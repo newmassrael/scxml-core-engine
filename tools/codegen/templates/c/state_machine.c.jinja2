@@ -2750,6 +2750,15 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
     {% set has_host_invoke_exit = (state.invokes | host_invoker) | length > 0 %}
     {% if state.on_exit_blocks or has_scxml_invoke_exit or has_hybrid_invoke_exit or has_host_invoke_exit %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
+        {# §scxml-D-exitStates: onexit first, then cancelInvoke for every kind
+           of invocation, then configuration.delete(s) (`exit_states` does
+           that after this returns). #}
+        {% for block in state.on_exit_blocks %}
+        /* Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }} —
+           each block is an independent helper so a `return;` inside
+           terminates only that block. W3C SCXML 3.13. */
+        {{ csym_prefix }}{{ model.name }}_on_exit_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}(sm);
+        {% endfor %}
         {% for invoke_info in state.invokes | host_invoker %}
         /* W3C SCXML 6.4: the host's invocation ends with the state that
            started it. `sce_host_invocation_take` answers whether this one ever
@@ -2779,12 +2788,6 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
                 _host_cancel_entry->handler(_host_cancel_entry->user_data, &_host_cancel, &_host_cancel_out);
             }
         }
-        {% endfor %}
-        {% for block in state.on_exit_blocks %}
-        /* Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }} —
-           each block is an independent helper so a `return;` inside
-           terminates only that block. W3C SCXML 3.13. */
-        {{ csym_prefix }}{{ model.name }}_on_exit_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}(sm);
         {% endfor %}
         {% if has_scxml_invoke_exit or has_hybrid_invoke_exit %}
         /* W3C SCXML 6.4: cancel any pending invokes deferred from this

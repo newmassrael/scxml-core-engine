@@ -492,10 +492,14 @@ func (p *LateTickHonoursCancelPolicy) ExecuteHistoryDefaultContent(history sce.H
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line late_tick_honours_cancel.scxml:39
 func (p *LateTickHonoursCancelPolicy) ExecuteExitActions(state LateTickHonoursCancelState, engine *sce.Engine[LateTickHonoursCancelState, LateTickHonoursCancelEvent], configurationBeforeExit []LateTickHonoursCancelState) {
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
 	switch state {
 	default:
 		// No exit actions

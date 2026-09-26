@@ -59,6 +59,7 @@ pub mod invoke_unsupported_type;
 pub mod late_tick_honours_cancel;
 pub mod native_action;
 pub mod nested_final_not_terminal;
+pub mod onexit_runs_before_the_state_leaves;
 pub mod parallel_completion_raises_done_state;
 pub mod parallel_done_state_is_delivered;
 pub mod parallel_region_root_external_domain;

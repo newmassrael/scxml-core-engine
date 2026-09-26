@@ -378,6 +378,9 @@ impl StatePolicy for Test377Policy {
         engine: &mut sce_rust_runtime::Engine<Self>,
         configuration_before_exit: &[Self::State],
     ) {
+        // §scxml-D-exitStates orders one state's exit as onexit, then
+        // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
+        // own handler is true: the deactivation is the LAST step here.
         match state {
             Test377State::S0 => {
                 // SCE-MAP: test377.scxml:9 :: s0 :: _state_body

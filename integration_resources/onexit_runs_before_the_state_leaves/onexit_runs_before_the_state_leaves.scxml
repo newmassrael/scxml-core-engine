@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML Appendix D exitStates: a state leaves the configuration AFTER its
+  own <onexit> has run, not before.
+
+  The procedure is, for each state in exitOrder:
+
+      for content in s.onexit.sort(documentOrder): executeContent(content)
+      for inv in s.invoke: cancelInvoke(inv)
+      configuration.delete(s)
+
+  so `In(s)` evaluated inside s's own <onexit> is TRUE. exitOrder puts a
+  descendant before its ancestor, so inside the child's <onexit> the parent
+  is still active too, and inside the parent's <onexit> the child is already
+  gone. An engine that deletes the state first — or deletes the whole exit
+  set up front and then runs the handlers — answers the first two with
+  false.
+
+  Nothing in the configuration after the microstep can tell those engines
+  apart: every one of them ends with `inner` and `outer` exited. What differs
+  is what the handlers SAW, so each handler records what it saw and the
+  verdict is taken from those records.
+
+  Each clause lands in a <final> of its own, checked in document order, so a
+  failure names which clause broke:
+
+    selfInInner  == 1   `inner` was active during its own <onexit>
+    parentInInner == 1  `outer` was active during `inner`'s <onexit>
+    selfInOuter  == 1   `outer` was active during its own <onexit>
+    childInOuter == 0   `inner` was already gone during `outer`'s <onexit>
+    exits        == 2   both handlers ran, so no clause above is vacuous
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="onexit_runs_before_the_state_leaves" datamodel="ecmascript"
+       initial="outer">
+
+  <datamodel>
+    <data id="selfInInner" expr="0"/>
+    <data id="parentInInner" expr="0"/>
+    <data id="selfInOuter" expr="0"/>
+    <data id="childInOuter" expr="0"/>
+    <data id="exits" expr="0"/>
+  </datamodel>
+
+  <state id="outer" initial="inner">
+    <onexit>
+      <assign location="exits" expr="exits + 1"/>
+      <if cond="In('outer')">
+        <assign location="selfInOuter" expr="1"/>
+      </if>
+      <if cond="In('inner')">
+        <assign location="childInOuter" expr="1"/>
+      </if>
+    </onexit>
+
+    <state id="inner">
+      <onexit>
+        <assign location="exits" expr="exits + 1"/>
+        <if cond="In('inner')">
+          <assign location="selfInInner" expr="1"/>
+        </if>
+        <if cond="In('outer')">
+          <assign location="parentInInner" expr="1"/>
+        </if>
+      </onexit>
+      <!-- Leaves both states: the target is outside `outer`. -->
+      <transition event="leave" target="check"/>
+    </state>
+  </state>
+
+  <state id="check">
+    <!-- Document order decides, so each clause gets the first final it fails. -->
+    <transition cond="exits != 2" target="failExits"/>
+    <transition cond="selfInInner != 1" target="failSelfInInner"/>
+    <transition cond="parentInInner != 1" target="failParentInInner"/>
+    <transition cond="selfInOuter != 1" target="failSelfInOuter"/>
+    <transition cond="childInOuter != 0" target="failChildInOuter"/>
+    <transition target="settled"/>
+  </state>
+
+  <final id="settled"/>
+  <final id="failExits"/>
+  <final id="failSelfInInner"/>
+  <final id="failParentInInner"/>
+  <final id="failSelfInOuter"/>
+  <final id="failChildInOuter"/>
+</scxml>

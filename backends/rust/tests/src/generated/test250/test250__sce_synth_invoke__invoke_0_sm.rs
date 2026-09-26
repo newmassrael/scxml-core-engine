@@ -668,6 +668,9 @@ impl StatePolicy for Test250SceSynthInvokeInvoke0Policy {
         engine: &mut sce_rust_runtime::Engine<Self>,
         configuration_before_exit: &[Self::State],
     ) {
+        // §scxml-D-exitStates orders one state's exit as onexit, then
+        // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
+        // own handler is true: the deactivation is the LAST step here.
         match state {
             Test250SceSynthInvokeInvoke0State::Sub0 => {
                 // SCE-MAP: test250__sce_synth_invoke__invoke_0.scxml:4 :: sub0 :: _state_body

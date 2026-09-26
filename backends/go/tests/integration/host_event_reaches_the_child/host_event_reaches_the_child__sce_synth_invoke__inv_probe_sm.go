@@ -447,10 +447,14 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteHistoryDef
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:3
 func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteExitActions(state HostEventReachesTheChildSceSynthInvokeInvProbeState, engine *sce.Engine[HostEventReachesTheChildSceSynthInvokeInvProbeState, HostEventReachesTheChildSceSynthInvokeInvProbeEvent], configurationBeforeExit []HostEventReachesTheChildSceSynthInvokeInvProbeState) {
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
 	switch state {
 	default:
 		// No exit actions

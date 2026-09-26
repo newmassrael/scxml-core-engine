@@ -1851,8 +1851,8 @@ func (p *AiLoopPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engin
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line ai_loop.scxml:155
 func (p *AiLoopPolicy) ExecuteExitActions(state AiLoopState, engine *sce.Engine[AiLoopState, AiLoopEvent], configurationBeforeExit []AiLoopState) {
 	p.ensureScriptEngine()
@@ -1864,7 +1864,16 @@ func (p *AiLoopPolicy) ExecuteExitActions(state AiLoopState, engine *sce.Engine[
 		// W3C SCXML 3.10: shallow history where
 		p.historyWhere = (sce.PolicyDocument[AiLoopState, AiLoopEvent]{Policy: p}).RecordedHistory(AiLoopStateRunning, false, configurationBeforeExit)
 	}
-	// W3C SCXML 3.4/3.12.1: Remove state from active configuration
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
+	switch state {
+	default:
+		// No exit actions
+	}
+	// §scxml-D-exitStates: out of the configuration only after its onexit
+	// and invoke cancellation — the configuration.delete(s) step.
 	p.activeStates = func() []AiLoopState {
 		var result []AiLoopState
 		for _, s := range p.activeStates {
@@ -1874,10 +1883,6 @@ func (p *AiLoopPolicy) ExecuteExitActions(state AiLoopState, engine *sce.Engine[
 		}
 		return result
 	}()
-	switch state {
-	default:
-		// No exit actions
-	}
 }
 
 

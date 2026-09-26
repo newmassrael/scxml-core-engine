@@ -505,12 +505,21 @@ func (p *ParallelRegionRootExternalDomainPolicy) ExecuteHistoryDefaultContent(hi
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //
 //line parallel_region_root_external_domain.scxml:34
 func (p *ParallelRegionRootExternalDomainPolicy) ExecuteExitActions(state ParallelRegionRootExternalDomainState, engine *sce.Engine[ParallelRegionRootExternalDomainState, ParallelRegionRootExternalDomainEvent], configurationBeforeExit []ParallelRegionRootExternalDomainState) {
-	// W3C SCXML 3.4/3.12.1: Remove state from active configuration
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
+	switch state {
+	default:
+		// No exit actions
+	}
+	// §scxml-D-exitStates: out of the configuration only after its onexit
+	// and invoke cancellation — the configuration.delete(s) step.
 	p.activeStates = func() []ParallelRegionRootExternalDomainState {
 		var result []ParallelRegionRootExternalDomainState
 		for _, s := range p.activeStates {
@@ -520,10 +529,6 @@ func (p *ParallelRegionRootExternalDomainPolicy) ExecuteExitActions(state Parall
 		}
 		return result
 	}()
-	switch state {
-	default:
-		// No exit actions
-	}
 }
 
 // BindCurrentEvent binds the event whose transitions are about to be selected as

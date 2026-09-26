@@ -871,11 +871,15 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteHistoryDefaultContent(history sce
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line wildcard_in_document_order.scxml:48
 func (p *WildcardInDocumentOrderPolicy) ExecuteExitActions(state WildcardInDocumentOrderState, engine *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent], configurationBeforeExit []WildcardInDocumentOrderState) {
 	p.ensureScriptEngine()
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
 	switch state {
 	default:
 		// No exit actions

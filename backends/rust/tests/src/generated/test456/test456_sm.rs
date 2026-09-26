@@ -656,6 +656,9 @@ impl StatePolicy for Test456Policy {
         engine: &mut sce_rust_runtime::Engine<Self>,
         configuration_before_exit: &[Self::State],
     ) {
+        // §scxml-D-exitStates orders one state's exit as onexit, then
+        // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
+        // own handler is true: the deactivation is the LAST step here.
     }
 
     // §scxml-5.10: the event whose transitions are about to be selected is the

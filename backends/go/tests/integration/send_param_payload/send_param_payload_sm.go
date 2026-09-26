@@ -1050,11 +1050,19 @@ func (p *SendParamPayloadPolicy) ExecuteHistoryDefaultContent(history sce.Histor
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line send_param_payload.scxml:82
 func (p *SendParamPayloadPolicy) ExecuteExitActions(state SendParamPayloadState, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent], configurationBeforeExit []SendParamPayloadState) {
 	p.ensureScriptEngine()
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
+	switch state {
+	default:
+		// No exit actions
+	}
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
 	switch state {
 	case SendParamPayloadStateAwaitChild:
@@ -1065,10 +1073,6 @@ func (p *SendParamPayloadPolicy) ExecuteExitActions(state SendParamPayloadState,
 		delete(p.activeInvokes, "inv_emitter")
 		p.pendingDoneInvokeInvEmitter = false
 	default:
-	}
-	switch state {
-	default:
-		// No exit actions
 	}
 }
 

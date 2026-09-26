@@ -653,18 +653,10 @@
 {% endif %}
 
 {# One state's exit, and nothing below it: the engine's Appendix D exit set
-   already holds every active descendant, in exit order, ahead of this state. #}
-{% if model.has_parallel_states or model.uses_in_predicate %}
-        // W3C SCXML 3.4/3.12.1: Remove state from active configuration (parallel states and In() predicate)
-        AOT_DEBUG("AOT executeExitActions: Removing state {} from activeStates", static_cast<int>(state));
-        {
-            ::std::lock_guard<::std::mutex> lock(activeStatesMutex_);
-            activeStates_.erase(
-                std::remove(activeStates_.begin(), activeStates_.end(), state),
-                activeStates_.end()
-            );
-        }
-{% endif %}
+   already holds every active descendant, in exit order, ahead of this state.
+   §scxml-D-exitStates orders one state's exit as onexit, then cancelInvoke,
+   then configuration.delete(s), so `In(s)` inside s's own handler is true:
+   the removal from `activeStates_` is the LAST thing this function does. #}
         {% if model.history_states %}
         // W3C SCXML 3.10: Record history as this state exits, from the
         // configuration the microstep started from — the engine snapshots it
@@ -699,6 +691,41 @@
                 AOT_DEBUG("AOT executeExitActions: Processing exit actions for state {} ({{ state_id }})", static_cast<int>(state));
 {% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid or state.invokes | mesh_rpc or state.invokes | scxml_remote or state.invokes | unsupported or state.invokes | host_invoker %}
                 {
+{% if state.on_exit_blocks %}
+                // §scxml-D-exitStates: the state's onexit runs first, while the
+                // state and its invocations are still live; cancelInvoke and
+                // the configuration.delete(s) step follow it.
+{% set single_cpp_exit_action = (state.on_exit_blocks|length == 1 and state.on_exit_blocks[0]|length == 1 and state.on_exit_blocks[0][0].type == 'script' and state.on_exit_blocks[0][0].is_cpp_function) %}
+{% if single_cpp_exit_action %}
+                // W3C SCXML 3.9: Single <cpp> action - direct call (true Zero Overhead)
+                // Optimization: No std::vector, std::function, or EntryExitHelper overhead
+                {{ state.on_exit_blocks[0][0].content_transformed | trim }};
+{% else %}
+                {
+                    // W3C SCXML 3.9: Build onexit block lambdas for EntryExitHelper
+                    // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
+                    std::vector<std::function<void()>> exitBlocks;
+{% for block in state.on_exit_blocks %}
+                    exitBlocks.push_back([{% if model.needs_nonstatic_method %}this, {% endif %}&engine]() {
+                        // Onexit block {{ loop.index }}/{{ state.on_exit_blocks|length }}
+{% for action in block %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "cpp", "                        ") -}}
+{%- endif %}
+                        {% set in_entry_exit = true %}
+                        {% include 'actions/' + action.type + '.jinja2' %}
+
+{% endfor %}
+                    });
+{% endfor %}
+                    // W3C SCXML 3.9: Delegate to EntryExitHelper (Single Source of Truth)
+                    // This achieves ARCHITECTURE.md Zero Duplication between Interpreter and AOT engines
+                    ::SCE::Core::EntryExitHelper<{{ model.name }}Policy, Engine>::executeExitBlocks(
+                        exitBlocks, engine, "{{ state_id }}"
+                    );
+                }
+{% endif %}
+{% endif %}
 {% if state.invokes | scxml or state.invokes | hybrid or state.invokes | unsupported %}
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (ARCHITECTURE.md Zero Duplication)
                 // Covers §scxml-6.4.1 unsupported-type entries too: an invoke
@@ -820,38 +847,6 @@
 {% endif %}
                 {% endfor %}
 {% endif %}
-{% if state.on_exit_blocks %}
-{% set single_cpp_exit_action = (state.on_exit_blocks|length == 1 and state.on_exit_blocks[0]|length == 1 and state.on_exit_blocks[0][0].type == 'script' and state.on_exit_blocks[0][0].is_cpp_function) %}
-{% if single_cpp_exit_action %}
-                // W3C SCXML 3.9: Single <cpp> action - direct call (true Zero Overhead)
-                // Optimization: No std::vector, std::function, or EntryExitHelper overhead
-                {{ state.on_exit_blocks[0][0].content_transformed | trim }};
-{% else %}
-                {
-                    // W3C SCXML 3.9: Build onexit block lambdas for EntryExitHelper
-                    // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
-                    std::vector<std::function<void()>> exitBlocks;
-{% for block in state.on_exit_blocks %}
-                    exitBlocks.push_back([{% if model.needs_nonstatic_method %}this, {% endif %}&engine]() {
-                        // Onexit block {{ loop.index }}/{{ state.on_exit_blocks|length }}
-{% for action in block %}
-{%- if action.req or action.unresolved %}
-{{ annot.annotation_block(action, "cpp", "                        ") -}}
-{%- endif %}
-                        {% set in_entry_exit = true %}
-                        {% include 'actions/' + action.type + '.jinja2' %}
-
-{% endfor %}
-                    });
-{% endfor %}
-                    // W3C SCXML 3.9: Delegate to EntryExitHelper (Single Source of Truth)
-                    // This achieves ARCHITECTURE.md Zero Duplication between Interpreter and AOT engines
-                    ::SCE::Core::EntryExitHelper<{{ model.name }}Policy, Engine>::executeExitBlocks(
-                        exitBlocks, engine, "{{ state_id }}"
-                    );
-                }
-{% endif %}
-{% endif %}
                 }
 {% endif %}
                 break;
@@ -861,4 +856,16 @@
             break;
         }
 {% endif %}{# model.has_exit_actions #}
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // §scxml-D-exitStates: out of the configuration only after its onexit
+        // and invoke cancellation — the configuration.delete(s) step.
+        AOT_DEBUG("AOT executeExitActions: Removing state {} from activeStates", static_cast<int>(state));
+        {
+            ::std::lock_guard<::std::mutex> lock(activeStatesMutex_);
+            activeStates_.erase(
+                std::remove(activeStates_.begin(), activeStates_.end(), state),
+                activeStates_.end()
+            );
+        }
+{% endif %}
     }

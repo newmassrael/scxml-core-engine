@@ -373,10 +373,9 @@
         engine: &mut sce_rust_runtime::Engine<Self>,
         configuration_before_exit: &[Self::State],
     ) {
-{% if model.has_parallel_states or model.uses_in_predicate %}
-        // W3C SCXML 3.4/3.12.1: Remove state from active configuration
-        self.deactivate(state);
-{% endif %}
+        // §scxml-D-exitStates orders one state's exit as onexit, then
+        // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
+        // own handler is true: the deactivation is the LAST step here.
 {% if model.history_states %}
         // W3C SCXML 3.10: Record history as this state exits, from the
         // configuration the microstep started from — the engine hands every
@@ -401,8 +400,36 @@
    this a document whose only `<invoke>` was host-served emitted no exit
    `match` at all, and the host was never told to stop. #}
 {% set has_invoke_exits = model.invokes | scxml or model.invokes | hybrid or model.invokes | host_invoker %}
+{% if model.has_exit_actions %}
+        match state {
+{% for state_id, state in model.states | dictsort %}
+{% if state.on_exit_blocks %}
+            {{ machine_name }}State::{{ state_id | to_state_variant }} => {  {{- annot.annotation_comment(state, "rust", "                ") }}
+{% if state.source_location %}
+                {{ sce_map.source_marker(state.source_location, "rust", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
+{% endif %}
+{% for block in state.on_exit_blocks %}
+                // W3C SCXML 3.9: onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }}
+                // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
+                'action_block: {
+{% for action in block %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "rust", "                ") -}}
+{%- endif %}
+                {% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
+
+{% endfor %}
+                }
+{% endfor %}
+            }
+{% endif %}
+{% endfor %}
+            _ => {}
+        }
+{% endif %}
 {% if has_invoke_exits %}
-        // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
+        // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on
+        // state exit — after the onexit above, per §scxml-D-exitStates.
         match state {
 {% for state_id, state in model.states | dictsort %}
 {% if state.invokes | scxml or state.invokes | hybrid or state.invokes | unsupported %}
@@ -462,32 +489,10 @@
             _ => {}
         }
 {% endif %}
-{% if model.has_exit_actions %}
-        match state {
-{% for state_id, state in model.states | dictsort %}
-{% if state.on_exit_blocks %}
-            {{ machine_name }}State::{{ state_id | to_state_variant }} => {  {{- annot.annotation_comment(state, "rust", "                ") }}
-{% if state.source_location %}
-                {{ sce_map.source_marker(state.source_location, "rust", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
-{% endif %}
-{% for block in state.on_exit_blocks %}
-                // W3C SCXML 3.9: onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }}
-                // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
-                'action_block: {
-{% for action in block %}
-{%- if action.req or action.unresolved %}
-{{ annot.annotation_block(action, "rust", "                ") -}}
-{%- endif %}
-                {% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
-
-{% endfor %}
-                }
-{% endfor %}
-            }
-{% endif %}
-{% endfor %}
-            _ => {}
-        }
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // §scxml-D-exitStates: out of the configuration only after its onexit
+        // and invoke cancellation — the configuration.delete(s) step.
+        self.deactivate(state);
 {% endif %}
     }
 

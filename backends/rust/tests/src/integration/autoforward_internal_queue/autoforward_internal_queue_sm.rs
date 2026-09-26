@@ -652,7 +652,14 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
         engine: &mut sce_rust_runtime::Engine<Self>,
         configuration_before_exit: &[Self::State],
     ) {
-        // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
+        // §scxml-D-exitStates orders one state's exit as onexit, then
+        // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
+        // own handler is true: the deactivation is the LAST step here.
+        match state {
+            _ => {}
+        }
+        // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on
+        // state exit — after the onexit above, per §scxml-D-exitStates.
         match state {
             AutoforwardInternalQueueState::Phase => {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state.
@@ -674,9 +681,6 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
                 self.active_invokes.remove("inv_watch");
                 self.pending_done_invoke_inv_watch = false;
             }
-            _ => {}
-        }
-        match state {
             _ => {}
         }
     }

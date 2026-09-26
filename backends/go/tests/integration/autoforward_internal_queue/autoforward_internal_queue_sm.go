@@ -605,10 +605,18 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteHistoryDefaultContent(history sc
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line autoforward_internal_queue.scxml:51
 func (p *AutoforwardInternalQueuePolicy) ExecuteExitActions(state AutoforwardInternalQueueState, engine *sce.Engine[AutoforwardInternalQueueState, AutoforwardInternalQueueEvent], configurationBeforeExit []AutoforwardInternalQueueState) {
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
+	switch state {
+	default:
+		// No exit actions
+	}
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
 	switch state {
 	case AutoforwardInternalQueueStatePhase:
@@ -619,10 +627,6 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteExitActions(state AutoforwardInt
 		delete(p.activeInvokes, "inv_watch")
 		p.pendingDoneInvokeInvWatch = false
 	default:
-	}
-	switch state {
-	default:
-		// No exit actions
 	}
 }
 

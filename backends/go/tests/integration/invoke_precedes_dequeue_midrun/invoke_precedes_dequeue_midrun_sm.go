@@ -659,10 +659,18 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteHistoryDefaultContent(history
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line invoke_precedes_dequeue_midrun.scxml:42
 func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteExitActions(state InvokePrecedesDequeueMidrunState, engine *sce.Engine[InvokePrecedesDequeueMidrunState, InvokePrecedesDequeueMidrunEvent], configurationBeforeExit []InvokePrecedesDequeueMidrunState) {
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
+	switch state {
+	default:
+		// No exit actions
+	}
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
 	switch state {
 	case InvokePrecedesDequeueMidrunStatePhase:
@@ -673,10 +681,6 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteExitActions(state InvokePrece
 		delete(p.activeInvokes, "inv_watch")
 		p.pendingDoneInvokeInvWatch = false
 	default:
-	}
-	switch state {
-	default:
-		// No exit actions
 	}
 }
 

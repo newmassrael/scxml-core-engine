@@ -1272,6 +1272,35 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML Appendix D exitStates: a state leaves the configuration AFTER
+    # its own <onexit> — onexit, cancelInvoke, configuration.delete(s). The
+    # handlers record what In() answered while they ran, because the
+    # configuration after the microstep is the same whatever order was used.
+    sce_generate_static_integration_c_test(onexit_runs_before_the_state_leaves "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_onexit_runs_before_the_state_leaves
+        integration/test_onexit_runs_before_the_state_leaves.c
+        ${INTEGRATION_C_TEST_onexit_runs_before_the_state_leaves_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_onexit_runs_before_the_state_leaves PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_onexit_runs_before_the_state_leaves PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_onexit_runs_before_the_state_leaves PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_onexit_runs_before_the_state_leaves
+        COMMAND sce_c_integration_onexit_runs_before_the_state_leaves
+    )
+    set_tests_properties(c11_integration_onexit_runs_before_the_state_leaves PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach
     # the datamodel as a value. Every other fixture here leaves the carrier's
     # `data` field zeroed, so this edge — the one a downstream MCU consumer

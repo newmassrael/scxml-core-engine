@@ -644,11 +644,15 @@ func (p *UndecodablePayloadIsReportedPolicy) ExecuteHistoryDefaultContent(histor
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line undecodable_payload_is_reported.scxml:56
 func (p *UndecodablePayloadIsReportedPolicy) ExecuteExitActions(state UndecodablePayloadIsReportedState, engine *sce.Engine[UndecodablePayloadIsReportedState, UndecodablePayloadIsReportedEvent], configurationBeforeExit []UndecodablePayloadIsReportedState) {
 	p.ensureScriptEngine()
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
 	switch state {
 	default:
 		// No exit actions

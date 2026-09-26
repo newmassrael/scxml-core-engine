@@ -650,11 +650,15 @@ func (p *DonedataLateCompletionSceSynthInvokeInvLatePolicy) ExecuteHistoryDefaul
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line donedata_late_completion__sce_synth_invoke__inv_late.scxml:3
 func (p *DonedataLateCompletionSceSynthInvokeInvLatePolicy) ExecuteExitActions(state DonedataLateCompletionSceSynthInvokeInvLateState, engine *sce.Engine[DonedataLateCompletionSceSynthInvokeInvLateState, DonedataLateCompletionSceSynthInvokeInvLateEvent], configurationBeforeExit []DonedataLateCompletionSceSynthInvokeInvLateState) {
 	p.ensureScriptEngine()
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
 	switch state {
 	default:
 		// No exit actions

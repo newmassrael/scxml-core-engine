@@ -745,11 +745,15 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteHistoryDefaultContent(history sce.H
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line error_cascade_is_bounded.scxml:45
 func (p *ErrorCascadeIsBoundedPolicy) ExecuteExitActions(state ErrorCascadeIsBoundedState, engine *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent], configurationBeforeExit []ErrorCascadeIsBoundedState) {
 	p.ensureScriptEngine()
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
 	switch state {
 	default:
 		// No exit actions

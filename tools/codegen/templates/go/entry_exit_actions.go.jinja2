@@ -298,8 +298,8 @@ func (p *{{ machine_name }}Policy) ExecuteHistoryDefaultContent(history sce.Hist
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 {{ sce_map.source_marker(model.source_location, "go", symbol_artifact=sce_artifact.machine) }}
 func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}State, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event], configurationBeforeExit []{{ machine_name }}State) {
 {% if model.needs_script_engine %}
@@ -317,18 +317,35 @@ func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}St
 	}
 {% endfor %}
 {% endif %}
-{% if model.has_parallel_states or model.uses_in_predicate %}
-	// W3C SCXML 3.4/3.12.1: Remove state from active configuration
-	p.activeStates = func() []{{ machine_name }}State {
-		var result []{{ machine_name }}State
-		for _, s := range p.activeStates {
-			if s != state {
-				result = append(result, s)
-			}
-		}
-		return result
-	}()
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
+	switch state {
+{% for state_id, state in model.states | dictsort %}
+{% if state.on_exit_blocks %}
+	case {{ machine_name }}State{{ state_id | to_state_variant }}:{{ annot.annotation_comment(state, "go", "		") }}
+{% if state.source_location %}
+		{{ sce_map.source_marker(state.source_location, "go", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
+{% for block in state.on_exit_blocks %}
+		// W3C SCXML 3.9: onexit block {{ loop.index0 }}
+		for exitBlock{{ loop.index0 }} := 0; exitBlock{{ loop.index0 }} < 1; exitBlock{{ loop.index0 }}++ {
+			_ = exitBlock{{ loop.index0 }}
+{% for action in block %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "go", "			") -}}
+{%- endif %}
+			{% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
+
+{% endfor %}
+		}
+{% endfor %}
+{% endif %}
+{% endfor %}
+	default:
+		// No exit actions
+	}
 {# W3C SCXML 6.4: `host_invoker` is named here as well as inside the loop, and
    that is load-bearing rather than belt-and-braces — the Rust template records
    the measurement. `unsupported` covers a host-served invoke today, but a
@@ -370,29 +387,17 @@ func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}St
 	default:
 	}
 {% endif %}
-	switch state {
-{% for state_id, state in model.states | dictsort %}
-{% if state.on_exit_blocks %}
-	case {{ machine_name }}State{{ state_id | to_state_variant }}:{{ annot.annotation_comment(state, "go", "		") }}
-{% if state.source_location %}
-		{{ sce_map.source_marker(state.source_location, "go", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
-{% endif %}
-{% for block in state.on_exit_blocks %}
-		// W3C SCXML 3.9: onexit block {{ loop.index0 }}
-		for exitBlock{{ loop.index0 }} := 0; exitBlock{{ loop.index0 }} < 1; exitBlock{{ loop.index0 }}++ {
-			_ = exitBlock{{ loop.index0 }}
-{% for action in block %}
-{%- if action.req or action.unresolved %}
-{{ annot.annotation_block(action, "go", "			") -}}
-{%- endif %}
-			{% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
-
-{% endfor %}
+{% if model.has_parallel_states or model.uses_in_predicate %}
+	// §scxml-D-exitStates: out of the configuration only after its onexit
+	// and invoke cancellation — the configuration.delete(s) step.
+	p.activeStates = func() []{{ machine_name }}State {
+		var result []{{ machine_name }}State
+		for _, s := range p.activeStates {
+			if s != state {
+				result = append(result, s)
+			}
 		}
-{% endfor %}
+		return result
+	}()
 {% endif %}
-{% endfor %}
-	default:
-		// No exit actions
-	}
 }

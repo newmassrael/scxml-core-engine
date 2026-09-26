@@ -548,11 +548,20 @@ func (p *ParallelCompletionRaisesDoneStatePolicy) ExecuteHistoryDefaultContent(h
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line parallel_completion_raises_done_state.scxml:21
 func (p *ParallelCompletionRaisesDoneStatePolicy) ExecuteExitActions(state ParallelCompletionRaisesDoneStateState, engine *sce.Engine[ParallelCompletionRaisesDoneStateState, ParallelCompletionRaisesDoneStateEvent], configurationBeforeExit []ParallelCompletionRaisesDoneStateState) {
-	// W3C SCXML 3.4/3.12.1: Remove state from active configuration
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
+	switch state {
+	default:
+		// No exit actions
+	}
+	// §scxml-D-exitStates: out of the configuration only after its onexit
+	// and invoke cancellation — the configuration.delete(s) step.
 	p.activeStates = func() []ParallelCompletionRaisesDoneStateState {
 		var result []ParallelCompletionRaisesDoneStateState
 		for _, s := range p.activeStates {
@@ -562,10 +571,6 @@ func (p *ParallelCompletionRaisesDoneStatePolicy) ExecuteExitActions(state Paral
 		}
 		return result
 	}()
-	switch state {
-	default:
-		// No exit actions
-	}
 }
 
 

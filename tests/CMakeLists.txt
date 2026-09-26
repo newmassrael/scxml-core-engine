@@ -1026,6 +1026,8 @@ add_executable(integration_tests
     integration/ParallelSelfTransitionKeepsItsLeafAotTest.cpp
     integration/AncestorEntryIsNotDefaultEntryTest.cpp
     integration/AncestorEntryIsNotDefaultEntryAotTest.cpp
+    integration/OnexitRunsBeforeTheStateLeavesTest.cpp
+    integration/OnexitRunsBeforeTheStateLeavesAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
     integration/EventDataArrivesAsSentAotTest.cpp
     integration/XmlDataIsADomTreeTest.cpp
@@ -1530,6 +1532,12 @@ sce_generate_static_integration_test(parallel_self_transition_keeps_its_leaf ${S
 # measured 2026-08-15, the same document without it passes while the defect is
 # still in the templates.
 sce_generate_static_integration_test(ancestor_entry_is_not_default_entry ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML Appendix D exitStates: a state leaves the configuration AFTER its
+# own <onexit> — onexit, cancelInvoke, configuration.delete(s). The handlers
+# record what In() answered while they ran; the configuration after the
+# microstep is the same whatever order an engine used.
+sce_generate_static_integration_test(onexit_runs_before_the_state_leaves ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach the
 # datamodel as a value. `raiseExternalEvent(name, data)` and

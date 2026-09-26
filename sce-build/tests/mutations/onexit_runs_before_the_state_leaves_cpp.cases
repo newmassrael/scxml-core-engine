@@ -1,0 +1,38 @@
+# Mutation cases for §scxml-D-exitStates — a state leaves the configuration
+# AFTER its own <onexit> has run: onexit, then cancelInvoke, then
+# configuration.delete(s).
+#
+# Run with `scripts/mutate sce-build/tests/mutations/onexit_runs_before_the_state_leaves_cpp.cases`.
+#
+# Measured 2026-09-26: the C++ AOT channel had the order backwards — its
+# generated `executeExitActions` erased the state from `activeStates_` first,
+# cancelled its invocations, and ran the <onexit> last, so `In(s)` inside s's
+# own handler answered false. The configuration after the microstep is the
+# same either way, which is why no fixture before
+# `integration_resources/onexit_runs_before_the_state_leaves/` noticed. This
+# file is its witness: it puts the erase back at the head of the exit and asks
+# whether the fixture's AOT driver goes red. The generated machine is built at
+# CMake time, so the ctest runner's own build carries the template edit to it.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets tools/codegen/templates/entry_exit_actions.jinja2
+mutation_oracles tests/integration/OnexitRunsBeforeTheStateLeavesAotTest.cpp
+
+# ── The state leaves before its handler runs ────────────────────────
+
+mutation_case "the state is erased from activeStates_ before its own onexit runs" <<'PY'
+edit("tools/codegen/templates/entry_exit_actions.jinja2",
+     """   the removal from `activeStates_` is the LAST thing this function does. #}
+""",
+     """   the removal from `activeStates_` is the LAST thing this function does. #}
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        {
+            ::std::lock_guard<::std::mutex> lock(activeStatesMutex_);
+            activeStates_.erase(
+                std::remove(activeStates_.begin(), activeStates_.end(), state),
+                activeStates_.end()
+            );
+        }
+{% endif %}
+""")
+PY

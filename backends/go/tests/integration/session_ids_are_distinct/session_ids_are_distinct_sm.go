@@ -938,11 +938,19 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteHistoryDefaultContent(history sce.H
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line session_ids_are_distinct.scxml:38
 func (p *SessionIdsAreDistinctPolicy) ExecuteExitActions(state SessionIdsAreDistinctState, engine *sce.Engine[SessionIdsAreDistinctState, SessionIdsAreDistinctEvent], configurationBeforeExit []SessionIdsAreDistinctState) {
 	p.ensureScriptEngine()
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
+	switch state {
+	default:
+		// No exit actions
+	}
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
 	switch state {
 	case SessionIdsAreDistinctStatePhase:
@@ -958,10 +966,6 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteExitActions(state SessionIdsAreDist
 		delete(p.activeInvokes, "inv_b")
 		p.pendingDoneInvokeInvB = false
 	default:
-	}
-	switch state {
-	default:
-		// No exit actions
 	}
 }
 

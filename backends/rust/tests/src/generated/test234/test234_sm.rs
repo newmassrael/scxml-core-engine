@@ -1312,9 +1312,14 @@ impl StatePolicy for Test234Policy {
         engine: &mut sce_rust_runtime::Engine<Self>,
         configuration_before_exit: &[Self::State],
     ) {
-        // W3C SCXML 3.4/3.12.1: Remove state from active configuration
-        self.deactivate(state);
-        // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
+        // §scxml-D-exitStates orders one state's exit as onexit, then
+        // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
+        // own handler is true: the deactivation is the LAST step here.
+        match state {
+            _ => {}
+        }
+        // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on
+        // state exit — after the onexit above, per §scxml-D-exitStates.
         match state {
             Test234State::P01 => {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state.
@@ -1358,9 +1363,9 @@ impl StatePolicy for Test234Policy {
             }
             _ => {}
         }
-        match state {
-            _ => {}
-        }
+        // §scxml-D-exitStates: out of the configuration only after its onexit
+        // and invoke cancellation — the configuration.delete(s) step.
+        self.deactivate(state);
     }
 
     // §scxml-5.10: the event whose transitions are about to be selected is the

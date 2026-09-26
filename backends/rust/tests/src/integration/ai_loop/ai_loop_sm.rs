@@ -2142,8 +2142,9 @@ impl StatePolicy for AiLoopPolicy {
         engine: &mut sce_rust_runtime::Engine<Self>,
         configuration_before_exit: &[Self::State],
     ) {
-        // W3C SCXML 3.4/3.12.1: Remove state from active configuration
-        self.deactivate(state);
+        // §scxml-D-exitStates orders one state's exit as onexit, then
+        // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
+        // own handler is true: the deactivation is the LAST step here.
         // W3C SCXML 3.10: Record history as this state exits, from the
         // configuration the microstep started from — the engine hands every
         // exit the configuration as it stood before the first one, so every
@@ -2159,6 +2160,9 @@ impl StatePolicy for AiLoopPolicy {
                 configuration_before_exit,
             ));
         }
+        // §scxml-D-exitStates: out of the configuration only after its onexit
+        // and invoke cancellation — the configuration.delete(s) step.
+        self.deactivate(state);
     }
 
     // §scxml-5.10: the event whose transitions are about to be selected is the

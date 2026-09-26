@@ -522,10 +522,14 @@ func (p *EventDescriptorSpellingsAgreePolicy) ExecuteHistoryDefaultContent(histo
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line event_descriptor_spellings_agree.scxml:56
 func (p *EventDescriptorSpellingsAgreePolicy) ExecuteExitActions(state EventDescriptorSpellingsAgreeState, engine *sce.Engine[EventDescriptorSpellingsAgreeState, EventDescriptorSpellingsAgreeEvent], configurationBeforeExit []EventDescriptorSpellingsAgreeState) {
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
 	switch state {
 	default:
 		// No exit actions

@@ -1083,6 +1083,29 @@ the forwarded event reaches it and `sawMarkerOnly` if all it ever sees is
 the `marker` the parent's own transition body sent. Both are top-level
 `<final>` states of the child, following `autoforward_internal_queue`.
 
+`onexit_runs_before_the_state_leaves` covers the per-state order inside
+§scxml-D-exitStates: for each state in exitOrder the processor runs its
+`<onexit>`, then cancels its invocations, then deletes it from the
+configuration. So `In(s)` inside s's own `<onexit>` is true, the parent is
+still active inside the child's, and the child is already gone inside the
+parent's. The configuration after the microstep is identical whatever order
+an engine used, which is why no existing fixture saw a difference: the two
+handlers record what `In()` answered while they ran, and the document turns
+those records into the `<final>` it reaches, one per clause.
+
+Measured 2026-09-26 by reading the seven exits: the C++ Interpreter, Python
+and C11 had the order; C++ AOT, Rust, Go and Kotlin removed the state from
+the configuration first, cancelled its invocations next and ran the
+`<onexit>` last. Kotlin split the defect across its runtime (`exitState`
+removed before calling `onExit`) and its template (`onExit` cancelled before
+the handler). C11 had one residue In() cannot see — a host-served invocation
+was cancelled ahead of the handler — and that moved with the rest.
+
+The axis is configuration removal only. Invocation cancellation moved to
+after the handler in every channel too, but its order relative to the
+handler needs a live invocation to observe and is not what this document
+measures.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

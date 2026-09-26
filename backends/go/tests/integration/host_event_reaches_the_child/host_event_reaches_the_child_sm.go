@@ -630,10 +630,18 @@ func (p *HostEventReachesTheChildPolicy) ExecuteHistoryDefaultContent(history sc
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line host_event_reaches_the_child.scxml:67
 func (p *HostEventReachesTheChildPolicy) ExecuteExitActions(state HostEventReachesTheChildState, engine *sce.Engine[HostEventReachesTheChildState, HostEventReachesTheChildEvent], configurationBeforeExit []HostEventReachesTheChildState) {
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
+	switch state {
+	default:
+		// No exit actions
+	}
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
 	switch state {
 	case HostEventReachesTheChildStatePhase:
@@ -644,10 +652,6 @@ func (p *HostEventReachesTheChildPolicy) ExecuteExitActions(state HostEventReach
 		delete(p.activeInvokes, "inv_probe")
 		p.pendingDoneInvokeInvProbe = false
 	default:
-	}
-	switch state {
-	default:
-		// No exit actions
 	}
 }
 

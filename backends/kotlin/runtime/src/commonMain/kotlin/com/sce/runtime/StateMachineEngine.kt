@@ -3081,8 +3081,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
             for ((history, deep) in historiesOf(state)) {
                 historyValues[history] = Microstep.recordedHistory(this, state, deep, configurationBeforeExit)
             }
-            this@StateMachineEngine.configuration.remove(state)
+            // §scxml-D-exitStates: onexit and cancelInvoke (both in the
+            // generated `onExit`) run while the state is still in the
+            // configuration, so `In(state)` inside its own handler is true;
+            // configuration.delete(s) is the last step.
             onExit(state)
+            this@StateMachineEngine.configuration.remove(state)
         }
 
         override fun executeTransitionContent(transition: EnabledTransition<S, HistoryId>) {

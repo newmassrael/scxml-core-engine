@@ -667,6 +667,9 @@ impl StatePolicy for Test387Policy {
         engine: &mut sce_rust_runtime::Engine<Self>,
         configuration_before_exit: &[Self::State],
     ) {
+        // §scxml-D-exitStates orders one state's exit as onexit, then
+        // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
+        // own handler is true: the deactivation is the LAST step here.
         // W3C SCXML 3.10: Record history as this state exits, from the
         // configuration the microstep started from — the engine hands every
         // exit the configuration as it stood before the first one, so every

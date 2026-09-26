@@ -614,10 +614,14 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteHistoryDefaultContent(history s
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line statechart_delayed_host_send.scxml:55
 func (p *StatechartDelayedHostSendPolicy) ExecuteExitActions(state StatechartDelayedHostSendState, engine *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent], configurationBeforeExit []StatechartDelayedHostSendState) {
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
 	switch state {
 	default:
 		// No exit actions

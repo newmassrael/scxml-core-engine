@@ -490,6 +490,9 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
         engine: &mut sce_rust_runtime::Engine<Self>,
         configuration_before_exit: &[Self::State],
     ) {
+        // §scxml-D-exitStates orders one state's exit as onexit, then
+        // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
+        // own handler is true: the deactivation is the LAST step here.
         match state {
             StatechartNativeActionState::Assembling => {
                 // SCE-MAP: statechart_native_action.scxml:59 :: assembling :: _state_body

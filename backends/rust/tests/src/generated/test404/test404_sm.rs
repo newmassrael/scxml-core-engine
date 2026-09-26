@@ -483,8 +483,9 @@ impl StatePolicy for Test404Policy {
         engine: &mut sce_rust_runtime::Engine<Self>,
         configuration_before_exit: &[Self::State],
     ) {
-        // W3C SCXML 3.4/3.12.1: Remove state from active configuration
-        self.deactivate(state);
+        // §scxml-D-exitStates orders one state's exit as onexit, then
+        // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
+        // own handler is true: the deactivation is the LAST step here.
         match state {
             Test404State::S01p => {
                 // SCE-MAP: test404.scxml:14 :: s01p :: _state_body
@@ -521,6 +522,9 @@ impl StatePolicy for Test404Policy {
             }
             _ => {}
         }
+        // §scxml-D-exitStates: out of the configuration only after its onexit
+        // and invoke cancellation — the configuration.delete(s) step.
+        self.deactivate(state);
     }
 
     // Appendix D selectTransitions, the half only this document can answer:

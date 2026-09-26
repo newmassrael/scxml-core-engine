@@ -430,10 +430,14 @@ func (p *NestedFinalNotTerminalPolicy) ExecuteHistoryDefaultContent(history sce.
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line nested_final_not_terminal.scxml:41
 func (p *NestedFinalNotTerminalPolicy) ExecuteExitActions(state NestedFinalNotTerminalState, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent], configurationBeforeExit []NestedFinalNotTerminalState) {
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
 	switch state {
 	default:
 		// No exit actions

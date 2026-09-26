@@ -623,11 +623,15 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) Execu
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist.scxml:3
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) ExecuteExitActions(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent], configurationBeforeExit []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState) {
 	p.ensureScriptEngine()
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
 	switch state {
 	default:
 		// No exit actions

@@ -519,23 +519,14 @@
 {% if state.source_location %}
                 {{ sce_map.source_marker(state.source_location, "kotlin", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
-{% if exit_has_invokes %}
-                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
-                cancelPendingInvokesForState(state)
-{% for inv in invoke_entries[state_id] %}
-{% if inv.is_unsupported is defined and inv.is_unsupported and inv.host_served is defined and inv.host_served %}
-                // W3C SCXML 6.4: the host's invocation ends with the state
-                // that started it. Unconditional here: the engine knows
-                // whether this one ever started and stays silent when it did
-                // not, so the emitted chain needs no bookkeeping of its own.
-                cancelHostInvoke("{{ inv.invoke_type | escape_kotlin }}", "{{ inv.invoke_id | escape_kotlin }}")
-{% elif not (inv.is_unsupported is defined and inv.is_unsupported) %}
-                // W3C SCXML 6.4: Cancel active invoked child on state exit
-                cancelInvoke("{{ inv.invoke_id }}")
-{% endif %}
-{% endfor %}
-{% endif %}
-{% if state.on_exit_blocks | length > 1 %}
+{# §scxml-D-exitStates orders one state's exit as onexit, then cancelInvoke,
+   then configuration.delete(s) — the engine's `exitState` removes the state
+   after this returns. So the <onexit> content comes first and the
+   cancellations after it. A single block written without `run {}` stops on
+   an error with a bare `return`, which would leave this function before the
+   cancellations run, so a state that has invocations takes the `run {}`
+   form even for one block. #}
+{% if state.on_exit_blocks | length > 1 or (exit_has_invokes and state.on_exit_blocks) %}
 {% for block in state.on_exit_blocks %}
                 // W3C SCXML 3.9: Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }}
                 // C++ EntryExitHelper pattern: each block executes independently
@@ -557,6 +548,22 @@
 {{ annot.annotation_block(action, "kotlin", "                ") -}}
 {%- endif %}
     {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% endif %}
+{% if exit_has_invokes %}
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+{% for inv in invoke_entries[state_id] %}
+{% if inv.is_unsupported is defined and inv.is_unsupported and inv.host_served is defined and inv.host_served %}
+                // W3C SCXML 6.4: the host's invocation ends with the state
+                // that started it. Unconditional here: the engine knows
+                // whether this one ever started and stays silent when it did
+                // not, so the emitted chain needs no bookkeeping of its own.
+                cancelHostInvoke("{{ inv.invoke_type | escape_kotlin }}", "{{ inv.invoke_id | escape_kotlin }}")
+{% elif not (inv.is_unsupported is defined and inv.is_unsupported) %}
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("{{ inv.invoke_id }}")
+{% endif %}
 {% endfor %}
 {% endif %}
             }

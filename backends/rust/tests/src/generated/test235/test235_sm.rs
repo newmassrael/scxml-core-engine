@@ -633,7 +633,14 @@ impl StatePolicy for Test235Policy {
         engine: &mut sce_rust_runtime::Engine<Self>,
         configuration_before_exit: &[Self::State],
     ) {
-        // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
+        // §scxml-D-exitStates orders one state's exit as onexit, then
+        // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
+        // own handler is true: the deactivation is the LAST step here.
+        match state {
+            _ => {}
+        }
+        // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on
+        // state exit — after the onexit above, per §scxml-D-exitStates.
         match state {
             Test235State::S0 => {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state.
@@ -655,9 +662,6 @@ impl StatePolicy for Test235Policy {
                 self.active_invokes.remove("foo");
                 self.pending_done_invoke_foo = false;
             }
-            _ => {}
-        }
-        match state {
             _ => {}
         }
     }

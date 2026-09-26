@@ -757,12 +757,21 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteHistoryDefaultContent(h
 }
 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
-// removes it from the configuration, cancels its invocations and runs its
-// <onexit>.
+// runs its <onexit>, cancels its invocations and removes it from the
+// configuration — §scxml-D-exitStates's order.
 //line parallel_regions_take_own_transitions.scxml:24
 func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteExitActions(state ParallelRegionsTakeOwnTransitionsState, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent], configurationBeforeExit []ParallelRegionsTakeOwnTransitionsState) {
 	p.ensureScriptEngine()
-	// W3C SCXML 3.4/3.12.1: Remove state from active configuration
+	// §scxml-D-exitStates orders one state's exit as onexit, then
+	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
+	// handler is true: the <onexit> switch comes first and the removal from
+	// the configuration last.
+	switch state {
+	default:
+		// No exit actions
+	}
+	// §scxml-D-exitStates: out of the configuration only after its onexit
+	// and invoke cancellation — the configuration.delete(s) step.
 	p.activeStates = func() []ParallelRegionsTakeOwnTransitionsState {
 		var result []ParallelRegionsTakeOwnTransitionsState
 		for _, s := range p.activeStates {
@@ -772,10 +781,6 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteExitActions(state Paral
 		}
 		return result
 	}()
-	switch state {
-	default:
-		// No exit actions
-	}
 }
 
 
