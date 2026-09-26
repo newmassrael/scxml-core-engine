@@ -213,9 +213,10 @@ func TestLeavingTheStateCancelsTheInvocation(t *testing.T) {
 // tearing down work it never began.
 //
 // Asserted at the engine surface rather than through the fixture, for the
-// reason the Rust channel records: driving the machine cannot produce the
-// "never started" case, because every host call that advances it runs a
-// macrostep and the pending invoke executes at the end of that macrostep.
+// reason the Rust channel records: `probe` cannot be left unstarted by driving
+// the machine, because `invoking` leaves only on a host event and the pending
+// invoke executes at the end of the macrostep that entered it. The emitted
+// half of the "never started" case is `passing`, in the case after this one.
 func TestCancelIsNotDeliveredForAnInvocationThatNeverStarted(t *testing.T) {
 	var log []string
 	var starts []hostStart
@@ -248,6 +249,29 @@ func TestCancelIsNotDeliveredForAnInvocationThatNeverStarted(t *testing.T) {
 	}
 	if cancels != 1 {
 		t.Fatalf("cancel reached the invoker %d times: %v", cancels, log)
+	}
+}
+
+// W3C SCXML 6.4: an invoke runs only for a state still active when its
+// macrostep ends. `passing` leaves on an eventless transition in the macrostep
+// that entered it, so `fleeting` is dropped while still pending and the host
+// hears nothing of it — neither a start nor a stop.
+func TestAnInvocationWhoseStateLeftIsNeverStarted(t *testing.T) {
+	var log []string
+	var starts []hostStart
+	s := newStarted()
+	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
+	s.engine.Initialize()
+	s.engine.Step()
+	s.engine.ProcessEvent(StatechartHostInvokerEventPass)
+
+	if got := s.counter(t, "ended"); got != 1 {
+		t.Fatalf("`passing` never carried the run on to `done`: ended = %d", got)
+	}
+	for _, e := range log {
+		if strings.HasSuffix(e, "id=fleeting") {
+			t.Fatalf("the host heard of an invocation whose state had left: %v", log)
+		}
 	}
 }
 

@@ -231,9 +231,11 @@ def test_cancel_is_not_delivered_for_an_invocation_that_never_started() -> None:
     host tearing down work it never began.
 
     Asserted at the engine surface rather than through the fixture, for the
-    reason the Rust channel records: driving the machine cannot produce the
-    "never started" case, because every host call that advances it runs a
-    macrostep and the pending invoke executes at the end of that macrostep."""
+    reason the Rust channel records: `probe` cannot be left unstarted by
+    driving the machine, because `invoking` leaves only on a host event and
+    the pending invoke executes at the end of the macrostep that entered it.
+    The emitted half of the "never started" case is `passing`, in the case
+    after this one."""
     engine = _sm.create_engine()
     log: List[str] = []
     starts: List[tuple] = []
@@ -262,6 +264,20 @@ def _deliver(engine, event) -> None:
     """This backend's delivery pair: enqueue, then run a macrostep."""
     engine.send_external(event)
     engine.advance_time(0)
+
+
+def test_an_invocation_whose_state_left_is_never_started() -> None:
+    """§scxml-6.4: an invoke runs only for a state still active when its
+    macrostep ends. `passing` leaves on an eventless transition in the
+    macrostep that entered it, so `fleeting` is dropped while still pending
+    and the host hears nothing of it — neither a start nor a stop."""
+    engine, log, _starts = _running()
+    _deliver(engine, Event.PASS)
+
+    assert _counter(engine, "ended") == 1, "`passing` never carried the run on to `done`"
+    assert not [e for e in log if e.endswith("id=fleeting")], (
+        f"the host heard of an invocation whose state had left: {log}"
+    )
 
 
 def test_a_completed_invocation_is_not_cancelled() -> None:

@@ -252,9 +252,10 @@ TEST_F(HostInvokerAotTest, LeavingTheStateCancelsTheInvocation) {
 // tearing down work it never began.
 //
 // Asserted at the engine surface rather than through the fixture, for the
-// reason the Rust channel records: driving the machine cannot produce the
-// "never started" case, because every host call that advances it runs a
-// macrostep and the pending invoke executes at the end of that macrostep.
+// reason the Rust channel records: `probe` cannot be left unstarted by driving
+// the machine, because `invoking` leaves only on a host event and the pending
+// invoke executes at the end of the macrostep that entered it. The emitted
+// half of the "never started" case is `passing`, in the case after this one.
 TEST_F(HostInvokerAotTest, CancelIsNotDeliveredForAnInvocationThatNeverStarted) {
     Machine sm;
     registerRunningInvoker(sm);
@@ -277,6 +278,23 @@ TEST_F(HostInvokerAotTest, CancelIsNotDeliveredForAnInvocationThatNeverStarted) 
         }
     }
     EXPECT_EQ(cancels, 1) << "cancel reached the invoker " << cancels << " times";
+}
+
+// W3C SCXML 6.4: an invoke runs only for a state still active when its
+// macrostep ends. `passing` leaves on an eventless transition in the macrostep
+// that entered it, so `fleeting` is dropped while still pending and the host
+// hears nothing of it — neither a start nor a stop.
+TEST_F(HostInvokerAotTest, AnInvocationWhoseStateLeftIsNeverStarted) {
+    Machine sm;
+    registerRunningInvoker(sm);
+    boot(sm);
+    sm.processEvent(Event::Pass);
+
+    EXPECT_EQ(sm.getPolicy().ended(), std::optional<int64_t>(1)) << "`passing` never carried the run on to `done`";
+    for (const auto &entry : log) {
+        EXPECT_EQ(entry.find("id=fleeting"), std::string::npos)
+            << "the host heard of an invocation whose state had left: " << entry;
+    }
 }
 
 // The other half. The build declared the type, so codegen emitted a start —

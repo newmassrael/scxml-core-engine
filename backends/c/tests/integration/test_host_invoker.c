@@ -525,8 +525,9 @@ static int leaving_the_state_cancels_the_invocation(void) {
 }
 
 // A cancel is delivered once, and only for an invocation that started. Asked
-// at the machine's surface, because driving it cannot produce "never started"
-// for a registered invoker.
+// at the machine's surface, because `probe` cannot be left unstarted by driving
+// it: `invoking` leaves only on a host event. The emitted half of "never
+// started" is `passing`, in the case after this one.
 //
 // The first half doubles as the contract `_init_with_host_invokers` exists
 // for: an invoker registered after `_init` is too late for the initial
@@ -561,6 +562,24 @@ static int cancel_is_not_delivered_for_an_invocation_that_never_started(void) {
         bad = 1;
     }
     bad |= check("never-started", "cancels of probe", count_lines(&run.rec, "CANCEL id=probe"), 1);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// W3C SCXML 6.4: an invoke runs only for a state still active when its
+// macrostep ends. `passing` leaves on an eventless transition in the macrostep
+// that entered it, so `fleeting` is dropped while still pending and the host
+// hears nothing of it — neither a start nor a stop.
+static int an_invocation_whose_state_left_is_never_started(void) {
+    running_t run;
+    statechart_host_invoker_t sm;
+    boot_running(&sm, &run);
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_PASS);
+
+    int bad = 0;
+    bad |= check("passing", "ended", counter(&sm, "ended"), 1);
+    bad |= check("passing", "starts of fleeting", count_lines(&run.rec, "START id=fleeting"), 0);
+    bad |= check("passing", "cancels of fleeting", count_lines(&run.rec, "CANCEL id=fleeting"), 0);
     statechart_host_invoker_destroy(&sm);
     return bad;
 }
@@ -1022,6 +1041,7 @@ int main(void) {
     bad |= what_the_request_says_is_evaluated_when_the_invocation_starts();
     bad |= leaving_the_state_cancels_the_invocation();
     bad |= cancel_is_not_delivered_for_an_invocation_that_never_started();
+    bad |= an_invocation_whose_state_left_is_never_started();
     bad |= a_completed_invocation_is_not_cancelled();
     bad |= a_late_completion_is_accepted_exactly_once();
     bad |= a_completion_after_the_cancel_is_refused();

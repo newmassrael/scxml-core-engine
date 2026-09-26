@@ -259,12 +259,13 @@ fn leaving_the_state_cancels_the_invocation() {
 /// would have the host tearing down work it never began.
 ///
 /// Asserted at the engine surface rather than through the fixture on
-/// purpose. Driving the machine cannot produce the "never started" case
-/// here — every host call that advances it runs a macrostep, and the
-/// pending invoke executes at the end of that macrostep, so by the time
-/// any exit is reachable the invocation has started. A first attempt
-/// tried it through the fixture and measured the opposite of what it
-/// claimed.
+/// purpose. `probe` cannot be left unstarted by driving the machine —
+/// `invoking` leaves only on a host event, and the pending invoke executes
+/// at the end of the macrostep that entered it, so by the time that exit is
+/// reachable the invocation has started. A first attempt tried it through
+/// the fixture and measured the opposite of what it claimed. The emitted
+/// half of the "never started" case — a state that leaves within its own
+/// macrostep — is `passing`, in the case after this one.
 #[test]
 fn cancel_is_not_delivered_for_an_invocation_that_never_started() {
     let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
@@ -297,6 +298,32 @@ fn cancel_is_not_delivered_for_an_invocation_that_never_started() {
         seen.iter().filter(|e| e.starts_with("CANCEL")).count(),
         1,
         "cancel reached the invoker more than once: {seen:?}",
+    );
+}
+
+/// §scxml-6.4: an invoke runs only for a state still active when its
+/// macrostep ends. `passing` leaves on an eventless transition in the
+/// macrostep that entered it, so `fleeting` is dropped while still pending
+/// and the host hears nothing of it — neither a start nor a stop.
+#[test]
+fn an_invocation_whose_state_left_is_never_started() {
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let starts: Starts = Arc::default();
+    let (mut engine, script_engine) = started();
+    engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
+    engine.initialize();
+    engine.step();
+    engine.process_event(Event::Pass);
+
+    assert_eq!(
+        counter(&engine, &script_engine, "ended"),
+        1,
+        "`passing` never carried the run on to `done`",
+    );
+    let seen = log.lock().expect("invoker log");
+    assert!(
+        !seen.iter().any(|e| e.ends_with("id=fleeting")),
+        "the host heard of an invocation whose state had left: {seen:?}",
     );
 }
 

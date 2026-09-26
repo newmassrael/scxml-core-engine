@@ -239,9 +239,11 @@ class HostInvokerTest {
 
     /// A cancel is delivered once, and only for an invocation that started. The
     /// engine owns that judgement: the exit chain cancels unconditionally.
-    /// Asserted at the engine surface, because driving the machine cannot
-    /// produce the "never started" case — every call that advances it runs a
-    /// macrostep, and the pending invoke executes at the end of it.
+    /// Asserted at the engine surface, because `probe` cannot be left
+    /// unstarted by driving the machine — `invoking` leaves only on a host
+    /// event, and the pending invoke executes at the end of the macrostep that
+    /// entered it. The emitted half of the "never started" case is `passing`,
+    /// in the case after this one.
     @Test
     fun cancelIsNotDeliveredForAnInvocationThatNeverStarted() {
         val sm = machine()
@@ -255,6 +257,25 @@ class HostInvokerTest {
             assertTrue(sm.cancelHostInvoke(declaredType, "probe"), "a started invocation reported nothing to cancel")
             assertFalse(sm.cancelHostInvoke(declaredType, "probe"), "the same invocation was cancelled twice")
             assertEquals(1, log.count { it.startsWith("CANCEL") }, "cancel reached the invoker more than once: $log")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /// §scxml-6.4: an invoke runs only for a state still active when its
+    /// macrostep ends. `passing` leaves on an eventless transition in the
+    /// macrostep that entered it, so `fleeting` is dropped while still pending
+    /// and the host hears nothing of it — neither a start nor a stop.
+    @Test
+    fun anInvocationWhoseStateLeftIsNeverStarted() {
+        val sm = machine()
+        val log = mutableListOf<String>()
+        sm.registerInvoker(declaredType, runningInvoker(log, mutableListOf()))
+        sm.initialize()
+        try {
+            deliver(sm, StatechartHostInvokerEvent.Pass)
+            assertEquals(1L, counter(sm, "ended"), "`passing` never carried the run on to `done`")
+            assertTrue(log.none { it.endsWith("id=fleeting") }, "the host heard of an invocation whose state had left: $log")
         } finally {
             sm.cleanup()
         }
