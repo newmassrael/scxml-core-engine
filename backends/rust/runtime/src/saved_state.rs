@@ -7,8 +7,11 @@
 //! A host whose process can be killed — a phone app, an ECU that reboots —
 //! saves the machine and gives it back later. What it saves is everything a
 //! macrostep boundary holds that the document cannot recompute: where the
-//! machine is (its configuration and current leaf) and every variable, the
-//! machine's own included — not only the ones a snapshot publishes.
+//! machine is (its configuration and current leaf), every variable, the
+//! machine's own included — not only the ones a snapshot publishes — and the
+//! external queue, in order. Only the internal queue is empty at a macrostep
+//! boundary; an event a host raised and has not yet driven the machine
+//! through is part of the state.
 //!
 //! The format is one JSON document (`sce-saved-state`, version [`crate::saved_state::FORMAT`]),
 //! the same on every backend, so what one backend saved another can read. A
@@ -38,7 +41,7 @@ use core::fmt;
 
 use crate::helpers::configuration::ConfigurationRejection;
 use crate::json::{self, Value};
-use crate::{Engine, StatePolicy};
+use crate::{Engine, EventQueueLike, EventType, EventWithMetadata, StatePolicy};
 
 /// The format version this runtime writes and reads.
 pub const FORMAT: u32 = 1;
@@ -83,6 +86,80 @@ pub struct SavedState {
     pub current: String,
     /// Every variable, by document id, in declaration order.
     pub variables: Vec<(String, Value)>,
+    /// The external queue, front first: events a host raised and has not yet
+    /// driven the machine through. Only the internal queue is empty at a
+    /// macrostep boundary, so a state that left these out would lose them.
+    pub external: Vec<SavedEvent>,
+}
+
+/// One event of a saved external queue: its name and the `_event` fields a
+/// document can read (§scxml-5.10.1). A typed payload is not saved — it is
+/// lifted again from `data` when the event is delivered, the one path every
+/// other delivery takes.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SavedEvent {
+    /// The event's name, as the document spells it.
+    pub name: String,
+    /// `_event.data`, as the wire carries it.
+    pub data: String,
+    /// `_event.type`: `internal`, `external` or `platform`.
+    pub event_type: String,
+    /// `_event.sendid`.
+    pub send_id: String,
+    /// `_event.origin`.
+    pub origin: String,
+    /// `_event.origintype`.
+    pub origin_type: String,
+    /// `_event.invokeid`.
+    pub invoke_id: String,
+}
+
+impl SavedEvent {
+    const FIELDS: [&'static str; 7] = [
+        "name",
+        "data",
+        "type",
+        "sendid",
+        "origin",
+        "origintype",
+        "invokeid",
+    ];
+
+    fn to_value(&self) -> Value {
+        let values = [
+            &self.name,
+            &self.data,
+            &self.event_type,
+            &self.send_id,
+            &self.origin,
+            &self.origin_type,
+            &self.invoke_id,
+        ];
+        Value::Object(
+            Self::FIELDS
+                .iter()
+                .zip(values)
+                .map(|(k, v)| ((*k).to_string(), Value::Text(v.clone())))
+                .collect(),
+        )
+    }
+
+    fn from_value(value: &Value, what: &str) -> Result<Self, StateRefusal> {
+        let text = |key: &str| match value.member(key) {
+            Some(Value::Text(s)) => Ok(s.clone()),
+            Some(_) => Err(StateRefusal::new(format!("'{what}.{key}' is not a text"))),
+            None => Err(StateRefusal::new(format!("'{what}' has no '{key}'"))),
+        };
+        Ok(Self {
+            name: text("name")?,
+            data: text("data")?,
+            event_type: text("type")?,
+            send_id: text("sendid")?,
+            origin: text("origin")?,
+            origin_type: text("origintype")?,
+            invoke_id: text("invokeid")?,
+        })
+    }
 }
 
 impl SavedState {
@@ -114,6 +191,10 @@ impl SavedState {
             (
                 "variables".to_string(),
                 Value::Object(self.variables.clone()),
+            ),
+            (
+                "external".to_string(),
+                Value::Array(self.external.iter().map(SavedEvent::to_value).collect()),
             ),
         ]))
     }
@@ -152,11 +233,20 @@ impl SavedState {
             Value::Object(members) => members.clone(),
             _ => return Err(StateRefusal::new("'variables' is not an object")),
         };
+        let external = match field("external")? {
+            Value::Array(items) => items
+                .iter()
+                .enumerate()
+                .map(|(i, v)| SavedEvent::from_value(v, &format!("external[{i}]")))
+                .collect::<Result<Vec<_>, _>>()?,
+            _ => return Err(StateRefusal::new("'external' is not an array")),
+        };
         Ok(Self {
             shape: text_of(field("shape")?, "shape")?,
             configuration,
             current: text_of(field("current")?, "current")?,
             variables,
+            external,
         })
     }
 }
@@ -363,6 +453,19 @@ pub fn save<P: StatePolicy>(
             .collect(),
         current: P::get_state_name(engine.get_current_state()).to_string(),
         variables,
+        external: engine
+            .external_queue
+            .queued()
+            .map(|queued| SavedEvent {
+                name: P::get_event_name(queued.event).to_string(),
+                data: queued.metadata.data.clone(),
+                event_type: queued.metadata.event_type.as_str().to_string(),
+                send_id: queued.metadata.send_id.clone(),
+                origin: queued.metadata.origin.clone(),
+                origin_type: queued.metadata.origin_type.clone(),
+                invoke_id: queued.metadata.invoke_id.clone(),
+            })
+            .collect(),
     })
 }
 
@@ -399,10 +502,42 @@ pub fn enter<P: StatePolicy>(policy: P, saved: &SavedState) -> Result<Engine<P>,
         .map(|id| state(id))
         .collect::<Result<crate::helpers::hierarchy::StateChain<P::State>, _>>()?;
     let current = state(&saved.current)?;
+    // Every queued event is read before anything is entered, so one this
+    // document cannot name refuses the restore rather than half of the queue.
+    let external = saved
+        .external
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            let event = P::get_event_from_name(&e.name).ok_or_else(|| {
+                StateRefusal::new(format!(
+                    "external[{i}] is '{}', which the document does not name",
+                    e.name
+                ))
+            })?;
+            let event_type = EventType::from_name(&e.event_type).ok_or_else(|| {
+                StateRefusal::new(format!(
+                    "external[{i}] has the type '{}', which is not an event type",
+                    e.event_type
+                ))
+            })?;
+            let mut queued = EventWithMetadata::<P::Event, P::Payload>::new(event);
+            queued.metadata.data = e.data.clone();
+            queued.metadata.event_type = event_type;
+            queued.metadata.send_id = e.send_id.clone();
+            queued.metadata.origin = e.origin.clone();
+            queued.metadata.origin_type = e.origin_type.clone();
+            queued.metadata.invoke_id = e.invoke_id.clone();
+            Ok(queued)
+        })
+        .collect::<Result<Vec<_>, StateRefusal>>()?;
     let mut engine = Engine::new(policy);
     engine
         .enter_at(&configuration, current)
         .map_err(|rejection| StateRefusal::new(describe::<P>(&rejection)))?;
+    for queued in external {
+        engine.raise_external_with_meta(queued);
+    }
     Ok(engine)
 }
 
@@ -471,6 +606,12 @@ mod tests {
                 ("big".to_string(), u64::MAX.to_saved()),
                 ("picked".to_string(), vec![3u8, 1].to_saved()),
             ],
+            external: vec![SavedEvent {
+                name: "tick".to_string(),
+                data: "{\"n\":1}".to_string(),
+                event_type: "external".to_string(),
+                ..SavedEvent::default()
+            }],
         };
         let back = SavedState::from_json(&state.to_json()).expect("reads");
         assert_eq!(back, state);
@@ -513,7 +654,7 @@ mod tests {
 
     #[test]
     fn another_format_is_refused() {
-        let text = r#"{"format":2,"shape":"d","configuration":[],"current":"s","variables":{}}"#;
+        let text = r#"{"format":2,"shape":"d","configuration":[],"current":"s","variables":{},"external":[]}"#;
         assert!(SavedState::from_json(text).is_err());
     }
 }

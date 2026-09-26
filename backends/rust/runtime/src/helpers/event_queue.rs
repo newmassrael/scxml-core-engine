@@ -104,6 +104,12 @@ impl<T, const N: usize> EventQueueManager<T, N> {
         self.queue.is_empty()
     }
 
+    /// The queued events, front first — what a saved state records of the
+    /// queue without taking anything off it.
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.queue.iter()
+    }
+
     /// Remove all queued events.
     pub fn clear(&mut self) {
         self.queue.clear();
@@ -136,6 +142,12 @@ pub trait EventQueueLike<T> {
     fn pop(&mut self) -> Option<T>;
     /// Whether the queue holds any events (`!isEmpty`).
     fn has_events(&self) -> bool;
+    /// The queued events, front first, left in place — what a saved state
+    /// records of a queue (SCE Accepted Subset §2.15), which the macrostep
+    /// loop never needs.
+    fn queued<'a>(&'a self) -> impl Iterator<Item = &'a T>
+    where
+        T: 'a;
 }
 
 impl<T, const N: usize> EventQueueLike<T> for EventQueueManager<T, N> {
@@ -147,6 +159,12 @@ impl<T, const N: usize> EventQueueLike<T> for EventQueueManager<T, N> {
     }
     fn has_events(&self) -> bool {
         EventQueueManager::has_events(self)
+    }
+    fn queued<'a>(&'a self) -> impl Iterator<Item = &'a T>
+    where
+        T: 'a,
+    {
+        self.iter()
     }
 }
 

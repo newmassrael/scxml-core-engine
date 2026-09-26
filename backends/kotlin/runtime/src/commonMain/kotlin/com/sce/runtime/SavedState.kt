@@ -38,12 +38,17 @@ class StateRefusal(message: String) : Exception(message)
  *   alone cannot say.
  * @property variables every variable, by document id, in declaration order;
  *   each value as [Json] holds it.
+ * @property external the external queue, front first: events raised to the
+ *   machine that it has not yet been driven through. Only the internal queue
+ *   is empty at a macrostep boundary, so a state that left these out would
+ *   lose them.
  */
 class SavedState(
     val shape: String,
     val configuration: List<String>,
     val current: String,
     val variables: Map<String, Any?>,
+    val external: List<SavedEvent> = emptyList(),
 ) {
     /** The variable [id], or a refusal naming it. */
     fun variable(id: String): Any? {
@@ -59,14 +64,15 @@ class SavedState(
             "configuration" to configuration,
             "current" to current,
             "variables" to variables,
+            "external" to external.map { it.toJsonValue() },
         )
     )
 
     override fun equals(other: Any?): Boolean =
         other is SavedState && other.shape == shape && other.configuration == configuration &&
-            other.current == current && other.variables == variables
+            other.current == current && other.variables == variables && other.external == external
 
-    override fun hashCode(): Int = listOf(shape, configuration, current, variables).hashCode()
+    override fun hashCode(): Int = listOf(shape, configuration, current, variables, external).hashCode()
 
     companion object {
         /** The format version this runtime writes and reads. */
@@ -106,11 +112,14 @@ class SavedState(
             @Suppress("UNCHECKED_CAST")
             val variables = field("variables") as? Map<String, Any?>
                 ?: throw StateRefusal("'variables' is not an object")
+            val external = (field("external") as? List<*> ?: throw StateRefusal("'external' is not an array"))
+                .mapIndexed { i, item -> SavedEvent.fromJsonValue(item, "external[$i]") }
             return SavedState(
                 shape = text(field("shape"), "shape"),
                 configuration = configuration,
                 current = text(field("current"), "current"),
                 variables = variables,
+                external = external,
             )
         }
 
@@ -125,6 +134,51 @@ class SavedState(
                 throw StateRefusal(
                     "the saved state is of a document of shape ${saved.shape}, and this machine's is $shape")
             }
+        }
+    }
+}
+
+/**
+ * One event of a saved external queue: its name and the `_event` fields a
+ * document can read (§scxml-5.10.1). A typed payload is not saved — it is
+ * lifted again from [data] when the event is delivered, the one path every
+ * other delivery takes.
+ */
+data class SavedEvent(
+    val name: String,
+    val data: String = "",
+    val type: String = "external",
+    val sendId: String = "",
+    val origin: String = "",
+    val originType: String = "",
+    val invokeId: String = "",
+) {
+    internal fun toJsonValue(): Map<String, Any?> = linkedMapOf(
+        "name" to name,
+        "data" to data,
+        "type" to type,
+        "sendid" to sendId,
+        "origin" to origin,
+        "origintype" to originType,
+        "invokeid" to invokeId,
+    )
+
+    internal companion object {
+        fun fromJsonValue(value: Any?, what: String): SavedEvent {
+            val members = value as? Map<*, *> ?: throw StateRefusal("'$what' is not an object")
+            fun text(key: String): String {
+                if (!members.containsKey(key)) throw StateRefusal("'$what' has no '$key'")
+                return members[key] as? String ?: throw StateRefusal("'$what.$key' is not a text")
+            }
+            return SavedEvent(
+                name = text("name"),
+                data = text("data"),
+                type = text("type"),
+                sendId = text("sendid"),
+                origin = text("origin"),
+                originType = text("origintype"),
+                invokeId = text("invokeid"),
+            )
         }
     }
 }

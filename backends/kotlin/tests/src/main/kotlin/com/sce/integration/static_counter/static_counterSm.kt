@@ -194,6 +194,18 @@ class StaticCounterStateMachine(
         is StaticCounterState.Done -> 1
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): StaticCounterEvent? = when (name) {
+        "go" -> StaticCounterEvent.Go
+        "tick" -> StaticCounterEvent.Tick
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: StaticCounterEvent): String? = when (event) {
+        is StaticCounterEvent.Go -> "go"
+        is StaticCounterEvent.Tick -> "tick"
+    }
 
 
 

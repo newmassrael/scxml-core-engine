@@ -198,6 +198,16 @@ class StaticHostCallStateMachine(
         is StaticHostCallState.Idle -> 0
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): StaticHostCallEvent? = when (name) {
+        "retry" -> StaticHostCallEvent.Retry
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: StaticHostCallEvent): String? = when (event) {
+        is StaticHostCallEvent.Retry -> "retry"
+    }
 
 
 

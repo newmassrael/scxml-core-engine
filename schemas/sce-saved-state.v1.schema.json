@@ -5,7 +5,7 @@
   "title": "SCE saved state (wire schema v1)",
   "description": "A datamodel=\"sce-static\" machine's whole state, saved at a macrostep boundary and restored into a new process in place of initialize (docs/SCE_ACCEPTED_SUBSET.md §2.15, \"Saving and restoring\"). The same document on every backend: what one backend saved, another restores. Producers and readers are the runtimes — sce_rust_runtime::saved_state (Rust) and com.sce.runtime.SavedState (Kotlin) — and the generated save/restore of each machine. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
-  "required": ["format", "shape", "configuration", "current", "variables"],
+  "required": ["format", "shape", "configuration", "current", "variables", "external"],
   "additionalProperties": false,
   "properties": {
     "format": {
@@ -31,6 +31,24 @@
       "description": "Every variable, the machine's own included, keyed by its document id in declaration order.",
       "type": "object",
       "additionalProperties": { "$ref": "#/definitions/value" }
+    },
+    "external": {
+      "description": "The external queue, front first: events raised to the machine that it has not yet been driven through. Only the internal queue is empty at a macrostep boundary. Restored in this order, behind nothing. A typed payload is not saved; it is lifted again from `data` on delivery.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "data", "type", "sendid", "origin", "origintype", "invokeid"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "description": "The event name, as the document spells it.", "type": "string", "minLength": 1 },
+          "data": { "description": "_event.data, as the wire carries it.", "type": "string" },
+          "type": { "description": "_event.type.", "enum": ["internal", "external", "platform"] },
+          "sendid": { "description": "_event.sendid.", "type": "string" },
+          "origin": { "description": "_event.origin.", "type": "string" },
+          "origintype": { "description": "_event.origintype.", "type": "string" },
+          "invokeid": { "description": "_event.invokeid.", "type": "string" }
+        }
+      }
     }
   },
   "definitions": {

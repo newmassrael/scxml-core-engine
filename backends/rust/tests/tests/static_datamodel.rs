@@ -494,6 +494,24 @@ fn a_restored_machine_carries_on_where_the_saved_one_stood() {
 }
 
 #[test]
+fn an_event_raised_and_not_yet_driven_through_is_saved_with_the_machine() {
+    // The host raised `tick` and saved before stepping: the event is part of
+    // the state — only the internal queue is empty at a macrostep boundary.
+    let mut engine = counter();
+    engine.raise_external_by_name("tick", "");
+    let saved = through_json(&engine.save().expect("saves"));
+    assert_eq!(saved.external.len(), 1, "{saved:?}");
+
+    let mut restored = Engine::<StaticCounterPolicy>::restore(StaticCounterPolicy::new(), &saved)
+        .expect("restores");
+    assert_eq!(restored.policy().count(), 0, "not yet delivered");
+    restored.step();
+    engine.step();
+    assert_eq!(restored.policy().count(), 1, "delivered after the restore");
+    assert_eq!(restored.snapshot(), engine.snapshot());
+}
+
+#[test]
 fn a_restore_runs_no_onentry() {
     // `idle`'s <onentry> calls the host. The saved run already made that
     // call; the restored machine must not make it again.

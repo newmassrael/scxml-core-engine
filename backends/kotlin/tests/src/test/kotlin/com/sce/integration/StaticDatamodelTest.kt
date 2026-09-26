@@ -32,6 +32,9 @@ import com.sce.integration.static_record.StaticRecordStateMachine
 import com.sce.runtime.SavedState
 import com.sce.runtime.StateRefusal
 import java.io.File
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -513,6 +516,45 @@ class StaticDatamodelTest {
         } finally {
             sm.cleanup()
             restored.cleanup()
+        }
+    }
+
+    @Test
+    fun anEventSentAndNotYetDrivenThroughIsSavedWithTheMachine() {
+        // The host sent `tick` and saved before ticking: the event is part of
+        // the state — only the internal queue is empty at a macrostep boundary.
+        val sm = StaticCounterStateMachine()
+        sm.initialize()
+        val restored = StaticCounterStateMachine()
+        try {
+            sm.send(StaticCounterEvent.Tick)
+            val saved = throughJson(sm.save())
+            assertEquals(1, saved.external.size, saved.toJson())
+            restored.restore(saved)
+            assertEquals(0u, restored.count, "not yet delivered")
+            restored.tick()
+            sm.tick()
+            assertEquals(1u, restored.count, "delivered after the restore")
+            assertEquals(sm.snapshot.value, restored.snapshot.value)
+        } finally {
+            sm.cleanup()
+            restored.cleanup()
+        }
+    }
+
+    @Test
+    fun aMachineItsOwnCoroutineDrivesIsNotSaved() = runBlocking {
+        // Its macrosteps run on another thread while a save would read it, and
+        // its queued events sit in a channel: refused for the mode, which the
+        // host chose, never for the moment.
+        val sm = StaticCounterStateMachine()
+        sm.start(this)
+        try {
+            withTimeout(10_000) { sm.snapshot.first { it.configuration.isNotEmpty() } }
+            val refusal = assertThrows(StateRefusal::class.java) { sm.save() }
+            assertTrue(refusal.message!!.contains("coroutine"), refusal.message)
+        } finally {
+            sm.stop()
         }
     }
 

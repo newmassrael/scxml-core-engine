@@ -2663,8 +2663,10 @@ machine at a macrostep boundary and restores it into a new process in place
 of `initialize`: Kotlin `sm.save()` / `sm.restore(saved)` on a machine not
 yet started, Rust `engine.save()` / `Engine::<P>::restore(policy, &saved)`
 through the generated `<Machine>Persist` trait. A saved state holds every
-variable, the machine's own included, the configuration and the current leaf,
-as one JSON document (`SavedState::to_json` / `SavedState.toJson`, schema
+variable, the machine's own included, the configuration, the current leaf and
+the external queue in order — only the internal queue is empty at a macrostep
+boundary, so an event a host raised and has not yet driven the machine
+through is part of the state — as one JSON document (`SavedState::to_json` / `SavedState.toJson`, schema
 `schemas/sce-saved-state.v1.schema.json`, a `pre-release` surface in
 `SCE_WIRE_CONTRACTS.md`). The document is the same on every backend — keys are
 the document's ids, the configuration is in document order, a 64-bit integer
@@ -2677,7 +2679,12 @@ both, and its host calls cannot be made twice), and it is refused, leaving
 the machine as it was, for a state saved from a document of another shape, a
 configuration that is not one of the document, or a value its variable's type
 or bound cannot hold. A save is refused for a machine that is not running and
-for one whose last macrostep was `truncated`.
+for one whose last macrostep was `truncated`, and on Kotlin for a machine its
+own coroutine drives (`start`): its macrosteps run on another thread while the
+host would read it, and its queued events sit in a channel nothing can read
+without taking them, so whether a save caught it at a boundary would depend on
+timing. The refusal follows the mode the host chose for the run, never the
+moment.
 
 A saved state is bound to the document's SHAPE, not its source hash: a
 SHA-256 the generator computes over every state with its kind and parent and

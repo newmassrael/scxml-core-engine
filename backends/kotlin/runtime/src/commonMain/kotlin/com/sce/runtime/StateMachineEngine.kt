@@ -1867,6 +1867,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
         if (configuration.isEmpty() || isInFinalState) {
             throw StateRefusal("the machine is not running: it was never started, or it has ended")
         }
+        // A machine driven by its own coroutine ([start]) runs its macrosteps
+        // on another thread while the host would be reading it here, and its
+        // queued events sit in a channel nothing can read without taking them.
+        // Whether a save caught it between two macrosteps would depend on
+        // timing, so it is refused for the mode, which a host chooses once per
+        // run, rather than for the moment.
+        if (!syncMode) {
+            throw StateRefusal(
+                "the machine is driven by its own coroutine (start); a saved state is taken from " +
+                    "a machine the host drives (initialize, then processEventSync or tick)")
+        }
         if (macrostepTruncated) {
             throw StateRefusal(
                 "the machine's last macrostep stopped at the microstep ceiling, so it does not " +
@@ -1877,6 +1888,18 @@ abstract class StateMachineEngine<S : State, E : Event>(
             configuration = configuration.sortedBy(::documentOrderOf).map(::stateIdOf),
             current = stateIdOf(_currentState.value),
             variables = variables,
+            external = externalEventQueue.map { queued ->
+                SavedEvent(
+                    name = eventNameOf(queued.event)
+                        ?: error("a queued event the document does not name: ${queued.event}"),
+                    data = queued.metadata.data,
+                    type = queued.metadata.type,
+                    sendId = queued.metadata.sendId,
+                    origin = queued.metadata.origin,
+                    originType = queued.metadata.originType,
+                    invokeId = queued.metadata.invokeId,
+                )
+            },
         )
     }
 
@@ -1897,6 +1920,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         if (verdict != ConfigurationRejection.NONE) {
             throw StateRefusal("the saved configuration is refused: ${verdict.reason}")
         }
+        savedExternal(saved)
     }
 
     /**
@@ -1911,6 +1935,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
         check(enterAt(states, current) == ConfigurationRejection.NONE) {
             "beginRestore judged this configuration and enterAt refused it"
         }
+        // Behind nothing, in the order they were saved: enterAt left the
+        // machine in the host-driven mode, whose queue this is.
+        externalEventQueue.addAll(savedExternal(saved))
         onMacrostepComplete(false)
     }
 
@@ -1918,6 +1945,26 @@ abstract class StateMachineEngine<S : State, E : Event>(
         fun state(id: String): S = resolveState(id) ?: throw StateRefusal("the document has no state '$id'")
         return saved.configuration.map(::state) to state(saved.current)
     }
+
+    private fun savedExternal(saved: SavedState): List<QueuedEvent<E>> =
+        saved.external.mapIndexed { i, e ->
+            val event = resolveEventByName(e.name)
+                ?: throw StateRefusal("external[$i] is '${e.name}', which the document does not name")
+            if (e.type !in setOf("internal", "external", "platform")) {
+                throw StateRefusal("external[$i] has the type '${e.type}', which is not an event type")
+            }
+            QueuedEvent(
+                event,
+                EventMetadata(
+                    data = e.data,
+                    type = e.type,
+                    sendId = e.sendId,
+                    origin = e.origin,
+                    originType = e.originType,
+                    invokeId = e.invokeId,
+                ),
+            )
+        }
 
     /**
      * §scxml-6.2: Single tick — poll scheduler, tick children, process events.

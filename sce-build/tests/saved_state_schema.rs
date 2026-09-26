@@ -81,7 +81,11 @@ fn the_schema_refuses_what_no_backend_writes() {
         "shape": "0".repeat(64),
         "configuration": ["s"],
         "current": "s",
-        "variables": {"count": 1}
+        "variables": {"count": 1},
+        "external": [{
+            "name": "tick", "data": "", "type": "external",
+            "sendid": "", "origin": "", "origintype": "", "invokeid": ""
+        }]
     });
     assert!(
         errors(&validator, &good).is_empty(),
@@ -105,6 +109,14 @@ fn the_schema_refuses_what_no_backend_writes() {
             "a variable that is null",
             "variables",
             serde_json::json!({"count": null}),
+        ),
+        (
+            "a queued event of no type",
+            "external",
+            serde_json::json!([{
+                "name": "tick", "data": "", "type": "sideways",
+                "sendid": "", "origin": "", "origintype": "", "invokeid": ""
+            }]),
         ),
     ];
     for (what, key, value) in broken {

@@ -50,6 +50,17 @@ impl EventType {
         }
     }
 
+    /// The type [`as_str`](Self::as_str) spells as `name`, or `None` for any
+    /// other text — what a saved state reads an event's type back through.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "internal" => Some(EventType::Internal),
+            "external" => Some(EventType::External),
+            "platform" => Some(EventType::Platform),
+            _ => None,
+        }
+    }
+
     /// §scxml-5.10.1: classify the event being processed — `platform` for the
     /// events the processor itself raises (`error.*`, `done.*`), otherwise by
     /// the queue it was taken from. Ports C++ `EventTypeHelper::classifyEventType`,

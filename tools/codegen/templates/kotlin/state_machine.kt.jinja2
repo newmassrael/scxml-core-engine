@@ -514,7 +514,10 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
    measured 2026-09-22 on `statechart_lifted.scxml`, a machine with no invoke,
    no parent, no datamodel and no host processor, which is exactly the shape
    every other condition here misses. #}
-{% if model.invokes or model.has_parent_communication or model.needs_script_engine or model.needs_http_send or model.host_processor_types or event_payload_active %}
+{# `static_saved_shape`: a machine that saves its state writes its queued
+   events by name and reads them back by name (SCE Accepted Subset §2.15), so
+   both maps are its own need, whatever else the document does. #}
+{% if model.invokes or model.has_parent_communication or model.needs_script_engine or model.needs_http_send or model.host_processor_types or event_payload_active or static_saved_shape %}
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): {{ machine_name }}Event? = when (name) {
 {% for event_name in leaf_events | sort %}

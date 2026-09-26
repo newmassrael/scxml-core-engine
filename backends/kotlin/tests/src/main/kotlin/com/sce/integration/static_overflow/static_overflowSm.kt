@@ -201,6 +201,20 @@ class StaticOverflowStateMachine(
         is StaticOverflowState.Waiting -> 0
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): StaticOverflowEvent? = when (name) {
+        "error.execution" -> StaticOverflowEvent.Error.Execution
+        "probe" -> StaticOverflowEvent.Probe
+        "up" -> StaticOverflowEvent.Up
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: StaticOverflowEvent): String? = when (event) {
+        is StaticOverflowEvent.Error.Execution -> "error.execution"
+        is StaticOverflowEvent.Probe -> "probe"
+        is StaticOverflowEvent.Up -> "up"
+    }
 
 
 
