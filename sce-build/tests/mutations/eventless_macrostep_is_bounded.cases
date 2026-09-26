@@ -103,10 +103,8 @@ mutation_case "the ceiling outlives the macrostep that hit it" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """        self.macrostep_truncated = false;
         self.macrostep_microsteps_taken = 0;
-        {
-            // §scxml-6.5: Execute finalize before parent's own transition matching""",
-     """        {
-            // §scxml-6.5: Execute finalize before parent's own transition matching""")
+""",
+     "")
 PY
 
 # ── The count ──────────────────────────────────────────────────────
