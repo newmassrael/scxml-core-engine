@@ -228,18 +228,60 @@ const BUFFER_NOT_RETURNED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-/// A `list<T>` parameter, which v1 does not take (SCE_FORGE.md §4.12). The
-/// type is spelled with entity references, so `actual` holds them too — the
-/// decoded `list<int64>` occurs on no line of the document.
-const LIST_PARAM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_list_param" version="1.0">
+/// An element of a list of records read by index: a record is read through
+/// a name — a foreach item — never as `xs[i]` (SCE_FORGE.md §4.12).
+///
+/// ⚠ This slot held a `list<T>` PARAMETER, refused in v1 until
+/// `f5868fe0a5` admitted one as a read-only view; the case kept expecting a
+/// refusal of a document that had become legal.
+const RECORD_LIST_INDEX: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_list_index" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_hlc.scxml" as="Hlc"/>
   <sce:signature>
-    <sce:param name="days"
-               type="list&lt;int64&gt;"/>
-    <sce:return type="uint16"/>
+    <sce:param name="xs" type="list&lt;record:Hlc&gt;"/>
+    <sce:return type="int64"/>
   </sce:signature>
   <sce:body>
+    <sce:return
+        expr="xs[0].wallTime"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A foreach item assigned: it is an element of the collection it iterates,
+/// read-only as that parameter is.
+const FOREACH_ITEM_ASSIGN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_foreach_item_assign" version="1.0">
+  <sce:signature>
+    <sce:param name="xs" type="list&lt;int32&gt;"/>
+    <sce:return type="int32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:foreach item="x" in="xs">
+      <sce:assign expr="0"
+                  target="x"/>
+    </sce:foreach>
     <sce:return expr="0"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A list of records appended something that is not a record of its
+/// schema by name — there is no record expression.
+const RECORD_LIST_APPEND_VALUE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_list_append_value" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_hlc.scxml" as="Hlc"/>
+  <sce:signature>
+    <sce:param name="xs" type="list&lt;record:Hlc&gt;"/>
+    <sce:return type="list&lt;record:Hlc&gt;" returns-max-size="4"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Hlc&gt;" capacity="4"/>
+    <sce:foreach item="x" in="xs">
+      <sce:append target="out"
+                  expr="x.wallTime"/>
+    </sce:foreach>
+    <sce:return expr="out"/>
   </sce:body>
 </scxml>
 "#;
@@ -560,12 +602,28 @@ const CASES: &[Case] = &[
         actual: None,
     },
     Case {
-        file: "probe_list_param.scxml",
-        document: LIST_PARAM,
-        code: "validation/attribute-rule-violated",
-        line: 5,
-        col: 16,
-        actual: Some("list&lt;int64&gt;"),
+        file: "probe_record_list_index.scxml",
+        document: RECORD_LIST_INDEX,
+        code: "expression/unsupported-construct",
+        line: 10,
+        col: 15,
+        actual: Some("xs[0]"),
+    },
+    Case {
+        file: "probe_foreach_item_assign.scxml",
+        document: FOREACH_ITEM_ASSIGN,
+        code: "algorithm/lvalue-unsupported",
+        line: 10,
+        col: 27,
+        actual: Some("x"),
+    },
+    Case {
+        file: "probe_record_list_append_value.scxml",
+        document: RECORD_LIST_APPEND_VALUE,
+        code: "expression/unsupported-construct",
+        line: 12,
+        col: 25,
+        actual: Some("x.wallTime"),
     },
     Case {
         file: "probe_list_of_string.scxml",

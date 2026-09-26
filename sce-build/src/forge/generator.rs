@@ -2192,11 +2192,21 @@ fn render_event_schema(
     l.insert_imports(&mut ctx, imports);
 
     if matches!(l.lang, crate::generator::Language::Rust) {
+        use crate::rust_derive_policy::RustDeriveCategory;
+        // Plain data — every field fixed-width, `bool` or an enum — is
+        // `Copy` as well (the record rule's schema, SCE_FORGE.md §4.12).
+        let plain = m.fields.iter().all(|f| {
+            crate::forge::model::AlgorithmValueType::list_elem_admitted(&f.sce_type)
+                || matches!(f.sce_type, SceType::Enum(_))
+        });
+        let category = if plain {
+            RustDeriveCategory::EventSchemaPlainPayload
+        } else {
+            RustDeriveCategory::EventSchemaPayload
+        };
         ctx.insert(
             "event_schema_payload_derives_attr".into(),
-            crate::rust_derive_policy::RustDeriveCategory::EventSchemaPayload
-                .derives_attr()
-                .into(),
+            category.derives_attr().into(),
         );
     }
 
@@ -21149,7 +21159,10 @@ fn sce_type_of_list_elem(elem: crate::forge::types::ListElem) -> SceType {
         InferredType::Int { signed: true, .. } => SceType::Int64,
         InferredType::Float { bits: 32 } => SceType::Float32,
         InferredType::Float { .. } => SceType::Float64,
-        _ => SceType::Bool,
+        InferredType::Bool => SceType::Bool,
+        // A record element is typed by its schema, which a caller resolves
+        // before asking for a scalar (the foreach lowering does).
+        other => unreachable!("a list element of {other:?} has no scalar type"),
     }
 }
 
@@ -21547,35 +21560,63 @@ fn collect_append_buffers(
 /// Go a slice, Python a `list`, Kotlin the runtime's `SceListBuf` returned as
 /// the primitive array of the element (an unsigned element as the stdlib's
 /// unsigned array view over the same bits).
+///
+/// A record element is the struct its event-schema import declares. It
+/// takes the same containers except where they are scalar-only: Kotlin's
+/// primitive arrays and `SceListBuf` (a record list is a read-only `List`,
+/// built in an `ArrayList`), and C11's runtime views (a record's view is
+/// declared beside the algorithm, [`c11_record_view_typedef`]).
 struct ListSpelling<'a> {
     lang: crate::generator::Language,
-    elem: &'a SceType,
+    elem: &'a ListElemType,
     elem_name: String,
 }
 
 impl<'a> ListSpelling<'a> {
-    fn new(l: &LangCtx, elem: &'a SceType) -> Self {
-        Self {
+    /// The spelling of a list of `elem`, a record element resolved through
+    /// `imports` — which the parser and the import resolution have already
+    /// judged, so a failure here is a pipeline fault, not the document's.
+    fn new(
+        l: &LangCtx,
+        elem: &'a ListElemType,
+        imports: &[ImportContext],
+    ) -> Result<Self, ForgeError> {
+        let elem_name = match elem {
+            ListElemType::Scalar(t) => l.type_name(t).into_owned(),
+            ListElemType::Record { alias } => {
+                let element = format!("list<{}>", elem.as_attr());
+                resolve_record(imports, alias, None, &element)?
+                    .qualified_type
+                    .clone()
+            }
+        };
+        Ok(Self {
             lang: l.lang,
             elem,
-            elem_name: l.type_name(elem).into_owned(),
-        }
+            elem_name,
+        })
+    }
+
+    fn is_record(&self) -> bool {
+        matches!(self.elem, ListElemType::Record { .. })
     }
 
     /// A read-only `list<T>` parameter: a borrowed view of the caller's
     /// elements on every backend, as a `bytes` parameter is — Rust a slice,
     /// C++ a `std::span`, C11 the runtime's `{const T *data; size_t len}`
     /// view for the element, Go a slice, Kotlin the element's primitive
-    /// array, Python a list.
+    /// array (a record's read-only `List`), Python a list.
     fn param_type(&self) -> String {
         use crate::generator::Language;
         let t = &self.elem_name;
         match self.lang {
             Language::Rust => format!("&[{t}]"),
             Language::Cpp => format!("std::span<const {t}>"),
+            Language::C11 if self.is_record() => c11_record_view_type(t),
             Language::C11 => format!("sce_forge_{}_view_t", t.trim_end_matches("_t")),
             Language::Go => format!("[]{t}"),
             Language::Python => format!("list[{t}]"),
+            Language::Kotlin if self.is_record() => format!("List<{t}>"),
             Language::Kotlin => self.kotlin_array_type().to_string(),
         }
     }
@@ -21593,6 +21634,7 @@ impl<'a> ListSpelling<'a> {
             Language::Cpp => format!("std::vector<{t}>"),
             Language::Go => format!("[]{t}"),
             Language::Python => format!("list[{t}]"),
+            Language::Kotlin if self.is_record() => format!("List<{t}>"),
             Language::Kotlin => self.kotlin_array_type().to_string(),
         }
     }
@@ -21633,23 +21675,38 @@ impl<'a> ListSpelling<'a> {
             // Python backend through the return's `returns-max-size`, as for
             // `bytearray`.
             Language::Python => format!("{pad}{local}: list[{t}] = []\n"),
+            Language::Kotlin if self.is_record() => {
+                format!("{pad}val {local} = ArrayList<{t}>({cap})\n")
+            }
             Language::Kotlin => format!("{pad}val {local} = SceListBuf({cap})\n"),
         }
     }
 
     /// Append one element `e`, already lowered into the element's slot.
     /// Overflow is fallible on the bounded backends and grows the others,
-    /// exactly as for `bytes`; `channel` spells C11's overflow return.
+    /// exactly as for `bytes`; `channel` spells C11's overflow return. A
+    /// record element is a record of the element's own schema (the append
+    /// judged it), so it is stored as it is — no conversion names a struct.
     fn push(&self, pad: &str, local: &str, e: &str, cap: u32, channel: &ReturnChannel) -> String {
         use crate::generator::Language;
         let t = &self.elem_name;
+        let record = self.is_record();
         match self.lang {
             Language::Rust => format!("{pad}{local}.push({e})?;\n"),
+            Language::Cpp if record => format!("{pad}{local}.push_back({e});\n"),
             Language::Cpp => format!("{pad}{local}.push_back(static_cast<{t}>({e}));\n"),
-            Language::C11 => format!(
-                "{pad}if ({local}.len < {cap}u) {{ {local}.items[{local}.len++] = ({t})({e}); }} else {{ {} }}\n",
-                channel.c11_capacity_exceeded(local)
-            ),
+            Language::C11 => {
+                let value = if record {
+                    e.to_string()
+                } else {
+                    format!("({t})({e})")
+                };
+                format!(
+                    "{pad}if ({local}.len < {cap}u) {{ {local}.items[{local}.len++] = {value}; }} else {{ {} }}\n",
+                    channel.c11_capacity_exceeded(local)
+                )
+            }
+            Language::Go if record => format!("{pad}{local} = append({local}, {e})\n"),
             Language::Go => format!("{pad}{local} = append({local}, {t}({e}))\n"),
             Language::Python => format!("{pad}{local}.append({e})\n"),
             Language::Kotlin => format!("{pad}{local}.add({e})\n"),
@@ -21657,26 +21714,45 @@ impl<'a> ListSpelling<'a> {
     }
 
     /// The value a list buffer `local` is returned as — Kotlin converts its
-    /// working buffer to the declared array; every other backend returns the
-    /// buffer itself. [`ReturnChannel::value`] spells the statement.
+    /// working buffer to the declared array (a record list's `ArrayList` is
+    /// already the `List` declared); every other backend returns the buffer
+    /// itself. [`ReturnChannel::value`] spells the statement.
     fn return_value(&self, local: &str) -> String {
         use crate::generator::Language;
         match self.lang {
-            Language::Kotlin => format!("{local}.{}()", self.kotlin_to_array()),
-            Language::Rust | Language::Cpp | Language::C11 | Language::Go | Language::Python => {
-                local.to_string()
+            Language::Kotlin if !self.is_record() => {
+                format!("{local}.{}()", self.kotlin_to_array())
             }
+            Language::Kotlin
+            | Language::Rust
+            | Language::Cpp
+            | Language::C11
+            | Language::Go
+            | Language::Python => local.to_string(),
         }
     }
 
     /// Whether the Kotlin return type is one of the stdlib's unsigned
     /// arrays, which sit behind `ExperimentalUnsignedTypes`.
     fn kotlin_needs_unsigned_opt_in(&self) -> bool {
-        self.elem.is_unsigned()
+        self.elem.scalar().is_some_and(SceType::is_unsigned)
+    }
+
+    /// The Kotlin working buffer's import, if it has one — `SceListBuf` for
+    /// a scalar element; a record list builds in the stdlib's `ArrayList`.
+    fn kotlin_buffer_import(&self) -> &'static str {
+        if self.is_record() {
+            ""
+        } else {
+            "import com.sce.forge.runtime.SceListBuf\n\n"
+        }
     }
 
     fn kotlin_array_type(&self) -> &'static str {
-        match self.elem {
+        let ListElemType::Scalar(elem) = self.elem else {
+            unreachable!("a list of records is a Kotlin `List`, not a primitive array")
+        };
+        match elem {
             SceType::Int64 => "LongArray",
             SceType::Int32 => "IntArray",
             SceType::Int16 => "ShortArray",
@@ -21695,7 +21771,10 @@ impl<'a> ListSpelling<'a> {
     }
 
     fn kotlin_to_array(&self) -> &'static str {
-        match self.elem {
+        let ListElemType::Scalar(elem) = self.elem else {
+            unreachable!("a list of records is returned as its `ArrayList`")
+        };
+        match elem {
             SceType::Int64 => "toLongArray",
             SceType::Int32 => "toIntArray",
             SceType::Int16 => "toShortArray",
@@ -21710,6 +21789,29 @@ impl<'a> ListSpelling<'a> {
             other => unreachable!("list<{}> is refused by the parser", other.as_attr()),
         }
     }
+}
+
+/// The C11 view of a read-only list of `record_type` — `HlcPayload_t` gives
+/// `HlcPayload_view_t`, beside the struct as the runtime's scalar views sit
+/// beside theirs (`sce/forge/list_view.h`).
+fn c11_record_view_type(record_type: &str) -> String {
+    format!("{}_view_t", record_type.trim_end_matches("_t"))
+}
+
+/// The C11 declaration of [`c11_record_view_type`], in the field names the
+/// runtime's views use so a `.data[i]` / `.len` body lowers identically.
+///
+/// It is declared beside each algorithm that takes one, not in the record's
+/// own header: that header is the event-schema's and serves every kind, and
+/// a view is an algorithm's parameter shape. Two algorithms of one
+/// translation unit may both declare it, and C11 forbids a second
+/// declaration of the same anonymous struct type, so it is guarded.
+fn c11_record_view_typedef(record_type: &str) -> String {
+    let view = c11_record_view_type(record_type);
+    let guard = format!("SCE_FORGE_{}_DEFINED", to_upper_snake(&view));
+    format!(
+        "#ifndef {guard}\n#define {guard}\ntypedef struct {{\n    const {record_type} *data;\n    size_t len;\n}} {view};\n#endif\n\n"
+    )
 }
 
 /// Lowering configuration for [`lower_algorithm_body`] — every invariant
@@ -21849,9 +21951,10 @@ struct AlgorithmLowerCtx<'a> {
     /// (the no-malloc carrier that doubles as the return value). Other
     /// backends use a language-native growable buffer and ignore this.
     c11_result_type: Option<&'a str>,
-    /// Every record parameter and local (SCE_FORGE.md §4.12), keyed by the
-    /// SCXML name, to the event-schema alias that types it — what a member
-    /// assignment, a record local and a record return are judged against.
+    /// Every record parameter, local and foreach item over a list of records
+    /// (SCE_FORGE.md §4.12), keyed by the SCXML name, to the event-schema
+    /// alias that types it — what a member assignment, a record local, a
+    /// record return and a record appended to a list are judged against.
     records: &'a std::collections::HashMap<String, String>,
     /// How the body returns its value, and a failure in its place when the
     /// algorithm declares `may-fail` (SCE_FORGE.md §3.4.1).
@@ -21981,7 +22084,8 @@ fn lower_algorithm_stmt(
                         _ => "",
                     };
                     out.push_str(
-                        &ListSpelling::new(l, elem).declare(pad, &local, cap, result_ty, rust_mut),
+                        &ListSpelling::new(l, elem, imports)?
+                            .declare(pad, &local, cap, result_ty, rust_mut),
                     );
                     return Ok(());
                 }
@@ -22270,15 +22374,40 @@ fn lower_algorithm_stmt(
             // real slot any number), so a wrong-kind element is refused by the
             // same rule and code as a wrong-kind assignment.
             if let Some(elem) = buffer.ty.list_elem() {
-                let e = expr::transpile_into(
-                    rhs,
-                    l.expr_target(),
-                    type_ctx,
-                    renames,
-                    InferredType::from_sce_type(elem),
-                )
-                .map_err(|refusal| rhs_site.place(refusal))?;
-                out.push_str(&ListSpelling::new(l, elem).push(pad, &local, &e, cap_n, &channel));
+                let e = match elem {
+                    ListElemType::Scalar(t) => expr::transpile_into(
+                        rhs,
+                        l.expr_target(),
+                        type_ctx,
+                        renames,
+                        InferredType::from_sce_type(t),
+                    )
+                    .map_err(|refusal| rhs_site.place(refusal))?,
+                    // A record element is a record of the element's schema,
+                    // by name — there is no record expression, the rule a
+                    // record return keeps (SCE_FORGE.md §4.12).
+                    ListElemType::Record { alias } => {
+                        let name = rhs.trim();
+                        if records.get(name) != Some(alias) {
+                            let at = rhs_site.locate(Some(0..name.len()));
+                            let refusal: ForgeError =
+                                crate::forge::error::ExprError::UnsupportedConstruct {
+                                    construct: format!(
+                                        "an append to a list<record:{alias}> of something other \
+                                         than a record:{alias} parameter, local or foreach item \
+                                         (v1 appends a record by name)"
+                                    ),
+                                    observed: at.observed(),
+                                }
+                                .into();
+                            return Err(at.place(refusal));
+                        }
+                        l.local_id(name)
+                    }
+                };
+                out.push_str(
+                    &ListSpelling::new(l, elem, imports)?.push(pad, &local, &e, cap_n, &channel),
+                );
                 return Ok(());
             }
             // The RHS static type selects the operation: a `bytes` value
@@ -22717,13 +22846,32 @@ fn lower_algorithm_stmt(
                 // wire's `key_fragments` content-hash stays
                 // discriminating per source-name shape.
                 // A read-only `list<T>` parameter iterates the same way, its
-                // item typed as the element.
-                let item_type: SceType = match type_ctx.lookup_var(source) {
-                    InferredType::Bytes => SceType::Uint8,
-                    InferredType::List(elem) => sce_type_of_list_elem(elem),
-                    _ => SceType::Bytes,
+                // item typed as the element — a record element as the struct
+                // its schema declares, which the item was registered with
+                // (`AlgorithmTypes::collect`).
+                let source_ty = type_ctx.lookup_var(source);
+                let item_name: Option<String> = match source_ty {
+                    InferredType::Bytes => Some(l.type_name(&SceType::Uint8).into_owned()),
+                    InferredType::List(crate::forge::types::ListElem::Record) => {
+                        let alias = records.get(item.as_str()).ok_or_else(|| {
+                            GenerateError::InvalidConfig(format!(
+                                "foreach item '{item}' over the list of records '{source}' was \
+                                 not registered as a record"
+                            ))
+                        })?;
+                        let element = format!("<sce:foreach item=\"{item}\" in=\"{source}\">");
+                        Some(
+                            resolve_record(imports, alias, None, &element)?
+                                .qualified_type
+                                .clone(),
+                        )
+                    }
+                    InferredType::List(elem) => {
+                        Some(l.type_name(&sce_type_of_list_elem(elem)).into_owned())
+                    }
+                    _ => None,
                 };
-                if item_type == SceType::Bytes {
+                let Some(item_name) = item_name else {
                     let mut candidates: Vec<String> = type_ctx
                         .vars
                         .iter()
@@ -22748,7 +22896,7 @@ fn lower_algorithm_stmt(
                     return Err(source_site
                         .locate(Some(0..source.trim().len()))
                         .place(refusal));
-                }
+                };
                 let src_lowered = expr::transpile_typed(
                     source,
                     l.expr_target(),
@@ -22758,12 +22906,13 @@ fn lower_algorithm_stmt(
                 )
                 .map_err(|refusal| source_site.place(refusal))?;
                 let it = l.local_id(item);
-                let item_name = l.type_name(&item_type);
                 let header = match lang {
                     Language::Rust => format!("{pad}for &{it} in {src_lowered}.iter() {{\n"),
                     Language::Cpp => format!("{pad}for ({item_name} {it} : {src_lowered}) {{\n"),
+                    // The index is named for the item, so a nested foreach's
+                    // does not shadow its enclosing one's (`-Wshadow`).
                     Language::C11 => format!(
-                        "{pad}for (size_t __i = 0; __i < {src_lowered}.len; ++__i) {{\n{pad}    {item_name} {it} = {src_lowered}.data[__i];\n"
+                        "{pad}for (size_t __{it}_i = 0; __{it}_i < {src_lowered}.len; ++__{it}_i) {{\n{pad}    {item_name} {it} = {src_lowered}.data[__{it}_i];\n"
                     ),
                     // Kotlin's `ByteArray` iteration yields signed `Byte`,
                     // but RFC §synth-5-A v1 declares the foreach item as `uint8`
@@ -22772,9 +22921,7 @@ fn lower_algorithm_stmt(
                     // preserved) so subsequent `<sce:var type="uintN" init="b">`
                     // widenings via `.toUShort()` zero-extend correctly. A list
                     // parameter's primitive array already yields its element.
-                    Language::Kotlin if item_type == SceType::Uint8
-                        && matches!(type_ctx.lookup_var(source), InferredType::Bytes) =>
-                    {
+                    Language::Kotlin if source_ty == InferredType::Bytes => {
                         format!(
                             "{pad}for (__raw_{it} in {src_lowered}) {{\n{pad}    val {it}: UByte = __raw_{it}.toUByte()\n"
                         )
@@ -22828,7 +22975,8 @@ fn lower_algorithm_stmt(
                             .into();
                         return Err(at.place(refusal));
                     }
-                    let value = ListSpelling::new(l, elem).return_value(&l.local_id(name));
+                    let value =
+                        ListSpelling::new(l, elem, imports)?.return_value(&l.local_id(name));
                     channel.value(pad, &value, true)
                 }
                 // A record return (SCE_FORGE.md §4.12): the returned value is
@@ -23788,7 +23936,7 @@ pub(crate) struct AlgorithmTypes<'a> {
     env: Vec<(String, SceType)>,
     /// Every `list<T>` parameter and its element type: read by `xs[i]`,
     /// `len(xs)` and `<sce:foreach in="xs">`, never written.
-    list_params: Vec<(String, SceType)>,
+    list_params: Vec<(String, ListElemType)>,
     /// Foreach items over a bounded collection, and whether their element
     /// schema was threaded (closed) or not (open).
     record_items: Vec<(&'a str, crate::forge::types::RecordShape)>,
@@ -23825,12 +23973,15 @@ impl<'a> AlgorithmTypes<'a> {
             .iter()
             .filter_map(|p| p.sce_type.scalar().map(|t| (p.name.clone(), t.clone())))
             .collect();
-        let list_params: Vec<(String, SceType)> = m
+        let list_params: Vec<(String, ListElemType)> = m
             .signature
             .params
             .iter()
             .filter_map(|p| p.sce_type.list_elem().map(|t| (p.name.clone(), t.clone())))
             .collect();
+        // An item over a list of records is a record, named by the item and
+        // typed by its schema below, as a record parameter is.
+        let mut record_list_items: Vec<(&str, &str, String)> = Vec::new();
         // An item over a bounded collection is an element — a record whose
         // fields `members` below registers when the element schema was
         // threaded. Only then are its members known: on a single-file path
@@ -23873,8 +24024,22 @@ impl<'a> AlgorithmTypes<'a> {
                     }
                     // An item over a `list<T>` parameter is an element; over
                     // `bytes`, a byte.
-                    match list_params.iter().find(|(p, _)| p == source) {
-                        Some((_, elem)) => elem.clone(),
+                    let elem = m
+                        .signature
+                        .params
+                        .iter()
+                        .find(|p| p.name == *source)
+                        .and_then(|p| p.sce_type.list_elem());
+                    match elem {
+                        Some(ListElemType::Scalar(elem)) => elem.clone(),
+                        Some(ListElemType::Record { alias }) => {
+                            record_list_items.push((
+                                name,
+                                alias.as_str(),
+                                format!("<sce:foreach item=\"{name}\" in=\"{source}\">"),
+                            ));
+                            continue;
+                        }
                         None => SceType::Uint8,
                     }
                 }
@@ -23930,6 +24095,11 @@ impl<'a> AlgorithmTypes<'a> {
                         (name, alias, spelling, format!("<sce:var name=\"{name}\">"))
                     }),
             )
+            .chain(
+                record_list_items
+                    .into_iter()
+                    .map(|(name, alias, element)| (name, alias, None, element)),
+            )
             .collect::<Vec<_>>();
         let mut records = Vec::new();
         for (name, alias, spelling, element) in &bindings {
@@ -23963,11 +24133,15 @@ impl<'a> AlgorithmTypes<'a> {
         }
         // A list parameter is a list as a value (`len(xs)`, a foreach source)
         // and its element under an index (`xs[i]`).
+        // A list of records has no operand element: `xs[i]` is refused, and
+        // an element is read through a foreach item.
         for (name, elem) in &self.list_params {
-            if let Some(list_elem) = crate::forge::types::ListElem::of(elem) {
+            if let Some(list_elem) = crate::forge::types::ListElem::of_list(elem) {
                 type_ctx.insert_var(name.as_str(), InferredType::List(list_elem));
             }
-            type_ctx.insert_array_elem(name.as_str(), InferredType::from_sce_type(elem));
+            if let Some(elem) = elem.scalar() {
+                type_ctx.insert_array_elem(name.as_str(), InferredType::from_sce_type(elem));
+            }
         }
         for &(name, shape) in &self.record_items {
             type_ctx.insert_record(name, shape);
@@ -24160,7 +24334,9 @@ fn render_algorithm(
                 return Ok(l.place_param(&p.name, &record.qualified_type));
             }
             if let Some(elem) = p.sce_type.list_elem() {
-                return Ok(l.place_param(&p.name, &ListSpelling::new(&l, elem).param_type()));
+                return Ok(
+                    l.place_param(&p.name, &ListSpelling::new(&l, elem, imports)?.param_type())
+                );
             }
             p.sce_type
                 .scalar()
@@ -24204,7 +24380,8 @@ fn render_algorithm(
     // one spelling for the signature, the preamble and the C11 struct.
     let return_list = declared_return
         .and_then(|t| t.list_elem())
-        .map(|elem| ListSpelling::new(&l, elem));
+        .map(|elem| ListSpelling::new(&l, elem, imports))
+        .transpose()?;
     let list_return_cap = match &return_list {
         Some(_) => Some(bytes_return_cap.ok_or_else(|| {
             GenerateError::InvalidConfig(format!(
@@ -24333,7 +24510,7 @@ fn render_algorithm(
                 Language::Rust => {
                     "use sce_portable_bytes::{SceOwnedList, CapacityExceeded};\n\n".to_string()
                 }
-                Language::Kotlin => "import com.sce.forge.runtime.SceListBuf\n\n".to_string(),
+                Language::Kotlin => list.kotlin_buffer_import().to_string(),
                 Language::C11 => list.c11_result_typedef(
                     list_return_cap.expect("checked when building return_type"),
                     &primary_symbol,
@@ -24370,7 +24547,22 @@ fn render_algorithm(
         ),
         _ => String::new(),
     };
-    let consts_prelude = format!("{buffer_build_preamble}{consts_prelude}");
+    // C11 views of the read-only lists of records the algorithm takes, one
+    // per record type ([`c11_record_view_typedef`]).
+    let mut record_views = String::new();
+    if matches!(lang, Language::C11) {
+        let mut declared = std::collections::BTreeSet::new();
+        for p in &m.signature.params {
+            let Some(elem @ ListElemType::Record { .. }) = p.sce_type.list_elem() else {
+                continue;
+            };
+            let record_type = ListSpelling::new(&l, elem, imports)?.elem_name;
+            if declared.insert(record_type.clone()) {
+                record_views.push_str(&c11_record_view_typedef(&record_type));
+            }
+        }
+    }
+    let consts_prelude = format!("{record_views}{buffer_build_preamble}{consts_prelude}");
 
     // RFC §synth-5-F: const names are emitted at SCREAMING_SNAKE_CASE in
     // every backend; without a rename here, the per-language
@@ -24477,7 +24669,8 @@ fn render_algorithm(
     ctx.insert("may_fail".into(), may_fail.into());
     ctx.insert("needs_span".into(), needs_span.into());
     // C11 declares a read-only `list<T>` parameter as the runtime's view for
-    // its element (`sce/forge/list_view.h`).
+    // its element (`sce/forge/list_view.h`); a list of records' view is
+    // declared beside the algorithm, over the `size_t` that header brings.
     let needs_list_view = m
         .signature
         .params
@@ -24506,7 +24699,8 @@ fn render_algorithm(
         || m.signature.params.iter().any(|p| {
             p.sce_type
                 .list_elem()
-                .is_some_and(|elem| ListSpelling::new(&l, elem).kotlin_needs_unsigned_opt_in())
+                .and_then(ListElemType::scalar)
+                .is_some_and(SceType::is_unsigned)
         });
     ctx.insert(
         "kotlin_needs_opt_in_unsigned".into(),

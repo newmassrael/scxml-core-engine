@@ -861,6 +861,31 @@ fn enforce_static_datamodel(
             });
             let capacity = attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "capacity");
             if is_list {
+                // A list of records is an algorithm's type (SCE_FORGE.md
+                // §4.12). A machine variable would need the whole-record
+                // append and the per-element snapshot a statechart list does
+                // not lower yet, so it is refused rather than accepted as a
+                // list nothing can fill or publish.
+                let record_list = node
+                    .attribute((SCE_NAMESPACE, "type"))
+                    .and_then(crate::forge::model::AlgorithmValueType::from_attr)
+                    .and_then(|t| {
+                        t.list_elem()
+                            .and_then(|e| e.record_alias().map(str::to_owned))
+                    });
+                if record_list.is_some() {
+                    let (written, pos) =
+                        attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "type")
+                            .expect("the sce:type was read above");
+                    return Err(refused(
+                        pos,
+                        format!("sce:type=\"{written}\""),
+                        "a list variable holds fixed-width numbers or bool — a list of \
+                         records is an algorithm parameter or return, not a machine variable",
+                        &node,
+                        Some(written.to_string()),
+                    ));
+                }
                 if let Some((written, pos)) = attribute_as_written(&node, "expr") {
                     return Err(refused(
                         pos,

@@ -111,8 +111,38 @@ pub struct ScalarOutput {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ListOutput {
-    pub list_of: CanonicalType,
+    pub list_of: ListElemArg,
     pub compare: CompareMode,
+}
+
+/// The element of a list argument or output: a canonical scalar (`"i64"`)
+/// or a record typed by an event-schema fixture (`{"record": "<fixture>"}`),
+/// whose elements the oracle writes as JSON objects keyed by the schema's
+/// field ids. Untagged, as [`AlgorithmArg`] is, so a scalar list keeps its
+/// bare-string spelling.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum ListElemArg {
+    Scalar(CanonicalType),
+    Record(RecordRef),
+}
+
+impl ListElemArg {
+    /// The record the element is, or `None` for a scalar element.
+    pub fn record(&self) -> Option<&RecordRef> {
+        match self {
+            Self::Record(r) => Some(r),
+            Self::Scalar(_) => None,
+        }
+    }
+
+    fn record_mut(&mut self) -> Option<&mut RecordRef> {
+        match self {
+            Self::Record(r) => Some(r),
+            Self::Scalar(_) => None,
+        }
+    }
 }
 
 /// What an algorithm fixture's single call returns: one scalar, a
@@ -147,7 +177,7 @@ pub enum AlgorithmArg {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ListArg {
-    pub list_of: CanonicalType,
+    pub list_of: ListElemArg,
 }
 
 /// A record argument or output: the event-schema fixture whose payload
@@ -1325,7 +1355,10 @@ impl Manifest {
                         ));
                     }
                     if let AlgorithmOutput::List(list) = output {
-                        if matches!(list.list_of, CanonicalType::String | CanonicalType::Bytes) {
+                        if matches!(
+                            list.list_of,
+                            ListElemArg::Scalar(CanonicalType::String | CanonicalType::Bytes)
+                        ) {
                             return Err(format!(
                                 "fixture {}: algorithm `list_of` must be a \
                                  scalar element type — list<T> admits no \
@@ -1337,15 +1370,18 @@ impl Manifest {
                     // A record names an event-schema fixture of this manifest,
                     // and its fields are that document's, derived when the
                     // harness renders — never written here.
+                    // A list's record element is held to the same rule.
                     let records = args
                         .iter()
                         .filter_map(|a| match a {
                             AlgorithmArg::Record(r) => Some(r),
-                            AlgorithmArg::Scalar(_) | AlgorithmArg::List(_) => None,
+                            AlgorithmArg::List(list) => list.list_of.record(),
+                            AlgorithmArg::Scalar(_) => None,
                         })
                         .chain(match output {
                             AlgorithmOutput::Record(r) => Some(r),
-                            AlgorithmOutput::List(_) | AlgorithmOutput::Scalar(_) => None,
+                            AlgorithmOutput::List(list) => list.list_of.record(),
+                            AlgorithmOutput::Scalar(_) => None,
                         });
                     for r in records {
                         let names_a_schema = self.fixtures.iter().any(|g| {
@@ -2481,12 +2517,18 @@ pub fn render_harness(
                 *may_fail = read_algorithm_may_fail(&scxml_path, &fixture_name)?;
                 // A record's fields come from its event-schema document, as
                 // this language spells them.
-                for arg in args.iter_mut() {
-                    if let AlgorithmArg::Record(r) = arg {
-                        r.fields = read_record_fields(manifest, resource_dir, &r.record, language)?;
-                    }
-                }
-                if let AlgorithmOutput::Record(r) = output {
+                // A list's record element too.
+                let arg_records = args.iter_mut().filter_map(|arg| match arg {
+                    AlgorithmArg::Record(r) => Some(r),
+                    AlgorithmArg::List(list) => list.list_of.record_mut(),
+                    AlgorithmArg::Scalar(_) => None,
+                });
+                let output_record = match output {
+                    AlgorithmOutput::Record(r) => Some(r),
+                    AlgorithmOutput::List(list) => list.list_of.record_mut(),
+                    AlgorithmOutput::Scalar(_) => None,
+                };
+                for r in arg_records.chain(output_record) {
                     r.fields = read_record_fields(manifest, resource_dir, &r.record, language)?;
                 }
                 // Symbol-name SSOT: lower the manifest's `function` to the

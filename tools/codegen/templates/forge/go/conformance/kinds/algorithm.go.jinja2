@@ -45,6 +45,22 @@
 		for __i, __v := range arg{{ loop.index0 }}_buf {
 			arg{{ loop.index0 }}[__i] = byte(__v)
 		}
+{% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
+{% set r = arg_ty.list_of %}
+		var arg{{ i }}_src []struct {
+{% for fld in r.fields %}
+			{{ fld.ident }} {{ fld.type | go_type }} `json:"{{ fld.name }}"`
+{% endfor %}
+		}
+		unmarshalOrFatal(t, c.Args[{{ i }}], &arg{{ i }}_src, "{{ f.name }} arg{{ i }}")
+		arg{{ i }} := make([]{{ r.record }}.{{ r.record | to_pascal_case }}Payload, len(arg{{ i }}_src))
+		for __i, __v := range arg{{ i }}_src {
+			arg{{ i }}[__i] = {{ r.record }}.{{ r.record | to_pascal_case }}Payload{
+{% for fld in r.fields %}
+				{{ fld.ident }}: __v.{{ fld.ident }},
+{% endfor %}
+			}
+		}
 {% elif arg_ty.list_of is defined %}
 		var arg{{ loop.index0 }} []{{ arg_ty.list_of | go_type }}
 		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
@@ -80,6 +96,27 @@
 			t.Errorf("{{ f.name }}.{{ fld.name }}: actual=%v expected=%v", actual.{{ fld.ident }}, expected.{{ fld.ident }})
 		}
 {% endfor %}
+{% elif f.output.list_of is defined and f.output.list_of.record is defined %}
+{# A list of records: compared by length, then field by field. #}
+		var expected []struct {
+{% for fld in f.output.list_of.fields %}
+			{{ fld.ident }} {{ fld.type | go_type }} `json:"{{ fld.name }}"`
+{% endfor %}
+		}
+		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
+		actual := {% if f.may_fail %}returned{% else %}{{ call }}{% endif %}
+
+		if len(actual) != len(expected) {
+			t.Errorf("{{ f.name }}: actual=%v expected=%v", actual, expected)
+			continue
+		}
+		for __i := range expected {
+{% for fld in f.output.list_of.fields %}
+			if actual[__i].{{ fld.ident }} != expected[__i].{{ fld.ident }} {
+				t.Errorf("{{ f.name }}[%d].{{ fld.name }}: actual=%v expected=%v", __i, actual[__i].{{ fld.ident }}, expected[__i].{{ fld.ident }})
+			}
+{% endfor %}
+		}
 {% elif f.output.list_of is defined %}
 {# A `list<T>` return (SCE_FORGE.md §4.12) is a `[]T`: compared by length,
    then element by element. #}

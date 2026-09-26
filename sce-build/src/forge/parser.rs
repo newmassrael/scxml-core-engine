@@ -7977,9 +7977,11 @@ fn validate_byte_buffer_build(
 }
 
 /// RFC §synth-5-A `algorithm/lvalue-unsupported`: parameters are read-only
-/// in v1. Walks the body recursively, and refuses an assignment or an append
-/// to a parameter at its `target` — the attribute the parameter is written
-/// in, however deeply the statement is nested.
+/// in v1, and so is a `<sce:foreach>` item, which is an element of the
+/// collection it iterates — a parameter or an imported collection, both
+/// read-only. Walks the body recursively, and refuses an assignment or an
+/// append to either at its `target` — the attribute the name is written in,
+/// however deeply the statement is nested.
 ///
 /// ⚠ It was refused at `<sce:body>`, "the nearest container element the
 /// diagnostic can point to without re-threading nodes through the IR" — a
@@ -7988,6 +7990,16 @@ fn validate_byte_buffer_build(
 fn reject_param_assignment(
     stmts: &[AlgorithmStmt],
     sig: &AlgorithmSignature,
+    doc_name: &str,
+) -> Result<(), Located<ForgeError>> {
+    reject_read_only_assignment(stmts, sig, &[], doc_name)
+}
+
+/// [`reject_param_assignment`] with the foreach `items` in scope.
+fn reject_read_only_assignment(
+    stmts: &[AlgorithmStmt],
+    sig: &AlgorithmSignature,
+    items: &[&str],
     doc_name: &str,
 ) -> Result<(), Located<ForgeError>> {
     for s in stmts {
@@ -8003,10 +8015,20 @@ fn reject_param_assignment(
                 ..
             } => {
                 let head = target.split(['.', '[']).next().unwrap_or(target).trim();
-                if sig.params.iter().any(|p| p.name == head) {
+                let restriction = if sig.params.iter().any(|p| p.name == head) {
+                    Some("algorithm parameters are read-only in v1")
+                } else if items.contains(&head) {
+                    Some(
+                        "a foreach item is read-only in v1 — it is an element of the \
+                         collection it iterates",
+                    )
+                } else {
+                    None
+                };
+                if let Some(restriction) = restriction {
                     let refusal: ForgeError = ValidationError::AlgorithmLvalueUnsupported {
                         target: target.clone(),
-                        restriction: "algorithm parameters are read-only in v1".into(),
+                        restriction: restriction.into(),
                     }
                     .into();
                     return Err(Located::in_file(
@@ -8020,13 +8042,18 @@ fn reject_param_assignment(
                 else_body,
                 ..
             } => {
-                reject_param_assignment(then_body, sig, doc_name)?;
+                reject_read_only_assignment(then_body, sig, items, doc_name)?;
                 if let Some(eb) = else_body {
-                    reject_param_assignment(eb, sig, doc_name)?;
+                    reject_read_only_assignment(eb, sig, items, doc_name)?;
                 }
             }
-            AlgorithmStmt::While { body, .. } | AlgorithmStmt::Foreach { body, .. } => {
-                reject_param_assignment(body, sig, doc_name)?;
+            AlgorithmStmt::While { body, .. } => {
+                reject_read_only_assignment(body, sig, items, doc_name)?;
+            }
+            AlgorithmStmt::Foreach { item, body, .. } => {
+                let mut inner = items.to_vec();
+                inner.push(item.as_str());
+                reject_read_only_assignment(body, sig, &inner, doc_name)?;
             }
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
@@ -9763,8 +9790,8 @@ pub(crate) fn read_type_attr(
 }
 
 /// Read an algorithm param / local / return `type=`: a scalar in
-/// [`TypeGrammar::Scalar`], or `list<T>` over an admitted scalar `T`
-/// ([`AlgorithmValueType::list_elem_admitted`]).
+/// [`TypeGrammar::Scalar`], `record:<alias>`, or `list<T>` over an admitted
+/// scalar `T` ([`AlgorithmValueType::list_elem_admitted`]) or a record.
 ///
 /// A scalar goes through [`read_type_attr`] unchanged, so a misspelled
 /// scalar is refused with the same candidates it always was. The list form
@@ -9777,31 +9804,9 @@ pub(crate) fn read_algorithm_value_type(
     attr: &str,
     text: &str,
 ) -> Result<AlgorithmValueType, Located<ForgeError>> {
-    // `record:<alias>` names the struct an imported event-schema declares.
-    // The alias is judged here, against this document's imports, the way
-    // `enum:<alias>` is; what the schema's fields are is judged where the
-    // import is resolved, since only there is the schema read.
     if let Some(alias) = text.trim().strip_prefix(AlgorithmValueType::RECORD_PREFIX) {
-        let alias = alias.trim();
-        let schemas = import_aliases_of(node, ForgeKind::EventSchema);
-        if schemas.iter().any(|a| a == alias) {
-            return Ok(AlgorithmValueType::Record {
-                alias: alias.to_string(),
-            });
-        }
-        return Err(located(
-            node,
-            doc_name,
-            ValidationError::InvalidAttribute {
-                element,
-                attr: attr.into(),
-                value: text.to_string(),
-                allowed: schemas
-                    .iter()
-                    .map(|a| format!("{}{a}", AlgorithmValueType::RECORD_PREFIX))
-                    .collect(),
-            },
-        ));
+        return read_record_alias(node, doc_name, element, attr, text, alias)
+            .map(|alias| AlgorithmValueType::Record { alias });
     }
     let Some(inner) = text
         .trim()
@@ -9811,6 +9816,15 @@ pub(crate) fn read_algorithm_value_type(
         return read_type_attr(node, doc_name, TypeGrammar::Scalar, element, attr, text)
             .map(AlgorithmValueType::Scalar);
     };
+    // A list of records (SCE_FORGE.md §4.12): the element is judged by the
+    // record rule, so a list of records is exactly as closed as one record.
+    if let Some(alias) = inner.trim().strip_prefix(AlgorithmValueType::RECORD_PREFIX) {
+        return read_record_alias(node, doc_name, element, attr, text, alias).map(|alias| {
+            AlgorithmValueType::List {
+                elem: ListElemType::Record { alias },
+            }
+        });
+    }
     let elem = read_type_attr(
         node,
         doc_name,
@@ -9834,7 +9848,42 @@ pub(crate) fn read_algorithm_value_type(
             },
         ));
     }
-    Ok(AlgorithmValueType::List { elem })
+    Ok(AlgorithmValueType::List {
+        elem: ListElemType::Scalar(elem),
+    })
+}
+
+/// The alias of a `record:<alias>` type — a record, or a list's record
+/// element — judged against this document's event-schema imports, the way
+/// `enum:<alias>` is. What the schema's fields are is judged where the
+/// import is resolved, since only there is the schema read. `text` is the
+/// whole `type=` value, which is what a refusal reports.
+fn read_record_alias(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: String,
+    attr: &str,
+    text: &str,
+    alias: &str,
+) -> Result<String, Located<ForgeError>> {
+    let alias = alias.trim();
+    let schemas = import_aliases_of(node, ForgeKind::EventSchema);
+    if schemas.iter().any(|a| a == alias) {
+        return Ok(alias.to_string());
+    }
+    Err(located(
+        node,
+        doc_name,
+        ValidationError::InvalidAttribute {
+            element,
+            attr: attr.into(),
+            value: text.to_string(),
+            allowed: schemas
+                .iter()
+                .map(|a| format!("{}{a}", AlgorithmValueType::RECORD_PREFIX))
+                .collect(),
+        },
+    ))
 }
 
 /// `node`'s unprefixed attribute `attr`, whose decoded value is `decoded`,

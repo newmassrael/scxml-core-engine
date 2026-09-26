@@ -169,11 +169,12 @@ pub fn lower_kotlin(
         })
         .collect();
     // The list variables, each with its element and bound — what an
-    // `<sce:append>` is rewritten against.
+    // `<sce:append>` is rewritten against. A machine list is of scalars: the
+    // parser refuses a list of records on a variable.
     let list_vars: ListVars = variables
         .iter()
         .filter_map(|v| {
-            let elem = v.value_type.as_ref()?.list_elem()?.clone();
+            let elem = v.value_type.as_ref()?.list_elem()?.scalar()?.clone();
             Some((v.id.clone(), (elem, v.capacity?)))
         })
         .collect();
@@ -254,7 +255,12 @@ pub fn lower_kotlin(
             }
             // A list starts empty. It is immutable, so a snapshot holding it
             // keeps what it saw however the machine appends afterwards.
-            if let Some(elem) = var.value_type.as_ref().and_then(|t| t.list_elem()) {
+            if let Some(elem) = var
+                .value_type
+                .as_ref()
+                .and_then(|t| t.list_elem())
+                .and_then(crate::forge::model::ListElemType::scalar)
+            {
                 fields.push(StaticField {
                     id: var.id.clone(),
                     name: filters::to_camel_case(var.id.clone()),

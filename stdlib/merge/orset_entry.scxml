@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/orset_entry.scxml — one entry of an observed-remove set
+  (Shapiro et al., "A comprehensive study of Convergent and Commutative
+  Replicated Data Types", 2011, §3.3.5): an element, and the tag of the add
+  that put it there. The tag is the hybrid logical clock timestamp the adding
+  node issued for that add (hlc_send), so no two adds anywhere share one.
+
+  The tag's three fields are spelled out rather than held as an
+  hlc_timestamp: a record's fields are fixed-width scalars
+  (SCE_FORGE.md §4.12), so a record does not hold a record.
+
+  A set is two lists of entries — the adds, and the tombstones of the adds
+  a remove observed — each merged across nodes by orset_union. Its value is
+  orset_live of the two.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="orset_entry"
+       sce:event-name="merge.orset_entry">
+  <datamodel>
+    <data id="element" sce:type="uint64" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

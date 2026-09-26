@@ -1695,6 +1695,50 @@
         { "args": [-4], "expected": true }
       ]
     },
+    "orset_contains": {
+      "fixture": "orset_contains",
+      "signature": "(live: list<record:Entry>, element: u64) -> bool",
+      "formula": "whether any live entry holds element (the standard document sce:std/merge/orset_contains.scxml)",
+      "cases": [
+        { "args": [[{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }, { "element": 2, "wallTime": 101, "counter": 0, "nodeId": 9 }], 2], "expected": true },
+        { "args": [[{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }, { "element": 2, "wallTime": 101, "counter": 0, "nodeId": 9 }], 3], "expected": false },
+        { "args": [[], 1], "expected": false, "note": "the empty set" },
+        { "args": [[{ "element": 18446744073709551615, "wallTime": 100, "counter": 0, "nodeId": 7 }], 18446744073709551615], "expected": true, "note": "the largest uint64 element, through every backend's JSON reader" }
+      ]
+    },
+    "orset_live": {
+      "fixture": "orset_live",
+      "signature": "(adds: list<record:Entry>, tombstones: list<record:Entry>) -> list<record:Entry>",
+      "formula": "the entries of adds that tombstones does not hold, in adds' order — an element is live while any of its adds is (Shapiro et al. 2011 §3.3.5; the standard document sce:std/merge/orset_live.scxml)",
+      "cases": [
+        { "args": [[{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }, { "element": 1, "wallTime": 102, "counter": 0, "nodeId": 9 }], [{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }]], "expected": [{ "element": 1, "wallTime": 102, "counter": 0, "nodeId": 9 }], "note": "an add the remove did not observe survives it (add wins)" },
+        { "args": [[{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }, { "element": 2, "wallTime": 101, "counter": 0, "nodeId": 9 }], []], "expected": [{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }, { "element": 2, "wallTime": 101, "counter": 0, "nodeId": 9 }], "note": "nothing removed" },
+        { "args": [[{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }], [{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }]], "expected": [], "note": "every add removed" },
+        { "args": [[{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }], [{ "element": 1, "wallTime": 100, "counter": 1, "nodeId": 7 }]], "expected": [{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }], "note": "a tombstone of another add of the same element" }
+      ]
+    },
+    "orset_observed": {
+      "fixture": "orset_observed",
+      "signature": "(live: list<record:Entry>, element: u64) -> list<record:Entry>",
+      "formula": "the live entries of element, in live's order — what a remove of it tombstones (the standard document sce:std/merge/orset_observed.scxml)",
+      "cases": [
+        { "args": [[{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }, { "element": 2, "wallTime": 101, "counter": 0, "nodeId": 9 }, { "element": 1, "wallTime": 102, "counter": 0, "nodeId": 9 }], 1], "expected": [{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }, { "element": 1, "wallTime": 102, "counter": 0, "nodeId": 9 }] },
+        { "args": [[{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }, { "element": 2, "wallTime": 101, "counter": 0, "nodeId": 9 }], 3], "expected": [], "note": "an element the set does not hold" },
+        { "args": [[], 1], "expected": [], "note": "the empty set" }
+      ]
+    },
+    "orset_union": {
+      "fixture": "orset_union",
+      "signature": "(a: list<record:Entry>, b: list<record:Entry>) -> list<record:Entry>",
+      "formula": "a, then the entries of b that a does not hold, in b's order — the merge of two replicas' adds or tombstones (Shapiro et al. 2011 §3.3.5; the standard document sce:std/merge/orset_union.scxml)",
+      "cases": [
+        { "args": [[{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }], [{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }, { "element": 2, "wallTime": 101, "counter": 0, "nodeId": 9 }]], "expected": [{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }, { "element": 2, "wallTime": 101, "counter": 0, "nodeId": 9 }], "note": "an entry both replicas hold is kept once" },
+        { "args": [[{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }], [{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 9 }]], "expected": [{ "element": 1, "wallTime": 100, "counter": 0, "nodeId": 7 }, { "element": 1, "wallTime": 100, "counter": 0, "nodeId": 9 }], "note": "two adds of one element are two entries" },
+        { "args": [[], [{ "element": 3, "wallTime": 50, "counter": 1, "nodeId": 2 }]], "expected": [{ "element": 3, "wallTime": 50, "counter": 1, "nodeId": 2 }] },
+        { "args": [[{ "element": 3, "wallTime": 50, "counter": 1, "nodeId": 2 }], []], "expected": [{ "element": 3, "wallTime": 50, "counter": 1, "nodeId": 2 }] },
+        { "args": [[], []], "expected": [], "note": "two empty replicas" }
+      ]
+    },
     "second_of_day": {
       "fixture": "second_of_day",
       "signature": "(seconds: i64) -> i32",
@@ -4163,6 +4207,18 @@
       "description": "A hybrid logical clock timestamp, the record type the standard documents sce:std/merge/hlc_send, hlc_receive and hlc_compare take and return (SCE_FORGE.md §4.12). A SHAPE claim like every event-schema fixture: names, order, and that a value reads back.",
       "event_name": "merge.hlc_timestamp",
       "fields": [
+        { "name": "wallTime", "value": 1727000000400, "sce_type": "int64" },
+        { "name": "counter", "value": 3, "sce_type": "uint32" },
+        { "name": "nodeId", "value": 7, "sce_type": "uint64" }
+      ]
+    },
+    "orset_entry": {
+      "fixture": "OrsetEntry",
+      "signature": "struct OrsetEntryPayload { uint64 element; int64 wallTime; uint32 counter; uint64 nodeId; }",
+      "description": "One entry of an observed-remove set — an element and the hybrid logical clock tag of the add that put it there — the element type of the lists the standard documents sce:std/merge/orset_* take and return (SCE_FORGE.md §4.12). A SHAPE claim like every event-schema fixture: names, order, and that a value reads back.",
+      "event_name": "merge.orset_entry",
+      "fields": [
+        { "name": "element", "value": 42, "sce_type": "uint64" },
         { "name": "wallTime", "value": 1727000000400, "sce_type": "int64" },
         { "name": "counter", "value": 3, "sce_type": "uint32" },
         { "name": "nodeId", "value": 7, "sce_type": "uint64" }

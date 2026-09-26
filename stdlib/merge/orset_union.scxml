@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/orset_union.scxml — the merge of two replicas' entry lists
+  of an observed-remove set: every entry of `a`, then every entry of `b`
+  that `a` does not already hold. Used for the adds and for the tombstones
+  alike; union is what makes the set converge, since it is commutative,
+  associative and idempotent in the entries it keeps.
+
+  Two entries are the same when all four fields are — a tag is unique, so
+  in practice the tag decides. Each input is a set (no entry twice), and so
+  is the result. The order is `a`'s, then `b`'s new entries in `b`'s order:
+  the value of the set does not depend on it.
+
+  The result holds at most 256 entries (SCE_FORGE.md §4.12); past that the
+  bounded backends fail and the heap backends grow, so a host keeps its
+  sets within it. The comparison is O(len(a) · len(b)), which a set this
+  small affords.
+
+  a {1@(100,0,7)}, b {1@(100,0,7), 2@(101,0,9)} → {1@(100,0,7), 2@(101,0,9)}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="orset_union" version="1.0">
+  <sce:import kind="event-schema" src="orset_entry.scxml" as="Entry"/>
+  <sce:signature>
+    <sce:param name="a" type="list&lt;record:Entry&gt;"/>
+    <sce:param name="b" type="list&lt;record:Entry&gt;"/>
+    <sce:return type="list&lt;record:Entry&gt;" returns-max-size="256"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="256"/>
+    <sce:foreach item="x" in="a">
+      <sce:append target="out" expr="x"/>
+    </sce:foreach>
+    <sce:foreach item="y" in="b">
+      <sce:var name="held" type="bool" init="false"/>
+      <sce:foreach item="z" in="a">
+        <sce:if cond="z.element === y.element &amp;&amp; z.wallTime === y.wallTime &amp;&amp; z.counter === y.counter &amp;&amp; z.nodeId === y.nodeId">
+          <sce:assign target="held" expr="true"/>
+        </sce:if>
+      </sce:foreach>
+      <sce:if cond="!held">
+        <sce:append target="out" expr="y"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

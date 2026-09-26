@@ -110,13 +110,18 @@ pub enum InferredType {
     },
 }
 
-/// The element of a [`InferredType::List`]: a fixed-width number or a
-/// `bool` — what a list admits (`AlgorithmValueType::list_elem_admitted`),
-/// kept `Copy` so the list type is.
+/// The element of a [`InferredType::List`]: a fixed-width number, a `bool`
+/// — what a list admits (`AlgorithmValueType::list_elem_admitted`) — or a
+/// record, kept `Copy` so the list type is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListElem {
     Number(NumericBaseType),
     Bool,
+    /// A record. Which record is not carried: the lattice has no record
+    /// type, and a record element is read only through a name — a foreach
+    /// item or a record local — that the record rule types by its fields
+    /// (SCE_FORGE.md §4.12).
+    Record,
 }
 
 impl ListElem {
@@ -132,7 +137,17 @@ impl ListElem {
         }
     }
 
-    /// The type one element has — what a `<foreach item>` over the list is.
+    /// The element a list of `elem` holds; `None` for a scalar no list
+    /// admits.
+    pub fn of_list(elem: &crate::forge::model::ListElemType) -> Option<Self> {
+        match elem {
+            crate::forge::model::ListElemType::Scalar(ty) => Self::of(ty),
+            crate::forge::model::ListElemType::Record { .. } => Some(Self::Record),
+        }
+    }
+
+    /// The type one element has as an operand. A record element is
+    /// `Unknown`: it has no operand type, and is read through a name.
     pub fn element_type(self) -> InferredType {
         match self {
             Self::Number(NumericBaseType::Int { signed, bits }) => {
@@ -140,6 +155,7 @@ impl ListElem {
             }
             Self::Number(NumericBaseType::Float { bits }) => InferredType::Float { bits },
             Self::Bool => InferredType::Bool,
+            Self::Record => InferredType::Unknown,
         }
     }
 }

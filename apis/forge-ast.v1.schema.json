@@ -315,7 +315,7 @@
       "description": "Type carried by an `<sce:const>` declaration. Scalar form is the only shape produced by hand-authored algorithm bodies (RFC §synth-5-A); the array form is reserved for `sce:compute-at=\"build\"` consts whose body is an `<sce:fold>` block (RFC §synth-5-F build-time const-fold). Keeping array out of [`SceType`] keeps the parameter / var / field surfaces scalar-only, which is the v1 contract everywhere else."
     },
     "AlgorithmParam": {
-      "description": "One parameter of an algorithm signature. Parameters are by-value scalars, by-reference slices for `bytes`, or by-value records (`record:<alias>`, SCE_FORGE.md §4.12); a `list<T>` parameter is refused in v1. Read-only in v1 (assigning to a parameter raises `algorithm/lvalue-unsupported`).",
+      "description": "One parameter of an algorithm signature. Parameters are by-value scalars, by-reference slices for `bytes`, by-value records (`record:<alias>`, SCE_FORGE.md §4.12), or read-only views of a `list<T>`. Read-only in v1 (assigning to a parameter raises `algorithm/lvalue-unsupported`).",
       "properties": {
         "name": {
           "type": "string"
@@ -663,10 +663,10 @@
           "description": "A scalar — any [`SceType`], including `bytes`."
         },
         {
-          "description": "`list<T>` — a runtime-length sequence of scalar `T`, bounded by the `capacity` of the local that builds it or the `returns-max-size` of the signature that returns it (SCE_FORGE.md §4.12, which states the same bound for a `bytes` buffer).",
+          "description": "`list<T>` — a runtime-length sequence of `T`, bounded by the `capacity` of the local that builds it or the `returns-max-size` of the signature that returns it (SCE_FORGE.md §4.12, which states the same bound for a `bytes` buffer). `T` is a fixed-width scalar or a record whose fields are ([`ListElemType`]).",
           "properties": {
             "list": {
-              "$ref": "#/definitions/SceType"
+              "$ref": "#/definitions/ListElemType"
             }
           },
           "required": [
@@ -687,7 +687,7 @@
           "type": "object"
         }
       ],
-      "description": "The type of an algorithm parameter, local or return: a scalar, or a bounded list of scalars.\n\n⚠ A list is deliberately NOT a [`SceType`] variant. `SceType` is the type of a codec field, an event-schema field, a validator input — surfaces that are scalar-only by contract (see [`AlgorithmConstType`], which keeps its build-time `array<T, N>` out of `SceType` for the same reason). Adding the variant there would hand every one of those surfaces a case to refuse. The algorithm kind is the one place a runtime-length sequence is computed and returned, so the widening lives here.\n\nSerialized untagged: a scalar stays the bare string it always was (`\"int64\"`), so the forge-AST wire is byte-identical for every document that declares no list; a list serializes as `{\"list\": \"int64\"}`."
+      "description": "The type of an algorithm parameter, local or return: a scalar, a record, or a bounded list of either.\n\n⚠ A list is deliberately NOT a [`SceType`] variant. `SceType` is the type of a codec field, an event-schema field, a validator input — surfaces that are scalar-only by contract (see [`AlgorithmConstType`], which keeps its build-time `array<T, N>` out of `SceType` for the same reason). Adding the variant there would hand every one of those surfaces a case to refuse. The algorithm kind is the one place a runtime-length sequence is computed and returned, so the widening lives here.\n\nSerialized untagged: a scalar stays the bare string it always was (`\"int64\"`), so the forge-AST wire is byte-identical for every document that declares no list; a list serializes as `{\"list\": \"int64\"}`."
     },
     "BackpressurePolicy": {
       "description": "`<sce:backpressure>` policy — RFC §synth-5-C body. All three policies parse, and the rust template lowers them uniformly (the policy threading into the runtime crate is an implementation concern of `sce-link-runtime`).",
@@ -4519,6 +4519,31 @@
         "event"
       ],
       "type": "object"
+    },
+    "ListElemType": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SceType"
+            }
+          ],
+          "description": "A fixed-width number or `bool`."
+        },
+        {
+          "description": "`record:<alias>` — a value of the struct the aliased event-schema import declares.",
+          "properties": {
+            "record": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "record"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "The element of an algorithm `list<T>`: a fixed-width scalar ([`AlgorithmValueType::list_elem_admitted`]) or a record named by its event-schema import alias, whose fields are fixed-width by the record rule itself (SCE_FORGE.md §4.12).\n\n⚠ One list type with a wider element, not a second list variant. Every site that asks a list for its element — the renderer, the type context, the statechart datamodel — must then say what it does with a record element; a separate variant would let each of them skip it silently.\n\nSerialized untagged, as [`AlgorithmValueType`] is: a scalar element stays the bare string (`{\"list\": \"int64\"}`), and a record one takes the record type's own shape (`{\"list\": {\"record\": \"Hlc\"}}`)."
     },
     "LookupEntry": {
       "description": "A single key-value entry in a lookup table.",

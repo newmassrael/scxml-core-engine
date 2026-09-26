@@ -33,6 +33,16 @@
                 {{ fld.ident }} = {{ ("args[" ~ i ~ "].jsonObject[\"" ~ fld.name ~ "\"]!!") | kt_unmarshal(fld.type) }},
 {% endfor %}
             )
+{% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
+{# A list of records is a read-only `List` of the schema's data class. #}
+{% set r = arg_ty.list_of %}
+            val arg{{ i }} = args[{{ i }}].jsonArray.map { e ->
+                com.sce.generated.{{ r.record }}.{{ r.record | to_pascal_case }}Payload(
+{% for fld in r.fields %}
+                    {{ fld.ident }} = {{ ("e.jsonObject[\"" ~ fld.name ~ "\"]!!") | kt_unmarshal(fld.type) }},
+{% endfor %}
+                )
+            }
 {% elif arg_ty.list_of is defined %}
 {# A `list<T>` argument is the element's primitive array, the type the
    algorithm's parameter declares; an unsigned array is still experimental,
@@ -71,6 +81,19 @@
 {% for fld in f.output.fields %}
             assertEquals({{ ("expected[\"" ~ fld.name ~ "\"]!!") | kt_unmarshal(fld.type) }}, actual.{{ fld.ident }}, "{{ f.name }}.{{ fld.name }}")
 {% endfor %}
+{% elif f.output.list_of is defined and f.output.list_of.record is defined %}
+{# A list of records is a `List` of the schema's data class: compared by
+   length, then field by field. #}
+            val actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %}
+
+            val expected = case.jsonObject["expected"]!!.jsonArray
+            assertEquals(expected.size, actual.size, "{{ f.name }} length")
+            for (k in expected.indices) {
+                val e = expected[k].jsonObject
+{% for fld in f.output.list_of.fields %}
+                assertEquals({{ ("e[\"" ~ fld.name ~ "\"]!!") | kt_unmarshal(fld.type) }}, actual[k].{{ fld.ident }}, "{{ f.name }}.{{ fld.name }}")
+{% endfor %}
+            }
 {% elif f.output.list_of is defined %}
 {# A `list<T>` return (SCE_FORGE.md §4.12) is the element's primitive array
    (`LongArray`, `UIntArray`, ...). Both sides compare as `List<T>`, so

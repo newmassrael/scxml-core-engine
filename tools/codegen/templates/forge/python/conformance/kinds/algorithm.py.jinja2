@@ -32,6 +32,16 @@
             )
 {% elif arg_ty == "bytes" %}
             arg{{ ai }} = bytes(case["args"][{{ ai }}])
+{% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
+{% set r = arg_ty.list_of %}
+            arg{{ ai }} = [
+                {{ r.record }}.{{ r.record | to_pascal_case }}Payload(
+{% for fld in r.fields %}
+                    {{ fld.ident }}=e["{{ fld.name }}"],
+{% endfor %}
+                )
+                for e in case["args"][{{ ai }}]
+            ]
 {% elif arg_ty.list_of is defined %}
             arg{{ ai }} = list(case["args"][{{ ai }}])
 {% else %}
@@ -51,6 +61,13 @@
 {% if f.output.record is defined %}
 {% for fld in f.output.fields %}
             self.assertEqual(actual.{{ fld.ident }}, expected["{{ fld.name }}"], "{{ f.name }}.{{ fld.name }}")
+{% endfor %}
+{% elif f.output.list_of is defined and f.output.list_of.record is defined %}
+{# A list of records: compared by length, then field by field. #}
+            self.assertEqual(len(actual), len(expected), "{{ f.name }} length")
+            for a, e in zip(actual, expected):
+{% for fld in f.output.list_of.fields %}
+                self.assertEqual(a.{{ fld.ident }}, e["{{ fld.name }}"], "{{ f.name }}.{{ fld.name }}")
 {% endfor %}
 {% elif f.output.list_of is defined %}
 {# A `list<T>` return (SCE_FORGE.md §4.12) is a `list`: compared by length,

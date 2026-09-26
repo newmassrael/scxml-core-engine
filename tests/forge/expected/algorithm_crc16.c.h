@@ -17,8 +17,8 @@
 #include "sce/forge/bytes.h"  /* sce_forge_bytes_view_t */
 static inline uint16_t algorithm_crc16(sce_forge_bytes_view_t data) {
     uint16_t crc = 0xFFFF;
-    for (size_t __i = 0; __i < data.len; ++__i) {
-        uint8_t b = data.data[__i];
+    for (size_t __b_i = 0; __b_i < data.len; ++__b_i) {
+        uint8_t b = data.data[__b_i];
         uint16_t hi = b;
         crc = crc ^ hi << 8;
         uint8_t i = 0;

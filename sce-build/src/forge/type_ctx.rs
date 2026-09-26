@@ -597,7 +597,7 @@ fn static_statechart<'a>(
         if let Some(elem) = value_type.list_elem() {
             // Typed as a list so `len(…)` measures it; the static data
             // model's judge refuses it anywhere it would be read as a value.
-            if let Some(elem) = crate::forge::types::ListElem::of(elem) {
+            if let Some(elem) = crate::forge::types::ListElem::of_list(elem) {
                 ctx.insert_var(var.id.as_str(), InferredType::List(elem));
             }
             continue;

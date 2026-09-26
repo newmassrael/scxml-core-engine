@@ -19,7 +19,8 @@
 //!     (manual `impl Default` below); SSOT trio still emitted.
 //!   * Codec with variant body → both struct and variant enum emit
 //!     SSOT trio (transitive closure for `body: NameVariant`).
-//!   * EventSchema payload, ForgeEnum, BoundedCollectionHandle +
+//!   * EventSchema payload (with a `string` field, and of plain data,
+//!     which adds `Copy`), ForgeEnum, BoundedCollectionHandle +
 //!     OverflowError — one fixture each.
 //!   * Transform holder + outputs record (a document reading
 //!     `previous()`) → SSOT trio on both.
@@ -176,6 +177,20 @@ fn event_schema_payload_emits_ssot_trio() {
     assert!(
         src.contains("#[derive(Debug, Clone, PartialEq)]"),
         "event_schema payload must derive Debug, Clone, PartialEq; got:\n{src}"
+    );
+}
+
+/// EventSchema payload of plain data — every field fixed-width — adds
+/// `Copy` to the trio, which a list of the record needs (SCE_FORGE.md
+/// §4.12). The fixture above holds a `string` and must not.
+#[test]
+fn event_schema_plain_payload_adds_copy() {
+    let out = scratch("event_schema_plain");
+    run_generate(&out, &repo_root().join("stdlib/merge/hlc_timestamp.scxml"));
+    let src = read_emitted_rs(&out);
+    assert!(
+        src.contains("#[derive(Debug, Clone, Copy, PartialEq)]"),
+        "a plain-data event_schema payload must derive Copy besides the trio; got:\n{src}"
     );
 }
 

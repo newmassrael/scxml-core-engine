@@ -504,6 +504,9 @@ impl<'a> Judge<'a> {
                     .value_type
                     .as_ref()
                     .and_then(crate::forge::model::AlgorithmValueType::list_elem)
+                    // A machine list is of scalars: the parser refuses a list
+                    // of records on a variable (`enforce_static_datamodel`).
+                    .and_then(crate::forge::model::ListElemType::scalar)
                     .map_or(InferredType::Unknown, InferredType::from_sce_type);
                 self.expr(
                     ctx,

@@ -487,6 +487,29 @@ fn run_record(args: &[&str], doc: &str) -> (bool, String) {
     run_beside(args, doc, &[("schema_day.scxml", SCHEMA_DAY)])
 }
 
+/// A list of records is an algorithm's type (SCE_FORGE.md §4.12). The type
+/// reader a machine variable shares with the algorithm kind admits it, so
+/// the machine refuses it itself, on the variable's line — it lowers
+/// neither the whole-record append nor the snapshot of one.
+#[test]
+fn a_list_of_records_variable_is_refused() {
+    let (ok, out) = run_record(
+        &["check"],
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  <datamodel>
+    <data id="days" sce:type="list&lt;record:Day&gt;" sce:capacity="4"/>
+  </datamodel>
+  <state id="s"/>
+</scxml>
+"##,
+    );
+    assert!(!ok, "a machine variable is not a list of records:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 6);
+}
+
 #[test]
 fn a_record_variable_is_read_and_updated_a_field_at_a_time() {
     // A field is read in a condition and in a host action's argument, and

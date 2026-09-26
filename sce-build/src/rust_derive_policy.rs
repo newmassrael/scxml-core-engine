@@ -75,6 +75,15 @@ pub enum RustDeriveCategory {
     /// `event_schema.rs.jinja2` — `pub struct {{ payload_struct_name }}`.
     /// §scxml-5.10 event payload, equivalent wire-typed role.
     EventSchemaPayload,
+    /// `event_schema.rs.jinja2` — the same payload when every field is a
+    /// fixed-width number, a `bool` or an enum: plain data, so `Copy`
+    /// besides. That is the schema an algorithm takes as a record
+    /// (SCE_FORGE.md §4.12), and a list of records needs it — the owned
+    /// list and a foreach item copy an element out, as they do a scalar. A
+    /// payload holding a `String` or bytes cannot be `Copy`, which is why
+    /// this is a category of its own rather than a change to
+    /// [`Self::EventSchemaPayload`].
+    EventSchemaPlainPayload,
     /// Repr-tagged C-like forge enum (no payload arms), so `Copy` +
     /// `Eq` are natural. One policy for one shape: covers every forge
     /// repr-tagged enum — `enum.rs.jinja2`'s `pub enum {{ enum_name }}`,
@@ -157,6 +166,7 @@ impl RustDeriveCategory {
             Self::CodecStruct => &["Debug", "Clone", "PartialEq"],
             Self::CodecVariantEnum => &["Debug", "Clone", "PartialEq"],
             Self::EventSchemaPayload => &["Debug", "Clone", "PartialEq"],
+            Self::EventSchemaPlainPayload => &["Debug", "Clone", "Copy", "PartialEq"],
             Self::ForgeEnum => &["Debug", "Clone", "Copy", "PartialEq", "Eq"],
             Self::BoundedCollectionHandle => &["Clone", "Copy", "PartialEq", "Eq", "Debug", "Hash"],
             Self::BoundedCollectionOverflowError => &["Clone", "Copy", "PartialEq", "Eq", "Debug"],
@@ -242,6 +252,23 @@ mod tests {
     }
 
     #[test]
+    fn plain_payload_is_the_payload_plus_copy() {
+        // The plain payload differs from the wire-typed baseline by
+        // exactly `Copy`, placed where the Copy-trivial categories put it.
+        let payload = RustDeriveCategory::EventSchemaPayload.derives();
+        let plain = RustDeriveCategory::EventSchemaPlainPayload.derives();
+        assert_eq!(plain, &["Debug", "Clone", "Copy", "PartialEq"]);
+        assert_eq!(
+            plain
+                .iter()
+                .filter(|d| **d != "Copy")
+                .copied()
+                .collect::<Vec<_>>(),
+            payload
+        );
+    }
+
+    #[test]
     fn codec_struct_includes_debug() {
         // Consumer signal (2026-05-28): downstream crates wrap
         // codec types in `#[derive(Debug)]` enums, so
@@ -285,6 +312,7 @@ mod tests {
             RustDeriveCategory::CodecStruct,
             RustDeriveCategory::CodecVariantEnum,
             RustDeriveCategory::EventSchemaPayload,
+            RustDeriveCategory::EventSchemaPlainPayload,
             RustDeriveCategory::ForgeEnum,
             RustDeriveCategory::BoundedCollectionHandle,
             RustDeriveCategory::BoundedCollectionOverflowError,

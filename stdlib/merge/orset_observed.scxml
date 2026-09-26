@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/orset_observed.scxml — the live entries of `element`: what a
+  remove of `element` observes, and so what it adds to the tombstones. Only
+  these, and not every add of the element any node will ever make, which is
+  why a concurrent add survives the remove (orset_live).
+
+  The result keeps `live`'s order and holds at most 256 entries.
+
+  live {1@(100,0,7), 2@(101,0,9), 1@(102,0,9)}, element 1 →
+  {1@(100,0,7), 1@(102,0,9)}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="orset_observed" version="1.0">
+  <sce:import kind="event-schema" src="orset_entry.scxml" as="Entry"/>
+  <sce:signature>
+    <sce:param name="live" type="list&lt;record:Entry&gt;"/>
+    <sce:param name="element" type="uint64"/>
+    <sce:return type="list&lt;record:Entry&gt;" returns-max-size="256"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="256"/>
+    <sce:foreach item="x" in="live">
+      <sce:if cond="x.element === element">
+        <sce:append target="out" expr="x"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

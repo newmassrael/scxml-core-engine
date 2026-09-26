@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/orset_contains.scxml — whether `element` is in the set whose
+  live entries (orset_live) are `live`: whether any of its adds is live.
+
+  live {1@(100,0,7), 2@(101,0,9)}: element 2 → true · element 3 → false.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="orset_contains" version="1.0">
+  <sce:import kind="event-schema" src="orset_entry.scxml" as="Entry"/>
+  <sce:signature>
+    <sce:param name="live" type="list&lt;record:Entry&gt;"/>
+    <sce:param name="element" type="uint64"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="found" type="bool" init="false"/>
+    <sce:foreach item="x" in="live">
+      <sce:if cond="x.element === element">
+        <sce:assign target="found" expr="true"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="found"/>
+  </sce:body>
+</scxml>

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/orset_live.scxml — the value of an observed-remove set: the
+  entries of `adds` whose add no remove observed, i.e. that `tombstones`
+  does not hold. An element is in the set while any of its adds is live, so
+  an add concurrent with a remove survives it — the remove could only
+  tombstone the adds it had seen (add wins).
+
+  The result keeps `adds`' order and holds at most 256 entries, as
+  orset_union's does.
+
+  adds {1@(100,0,7), 1@(102,0,9)}, tombstones {1@(100,0,7)} → {1@(102,0,9)}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="orset_live" version="1.0">
+  <sce:import kind="event-schema" src="orset_entry.scxml" as="Entry"/>
+  <sce:signature>
+    <sce:param name="adds" type="list&lt;record:Entry&gt;"/>
+    <sce:param name="tombstones" type="list&lt;record:Entry&gt;"/>
+    <sce:return type="list&lt;record:Entry&gt;" returns-max-size="256"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="256"/>
+    <sce:foreach item="x" in="adds">
+      <sce:var name="removed" type="bool" init="false"/>
+      <sce:foreach item="t" in="tombstones">
+        <sce:if cond="t.element === x.element &amp;&amp; t.wallTime === x.wallTime &amp;&amp; t.counter === x.counter &amp;&amp; t.nodeId === x.nodeId">
+          <sce:assign target="removed" expr="true"/>
+        </sce:if>
+      </sce:foreach>
+      <sce:if cond="!removed">
+        <sce:append target="out" expr="x"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

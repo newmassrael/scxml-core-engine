@@ -58,7 +58,11 @@ static void test_{{ f.name }}(void) {
 {% set w.n = c.args[ai] | length %}
 {% endif %}
 {% endfor %}
+{% if arg_ty.list_of.record is defined %}
+        {{ arg_ty.list_of.record | to_pascal_case }}Payload_t input_arg{{ ai }}[{{ w.n }}];
+{% else %}
         {{ arg_ty.list_of | c_type }} input_arg{{ ai }}[{{ w.n }}];
+{% endif %}
         size_t  input_arg{{ ai }}_len;
 {% else %}
         {{ arg_ty | c_type }} input_arg{{ loop.index0 }};
@@ -66,6 +70,9 @@ static void test_{{ f.name }}(void) {
 {% endfor %}
 {% if f.output.record is defined %}
         {{ f.output.record | to_pascal_case }}Payload_t expected;
+{% elif f.output.list_of is defined and f.output.list_of.record is defined %}
+        {{ f.output.list_of.record | to_pascal_case }}Payload_t expected[{{ ns.width }}];
+        size_t  expected_len;
 {% elif f.output.list_of is defined %}
         {{ f.output.list_of | c_type }} expected[{{ ns.width }}];
         size_t  expected_len;
@@ -85,6 +92,9 @@ static void test_{{ f.name }}(void) {
 {% elif arg_ty == "bytes" %}
             .input_arg{{ ai }} = {{ c.args[ai] | c_literal(arg_ty) }},
             .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
+{% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
+            .input_arg{{ ai }} = { {% for v in c.args[ai] %}{ {% for fld in arg_ty.list_of.fields %}.{{ fld.ident }} = {{ v[fld.name] | c_literal(fld.type) }}, {% endfor %}}, {% else %}{0}{% endfor %} },
+            .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
 {% elif arg_ty.list_of is defined %}
             .input_arg{{ ai }} = { {% for v in c.args[ai] %}{{ v | c_literal(arg_ty.list_of) }}, {% else %}0{% endfor %} },
             .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
@@ -96,6 +106,9 @@ static void test_{{ f.name }}(void) {
             .fails = "{{ c.fails }}",
 {% elif f.output.record is defined %}
             .expected = { {% for fld in f.output.fields %}.{{ fld.ident }} = {{ c.expected[fld.name] | c_literal(fld.type) }}, {% endfor %}},
+{% elif f.output.list_of is defined and f.output.list_of.record is defined %}
+            .expected = { {% for v in c.expected %}{ {% for fld in f.output.list_of.fields %}.{{ fld.ident }} = {{ v[fld.name] | c_literal(fld.type) }}, {% endfor %}}, {% else %}{0}{% endfor %} },
+            .expected_len = {{ c.expected | length }},
 {% elif f.output.list_of is defined %}
             .expected = { {% for v in c.expected %}{{ v | c_literal(f.output.list_of) }}, {% else %}0{% endfor %} },
             .expected_len = {{ c.expected | length }},
@@ -114,6 +127,9 @@ static void test_{{ f.name }}(void) {
         sce_forge_bytes_t arg{{ loop.index0 }} = {0};
         memcpy(arg{{ loop.index0 }}.data, cases[i].input_arg{{ loop.index0 }}, cases[i].input_arg{{ loop.index0 }}_len);
         arg{{ loop.index0 }}.len = cases[i].input_arg{{ loop.index0 }}_len;
+{% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
+{# The view the algorithm's header declares beside it for this record. #}
+        const {{ arg_ty.list_of.record | to_pascal_case }}Payload_view_t arg{{ loop.index0 }} = { cases[i].input_arg{{ loop.index0 }}, cases[i].input_arg{{ loop.index0 }}_len };
 {% elif arg_ty.list_of is defined %}
         const sce_forge_{{ (arg_ty.list_of | c_type) | replace("_t", "") }}_view_t arg{{ loop.index0 }} = { cases[i].input_arg{{ loop.index0 }}, cases[i].input_arg{{ loop.index0 }}_len };
 {% else %}
@@ -159,6 +175,18 @@ static void test_{{ f.name }}(void) {
             continue;
         }
         for (size_t k = 0; k < actual.len; ++k) {
+{% if f.output.list_of.record is defined %}
+{# A list of records: compared field by field. #}
+{% for fld in f.output.list_of.fields %}
+            if (actual.items[k].{{ fld.ident }} != cases[i].expected[k].{{ fld.ident }}) {
+                fprintf(stderr,
+                    "FAIL: {{ f.name }} case %zu [%zu]: {{ fld.name }} actual=%lld expected=%lld\n",
+                    i, k, (long long)actual.items[k].{{ fld.ident }}, (long long)cases[i].expected[k].{{ fld.ident }});
+                ++g_failures;
+            }
+{% endfor %}
+        }
+{% else %}
 {% if f.output.compare == "tolerance" %}
             if (!close_enough((double)actual.items[k], (double)cases[i].expected[k], FLOAT_TOL)) {
 {% else %}
@@ -180,6 +208,7 @@ static void test_{{ f.name }}(void) {
                 ++g_failures;
             }
         }
+{% endif %}
 {% else %}
         {{ f.output.type | c_type }} actual = {% if f.may_fail %}result.value{% else %}{{ f.function }}({{ call_args }}){% endif %};
 {% if f.output.compare == "tolerance" %}

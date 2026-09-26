@@ -475,9 +475,35 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     infer_types(ast, ctx);
     reject_unknown_callees(ast, ctx)?;
     reject_unknown_names(ast, ctx)?;
+    reject_unnamed_record_elements(ast, source)?;
     reject_call_argument_mismatches(ast, ctx, source)?;
     lower_bytes_eq(ast, ctx);
     Ok(())
+}
+
+/// Refuse an element of a list of records read by index. A record is read
+/// through a name — a parameter, a local, a `<sce:foreach>` item — whose
+/// fields the record rule types (SCE_FORGE.md §4.12); `xs[i]` has no name,
+/// so `xs[i].wallTime` would reach every backend as an operand of no type.
+fn reject_unnamed_record_elements(expr: &TypedExpr, source: &str) -> Result<(), Refusal> {
+    if let ExprKind::Index { object, .. } = &expr.kind {
+        if object.ty == InferredType::List(crate::forge::types::ListElem::Record) {
+            return Err(ExprError::UnsupportedConstruct {
+                construct: "an element of a list of records read by index (a record element \
+                            is read through a <sce:foreach> item)"
+                    .to_string(),
+                observed: expr
+                    .span
+                    .clone()
+                    .and_then(|span| source.get(span))
+                    .map(str::to_string),
+            }
+            .at(expr.span.clone()));
+        }
+    }
+    expr.children()
+        .into_iter()
+        .try_for_each(|child| reject_unnamed_record_elements(child, source))
 }
 
 /// Whether a value of type `got` may stand where `slot` is declared.

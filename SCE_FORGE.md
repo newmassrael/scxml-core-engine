@@ -1412,6 +1412,26 @@ The fields are written in the SCHEMA's order whatever order the author gave them
 
 **Executed on every backend**: `algorithm_hlc_compare` (two record parameters) and `algorithm_hlc_tick` (record parameter, record local, field update, record return) run in the numerical conformance harness. A record argument or output is written in the manifest as `{"record": "<event-schema fixture>"}`, and its fields are read from that schema document when the harness renders — never written beside it, so the harness cannot disagree with the struct the generator emits.
 
+#### Lists of records — `list<record:<alias>>`
+
+A list's element may be a record: `type="list&lt;record:Entry&gt;"`. It is the product of the two rules above, and adds none of its own — the element is held to the record rule (fixed-width fields), and the list to the list rule (a read-only parameter view, a `capacity`-bounded buffer returned by name, the same overflow contract, host-only calls).
+
+- **Read** an element through a name: the item of `<sce:foreach item="e" in="xs">`, typed as the record, whose fields read as `e.<field>`. `xs[i]` on a list of records is refused (`expression/unsupported-construct`) — a record is read through a name, as a record return is written as one, and `xs[i].field` would otherwise reach every backend as an operand of no type.
+- **Append** a record parameter, local or foreach item of the element's schema, by name: `<sce:append target="out" expr="e"/>`. Anything else is refused (`expression/unsupported-construct`).
+- A **foreach item** — over any list, scalar or record — is read-only, as the parameter it is an element of is (`algorithm/lvalue-unsupported`).
+- A `sce-static` **statechart variable** may not be a list of records (the machine lowers neither the whole-record append nor its snapshot).
+
+| Backend | Parameter | Buffer / return |
+|---------|-----------|-----------------|
+| Rust | `&[R]` | `SceOwnedList<R, N>` — the payload is `Copy`, which a plain-data schema derives |
+| C11 | `<Pascal>Payload_view_t` `{const R *data; size_t len}`, declared beside the algorithm under a guard (the record's header serves every kind, and a view is an algorithm's shape) | `<symbol>_result_t { R items[N]; … }` |
+| C++ | `std::span<const R>` | `std::vector<R>` |
+| Go | `[]R` | `[]R` |
+| Python | `list[R]` | `list[R]` |
+| Kotlin | `List<R>` | `ArrayList<R>(N)`, returned as `List<R>` — `SceListBuf` holds 64-bit slots, not objects |
+
+**Executed on every backend**: the observed-remove set of `sce:std/merge` (`orset_union`, `orset_live`, `orset_observed`, `orset_contains`) runs in the numerical conformance harness — list-of-record parameters, nested foreach items, record appends and list-of-record returns. The manifest writes the element as `{"list_of": {"record": "<event-schema fixture>"}}`, its fields derived from the schema as a record's are.
+
 ---
 
 ## 5. Kind Composition

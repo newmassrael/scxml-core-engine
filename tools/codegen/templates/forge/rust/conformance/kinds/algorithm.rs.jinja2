@@ -18,7 +18,8 @@
    A record argument or output (SCE_FORGE.md §4.12) is the event-schema's
    payload struct, built from and compared against a JSON object keyed by
    the schema's field ids; `fields` carries each field's Rust identifier,
-   derived from the schema document when the harness renders.
+   derived from the schema document when the harness renders. A list of
+   records is a JSON array of such objects.
 
    A `may-fail` algorithm (SCE_FORGE.md §3.4.1) returns `Result<T,
    AlgorithmError>`. A case that names a failure (`"fails": "overflow"`)
@@ -38,6 +39,18 @@
             {{ fld.ident }}: {{ ("case[\"args\"][" ~ i ~ "][\"" ~ fld.name ~ "\"]") | rust_unmarshal(fld.type) }},
 {% endfor %}
         };
+{% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
+{% set r = arg_ty.list_of %}
+        let arg{{ i }}: Vec<fixtures::{{ r.record }}::{{ r.record | to_pascal_case }}Payload> = case["args"][{{ i }}]
+            .as_array()
+            .expect("a list argument is an array")
+            .iter()
+            .map(|x| fixtures::{{ r.record }}::{{ r.record | to_pascal_case }}Payload {
+{% for fld in r.fields %}
+                {{ fld.ident }}: {{ ("x[\"" ~ fld.name ~ "\"]") | rust_unmarshal(fld.type) }},
+{% endfor %}
+            })
+            .collect();
 {% elif arg_ty.list_of is defined %}
         let arg{{ i }}: Vec<{{ arg_ty.list_of | rust_type }}> = case["args"][{{ i }}]
             .as_array()
@@ -69,6 +82,23 @@
             "{{ f.name }}.{{ fld.name }}"
         );
 {% endfor %}
+{% elif f.output.list_of is defined and f.output.list_of.record is defined %}
+        let expected = case["expected"].as_array().expect("expected must be array");
+{% if not f.may_fail %}
+        let actual = {{ call }}
+            .expect("{{ f.name }}: a case within the declared capacity");
+{% endif %}
+        let actual = actual.as_slice();
+        assert_eq!(actual.len(), expected.len(), "{{ f.name }} length");
+        for (a, e) in actual.iter().zip(expected.iter()) {
+{% for fld in f.output.list_of.fields %}
+            assert_eq!(
+                a.{{ fld.ident }},
+                {{ ("e[\"" ~ fld.name ~ "\"]") | rust_unmarshal(fld.type) }},
+                "{{ f.name }}.{{ fld.name }}"
+            );
+{% endfor %}
+        }
 {% elif f.output.list_of is defined %}
         let expected: Vec<{{ f.output.list_of | rust_type }}> = case["expected"]
             .as_array()

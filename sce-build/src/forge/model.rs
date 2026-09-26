@@ -3328,8 +3328,8 @@ pub struct InlineKind {
 
 // ── Algorithm kind (RFC §synth-5-A) ──────────────────────────────────
 
-/// The type of an algorithm parameter, local or return: a scalar, or a
-/// bounded list of scalars.
+/// The type of an algorithm parameter, local or return: a scalar, a record,
+/// or a bounded list of either.
 ///
 /// ⚠ A list is deliberately NOT a [`SceType`] variant. `SceType` is the type
 /// of a codec field, an event-schema field, a validator input — surfaces
@@ -3348,13 +3348,14 @@ pub struct InlineKind {
 pub enum AlgorithmValueType {
     /// A scalar — any [`SceType`], including `bytes`.
     Scalar(SceType),
-    /// `list<T>` — a runtime-length sequence of scalar `T`, bounded by the
+    /// `list<T>` — a runtime-length sequence of `T`, bounded by the
     /// `capacity` of the local that builds it or the `returns-max-size` of
     /// the signature that returns it (SCE_FORGE.md §4.12, which states the
-    /// same bound for a `bytes` buffer).
+    /// same bound for a `bytes` buffer). `T` is a fixed-width scalar or a
+    /// record whose fields are ([`ListElemType`]).
     List {
         #[serde(rename = "list")]
-        elem: SceType,
+        elem: ListElemType,
     },
     /// `record:<alias>` — a value of the struct an imported
     /// `sce:kind="event-schema"` document declares, named by that import's
@@ -3377,7 +3378,7 @@ impl AlgorithmValueType {
     }
 
     /// The element type of a list, or `None` for a scalar or a record.
-    pub fn list_elem(&self) -> Option<&SceType> {
+    pub fn list_elem(&self) -> Option<&ListElemType> {
         match self {
             Self::List { elem } => Some(elem),
             Self::Scalar(_) | Self::Record { .. } => None,
@@ -3429,9 +3430,7 @@ impl AlgorithmValueType {
             .strip_prefix(Self::LIST_PREFIX)
             .and_then(|t| t.strip_suffix('>'))
         {
-            Some(inner) => SceType::from_attr(inner.trim())
-                .filter(Self::list_elem_admitted)
-                .map(|elem| Self::List { elem }),
+            Some(inner) => ListElemType::from_attr(inner).map(|elem| Self::List { elem }),
             None => SceType::from_attr(s).map(Self::Scalar),
         }
     }
@@ -3460,10 +3459,78 @@ impl AlgorithmValueType {
     }
 }
 
+/// The element of an algorithm `list<T>`: a fixed-width scalar
+/// ([`AlgorithmValueType::list_elem_admitted`]) or a record named by its
+/// event-schema import alias, whose fields are fixed-width by the record
+/// rule itself (SCE_FORGE.md §4.12).
+///
+/// ⚠ One list type with a wider element, not a second list variant. Every
+/// site that asks a list for its element — the renderer, the type context,
+/// the statechart datamodel — must then say what it does with a record
+/// element; a separate variant would let each of them skip it silently.
+///
+/// Serialized untagged, as [`AlgorithmValueType`] is: a scalar element stays
+/// the bare string (`{"list": "int64"}`), and a record one takes the
+/// record type's own shape (`{"list": {"record": "Hlc"}}`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum ListElemType {
+    /// A fixed-width number or `bool`.
+    Scalar(SceType),
+    /// `record:<alias>` — a value of the struct the aliased event-schema
+    /// import declares.
+    Record {
+        #[serde(rename = "record")]
+        alias: String,
+    },
+}
+
+impl ListElemType {
+    /// Read an element spelling — an admitted scalar keyword or
+    /// `record:<alias>`. `None` for anything else.
+    pub fn from_attr(s: &str) -> Option<Self> {
+        let s = s.trim();
+        if let Some(alias) = s.strip_prefix(AlgorithmValueType::RECORD_PREFIX) {
+            let alias = alias.trim();
+            return (!alias.is_empty()).then(|| Self::Record {
+                alias: alias.to_string(),
+            });
+        }
+        SceType::from_attr(s)
+            .filter(AlgorithmValueType::list_elem_admitted)
+            .map(Self::Scalar)
+    }
+
+    /// The element spelling inside `list<…>`.
+    pub fn as_attr(&self) -> String {
+        match self {
+            Self::Scalar(t) => t.as_attr().to_string(),
+            Self::Record { alias } => format!("{}{alias}", AlgorithmValueType::RECORD_PREFIX),
+        }
+    }
+
+    /// The scalar element, or `None` for a record one.
+    pub fn scalar(&self) -> Option<&SceType> {
+        match self {
+            Self::Scalar(t) => Some(t),
+            Self::Record { .. } => None,
+        }
+    }
+
+    /// The import alias of a record element, or `None` for a scalar one.
+    pub fn record_alias(&self) -> Option<&str> {
+        match self {
+            Self::Record { alias } => Some(alias),
+            Self::Scalar(_) => None,
+        }
+    }
+}
+
 /// One parameter of an algorithm signature. Parameters are by-value
-/// scalars, by-reference slices for `bytes`, or by-value records
-/// (`record:<alias>`, SCE_FORGE.md §4.12); a `list<T>` parameter is refused
-/// in v1. Read-only in v1 (assigning to a parameter raises
+/// scalars, by-reference slices for `bytes`, by-value records
+/// (`record:<alias>`, SCE_FORGE.md §4.12), or read-only views of a
+/// `list<T>`. Read-only in v1 (assigning to a parameter raises
 /// `algorithm/lvalue-unsupported`).
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]

@@ -115,17 +115,19 @@
   </xs:simpleType>
 
   <!-- SCE Forge Section 4.12: an algorithm parameter, return or local — a
-       scalar `sceType`, or `list<T>`, a bounded buffer. Authored as
-       `list&lt;int64&gt;` in XML. The pattern is lexical, as
-       `sceTypeOrEnumRef`'s is: it admits `list<>` over any `sceType`, and the
-       parser (`read_algorithm_value_type`, the signature rules) refuses what
-       v1 does not take — a `string`/`bytes` element, a list parameter — with
-       a diagnostic that names the rule rather than an enumeration. -->
+       scalar `sceType`, a record, or `list<T>`, a bounded buffer of scalars
+       or of records. Authored as `list&lt;int64&gt;` /
+       `list&lt;record:Hlc&gt;` in XML. The pattern is lexical, as
+       `sceTypeOrEnumRef`'s is: it admits `list<>` over any `sceType` or
+       record, and the parser (`read_algorithm_value_type`) refuses what v1
+       does not take — a `string`/`bytes` element, a record alias no
+       event-schema import declares — with a diagnostic that names the rule
+       rather than an enumeration. -->
   <xs:simpleType name="algorithmValueType">
     <xs:union memberTypes="sce:sceType">
       <xs:simpleType>
         <xs:restriction base="xs:string">
-          <xs:pattern value="list&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes)\s*&gt;"/>
+          <xs:pattern value="list&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|record:[A-Za-z_][A-Za-z0-9_]*)\s*&gt;"/>
         </xs:restriction>
       </xs:simpleType>
       <!-- `record:<alias>` — the struct an imported event-schema declares.

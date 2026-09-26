@@ -662,10 +662,21 @@
       ],
       "properties": {
         "list_of": {
-          "$ref": "#/definitions/CanonicalType"
+          "$ref": "#/definitions/ListElemArg"
         }
       },
       "additionalProperties": false
+    },
+    "ListElemArg": {
+      "description": "The element of a list argument or output: a canonical scalar (`\"i64\"`) or a record typed by an event-schema fixture (`{\"record\": \"<fixture>\"}`), whose elements the oracle writes as JSON objects keyed by the schema's field ids. Untagged, as [`AlgorithmArg`] is, so a scalar list keeps its bare-string spelling.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/CanonicalType"
+        },
+        {
+          "$ref": "#/definitions/RecordRef"
+        }
+      ]
     },
     "ListOutput": {
       "description": "List output descriptor for an algorithm that returns `list<T>` (SCE_FORGE.md §4.12): `expected` is a JSON array, compared element by element and by length. `list_of` names the element's canonical type; `compare` applies to each element.\n\n⚠ Cases stay within the declared capacity. Past it the backends differ by contract (Rust/C11 fail, the heap backends grow), so an overflowing case would measure that difference rather than the algorithm.",
@@ -679,7 +690,7 @@
           "$ref": "#/definitions/CompareMode"
         },
         "list_of": {
-          "$ref": "#/definitions/CanonicalType"
+          "$ref": "#/definitions/ListElemArg"
         }
       },
       "additionalProperties": false

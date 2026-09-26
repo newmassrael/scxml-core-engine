@@ -37,6 +37,18 @@
             arg{{ loop.index0 }}_buf.push_back(static_cast<std::uint8_t>(b.get<unsigned int>()));
         }
         std::span<const std::uint8_t> arg{{ loop.index0 }}{ arg{{ loop.index0 }}_buf };
+{% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
+{# A list of records: each JSON object filled into a payload struct, held
+   in a vector the parameter's `std::span` views. #}
+{% set r = arg_ty.list_of %}
+        std::vector<SCE::Generated::{{ r.record | to_pascal_case }}::{{ r.record | to_pascal_case }}Payload> arg{{ ai }};
+        for (const auto &x : c["args"][{{ ai }}]) {
+            SCE::Generated::{{ r.record | to_pascal_case }}::{{ r.record | to_pascal_case }}Payload e{};
+{% for fld in r.fields %}
+            e.{{ fld.ident }} = x["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>();
+{% endfor %}
+            arg{{ ai }}.push_back(e);
+        }
 {% elif arg_ty.list_of is defined %}
 {# A `list<T>` argument: the elements held in a vector, which the
    parameter's `std::span<const T>` views. #}
@@ -72,6 +84,25 @@
               std::to_string(actual.{{ fld.ident }}).c_str(),
               std::to_string(c["expected"]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>()).c_str());
 {% endfor %}
+{% elif f.output.list_of is defined and f.output.list_of.record is defined %}
+{# A list of records: compared by length, then field by field. #}
+        const auto &expected = c["expected"];
+        auto actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %};
+        CHECK(actual.size() == expected.size(),
+              "{{ f.name }} case %d: length actual=%zu expected=%zu",
+              i,
+              actual.size(),
+              expected.size());
+        for (std::size_t k = 0; k < expected.size() && k < actual.size(); ++k) {
+{% for fld in f.output.list_of.fields %}
+            CHECK(actual[k].{{ fld.ident }} == expected[k]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>(),
+                  "{{ f.name }} case %d [%zu]: {{ fld.name }} actual=%s expected=%s",
+                  i,
+                  k,
+                  std::to_string(actual[k].{{ fld.ident }}).c_str(),
+                  std::to_string(expected[k]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>()).c_str());
+{% endfor %}
+        }
 {% elif f.output.list_of is defined %}
 {# A `list<T>` return (SCE_FORGE.md §4.12) is a `std::vector<T>`: compared
    by length, then element by element. `std::to_string` prints any element
