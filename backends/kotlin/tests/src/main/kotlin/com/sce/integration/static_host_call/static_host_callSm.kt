@@ -108,6 +108,47 @@ class StaticHostCallStateMachine(
         _snapshot.value = Snapshot(activeConfiguration, truncated)
     }
 
+    // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
+
+    /**
+     * The shape a saved state of this document is bound to: a state saved
+     * from a document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not.
+     */
+    val savedShape: String = "45f854bb5b58951e887962f98dd45032839c434e699a4b89615076899b615400"
+
+    /**
+     * This machine's whole state at the macrostep boundary it stands at —
+     * every variable, the machine's own included, and where it stands — as
+     * the `sce-saved-state` document every backend reads ([SavedState.toJson]).
+     *
+     * @throws StateRefusal for a machine that is not running, or whose last
+     *   macrostep stopped at the microstep ceiling.
+     */
+    fun save(): SavedState = savedState(
+        savedShape,
+        linkedMapOf(
+            "attempts" to SavedValues.of(attempts),
+        ),
+    )
+
+    /**
+     * Stand this machine where [saved] left one, in place of [initialize]: no
+     * `<onentry>` runs and no `<data>` is evaluated, since the saved run
+     * already did both. Every value is read before any is written, so a
+     * refused restore leaves the machine as it was.
+     *
+     * @throws StateRefusal for a machine that has already started, a state
+     *   saved from a document of another shape, a configuration that is not
+     *   one of this document, or a value its variable's type cannot hold.
+     */
+    fun restore(saved: SavedState) {
+        beginRestore(saved, savedShape)
+        val saved1 = SavedValues.uint32(saved.variable("attempts"), "attempts")
+        attempts = saved1
+        enterSaved(saved)
+    }
+
     override val initialState: StaticHostCallState = StaticHostCallState.Idle
 
     // W3C SCXML 6.2: which entry point a host must drive this machine with in

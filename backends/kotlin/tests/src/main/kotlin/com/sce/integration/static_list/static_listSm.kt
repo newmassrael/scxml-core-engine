@@ -102,6 +102,53 @@ class StaticListStateMachine(
         _snapshot.value = Snapshot(activeConfiguration, currentData(), truncated)
     }
 
+    // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
+
+    /**
+     * The shape a saved state of this document is bound to: a state saved
+     * from a document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not.
+     */
+    val savedShape: String = "ae704abc4c29a63e76bfe2707c4d0e0ce4717e731dba9b74c000c278e6cca9c2"
+
+    /**
+     * This machine's whole state at the macrostep boundary it stands at —
+     * every variable, the machine's own included, and where it stands — as
+     * the `sce-saved-state` document every backend reads ([SavedState.toJson]).
+     *
+     * @throws StateRefusal for a machine that is not running, or whose last
+     *   macrostep stopped at the microstep ceiling.
+     */
+    fun save(): SavedState = savedState(
+        savedShape,
+        linkedMapOf(
+            "picked" to SavedValues.list(picked) { SavedValues.of(it) },
+            "refusals" to SavedValues.of(refusals),
+            "count" to SavedValues.of(count),
+        ),
+    )
+
+    /**
+     * Stand this machine where [saved] left one, in place of [initialize]: no
+     * `<onentry>` runs and no `<data>` is evaluated, since the saved run
+     * already did both. Every value is read before any is written, so a
+     * refused restore leaves the machine as it was.
+     *
+     * @throws StateRefusal for a machine that has already started, a state
+     *   saved from a document of another shape, a configuration that is not
+     *   one of this document, or a value its variable's type cannot hold.
+     */
+    fun restore(saved: SavedState) {
+        beginRestore(saved, savedShape)
+        val saved1 = SavedValues.list(saved.variable("picked"), "picked", 3) { e, w -> SavedValues.uint8(e, w) }
+        val saved2 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        val saved3 = SavedValues.uint32(saved.variable("count"), "count")
+        picked = saved1
+        refusals = saved2
+        count = saved3
+        enterSaved(saved)
+    }
+
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the
     // native transition guards. `null` between events / for untyped events.

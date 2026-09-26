@@ -151,6 +151,89 @@ class {{ machine_name }}StateMachine(
         _snapshot.value = Snapshot(activeConfiguration{% if static_published %}, currentData(){% endif %}, truncated)
     }
 {% endif %}
+{% if static_saved_shape %}
+
+    // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
+{% macro saved_write(kind, type, name) -%}
+{%- if kind == "record" -%}
+{{ name }}.toSaved()
+{%- elif kind == "list" -%}
+SavedValues.list({{ name }}) { SavedValues.of(it) }
+{%- else -%}
+SavedValues.of({{ name }})
+{%- endif -%}
+{%- endmacro %}
+{% macro saved_read(kind, type, value, what, capacity) -%}
+{%- if kind == "record" -%}
+read{{ type }}({{ value }}, {{ what }})
+{%- elif kind == "list" -%}
+SavedValues.list({{ value }}, {{ what }}, {{ capacity }}) { e, w -> SavedValues.{{ type }}(e, w) }
+{%- elif type == "bytes" -%}
+SavedValues.bytes({{ value }}, {{ what }}, {{ capacity if capacity is not none else "Int.MAX_VALUE" }})
+{%- else -%}
+SavedValues.{{ type }}({{ value }}, {{ what }})
+{%- endif -%}
+{%- endmacro %}
+{% for record in static_records %}
+
+    private fun {{ record.ty }}.toSaved(): Any = linkedMapOf(
+{% for field in record.fields %}
+        "{{ field.id }}" to {{ saved_write("scalar", field.saved_type, field.name) }},
+{% endfor %}
+    )
+
+    private fun read{{ record.ty }}(value: Any?, what: String): {{ record.ty }} = {{ record.ty }}(
+{% for field in record.fields %}
+        {{ field.name }} = {{ saved_read("scalar", field.saved_type, 'SavedValues.field(value, what, "' ~ field.id ~ '")', '"$what.' ~ field.id ~ '"', none) }},
+{% endfor %}
+    )
+{% endfor %}
+
+    /**
+     * The shape a saved state of this document is bound to: a state saved
+     * from a document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not.
+     */
+    val savedShape: String = "{{ static_saved_shape }}"
+
+    /**
+     * This machine's whole state at the macrostep boundary it stands at —
+     * every variable, the machine's own included, and where it stands — as
+     * the `sce-saved-state` document every backend reads ([SavedState.toJson]).
+     *
+     * @throws StateRefusal for a machine that is not running, or whose last
+     *   macrostep stopped at the microstep ceiling.
+     */
+    fun save(): SavedState = savedState(
+        savedShape,
+        linkedMapOf(
+{% for field in static_fields %}
+            "{{ field.id }}" to {{ saved_write(field.saved_kind, field.saved_type, field.name) }},
+{% endfor %}
+        ),
+    )
+
+    /**
+     * Stand this machine where [saved] left one, in place of [initialize]: no
+     * `<onentry>` runs and no `<data>` is evaluated, since the saved run
+     * already did both. Every value is read before any is written, so a
+     * refused restore leaves the machine as it was.
+     *
+     * @throws StateRefusal for a machine that has already started, a state
+     *   saved from a document of another shape, a configuration that is not
+     *   one of this document, or a value its variable's type cannot hold.
+     */
+    fun restore(saved: SavedState) {
+        beginRestore(saved, savedShape)
+{% for field in static_fields %}
+        val saved{{ loop.index }} = {{ saved_read(field.saved_kind, field.saved_type, 'saved.variable("' ~ field.id ~ '")', '"' ~ field.id ~ '"', field.capacity) }}
+{% endfor %}
+{% for field in static_fields %}
+        {{ field.name }} = saved{{ loop.index }}
+{% endfor %}
+        enterSaved(saved)
+    }
+{% endif %}
 {# W3C SCXML 5.3: the datamodel has ONE home, and it is not this class.
 
    A `<data>` that carries an initialiser is owned by the script engine for the

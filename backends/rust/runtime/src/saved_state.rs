@@ -219,16 +219,32 @@ macro_rules! saved_wide_int {
 }
 saved_wide_int!(u64, i64);
 
+// JSON has no spelling for a value that is not finite, so it is written as
+// the text every backend reads it back from.
 macro_rules! saved_real {
     ($($t:ty),*) => {$(
         impl SavedValue for $t {
             fn to_saved(&self) -> Value {
-                Value::Number(format!("{:?}", self))
+                if self.is_nan() {
+                    Value::Text("NaN".to_string())
+                } else if self.is_infinite() {
+                    Value::Text(if *self > 0.0 { "Infinity" } else { "-Infinity" }.to_string())
+                } else {
+                    Value::Number(format!("{:?}", self))
+                }
             }
             fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal> {
-                let n = number(value, what)?;
-                n.parse()
-                    .map_err(|_| StateRefusal::new(format!("'{what}' ({n}) is not a number")))
+                match value {
+                    Value::Text(t) if t == "NaN" => Ok(<$t>::NAN),
+                    Value::Text(t) if t == "Infinity" => Ok(<$t>::INFINITY),
+                    Value::Text(t) if t == "-Infinity" => Ok(<$t>::NEG_INFINITY),
+                    _ => {
+                        let n = number(value, what)?;
+                        n.parse().map_err(|_| {
+                            StateRefusal::new(format!("'{what}' ({n}) is not a number"))
+                        })
+                    }
+                }
             }
         }
     )*};
@@ -307,7 +323,8 @@ pub fn bounded<T: SavedValue>(
 }
 
 /// Save `engine`, a machine of the document whose shape is `shape`, with the
-/// `variables` its generated code read from its fields.
+/// `variables` its generated code read from its fields. The configuration is
+/// written in document order.
 ///
 /// Refused for a machine that is not running — never started, or ended at a
 /// top-level `<final>`, where there is nothing left to resume — and for one
@@ -329,10 +346,13 @@ pub fn save<P: StatePolicy>(
              not stand at a settled configuration",
         ));
     }
+    // Document order, so the same machine saves the same text on every
+    // backend.
+    let mut active = engine.get_active_states();
+    active.sort_by_key(|s| P::get_document_order(*s));
     Ok(SavedState {
         shape: shape.to_string(),
-        configuration: engine
-            .get_active_states()
+        configuration: active
             .iter()
             .map(|s| P::get_state_name(*s).to_string())
             .collect(),
@@ -460,6 +480,17 @@ mod tests {
         assert!(u8::from_saved(&Value::Number("256".to_string()), "level").is_err());
         assert!(u32::from_saved(&Value::Text("5".to_string()), "count").is_err());
         assert!(u64::from_saved(&Value::Number("5".to_string()), "big").is_err());
+    }
+
+    #[test]
+    fn a_value_that_is_not_finite_is_written_as_a_text_json_can_hold() {
+        for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let saved = x.to_saved();
+            assert!(matches!(saved, Value::Text(_)), "{saved:?}");
+            let back = f64::from_saved(&saved, "x").expect("reads back");
+            assert!(back == x || (back.is_nan() && x.is_nan()), "{back}");
+        }
+        assert_eq!(1.5f32.to_saved(), Value::Number("1.5".to_string()));
     }
 
     #[test]

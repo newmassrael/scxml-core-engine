@@ -29,7 +29,12 @@ import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_record.StaticRecordDayRecord
 import com.sce.integration.static_record.StaticRecordEvent
 import com.sce.integration.static_record.StaticRecordStateMachine
+import com.sce.runtime.SavedState
+import com.sce.runtime.StateRefusal
+import java.io.File
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
@@ -449,6 +454,182 @@ class StaticDatamodelTest {
             )
         } finally {
             sm.cleanup()
+        }
+    }
+
+    // ── saving a machine and restoring it into a new process (E17) ──────────
+    //
+    // Each saved state goes through its JSON text and back before it is
+    // restored, as one that crossed a process boundary would.
+
+    private fun throughJson(saved: SavedState): SavedState = SavedState.fromJson(saved.toJson())
+
+    /**
+     * The saved state the shared fixture holds — the text every backend must
+     * save after the same run and must restore from, which is what makes a
+     * state saved by one backend a state another can read.
+     */
+    private fun sharedFixture(machine: String): String {
+        // Found by walking up rather than by a fixed depth, because Gradle's
+        // working directory is the project's and that is a build detail.
+        val root = generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
+            .firstOrNull { File(it, "sce-build").isDirectory }
+            ?: error("no ancestor of ${System.getProperty("user.dir")} holds sce-build/")
+        return File(root, "sce-build/tests/fixtures/static_datamodel/saved/$machine.json").readText().trim()
+    }
+
+    @Test
+    fun aRestoredMachineCarriesOnWhereTheSavedOneStood() {
+        // Seven ticks: count 7, and `ready` set at 5 and not yet cleared.
+        // `step` is the machine's own — saved though no snapshot publishes it.
+        val sm = StaticCounterStateMachine()
+        sm.initialize()
+        val restored = StaticCounterStateMachine()
+        try {
+            ticks(sm, 7)
+            restored.restore(throughJson(sm.save()))
+            assertEquals(sm.snapshot.value, restored.snapshot.value)
+
+            ticks(sm, 2)
+            ticks(restored, 2)
+            assertEquals(
+                sm.snapshot.value,
+                restored.snapshot.value,
+                "both run on alike: count 9, and the <elseif> cleared ready"
+            )
+        } finally {
+            sm.cleanup()
+            restored.cleanup()
+        }
+    }
+
+    @Test
+    fun aRestoreRunsNoOnentry() {
+        // `idle`'s <onentry> calls the host. The saved run already made that
+        // call; the restored machine must not make it again.
+        val sm = StaticHostCallStateMachine(RecordingStaticHostCallActions())
+        sm.initialize()
+        val host = RecordingStaticHostCallActions()
+        val restored = StaticHostCallStateMachine(host)
+        try {
+            sm.send(StaticHostCallEvent.Retry)
+            sm.tick()
+            restored.restore(throughJson(sm.save()))
+            assertEquals(emptyList<Any>(), host.calls, "restoring entered nothing, so it called nothing")
+            restored.send(StaticHostCallEvent.Retry)
+            restored.tick()
+            assertEquals(
+                listOf(RecordingStaticHostCallActions.Call.ShowAttempts(2u, false)),
+                host.calls,
+                "the next entry sees the attempts the saved run had made"
+            )
+        } finally {
+            sm.cleanup()
+            restored.cleanup()
+        }
+    }
+
+    @Test
+    fun aRecordAndAListSaveTheTextEveryBackendSaves() {
+        // The same runs the Rust suite makes, saving the shared fixture's text
+        // byte for byte: keys are the document's ids, a record is an object of
+        // its schema's fields, a list an array.
+        val record = StaticRecordStateMachine()
+        record.initialize()
+        val list = StaticListStateMachine()
+        list.initialize()
+        try {
+            record.raiseDayPicked(2027.toUShort(), 2.toUByte(), 27.toUByte())
+            record.tick()
+            assertEquals(sharedFixture("static_record"), record.save().toJson())
+
+            pick(list, 4)
+            pick(list, 2)
+            assertEquals(sharedFixture("static_list"), list.save().toJson())
+        } finally {
+            record.cleanup()
+            list.cleanup()
+        }
+    }
+
+    @Test
+    fun aStateAnotherBackendSavedIsRestored() {
+        val record = StaticRecordStateMachine()
+        val list = StaticListStateMachine()
+        try {
+            record.restore(SavedState.fromJson(sharedFixture("static_record")))
+            assertEquals(day(2027, 2, 27), record.shown)
+
+            list.restore(SavedState.fromJson(sharedFixture("static_list")))
+            assertEquals(listOf(4.toUByte(), 2.toUByte()), list.picked)
+            assertEquals(2u, list.count)
+            pick(list, 6)
+            assertEquals(3u, list.count, "the restored machine runs on from the saved values")
+        } finally {
+            record.cleanup()
+            list.cleanup()
+        }
+    }
+
+    @Test
+    fun aStateSavedFromAnotherDocumentIsRefused() {
+        val sm = StaticCounterStateMachine()
+        try {
+            val refusal = assertThrows(StateRefusal::class.java) {
+                sm.restore(SavedState.fromJson(sharedFixture("static_list")))
+            }
+            assertTrue(refusal.message!!.contains("shape"), refusal.message)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aListLongerThanItsBoundIsRefusedAndTheMachineIsLeftAsItWas() {
+        // A machine never holds more than sce:capacity="3"; a saved state that
+        // claims it did is not one this machine wrote. `refusals` reads before
+        // `picked` fails, and still nothing is written.
+        val text = sharedFixture("static_list").replace("\"picked\":[4,2]", "\"picked\":[1,2,3,4]")
+        val sm = StaticListStateMachine()
+        try {
+            val refusal = assertThrows(StateRefusal::class.java) { sm.restore(SavedState.fromJson(text)) }
+            assertTrue(refusal.message!!.contains("bounded by"), refusal.message)
+            assertEquals(emptyList<UByte>(), sm.picked)
+            assertEquals(0u, sm.count)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aConfigurationThatIsNotOneOfTheDocumentIsRefused() {
+        val text = sharedFixture("static_list").replace("[\"collecting\"]", "[\"nowhere\"]")
+        val sm = StaticListStateMachine()
+        try {
+            val refusal = assertThrows(StateRefusal::class.java) { sm.restore(SavedState.fromJson(text)) }
+            assertTrue(refusal.message!!.contains("nowhere"), refusal.message)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aMachineThatIsNotRunningIsNotSavedAndAStartedOneIsNotRestored() {
+        val fresh = StaticCounterStateMachine()
+        val list = StaticListStateMachine()
+        list.initialize()
+        try {
+            assertThrows(StateRefusal::class.java) { fresh.save() }
+            assertThrows(StateRefusal::class.java) {
+                list.restore(SavedState.fromJson(sharedFixture("static_list")))
+            }
+            listOf(1, 2, 3).forEach { pick(list, it) }
+            list.send(StaticListEvent.Full)
+            list.tick()
+            assertThrows(StateRefusal::class.java, { list.save() }, "ended at a top-level <final>")
+        } finally {
+            fresh.cleanup()
+            list.cleanup()
         }
     }
 }

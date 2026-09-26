@@ -99,6 +99,62 @@ class StaticRecordStateMachine(
         _snapshot.value = Snapshot(activeConfiguration, currentData(), truncated)
     }
 
+    // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
+
+    private fun StaticRecordDayRecord.toSaved(): Any = linkedMapOf(
+        "year" to SavedValues.of(year),
+        "month" to SavedValues.of(month),
+        "dayOfMonth" to SavedValues.of(dayOfMonth),
+    )
+
+    private fun readStaticRecordDayRecord(value: Any?, what: String): StaticRecordDayRecord = StaticRecordDayRecord(
+        year = SavedValues.uint16(SavedValues.field(value, what, "year"), "$what.year"),
+        month = SavedValues.uint8(SavedValues.field(value, what, "month"), "$what.month"),
+        dayOfMonth = SavedValues.uint8(SavedValues.field(value, what, "dayOfMonth"), "$what.dayOfMonth"),
+    )
+
+    /**
+     * The shape a saved state of this document is bound to: a state saved
+     * from a document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not.
+     */
+    val savedShape: String = "23e94bbee0f8862f1ad51a0f614fe3df492096ccaf6676d9eb8cd371639f9fba"
+
+    /**
+     * This machine's whole state at the macrostep boundary it stands at —
+     * every variable, the machine's own included, and where it stands — as
+     * the `sce-saved-state` document every backend reads ([SavedState.toJson]).
+     *
+     * @throws StateRefusal for a machine that is not running, or whose last
+     *   macrostep stopped at the microstep ceiling.
+     */
+    fun save(): SavedState = savedState(
+        savedShape,
+        linkedMapOf(
+            "shown" to shown.toSaved(),
+            "refusals" to SavedValues.of(refusals),
+        ),
+    )
+
+    /**
+     * Stand this machine where [saved] left one, in place of [initialize]: no
+     * `<onentry>` runs and no `<data>` is evaluated, since the saved run
+     * already did both. Every value is read before any is written, so a
+     * refused restore leaves the machine as it was.
+     *
+     * @throws StateRefusal for a machine that has already started, a state
+     *   saved from a document of another shape, a configuration that is not
+     *   one of this document, or a value its variable's type cannot hold.
+     */
+    fun restore(saved: SavedState) {
+        beginRestore(saved, savedShape)
+        val saved1 = readStaticRecordDayRecord(saved.variable("shown"), "shown")
+        val saved2 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        shown = saved1
+        refusals = saved2
+        enterSaved(saved)
+    }
+
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the
     // native transition guards. `null` between events / for untyped events.

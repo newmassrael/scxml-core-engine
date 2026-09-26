@@ -545,19 +545,52 @@ fn a_record_and_a_list_are_saved_whole() {
     assert_eq!(restored.snapshot(), engine.snapshot());
 }
 
+/// The saved states the shared fixtures hold — the text every backend must
+/// save after the same run and must restore from, which is what makes a state
+/// saved by one backend a state another can read.
+const SHARED_RECORD: &str =
+    include_str!("../../../../sce-build/tests/fixtures/static_datamodel/saved/static_record.json");
+const SHARED_LIST: &str =
+    include_str!("../../../../sce-build/tests/fixtures/static_datamodel/saved/static_list.json");
+
 #[test]
-fn a_saved_state_names_each_variable_by_its_document_id() {
-    // The JSON is the cross-backend format: keys are the document's ids, not
-    // any backend's field names, and a record is an object of its schema's
-    // fields.
+fn a_record_and_a_list_save_the_text_every_backend_saves() {
+    // The same runs the Kotlin suite makes, saving the shared fixture's text
+    // byte for byte.
     let mut engine = record();
-    pick_day(&mut engine, 2027, 1, 3);
-    let json = engine.save().expect("saves").to_json();
-    assert!(
-        json.contains(r#""shown":{"year":2027,"month":1,"dayOfMonth":3}"#),
-        "{json}"
+    pick_day(&mut engine, 2027, 2, 27);
+    assert_eq!(
+        engine.save().expect("saves").to_json(),
+        SHARED_RECORD.trim()
     );
-    assert!(json.contains(r#""configuration":["showing"]"#), "{json}");
+
+    let mut engine = list();
+    pick(&mut engine, 4);
+    pick(&mut engine, 2);
+    assert_eq!(engine.save().expect("saves").to_json(), SHARED_LIST.trim());
+}
+
+#[test]
+fn a_state_another_backend_saved_is_restored() {
+    let restored = Engine::<StaticRecordPolicy>::restore(
+        StaticRecordPolicy::new(),
+        &SavedState::from_json(SHARED_RECORD).expect("reads"),
+    )
+    .expect("restores");
+    assert_eq!(restored.policy().shown(), day(2027, 2, 27));
+
+    let mut restored = Engine::<StaticListPolicy>::restore(
+        StaticListPolicy::new(),
+        &SavedState::from_json(SHARED_LIST).expect("reads"),
+    )
+    .expect("restores");
+    assert_eq!(restored.policy().picked(), &[4, 2]);
+    pick(&mut restored, 6);
+    assert_eq!(
+        restored.policy().count(),
+        3,
+        "the restored machine runs on from the saved values"
+    );
 }
 
 #[test]

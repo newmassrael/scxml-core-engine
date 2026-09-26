@@ -50,6 +50,13 @@ pub struct StaticField {
     /// The bound of a list or a byte string: the machine never holds more,
     /// so neither may a restored value.
     pub capacity: Option<u32>,
+    /// How a saved state holds the value: `scalar`, `list` or `record`.
+    pub saved_kind: &'static str,
+    /// What [`Self::saved_kind`] is of: a scalar's or a list element's
+    /// `sce:type` spelling (`uint8`, `bool`, `bytes`, …), or a record's
+    /// backend type. A backend without overloading on type reads each value
+    /// with the function this names.
+    pub saved_type: String,
 }
 
 /// What lowering a `sce-static` machine produced beyond the rewritten model.
@@ -96,6 +103,8 @@ pub struct StaticRecordField {
     pub id: String,
     /// The backend identifier ([`StaticTarget::record_field`]).
     pub name: String,
+    /// The field's `sce:type` spelling (see [`StaticField::saved_type`]).
+    pub saved_type: String,
 }
 
 /// How one backend spells what a `sce-static` document says. The walk
@@ -600,6 +609,7 @@ pub fn lower(
                             .map(|f| StaticRecordField {
                                 id: f.id.clone(),
                                 name: target.record_field(&f.id),
+                                saved_type: f.sce_type.as_attr(),
                             })
                             .collect(),
                     });
@@ -630,10 +640,12 @@ pub fn lower(
                     id: var.id.clone(),
                     name,
                     init: target.record_value(&ty, &values),
+                    saved_type: ty.clone(),
                     ty,
                     published,
                     view: None,
                     capacity: None,
+                    saved_kind: "record",
                 });
                 continue;
             }
@@ -652,6 +664,8 @@ pub fn lower(
                     published,
                     view: target.list_view(elem),
                     capacity: var.capacity,
+                    saved_kind: "list",
+                    saved_type: elem.as_attr(),
                 });
                 continue;
             }
@@ -686,6 +700,8 @@ pub fn lower(
                 capacity: matches!(ty, SceType::Bytes)
                     .then_some(var.capacity)
                     .flatten(),
+                saved_kind: "scalar",
+                saved_type: ty.as_attr(),
             });
         }
     }

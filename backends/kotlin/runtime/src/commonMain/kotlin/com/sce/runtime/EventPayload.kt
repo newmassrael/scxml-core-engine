@@ -21,10 +21,8 @@ package com.sce.runtime
  * guard that does not fire. A native lowering that answered differently would
  * make the optimisation observable, which is the one thing it may not be.
  *
- * ⚠ The reader here is hand-written rather than a JSON library's, because this
- * module has no JSON dependency and its writing half ([StateMachineEngine
- * .valueToJson]) is hand-written for the same reason. The two are a pair: what
- * one writes, the other must read back.
+ * The JSON is read through the runtime's one reader ([Json]); what the inject
+ * seam writes goes through its [Json.quote].
  *
  * Cross-language siblings: `sce_runtime.event_payload` (Python),
  * `sce.LiftPayload` (Go), `SCE::EventPayload` (C++).
@@ -57,7 +55,7 @@ object EventPayload {
          */
         private fun number(name: String): String {
             val value = raw(name)
-            if (value !is JsonNumber) {
+            if (value !is Json.Number) {
                 throw Refusal("'$name' is not a number ($value)")
             }
             return value.text
@@ -155,33 +153,30 @@ object EventPayload {
         }
     }
 
-    /** A number kept in the spelling it was written in, so no width is lost. */
-    internal class JsonNumber(val text: String) {
-        override fun toString(): String = text
-    }
-
     /**
      * The fields the event's data names.
      *
      * The JSON read is §scxml-B-2-8-1's second rung, the same one the script
-     * engine takes for the same string.
+     * engine takes for the same string — through the runtime's one reader.
      */
     fun decode(data: String): Fields {
         val trimmed = data.trim()
         if (trimmed.isEmpty()) {
             throw Refusal("the event carries no data")
         }
-        val reader = JsonReader(trimmed)
-        val value = reader.readValue()
-        reader.skipWhitespace()
-        if (!reader.atEnd()) {
+        if (!trimmed.startsWith('{')) {
+            throw Refusal(
+                "the event's data is a bare value, and this event's schema declares named fields")
+        }
+        val value = try {
+            Json.parse(trimmed)
+        } catch (e: Json.Error.Trailing) {
             throw Refusal("the event's data carries more than one JSON value")
+        } catch (e: Json.Error.Malformed) {
+            throw Refusal("the event's data is not JSON (${e.what})")
         }
         @Suppress("UNCHECKED_CAST")
-        val fields = value as? Map<String, Any?>
-            ?: throw Refusal(
-                "the event's data is a bare value, and this event's schema declares named fields")
-        return Fields(fields)
+        return Fields(value as Map<String, Any?>)
     }
 
     /**
@@ -190,7 +185,7 @@ object EventPayload {
      */
     fun encode(fields: Map<String, Any?>): String {
         val parts = fields.entries.joinToString(",") { (key, value) ->
-            "${quote(key)}:${literal(value)}"
+            "${Json.quote(key)}:${literal(value)}"
         }
         return "{$parts}"
     }
@@ -207,178 +202,7 @@ object EventPayload {
         is UByte, is UShort, is UInt, is ULong -> value.toString()
         is Byte, is Short, is Int, is Long -> value.toString()
         is Float, is Double -> value.toString()
-        is ByteArray -> quote(bytesAsText(value))
-        else -> quote(value.toString())
-    }
-
-    private fun quote(text: String): String {
-        val sb = StringBuilder(text.length + 2)
-        sb.append('"')
-        for (c in text) {
-            when (c) {
-                '"' -> sb.append("\\\"")
-                '\\' -> sb.append("\\\\")
-                '\n' -> sb.append("\\n")
-                '\r' -> sb.append("\\r")
-                '\t' -> sb.append("\\t")
-                else ->
-                    if (c.code < 0x20) {
-                        sb.append("\\u").append(c.code.toString(16).padStart(4, '0'))
-                    } else {
-                        sb.append(c)
-                    }
-            }
-        }
-        sb.append('"')
-        return sb.toString()
-    }
-
-    /**
-     * A JSON reader over one payload.
-     *
-     * It reads the whole grammar rather than only an object of scalars: a
-     * payload may carry fields this document's schema does not name, and a
-     * nested one still has to be walked past to reach the fields that follow.
-     */
-    internal class JsonReader(private val text: String) {
-        private var at = 0
-
-        fun atEnd(): Boolean = at >= text.length
-
-        fun skipWhitespace() {
-            while (at < text.length && text[at].isWhitespace()) at++
-        }
-
-        fun readValue(): Any? {
-            skipWhitespace()
-            if (atEnd()) throw Refusal("the event's data ends where a value was expected")
-            return when (val c = text[at]) {
-                '{' -> readObject()
-                '[' -> readArray()
-                '"' -> readString()
-                't' -> readKeyword("true", true)
-                'f' -> readKeyword("false", false)
-                'n' -> readKeyword("null", null)
-                else ->
-                    if (c == '-' || c in '0'..'9') {
-                        readNumber()
-                    } else {
-                        throw Refusal("the event's data is not JSON (unexpected '$c')")
-                    }
-            }
-        }
-
-        private fun readObject(): Map<String, Any?> {
-            at++ // '{'
-            val out = LinkedHashMap<String, Any?>()
-            skipWhitespace()
-            if (!atEnd() && text[at] == '}') {
-                at++
-                return out
-            }
-            while (true) {
-                skipWhitespace()
-                if (atEnd() || text[at] != '"') {
-                    throw Refusal("the event's data is not JSON (a field name was expected)")
-                }
-                val key = readString()
-                skipWhitespace()
-                if (atEnd() || text[at] != ':') {
-                    throw Refusal("the event's data is not JSON (a ':' was expected)")
-                }
-                at++
-                out[key] = readValue()
-                skipWhitespace()
-                if (atEnd()) throw Refusal("the event's data is not JSON (it ends unclosed)")
-                when (text[at]) {
-                    ',' -> at++
-                    '}' -> { at++; return out }
-                    else -> throw Refusal("the event's data is not JSON (a ',' or '}' was expected)")
-                }
-            }
-        }
-
-        private fun readArray(): List<Any?> {
-            at++ // '['
-            val out = ArrayList<Any?>()
-            skipWhitespace()
-            if (!atEnd() && text[at] == ']') {
-                at++
-                return out
-            }
-            while (true) {
-                out.add(readValue())
-                skipWhitespace()
-                if (atEnd()) throw Refusal("the event's data is not JSON (it ends unclosed)")
-                when (text[at]) {
-                    ',' -> at++
-                    ']' -> { at++; return out }
-                    else -> throw Refusal("the event's data is not JSON (a ',' or ']' was expected)")
-                }
-            }
-        }
-
-        private fun readString(): String {
-            at++ // '"'
-            val sb = StringBuilder()
-            while (true) {
-                if (atEnd()) throw Refusal("the event's data is not JSON (a text ends unclosed)")
-                when (val c = text[at++]) {
-                    '"' -> return sb.toString()
-                    '\\' -> {
-                        if (atEnd()) throw Refusal("the event's data is not JSON (an escape ends the text)")
-                        when (val e = text[at++]) {
-                            '"' -> sb.append('"')
-                            '\\' -> sb.append('\\')
-                            '/' -> sb.append('/')
-                            'b' -> sb.append('\b')
-                            'f' -> sb.append('\u000C')
-                            'n' -> sb.append('\n')
-                            'r' -> sb.append('\r')
-                            't' -> sb.append('\t')
-                            'u' -> {
-                                if (at + 4 > text.length) {
-                                    throw Refusal("the event's data is not JSON (a \\u escape is short)")
-                                }
-                                val code = text.substring(at, at + 4).toIntOrNull(16)
-                                    ?: throw Refusal("the event's data is not JSON (a \\u escape is not hex)")
-                                sb.append(code.toChar())
-                                at += 4
-                            }
-                            else -> throw Refusal("the event's data is not JSON (unknown escape '\\$e')")
-                        }
-                    }
-                    else -> sb.append(c)
-                }
-            }
-        }
-
-        private fun readNumber(): JsonNumber {
-            val start = at
-            if (!atEnd() && text[at] == '-') at++
-            while (!atEnd() && text[at] in '0'..'9') at++
-            if (!atEnd() && text[at] == '.') {
-                at++
-                while (!atEnd() && text[at] in '0'..'9') at++
-            }
-            if (!atEnd() && (text[at] == 'e' || text[at] == 'E')) {
-                at++
-                if (!atEnd() && (text[at] == '+' || text[at] == '-')) at++
-                while (!atEnd() && text[at] in '0'..'9') at++
-            }
-            val slice = text.substring(start, at)
-            if (slice.isEmpty() || slice == "-") {
-                throw Refusal("the event's data is not JSON (a number has no digits)")
-            }
-            return JsonNumber(slice)
-        }
-
-        private fun readKeyword(word: String, value: Any?): Any? {
-            if (!text.startsWith(word, at)) {
-                throw Refusal("the event's data is not JSON (expected '$word')")
-            }
-            at += word.length
-            return value
-        }
+        is ByteArray -> Json.quote(bytesAsText(value))
+        else -> Json.quote(value.toString())
     }
 }

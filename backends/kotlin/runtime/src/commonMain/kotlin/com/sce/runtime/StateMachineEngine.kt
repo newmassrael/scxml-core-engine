@@ -1803,14 +1803,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     fun enterAt(configuration: Collection<S>, current: S): ConfigurationRejection {
         // Before anything is touched: a rejection must not half-enter.
-        val verdict = validateConfiguration(
-            configuration.toList(),
-            current,
-            ::parentOf,
-            { !isCompoundState(it) && !isParallelState(it) },
-            ::isParallelState,
-            ::childStatesOf,
-        )
+        val verdict = judgeConfiguration(configuration, current)
         if (verdict != ConfigurationRejection.NONE) {
             return verdict
         }
@@ -1840,6 +1833,90 @@ abstract class StateMachineEngine<S : State, E : Event>(
         isInFinalState = endedHere
 
         return ConfigurationRejection.NONE
+    }
+
+    /** Whether [configuration] is one of this document, with [current] as its current state. */
+    private fun judgeConfiguration(configuration: Collection<S>, current: S): ConfigurationRejection =
+        validateConfiguration(
+            configuration.toList(),
+            current,
+            ::parentOf,
+            { !isCompoundState(it) && !isParallelState(it) },
+            ::isParallelState,
+            ::childStatesOf,
+        )
+
+    // ── SCE Accepted Subset §2.15: saving a sce-static machine, restoring it ──
+    //
+    // The steps every generated `save`/`restore` takes alike; the generated
+    // machine adds only its own variables between them. The Kotlin twin of
+    // `sce_rust_runtime::saved_state::{save, check_shape, enter}`.
+
+    /**
+     * This machine's [SavedState], with the [variables] its generated code
+     * read from its fields. The configuration is written in document order,
+     * so the same machine saves the same text on every backend.
+     *
+     * Refused for a machine that is not running — never started, or ended at
+     * a top-level `<final>`, where there is nothing left to resume — and for
+     * one whose last macrostep stopped at the microstep ceiling: its
+     * configuration is not a settled one, and a restore would resume it as if
+     * it were.
+     */
+    protected fun savedState(shape: String, variables: Map<String, Any?>): SavedState {
+        if (configuration.isEmpty() || isInFinalState) {
+            throw StateRefusal("the machine is not running: it was never started, or it has ended")
+        }
+        if (macrostepTruncated) {
+            throw StateRefusal(
+                "the machine's last macrostep stopped at the microstep ceiling, so it does not " +
+                    "stand at a settled configuration")
+        }
+        return SavedState(
+            shape = shape,
+            configuration = configuration.sortedBy(::documentOrderOf).map(::stateIdOf),
+            current = stateIdOf(_currentState.value),
+            variables = variables,
+        )
+    }
+
+    /**
+     * Refuse to restore [saved] into this machine unless it has not started —
+     * a restore stands in place of [initialize] — [saved] was saved from a
+     * document of this [shape], and the configuration it names is one of this
+     * document. Judged before any variable is written, so a refused restore
+     * leaves the machine as it was.
+     */
+    protected fun beginRestore(saved: SavedState, shape: String) {
+        if (configuration.isNotEmpty() || isInFinalState) {
+            throw StateRefusal("a machine is restored in place of initialize, and this one has already started")
+        }
+        SavedState.checkShape(saved, shape)
+        val (states, current) = savedConfiguration(saved)
+        val verdict = judgeConfiguration(states, current)
+        if (verdict != ConfigurationRejection.NONE) {
+            throw StateRefusal("the saved configuration is refused: ${verdict.reason}")
+        }
+    }
+
+    /**
+     * Stand this machine, whose variables already hold what [saved] holds, at
+     * the configuration [saved] names ([enterAt]), which [beginRestore]
+     * judged: no `<onentry>` runs and no `<data>` is evaluated, since the
+     * saved run already did both. The snapshot is published, as a completed
+     * macrostep would.
+     */
+    protected fun enterSaved(saved: SavedState) {
+        val (states, current) = savedConfiguration(saved)
+        check(enterAt(states, current) == ConfigurationRejection.NONE) {
+            "beginRestore judged this configuration and enterAt refused it"
+        }
+        onMacrostepComplete(false)
+    }
+
+    private fun savedConfiguration(saved: SavedState): Pair<List<S>, S> {
+        fun state(id: String): S = resolveState(id) ?: throw StateRefusal("the document has no state '$id'")
+        return saved.configuration.map(::state) to state(saved.current)
     }
 
     /**
