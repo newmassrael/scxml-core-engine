@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 5.10.1: `_event.type` is "internal" for an event taken off the
+  internal queue, "external" for one taken off the external queue, and
+  "platform" for the processor's own error and done events.
+
+  `s0`'s <onentry> queues three events, the external one FIRST:
+
+      <send event="ext"/>                                   external queue
+      <raise event="int"/>                                  internal queue
+      <send target="#_internal" event="viaInternalSend">    internal queue,
+        <param name="a" expr="1"/>                            with a payload
+      </send>
+
+  The internal queue drains before the external one, so `int` and
+  `viaInternalSend` are processed while `ext` still waits. A processor that
+  decides the type when an event is ENQUEUED, not when it is taken, types
+  `int` "external" and `ext` "internal"; one that builds the payload-carrying
+  `#_internal` event with external metadata types it "external".
+
+  Each event records the type it saw as a code — 1 internal, 2 external,
+  3 anything else — so every channel's datamodel can hand it back as an
+  integer:
+
+    intCode     1
+    sendCode    1
+    extCode     2
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="event_type_names_its_queue" datamodel="ecmascript"
+       initial="s0">
+
+  <datamodel>
+    <data id="intCode" expr="0"/>
+    <data id="sendCode" expr="0"/>
+    <data id="extCode" expr="0"/>
+  </datamodel>
+
+  <state id="s0">
+    <onentry>
+      <send event="ext"/>
+      <raise event="int"/>
+      <send target="#_internal" event="viaInternalSend">
+        <param name="a" expr="1"/>
+      </send>
+    </onentry>
+
+    <transition event="int">
+      <if cond="_event.type == 'internal'">
+        <assign location="intCode" expr="1"/>
+      <elseif cond="_event.type == 'external'"/>
+        <assign location="intCode" expr="2"/>
+      <else/>
+        <assign location="intCode" expr="3"/>
+      </if>
+    </transition>
+
+    <transition event="viaInternalSend">
+      <if cond="_event.type == 'internal'">
+        <assign location="sendCode" expr="1"/>
+      <elseif cond="_event.type == 'external'"/>
+        <assign location="sendCode" expr="2"/>
+      <else/>
+        <assign location="sendCode" expr="3"/>
+      </if>
+    </transition>
+
+    <transition event="ext" target="done">
+      <if cond="_event.type == 'internal'">
+        <assign location="extCode" expr="1"/>
+      <elseif cond="_event.type == 'external'"/>
+        <assign location="extCode" expr="2"/>
+      <else/>
+        <assign location="extCode" expr="3"/>
+      </if>
+    </transition>
+  </state>
+
+  <final id="done"/>
+</scxml>

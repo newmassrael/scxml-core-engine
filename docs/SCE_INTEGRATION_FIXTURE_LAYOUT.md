@@ -1141,6 +1141,23 @@ all. The rule now lives in each runtime (a per-run set of states already
 bound, cleared when a run starts and seeded by a configuration restore); the
 templates only say what binding means for each state.
 
+`event_type_names_its_queue` covers §scxml-5.10.1: `_event.type` is
+"internal" for an event taken off the internal queue, "external" for one
+taken off the external queue, and "platform" for the processor's own error
+and done events. The document queues an external event first and two
+internal ones after it — the second a `<send target="#_internal">` with a
+payload — so each event is processed while the other queue still holds
+something, and records the type it saw as a code.
+
+Measured 2026-09-26: C++ AOT and Rust set an "external" flag when an event
+was enqueued and consumed it on whichever event was bound next, so the
+first internal event was typed "external" and the external one "internal";
+Python typed a payload-carrying `#_internal` send "external". Both engines
+now decide at dequeue, where the queue is known (`isCurrentEventExternal` /
+`is_current_event_external`), the flag and its generator field are gone
+from all three templates that carried it, and Python's internal queue types
+everything on it.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

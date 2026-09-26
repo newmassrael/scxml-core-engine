@@ -1356,6 +1356,32 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 5.10.1: `_event.type` names the queue an event was taken from.
+    sce_generate_static_integration_c_test(event_type_names_its_queue "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_event_type_names_its_queue
+        integration/test_event_type_names_its_queue.c
+        ${INTEGRATION_C_TEST_event_type_names_its_queue_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_event_type_names_its_queue PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_event_type_names_its_queue PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_event_type_names_its_queue PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_event_type_names_its_queue
+        COMMAND sce_c_integration_event_type_names_its_queue
+    )
+    set_tests_properties(c11_integration_event_type_names_its_queue PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach
     # the datamodel as a value. Every other fixture here leaves the carrier's
     # `data` field zeroed, so this edge — the one a downstream MCU consumer
