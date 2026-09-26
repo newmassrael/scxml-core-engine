@@ -260,17 +260,22 @@ public object SceChecked {
     // not below the array's size — never an `IndexOutOfBoundsException`. The
     // index arrives as `Long`, which holds every SCE index exactly except an
     // unsigned 64-bit one past `Long.MAX_VALUE`, and that is out of range
-    // anyway.
+    // anyway. The unsigned arrays are still experimental in the stdlib, so
+    // their overloads opt in, as `SceListBuf`'s conversions do.
     private fun inside(i: Long, size: Int): Int =
         if (i < 0L || i >= size.toLong()) fail(AlgorithmError.OutOfRange) else i.toInt()
 
     public fun at(xs: ByteArray, i: Long): Byte = xs[inside(i, xs.size)]
+    @OptIn(ExperimentalUnsignedTypes::class)
     public fun at(xs: UByteArray, i: Long): UByte = xs[inside(i, xs.size)]
     public fun at(xs: ShortArray, i: Long): Short = xs[inside(i, xs.size)]
+    @OptIn(ExperimentalUnsignedTypes::class)
     public fun at(xs: UShortArray, i: Long): UShort = xs[inside(i, xs.size)]
     public fun at(xs: IntArray, i: Long): Int = xs[inside(i, xs.size)]
+    @OptIn(ExperimentalUnsignedTypes::class)
     public fun at(xs: UIntArray, i: Long): UInt = xs[inside(i, xs.size)]
     public fun at(xs: LongArray, i: Long): Long = xs[inside(i, xs.size)]
+    @OptIn(ExperimentalUnsignedTypes::class)
     public fun at(xs: ULongArray, i: Long): ULong = xs[inside(i, xs.size)]
     public fun at(xs: FloatArray, i: Long): Float = xs[inside(i, xs.size)]
     public fun at(xs: DoubleArray, i: Long): Double = xs[inside(i, xs.size)]

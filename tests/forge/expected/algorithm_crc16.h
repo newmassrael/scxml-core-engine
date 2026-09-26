@@ -19,7 +19,7 @@ namespace SCE::Generated::AlgorithmCrc16 {
 
 inline uint16_t algorithm_crc16(std::span<const std::uint8_t> data) {
     uint16_t crc = 0xFFFF;
-    for (std::uint8_t b : data) {
+    for (uint8_t b : data) {
         uint16_t hi = b;
         crc = crc ^ hi << 8;
         uint8_t i = 0;

@@ -22,7 +22,7 @@ inline constexpr std::array<uint16_t, 256> CRC16_TABLE = { 0, 4129, 8258, 12387,
 
 inline uint16_t algorithm_crc16_table(std::span<const std::uint8_t> data) {
     uint16_t crc = 0xFFFF;
-    for (std::uint8_t b : data) {
+    for (uint8_t b : data) {
         uint16_t idx = (crc >> 8 ^ b) & 0xFF;
         crc = crc << 8 ^ CRC16_TABLE[idx];
     }
