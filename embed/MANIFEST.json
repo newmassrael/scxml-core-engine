@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "2edb0e2c04",
+  "embed_version": "3d1ca8c8bd",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 271,
+  "symbol_count": 280,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1048,6 +1048,87 @@
       "kind": "function",
       "name": "SCE::Core::TransitionHelper::matchesEventDescriptor",
       "signature": "bool SCE::Core::TransitionHelper::matchesEventDescriptor(const std::string &, const std::string &)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "enum",
+      "name": "SCE::RequestFieldKind",
+      "values": [
+        "Uint8",
+        "Uint16",
+        "Uint32",
+        "Uint64",
+        "Int8",
+        "Int16",
+        "Int32",
+        "Int64",
+        "Float32",
+        "Float64",
+        "Bool",
+        "String",
+        "Bytes"
+      ]
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "function",
+      "name": "SCE::TypedHostInvokeRequestDetail::fits",
+      "signature": "bool SCE::TypedHostInvokeRequestDetail::fits(const Whole &, RequestFieldKind)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "function",
+      "name": "SCE::TypedHostInvokeRequestDetail::isWholeKind",
+      "signature": "bool SCE::TypedHostInvokeRequestDetail::isWholeKind(RequestFieldKind)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "function",
+      "name": "SCE::TypedHostInvokeRequestDetail::quoted",
+      "signature": "std::string SCE::TypedHostInvokeRequestDetail::quoted(const std::string &)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "function",
+      "name": "SCE::TypedHostInvokeRequestDetail::wholeOf",
+      "signature": "std::optional<Whole> SCE::TypedHostInvokeRequestDetail::wholeOf(const ::ScriptValue &)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "function",
+      "name": "SCE::requestField<T>",
+      "signature": "T SCE::requestField<T>(const HostInvokeRequest &, const char *)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "function",
+      "name": "SCE::requestFieldWire",
+      "signature": "std::optional<std::string> SCE::requestFieldWire(const ::ScriptValue &, const std::string &, RequestFieldType, const std::function<std::string (double)> &, std::string &)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "struct",
+      "members": [
+        "field RequestFieldKind kind",
+        "field std::size_t cap"
+      ],
+      "name": "SCE::RequestFieldType"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "struct",
+      "members": [
+        "field bool beyond",
+        "field bool negative",
+        "field uint64_t magnitude",
+        "method Whole &(Whole &&) noexcept operator=",
+        "method Whole &(const Whole &) noexcept operator=",
+        "method void () noexcept Whole",
+        "method void () noexcept ~Whole",
+        "method void (Whole &&) noexcept Whole",
+        "method void (const Whole &) noexcept Whole"
+      ],
+      "name": "SCE::TypedHostInvokeRequestDetail::Whole"
     },
     {
       "header": "events/CppHttplibClient.h",
