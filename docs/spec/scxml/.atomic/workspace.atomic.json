@@ -14538,6 +14538,11 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "initialize",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "exit_interpreter",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

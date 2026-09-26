@@ -1035,15 +1035,7 @@ impl<P: StatePolicy> Engine<P> {
         if self.interpreter_exited {
             return;
         }
-        let configuration = self.get_active_states();
-        let mut states_to_exit = configuration.clone();
-        // `configuration.toList().sort(exitOrder)` — reverse document order.
-        crate::stable_sort_by(&mut states_to_exit, |a, b| {
-            P::get_document_order(*b).cmp(&P::get_document_order(*a))
-        });
-        for state in states_to_exit.iter().copied() {
-            self.execute_on_exit(state, &configuration);
-        }
+        microstep::exit_interpreter(&mut EngineHost { engine: self });
         self.interpreter_exited = true;
         self.is_running = false;
     }

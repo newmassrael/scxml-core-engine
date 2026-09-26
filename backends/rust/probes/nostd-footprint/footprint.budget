@@ -64,12 +64,21 @@ MACHINE_SYMBOLS='sce_nostd_build_probe::'
 MEASURED_WITH='rustc 1.98.1 (48a229cea 2026-09-01)'
 
 # Sum of every machine symbol in the staticlib, as the engine ships.
-TOTAL_BYTES=4976
+#
+# 4976 -> 5070 (2026-09-26): what the bytes bought is W3C SCXML Appendix D's
+# exitInterpreter, which the engine had skipped — a run that ends in a
+# top-level <final> or is stopped now exits every state it is still in, and
+# `get_active_states` answers empty afterwards. The procedure first landed
+# inline in `Engine` at 5182, over the band; moved into `helpers::microstep`
+# beside exitStates, sharing that procedure's exitOrder sort instead of
+# carrying a second copy, it costs these 94.
+TOTAL_BYTES=5070
 
 # The same sum with `no_macrostep_diagnostics`, which compiles the macrostep
 # REPORT out and leaves the bound in place.
 #
-# The difference — 24 bytes per machine — is the number that feature is worth,
+# The difference — 28 bytes per machine (24 before the exitInterpreter re-pin
+# moved inlining around it) — is the number that feature is worth,
 # and it is here rather than in a commit message because it is the answer to a
 # question a consumer asked: whether gating the diagnostics would recover what
 # two commits cost their image. Measuring both ways is also what keeps the
@@ -103,7 +112,7 @@ TOTAL_BYTES=4976
 # elsewhere. A downstream consumer reached the same conclusion from the other
 # end — with `lto = true` and no logger installed, their image had already
 # discarded every `log::` call before we asked them to try.
-TOTAL_BYTES_NO_DIAGNOSTICS=4952
+TOTAL_BYTES_NO_DIAGNOSTICS=5042
 
 # Drift allowed either way before the gate speaks, in BYTES. Wide enough that
 # an unrelated inlining decision does not cry wolf, tight enough that one more
@@ -120,7 +129,8 @@ TOLERANCE_BYTES=133
 # a toolchain that mangles without generic arguments — and every byte figure
 # above it is meaningless. The set held 36 symbols at the last re-pin and 35
 # before it, across a change that moved half its bytes between the runtime and
-# the policy; the legacy scheme leaves 3, and the bitcode staticlib left none.
+# the policy (38 after the exitInterpreter re-pin); the legacy scheme leaves 3,
+# and the bitcode staticlib left none.
 # The floor sits between, with room for a refactor to move the count by a
 # dozen.
 MIN_SYMBOLS=24

@@ -511,10 +511,17 @@ pub fn compute_states_to_exit<D: Document>(
             add_once(&mut states_to_exit, state);
         }
     }
-    stable_sort_by(&mut states_to_exit, |a, b| {
+    sort_in_exit_order(doc, &mut states_to_exit);
+    states_to_exit
+}
+
+/// Appendix D's exitOrder: descendants before their ancestors and reverse
+/// document order among the rest, which together are exactly reverse document
+/// order. The one sort both exitStates and exitInterpreter exit by.
+fn sort_in_exit_order<D: Document>(doc: &D, states: &mut [D::State]) {
+    stable_sort_by(states, |a, b| {
         doc.document_order(*b).cmp(&doc.document_order(*a))
     });
-    states_to_exit
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -550,6 +557,27 @@ pub fn exit_states<R: Run>(run: &mut R, transitions: &[EnabledTransition<R::Stat
     let states_to_exit = compute_states_to_exit(run, transitions, &configuration);
     for &state in states_to_exit.iter() {
         run.exit_state(state, &configuration);
+    }
+}
+
+/// Appendix D's exitInterpreter: every state still in the configuration, exited
+/// in exitOrder, each the way exitStates exits one.
+///
+/// ```text
+/// statesToExit = configuration.toList().sort(exitOrder)
+/// for s in statesToExit: onexit, cancel its invocations, configuration.delete(s)
+/// ```
+///
+/// Reached two ways, the two the procedure names: the main event loop ends
+/// because the run entered a top-level `<final>`, or the host stops a run that
+/// has not ended. The list is sorted in place and is also the configuration
+/// each exit records history from — that reads it as a set, so its order is
+/// free, and one list rather than a copy is bytes every machine pays for.
+pub fn exit_interpreter<R: Run>(run: &mut R) {
+    let mut states_to_exit = run.configuration();
+    sort_in_exit_order(run, &mut states_to_exit);
+    for &state in states_to_exit.iter() {
+        run.exit_state(state, &states_to_exit);
     }
 }
 
