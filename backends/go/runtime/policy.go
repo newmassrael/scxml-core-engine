@@ -242,9 +242,6 @@ type StatePolicy[S comparable, E comparable] interface {
 	// HasActiveStates returns whether the policy exposes activeStates_ tracking.
 	HasActiveStates() bool
 
-	// HasExternalEventFlag returns whether the policy has a nextEventIsExternal_ flag.
-	HasExternalEventFlag() bool
-
 	// HasChildTick returns whether the policy supports child-tick for nested invokes.
 	HasChildTick() bool
 
@@ -286,9 +283,6 @@ type StatePolicy[S comparable, E comparable] interface {
 
 	// TickChildren ticks child state machines (§scxml-6.4).
 	TickChildren(engine *Engine[S, E])
-
-	// SetNextEventIsExternal sets the nextEventIsExternal_ flag (§scxml-5.10.1).
-	SetNextEventIsExternal(value bool)
 
 	// PopulateEventMetadata populates pending event metadata fields from an event's
 	// metadata (§scxml-5.10).

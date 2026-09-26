@@ -127,8 +127,6 @@ impl Test347SceSynthInvokeChildEvent {
 // ======================================================================
 
 pub struct Test347SceSynthInvokeChildPolicy {
-    // W3C SCXML 5.10.1: External event flag for _event.type classification
-    next_event_is_external: bool,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
@@ -154,7 +152,6 @@ pub struct Test347SceSynthInvokeChildPolicy {
 impl Test347SceSynthInvokeChildPolicy {
     pub fn new() -> Self {
         Self {
-            next_event_is_external: false,
             session_id: None,
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -215,7 +212,6 @@ impl StatePolicy for Test347SceSynthInvokeChildPolicy {
     // `()` — so without this constant a host had no route to the knowledge that
     // its driving loop must call `tick()` rather than `step()`.
     const NEEDS_EVENT_SCHEDULER: bool = false;
-    const HAS_EXTERNAL_EVENT_FLAG: bool = true;
 
     // ======================================================================
     // Static metadata methods (W3C SCXML document structure)
@@ -343,10 +339,6 @@ impl StatePolicy for Test347SceSynthInvokeChildPolicy {
     // None before that ever happened.
     fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
         match history {}
-    }
-
-    fn set_next_event_is_external(&mut self, value: bool) {
-        self.next_event_is_external = value;
     }
 
     // ======================================================================

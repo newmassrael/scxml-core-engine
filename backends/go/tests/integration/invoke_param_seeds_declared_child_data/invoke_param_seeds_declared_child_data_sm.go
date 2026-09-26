@@ -279,8 +279,6 @@ func (e InvokeParamSeedsDeclaredChildDataEvent) String() string {
 // ======================================================================
 
 type InvokeParamSeedsDeclaredChildDataPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -1346,11 +1344,6 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) NullEvent() InvokeParamSeedsDe
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) HasParallelStates() bool {
 	return false
@@ -1390,7 +1383,6 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetActiveStates() []InvokePara
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) SetActiveStates(_ []InvokeParamSeedsDeclaredChildDataState) {}
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[InvokeParamSeedsDeclaredChildDataEvent], _ *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

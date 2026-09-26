@@ -189,8 +189,6 @@ func (e UnhandledErrorIsObservableEvent) String() string {
 // ======================================================================
 
 type UnhandledErrorIsObservablePolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -632,11 +630,6 @@ func (p *UnhandledErrorIsObservablePolicy) NullEvent() UnhandledErrorIsObservabl
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *UnhandledErrorIsObservablePolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *UnhandledErrorIsObservablePolicy) HasParallelStates() bool {
 	return false
@@ -674,7 +667,6 @@ func (p *UnhandledErrorIsObservablePolicy) GetActiveStates() []UnhandledErrorIsO
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *UnhandledErrorIsObservablePolicy) SetActiveStates(_ []UnhandledErrorIsObservableState) {}
-func (p *UnhandledErrorIsObservablePolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *UnhandledErrorIsObservablePolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[UnhandledErrorIsObservableEvent], _ *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

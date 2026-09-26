@@ -164,8 +164,6 @@ func (e EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent) String()
 // ======================================================================
 
 type EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -489,11 +487,6 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy) NullEv
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy) HasParallelStates() bool {
 	return false
@@ -531,7 +524,6 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy) GetAct
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy) SetActiveStates(_ []EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState) {}
-func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent], _ *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

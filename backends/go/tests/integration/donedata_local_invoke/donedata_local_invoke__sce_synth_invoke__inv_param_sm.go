@@ -152,8 +152,6 @@ func (e DonedataLocalInvokeSceSynthInvokeInvParamEvent) String() string {
 // ======================================================================
 
 type DonedataLocalInvokeSceSynthInvokeInvParamPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -471,11 +469,6 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) NullEvent() DonedataLo
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) HasParallelStates() bool {
 	return false
@@ -513,7 +506,6 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) GetActiveStates() []Do
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) SetActiveStates(_ []DonedataLocalInvokeSceSynthInvokeInvParamState) {}
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[DonedataLocalInvokeSceSynthInvokeInvParamEvent], _ *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

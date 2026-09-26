@@ -234,7 +234,6 @@ const ANALYZER_WRITTEN: &[&str] = &[
     "needs_event_sendid",
     "needs_event_type",
     "needs_event_type_helper",
-    "needs_external_flag",
     "needs_foreach",
     "needs_guard_helper",
     "needs_http_send",

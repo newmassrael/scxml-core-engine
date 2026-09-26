@@ -74,11 +74,6 @@ template <typename P, typename = void> struct HasActiveStatesTrait : std::false_
 template <typename P>
 struct HasActiveStatesTrait<P, std::void_t<decltype(std::declval<P>().getActiveStates())>> : std::true_type {};
 
-template <typename P, typename = void> struct HasExternalEventFlagTrait : std::false_type {};
-
-template <typename P>
-struct HasExternalEventFlagTrait<P, std::void_t<decltype(std::declval<P>().nextEventIsExternal_)>> : std::true_type {};
-
 /// Policy declares that driving it needs `tick()` rather than `step()` alone.
 ///
 /// `step()` runs a macrostep and never drains the delayed-send scheduler or
@@ -272,10 +267,6 @@ concept HasFinalize = HasFinalizeTrait<P, EventMeta, Engine>::value;
 template <typename P>
 concept HasActiveStates = HasActiveStatesTrait<P>::value;
 
-/// Policy has external event marking flag
-template <typename P>
-concept HasExternalEventFlag = HasExternalEventFlagTrait<P>::value;
-
 /// Policy can deliver an event to a live invoke child by session id
 template <typename P>
 concept HasChildSessionDelivery = HasChildSessionDeliveryTrait<P>::value;
@@ -309,8 +300,6 @@ template <typename P, typename M, typename Engine>
 inline constexpr bool HasFinalize = HasFinalizeTrait<P, M, Engine>::value;
 
 template <typename P> inline constexpr bool HasActiveStates = HasActiveStatesTrait<P>::value;
-
-template <typename P> inline constexpr bool HasExternalEventFlag = HasExternalEventFlagTrait<P>::value;
 
 template <typename P> inline constexpr bool HasChildSessionDelivery = HasChildSessionDeliveryTrait<P>::value;
 

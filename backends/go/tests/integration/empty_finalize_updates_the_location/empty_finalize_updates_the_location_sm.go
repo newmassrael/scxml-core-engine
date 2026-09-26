@@ -245,8 +245,6 @@ func (e EmptyFinalizeUpdatesTheLocationEvent) String() string {
 // ======================================================================
 
 type EmptyFinalizeUpdatesTheLocationPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -1111,11 +1109,6 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) NullEvent() EmptyFinalizeUpdates
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) HasParallelStates() bool {
 	return false
@@ -1155,7 +1148,6 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) GetActiveStates() []EmptyFinaliz
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) SetActiveStates(_ []EmptyFinalizeUpdatesTheLocationState) {}
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) HasExternalEventFlag() bool { return true }
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) ForwardToAutoforwardChildren(_ string, _ sce.EventMetadata, _ *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent]) {}
 

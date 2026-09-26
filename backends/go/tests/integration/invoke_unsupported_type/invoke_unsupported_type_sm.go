@@ -334,7 +334,6 @@ func (p *InvokeUnsupportedTypePolicy) NullEvent() InvokeUnsupportedTypeEvent {
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *InvokeUnsupportedTypePolicy) HasParallelStates() bool {
 	return false
@@ -373,8 +372,6 @@ func (p *InvokeUnsupportedTypePolicy) GetActiveStates() []InvokeUnsupportedTypeS
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *InvokeUnsupportedTypePolicy) SetActiveStates(_ []InvokeUnsupportedTypeState) {}
-func (p *InvokeUnsupportedTypePolicy) HasExternalEventFlag() bool { return false }
-func (p *InvokeUnsupportedTypePolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *InvokeUnsupportedTypePolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[InvokeUnsupportedTypeEvent], _ *sce.Engine[InvokeUnsupportedTypeState, InvokeUnsupportedTypeEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

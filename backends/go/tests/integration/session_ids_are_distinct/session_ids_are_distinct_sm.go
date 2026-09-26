@@ -194,8 +194,6 @@ func (e SessionIdsAreDistinctEvent) String() string {
 // ======================================================================
 
 type SessionIdsAreDistinctPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -811,11 +809,6 @@ func (p *SessionIdsAreDistinctPolicy) NullEvent() SessionIdsAreDistinctEvent {
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *SessionIdsAreDistinctPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *SessionIdsAreDistinctPolicy) HasParallelStates() bool {
 	return false
@@ -855,7 +848,6 @@ func (p *SessionIdsAreDistinctPolicy) GetActiveStates() []SessionIdsAreDistinctS
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *SessionIdsAreDistinctPolicy) SetActiveStates(_ []SessionIdsAreDistinctState) {}
-func (p *SessionIdsAreDistinctPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *SessionIdsAreDistinctPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[SessionIdsAreDistinctEvent], _ *sce.Engine[SessionIdsAreDistinctState, SessionIdsAreDistinctEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

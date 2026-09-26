@@ -431,7 +431,6 @@ func (p *ParallelCompletionRaisesDoneStatePolicy) SetActiveStates(states []Paral
 	p.activeStates = append(p.activeStates[:0:0], states...)
 }
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *ParallelCompletionRaisesDoneStatePolicy) HasParallelStates() bool {
 	return true
@@ -463,8 +462,6 @@ func (p *ParallelCompletionRaisesDoneStatePolicy) HasChildTick() bool { return f
 func (p *ParallelCompletionRaisesDoneStatePolicy) HasFinalize() bool { return false }
 func (p *ParallelCompletionRaisesDoneStatePolicy) HasAutoforward() bool { return false }
 func (p *ParallelCompletionRaisesDoneStatePolicy) HasActiveStates() bool { return true }
-func (p *ParallelCompletionRaisesDoneStatePolicy) HasExternalEventFlag() bool { return false }
-func (p *ParallelCompletionRaisesDoneStatePolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *ParallelCompletionRaisesDoneStatePolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[ParallelCompletionRaisesDoneStateEvent], _ *sce.Engine[ParallelCompletionRaisesDoneStateState, ParallelCompletionRaisesDoneStateEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

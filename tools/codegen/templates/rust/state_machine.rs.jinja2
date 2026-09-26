@@ -201,10 +201,6 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     // the generated code allocator-free.
     active_states: ::sce_rust_runtime::helpers::hierarchy::StateChain<{{ machine_name }}State>,
 {% endif %}
-{% if model.needs_external_flag %}
-    // W3C SCXML 5.10.1: External event flag for _event.type classification
-    next_event_is_external: bool,
-{% endif %}
 {% if model.needs_event_name %}
     // W3C SCXML 5.10: Event name for _event.name binding
     //
@@ -388,9 +384,6 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% if model.has_parallel_states or model.uses_in_predicate %}
             active_states: ::sce_rust_runtime::helpers::hierarchy::new_chain(),
 {% endif %}
-{% if model.needs_external_flag %}
-            next_event_is_external: false,
-{% endif %}
 {% if model.needs_event_name %}
             pending_event_name: ::sce_rust_runtime::SceString::new(),
 {% endif %}
@@ -536,9 +529,6 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     const NEEDS_EVENT_SCHEDULER: bool = {{ 'true' if model.needs_tick_driving else 'false' }};
 {% if model.has_parallel_states or model.uses_in_predicate %}
     const HAS_ACTIVE_STATES: bool = true;
-{% endif %}
-{% if model.needs_external_flag %}
-    const HAS_EXTERNAL_EVENT_FLAG: bool = true;
 {% endif %}
 {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
     // §scxml-6.4: gates the engine's macrostep-end call into
@@ -766,12 +756,6 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% if model.needs_script_engine %}
         self.publish_in_predicate_states();
 {% endif %}
-    }
-{% endif %}
-
-{% if model.needs_external_flag %}
-    fn set_next_event_is_external(&mut self, value: bool) {
-        self.next_event_is_external = value;
     }
 {% endif %}
 

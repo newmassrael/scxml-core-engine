@@ -265,8 +265,6 @@ func (e AncestorEntryIsNotDefaultEntryEvent) String() string {
 type AncestorEntryIsNotDefaultEntryPolicy struct {
 	// W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
 	activeStates []AncestorEntryIsNotDefaultEntryState
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -765,11 +763,6 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) SetActiveStates(states []Ancestor
 	p.activeStates = append(p.activeStates[:0:0], states...)
 }
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *AncestorEntryIsNotDefaultEntryPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *AncestorEntryIsNotDefaultEntryPolicy) HasParallelStates() bool {
 	return true
@@ -801,7 +794,6 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) HasChildTick() bool { return fals
 func (p *AncestorEntryIsNotDefaultEntryPolicy) HasFinalize() bool { return false }
 func (p *AncestorEntryIsNotDefaultEntryPolicy) HasAutoforward() bool { return false }
 func (p *AncestorEntryIsNotDefaultEntryPolicy) HasActiveStates() bool { return true }
-func (p *AncestorEntryIsNotDefaultEntryPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *AncestorEntryIsNotDefaultEntryPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[AncestorEntryIsNotDefaultEntryEvent], _ *sce.Engine[AncestorEntryIsNotDefaultEntryState, AncestorEntryIsNotDefaultEntryEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

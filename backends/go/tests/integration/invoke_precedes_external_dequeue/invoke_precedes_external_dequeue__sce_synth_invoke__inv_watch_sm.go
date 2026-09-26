@@ -349,7 +349,6 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) NullEvent() 
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) HasParallelStates() bool {
 	return false
@@ -387,8 +386,6 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) GetActiveSta
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) SetActiveStates(_ []InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) {}
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) HasExternalEventFlag() bool { return false }
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent], _ *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

@@ -394,7 +394,6 @@ func (p *EventDescriptorSpellingsAgreePolicy) NullEvent() EventDescriptorSpellin
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *EventDescriptorSpellingsAgreePolicy) HasParallelStates() bool {
 	return false
@@ -432,8 +431,6 @@ func (p *EventDescriptorSpellingsAgreePolicy) GetActiveStates() []EventDescripto
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *EventDescriptorSpellingsAgreePolicy) SetActiveStates(_ []EventDescriptorSpellingsAgreeState) {}
-func (p *EventDescriptorSpellingsAgreePolicy) HasExternalEventFlag() bool { return false }
-func (p *EventDescriptorSpellingsAgreePolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *EventDescriptorSpellingsAgreePolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[EventDescriptorSpellingsAgreeEvent], _ *sce.Engine[EventDescriptorSpellingsAgreeState, EventDescriptorSpellingsAgreeEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

@@ -73,7 +73,9 @@ public:
             pendingEventName_ = {{ model.name }}Policy::getEventName(event);
 {% endif %}
 {% if model.needs_event_type %}
-            pendingEventType_ = this->getEventType(pendingEventName_);
+            // §scxml-5.10.1: typed by the queue the engine took the event from.
+            pendingEventType_ =
+                ::SCE::EventTypeHelper::classifyEventType(pendingEventName_, engine.isCurrentEventExternal());
 {% endif %}
             AOT_DEBUG("AOT bindCurrentEvent: pendingEventName='{}', pendingEventType='{}'", pendingEventName_, pendingEventType_);
         }

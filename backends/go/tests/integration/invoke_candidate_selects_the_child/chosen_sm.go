@@ -307,7 +307,6 @@ func (p *ChosenPolicy) NullEvent() ChosenEvent {
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *ChosenPolicy) HasParallelStates() bool {
 	return false
@@ -345,8 +344,6 @@ func (p *ChosenPolicy) GetActiveStates() []ChosenState { return nil }
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *ChosenPolicy) SetActiveStates(_ []ChosenState) {}
-func (p *ChosenPolicy) HasExternalEventFlag() bool { return false }
-func (p *ChosenPolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *ChosenPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[ChosenEvent], _ *sce.Engine[ChosenState, ChosenEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

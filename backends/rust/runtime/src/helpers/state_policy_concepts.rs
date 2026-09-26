@@ -26,7 +26,6 @@
 //! - `StatePolicy::HAS_PARALLEL_STATES`
 //! - `StatePolicy::HAS_AUTOFORWARD`
 //! - `StatePolicy::HAS_CHILD_TICK`
-//! - `StatePolicy::HAS_EXTERNAL_EVENT_FLAG`
 //! - `StatePolicy::HAS_ACTIVE_STATES`
 //!
 //! The engine branches on these constants via `if P::HAS_X { ... }`. Rust's const
@@ -67,11 +66,6 @@ pub const fn has_finalize<P: StatePolicy>() -> bool {
 /// C++ `SCE::Core::HasActiveStates<StatePolicy>` equivalent.
 pub const fn has_active_states<P: StatePolicy>() -> bool {
     P::HAS_ACTIVE_STATES
-}
-
-/// C++ `SCE::Core::HasExternalEventFlag<StatePolicy>` equivalent.
-pub const fn has_external_event_flag<P: StatePolicy>() -> bool {
-    P::HAS_EXTERNAL_EVENT_FLAG
 }
 
 /// C++ `SCE::Core::HasAutoforward<StatePolicy, Engine>` equivalent.

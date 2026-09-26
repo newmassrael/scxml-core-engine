@@ -171,8 +171,6 @@ func (e InvokeExpressionFailureIsReportedEvent) String() string {
 // ======================================================================
 
 type InvokeExpressionFailureIsReportedPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -624,11 +622,6 @@ func (p *InvokeExpressionFailureIsReportedPolicy) NullEvent() InvokeExpressionFa
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *InvokeExpressionFailureIsReportedPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *InvokeExpressionFailureIsReportedPolicy) HasParallelStates() bool {
 	return false
@@ -668,7 +661,6 @@ func (p *InvokeExpressionFailureIsReportedPolicy) GetActiveStates() []InvokeExpr
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *InvokeExpressionFailureIsReportedPolicy) SetActiveStates(_ []InvokeExpressionFailureIsReportedState) {}
-func (p *InvokeExpressionFailureIsReportedPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *InvokeExpressionFailureIsReportedPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[InvokeExpressionFailureIsReportedEvent], _ *sce.Engine[InvokeExpressionFailureIsReportedState, InvokeExpressionFailureIsReportedEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

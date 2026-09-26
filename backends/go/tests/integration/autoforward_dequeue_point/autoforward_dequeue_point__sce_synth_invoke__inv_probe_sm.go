@@ -365,7 +365,6 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) NullEvent() Autofo
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) HasParallelStates() bool {
 	return false
@@ -403,8 +402,6 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) GetActiveStates() 
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) SetActiveStates(_ []AutoforwardDequeuePointSceSynthInvokeInvProbeState) {}
-func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) HasExternalEventFlag() bool { return false }
-func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[AutoforwardDequeuePointSceSynthInvokeInvProbeEvent], _ *sce.Engine[AutoforwardDequeuePointSceSynthInvokeInvProbeState, AutoforwardDequeuePointSceSynthInvokeInvProbeEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

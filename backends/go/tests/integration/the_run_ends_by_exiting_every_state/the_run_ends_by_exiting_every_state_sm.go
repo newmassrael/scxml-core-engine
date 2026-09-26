@@ -174,8 +174,6 @@ func (e TheRunEndsByExitingEveryStateEvent) String() string {
 type TheRunEndsByExitingEveryStatePolicy struct {
 	// W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
 	activeStates []TheRunEndsByExitingEveryStateState
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -596,11 +594,6 @@ func (p *TheRunEndsByExitingEveryStatePolicy) SetActiveStates(states []TheRunEnd
 	p.activeStates = append(p.activeStates[:0:0], states...)
 }
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *TheRunEndsByExitingEveryStatePolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *TheRunEndsByExitingEveryStatePolicy) HasParallelStates() bool {
 	return false
@@ -632,7 +625,6 @@ func (p *TheRunEndsByExitingEveryStatePolicy) HasChildTick() bool { return false
 func (p *TheRunEndsByExitingEveryStatePolicy) HasFinalize() bool { return false }
 func (p *TheRunEndsByExitingEveryStatePolicy) HasAutoforward() bool { return false }
 func (p *TheRunEndsByExitingEveryStatePolicy) HasActiveStates() bool { return true }
-func (p *TheRunEndsByExitingEveryStatePolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *TheRunEndsByExitingEveryStatePolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[TheRunEndsByExitingEveryStateEvent], _ *sce.Engine[TheRunEndsByExitingEveryStateState, TheRunEndsByExitingEveryStateEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

@@ -218,8 +218,6 @@ func (e ParallelRegionsTakeOwnTransitionsEvent) String() string {
 type ParallelRegionsTakeOwnTransitionsPolicy struct {
 	// W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
 	activeStates []ParallelRegionsTakeOwnTransitionsState
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -648,11 +646,6 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) SetActiveStates(states []Paral
 	p.activeStates = append(p.activeStates[:0:0], states...)
 }
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *ParallelRegionsTakeOwnTransitionsPolicy) HasParallelStates() bool {
 	return true
@@ -684,7 +677,6 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) HasChildTick() bool { return f
 func (p *ParallelRegionsTakeOwnTransitionsPolicy) HasFinalize() bool { return false }
 func (p *ParallelRegionsTakeOwnTransitionsPolicy) HasAutoforward() bool { return false }
 func (p *ParallelRegionsTakeOwnTransitionsPolicy) HasActiveStates() bool { return true }
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[ParallelRegionsTakeOwnTransitionsEvent], _ *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

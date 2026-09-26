@@ -218,8 +218,6 @@ func (e ParallelSelfTransitionKeepsItsLeafEvent) String() string {
 type ParallelSelfTransitionKeepsItsLeafPolicy struct {
 	// W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
 	activeStates []ParallelSelfTransitionKeepsItsLeafState
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -648,11 +646,6 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) SetActiveStates(states []Para
 	p.activeStates = append(p.activeStates[:0:0], states...)
 }
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *ParallelSelfTransitionKeepsItsLeafPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *ParallelSelfTransitionKeepsItsLeafPolicy) HasParallelStates() bool {
 	return true
@@ -684,7 +677,6 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) HasChildTick() bool { return 
 func (p *ParallelSelfTransitionKeepsItsLeafPolicy) HasFinalize() bool { return false }
 func (p *ParallelSelfTransitionKeepsItsLeafPolicy) HasAutoforward() bool { return false }
 func (p *ParallelSelfTransitionKeepsItsLeafPolicy) HasActiveStates() bool { return true }
-func (p *ParallelSelfTransitionKeepsItsLeafPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *ParallelSelfTransitionKeepsItsLeafPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[ParallelSelfTransitionKeepsItsLeafEvent], _ *sce.Engine[ParallelSelfTransitionKeepsItsLeafState, ParallelSelfTransitionKeepsItsLeafEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

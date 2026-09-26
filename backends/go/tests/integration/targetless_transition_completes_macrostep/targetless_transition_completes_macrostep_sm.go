@@ -186,8 +186,6 @@ func (e TargetlessTransitionCompletesMacrostepEvent) String() string {
 // ======================================================================
 
 type TargetlessTransitionCompletesMacrostepPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -649,11 +647,6 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) NullEvent() TargetlessTra
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *TargetlessTransitionCompletesMacrostepPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *TargetlessTransitionCompletesMacrostepPolicy) HasParallelStates() bool {
 	return false
@@ -691,7 +684,6 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) GetActiveStates() []Targe
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *TargetlessTransitionCompletesMacrostepPolicy) SetActiveStates(_ []TargetlessTransitionCompletesMacrostepState) {}
-func (p *TargetlessTransitionCompletesMacrostepPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[TargetlessTransitionCompletesMacrostepEvent], _ *sce.Engine[TargetlessTransitionCompletesMacrostepState, TargetlessTransitionCompletesMacrostepEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

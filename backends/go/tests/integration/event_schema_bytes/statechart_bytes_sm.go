@@ -348,7 +348,6 @@ func (p *StatechartBytesPolicy) NullEvent() StatechartBytesEvent {
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *StatechartBytesPolicy) HasParallelStates() bool {
 	return false
@@ -386,8 +385,6 @@ func (p *StatechartBytesPolicy) GetActiveStates() []StatechartBytesState { retur
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *StatechartBytesPolicy) SetActiveStates(_ []StatechartBytesState) {}
-func (p *StatechartBytesPolicy) HasExternalEventFlag() bool { return false }
-func (p *StatechartBytesPolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *StatechartBytesPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[StatechartBytesEvent], _ *sce.Engine[StatechartBytesState, StatechartBytesEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

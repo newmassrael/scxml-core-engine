@@ -402,7 +402,6 @@ func (p *StatechartNativeActionPolicy) NullEvent() StatechartNativeActionEvent {
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *StatechartNativeActionPolicy) HasParallelStates() bool {
 	return false
@@ -440,8 +439,6 @@ func (p *StatechartNativeActionPolicy) GetActiveStates() []StatechartNativeActio
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *StatechartNativeActionPolicy) SetActiveStates(_ []StatechartNativeActionState) {}
-func (p *StatechartNativeActionPolicy) HasExternalEventFlag() bool { return false }
-func (p *StatechartNativeActionPolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *StatechartNativeActionPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[StatechartNativeActionEvent], _ *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

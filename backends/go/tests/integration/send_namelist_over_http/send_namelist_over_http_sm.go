@@ -222,8 +222,6 @@ func (e SendNamelistOverHttpEvent) String() string {
 // ======================================================================
 
 type SendNamelistOverHttpPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -639,11 +637,6 @@ func (p *SendNamelistOverHttpPolicy) NullEvent() SendNamelistOverHttpEvent {
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *SendNamelistOverHttpPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *SendNamelistOverHttpPolicy) HasParallelStates() bool {
 	return false
@@ -681,7 +674,6 @@ func (p *SendNamelistOverHttpPolicy) GetActiveStates() []SendNamelistOverHttpSta
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *SendNamelistOverHttpPolicy) SetActiveStates(_ []SendNamelistOverHttpState) {}
-func (p *SendNamelistOverHttpPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *SendNamelistOverHttpPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[SendNamelistOverHttpEvent], _ *sce.Engine[SendNamelistOverHttpState, SendNamelistOverHttpEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

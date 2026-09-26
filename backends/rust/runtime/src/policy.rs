@@ -216,9 +216,6 @@ pub trait StatePolicy: Sized + 'static {
     /// Whether the policy exposes `activeStates_` tracking (required for parallel states).
     const HAS_ACTIVE_STATES: bool = false;
 
-    /// Whether the policy has a `nextEventIsExternal_` flag for `_event.type` classification.
-    const HAS_EXTERNAL_EVENT_FLAG: bool = false;
-
     /// Whether the policy supports child-tick for nested invokes.
     const HAS_CHILD_TICK: bool = false;
 
@@ -594,12 +591,6 @@ pub trait StatePolicy: Sized + 'static {
     /// Generated only when `HAS_CHILD_TICK` is `true`. Called from
     /// [`Engine::tick`](crate::Engine::tick) to propagate scheduler ticks to children.
     fn tick_children(&mut self, _engine: &mut Engine<Self>) {}
-
-    /// Set the `nextEventIsExternal_` flag (§scxml-5.10.1).
-    ///
-    /// Generated only when `HAS_EXTERNAL_EVENT_FLAG` is `true`. Used by the engine's
-    /// `raise_external` to mark the next processed event as external for `_event.type`.
-    fn set_next_event_is_external(&mut self, _value: bool) {}
 
     /// §scxml-5.10: Populate pending event metadata fields from an event's metadata.
     ///

@@ -435,13 +435,11 @@ func (p *ParallelRegionRootExternalDomainPolicy) NeedsDataModelInit() bool {
 	return false
 }
 
-func (p *ParallelRegionRootExternalDomainPolicy) HasInvokeSupport() bool        { return false }
-func (p *ParallelRegionRootExternalDomainPolicy) HasChildTick() bool            { return false }
-func (p *ParallelRegionRootExternalDomainPolicy) HasFinalize() bool             { return false }
-func (p *ParallelRegionRootExternalDomainPolicy) HasAutoforward() bool          { return false }
-func (p *ParallelRegionRootExternalDomainPolicy) HasActiveStates() bool         { return true }
-func (p *ParallelRegionRootExternalDomainPolicy) HasExternalEventFlag() bool    { return false }
-func (p *ParallelRegionRootExternalDomainPolicy) SetNextEventIsExternal(_ bool) {}
+func (p *ParallelRegionRootExternalDomainPolicy) HasInvokeSupport() bool { return false }
+func (p *ParallelRegionRootExternalDomainPolicy) HasChildTick() bool     { return false }
+func (p *ParallelRegionRootExternalDomainPolicy) HasFinalize() bool      { return false }
+func (p *ParallelRegionRootExternalDomainPolicy) HasAutoforward() bool   { return false }
+func (p *ParallelRegionRootExternalDomainPolicy) HasActiveStates() bool  { return true }
 
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *ParallelRegionRootExternalDomainPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[ParallelRegionRootExternalDomainEvent], _ *sce.Engine[ParallelRegionRootExternalDomainState, ParallelRegionRootExternalDomainEvent]) {

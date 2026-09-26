@@ -701,11 +701,6 @@ func (e *Engine[S, E]) RaiseExternal(event E, eventData, origin string) {
 		"",                      // target
 	)
 	e.externalQueue.Raise(meta)
-
-	// §scxml-5.10.1: Mark next event as external for _event.type
-	if e.policy.HasExternalEventFlag() {
-		e.policy.SetNextEventIsExternal(true)
-	}
 }
 
 // RaiseExternalByName raises an external event by name (§scxml-6.4.1, for
@@ -748,10 +743,6 @@ func (e *Engine[S, E]) RaiseExternalWithMeta(event EventWithMetadata[E]) {
 	log.Printf("[sce] Engine::RaiseExternalWithMeta: enqueuing external event with metadata")
 
 	e.externalQueue.Raise(event)
-
-	if e.policy.HasExternalEventFlag() {
-		e.policy.SetNextEventIsExternal(true)
-	}
 }
 
 // ProcessEvent processes an external event (convenience API, runs one macrostep)

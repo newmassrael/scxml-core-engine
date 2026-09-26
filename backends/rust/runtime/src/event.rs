@@ -49,6 +49,21 @@ impl EventType {
             EventType::Platform => "platform",
         }
     }
+
+    /// §scxml-5.10.1: classify the event being processed — `platform` for the
+    /// events the processor itself raises (`error.*`, `done.*`), otherwise by
+    /// the queue it was taken from. Ports C++ `EventTypeHelper::classifyEventType`,
+    /// so every generated Rust machine asks this one function rather than
+    /// carrying its own copy of the rule.
+    pub fn classify(event_name: &str, from_external_queue: bool) -> EventType {
+        if event_name.starts_with("error.") || event_name.starts_with("done.") {
+            EventType::Platform
+        } else if from_external_queue {
+            EventType::External
+        } else {
+            EventType::Internal
+        }
+    }
 }
 
 /// Metadata fields attached to events (§scxml-5.10).
@@ -57,19 +72,16 @@ impl EventType {
 /// engine carries an `EventMetadata`, which is copied into `_event.*` fields
 /// in the script engine via [`EventMetadataHelper`](crate::helpers).
 ///
-/// ⚠ `event_type` does NOT currently decide anything. This comment used to say
-/// it "drives internal/external queue routing (not just the `_event.type`
-/// script binding)", and that was measured false on 2026-08-19: nothing in this
-/// crate reads the field, routing is decided by which queue a caller pushes to,
-/// and the script-visible `_event.type` is recomputed in generated code from the
-/// event NAME — after that generated code has already copied this field into the
-/// same slot. So one fact has two producers and the later one always wins, which
-/// is why [`platform`](Self::platform) and [`internal`](Self::internal) below
-/// have no callers at all. Closing that is its own round: the honest fix is for
-/// the engine to classify once, at `raise`, and for the backends to stop
-/// recomputing — spelled out in the debt registry rather than half-done here.
-/// The field stays on every profile until then, because removing it would
-/// change the no_std layout for a round that has not happened yet.
+/// ⚠ `event_type` does NOT decide anything. Routing is decided by which queue a
+/// caller pushes to, and the script-visible `_event.type` is decided by the
+/// engine where it DEQUEUES the event — the one moment the queue is known —
+/// through [`EventType::classify`] and
+/// [`Engine::is_current_event_external`](crate::Engine::is_current_event_external)
+/// (2026-09-26; before that an enqueue-time flag typed interleaved events
+/// wrongly). So this field is a second producer nothing reads, which is why
+/// [`platform`](Self::platform) and [`internal`](Self::internal) below have no
+/// callers. It stays on every profile because removing it would change the
+/// no_std layout.
 /// The five `SceString` fields gated below are W3C `_event.*` script/invoke/HTTP
 /// metadata with no no_std reader: reading `_event.data` (schemaless/dynamic) /
 /// `_event.sendid` / `_event.origin` / `_event.origintype` is an ECMAScript

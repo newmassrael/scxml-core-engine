@@ -137,8 +137,6 @@ impl Test347Event {
 // ======================================================================
 
 pub struct Test347Policy {
-    // W3C SCXML 5.10.1: External event flag for _event.type classification
-    next_event_is_external: bool,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
@@ -179,7 +177,6 @@ pub struct Test347Policy {
 impl Test347Policy {
     pub fn new() -> Self {
         Self {
-            next_event_is_external: false,
             session_id: None,
             pending_invokes: Vec::new(),
             active_invokes: std::collections::HashMap::new(),
@@ -431,7 +428,6 @@ impl StatePolicy for Test347Policy {
     // `()` — so without this constant a host had no route to the knowledge that
     // its driving loop must call `tick()` rather than `step()`.
     const NEEDS_EVENT_SCHEDULER: bool = true;
-    const HAS_EXTERNAL_EVENT_FLAG: bool = true;
     // §scxml-6.4: gates the engine's macrostep-end call into
     // `execute_pending_invokes`. §scxml-6.4.1 unsupported-type invokes need
     // it too — that call site is where their error.execution is raised.
@@ -586,10 +582,6 @@ impl StatePolicy for Test347Policy {
     // None before that ever happened.
     fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
         match history {}
-    }
-
-    fn set_next_event_is_external(&mut self, value: bool) {
-        self.next_event_is_external = value;
     }
 
     // ======================================================================

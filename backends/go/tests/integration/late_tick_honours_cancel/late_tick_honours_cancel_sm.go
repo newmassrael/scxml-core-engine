@@ -340,7 +340,6 @@ func (p *LateTickHonoursCancelPolicy) NullEvent() LateTickHonoursCancelEvent {
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *LateTickHonoursCancelPolicy) HasParallelStates() bool {
 	return false
@@ -378,8 +377,6 @@ func (p *LateTickHonoursCancelPolicy) GetActiveStates() []LateTickHonoursCancelS
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *LateTickHonoursCancelPolicy) SetActiveStates(_ []LateTickHonoursCancelState) {}
-func (p *LateTickHonoursCancelPolicy) HasExternalEventFlag() bool { return false }
-func (p *LateTickHonoursCancelPolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *LateTickHonoursCancelPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[LateTickHonoursCancelEvent], _ *sce.Engine[LateTickHonoursCancelState, LateTickHonoursCancelEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

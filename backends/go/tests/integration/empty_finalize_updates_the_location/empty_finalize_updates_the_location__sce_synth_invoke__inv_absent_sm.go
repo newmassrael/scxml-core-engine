@@ -164,8 +164,6 @@ func (e EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent) String() st
 // ======================================================================
 
 type EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -489,11 +487,6 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy) NullEvent
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy) HasParallelStates() bool {
 	return false
@@ -531,7 +524,6 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy) GetActive
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy) SetActiveStates(_ []EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState) {}
-func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent], _ *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

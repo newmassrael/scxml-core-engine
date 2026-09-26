@@ -142,18 +142,6 @@
     }
 {% endif %}
 
-private:
-{% if model.needs_event_type %}
-    // Helper: Determine event type using shared EventTypeHelper (W3C SCXML 5.10.1)
-    std::string getEventType(const std::string& eventName) {
-        bool isExternal = nextEventIsExternal_;
-        if (nextEventIsExternal_) {
-            nextEventIsExternal_ = false;
-        }
-        return ::SCE::EventTypeHelper::classifyEventType(eventName, isExternal);
-    }
-{% endif %}
-
 public:
     // Helper: Set _event variable in script engine (W3C SCXML 5.10)
     // Always generated for compile-time compatibility, but no-op if JSEngine not needed
@@ -172,7 +160,12 @@ public:
 {% if model.needs_script_engine and (model.needs_event_name or model.needs_event_data) %}
         if (eventName.empty()) return ::SCE::PayloadReading::Absent;
         ensureScriptEngine();
-        std::string actualType = eventType.empty() ? this->getEventType(eventName) : eventType;
+        // §scxml-5.10.1: the caller hands the type the engine decided at
+        // dequeue (`pendingEventType_`). It is empty only for a document that
+        // never reads `_event.type`, where the name's own class is all that is
+        // left to say.
+        std::string actualType =
+            eventType.empty() ? ::SCE::EventTypeHelper::classifyEventType(eventName, false) : eventType;
         // W3C SCXML C.1: `_event.origin` is the address the sending session
         // published, not its bare session id. The queue carries the id
         // because `executeFinalizeForChildEvent` keys on it

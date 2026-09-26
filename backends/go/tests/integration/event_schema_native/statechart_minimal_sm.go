@@ -348,7 +348,6 @@ func (p *StatechartMinimalPolicy) NullEvent() StatechartMinimalEvent {
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *StatechartMinimalPolicy) HasParallelStates() bool {
 	return false
@@ -386,8 +385,6 @@ func (p *StatechartMinimalPolicy) GetActiveStates() []StatechartMinimalState { r
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *StatechartMinimalPolicy) SetActiveStates(_ []StatechartMinimalState) {}
-func (p *StatechartMinimalPolicy) HasExternalEventFlag() bool { return false }
-func (p *StatechartMinimalPolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *StatechartMinimalPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[StatechartMinimalEvent], _ *sce.Engine[StatechartMinimalState, StatechartMinimalEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

@@ -424,7 +424,6 @@ fn analyze_model_features(model: &mut SCXMLModel) {
     model.needs_event_origin = false;
     model.needs_event_origintype = false;
     model.needs_event_invokeid = false;
-    model.needs_external_flag = false;
 
     // Temporarily take states out of model to avoid borrow conflict:
     // analyze_action needs &mut model (for events/flags) but never accesses model.states.
@@ -568,7 +567,6 @@ fn apply_script_engine_implications(model: &mut SCXMLModel) {
     model.needs_event_origin = true;
     model.needs_event_origintype = true;
     model.needs_event_invokeid = true;
-    model.needs_external_flag = true;
     // §scxml-B-2-8-1: which reading an arriving `_event.data` gets is decided
     // by the PAYLOAD, at run time, and a host may hand any scripted machine an
     // XML document. The other flips of `needs_dom_helper` are build-time facts
@@ -713,10 +711,6 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
                 if model.http_send_location.is_none() {
                     model.http_send_location = action.source_location.clone();
                 }
-            }
-            // W3C SCXML: SCXMLEventProcessor external flag
-            if action.send_type == "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" {
-                model.needs_external_flag = true;
             }
             check_action_event_fields(action, model);
         }

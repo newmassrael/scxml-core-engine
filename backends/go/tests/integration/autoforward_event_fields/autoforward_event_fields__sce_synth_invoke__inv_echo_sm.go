@@ -171,8 +171,6 @@ func (e AutoforwardEventFieldsSceSynthInvokeInvEchoEvent) String() string {
 // ======================================================================
 
 type AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -498,11 +496,6 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) NullEvent() Autoforw
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) HasParallelStates() bool {
 	return false
@@ -540,7 +533,6 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) GetActiveStates() []
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) SetActiveStates(_ []AutoforwardEventFieldsSceSynthInvokeInvEchoState) {}
-func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[AutoforwardEventFieldsSceSynthInvokeInvEchoEvent], _ *sce.Engine[AutoforwardEventFieldsSceSynthInvokeInvEchoState, AutoforwardEventFieldsSceSynthInvokeInvEchoEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

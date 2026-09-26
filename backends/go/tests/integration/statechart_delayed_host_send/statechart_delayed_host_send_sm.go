@@ -394,7 +394,6 @@ func (p *StatechartDelayedHostSendPolicy) NullEvent() StatechartDelayedHostSendE
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *StatechartDelayedHostSendPolicy) HasParallelStates() bool {
 	return false
@@ -432,8 +431,6 @@ func (p *StatechartDelayedHostSendPolicy) GetActiveStates() []StatechartDelayedH
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *StatechartDelayedHostSendPolicy) SetActiveStates(_ []StatechartDelayedHostSendState) {}
-func (p *StatechartDelayedHostSendPolicy) HasExternalEventFlag() bool { return false }
-func (p *StatechartDelayedHostSendPolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *StatechartDelayedHostSendPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[StatechartDelayedHostSendEvent], _ *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

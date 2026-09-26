@@ -2306,9 +2306,6 @@
                 "null"
               ]
             },
-            "needs_external_flag": {
-              "type": "boolean"
-            },
             "needs_foreach": {
               "type": [
                 "boolean",
@@ -2524,7 +2521,6 @@
             "needs_event_origintype",
             "needs_event_sendid",
             "needs_event_type",
-            "needs_external_flag",
             "needs_http_send",
             "needs_nonstatic_method",
             "needs_parent_template",

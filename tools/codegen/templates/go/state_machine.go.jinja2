@@ -255,10 +255,6 @@ type {{ machine_name }}Policy struct {
 	// W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
 	activeStates []{{ machine_name }}State
 {% endif %}
-{% if model.needs_external_flag %}
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
-{% endif %}
 {% if model.needs_event_name %}
 	pendingEventName string
 {% endif %}
@@ -589,13 +585,6 @@ func (p *{{ machine_name }}Policy) SetActiveStates(states []{{ machine_name }}St
 }
 {% endif %}
 
-{% if model.needs_external_flag %}
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *{{ machine_name }}Policy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-{% endif %}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *{{ machine_name }}Policy) HasParallelStates() bool {
 	return {{ 'true' if model.has_parallel_states else 'false' }}
@@ -657,12 +646,6 @@ func (p *{{ machine_name }}Policy) GetActiveStates() []{{ machine_name }}State {
 func (p *{{ machine_name }}Policy) SetActiveStates(_ []{{ machine_name }}State) {}
 {% else %}
 func (p *{{ machine_name }}Policy) HasActiveStates() bool { return true }
-{% endif %}
-{% if not model.needs_external_flag %}
-func (p *{{ machine_name }}Policy) HasExternalEventFlag() bool { return false }
-func (p *{{ machine_name }}Policy) SetNextEventIsExternal(_ bool) {}
-{% else %}
-func (p *{{ machine_name }}Policy) HasExternalEventFlag() bool { return true }
 {% endif %}
 {% set finalize_invokes = model.invokes | scxml | selectattr('finalize_content') | list if model.invokes | scxml else [] %}
 {% if not finalize_invokes %}

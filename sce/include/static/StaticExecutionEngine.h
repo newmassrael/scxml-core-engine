@@ -830,7 +830,12 @@ private:
     std::function<void(const std::string &parallel_id, const std::string &region_id)> onParallelRegionLocalComplete_;
     std::function<void(const std::string &parallel_id, const std::string &region_id, const std::string &donedata)>
         onParallelRegionRemoteSend_;
-    std::string currentEventInvokeId_;     // SCE Mesh §mesh-9.5: invokeId of event being processed
+    std::string currentEventInvokeId_;  // SCE Mesh §mesh-9.5: invokeId of event being processed
+    // §scxml-5.10.1: whether the event being processed was taken off the
+    // external queue. Set where the event is dequeued — the one moment the
+    // queue is known — and read when `_event` is bound, so interleaved
+    // internal and external events each carry their own `_event.type`.
+    bool currentEventFromExternalQueue_ = false;
     SCE::PullScheduler<Event> scheduler_;  // §scxml-6.2: Delayed event scheduler
 
     /// §scxml-6.2.2: where this engine reads "now" from — see `ISceClock`.
@@ -1107,11 +1112,6 @@ public:
                       static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);
 
         externalQueue_.raise(eventWithMetadata);
-
-        // §scxml-5.10.1: Mark next event as external for _event.type (test331)
-        if constexpr (SCE::Core::HasExternalEventFlag<StatePolicy>) {
-            policy_.nextEventIsExternal_ = true;
-        }
     }
 
     /**
@@ -1807,6 +1807,7 @@ protected:
             [this](const EventWithMetadata &eventWithMeta) {
                 Event event = eventWithMeta.event;
                 currentEventInvokeId_ = eventWithMeta.invokeId;
+                currentEventFromExternalQueue_ = false;
                 SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
                                                                                                  eventWithMeta);
                 bindTypedPayload(eventWithMeta);
@@ -1935,6 +1936,7 @@ protected:
      */
     void applyExternalEventPreamble(const EventWithMetadata &eventWithMeta) {
         currentEventInvokeId_ = eventWithMeta.invokeId;
+        currentEventFromExternalQueue_ = true;
         SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_, eventWithMeta);
         bindTypedPayload(eventWithMeta);
 
@@ -2485,6 +2487,18 @@ public:
      */
     bool isInFinalState() const {
         return terminalState_.has_value();
+    }
+
+    /**
+     * @brief Whether the event being processed came off the external queue
+     *        (§scxml-5.10.1 `_event.type`)
+     *
+     * Decided where the event was dequeued, so an internal event raised while
+     * an external one waits — or the reverse — is typed by the queue it was
+     * taken from, not by whatever was enqueued last.
+     */
+    bool isCurrentEventExternal() const {
+        return currentEventFromExternalQueue_;
     }
 
     /**

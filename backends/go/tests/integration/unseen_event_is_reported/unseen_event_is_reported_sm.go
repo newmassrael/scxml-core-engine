@@ -167,8 +167,6 @@ func (e UnseenEventIsReportedEvent) String() string {
 // ======================================================================
 
 type UnseenEventIsReportedPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -514,11 +512,6 @@ func (p *UnseenEventIsReportedPolicy) NullEvent() UnseenEventIsReportedEvent {
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *UnseenEventIsReportedPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *UnseenEventIsReportedPolicy) HasParallelStates() bool {
 	return false
@@ -556,7 +549,6 @@ func (p *UnseenEventIsReportedPolicy) GetActiveStates() []UnseenEventIsReportedS
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *UnseenEventIsReportedPolicy) SetActiveStates(_ []UnseenEventIsReportedState) {}
-func (p *UnseenEventIsReportedPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *UnseenEventIsReportedPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[UnseenEventIsReportedEvent], _ *sce.Engine[UnseenEventIsReportedState, UnseenEventIsReportedEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

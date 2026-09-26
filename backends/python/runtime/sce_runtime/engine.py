@@ -29,6 +29,7 @@ Around that core:
 
 from __future__ import annotations
 
+import dataclasses
 import uuid
 from collections import deque
 from typing import (
@@ -871,12 +872,16 @@ class Engine(Generic[S, E]):
                 self._error_cascade_events += 1
                 self._last_error_cascade_event = event
                 return
-        self._internal_queue.append(
-            EventWithMetadata(
-                event=event,
-                metadata=metadata or EventMetadata(event_type="internal"),
-            )
-        )
+        # §scxml-5.10.1: `_event.type` is the queue the event rides — an
+        # event on this one is "internal" whatever metadata its caller built
+        # (a `<send target="#_internal">` with a payload used to arrive with
+        # the dataclass default, "external"); only the processor's own
+        # platform events keep their class.
+        if metadata is None:
+            metadata = EventMetadata(event_type="internal")
+        elif metadata.event_type != "platform":
+            metadata = dataclasses.replace(metadata, event_type="internal")
+        self._internal_queue.append(EventWithMetadata(event=event, metadata=metadata))
 
     # ── BasicHTTP Event I/O Processor (§scxml-C-2) ─────────────
 

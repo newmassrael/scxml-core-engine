@@ -2789,7 +2789,6 @@ pub struct SCXMLModel {
     pub needs_event_origin: bool,
     pub needs_event_origintype: bool,
     pub needs_event_invokeid: bool,
-    pub needs_external_flag: bool,
 
     // Variables
     pub variables: Vec<Variable>,

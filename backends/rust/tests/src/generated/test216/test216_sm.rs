@@ -127,8 +127,6 @@ impl Test216Event {
 // ======================================================================
 
 pub struct Test216Policy {
-    // W3C SCXML 5.10.1: External event flag for _event.type classification
-    next_event_is_external: bool,
     // W3C SCXML 5.10: Event name for _event.name binding
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: typed as the runtime crate's [`SceString`]
@@ -216,7 +214,6 @@ impl Test216Policy {
     pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
         Self {
             script_engine,
-            next_event_is_external: false,
             pending_event_name: ::sce_rust_runtime::SceString::new(),
             pending_event_data: ::sce_rust_runtime::SceString::new(),
             pending_event_type: ::sce_rust_runtime::SceString::new(),
@@ -626,7 +623,6 @@ impl StatePolicy for Test216Policy {
     // `()` — so without this constant a host had no route to the knowledge that
     // its driving loop must call `tick()` rather than `step()`.
     const NEEDS_EVENT_SCHEDULER: bool = true;
-    const HAS_EXTERNAL_EVENT_FLAG: bool = true;
     // §scxml-6.4: gates the engine's macrostep-end call into
     // `execute_pending_invokes`. §scxml-6.4.1 unsupported-type invokes need
     // it too — that call site is where their error.execution is raised.
@@ -762,10 +758,6 @@ impl StatePolicy for Test216Policy {
     // None before that ever happened.
     fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
         match history {}
-    }
-
-    fn set_next_event_is_external(&mut self, value: bool) {
-        self.next_event_is_external = value;
     }
 
     // W3C SCXML 5.10: Populate pending event metadata from EventWithMetadata
@@ -931,16 +923,12 @@ impl StatePolicy for Test216Policy {
         if event != Self::null_event() {
             let event_name = Self::get_event_name(event);
             self.pending_event_name = event_name.to_string();
-            // W3C SCXML 5.10.1: Classify event type (ports C++ EventTypeHelper::classifyEventType)
-            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.")
-            {
-                "platform"
-            } else if self.next_event_is_external {
-                self.next_event_is_external = false;
-                "external"
-            } else {
-                "internal"
-            };
+            // §scxml-5.10.1: typed by the queue the engine took the event from.
+            let event_type = sce_rust_runtime::EventType::classify(
+                event_name,
+                engine.is_current_event_external(),
+            )
+            .as_str();
             self.pending_event_type = event_type.to_string();
             // W3C SCXML 5.10: Set _event with all available metadata fields
             let ev_data: &str = &self.pending_event_data;

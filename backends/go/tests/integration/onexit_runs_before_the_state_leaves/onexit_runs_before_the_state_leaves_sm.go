@@ -218,8 +218,6 @@ func (e OnexitRunsBeforeTheStateLeavesEvent) String() string {
 type OnexitRunsBeforeTheStateLeavesPolicy struct {
 	// W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
 	activeStates []OnexitRunsBeforeTheStateLeavesState
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -706,11 +704,6 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) SetActiveStates(states []OnexitRu
 	p.activeStates = append(p.activeStates[:0:0], states...)
 }
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *OnexitRunsBeforeTheStateLeavesPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *OnexitRunsBeforeTheStateLeavesPolicy) HasParallelStates() bool {
 	return false
@@ -742,7 +735,6 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) HasChildTick() bool { return fals
 func (p *OnexitRunsBeforeTheStateLeavesPolicy) HasFinalize() bool { return false }
 func (p *OnexitRunsBeforeTheStateLeavesPolicy) HasAutoforward() bool { return false }
 func (p *OnexitRunsBeforeTheStateLeavesPolicy) HasActiveStates() bool { return true }
-func (p *OnexitRunsBeforeTheStateLeavesPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[OnexitRunsBeforeTheStateLeavesEvent], _ *sce.Engine[OnexitRunsBeforeTheStateLeavesState, OnexitRunsBeforeTheStateLeavesEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

@@ -464,10 +464,6 @@ struct {{ model.name }}Policy {
     // transition matcher reads the policy from a const method.
     mutable {{ native_actions_interface }} *actions_ = nullptr;
     {% endif %}
-    {% if model.needs_external_flag %}
-    // W3C SCXML 6.2: Flag to mark next event as external (from send)
-    mutable bool nextEventIsExternal_ = false;
-    {% endif %}
     // W3C SCXML 5.10: the current event's metadata — the payload, origin,
     // sendid and invokeid a dequeued event carries.
     //

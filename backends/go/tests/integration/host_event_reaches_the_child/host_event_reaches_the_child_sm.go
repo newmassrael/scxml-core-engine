@@ -528,7 +528,6 @@ func (p *HostEventReachesTheChildPolicy) NullEvent() HostEventReachesTheChildEve
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *HostEventReachesTheChildPolicy) HasParallelStates() bool {
 	return false
@@ -568,8 +567,6 @@ func (p *HostEventReachesTheChildPolicy) GetActiveStates() []HostEventReachesThe
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *HostEventReachesTheChildPolicy) SetActiveStates(_ []HostEventReachesTheChildState) {}
-func (p *HostEventReachesTheChildPolicy) HasExternalEventFlag() bool { return false }
-func (p *HostEventReachesTheChildPolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *HostEventReachesTheChildPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[HostEventReachesTheChildEvent], _ *sce.Engine[HostEventReachesTheChildState, HostEventReachesTheChildEvent]) {}
 

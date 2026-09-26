@@ -192,8 +192,6 @@ func (e DonedataLocalInvokeEvent) String() string {
 // ======================================================================
 
 type DonedataLocalInvokePolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -780,11 +778,6 @@ func (p *DonedataLocalInvokePolicy) NullEvent() DonedataLocalInvokeEvent {
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *DonedataLocalInvokePolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *DonedataLocalInvokePolicy) HasParallelStates() bool {
 	return false
@@ -824,7 +817,6 @@ func (p *DonedataLocalInvokePolicy) GetActiveStates() []DonedataLocalInvokeState
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *DonedataLocalInvokePolicy) SetActiveStates(_ []DonedataLocalInvokeState) {}
-func (p *DonedataLocalInvokePolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *DonedataLocalInvokePolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[DonedataLocalInvokeEvent], _ *sce.Engine[DonedataLocalInvokeState, DonedataLocalInvokeEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

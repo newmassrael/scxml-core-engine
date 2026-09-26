@@ -519,7 +519,6 @@ func (p *InvokePrecedesDequeueMidrunPolicy) NullEvent() InvokePrecedesDequeueMid
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *InvokePrecedesDequeueMidrunPolicy) HasParallelStates() bool {
 	return false
@@ -559,8 +558,6 @@ func (p *InvokePrecedesDequeueMidrunPolicy) GetActiveStates() []InvokePrecedesDe
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *InvokePrecedesDequeueMidrunPolicy) SetActiveStates(_ []InvokePrecedesDequeueMidrunState) {}
-func (p *InvokePrecedesDequeueMidrunPolicy) HasExternalEventFlag() bool { return false }
-func (p *InvokePrecedesDequeueMidrunPolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[InvokePrecedesDequeueMidrunEvent], _ *sce.Engine[InvokePrecedesDequeueMidrunState, InvokePrecedesDequeueMidrunEvent]) {}
 

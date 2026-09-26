@@ -200,8 +200,6 @@ func (e XmlDataIsADomTreeEvent) String() string {
 // ======================================================================
 
 type XmlDataIsADomTreePolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -542,11 +540,6 @@ func (p *XmlDataIsADomTreePolicy) NullEvent() XmlDataIsADomTreeEvent {
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *XmlDataIsADomTreePolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *XmlDataIsADomTreePolicy) HasParallelStates() bool {
 	return false
@@ -584,7 +577,6 @@ func (p *XmlDataIsADomTreePolicy) GetActiveStates() []XmlDataIsADomTreeState { r
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *XmlDataIsADomTreePolicy) SetActiveStates(_ []XmlDataIsADomTreeState) {}
-func (p *XmlDataIsADomTreePolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *XmlDataIsADomTreePolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[XmlDataIsADomTreeEvent], _ *sce.Engine[XmlDataIsADomTreeState, XmlDataIsADomTreeEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

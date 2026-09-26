@@ -334,7 +334,6 @@ func (p *NestedFinalNotTerminalPolicy) NullEvent() NestedFinalNotTerminalEvent {
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *NestedFinalNotTerminalPolicy) HasParallelStates() bool {
 	return false
@@ -372,8 +371,6 @@ func (p *NestedFinalNotTerminalPolicy) GetActiveStates() []NestedFinalNotTermina
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *NestedFinalNotTerminalPolicy) SetActiveStates(_ []NestedFinalNotTerminalState) {}
-func (p *NestedFinalNotTerminalPolicy) HasExternalEventFlag() bool { return false }
-func (p *NestedFinalNotTerminalPolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *NestedFinalNotTerminalPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[NestedFinalNotTerminalEvent], _ *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

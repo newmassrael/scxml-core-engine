@@ -184,8 +184,6 @@ func (e DonedataLateCompletionEvent) String() string {
 // ======================================================================
 
 type DonedataLateCompletionPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -655,11 +653,6 @@ func (p *DonedataLateCompletionPolicy) NullEvent() DonedataLateCompletionEvent {
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *DonedataLateCompletionPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *DonedataLateCompletionPolicy) HasParallelStates() bool {
 	return false
@@ -699,7 +692,6 @@ func (p *DonedataLateCompletionPolicy) GetActiveStates() []DonedataLateCompletio
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *DonedataLateCompletionPolicy) SetActiveStates(_ []DonedataLateCompletionState) {}
-func (p *DonedataLateCompletionPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *DonedataLateCompletionPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[DonedataLateCompletionEvent], _ *sce.Engine[DonedataLateCompletionState, DonedataLateCompletionEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

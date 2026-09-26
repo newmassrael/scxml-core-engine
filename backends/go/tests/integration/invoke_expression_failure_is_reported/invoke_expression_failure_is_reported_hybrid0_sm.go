@@ -286,7 +286,6 @@ func (p *InvokeExpressionFailureIsReportedHybrid0Policy) NullEvent() InvokeExpre
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *InvokeExpressionFailureIsReportedHybrid0Policy) HasParallelStates() bool {
 	return false
@@ -324,8 +323,6 @@ func (p *InvokeExpressionFailureIsReportedHybrid0Policy) GetActiveStates() []Inv
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *InvokeExpressionFailureIsReportedHybrid0Policy) SetActiveStates(_ []InvokeExpressionFailureIsReportedHybrid0State) {}
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) HasExternalEventFlag() bool { return false }
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *InvokeExpressionFailureIsReportedHybrid0Policy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[InvokeExpressionFailureIsReportedHybrid0Event], _ *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

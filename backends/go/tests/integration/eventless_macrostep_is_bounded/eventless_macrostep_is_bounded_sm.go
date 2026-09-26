@@ -207,8 +207,6 @@ func (e EventlessMacrostepIsBoundedEvent) String() string {
 // ======================================================================
 
 type EventlessMacrostepIsBoundedPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -606,11 +604,6 @@ func (p *EventlessMacrostepIsBoundedPolicy) NullEvent() EventlessMacrostepIsBoun
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *EventlessMacrostepIsBoundedPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *EventlessMacrostepIsBoundedPolicy) HasParallelStates() bool {
 	return false
@@ -648,7 +641,6 @@ func (p *EventlessMacrostepIsBoundedPolicy) GetActiveStates() []EventlessMacrost
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *EventlessMacrostepIsBoundedPolicy) SetActiveStates(_ []EventlessMacrostepIsBoundedState) {}
-func (p *EventlessMacrostepIsBoundedPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *EventlessMacrostepIsBoundedPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[EventlessMacrostepIsBoundedEvent], _ *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

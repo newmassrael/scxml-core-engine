@@ -655,6 +655,11 @@ pub struct Engine<P: StatePolicy> {
     /// `<data>` to bind late.
     #[cfg(not(feature = "no_std"))]
     pub(crate) late_bound_states: std::collections::HashSet<P::State>,
+    /// §scxml-5.10.1: whether the event being processed was taken off the
+    /// external queue. Set where it is dequeued — the one moment the queue is
+    /// known — and read when `_event` is bound, so interleaved internal and
+    /// external events each carry their own `_event.type`.
+    pub(crate) current_event_from_external_queue: bool,
     /// §scxml-6.4: Completion callback invoked when reaching a final state.
     ///
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: `Box<dyn FnMut>` is alloc-coupled and gated to
@@ -824,6 +829,7 @@ impl<P: StatePolicy> Engine<P> {
             is_running: false,
             terminal_state: None,
             interpreter_exited: false,
+            current_event_from_external_queue: false,
             #[cfg(not(feature = "no_std"))]
             late_bound_states: std::collections::HashSet::new(),
             #[cfg(not(feature = "no_std"))]
@@ -1817,6 +1823,16 @@ impl<P: StatePolicy> Engine<P> {
         self.late_bound_states.insert(state)
     }
 
+    /// Whether the event being processed came off the external queue
+    /// (§scxml-5.10.1 `_event.type`).
+    ///
+    /// Decided where the event was dequeued, so an internal event raised
+    /// while an external one waits — or the reverse — is typed by the queue it
+    /// was taken from, not by whatever was enqueued last.
+    pub fn is_current_event_external(&self) -> bool {
+        self.current_event_from_external_queue
+    }
+
     /// §scxml-5.5 + 6.3.1: Stash the donedata payload evaluated on a
     /// top-level `<final>` so the invoking parent can lift it onto
     /// `done.invoke.<id>._event.data`.
@@ -1928,11 +1944,6 @@ impl<P: StatePolicy> Engine<P> {
             target: SceString::new(),
         };
         self.external_queue.raise(meta);
-
-        // §scxml-5.10.1: Mark next event as external for _event.type
-        if concepts::has_external_event_flag::<P>() {
-            self.policy.set_next_event_is_external(true);
-        }
     }
 
     /// EventSchema native lowering: raise an external event carrying a
@@ -1974,11 +1985,6 @@ impl<P: StatePolicy> Engine<P> {
             target: SceString::new(),
         };
         self.external_queue.raise(meta);
-
-        // §scxml-5.10.1: Mark next event as external for _event.type
-        if concepts::has_external_event_flag::<P>() {
-            self.policy.set_next_event_is_external(true);
-        }
     }
 
     /// Raise a typed event that also carries its payload on the `_event.data`
@@ -2026,11 +2032,6 @@ impl<P: StatePolicy> Engine<P> {
             target: SceString::new(),
         };
         self.external_queue.raise(meta);
-
-        // §scxml-5.10.1: Mark next event as external for _event.type
-        if concepts::has_external_event_flag::<P>() {
-            self.policy.set_next_event_is_external(true);
-        }
     }
 
     /// §scxml-6.4.1: Raise an external event by name (for child autoforward).
@@ -2083,10 +2084,6 @@ impl<P: StatePolicy> Engine<P> {
         sce_log_debug!("Engine::raise_external_with_meta: enqueuing external event with metadata");
 
         self.external_queue.raise(event);
-
-        if concepts::has_external_event_flag::<P>() {
-            self.policy.set_next_event_is_external(true);
-        }
     }
 
     /// §scxml-3.12: Process an external event (convenience API, runs one macrostep).
@@ -2960,6 +2957,8 @@ impl<P: StatePolicy> Engine<P> {
     /// §scxml-D-mainEventLoop: bind one event taken off the internal queue as
     /// `_event`, select, and take the microstep it selects.
     fn take_internal_event(&mut self, event_with_meta: EventWithMetadata<P::Event, P::Payload>) {
+        // §scxml-5.10.1: this event came off the internal queue.
+        self.current_event_from_external_queue = false;
         // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
         self.policy
             .populate_event_metadata(&event_with_meta.metadata);
@@ -3066,6 +3065,8 @@ impl<P: StatePolicy> Engine<P> {
         // comes back.
         self.macrostep_truncated = false;
         self.macrostep_microsteps_taken = 0;
+        // §scxml-5.10.1: this event came off the external queue.
+        self.current_event_from_external_queue = true;
         {
             // §scxml-6.5: Execute finalize before parent's own transition matching
             if concepts::has_finalize::<P>() {

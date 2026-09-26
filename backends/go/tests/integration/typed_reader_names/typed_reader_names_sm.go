@@ -167,8 +167,6 @@ func (e TypedReaderNamesEvent) String() string {
 // ======================================================================
 
 type TypedReaderNamesPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -662,11 +660,6 @@ func (p *TypedReaderNamesPolicy) NullEvent() TypedReaderNamesEvent {
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *TypedReaderNamesPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *TypedReaderNamesPolicy) HasParallelStates() bool {
 	return false
@@ -704,7 +697,6 @@ func (p *TypedReaderNamesPolicy) GetActiveStates() []TypedReaderNamesState { ret
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *TypedReaderNamesPolicy) SetActiveStates(_ []TypedReaderNamesState) {}
-func (p *TypedReaderNamesPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *TypedReaderNamesPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[TypedReaderNamesEvent], _ *sce.Engine[TypedReaderNamesState, TypedReaderNamesEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

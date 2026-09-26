@@ -161,8 +161,6 @@ func (e StatechartHostProcessorEvent) String() string {
 // ======================================================================
 
 type StatechartHostProcessorPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -550,11 +548,6 @@ func (p *StatechartHostProcessorPolicy) NullEvent() StatechartHostProcessorEvent
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *StatechartHostProcessorPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *StatechartHostProcessorPolicy) HasParallelStates() bool {
 	return false
@@ -592,7 +585,6 @@ func (p *StatechartHostProcessorPolicy) GetActiveStates() []StatechartHostProces
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *StatechartHostProcessorPolicy) SetActiveStates(_ []StatechartHostProcessorState) {}
-func (p *StatechartHostProcessorPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *StatechartHostProcessorPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[StatechartHostProcessorEvent], _ *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

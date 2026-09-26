@@ -477,8 +477,6 @@ func (e AiLoopEvent) String() string {
 type AiLoopPolicy struct {
 	// W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
 	activeStates []AiLoopState
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -1359,11 +1357,6 @@ func (p *AiLoopPolicy) SetActiveStates(states []AiLoopState) {
 	p.activeStates = append(p.activeStates[:0:0], states...)
 }
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *AiLoopPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *AiLoopPolicy) HasParallelStates() bool {
 	return true
@@ -1395,7 +1388,6 @@ func (p *AiLoopPolicy) HasChildTick() bool { return false }
 func (p *AiLoopPolicy) HasFinalize() bool { return false }
 func (p *AiLoopPolicy) HasAutoforward() bool { return false }
 func (p *AiLoopPolicy) HasActiveStates() bool { return true }
-func (p *AiLoopPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *AiLoopPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[AiLoopEvent], _ *sce.Engine[AiLoopState, AiLoopEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

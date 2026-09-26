@@ -307,7 +307,6 @@ func (p *SendParamPayloadSceSynthInvokeInvEmitterPolicy) NullEvent() SendParamPa
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *SendParamPayloadSceSynthInvokeInvEmitterPolicy) HasParallelStates() bool {
 	return false
@@ -345,8 +344,6 @@ func (p *SendParamPayloadSceSynthInvokeInvEmitterPolicy) GetActiveStates() []Sen
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *SendParamPayloadSceSynthInvokeInvEmitterPolicy) SetActiveStates(_ []SendParamPayloadSceSynthInvokeInvEmitterState) {}
-func (p *SendParamPayloadSceSynthInvokeInvEmitterPolicy) HasExternalEventFlag() bool { return false }
-func (p *SendParamPayloadSceSynthInvokeInvEmitterPolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *SendParamPayloadSceSynthInvokeInvEmitterPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[SendParamPayloadSceSynthInvokeInvEmitterEvent], _ *sce.Engine[SendParamPayloadSceSynthInvokeInvEmitterState, SendParamPayloadSceSynthInvokeInvEmitterEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

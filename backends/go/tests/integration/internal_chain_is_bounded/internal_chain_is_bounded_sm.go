@@ -223,8 +223,6 @@ func (e InternalChainIsBoundedEvent) String() string {
 // ======================================================================
 
 type InternalChainIsBoundedPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -726,11 +724,6 @@ func (p *InternalChainIsBoundedPolicy) NullEvent() InternalChainIsBoundedEvent {
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *InternalChainIsBoundedPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *InternalChainIsBoundedPolicy) HasParallelStates() bool {
 	return false
@@ -768,7 +761,6 @@ func (p *InternalChainIsBoundedPolicy) GetActiveStates() []InternalChainIsBounde
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *InternalChainIsBoundedPolicy) SetActiveStates(_ []InternalChainIsBoundedState) {}
-func (p *InternalChainIsBoundedPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *InternalChainIsBoundedPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[InternalChainIsBoundedEvent], _ *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

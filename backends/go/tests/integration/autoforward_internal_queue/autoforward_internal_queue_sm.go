@@ -503,7 +503,6 @@ func (p *AutoforwardInternalQueuePolicy) NullEvent() AutoforwardInternalQueueEve
 }
 
 
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *AutoforwardInternalQueuePolicy) HasParallelStates() bool {
 	return false
@@ -543,8 +542,6 @@ func (p *AutoforwardInternalQueuePolicy) GetActiveStates() []AutoforwardInternal
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *AutoforwardInternalQueuePolicy) SetActiveStates(_ []AutoforwardInternalQueueState) {}
-func (p *AutoforwardInternalQueuePolicy) HasExternalEventFlag() bool { return false }
-func (p *AutoforwardInternalQueuePolicy) SetNextEventIsExternal(_ bool) {}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *AutoforwardInternalQueuePolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[AutoforwardInternalQueueEvent], _ *sce.Engine[AutoforwardInternalQueueState, AutoforwardInternalQueueEvent]) {}
 
