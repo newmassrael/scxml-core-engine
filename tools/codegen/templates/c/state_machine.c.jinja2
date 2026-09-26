@@ -2762,14 +2762,18 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
     {% for state_id, state in model.states | dictsort %}
     {% set has_scxml_invoke_exit = (state.invokes | scxml) | length > 0 %}
     {% set has_hybrid_invoke_exit = (state.invokes | hybrid) | length > 0 %}
-    {# W3C SCXML 6.4: a host-run invoke joins this chain for its own reason —
-       its exit path tells the HOST to stop, which no other arm does. Named in
-       the guard rather than left to `unsupported`: a state whose only invoke
-       is host-served must still get a `case`, or the host is told to start and
-       never told to stop. The Rust and Go templates record the same
-       measurement. #}
-    {% set has_host_invoke_exit = (state.invokes | host_invoker) | length > 0 %}
-    {% if state.on_exit_blocks or has_scxml_invoke_exit or has_hybrid_invoke_exit or has_host_invoke_exit %}
+    {# W3C SCXML 6.4: an invoke still pending when its state leaves is
+       dropped here, whatever its kind, and a host-run one that started is
+       told to stop. `unsupported` is the host-served kind plus the refused
+       kind. A state whose only invoke was host-served once got no `case`,
+       so the host was told to start and never to stop; and while the
+       pending cancel below was keyed to the SCXML kinds alone, a state
+       holding only host-served or refused invokes kept its pending entry,
+       so the macrostep-end `execute_pending_invokes` started the host's work
+       — or raised the refused one's error.execution — for a state that had
+       already left. #}
+    {% set has_unsupported_invoke_exit = (state.invokes | unsupported) | length > 0 %}
+    {% if state.on_exit_blocks or has_scxml_invoke_exit or has_hybrid_invoke_exit or has_unsupported_invoke_exit %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
         {# §scxml-D-exitStates: onexit first, then cancelInvoke for every kind
            of invocation, then configuration.delete(s) (`exit_states` does
@@ -2790,7 +2794,7 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
         (void){{ csym_prefix }}{{ model.name }}_cancel_host_invoke(sm, "{{ invoke_info.invoke_type | escape_c }}",
                                                                     "{{ invoke_info.invoke_id | escape_c }}");
         {% endfor %}
-        {% if has_scxml_invoke_exit or has_hybrid_invoke_exit %}
+        {% if has_scxml_invoke_exit or has_hybrid_invoke_exit or has_unsupported_invoke_exit %}
         /* W3C SCXML 6.4: cancel any pending invokes deferred from this
            state's onentry that have not yet executed (state exit before
            macrostep end), and destroy any active children spawned from

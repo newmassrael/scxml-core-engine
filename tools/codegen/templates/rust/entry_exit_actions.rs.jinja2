@@ -398,11 +398,13 @@
         }
 {% endfor %}
 {% endif %}
-{# A host-run invocation ends with the state that started it, so its exit
-   chain has to exist. The two kinds above are SCXML child sessions; before
-   this a document whose only `<invoke>` was host-served emitted no exit
-   `match` at all, and the host was never told to stop. #}
-{% set has_invoke_exits = model.invokes | scxml or model.invokes | hybrid or model.invokes | host_invoker %}
+{# Every kind of invocation needs this exit chain: a pending one is dropped
+   here when its state leaves before the macrostep ends (§scxml-6.4), and a
+   host-run one is told to stop. `unsupported` covers the host-served kind
+   and the refused kind alike — a document whose only `<invoke>` was refused
+   used to emit no exit `match`, so the refused invoke was attempted after
+   its state had left and raised a §scxml-6.4.1 error.execution. #}
+{% set has_invoke_exits = model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
 {% if model.has_exit_actions %}
         match state {
 {% for state_id, state in model.states | dictsort %}
