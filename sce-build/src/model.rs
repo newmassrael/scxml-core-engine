@@ -2733,6 +2733,17 @@ pub struct SCXMLModel {
     /// how many to make room for.
     #[serde(default)]
     pub delayed_host_send_max_params: usize,
+    /// Whether any host-run `<invoke>` in this document names a deadline
+    /// (`_sce_deadline_ms`, §scxml-6.4.1's platform-defined arguments).
+    ///
+    /// A deadline is an entry on the delayed-send queue, and the C11
+    /// backend's queue entry is a fixed-size struct: this is what tells it
+    /// at generation time to make room for one. The heap backends hold it
+    /// in a variant and need no flag. Set in
+    /// [`crate::host_processor_analyzer::declare_host_surfaces`], beside
+    /// the `error.invoke` event and scheduler a deadline needs.
+    #[serde(default)]
+    pub has_host_invoke_deadline: bool,
     /// Whether the document contains any `<cancel>` action (§scxml-6.3).
     ///
     /// Drives the Rust `StatePolicy::ScheduledSendId` selection: a cancel-free

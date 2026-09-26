@@ -28,9 +28,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "statechart_host_invoker_sm.h"
+
+#ifndef SCE_HOST_INVOKE_DEADLINE_TABLE
+#error "SCE_HOST_INVOKE_DEADLINE_TABLE must name the shared deadline table (backends/c/tests/CMakeLists.txt)"
+#endif
 
 // The type the fixture was compiled for. `backends/c/tests/CMakeLists.txt`
 // passes this same string to `--host-invoker`.
@@ -102,6 +107,12 @@ static int64_t counter(const statechart_host_invoker_t *sm, const char *name) {
         ok = statechart_host_invoker_leaked(sm, &value);
     } else if (strcmp(name, "lost") == 0) {
         ok = statechart_host_invoker_lost(sm, &value);
+    } else if (strcmp(name, "expired") == 0) {
+        ok = statechart_host_invoker_expired(sm, &value);
+    } else if (strcmp(name, "finished") == 0) {
+        ok = statechart_host_invoker_finished(sm, &value);
+    } else if (strcmp(name, "misdated") == 0) {
+        ok = statechart_host_invoker_misdated(sm, &value);
     }
     if (!ok) {
         (void)fprintf(stderr, "host_invoker: FAIL - the fixture declares `%s` and the machine could not read it\n",
@@ -578,6 +589,213 @@ static int an_invoker_registered_for_another_type_does_not_run_this_one(void) {
     return bad;
 }
 
+// An invoker that answers nothing and records, per start, whether the request
+// still carried the deadline param. `running_t`'s bookkeeping, with the param
+// in the line.
+static void timed_invoker(void *user_data, const sce_host_invoke_event_t *event, sce_host_invoke_response_t *out) {
+    (void)out;
+    running_t *run = (running_t *)user_data;
+    char line[128];
+    if (event->phase == SCE_HOST_INVOKE_START) {
+        (void)snprintf(line, sizeof(line), "START id=%s deadline-param=%s", event->invoke_id,
+                       param(event, SCE_HOST_INVOKE_DEADLINE_PARAM) != NULL ? "true" : "false");
+        if (run->starts < (int)(sizeof(run->tokens) / sizeof(run->tokens[0]))) {
+            (void)snprintf(run->ids[run->starts], sizeof(run->ids[0]), "%s", event->invoke_id);
+            run->tokens[run->starts] = event->token;
+        }
+        run->starts++;
+    } else {
+        (void)snprintf(line, sizeof(line), "CANCEL id=%s", event->invoke_id);
+    }
+    record(&run->rec, line);
+}
+
+// A machine on a manual clock, driven into `timed`. The clock is handed to
+// `_init`, which arms against it.
+static void boot_timed(statechart_host_invoker_t *sm, running_t *run) {
+    sce_host_invoker_registry_t wiring;
+    memset(run, 0, sizeof(*run));
+    memset(&wiring, 0, sizeof(wiring));
+    (void)sce_host_invoker_register(&wiring, DECLARED_TYPE, timed_invoker, run);
+    statechart_host_invoker_init_with_clock_and_host_invokers(sm, sce_clock_manual(0), &wiring);
+    deliver(sm, STATECHART_HOST_INVOKER_EVENT_TIME);
+}
+
+// A deadline that passes while the invocation is still running ends it: the
+// host is told to stop, the document receives `error.invoke.slow` with
+// `_event.data` "deadline", and a reply afterwards is refused. The param is the
+// machine's — the host never sees it — and a `<cancel>` of the empty send id
+// does not reach it.
+static int a_deadline_that_passes_ends_the_invocation(void) {
+    running_t run;
+    statechart_host_invoker_t sm;
+    boot_timed(&sm, &run);
+
+    int bad = 0;
+    bad |= check("deadline", "starts of slow without the param",
+                 count_lines(&run.rec, "START id=slow deadline-param=false"), 1);
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_FORGET);
+    statechart_host_invoker_advance_time_ms(&sm, 49);
+    bad |= check("deadline", "expired at 49 ms", counter(&sm, "expired"), 0);
+    statechart_host_invoker_advance_time_ms(&sm, 1);
+    bad |= check("deadline", "expired at 50 ms", counter(&sm, "expired"), 1);
+    bad |= check("deadline", "cancels of slow", count_lines(&run.rec, "CANCEL id=slow"), 1);
+    bad |= expect(
+        "deadline", "a reply after the deadline was refused",
+        !statechart_host_invoker_complete_host_invoke(&sm, DECLARED_TYPE, "slow", token_of(&run, "slow"), "late"));
+    statechart_host_invoker_step(&sm);
+    bad |= check("deadline", "finished", counter(&sm, "finished"), 0);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// The discriminator: a completion before the deadline is the outcome, and the
+// deadline that comes due afterwards does nothing — no cancel, no
+// `error.invoke`, and nothing left for the host to tick toward.
+static int a_completion_before_the_deadline_disarms_it(void) {
+    running_t run;
+    statechart_host_invoker_t sm;
+    boot_timed(&sm, &run);
+
+    int bad = 0;
+    bad |=
+        expect("disarm", "a running invocation's completion was accepted",
+               statechart_host_invoker_complete_host_invoke(&sm, DECLARED_TYPE, "slow", token_of(&run, "slow"), "ok"));
+    statechart_host_invoker_step(&sm);
+    bad |= check("disarm", "finished", counter(&sm, "finished"), 1);
+    bad |= check("disarm", "time until next scheduled", statechart_host_invoker_time_until_next_scheduled_ms(&sm), -1);
+    statechart_host_invoker_advance_time_ms(&sm, 100);
+    bad |= check("disarm", "expired", counter(&sm, "expired"), 0);
+    bad |= check("disarm", "cancels of slow", count_lines(&run.rec, "CANCEL id=slow"), 0);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// W3C SCXML 6.4.1: a deadline that is not a whole number of milliseconds is an
+// argument that cannot be evaluated — error.execution, and the host is never
+// asked to start the invocation.
+static int a_deadline_that_is_not_milliseconds_starts_nothing(void) {
+    running_t run;
+    statechart_host_invoker_t sm;
+    boot_timed(&sm, &run);
+
+    int bad = 0;
+    bad |= check("undated", "misdated", counter(&sm, "misdated"), 1);
+    bad |= check("undated", "starts of undated", count_lines(&run.rec, "START id=undated deadline-param=false"), 0);
+    bad |= check("undated", "starts of undated with the param",
+                 count_lines(&run.rec, "START id=undated deadline-param=true"), 0);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// The table's JSON is read by walking it, not by a library this test does not
+// link: whitespace and commas separate, `[` opens a list, `]` closes one, and a
+// string is a quoted run with no escape — the table has no use for one, and a
+// reader that ignored an escape would misread it silently, so meeting one is a
+// failure.
+static const char *skip_separators(const char *p) {
+    while (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t' || *p == ',') {
+        p++;
+    }
+    return p;
+}
+
+// The string literal at `*cursor` (after separators), copied into `out`, with
+// `*cursor` moved past it.
+static bool read_table_string(const char **cursor, char *out, size_t cap) {
+    const char *p = skip_separators(*cursor);
+    if (*p != '"') {
+        return false;
+    }
+    p++;
+    size_t n = 0;
+    while (*p != '\0' && *p != '"') {
+        if (*p == '\\' || n + 1 >= cap) {
+            (void)fprintf(stderr, "host_invoker: FAIL [table] - a string this reader cannot take\n");
+            return false;
+        }
+        out[n++] = *p++;
+    }
+    if (*p != '"') {
+        return false;
+    }
+    out[n] = '\0';
+    *cursor = p + 1;
+    return true;
+}
+
+// The position just inside the list that follows the key `key`, or NULL.
+static const char *open_table_list(const char *text, const char *key) {
+    const char *at = strstr(text, key);
+    if (at == NULL) {
+        return NULL;
+    }
+    at = strchr(at, '[');
+    return at != NULL ? at + 1 : NULL;
+}
+
+// Every runtime reads a deadline's text by one grammar, held to one table.
+// strtoull would not do: it skips leading whitespace and reads a sign, and a
+// deadline this backend honours while another refuses it makes a document
+// depend on where it was compiled.
+static int a_deadline_is_read_by_the_shared_table(void) {
+    static char text[8192];
+    FILE *file = fopen(SCE_HOST_INVOKE_DEADLINE_TABLE, "rb");
+    if (file == NULL) {
+        (void)fprintf(stderr, "host_invoker: FAIL [table] - cannot read %s\n", SCE_HOST_INVOKE_DEADLINE_TABLE);
+        return 1;
+    }
+    size_t len = fread(text, 1, sizeof(text) - 1, file);
+    (void)fclose(file);
+    text[len] = '\0';
+
+    int bad = 0;
+    int accepted = 0;
+    int refused = 0;
+    char written[64];
+    char ms[64];
+    // `accepted` is a list of `[written, ms]` pairs.
+    const char *cursor = open_table_list(text, "\"accepted\"");
+    while (cursor != NULL) {
+        cursor = skip_separators(cursor);
+        if (*cursor != '[') {
+            break;
+        }
+        cursor++;
+        if (!read_table_string(&cursor, written, sizeof(written)) || !read_table_string(&cursor, ms, sizeof(ms))) {
+            bad |= expect("table", "an accepted pair is two strings", false);
+            break;
+        }
+        cursor = skip_separators(cursor);
+        if (*cursor != ']') {
+            bad |= expect("table", "an accepted pair is two strings", false);
+            break;
+        }
+        cursor++;
+        uint64_t got = 0;
+        const bool ok = sce_parse_host_invoke_deadline_ms(written, &got);
+        if (!ok || got != (uint64_t)strtoull(ms, NULL, 10)) {
+            (void)fprintf(stderr, "host_invoker: FAIL [table] - \"%s\" did not read as %s\n", written, ms);
+            bad = 1;
+        }
+        accepted++;
+    }
+    // `refused` is a list of strings.
+    cursor = open_table_list(text, "\"refused\"");
+    while (cursor != NULL && read_table_string(&cursor, written, sizeof(written))) {
+        uint64_t got = 0;
+        if (sce_parse_host_invoke_deadline_ms(written, &got)) {
+            (void)fprintf(stderr, "host_invoker: FAIL [table] - \"%s\" was accepted\n", written);
+            bad = 1;
+        }
+        refused++;
+    }
+    // A floor: an empty read would pass every check above.
+    bad |= expect("table", "the table's accepted list was read", accepted > 0);
+    bad |= expect("table", "the table's refused list was read", refused > 0);
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
     bad |= a_registered_invoker_is_started_with_what_the_document_wrote();
@@ -594,11 +812,15 @@ int main(void) {
     bad |= a_generic_done_invoke_raised_the_old_way_is_refused();
     bad |= a_declared_type_with_no_invoker_still_raises_error_execution();
     bad |= an_invoker_registered_for_another_type_does_not_run_this_one();
+    bad |= a_deadline_that_passes_ends_the_invocation();
+    bad |= a_completion_before_the_deadline_disarms_it();
+    bad |= a_deadline_that_is_not_milliseconds_starts_nothing();
+    bad |= a_deadline_is_read_by_the_shared_table();
 
     if (bad != 0) {
         (void)fprintf(stderr, "host_invoker: FAIL - see the scenario(s) named above\n");
         return 1;
     }
-    (void)printf("host_invoker: PASS - 5 scenarios\n");
+    (void)printf("host_invoker: PASS - every scenario\n");
     return 0;
 }

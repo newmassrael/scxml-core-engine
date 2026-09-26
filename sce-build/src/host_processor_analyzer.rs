@@ -328,6 +328,7 @@ pub fn declare_host_surfaces(
             model.events.insert("error.invoke".to_string());
             model.needs_event_scheduler = Some(true);
             model.needs_tick_driving = model.needs_event_scheduler_driving();
+            model.has_host_invoke_deadline = true;
         }
         // A host-served invoke evaluates its request when it starts, which
         // analysis — run before this declaration — could not know it would.

@@ -324,6 +324,63 @@ static inline const sce_host_processor_entry_t *sce_host_registry_find(const sce
     is the event a completion falls back to. */
 #define SCE_DONE_INVOKE_EVENT "done.invoke"
 
+/** The event an invocation that did not finish raises instead of its
+    completion — a host-run invocation past its `_sce_deadline_ms` — named the
+    way `sce:mesh-rpc` names a request that ran out of time (SCE_MESH.md §9.5),
+    so a document handles the two alike. Specific form: `error.invoke.<id>`. */
+#define SCE_ERROR_INVOKE_PREFIX "error.invoke."
+
+/** The generic form of SCE_ERROR_INVOKE_PREFIX, for a document that names no
+    specific `error.invoke.<id>` — as SCE_DONE_INVOKE_EVENT is for a
+    completion. */
+#define SCE_ERROR_INVOKE_EVENT "error.invoke"
+
+/** The reserved `<param>` a host-run `<invoke>` names its deadline with, in
+    milliseconds. The machine reads it and does not hand it to the host: past
+    the deadline, an invocation still running is cancelled and the document
+    receives `error.invoke.<id>` instead of its completion. */
+#define SCE_HOST_INVOKE_DEADLINE_PARAM "_sce_deadline_ms"
+
+/** Read the text of a SCE_HOST_INVOKE_DEADLINE_PARAM value as milliseconds
+    into `*out`, returning whether it is one.
+
+    One or more ASCII digits, optionally followed by `.` and one or more `0` —
+    a `<param expr>` reaches the request as the text of its value, and a script
+    engine may render a whole number `5000.0` — within a signed 64-bit count.
+    No sign, no whitespace, no exponent, no digit separator. Spelled out rather
+    than left to `strtoull`, which skips leading whitespace and reads a sign,
+    because every runtime implements this and one table holds them all:
+    `sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json`. */
+static inline bool sce_parse_host_invoke_deadline_ms(const char *written, uint64_t *out) {
+    const uint64_t max = (uint64_t)INT64_MAX;
+    uint64_t ms = 0u;
+    const char *p = written;
+    if (written == NULL || *p < '0' || *p > '9') {
+        return false;
+    }
+    for (; *p >= '0' && *p <= '9'; ++p) {
+        const uint64_t digit = (uint64_t)(*p - '0');
+        if (ms > (max - digit) / 10u) {
+            return false;
+        }
+        ms = ms * 10u + digit;
+    }
+    if (*p == '.') {
+        ++p;
+        if (*p != '0') {
+            return false;
+        }
+        while (*p == '0') {
+            ++p;
+        }
+    }
+    if (*p != '\0') {
+        return false;
+    }
+    *out = ms;
+    return true;
+}
+
 /** How many host-run invocations may be in flight at once. Each generated
     machine asserts it covers the most its own configurations can hold. */
 #ifndef SCE_MAX_HOST_INVOCATIONS

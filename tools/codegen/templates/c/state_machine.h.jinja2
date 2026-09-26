@@ -358,6 +358,18 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
     uint8_t host_param_count;
 {% endif %}
 {% endif %}
+{% if model.has_host_invoke_deadline %}
+    /* The deadline of one start of a host-run invocation, judged when the
+       entry comes due: if that start is still running, the host is told to
+       stop and the document receives `error.invoke.<id>`. On this queue for
+       the reason `host_send` is — one fire-time order, one next-deadline
+       answer. Its `send_id` is empty and `scheduled_cancel` skips it: a
+       deadline is the machine's, not the document's. */
+    bool host_invoke_deadline;
+    char deadline_processor_type[SCE_MAX_ID_LEN];
+    char deadline_invoke_id[SCE_MAX_ID_LEN];
+    uint64_t deadline_token;
+{% endif %}
 } {{ csym_prefix }}{{ model.name }}_scheduled_entry_t;
 
 typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_queue {

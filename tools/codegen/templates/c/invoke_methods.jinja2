@@ -217,24 +217,17 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {{ param_macros.collect_host_params_into(invoke_info.params, model, csym_prefix, '_host_inv_params', '_host_inv_param_count', '_host_inv_param', '<invoke>', '            ') -}}
             {
                 sce_host_invoke_event_t _host_inv;
-                sce_host_invoke_response_t _host_inv_out;
-                const sce_host_invoker_entry_t *_host_inv_entry =
-                    sce_host_invoker_find(&sm->host_invokers, "{{ invoke_info.invoke_type | escape_c }}");
                 memset(&_host_inv, 0, sizeof(_host_inv));
-                memset(&_host_inv_out, 0, sizeof(_host_inv_out));
                 _host_inv.phase = SCE_HOST_INVOKE_START;
                 _host_inv.processor_type = "{{ invoke_info.invoke_type | escape_c }}";
                 _host_inv.invoke_id = "{{ invoke_info.invoke_id | escape_c }}";
                 _host_inv.src = {% if invoke_info.srcexpr %}_host_inv_src{% else %}"{{ invoke_info.src | default('', true) | escape_c }}"{% endif %};
                 _host_inv.content = {% if invoke_info.contentexpr %}_host_inv_content{% else %}"{{ invoke_info.content | default('', true) | escape_c }}"{% endif %};
-{% if host_param_cap > 0 %}
-                _host_inv.params = _host_inv_param_count > 0 ? _host_inv_params : NULL;
-                _host_inv.param_count = _host_inv_param_count;
-{% else %}
-                _host_inv.params = NULL;
-                _host_inv.param_count = 0;
-{% endif %}
-                if (_host_inv_entry == NULL) {
+                /* W3C SCXML 6.4.1: the machine's one start path records the
+                   invocation, reads its deadline and runs the handler; this
+                   site only says what the document wrote. */
+                if (!{{ csym_prefix }}{{ model.name }}_perform_host_invoke(
+                        sm, &_host_inv, {% if host_param_cap > 0 %}_host_inv_params, _host_inv_param_count{% else %}NULL, 0{% endif %})) {
                     /* W3C SCXML 6.4.1: declared but no invoker registered. The
                        document asked for a process to be run and none was,
                        which is the same fact as an unsupported type — so the
@@ -245,24 +238,6 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                         "<invoke> names an invoker the host declared but never registered");
 {% endif %}
-                } else {
-                    /* W3C SCXML 6.4: recorded, with its token, BEFORE the
-                       handler runs, so a handler that completes
-                       synchronously completes an invocation the set already
-                       holds. */
-                    _host_inv.token = sce_host_invocation_mark(&sm->started_host_invokes,
-                                                               "{{ invoke_info.invoke_type | escape_c }}",
-                                                               "{{ invoke_info.invoke_id | escape_c }}");
-                    _host_inv_entry->handler(_host_inv_entry->user_data, &_host_inv, &_host_inv_out);
-                    if (_host_inv_out.has_done_data) {
-                        /* W3C SCXML 6.4: a completion the host reported NOW
-                           takes the same door as one it reports later, so
-                           the two cannot disagree about whether the
-                           invocation is over. */
-                        (void){{ csym_prefix }}{{ model.name }}_complete_host_invoke(
-                            sm, "{{ invoke_info.invoke_type | escape_c }}", "{{ invoke_info.invoke_id | escape_c }}",
-                            _host_inv.token, _host_inv_out.done_data);
-                    }
                 }
             }
 {% else %}

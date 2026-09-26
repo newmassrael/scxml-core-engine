@@ -1668,6 +1668,11 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     target_include_directories(sce_c_integration_host_invoker PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
+    # The deadline grammar every runtime shares is held to one table, read by
+    # this test from the checkout.
+    target_compile_definitions(sce_c_integration_host_invoker PRIVATE
+        SCE_HOST_INVOKE_DEADLINE_TABLE="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json"
+    )
     set_target_properties(sce_c_integration_host_invoker PROPERTIES
         C_STANDARD 11
         C_STANDARD_REQUIRED ON

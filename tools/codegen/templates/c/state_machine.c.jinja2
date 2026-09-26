@@ -409,6 +409,16 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model
    `scheduled_push` above is. Measured: without it an invoker-only document
    compiled with an implicit declaration and would have failed at link. */
 SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ model.name }}_event_from_name(const char *name, size_t len);
+/* W3C SCXML 6.4.1: the one place a host-run invocation starts. Forward-declared
+   for the same reason — every start site sits above its definition. */
+SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                          sce_host_invoke_event_t *start,
+                                                                          sce_host_send_param_t *params,
+                                                                          int param_count);
+{% if model.has_host_invoke_deadline %}
+SCE_SM_FN static void expire_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm,
+                                         const {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *deadline);
+{% endif %}
 {% endif %}
 {# §scxml-6.4.1 is in this guard for the reason §scxml-6.2.5 is: a host-run
    invoke answers with a COMPLETION, and `done.invoke.<id>` is a name chosen
@@ -2763,33 +2773,13 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
         {% endfor %}
         {% for invoke_info in state.invokes | host_invoker %}
         /* W3C SCXML 6.4: the host's invocation ends with the state that
-           started it. `sce_host_invocation_take` answers whether this one ever
+           started it. `_cancel_host_invoke` answers whether this one ever
            started, so the emitted chain needs no bookkeeping of its own — a
            state that exits before its macrostep settles never started, and the
-           host is not told to tear down work it never began. */
-        {
-            const sce_host_invoker_entry_t *_host_cancel_entry =
-                sce_host_invoker_find(&sm->host_invokers, "{{ invoke_info.invoke_type | escape_c }}");
-            uint64_t _host_cancel_token = 0u;
-            if (sce_host_invocation_take(&sm->started_host_invokes,
-                                         "{{ invoke_info.invoke_type | escape_c }}",
-                                         "{{ invoke_info.invoke_id | escape_c }}", &_host_cancel_token)
-                && _host_cancel_entry != NULL) {
-                sce_host_invoke_event_t _host_cancel;
-                sce_host_invoke_response_t _host_cancel_out;
-                memset(&_host_cancel, 0, sizeof(_host_cancel));
-                memset(&_host_cancel_out, 0, sizeof(_host_cancel_out));
-                _host_cancel.phase = SCE_HOST_INVOKE_CANCEL;
-                _host_cancel.processor_type = "{{ invoke_info.invoke_type | escape_c }}";
-                _host_cancel.invoke_id = "{{ invoke_info.invoke_id | escape_c }}";
-                _host_cancel.src = "";
-                _host_cancel.content = "";
-                _host_cancel.params = NULL;
-                _host_cancel.param_count = 0;
-                _host_cancel.token = _host_cancel_token;
-                _host_cancel_entry->handler(_host_cancel_entry->user_data, &_host_cancel, &_host_cancel_out);
-            }
-        }
+           host is not told to tear down work it never began. The same door a
+           host's own cancel takes, so a pending deadline is dropped either way. */
+        (void){{ csym_prefix }}{{ model.name }}_cancel_host_invoke(sm, "{{ invoke_info.invoke_type | escape_c }}",
+                                                                    "{{ invoke_info.invoke_id | escape_c }}");
         {% endfor %}
         {% if has_scxml_invoke_exit or has_hybrid_invoke_exit %}
         /* W3C SCXML 6.4: cancel any pending invokes deferred from this
@@ -3322,6 +3312,9 @@ SCE_SM_FN static void scheduled_push({{ csym_prefix }}{{ model.name }}_t *sm,
 {% if model.has_delayed_host_send %}
     slot->host_send = false;
 {% endif %}
+{% if model.has_host_invoke_deadline %}
+    slot->host_invoke_deadline = false;
+{% endif %}
     sm->scheduled_queue.count++;
 }
 
@@ -3433,6 +3426,14 @@ SCE_SM_FN static void scheduled_push_parent({{ csym_prefix }}{{ model.name }}_t 
     slot->payload_lua_ref = LUA_NOREF;
 {% endif %}
     slot->to_parent = true;
+    /* The slot may be one a shifted entry of another kind left behind, so
+       every kind flag this entry does not carry is cleared, not assumed. */
+{% if model.has_delayed_host_send %}
+    slot->host_send = false;
+{% endif %}
+{% if model.has_host_invoke_deadline %}
+    slot->host_invoke_deadline = false;
+{% endif %}
     if (event_name != NULL) {
         strncpy(slot->to_parent_event, event_name, (size_t)SCE_MAX_ID_LEN - 1u);
         slot->to_parent_event[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
@@ -3484,7 +3485,12 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_cancel({{ csym_prefix }}{{ model.na
     }
     uint8_t pos = 0u;
     for (uint8_t i = 0u; i < sm->scheduled_queue.count; ++i) {
-        if (strcmp(sm->scheduled_queue.buf[i].send_id, send_id) != 0) {
+        if (strcmp(sm->scheduled_queue.buf[i].send_id, send_id) != 0
+{%- if model.has_host_invoke_deadline %}
+            /* A host-run invocation's deadline is the machine's, not the
+               document's: no `<cancel>` reaches it. */
+            || sm->scheduled_queue.buf[i].host_invoke_deadline
+{%- endif %}) {
             if (pos != i) {
                 sm->scheduled_queue.buf[pos] = sm->scheduled_queue.buf[i];
             }
@@ -4494,6 +4500,17 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             continue;
         }
 {% endif %}
+{% if model.has_host_invoke_deadline %}
+        /* W3C SCXML 6.4: a host-run invocation's deadline came due. */
+        if (ready.host_invoke_deadline) {
+            expire_host_invoke(sm, &ready);
+            run_main_event_loop(sm);
+            if (!sm->is_running || {{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
+                break;
+            }
+            continue;
+        }
+{% endif %}
 {% if model.has_parent_communication %}
         /* W3C SCXML 6.2 + 6.4 (test187): a `to_parent` entry routes
            through `parent_dispatch` instead of the local raise path —
@@ -5012,25 +5029,13 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_has_invoker(const {{ csym_prefi
     return sce_host_invoker_find(&sm->host_invokers, processor_type) != NULL;
 }
 
-/* W3C SCXML 6.4: stop a host-run invocation from outside the exit chain.
-
-   Exposed because the exit chain is not the only way an invocation ends: a
-   host that tears its own session down needs to say so, and a test needs to
-   ask whether "did this one start?" is answered correctly. Returns whether a
-   cancel was delivered. */
-SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_cancel_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
-                                                                    const char *invoke_id) {
-    const sce_host_invoker_entry_t *entry;
+/* Tell the host to stop start `token` of `invoke_id`. Returns whether an
+   invoker was there to tell. */
+SCE_SM_FN static bool deliver_host_invoke_cancel({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
+                                                 const char *invoke_id, uint64_t token) {
+    const sce_host_invoker_entry_t *entry = sce_host_invoker_find(&sm->host_invokers, processor_type);
     sce_host_invoke_event_t event;
     sce_host_invoke_response_t out;
-    uint64_t token = 0u;
-    if (sm == NULL) {
-        return false;
-    }
-    if (!sce_host_invocation_take(&sm->started_host_invokes, processor_type, invoke_id, &token)) {
-        return false;
-    }
-    entry = sce_host_invoker_find(&sm->host_invokers, processor_type);
     if (entry == NULL) {
         return false;
     }
@@ -5046,6 +5051,204 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_cancel_host_invoke({{ csym_pref
     event.token = token;
     entry->handler(entry->user_data, &event, &out);
     return true;
+}
+
+{% if model.has_host_invoke_deadline %}
+/* Arm the deadline of start `token`: an entry on the delayed-send queue, in
+   the same fire-time order as every other, with no send id — no `<cancel>`
+   reaches it. The fire time is held at the clock's maximum rather than
+   wrapped, since the largest deadline the grammar admits would otherwise land
+   in the past and end the invocation at once. */
+SCE_SM_FN static void schedule_host_invoke_deadline({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
+                                                    const char *invoke_id, uint64_t token, uint64_t deadline_ms) {
+    const uint64_t now_ms = sched_now_ms(sm);
+    const uint64_t fire_time_ms = deadline_ms > UINT64_MAX - now_ms ? UINT64_MAX : now_ms + deadline_ms;
+    uint8_t pos;
+    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot;
+    if (sm->scheduled_queue.count >= (uint8_t)SCE_MAX_SCHEDULED) {
+{% if 'error.execution' in model.events %}
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "the scheduled-send queue is full, so an <invoke> deadline was dropped");
+{% endif %}
+        return;
+    }
+    pos = sm->scheduled_queue.count;
+    for (uint8_t i = 0; i < sm->scheduled_queue.count; ++i) {
+        if (fire_time_ms < sm->scheduled_queue.buf[i].fire_time_ms) {
+            pos = i;
+            break;
+        }
+    }
+    for (uint8_t j = sm->scheduled_queue.count; j > pos; --j) {
+        sm->scheduled_queue.buf[j] = sm->scheduled_queue.buf[j - 1u];
+    }
+    slot = &sm->scheduled_queue.buf[pos];
+    memset(slot, 0, sizeof(*slot));
+    slot->fire_time_ms = fire_time_ms;
+    slot->event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
+{% if model.needs_script_engine %}
+    slot->payload_lua_ref = LUA_NOREF;
+{% endif %}
+    slot->host_invoke_deadline = true;
+    sce_copy_bounded_id(slot->deadline_processor_type, processor_type);
+    sce_copy_bounded_id(slot->deadline_invoke_id, invoke_id);
+    slot->deadline_token = token;
+    sm->scheduled_queue.count++;
+}
+
+/* Drop the pending deadline of start `token`, whose invocation ended another
+   way — completed or cancelled. Leaving it would keep a host ticking toward a
+   deadline that can no longer do anything. */
+SCE_SM_FN static void drop_host_invoke_deadline({{ csym_prefix }}{{ model.name }}_t *sm, uint64_t token) {
+    uint8_t pos = 0u;
+    for (uint8_t i = 0u; i < sm->scheduled_queue.count; ++i) {
+        const bool this_deadline = sm->scheduled_queue.buf[i].host_invoke_deadline
+                                   && sm->scheduled_queue.buf[i].deadline_token == token;
+        if (!this_deadline) {
+            if (pos != i) {
+                sm->scheduled_queue.buf[pos] = sm->scheduled_queue.buf[i];
+            }
+            pos++;
+        }
+    }
+    sm->scheduled_queue.count = pos;
+}
+
+/* W3C SCXML 6.4: a host-run invocation's deadline came due. If that start is
+   still running, end it: the host is told to stop, and the document receives
+   `error.invoke.<id>` — or the generic `error.invoke` when it names no
+   specific one — with `_event.invokeid` set and `_event.data` the string
+   "deadline". Through the same door a completion takes, so exactly one of the
+   two happens. */
+SCE_SM_FN static void expire_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm,
+                                         const {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *deadline) {
+    char name[SCE_MAX_ID_LEN];
+    const size_t prefix_len = sizeof(SCE_ERROR_INVOKE_PREFIX) - 1u;
+    const size_t id_len = strlen(deadline->deadline_invoke_id);
+    {{ csym_prefix }}{{ model.name }}_event_t expired = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
+    if (!sce_host_invocation_take_token(&sm->started_host_invokes, deadline->deadline_processor_type,
+                                        deadline->deadline_invoke_id, deadline->deadline_token)) {
+        return;
+    }
+    if (!deliver_host_invoke_cancel(sm, deadline->deadline_processor_type, deadline->deadline_invoke_id,
+                                    deadline->deadline_token)) {
+        return;
+    }
+    if (prefix_len + id_len < sizeof(name)) {
+        memcpy(name, SCE_ERROR_INVOKE_PREFIX, prefix_len);
+        memcpy(name + prefix_len, deadline->deadline_invoke_id, id_len);
+        name[prefix_len + id_len] = '\0';
+        expired = {{ csym_prefix }}{{ model.name }}_event_from_name(name, prefix_len + id_len);
+    }
+    if (expired == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
+        expired = {{ csym_prefix }}{{ model.name }}_event_from_name(SCE_ERROR_INVOKE_EVENT,
+                                                                    sizeof(SCE_ERROR_INVOKE_EVENT) - 1u);
+    }
+    if (expired != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
+        {{ csym_prefix }}{{ model.name }}_event_with_meta_t raised;
+        memset(&raised, 0, sizeof(raised));
+        raised.event = expired;
+        /* The JSON spelling of the string, as every other backend carries it. */
+        sce_copy_bounded_data(raised.data, "\"deadline\"");
+        sce_copy_bounded_id(raised.invoke_id, deadline->deadline_invoke_id);
+        {{ csym_prefix }}{{ model.name }}_raise_external(sm, &raised);
+    }
+}
+{% endif %}
+
+/* W3C SCXML 6.4.1: start a host-run invocation, reporting whether an invoker
+   ran it. `false` means none was registered, which the start site turns into
+   `error.execution`.
+
+   The start is recorded, with its token, BEFORE the handler runs, so a handler
+   that completes synchronously completes an invocation the set already holds;
+   and a completion reported now takes the same door as one reported later.
+
+   A `_sce_deadline_ms` param is the machine's, not the host's: it is taken out
+   of `params` (the start site's own array) and armed with the start. A value
+   that is not a whole number of milliseconds raises `error.execution` and
+   starts nothing — an argument of the element that cannot be evaluated — and
+   the call answers `true` because the report has been made. */
+SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                          sce_host_invoke_event_t *start,
+                                                                          sce_host_send_param_t *params,
+                                                                          int param_count) {
+    const sce_host_invoker_entry_t *entry = sce_host_invoker_find(&sm->host_invokers, start->processor_type);
+    sce_host_invoke_response_t out;
+{% if model.has_host_invoke_deadline %}
+    bool has_deadline = false;
+    const char *unreadable = NULL;
+    uint64_t deadline_ms = 0u;
+    int kept = 0;
+{% endif %}
+    if (entry == NULL) {
+        return false;
+    }
+{% if model.has_host_invoke_deadline %}
+    for (int i = 0; i < param_count; ++i) {
+        if (strcmp(params[i].name, SCE_HOST_INVOKE_DEADLINE_PARAM) == 0) {
+            /* Given twice is two answers to one question, so unreadable too. */
+            if ((has_deadline || !sce_parse_host_invoke_deadline_ms(params[i].value, &deadline_ms))
+                && unreadable == NULL) {
+                unreadable = params[i].value;
+            }
+            has_deadline = true;
+            continue;
+        }
+        params[kept++] = params[i];
+    }
+    param_count = kept;
+    if (unreadable != NULL) {
+{% if 'error.execution' in model.events %}
+        char message[SCE_MAX_DATA_LEN];
+        (void)snprintf(message, sizeof(message),
+                       "<invoke type='%s' id='%s'>: " SCE_HOST_INVOKE_DEADLINE_PARAM
+                       "='%s' is not a whole number of milliseconds",
+                       start->processor_type, start->invoke_id, unreadable);
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, message);
+{% endif %}
+        return true;
+    }
+{% endif %}
+    start->params = param_count > 0 ? params : NULL;
+    start->param_count = param_count;
+    start->token = sce_host_invocation_mark(&sm->started_host_invokes, start->processor_type, start->invoke_id);
+{% if model.has_host_invoke_deadline %}
+    if (has_deadline) {
+        schedule_host_invoke_deadline(sm, start->processor_type, start->invoke_id, start->token, deadline_ms);
+    }
+{% endif %}
+    memset(&out, 0, sizeof(out));
+    entry->handler(entry->user_data, start, &out);
+    if (out.has_done_data) {
+        (void){{ csym_prefix }}{{ model.name }}_complete_host_invoke(sm, start->processor_type, start->invoke_id,
+                                                                     start->token, out.done_data);
+    }
+    return true;
+}
+
+/* W3C SCXML 6.4: stop a host-run invocation whose state has exited, or from
+   outside the exit chain.
+
+   The exit chain calls this, and it is exposed because the exit chain is not
+   the only way an invocation ends: a host that tears its own session down
+   needs to say so, and a test needs to ask whether "did this one start?" is
+   answered correctly. Returns whether a cancel was delivered. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_cancel_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
+                                                                    const char *invoke_id) {
+    uint64_t token = 0u;
+    if (sm == NULL) {
+        return false;
+    }
+    if (!sce_host_invocation_take(&sm->started_host_invokes, processor_type, invoke_id, &token)) {
+        return false;
+    }
+{% if model.has_host_invoke_deadline %}
+    drop_host_invoke_deadline(sm, token);
+{% endif %}
+    return deliver_host_invoke_cancel(sm, processor_type, invoke_id, token);
 }
 
 /* W3C SCXML 6.4: a host-run invocation finished; raise its
@@ -5076,6 +5279,9 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke({{ csym_pr
     if (!sce_host_invocation_take_token(&sm->started_host_invokes, processor_type, invoke_id, token)) {
         return false;
     }
+{% if model.has_host_invoke_deadline %}
+    drop_host_invoke_deadline(sm, token);
+{% endif %}
     id_len = strlen(invoke_id);
     if (prefix_len + id_len >= sizeof(name)) {
         /* A name longer than any event this machine declares cannot name one

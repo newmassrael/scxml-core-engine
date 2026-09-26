@@ -2160,6 +2160,11 @@
             "has_history_states": {
               "type": "boolean"
             },
+            "has_host_invoke_deadline": {
+              "default": false,
+              "description": "Whether any host-run `<invoke>` in this document names a deadline (`_sce_deadline_ms`, §scxml-6.4.1's platform-defined arguments).\n\nA deadline is an entry on the delayed-send queue, and the C11 backend's queue entry is a fixed-size struct: this is what tells it at generation time to make room for one. The heap backends hold it in a variant and need no flag. Set in [`crate::host_processor_analyzer::declare_host_surfaces`], beside the `error.invoke` event and scheduler a deadline needs.",
+              "type": "boolean"
+            },
             "has_parallel_states": {
               "type": "boolean"
             },
