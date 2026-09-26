@@ -19,6 +19,7 @@
 #include "factory/NodeFactory.h"
 #include "parsing/ActionParser.h"
 #include "parsing/PugiXMLParser.h"
+#include "parsing/SemanticError.h"
 
 #include <gtest/gtest.h>
 
@@ -68,21 +69,29 @@ TEST(SendParamLocationTest, ExprParamStillWins) {
     EXPECT_EQ(params[0].valueExpr(), "1 + 1");
 }
 
-// §scxml-5.7.1 makes 'name' required; a param carrying neither value form
-// has nothing to send, so both stay out of the param list rather than
-// entering it with an empty expression that would evaluate to undefined.
-TEST(SendParamLocationTest, NamelessAndValuelessParamsAreDropped) {
+// §scxml-5.7.1 makes 'name' required; a nameless param has no key to send
+// under, so it stays out of the param list rather than entering it with an
+// empty name.
+TEST(SendParamLocationTest, NamelessParamIsDropped) {
     auto nameless = parseSendElement("<send xmlns=\"http://www.w3.org/2005/07/scxml\" event=\"e\">"
                                      "  <param expr=\"1\"/>"
                                      "</send>");
     ASSERT_NE(nameless, nullptr);
     EXPECT_TRUE(nameless->getParamsWithExpr().empty());
+}
 
-    auto valueless = parseSendElement("<send xmlns=\"http://www.w3.org/2005/07/scxml\" event=\"e\">"
+// §scxml-5.7: "A conformant SCXML document MUST specify either the 'expr'
+// attribute of <param> or the 'location' attribute". A param naming neither
+// is a document error, refused where the document is read — as the code
+// generator's frontend refuses it — rather than dropped in silence.
+TEST(SendParamLocationTest, ValuelessParamIsRefused) {
+    SCE::PugiXMLParser xmlParser;
+    auto doc = xmlParser.parseContent("<send xmlns=\"http://www.w3.org/2005/07/scxml\" event=\"e\">"
                                       "  <param name=\"aParam\"/>"
                                       "</send>");
-    ASSERT_NE(valueless, nullptr);
-    EXPECT_TRUE(valueless->getParamsWithExpr().empty());
+    ASSERT_TRUE(doc) << "fixture must parse as XML";
+    SCE::ActionParser actionParser(std::make_shared<SCE::NodeFactory>());
+    EXPECT_THROW(actionParser.parseActionNode(doc->getRootElement()), SCE::parsing::SemanticExactlyOneAttribute);
 }
 
 }  // namespace

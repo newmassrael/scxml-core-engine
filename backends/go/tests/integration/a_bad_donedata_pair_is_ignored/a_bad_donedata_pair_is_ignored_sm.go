@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f41658fd13fc9dfc148e625da5ebe860056bf477d1f608022a918aadfef3652c
+// source-hash: ca41bb31388364a653df5c43642b7f70894bfe28acab04d3f8f0ea8b795da311
 
 
 // SPDX-License-Identifier: MIT
@@ -18,7 +18,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine
+// SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine
 
 package a_bad_donedata_pair_is_ignored
 
@@ -281,6 +281,21 @@ func (p *ABadDonedataPairIsIgnoredPolicy) V() (int64, bool) {
 	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "v")
 }
 
+// Obj reports what the `obj` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `obj` was assigned a value of another type, or the engine refused.
+//
+// The value as JSON text, serialised by the engine's own JSON.stringify
+// (§scxml-B-2) so the key order is the document's.
+func (p *ABadDonedataPairIsIgnoredPolicy) Obj() (string, bool) {
+	return sce.ReadDatamodelJSON(p.ScriptEngine, p.SessionID, "obj")
+}
+
 
 
 // IsStateActive checks if a state is active by name (W3C SCXML 5.9.2: In() predicate).
@@ -371,6 +386,16 @@ func (p *ABadDonedataPairIsIgnoredPolicy) InitializeDataModel(eng *sce.Engine[AB
 		} else {
 			eng.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<data id='v'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "v", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize obj from expr="({})"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `{}`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "obj", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<data id='obj'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "obj", nil)
 		}
 	}
 
@@ -739,7 +764,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line a_bad_donedata_pair_is_ignored.scxml:21
+//line a_bad_donedata_pair_is_ignored.scxml:23
 func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteEntryActions(state ABadDonedataPairIsIgnoredState, engine *sce.Engine[ABadDonedataPairIsIgnoredState, ABadDonedataPairIsIgnoredEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	// W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
@@ -751,7 +776,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteEntryActions(state ABadDonedata
 	p.activeStates = append(p.activeStates, state)
 	switch state {
 	case ABadDonedataPairIsIgnoredStateR1f:
-		//line a_bad_donedata_pair_is_ignored.scxml:36
+		//line a_bad_donedata_pair_is_ignored.scxml:39
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
 		{
@@ -770,7 +795,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteEntryActions(state ABadDonedata
 				} else {
 					engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<donedata> <param name='good'> failed to evaluate"))
 				}
-				if val, err := se.EvaluateExpression(p.SessionID, "error(\"SCXML expr is not valid ECMAScript: nowhere: nowhere is not declared by this document\")"); err == nil {
+				if val, err := se.EvaluateExpression(p.SessionID, "obj.missing.deep"); err == nil {
 					// §scxml-B-2-9: donedata rides an event, so it leaves the
 					// data model and travels as JSON — the same wire
 					// `<send>`'s params take.
@@ -796,7 +821,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteEntryActions(state ABadDonedata
 			engine.Raise(sce.NewEventWithMetadata(ABadDonedataPairIsIgnoredEventDoneStateP))
 		}
 	case ABadDonedataPairIsIgnoredStateR2f:
-		//line a_bad_donedata_pair_is_ignored.scxml:45
+		//line a_bad_donedata_pair_is_ignored.scxml:48
 		// W3C SCXML 3.7: Final state reached — raise done.state.r2
 		engine.Raise(sce.NewEventWithMetadata(ABadDonedataPairIsIgnoredEventDoneStateR2))
 		// W3C SCXML 3.4 / §scxml-D-enterStates: a region of p
@@ -817,7 +842,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteEntryActions(state ABadDonedata
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line a_bad_donedata_pair_is_ignored.scxml:21
+//line a_bad_donedata_pair_is_ignored.scxml:23
 func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[ABadDonedataPairIsIgnoredState, ABadDonedataPairIsIgnoredEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -825,7 +850,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteHistoryDefaultContent(history s
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line a_bad_donedata_pair_is_ignored.scxml:21
+//line a_bad_donedata_pair_is_ignored.scxml:23
 func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteExitActions(state ABadDonedataPairIsIgnoredState, engine *sce.Engine[ABadDonedataPairIsIgnoredState, ABadDonedataPairIsIgnoredEvent], configurationBeforeExit []ABadDonedataPairIsIgnoredState) {
 	p.ensureScriptEngine()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
@@ -854,7 +879,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteExitActions(state ABadDonedataP
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line a_bad_donedata_pair_is_ignored.scxml:21
+//line a_bad_donedata_pair_is_ignored.scxml:23
 func (p *ABadDonedataPairIsIgnoredPolicy) BindCurrentEvent(event ABadDonedataPairIsIgnoredEvent, engine *sce.Engine[ABadDonedataPairIsIgnoredState, ABadDonedataPairIsIgnoredEvent]) {
 	if event != ABadDonedataPairIsIgnoredEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
@@ -869,7 +894,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) BindCurrentEvent(event ABadDonedataPai
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line a_bad_donedata_pair_is_ignored.scxml:21
+//line a_bad_donedata_pair_is_ignored.scxml:23
 func (p *ABadDonedataPairIsIgnoredPolicy) FirstEnabledTransition(state ABadDonedataPairIsIgnoredState, event ABadDonedataPairIsIgnoredEvent, engine *sce.Engine[ABadDonedataPairIsIgnoredState, ABadDonedataPairIsIgnoredEvent]) (sce.EnabledTransition[ABadDonedataPairIsIgnoredState, sce.HistoryID], bool) {
 	switch state {
 	case ABadDonedataPairIsIgnoredStateP:
@@ -932,14 +957,14 @@ func (p *ABadDonedataPairIsIgnoredPolicy) FirstEnabledTransition(state ABadDoned
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line a_bad_donedata_pair_is_ignored.scxml:21
+//line a_bad_donedata_pair_is_ignored.scxml:23
 func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteTransitionContent(source ABadDonedataPairIsIgnoredState, transitionIndex int, engine *sce.Engine[ABadDonedataPairIsIgnoredState, ABadDonedataPairIsIgnoredEvent]) {
 	p.ensureScriptEngine()
 	switch source {
 	case ABadDonedataPairIsIgnoredStateP:
 		switch transitionIndex {
 		case 0:
-			//line a_bad_donedata_pair_is_ignored.scxml:48
+			//line a_bad_donedata_pair_is_ignored.scxml:51
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
@@ -947,7 +972,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteTransitionContent(source ABadDo
 	}
 
 		case 1:
-			//line a_bad_donedata_pair_is_ignored.scxml:51
+			//line a_bad_donedata_pair_is_ignored.scxml:54
 
 	// W3C SCXML 5.3: <assign location="shape" expr="1">
 	if err := p.assignVariable(`shape`, `1`); err != nil {
@@ -955,7 +980,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteTransitionContent(source ABadDo
 	}
 
 		case 2:
-			//line a_bad_donedata_pair_is_ignored.scxml:55
+			//line a_bad_donedata_pair_is_ignored.scxml:58
 
 	// W3C SCXML 5.3: <assign location="shape" expr="2">
 	if err := p.assignVariable(`shape`, `2`); err != nil {

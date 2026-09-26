@@ -1149,6 +1149,38 @@ TEST(SemanticErrorWire, IncompatibleAttributesConformsToV1Schema) {
     EXPECT_FALSE(j.contains("actual"));
 }
 
+TEST(SemanticErrorWire, ExactlyOneAttributeConformsToV1Schema) {
+    // A `<param>` carrying both `expr` and `location` (W3C SCXML 5.7). The
+    // Rust arm of `validation/exactly-one-attribute` puts the alternatives on
+    // `expected`, the attribute written beyond the first on `actual`, and
+    // proposes no repair — which one the author meant is not its to say.
+    const SemanticExactlyOneAttribute err(/*element=*/"<param>", /*alternatives=*/{"expr", "location"},
+                                          /*extra=*/std::optional<std::string>{"location"});
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "validation/exactly-one-attribute");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_EQ(j.at("message").get<std::string>(),
+              "<param>: takes exactly one of expr, location, and 'location' is one too many");
+    ASSERT_TRUE(j.contains("expected")) << j.dump();
+    EXPECT_EQ(j.at("expected"), nlohmann::ordered_json::array({"expr", "location"}));
+    ASSERT_TRUE(j.contains("actual")) << j.dump();
+    EXPECT_EQ(j.at("actual").get<std::string>(), "location");
+    EXPECT_FALSE(j.contains("fix"));
+}
+
+TEST(SemanticErrorWire, ExactlyOneAttributeWithNoneWrittenOmitsActual) {
+    // The same code for a `<param>` carrying neither: nothing is written,
+    // so nothing rides `actual`, and the message says so.
+    const SemanticExactlyOneAttribute err(/*element=*/"<param>", /*alternatives=*/{"expr", "location"},
+                                          /*extra=*/std::nullopt);
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "validation/exactly-one-attribute");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_EQ(j.at("message").get<std::string>(), "<param>: takes exactly one of expr, location, and carries none");
+    EXPECT_FALSE(j.contains("actual"));
+    EXPECT_FALSE(j.contains("fix"));
+}
+
 TEST(SemanticErrorWire, TopLevelScriptUnloadedConformsToV1Schema) {
     // The 1 NEW wire code §wire-W5 D2 introduces. Carries `spec` field
     // ("W3C SCXML §5.8") because the code has a spec_anchor on the

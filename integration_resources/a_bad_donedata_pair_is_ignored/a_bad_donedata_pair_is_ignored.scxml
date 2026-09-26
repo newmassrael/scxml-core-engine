@@ -9,8 +9,10 @@
 
   Region `r1` reaches `r1f`, whose <donedata> carries three pairs: `empty`
   names no location (location=""), `good` reads `v`, and `bad` names a
-  location the data model does not hold. Region `r2` starts final, so
-  entering `r1f` completes `p`.
+  location the data model does not hold: `obj.missing.deep`. Its base `obj`
+  is declared, so no build-time check refuses the document, and the failure
+  comes where §5.7 puts it — at run time, when the pair is evaluated.
+  Region `r2` starts final, so entering `r1f` completes `p`.
 
     errors  2 — one error.execution for `empty`, one for `bad`.
     shape   1 — done.state.r1 arrived carrying `good` = 7 and neither
@@ -26,6 +28,7 @@
     <data id="errors" expr="0"/>
     <data id="shape" expr="0"/>
     <data id="v" expr="7"/>
+    <data id="obj" expr="({})"/>
   </datamodel>
 
   <parallel id="p">
@@ -37,7 +40,7 @@
         <donedata>
           <param name="empty" location=""/>
           <param name="good" location="v"/>
-          <param name="bad" location="nowhere"/>
+          <param name="bad" location="obj.missing.deep"/>
         </donedata>
       </final>
     </state>

@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f41658fd13fc9dfc148e625da5ebe860056bf477d1f608022a918aadfef3652c
+// source-hash: ca41bb31388364a653df5c43642b7f70894bfe28acab04d3f8f0ea8b795da311
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/a_bad_donedata_pair_is_ignored/a_bad_donedata_pair_is_ignored.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine
+// SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine
 
 package com.sce.integration.a_bad_donedata_pair_is_ignored
 
@@ -80,6 +80,21 @@ class ABadDonedataPairIsIgnoredStateMachine(
      */
     fun v(): Long? =
         com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "v")
+
+    /**
+     * §scxml-5.3: what the `obj` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `obj` was assigned a value of another type, or the engine refused.
+     *
+     * The value as JSON text, serialised by the engine's own `JSON.stringify`
+     * (§scxml-B-2) so the key order is the document's.
+     */
+    fun obj(): String? =
+        com.sce.runtime.DatamodelRead.readJson(scriptEngine, scriptSessionId, "obj")
 
     override val initialState: ABadDonedataPairIsIgnoredState = ABadDonedataPairIsIgnoredState.R1a
 
@@ -305,6 +320,13 @@ class ABadDonedataPairIsIgnoredStateMachine(
         } catch (e: Exception) {
             raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<data id='v'> expr failed to evaluate")
         }
+        // W3C SCXML 5.3: Initialize variable 'obj' with expr
+        try {
+            val initResult_obj = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})"))
+            engine.setVariable(sid, "obj", initResult_obj)
+        } catch (e: Exception) {
+            raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
+        }
 
 
 
@@ -505,25 +527,25 @@ class ABadDonedataPairIsIgnoredStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine
+    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine
     override fun onEntry(state: ABadDonedataPairIsIgnoredState, isDefaultEntry: Boolean) {
         when (state) {
             is ABadDonedataPairIsIgnoredState.Done -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:61 :: done :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:64 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is ABadDonedataPairIsIgnoredState.P -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:31 :: p :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:34 :: p :: _state_body
             }
             is ABadDonedataPairIsIgnoredState.R1 -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:32 :: r1 :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:35 :: r1 :: _state_body
             }
             is ABadDonedataPairIsIgnoredState.R1a -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:33 :: r1a :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:36 :: r1a :: _state_body
             }
             is ABadDonedataPairIsIgnoredState.R1f -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:36 :: r1f :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:39 :: r1f :: _state_body
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
                     ensureScriptEngine()
@@ -542,7 +564,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
                         raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<donedata> <param name='good'> failed to evaluate")
                     }
                     try {
-                        doneParams["bad"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("error(\"SCXML expr is not valid ECMAScript: nowhere: nowhere is not declared by this document\")", "nowhere"))
+                        doneParams["bad"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))
                     } catch (_: Exception) {
                         // §scxml-5.7: error.execution, and this pair is ignored.
                         raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<donedata> <param name='bad'> failed to evaluate")
@@ -563,10 +585,10 @@ class ABadDonedataPairIsIgnoredStateMachine(
                 }
             }
             is ABadDonedataPairIsIgnoredState.R2 -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:44 :: r2 :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:47 :: r2 :: _state_body
             }
             is ABadDonedataPairIsIgnoredState.R2f -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:45 :: r2f :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:48 :: r2f :: _state_body
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(ABadDonedataPairIsIgnoredEvent.Done.State.R2, EventMetadata.platform())
                 // W3C SCXML 3.7.1: this <final> may have completed the
@@ -581,53 +603,53 @@ class ABadDonedataPairIsIgnoredStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine
+    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine
     override fun onExit(state: ABadDonedataPairIsIgnoredState) {
         when (state) {
             is ABadDonedataPairIsIgnoredState.Done -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:61 :: done :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:64 :: done :: _state_body
             }
             is ABadDonedataPairIsIgnoredState.P -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:31 :: p :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:34 :: p :: _state_body
             }
             is ABadDonedataPairIsIgnoredState.R1 -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:32 :: r1 :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:35 :: r1 :: _state_body
             }
             is ABadDonedataPairIsIgnoredState.R1a -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:33 :: r1a :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:36 :: r1a :: _state_body
             }
             is ABadDonedataPairIsIgnoredState.R1f -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:36 :: r1f :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:39 :: r1f :: _state_body
             }
             is ABadDonedataPairIsIgnoredState.R2 -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:44 :: r2 :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:47 :: r2 :: _state_body
             }
             is ABadDonedataPairIsIgnoredState.R2f -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:45 :: r2f :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:48 :: r2f :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine
+    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine
     override fun executeTransitionContent(source: ABadDonedataPairIsIgnoredState, transitionIndex: Int) {
         when (source) {
         is ABadDonedataPairIsIgnoredState.P -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:48 :: p :: _transition_0
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:51 :: p :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))
             }
             1 -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:51 :: p :: _transition_1
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:54 :: p :: _transition_1
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("shape", "shape"), com.sce.runtime.ScriptSource.lua("1", "1"))
             }
             2 -> {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:55 :: p :: _transition_2
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:58 :: p :: _transition_2
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("shape", "shape"), com.sce.runtime.ScriptSource.lua("2", "2"))

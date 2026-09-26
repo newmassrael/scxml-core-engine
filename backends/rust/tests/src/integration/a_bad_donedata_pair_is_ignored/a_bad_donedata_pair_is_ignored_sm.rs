@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f41658fd13fc9dfc148e625da5ebe860056bf477d1f608022a918aadfef3652c
+// source-hash: ca41bb31388364a653df5c43642b7f70894bfe28acab04d3f8f0ea8b795da311
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine"]
-// SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine
+#![doc = "SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine"]
+// SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -238,6 +238,24 @@ impl ABadDonedataPairIsIgnoredPolicy {
         )
     }
 
+    /// §scxml-5.3: what the `obj` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `obj` was
+    /// assigned a value of another type, or the engine refused.
+    ///
+    /// The value as JSON text, serialized by the engine's own
+    /// `JSON.stringify` (§scxml-B-2) so the key order is the document's.
+    pub fn obj(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_json(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "obj",
+        )
+    }
+
     /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
     /// machine, published as the processor's 'location' in `_ioprocessors`.
     /// Must be called before `initialize()`, since the entries are populated
@@ -363,6 +381,13 @@ impl ABadDonedataPairIsIgnoredPolicy {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
+        // W3C SCXML 5.2/5.3: Initialize 'obj' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "obj", "{}",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
         // W3C SCXML 5.9.2: Register In() state query callback
         {
             let shared_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
@@ -439,6 +464,17 @@ impl ABadDonedataPairIsIgnoredPolicy {
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 ABadDonedataPairIsIgnoredEvent::ErrorExecution,
                 "<data id='v'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'obj' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "obj", "{}",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                ABadDonedataPairIsIgnoredEvent::ErrorExecution,
+                "<data id='obj'> expr failed to evaluate",
             ));
         }
 
@@ -844,8 +880,8 @@ impl StatePolicy for ABadDonedataPairIsIgnoredPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine"]
-    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine
+    #[doc = "SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine"]
+    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -858,7 +894,7 @@ impl StatePolicy for ABadDonedataPairIsIgnoredPolicy {
         }
         match state {
             ABadDonedataPairIsIgnoredState::R1f => {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:36 :: r1f :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:39 :: r1f :: _state_body
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 let mut done_event_data = String::new();
                 {
@@ -898,18 +934,28 @@ impl StatePolicy for ABadDonedataPairIsIgnoredPolicy {
                             ));
                         }
                     }
-                    match se.evaluate_expression(&sid, "error(\"SCXML expr is not valid ECMAScript: nowhere: nowhere is not declared by this document\")") {
+                    match se.evaluate_expression(&sid, "obj.missing.deep") {
                         Ok(val) => {
                             // §scxml-B-2-9: donedata rides an event, so it
                             // leaves the data model and travels as JSON —
                             // the same wire `<send>`'s params take.
                             let mut part = String::from("\"bad\":");
-                            part.push_str(&::sce_rust_runtime::helpers::event_data::script_value_to_json(&val));
+                            part.push_str(
+                                &::sce_rust_runtime::helpers::event_data::script_value_to_json(
+                                    &val,
+                                ),
+                            );
                             json_parts.push(part);
                         }
                         Err(e) => {
-                            ::sce_rust_runtime::sce_log_error!("Donedata param 'bad' eval failed: {}", e);
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(ABadDonedataPairIsIgnoredEvent::ErrorExecution, "<donedata> <param name='bad'> failed to evaluate"));
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Donedata param 'bad' eval failed: {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                ABadDonedataPairIsIgnoredEvent::ErrorExecution,
+                                "<donedata> <param name='bad'> failed to evaluate",
+                            ));
                         }
                     }
                     // §scxml-5.5: the pairs that survived, `{}` when none did.
@@ -943,7 +989,7 @@ impl StatePolicy for ABadDonedataPairIsIgnoredPolicy {
                 }
             }
             ABadDonedataPairIsIgnoredState::R2f => {
-                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:45 :: r2f :: _state_body
+                // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:48 :: r2f :: _state_body
                 // W3C SCXML 3.7: Generate done.state.r2 event
                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                     ABadDonedataPairIsIgnoredEvent::DoneStateR2,
@@ -977,8 +1023,8 @@ impl StatePolicy for ABadDonedataPairIsIgnoredPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine"]
-    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine
+    #[doc = "SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine"]
+    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -996,8 +1042,8 @@ impl StatePolicy for ABadDonedataPairIsIgnoredPolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine"]
-    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine
+    #[doc = "SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine"]
+    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -1041,8 +1087,8 @@ impl StatePolicy for ABadDonedataPairIsIgnoredPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine"]
-    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine
+    #[doc = "SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine"]
+    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1121,8 +1167,8 @@ impl StatePolicy for ABadDonedataPairIsIgnoredPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine"]
-    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:21 :: _machine
+    #[doc = "SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine"]
+    // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:23 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1133,7 +1179,7 @@ impl StatePolicy for ABadDonedataPairIsIgnoredPolicy {
             ABadDonedataPairIsIgnoredState::P => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:48 :: p :: _transition_0
+                        // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:51 :: p :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -1161,7 +1207,7 @@ impl StatePolicy for ABadDonedataPairIsIgnoredPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:51 :: p :: _transition_1
+                        // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:54 :: p :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -1189,7 +1235,7 @@ impl StatePolicy for ABadDonedataPairIsIgnoredPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:55 :: p :: _transition_2
+                        // SCE-MAP: a_bad_donedata_pair_is_ignored.scxml:58 :: p :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
 
                         {

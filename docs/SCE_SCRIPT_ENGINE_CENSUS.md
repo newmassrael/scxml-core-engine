@@ -100,7 +100,7 @@ documents-floor 700
 documents-judged-floor 450
 engine-documents 242
 native-prefix-documents 2
-datamodel-variable-init 299
+datamodel-variable-init 300
 transition-guard 221
 assign-action 253
 child-invoke-needs-script-engine 46
@@ -188,11 +188,11 @@ never spelled correctly.
   `an_invoke_left_before_it_starts_raises_nothing.scxml` (one engine
   document: one counter and the assign that bumps it) raised
   `engine-documents`, `datamodel-variable-init` and `assign-action` by one.
-  Then `a_bad_donedata_pair_is_ignored.scxml` (one engine document: three
+  Then `a_bad_donedata_pair_is_ignored.scxml` (one engine document: four
   data items, three assigns, one guard that reads the done event's shape,
-  and a `<donedata>` of `<param>`s) raised `engine-documents`,
-  `datamodel-variable-init` and `assign-action` by three, `transition-guard`
-  and `donedata-param` by one.
+  and a `<donedata>` of `<param>`s) raised `engine-documents` by one,
+  `datamodel-variable-init` by four, `assign-action` by three, and
+  `transition-guard` and `donedata-param` by one.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
