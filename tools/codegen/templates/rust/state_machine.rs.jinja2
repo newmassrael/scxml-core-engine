@@ -241,6 +241,11 @@ impl{{ policy_generics_decl }} {{ machine_name }}Observe for Engine<{{ machine_n
 {% if has_native_actions %}
 // ── W3C SCXML G.7: <sce:action> host-dispatch trait ──
 {{ native_actions_defs }}
+{% if native_actions_recording and not no_std %}
+{# The recording host keeps its calls in a `Vec`, so it exists only where
+   `alloc` does; a no_std host supplies its own. #}
+{{ native_actions_recording }}
+{% endif %}
 {% endif %}
 {% if host_invoker_interface %}
 // ── SCE Accepted Subset 2.12: typed host-run invoke interface ──
@@ -530,6 +535,14 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% endif %}
         }
     }
+{% if has_native_actions %}
+
+    /// W3C SCXML G.7: the host the `<sce:action>` operations are dispatched
+    /// to — read back, e.g. a recording host's calls, since the machine owns it.
+    pub fn actions(&self) -> &A {
+        &self.actions
+    }
+{% endif %}
 {% for field in static_published %}
 
     /// W3C SCXML 5.2: what the published `{{ field.id }}` datamodel variable

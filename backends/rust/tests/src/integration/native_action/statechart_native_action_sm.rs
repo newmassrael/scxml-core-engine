@@ -181,6 +181,58 @@ pub trait StatechartNativeActionActions {
     fn reset_slot(&mut self);
 }
 
+/// One call the machine made of its host, recorded by
+/// [`RecordingStatechartNativeActionActions`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum StatechartNativeActionActionsCall {
+    AppendFragmentPayload { payload: Vec<u8>, offset: u32 },
+    OnAssemblingExit,
+    OnIdleEntry,
+    ResetSlot,
+}
+
+/// [`StatechartNativeActionActions`] that performs nothing and records every call in
+/// order — the host a test drives the machine with. Read
+/// [`calls`](Self::calls) after the machine has run.
+#[derive(Debug, Default)]
+pub struct RecordingStatechartNativeActionActions {
+    calls: Vec<StatechartNativeActionActionsCall>,
+}
+
+impl RecordingStatechartNativeActionActions {
+    /// Every call so far, oldest first.
+    pub fn calls(&self) -> &[StatechartNativeActionActionsCall] {
+        &self.calls
+    }
+
+    /// Forget the calls recorded so far.
+    pub fn clear(&mut self) {
+        self.calls.clear();
+    }
+}
+
+impl StatechartNativeActionActions for RecordingStatechartNativeActionActions {
+    fn append_fragment_payload(&mut self, payload: &[u8], offset: u32) {
+        self.calls
+            .push(StatechartNativeActionActionsCall::AppendFragmentPayload {
+                payload: payload.to_vec(),
+                offset,
+            });
+    }
+    fn on_assembling_exit(&mut self) {
+        self.calls
+            .push(StatechartNativeActionActionsCall::OnAssemblingExit);
+    }
+    fn on_idle_entry(&mut self) {
+        self.calls
+            .push(StatechartNativeActionActionsCall::OnIdleEntry);
+    }
+    fn reset_slot(&mut self) {
+        self.calls
+            .push(StatechartNativeActionActionsCall::ResetSlot);
+    }
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -226,6 +278,12 @@ impl<A: StatechartNativeActionActions + 'static> StatechartNativeActionPolicy<A>
             invoke_id: String::new(),
             child_session_id: String::new(),
         }
+    }
+
+    /// W3C SCXML G.7: the host the `<sce:action>` operations are dispatched
+    /// to — read back, e.g. a recording host's calls, since the machine owns it.
+    pub fn actions(&self) -> &A {
+        &self.actions
     }
 }
 

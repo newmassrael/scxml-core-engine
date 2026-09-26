@@ -578,6 +578,11 @@ pub struct NativeActions {
     /// re-derived in the template so the names cannot drift from the ones
     /// [`build_interface`] declared.
     pub operation_names: Vec<String>,
+    /// Rust's `Recording<Interface>` ([`rust_recording_host`]), or empty for
+    /// every other backend and for a document with no native action. Kept
+    /// out of [`Self::interface_def`] because it holds its calls in a `Vec`:
+    /// the template emits it only for a profile with `alloc`.
+    pub recording_def: String,
 }
 
 /// One host operation's signature: the ordered `(parameter name, declared
@@ -805,6 +810,14 @@ pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> Nat
     } else {
         (String::new(), String::new())
     };
+    // Kotlin's recording host rides inside its interface definition; Rust's is
+    // apart, because it holds its calls in a `Vec` and the template emits it
+    // only where `alloc` is.
+    let recording_def = if any && lang == Language::Rust {
+        rust_recording_host(&interface_name, &sigs)
+    } else {
+        String::new()
+    };
 
     NativeActions {
         interface_def,
@@ -812,6 +825,7 @@ pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> Nat
         payload_events,
         any,
         operation_names,
+        recording_def,
     }
 }
 
@@ -1336,6 +1350,83 @@ fn kotlin_recording_host(interface_name: &str, sigs: &BTreeMap<String, Signature
     )
 }
 
+/// `Recording<Interface>`: the Rust host trait's implementation that performs
+/// nothing and records every call, in order, as a value — the twin of
+/// [`kotlin_recording_host`], for the same reason: a test drives the machine
+/// with no host at all, and reads back what the machine asked of it.
+///
+/// Generated from the same signatures as the trait, so it cannot fall out of
+/// step with it. Each call is a variant of `<Interface>Call`, which derives
+/// `PartialEq`, so a test compares whole calls by value; a borrowed argument
+/// (`&str`, `&[u8]`) is recorded as its owned copy. The machine owns its host,
+/// so a test reads the calls back through `Policy::actions()`.
+fn rust_recording_host(interface_name: &str, sigs: &BTreeMap<String, Signature>) -> String {
+    let lang = Language::Rust;
+    let owned = |t: &SceType| -> String {
+        match t {
+            SceType::String => "String".to_string(),
+            SceType::Bytes => "Vec<u8>".to_string(),
+            _ => host_param_type(lang, t),
+        }
+    };
+    let mut variants = String::new();
+    let mut methods = String::new();
+    for (name, sig) in sigs {
+        let method = method_name(lang, name);
+        let variant = filters::to_pascal_case(method.clone());
+        let params: Vec<String> = sig
+            .iter()
+            .flat_map(|(n, t)| params_for(lang, n, t))
+            .collect();
+        let sep = if params.is_empty() { "" } else { ", " };
+        if sig.is_empty() {
+            variants.push_str(&format!("    {variant},\n"));
+            methods.push_str(&format!(
+                "    fn {method}(&mut self) {{\n        self.calls.push({interface_name}Call::{variant});\n    }}\n"
+            ));
+            continue;
+        }
+        let fields: Vec<String> = sig
+            .iter()
+            .map(|(n, t)| format!("{}: {}", param_ident(lang, n), owned(t)))
+            .collect();
+        let values: Vec<String> = sig
+            .iter()
+            .map(|(n, t)| {
+                let id = param_ident(lang, n);
+                match t {
+                    SceType::String => format!("{id}: {id}.to_string()"),
+                    SceType::Bytes => format!("{id}: {id}.to_vec()"),
+                    _ => id,
+                }
+            })
+            .collect();
+        variants.push_str(&format!("    {variant} {{ {} }},\n", fields.join(", ")));
+        methods.push_str(&format!(
+            "    fn {method}(&mut self{sep}{}) {{\n        self.calls.push({interface_name}Call::{variant} {{ {} }});\n    }}\n",
+            params.join(", "),
+            values.join(", ")
+        ));
+    }
+    format!(
+        "/// One call the machine made of its host, recorded by\n\
+         /// [`Recording{interface_name}`].\n\
+         #[derive(Debug, Clone, PartialEq)]\n\
+         pub enum {interface_name}Call {{\n{variants}}}\n\n\
+         /// [`{interface_name}`] that performs nothing and records every call in\n\
+         /// order — the host a test drives the machine with. Read\n\
+         /// [`calls`](Self::calls) after the machine has run.\n\
+         #[derive(Debug, Default)]\n\
+         pub struct Recording{interface_name} {{\n    calls: Vec<{interface_name}Call>,\n}}\n\n\
+         impl Recording{interface_name} {{\n    \
+         /// Every call so far, oldest first.\n    \
+         pub fn calls(&self) -> &[{interface_name}Call] {{\n        &self.calls\n    }}\n\n    \
+         /// Forget the calls recorded so far.\n    \
+         pub fn clear(&mut self) {{\n        self.calls.clear();\n    }}\n}}\n\n\
+         impl {interface_name} for Recording{interface_name} {{\n{methods}}}\n"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1669,5 +1760,37 @@ mod tests {
         );
         assert!(out.contains("data object ResetSlot : Call"), "{out}");
         assert!(out.contains("override fun resetSlot() {"), "{out}");
+    }
+
+    #[test]
+    fn the_rust_recording_host_records_every_call_by_value() {
+        let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
+        sigs.insert(
+            "append_fragment".to_string(),
+            vec![
+                ("payload".to_string(), SceType::Bytes),
+                ("offset".to_string(), SceType::Uint32),
+            ],
+        );
+        sigs.insert("reset_slot".to_string(), Vec::new());
+        let out = rust_recording_host("MActions", &sigs);
+        assert!(
+            out.contains("impl MActions for RecordingMActions {"),
+            "the recorder implements the trait it is generated from:\n{out}"
+        );
+        // A borrowed argument is recorded as its owned copy, so a recorded
+        // call outlives the dispatch and compares by value.
+        assert!(
+            out.contains("AppendFragment { payload: Vec<u8>, offset: u32 },"),
+            "{out}"
+        );
+        assert!(
+            out.contains(
+                "self.calls.push(MActionsCall::AppendFragment { payload: payload.to_vec(), offset });"
+            ),
+            "{out}"
+        );
+        assert!(out.contains("    ResetSlot,\n"), "{out}");
+        assert!(out.contains("fn reset_slot(&mut self) {"), "{out}");
     }
 }

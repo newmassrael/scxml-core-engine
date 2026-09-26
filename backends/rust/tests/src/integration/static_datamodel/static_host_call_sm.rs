@@ -156,6 +156,40 @@ pub trait StaticHostCallActions {
     fn show_attempts(&mut self, count: u32, exhausted: bool);
 }
 
+/// One call the machine made of its host, recorded by
+/// [`RecordingStaticHostCallActions`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum StaticHostCallActionsCall {
+    ShowAttempts { count: u32, exhausted: bool },
+}
+
+/// [`StaticHostCallActions`] that performs nothing and records every call in
+/// order — the host a test drives the machine with. Read
+/// [`calls`](Self::calls) after the machine has run.
+#[derive(Debug, Default)]
+pub struct RecordingStaticHostCallActions {
+    calls: Vec<StaticHostCallActionsCall>,
+}
+
+impl RecordingStaticHostCallActions {
+    /// Every call so far, oldest first.
+    pub fn calls(&self) -> &[StaticHostCallActionsCall] {
+        &self.calls
+    }
+
+    /// Forget the calls recorded so far.
+    pub fn clear(&mut self) {
+        self.calls.clear();
+    }
+}
+
+impl StaticHostCallActions for RecordingStaticHostCallActions {
+    fn show_attempts(&mut self, count: u32, exhausted: bool) {
+        self.calls
+            .push(StaticHostCallActionsCall::ShowAttempts { count, exhausted });
+    }
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -200,6 +234,12 @@ impl<A: StaticHostCallActions + 'static> StaticHostCallPolicy<A> {
             invoke_id: String::new(),
             child_session_id: String::new(),
         }
+    }
+
+    /// W3C SCXML G.7: the host the `<sce:action>` operations are dispatched
+    /// to — read back, e.g. a recording host's calls, since the machine owns it.
+    pub fn actions(&self) -> &A {
+        &self.actions
     }
 }
 

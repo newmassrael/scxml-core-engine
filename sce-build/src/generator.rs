@@ -2662,6 +2662,7 @@ fn render_rust(
         has_native_actions => native.any,
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,
+        native_actions_recording => &native.recording_def,
         policy_generics_decl => &policy_generics_decl,
         policy_generics_use => &policy_generics_use,
         static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,

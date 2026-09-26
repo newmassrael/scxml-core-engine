@@ -15,15 +15,13 @@
 // The assertions are the Kotlin test's: one document means one behaviour on
 // both backends.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use sce_rust_runtime::Engine;
 use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
     StaticCounterData, StaticCounterObserve, StaticCounterPolicy, StaticCounterState,
 };
 use sce_rust_tests::integration::static_datamodel::static_host_call_sm::{
-    StaticHostCallActions, StaticHostCallObserve, StaticHostCallPolicy, StaticHostCallState,
+    RecordingStaticHostCallActions, StaticHostCallActionsCall, StaticHostCallObserve,
+    StaticHostCallPolicy, StaticHostCallState,
 };
 use sce_rust_tests::integration::static_datamodel::static_list_sm::{
     StaticListDayPickedPayload, StaticListInject, StaticListObserve, StaticListPolicy,
@@ -154,30 +152,30 @@ fn a_snapshot_does_not_change_afterwards() {
 
 // ── static_host_call: a host action taking typed datamodel arguments ──────
 
-#[derive(Clone, Default)]
-struct Recorder(Rc<RefCell<Vec<(u32, bool)>>>);
-
-impl StaticHostCallActions for Recorder {
-    fn show_attempts(&mut self, count: u32, exhausted: bool) {
-        self.0.borrow_mut().push((count, exhausted));
-    }
-}
-
 #[test]
 fn a_host_action_takes_typed_datamodel_arguments_with_no_event_in_scope() {
     // `<sce:action name="showAttempts">` in `<onentry>`, its arguments a
     // variable and a comparison over it: each a typed expression, and the
-    // host method's parameter types are theirs.
-    let recorder = Recorder::default();
-    let mut engine = Engine::new(StaticHostCallPolicy::new(recorder.clone()));
+    // host method's parameter types are theirs. The generated recording
+    // host: no hand-written stand-in, and its calls cannot drift from the
+    // trait they record.
+    let mut engine = Engine::new(StaticHostCallPolicy::new(
+        RecordingStaticHostCallActions::default(),
+    ));
     engine.initialize();
     for _ in 0..4 {
         engine.raise_external_by_name("retry", "");
         engine.step();
     }
+    let call = |count, exhausted| StaticHostCallActionsCall::ShowAttempts { count, exhausted };
     assert_eq!(
-        *recorder.0.borrow(),
-        vec![(0, false), (1, false), (2, false), (3, true)],
+        engine.policy().actions().calls(),
+        &[
+            call(0, false),
+            call(1, false),
+            call(2, false),
+            call(3, true)
+        ],
         "one call per entry of `idle`, each with the datamodel as it stood; \
          the fourth retry finds `attempts < 3` false and re-enters nothing"
     );
@@ -187,7 +185,9 @@ fn a_host_action_takes_typed_datamodel_arguments_with_no_event_in_scope() {
 fn a_machine_that_publishes_no_variable_snapshots_its_configuration_alone() {
     // `attempts` is not declared sce:direction="out", so it is the machine's
     // own: the snapshot carries no data, only where the machine is.
-    let mut engine = Engine::new(StaticHostCallPolicy::new(Recorder::default()));
+    let mut engine = Engine::new(StaticHostCallPolicy::new(
+        RecordingStaticHostCallActions::default(),
+    ));
     engine.initialize();
     let snapshot = engine.snapshot();
     assert_eq!(
