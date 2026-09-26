@@ -98,11 +98,11 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 237
+engine-documents 238
 native-prefix-documents 2
-datamodel-variable-init 286
+datamodel-variable-init 291
 transition-guard 220
-assign-action 234
+assign-action 238
 child-invoke-needs-script-engine 46
 log-expr 45
 send-param-expr 32
@@ -170,7 +170,11 @@ never spelled correctly.
   the `typed` state's typed request (the `scope` and `level` a
   `PermRequest` is built from, and the `retype` assign that makes `level` a
   text so the request no longer fits) raised `datamodel-variable-init` by
-  two and `assign-action` by one. A consumer pairing `cond="cpp:…"` with
+  two and `assign-action` by one. Then
+  `late_data_binds_on_first_entry.scxml` (one engine document: three
+  handler records and the late-bound state's two `<data>`, four assigns)
+  raised `engine-documents`, `datamodel-variable-init` by five and
+  `assign-action` by four. A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
 - **49% of judged documents need an engine** (233 of 475). The remaining
