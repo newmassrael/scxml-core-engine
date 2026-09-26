@@ -331,13 +331,12 @@ pub fn lower_kotlin(
             let field = payload_field(&transition.event);
             let accessor = format!("{field}!!");
             let renames = renames(&names, schema.map(|_| accessor.as_str()));
-            // A pure `In()` predicate is already native on every backend, and
-            // each guard macro takes it first; lowering it again would write
-            // a second spelling of the same test that no macro reads.
+            // A pure `In()` predicate is lowered like any other condition, so
+            // a guard and an `<if>` of one document spell it alike; the guard
+            // macros read `native_guard` before their own `In()` arm.
             if !transition.cond.trim().is_empty()
                 && !transition.is_cpp_condition
                 && !transition.is_kt_condition
-                && !transition.is_pure_in_predicate
             {
                 let lowered = transpile_into(
                     &transition.cond,
@@ -510,6 +509,9 @@ fn lower_action(
     };
     let reads = crate::forge::expr::references_event_data_lexically;
     let mut reads_payload = false;
+    // Each statement lands whole in `native_code`, and each condition in
+    // `native_cond` — the slots every backend's action dispatcher reads before
+    // its own spellings, so the IR the author wrote is left as it was.
     match action.action_type.as_str() {
         "assign" => {
             reads_payload = reads(&action.expr);
@@ -519,34 +521,35 @@ fn lower_action(
             // A record's field is a `val` of an immutable data class, so the
             // assignment builds the next value with that field replaced —
             // the lowering an algorithm's record local takes (E9).
-            let location = action.location.trim().to_string();
-            match location
+            let location = action.location.trim();
+            action.native_code = match location
                 .split_once('.')
                 .filter(|(var, _)| rewrites.records.contains_key(*var))
             {
                 Some((var, field)) => {
                     let name = renames.get(var).copied().unwrap_or(var);
-                    action.expr = format!(
-                        "{name}.copy({} = {value})",
+                    format!(
+                        "{name} = {name}.copy({} = {value})",
                         crate::forge::generator::event_schema_field_ident(
                             field,
                             crate::generator::Language::Kotlin
                         )
-                    );
-                    action.location = var.to_string();
+                    )
                 }
-                None => action.expr = value,
-            }
+                None => {
+                    let name = renames.get(location).copied().unwrap_or(location);
+                    format!("{name} = {value}")
+                }
+            };
         }
         "if" if !action.is_cpp_condition && !action.is_kt_condition => {
             reads_payload = reads(&action.cond);
-            action.cond_kt = lower(&action.cond, InferredType::Bool)?;
-            action.is_kt_condition = true;
+            action.native_cond = lower(&action.cond, InferredType::Bool)?;
             action.cond_constant = None;
         }
         "log" if !action.expr.trim().is_empty() => {
             reads_payload = reads(&action.expr);
-            action.expr = transpile_typed(
+            let value = transpile_typed(
                 &action.expr,
                 ExprTarget::Kotlin,
                 ctx,
@@ -559,6 +562,12 @@ fn lower_action(
                     action.expr, r.error
                 ))
             })?;
+            let label = if action.label.is_empty() {
+                String::new()
+            } else {
+                format!("\"{}: \" + ", filters::escape_kotlin(action.label.clone()))
+            };
+            action.native_code = format!("println({label}{value})");
         }
         // A list is an immutable `List<T>` field, so an append builds the
         // next list, and does so only while the list is under its bound — on
@@ -587,14 +596,14 @@ fn lower_action(
             } else {
                 String::new()
             };
-            action.content_kt = format!(
+            action.native_code = format!(
                 "if ({name}.size < {capacity}) {{ {name} = {name} + ({value}) }}{otherwise}"
             );
         }
         "sce_clear" => {
             let target = action.location.trim();
             let name = renames.get(target).copied().unwrap_or(target);
-            action.content_kt = format!("{name} = emptyList()");
+            action.native_code = format!("{name} = emptyList()");
         }
         _ => {}
     }
@@ -616,7 +625,7 @@ fn lower_nested(
             continue;
         }
         reads_payload |= crate::forge::expr::references_event_data_lexically(&branch.cond);
-        branch.cond_kt = transpile_into(
+        branch.native_cond = transpile_into(
             &branch.cond,
             ExprTarget::Kotlin,
             ctx,
@@ -629,7 +638,6 @@ fn lower_nested(
                 branch.cond, r.error
             ))
         })?;
-        branch.is_kt_condition = true;
         branch.cond_constant = None;
     }
     for block in action.nested_blocks_mut() {

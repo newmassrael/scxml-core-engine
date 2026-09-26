@@ -317,7 +317,6 @@ class StaticListStateMachine(
 
             if (picked.size < 3) { picked = picked + (pendingDayPickedPayload!!.dayOfMonth) } else { raisePlatformError(StaticListEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 3") }
 
-
             count = (picked).size.toUInt()
             }
             2 -> {
@@ -327,7 +326,6 @@ class StaticListStateMachine(
             }
             3 -> {
                 // SCE-MAP: static_list.scxml:30 :: collecting :: _transition_3
-
 
             refusals = refusals + 1.toUInt()
             }

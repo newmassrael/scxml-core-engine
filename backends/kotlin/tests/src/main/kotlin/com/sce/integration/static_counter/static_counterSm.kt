@@ -209,16 +209,13 @@ class StaticCounterStateMachine(
             0 -> {
                 // SCE-MAP: static_counter.scxml:22 :: counting :: _transition_0
 
-
             count = count + step
 
 
             if (count == 5.toUInt()) {
 
-
             ready = true
             } else if (count > 7.toUInt()) {
-
 
             ready = false
             }

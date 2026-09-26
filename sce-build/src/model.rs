@@ -393,6 +393,22 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_action_rendered: String,
+    /// Codegen-internal: the whole statement this action lowered to in the
+    /// rendering backend's own code — an `<assign>`, a `<log>`, an
+    /// `<sce:append>` or `<sce:clear>` of a `sce-static` document, written by
+    /// `forge::static_lowering` on the cloned single-language model. When set,
+    /// every backend's action dispatcher emits it verbatim. Transient and
+    /// outside the AST contract, as [`Self::native_action_rendered`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_code: String,
+    /// Codegen-internal: an `<if>`'s condition lowered to the rendering
+    /// backend's own code, the action twin of [`Transition::native_guard`].
+    /// `cond_kt` / `cond_cpp` stay what the author wrote behind `kt:` /
+    /// `cpp:`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_cond: String,
 
     // SCE_MESH.md §13 — mesh metadata is not carried on individual
     // <send> actions. Communication pattern is inferred from event name
@@ -457,6 +473,10 @@ pub struct ElseIfBranch {
     pub cond_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     pub cond_cpp: String,
     pub cond_kt: String,
+    /// See [`Action::native_cond`].
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_cond: String,
     /// See [`Action::cond_cpp_transformed`].
     #[serde(default)]
     pub cond_cpp_transformed: String,

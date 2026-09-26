@@ -279,7 +279,6 @@ class StaticRecordStateMachine(
             0 -> {
                 // SCE-MAP: static_record.scxml:26 :: showing :: _transition_0
 
-
             shown = shown.copy(dayOfMonth = (shown.dayOfMonth.toUInt() + 1.toUInt()).toUByte())
             }
             1 -> {
@@ -288,18 +287,14 @@ class StaticRecordStateMachine(
                     return
                 }
 
-
             shown = shown.copy(year = pendingDayPickedPayload!!.year)
 
-
             shown = shown.copy(month = pendingDayPickedPayload!!.month)
-
 
             shown = shown.copy(dayOfMonth = pendingDayPickedPayload!!.dayOfMonth)
             }
             2 -> {
                 // SCE-MAP: static_record.scxml:36 :: showing :: _transition_2
-
 
             refusals = refusals + 1.toUInt()
             }

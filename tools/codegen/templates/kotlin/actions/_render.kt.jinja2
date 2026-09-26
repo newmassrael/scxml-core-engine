@@ -3,8 +3,13 @@
 
 {# W3C SCXML: Common action dispatcher for entry/exit/transition contexts.
    Expects `action` and `machine_name` variables in scope.
-   Three-way pattern: script engine | static Kotlin | fallback. #}
-{% if action.type == 'raise' %}
+   Three-way pattern: script engine | static Kotlin | fallback.
+   A statement lowered at generate time (`action.native_code`, written by
+   `forge::static_lowering` for a sce-static document) is emitted as it is,
+   ahead of every spelling of its kind. #}
+{% if action.native_code %}
+            {{ action.native_code }}
+{% elif action.type == 'raise' %}
             raiseInternal({{ machine_name }}Event.{{ action.event | to_event_ref }})
 {% elif action.type == 'assign' %}
 {% include 'actions/assign.kt.jinja2' with context %}
@@ -37,10 +42,7 @@
    engine is involved. #}
             // W3C SCXML G.7: <sce:action name="{{ action.native_action_name }}">
             {{ action.native_action_rendered }}
-{% elif action.type == 'sce_append' or action.type == 'sce_clear' %}
-{# SCE Accepted Subset §2.15: fill or empty a `sce-static` list. The statement
-   — the bound check and the error arm included — is lowered ahead of the
-   template by `forge::static_lowering`, which holds the list's element and
-   capacity, and stored on `action.content_kt`. #}
-            {{ action.content_kt }}
 {% endif %}
+{# SCE Accepted Subset §2.15: `<sce:append>` / `<sce:clear>` exist only under
+   sce-static, whose every statement — a list's bound check and error arm
+   included — arrives in `action.native_code` above. #}

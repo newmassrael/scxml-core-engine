@@ -26,16 +26,17 @@
     go/process_transition.go.jinja2.
 #}
 {# --- The guard a transition is taken under (three-way pattern) ---
-   An In() predicate or a native Kotlin condition as written, a natively
-   lowered typed-payload comparison, the script engine, or a value decided at
-   build time (W3C SCXML 5.9). #}
+   A guard lowered to Kotlin at generate time (a typed-payload comparison, a
+   sce-static condition), an In() predicate or a native Kotlin condition as
+   written, the script engine, or a value decided at build time (W3C SCXML
+   5.9). #}
 {% macro render_cond(trans) -%}
-{% if trans.is_pure_in_predicate -%}
+{% if trans.native_guard -%}
+{{ trans.native_guard }}
+{%- elif trans.is_pure_in_predicate -%}
 {{ trans.cond_kt }}
 {%- elif trans.is_kt_condition -%}
 {{ trans.cond_kt }}
-{%- elif trans.native_guard -%}
-{{ trans.native_guard }}
 {%- elif model.needs_script_engine and trans.cond and not trans.is_cpp_condition -%}
 safeEvaluateGuard({{ trans.cond | to_script_source_guard }})
 {%- elif trans.cond and not trans.is_cpp_condition -%}

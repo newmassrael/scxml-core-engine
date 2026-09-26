@@ -11,7 +11,9 @@
    beside it unconditionally — a wrong output with no diagnostic. #}
 {# Save outer action to avoid scoping conflict with nested action includes #}
 {% set outer_if_action = action %}
-{% if outer_if_action.is_kt_condition and outer_if_action.cond_kt %}
+{% if outer_if_action.native_cond %}
+            if ({{ outer_if_action.native_cond }}) {
+{% elif outer_if_action.is_kt_condition and outer_if_action.cond_kt %}
             if ({{ outer_if_action.cond_kt }}) {
 {% elif outer_if_action.is_pure_in_predicate and outer_if_action.cond_kt %}
             if ({{ outer_if_action.cond_kt }}) {
@@ -26,7 +28,9 @@
 {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
 {% for elseif in outer_if_action.elseif_branches %}
-{% if elseif.is_kt_condition and elseif.cond_kt %}
+{% if elseif.native_cond %}
+            } else if ({{ elseif.native_cond }}) {
+{% elif elseif.is_kt_condition and elseif.cond_kt %}
             } else if ({{ elseif.cond_kt }}) {
 {% elif elseif.is_pure_in_predicate and elseif.cond_kt %}
             } else if ({{ elseif.cond_kt }}) {

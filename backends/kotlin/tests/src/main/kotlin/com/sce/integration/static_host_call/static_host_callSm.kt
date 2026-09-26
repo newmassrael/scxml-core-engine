@@ -210,7 +210,6 @@ class StaticHostCallStateMachine(
             0 -> {
                 // SCE-MAP: static_host_call.scxml:25 :: idle :: _transition_0
 
-
             attempts = attempts + 1.toUInt()
             }
             else -> {}
