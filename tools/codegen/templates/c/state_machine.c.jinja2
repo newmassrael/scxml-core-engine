@@ -2709,6 +2709,18 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                     "\"{{ state.donedata.content.text | escape_json_string | escape_c }}\"",
                     (size_t)SCE_MAX_DATA_LEN - 1u);
             _done_evt.data[(size_t)SCE_MAX_DATA_LEN - 1u] = '\0';
+            {% elif state.donedata and model.needs_script_engine %}
+            /* W3C SCXML 5.5: the evaluated donedata rides on THIS event, as
+               cpp's `EventWithMetadata::data` does — serialised to JSON onto
+               `data[]`, which `set_current_event` parses back when this event
+               is dequeued. It used to wait in `_pending_donedata` for "the
+               next dequeue", and the next dequeue is not this event whenever
+               the entry also raised something first: a <param> that cannot be
+               read queues error.execution ahead of done.state (§scxml-5.7), and
+               that error took the data. The stash is cleared so nothing dequeued
+               before this event can read it. */
+            {{ se.lua_marshal_child_donedata('sm->L', '_done_evt') }}
+            (void)luaL_dostring(sm->L, "_pending_donedata = nil");
             {% endif %}
             {{ csym_prefix }}{{ model.name }}_raise(sm, &_done_evt);
         }
