@@ -216,6 +216,15 @@ impl Expected {
     }
 }
 
+/// The declared type of the place a value lands in — `None` for a hint,
+/// where nothing is declared and so nothing can fail to fit.
+fn slot_type(expected: Expected) -> Option<InferredType> {
+    match expected {
+        Expected::Slot(ty) => Some(ty),
+        Expected::Hint(_) => None,
+    }
+}
+
 /// [`transpile_typed`] for the value a function RETURNS in the type its
 /// signature declares — a transform output's body. It differs in one
 /// place: Rust declares a `string` result `String`, and a string inside an
@@ -277,6 +286,7 @@ fn transpile_at(
     judge_value(&ast, slot, expr)?;
     if ctx.receives_failures {
         check_integer_arithmetic(&mut ast, expected);
+        check_integer_narrowing(&mut ast, slot_type(slot));
     }
 
     // RFC c7-wildcard W-project: Go exports struct fields in PascalCase
@@ -395,6 +405,7 @@ pub(crate) fn transpile_typed_with_import_lowering(
     judge_value(&ast, expected, expr)?;
     if ctx.receives_failures {
         check_integer_arithmetic(&mut ast, expected.ty());
+        check_integer_narrowing(&mut ast, slot_type(expected));
     }
     Ok(emit_c(&ast, expected.ty())?)
 }
@@ -1513,6 +1524,10 @@ pub(crate) enum CheckedOp {
     Div,
     Rem,
     Neg,
+    /// A value stored where a narrower integer type is declared — the node's
+    /// `ty` is that type and `left` the value, at its own type
+    /// ([`check_integer_narrowing`]).
+    Narrow,
 }
 
 impl CheckedOp {
@@ -1537,7 +1552,61 @@ impl CheckedOp {
             Self::Div => "div",
             Self::Rem => "rem",
             Self::Neg => "neg",
+            Self::Narrow => "narrow",
         }
+    }
+}
+
+/// Rewrite every integer value of `node` that lands where a narrower integer
+/// type is declared into a [`CheckedOp::Narrow`] node (SCE_FORGE.md §3.4.1):
+/// `node` itself when `place` is that type, and each argument of a call in
+/// its parameter's type.
+///
+/// Only a value whose type can hold something `place` cannot is rewritten —
+/// a `uint8` stored in an `int32` never fails. A literal is not: it is the
+/// author's own value, and one its place cannot hold is refused at build
+/// time (`expression/literal-out-of-range`). Runs after
+/// [`check_integer_arithmetic`], so a narrowed operation is checked at its
+/// own width first.
+pub(crate) fn check_integer_narrowing(node: &mut TypedExpr, place: Option<InferredType>) {
+    match &mut node.kind {
+        ExprKind::Call { args, params, .. } => {
+            let params = params.clone();
+            for (i, arg) in args.iter_mut().enumerate() {
+                check_integer_narrowing(arg, params.get(i).copied());
+            }
+        }
+        _ => {
+            for child in node.children_mut() {
+                check_integer_narrowing(child, None);
+            }
+        }
+    }
+    let Some(place) = place else {
+        return;
+    };
+    if matches!(node.kind, ExprKind::NumberLit(_)) || !integer_can_leave(node.ty, place) {
+        return;
+    }
+    let value = std::mem::replace(node, TypedExpr::new(ExprKind::NullLit));
+    let span = value.span.clone();
+    *node = TypedExpr {
+        kind: ExprKind::Checked {
+            op: CheckedOp::Narrow,
+            left: Box::new(value),
+            right: None,
+        },
+        ty: place,
+        span,
+    };
+}
+
+/// Whether a value of integer type `from` can be one integer type `to`
+/// cannot hold.
+fn integer_can_leave(from: InferredType, to: InferredType) -> bool {
+    match (from.int_bounds(), to.int_bounds()) {
+        (Some((flo, fhi)), Some((tlo, thi))) => flo < tlo || fhi > thi,
+        _ => false,
     }
 }
 
@@ -4241,6 +4310,25 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                     observed: None,
                 });
             };
+            if *op == CheckedOp::Narrow {
+                // The value at its own type; the helper names both.
+                let InferredType::Int {
+                    signed: from_signed,
+                    bits: from_bits,
+                } = left.ty
+                else {
+                    return Err(ExprError::UnsupportedConstruct {
+                        construct: format!("a checked narrowing from {:?}", left.ty),
+                        observed: None,
+                    });
+                };
+                return Ok(format!(
+                    "SCE::Forge::Checked::narrow<std::{}int{bits}_t, std::{}int{from_bits}_t>(sce_failure_, {})",
+                    if signed { "" } else { "u" },
+                    if from_signed { "" } else { "u" },
+                    emit_cpp(left, left.ty)?
+                ));
+            }
             let mut operands = vec!["sce_failure_".to_string(), emit_cpp(left, expr.ty)?];
             if let Some(right) = right {
                 operands.push(emit_cpp(right, expr.ty)?);
@@ -4731,6 +4819,44 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // (Kotlin gives a bare literal no unsigned or narrow type). A failure
         // is thrown and turned into `AlgorithmResult.Failed` at the
         // algorithm's boundary.
+        ExprKind::Checked {
+            op: CheckedOp::Narrow,
+            left,
+            ..
+        } => {
+            // The value widened, exactly, to `Long` or `ULong` by its own
+            // signedness; one overload per target takes either.
+            let (
+                InferredType::Int { signed, bits },
+                InferredType::Int {
+                    signed: from_signed,
+                    bits: from_bits,
+                },
+            ) = (expr.ty, left.ty)
+            else {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!("a checked narrowing from {:?} to {:?}", left.ty, expr.ty),
+                    observed: None,
+                });
+            };
+            let value = emit_kotlin(left, left.ty)?;
+            let widened = match (from_signed, from_bits) {
+                (true, 64) | (false, 64) => value,
+                (true, _) => format!("({value}).toLong()"),
+                (false, _) => format!("({value}).toULong()"),
+            };
+            let target = match (signed, bits) {
+                (true, 8) => "Byte",
+                (true, 16) => "Short",
+                (true, 32) => "Int",
+                (true, _) => "Long",
+                (false, 8) => "UByte",
+                (false, 16) => "UShort",
+                (false, 32) => "UInt",
+                (false, _) => "ULong",
+            };
+            format!("com.sce.forge.runtime.SceChecked.narrowTo{target}({widened})")
+        }
         ExprKind::Checked { op, left, right } => {
             let mut operands = vec![emit_kotlin(left, expr.ty)?];
             if let Some(right) = right {
@@ -5235,6 +5361,26 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                 }
                 .at(expr.span.clone()));
             };
+            if *op == CheckedOp::Narrow {
+                // The value at its own type; the helper names both.
+                let InferredType::Int {
+                    signed: from_signed,
+                    bits: from_bits,
+                } = left.ty
+                else {
+                    return Err(ExprError::UnsupportedConstruct {
+                        construct: format!("a checked narrowing from {:?}", left.ty),
+                        observed: None,
+                    }
+                    .at(expr.span.clone()));
+                };
+                return Ok(format!(
+                    "sce_forge_runtime::algorithm::narrow::<{}, {}>({})?",
+                    rust_int_type(signed, bits),
+                    rust_int_type(from_signed, from_bits),
+                    emit_rust(left, left.ty)?
+                ));
+            }
             let mut operands = vec![emit_rust(left, expr.ty)?];
             if let Some(right) = right {
                 operands.push(emit_rust(right, expr.ty)?);
@@ -5596,6 +5742,28 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                 }
                 .at(expr.span.clone()));
             };
+            if *op == CheckedOp::Narrow {
+                // The value converted, exactly, to `int64` or `uint64` by its
+                // own signedness; one helper per target takes either.
+                let InferredType::Int {
+                    signed: from_signed,
+                    ..
+                } = left.ty
+                else {
+                    return Err(ExprError::UnsupportedConstruct {
+                        construct: format!("a checked narrowing from {:?}", left.ty),
+                        observed: None,
+                    }
+                    .at(expr.span.clone()));
+                };
+                let wide = if from_signed { "int64" } else { "uint64" };
+                return Ok(format!(
+                    "scealgorithm.Narrow{}{bits}From{}(&sceFailure, {wide}({}))",
+                    if signed { "Int" } else { "Uint" },
+                    if from_signed { "Int" } else { "Uint" },
+                    emit_go(left, left.ty)?
+                ));
+            }
             let mut operands = vec!["&sceFailure".to_string(), emit_go(left, expr.ty)?];
             if let Some(right) = right {
                 operands.push(emit_go(right, expr.ty)?);
@@ -6015,7 +6183,14 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                     observed: None,
                 });
             };
-            let mut operands = vec![emit_python(left, expr.ty)?];
+            // A narrowing holds the value, at its own type, to the target's
+            // width; the operations compute at the width they are checked at.
+            let operand_ty = if *op == CheckedOp::Narrow {
+                left.ty
+            } else {
+                expr.ty
+            };
+            let mut operands = vec![emit_python(left, operand_ty)?];
             if let Some(right) = right {
                 operands.push(emit_python(right, expr.ty)?);
             }
@@ -6396,6 +6571,27 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                     observed: None,
                 });
             };
+            if *op == CheckedOp::Narrow {
+                // The value arrives as `int64_t` or `uint64_t` by its own
+                // signedness, which holds it exactly; one helper per target
+                // takes either.
+                let InferredType::Int {
+                    signed: from_signed,
+                    ..
+                } = left.ty
+                else {
+                    return Err(ExprError::UnsupportedConstruct {
+                        construct: format!("a checked narrowing from {:?}", left.ty),
+                        observed: None,
+                    });
+                };
+                return Ok(format!(
+                    "sce_forge_checked_narrow_{}{bits}_from_{}(&sce_failure_, {})",
+                    if signed { "i" } else { "u" },
+                    if from_signed { "i" } else { "u" },
+                    emit_c(left, left.ty)?
+                ));
+            }
             let mut operands = vec!["&sce_failure_".to_string(), emit_c(left, expr.ty)?];
             if let Some(right) = right {
                 operands.push(emit_c(right, expr.ty)?);

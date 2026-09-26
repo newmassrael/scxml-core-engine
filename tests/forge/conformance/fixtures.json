@@ -1073,6 +1073,20 @@
       }
     },
     {
+      "name": "algorithm_checked_narrow",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_checked_narrow",
+      "args": [
+        "i64",
+        "u32"
+      ],
+      "output": {
+        "type": "i32",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "algorithm_crc16",
       "kind": "algorithm",
       "ref_section": "pure_functions",

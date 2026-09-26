@@ -5,7 +5,9 @@
 // integer arithmetic contract (E12) rests on.
 //
 // Under that contract an integer `+ - *` or unary `-` whose result leaves its
-// type, a `/ %` by zero and a signed `MIN / -1` are failures of the
+// type, a `/ %` by zero, a signed `MIN / -1`, and a value stored where its
+// type cannot hold it — a local, a record field, the returned value or a
+// call's argument of a narrower integer type — are failures of the
 // algorithm, not values: a wrapped result is a wrong answer delivered in
 // silence, which is the one outcome the contract exists to end. Bitwise
 // operations and shifts keep the declared width's two's-complement meaning
@@ -47,6 +49,9 @@ pub enum HazardKind {
     /// A signed `/ %` that can divide its type's minimum by `-1`, whose
     /// quotient its type cannot hold.
     MinDividedByMinusOne,
+    /// A value stored in a place whose integer type cannot hold every value
+    /// it can take — the place's type is the hazard's `ty`.
+    DoesNotFit,
 }
 
 /// One operation the analysis could not prove safe.
@@ -60,12 +65,14 @@ pub struct IntHazard {
     /// operation's own row and column.
     pub spelling: Option<AttributeSpelling>,
     pub kind: HazardKind,
-    /// The type the operation computes in.
+    /// The type the operation computes in; for [`HazardKind::DoesNotFit`],
+    /// the type of the place the value is stored in.
     pub ty: InferredType,
 }
 
-/// Every operation of `body` that can fail, given `params` (name and type)
-/// and `ctx`, the scope the algorithm's expressions are typed in.
+/// Every operation of `body` that can fail, given `params` (name and type),
+/// `ret` (the declared return type) and `ctx`, the scope the algorithm's
+/// expressions are typed in.
 ///
 /// `None` when an expression of `body` is one the typed pipeline refuses: the
 /// body is then not judged. That expression has a refusal of its own, raised
@@ -74,11 +81,15 @@ pub struct IntHazard {
 /// (a misspelt bound read as an overflow).
 pub fn hazards(
     params: &[(String, AlgorithmValueType)],
+    ret: Option<&AlgorithmValueType>,
     body: &[AlgorithmStmt],
     ctx: &TypeCtx<'_>,
 ) -> Option<Vec<IntHazard>> {
     let mut analysis = Analysis {
         ctx,
+        ret: ret
+            .and_then(AlgorithmValueType::scalar)
+            .map(InferredType::from_sce_type),
         found: Vec::new(),
         recording: true,
         untyped: std::cell::Cell::new(false),
@@ -185,6 +196,9 @@ impl Env {
 
 struct Analysis<'c, 'a> {
     ctx: &'c TypeCtx<'a>,
+    /// The declared return type, when it is a scalar — the place a returned
+    /// value is stored in.
+    ret: Option<InferredType>,
     found: Vec<IntHazard>,
     /// Off while a loop is iterated towards its fixed point, whose early
     /// rounds see narrower ranges than the loop really reaches; on for the
@@ -222,15 +236,17 @@ impl Analysis<'_, '_> {
                 init_spelling,
                 ..
             } => {
+                let place = sce_type.scalar().map(InferredType::from_sce_type);
                 let value = init
                     .as_deref()
-                    .and_then(|e| self.value(e, init_spelling.as_ref(), env));
+                    .and_then(|e| self.stored(e, init_spelling.as_ref(), env, place));
                 self.store(env, name, scalar_range(sce_type), value);
             }
             AlgorithmStmt::RecordVar { name, fields, .. } => {
                 for field in fields {
-                    let value = self.value(&field.expr, field.expr_spelling.as_ref(), env);
                     let key = format!("{name}.{}", field.name);
+                    let place = self.declared_type(&key);
+                    let value = self.stored(&field.expr, field.expr_spelling.as_ref(), env, place);
                     let slot = self.declared_range(&key);
                     self.store(env, &key, slot, value);
                 }
@@ -241,30 +257,49 @@ impl Analysis<'_, '_> {
                 expr_spelling,
                 ..
             } => {
-                let value = self.value(expr, expr_spelling.as_ref(), env);
                 let key = target.trim().to_string();
+                let place = self.declared_type(&key);
+                let value = self.stored(expr, expr_spelling.as_ref(), env, place);
                 let slot = self.declared_range(&key);
                 self.store(env, &key, slot, value);
             }
             AlgorithmStmt::Append {
+                target,
                 expr,
                 expr_spelling,
                 ..
             } => {
-                self.value(expr, expr_spelling.as_ref(), env);
+                // A `list<T>` element lands in `T`; a byte buffer takes a
+                // `uint8` or a `bytes`, and a wider value is refused where
+                // the append is lowered.
+                let place = match self.declared_type(target.trim()) {
+                    Some(InferredType::List(elem)) => Some(elem.element_type()),
+                    _ => None,
+                };
+                self.stored(expr, expr_spelling.as_ref(), env, place);
             }
             AlgorithmStmt::Return {
                 expr,
                 expr_spelling,
             } => {
                 if let Some(e) = expr {
-                    self.value(e, expr_spelling.as_ref(), env);
+                    self.stored(e, expr_spelling.as_ref(), env, self.ret);
                 }
                 *env = Env::dead();
             }
-            AlgorithmStmt::Call { args, .. } => {
-                for arg in args {
-                    self.value(&arg.expr, None, env);
+            AlgorithmStmt::Call { target, args, .. } => {
+                // Each argument lands in its parameter, as an argument of the
+                // expression form does ([`Self::eval`]).
+                let params = self
+                    .ctx
+                    .funcs
+                    .get(target.trim())
+                    .filter(|sig| sig.host_only.is_none())
+                    .map(|sig| sig.params.clone())
+                    .unwrap_or_default();
+                for (i, arg) in args.iter().enumerate() {
+                    let place = params.get(i).copied();
+                    self.stored(&arg.expr, arg.spelling.as_ref(), env, place);
                 }
             }
             AlgorithmStmt::If {
@@ -387,15 +422,17 @@ impl Analysis<'_, '_> {
     }
 
     /// Store `value` in `name`, whose declared type holds `slot`. A value the
-    /// slot cannot hold is converted into it, which the type rules define as
-    /// wrapping to the slot — not an arithmetic failure — so after it the
-    /// name is known only by its type.
+    /// slot cannot hold was reported where it was computed ([`Self::stored`]);
+    /// an execution that goes on stored one the slot holds.
     fn store(&self, env: &mut Env, name: &str, slot: Option<Interval>, value: Option<Interval>) {
         // A new value keeps no fact a guard proved of the old one.
         env.nonzero.remove(name);
         match (slot, value) {
             (Some(slot), Some(v)) if v.within(slot) => {
                 env.vars.insert(name.to_string(), v);
+            }
+            (Some(slot), Some(v)) if v.lo <= slot.hi && slot.lo <= v.hi => {
+                env.vars.insert(name.to_string(), v.clamp(slot));
             }
             (Some(slot), _) => {
                 env.vars.insert(name.to_string(), slot);
@@ -408,7 +445,49 @@ impl Analysis<'_, '_> {
 
     /// The range `name`'s declared type holds, from the scope.
     fn declared_range(&self, name: &str) -> Option<Interval> {
-        self.ctx.vars.get(name).and_then(|ty| type_range(*ty))
+        self.declared_type(name).and_then(type_range)
+    }
+
+    /// `name`'s declared type, from the scope.
+    fn declared_type(&self, name: &str) -> Option<InferredType> {
+        self.ctx.vars.get(name).copied()
+    }
+
+    /// Judge `expr`, stored in a place of type `place`, recording its hazards
+    /// — a value `place` cannot hold among them — and return the range of its
+    /// value when it is an integer.
+    fn stored(
+        &mut self,
+        expr: &str,
+        spelling: Option<&AttributeSpelling>,
+        env: &Env,
+        place: Option<InferredType>,
+    ) -> Option<Interval> {
+        let tree = self.typed(expr)?;
+        let value = self.eval(&tree, expr, spelling, env);
+        self.fits(&tree, expr, spelling, value, place);
+        value
+    }
+
+    /// Record a [`HazardKind::DoesNotFit`] when `value`, the range of `node`,
+    /// reaches past what `place` holds.
+    fn fits(
+        &mut self,
+        node: &TypedExpr,
+        expr: &str,
+        spelling: Option<&AttributeSpelling>,
+        value: Option<Interval>,
+        place: Option<InferredType>,
+    ) {
+        let (Some(value), Some(place)) = (value, place) else {
+            return;
+        };
+        let Some(slot) = type_range(place) else {
+            return;
+        };
+        if !value.within(slot) {
+            self.hazard_in(node, expr, spelling, HazardKind::DoesNotFit, place);
+        }
     }
 
     /// `expr` as the typed tree the emitters lower, or `None` for one the
@@ -430,24 +509,24 @@ impl Analysis<'_, '_> {
         Some(tree)
     }
 
-    /// Judge `expr`, recording its hazards, and return the range of its value
-    /// when it is an integer.
-    fn value(
-        &mut self,
-        expr: &str,
-        spelling: Option<&AttributeSpelling>,
-        env: &Env,
-    ) -> Option<Interval> {
-        let tree = self.typed(expr)?;
-        self.eval(&tree, expr, spelling, env)
-    }
-
     fn hazard(
         &mut self,
         node: &TypedExpr,
         expr: &str,
         spelling: Option<&AttributeSpelling>,
         kind: HazardKind,
+    ) {
+        self.hazard_in(node, expr, spelling, kind, node.ty);
+    }
+
+    /// Record `kind` at `node`, judged in `ty`.
+    fn hazard_in(
+        &mut self,
+        node: &TypedExpr,
+        expr: &str,
+        spelling: Option<&AttributeSpelling>,
+        kind: HazardKind,
+        ty: InferredType,
     ) {
         if !self.recording {
             return;
@@ -462,7 +541,7 @@ impl Analysis<'_, '_> {
                 span: node.span.clone(),
                 spelling: spelling.cloned(),
                 kind,
-                ty: node.ty,
+                ty,
             });
         }
     }
@@ -576,6 +655,15 @@ impl Analysis<'_, '_> {
                     hi: i128::from(u32::MAX),
                 };
                 Some(own.map_or(contract, |own| contract.clamp(own)))
+            }
+            // Each argument lands in its parameter's type, as a value lands
+            // in a local's.
+            ExprKind::Call { args, params, .. } if !params.is_empty() => {
+                for (arg, param) in args.iter().zip(params) {
+                    let value = self.eval(arg, expr, spelling, env);
+                    self.fits(arg, expr, spelling, value, Some(*param));
+                }
+                own
             }
             _ => {
                 for child in node.children() {
@@ -803,6 +891,7 @@ impl HazardKind {
             HazardKind::Overflow => "overflow",
             HazardKind::DivideByZero => "divide by zero",
             HazardKind::MinDividedByMinusOne => "divide the minimum by -1",
+            HazardKind::DoesNotFit => "leave the type it is stored in",
         }
     }
 }
@@ -836,7 +925,8 @@ pub(crate) fn check(
         .collect();
     // A body the typed pipeline refuses somewhere is not judged here: its
     // refusal is raised where that expression is lowered.
-    let Some(first) = hazards(&params, &m.body, &ctx).and_then(|found| found.into_iter().next())
+    let Some(first) = hazards(&params, m.signature.return_type.as_ref(), &m.body, &ctx)
+        .and_then(|found| found.into_iter().next())
     else {
         return Ok(());
     };
@@ -926,6 +1016,16 @@ mod tests {
         locals: &[(&str, SceType)],
         body: &[AlgorithmStmt],
     ) -> Vec<(String, HazardKind)> {
+        analyse_returning(params, locals, None, body)
+    }
+
+    /// [`analyse`] of an algorithm that declares it returns `ret`.
+    fn analyse_returning(
+        params: &[(&str, SceType)],
+        locals: &[(&str, SceType)],
+        ret: Option<SceType>,
+        body: &[AlgorithmStmt],
+    ) -> Vec<(String, HazardKind)> {
         let mut ctx = TypeCtx::new();
         for (n, t) in params.iter().chain(locals) {
             ctx.insert_var(n, InferredType::from_sce_type(t));
@@ -934,11 +1034,65 @@ mod tests {
             .iter()
             .map(|(n, t)| (n.to_string(), AlgorithmValueType::Scalar(t.clone())))
             .collect();
-        hazards(&params, body, &ctx)
+        let ret = ret.map(AlgorithmValueType::Scalar);
+        hazards(&params, ret.as_ref(), body, &ctx)
             .expect("every expression of a unit-test body types")
             .into_iter()
             .map(|h| (h.expr, h.kind))
             .collect()
+    }
+
+    /// A wider value stored in a narrower local is not wrapped into it: it
+    /// is an operation that can fail, like an overflowing sum.
+    #[test]
+    fn a_value_its_local_cannot_hold_is_a_hazard() {
+        let body = [
+            var("v", AlgorithmValueType::Scalar(SceType::Int32), "x"),
+            ret("v"),
+        ];
+        assert_eq!(
+            analyse(&[("x", SceType::Int64)], &[("v", SceType::Int32)], &body),
+            vec![("x".to_string(), HazardKind::DoesNotFit)]
+        );
+    }
+
+    /// The range, not the type, decides: a remainder folded into 0..6 fits
+    /// a uint8 whatever int64 it came from.
+    #[test]
+    fn a_value_proven_to_fit_a_narrower_local_is_not_a_hazard() {
+        let body = [var("w", u8t(), "(x % 7 + 11) % 7"), ret("w")];
+        assert!(analyse(&[("x", SceType::Int64)], &[("w", SceType::Uint8)], &body).is_empty());
+    }
+
+    /// The returned value lands in the declared return type.
+    #[test]
+    fn a_returned_value_its_return_type_cannot_hold_is_a_hazard() {
+        let body = [ret("x")];
+        assert_eq!(
+            analyse_returning(&[("x", SceType::Int64)], &[], Some(SceType::Uint8), &body),
+            vec![("x".to_string(), HazardKind::DoesNotFit)]
+        );
+        let guarded = [if_("x >= 0 && x <= 255", vec![ret("x")]), ret("0")];
+        assert!(
+            analyse_returning(
+                &[("x", SceType::Int64)],
+                &[],
+                Some(SceType::Uint8),
+                &guarded
+            )
+            .is_empty(),
+            "a guard that bounds the value proves it fits"
+        );
+    }
+
+    /// An assignment and a record field are places too.
+    #[test]
+    fn an_assigned_value_its_target_cannot_hold_is_a_hazard() {
+        let body = [var("n", u8t(), "0"), assign("n", "x"), ret("n")];
+        assert_eq!(
+            analyse(&[("x", SceType::Uint16)], &[("n", SceType::Uint8)], &body),
+            vec![("x".to_string(), HazardKind::DoesNotFit)]
+        );
     }
 
     #[test]
@@ -1021,7 +1175,7 @@ mod tests {
             while_("i < limt", 8, vec![assign("i", "i + 1")]),
             ret("i"),
         ];
-        assert!(hazards(&[], &body, &ctx).is_none());
+        assert!(hazards(&[], None, &body, &ctx).is_none());
     }
 
     #[test]

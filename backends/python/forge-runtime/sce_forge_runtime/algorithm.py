@@ -82,6 +82,11 @@ class _Width:
     def neg(self, a: int) -> int:
         return self._fit(-a)
 
+    def narrow(self, v: int) -> int:
+        """A value stored where this width is declared: the same value, or an
+        overflow when the width cannot hold it — never a wrapped one."""
+        return self._fit(v)
+
 
 I8 = _Width(-(2**7), 2**7 - 1)
 I16 = _Width(-(2**15), 2**15 - 1)

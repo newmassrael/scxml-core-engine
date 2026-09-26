@@ -220,4 +220,30 @@ public object SceChecked {
         if (a != 0uL) fail(AlgorithmError.Overflow)
         return a
     }
+
+    // A value stored where a narrower integer type is declared is the same
+    // value, or an overflow when the type cannot hold it — never a wrapped
+    // one. The value arrives as `Long` (from a signed type) or `ULong` (from
+    // an unsigned one), either of which holds it exactly, so one overload per
+    // target and signedness serves every source width. A pair whose every
+    // value fits (`Long` from signed, `ULong` from unsigned) has none: the
+    // generator emits no check there.
+    private fun fitUnsigned(v: ULong, hi: Long): Long =
+        if (v > hi.toULong()) fail(AlgorithmError.Overflow) else v.toLong()
+
+    public fun narrowToByte(v: Long): Byte = fit(v, I8_MIN, I8_MAX).toByte()
+    public fun narrowToByte(v: ULong): Byte = fitUnsigned(v, I8_MAX).toByte()
+    public fun narrowToShort(v: Long): Short = fit(v, I16_MIN, I16_MAX).toShort()
+    public fun narrowToShort(v: ULong): Short = fitUnsigned(v, I16_MAX).toShort()
+    public fun narrowToInt(v: Long): Int = fit(v, I32_MIN, I32_MAX).toInt()
+    public fun narrowToInt(v: ULong): Int = fitUnsigned(v, I32_MAX).toInt()
+    public fun narrowToLong(v: ULong): Long = fitUnsigned(v, Long.MAX_VALUE)
+    public fun narrowToUByte(v: Long): UByte = fit(v, 0L, U8_MAX).toUByte()
+    public fun narrowToUByte(v: ULong): UByte = fitUnsigned(v, U8_MAX).toUByte()
+    public fun narrowToUShort(v: Long): UShort = fit(v, 0L, U16_MAX).toUShort()
+    public fun narrowToUShort(v: ULong): UShort = fitUnsigned(v, U16_MAX).toUShort()
+    public fun narrowToUInt(v: Long): UInt = fit(v, 0L, U32_MAX).toUInt()
+    public fun narrowToUInt(v: ULong): UInt = fitUnsigned(v, U32_MAX).toUInt()
+    public fun narrowToULong(v: Long): ULong =
+        if (v < 0L) fail(AlgorithmError.Overflow) else v.toULong()
 }

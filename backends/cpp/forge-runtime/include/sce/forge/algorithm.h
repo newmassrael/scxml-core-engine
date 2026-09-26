@@ -255,5 +255,27 @@ template <typename T> constexpr T neg(AlgorithmFailure &f, T a) noexcept {
     }
 }
 
+/// A value of type `S` stored where a `T` is declared: the same value, or 0
+/// and an overflow when `T` cannot hold it — never a wrapped one. Each
+/// comparison is made in a 64-bit type of one signedness, which holds both
+/// sides exactly.
+template <typename T, typename S> constexpr T narrow(AlgorithmFailure &f, S v) noexcept {
+    static_assert(std::is_integral_v<T> && std::is_integral_v<S>, "checked narrowing is integer narrowing");
+    bool fits = false;
+    if constexpr (Detail::kSigned<S> && Detail::kSigned<T>) {
+        fits = static_cast<std::int64_t>(v) >= static_cast<std::int64_t>(std::numeric_limits<T>::min()) &&
+               static_cast<std::int64_t>(v) <= static_cast<std::int64_t>(std::numeric_limits<T>::max());
+    } else if constexpr (Detail::kSigned<S>) {
+        fits = v >= 0 && static_cast<std::uint64_t>(v) <= static_cast<std::uint64_t>(std::numeric_limits<T>::max());
+    } else {
+        fits = static_cast<std::uint64_t>(v) <= static_cast<std::uint64_t>(std::numeric_limits<T>::max());
+    }
+    if (!fits) {
+        f.fail(AlgorithmError::Overflow);
+        return T{};
+    }
+    return static_cast<T>(v);
+}
+
 }  // namespace Checked
 }  // namespace SCE::Forge

@@ -306,3 +306,72 @@ func NegUint64(f *Failure, a uint64) uint64 {
 	}
 	return a
 }
+
+// A value stored where a narrower integer type is declared is the same
+// value, or 0 and an overflow when the type cannot hold it — never a
+// wrapped one. The value arrives as int64 (from a signed type) or uint64
+// (from an unsigned one), either of which holds it exactly, so one helper
+// per target and signedness serves every source width. A pair whose every
+// value fits (int64 from signed, uint64 from unsigned) has no helper: the
+// generator emits no check there.
+
+func narrowFromInt[T narrow](f *Failure, v, lo, hi int64) T { return fit[T](f, v, lo, hi) }
+
+func narrowFromUint[T narrow](f *Failure, v uint64, hi int64) T {
+	if v > uint64(hi) {
+		f.Fail(Overflow)
+		return 0
+	}
+	return T(v)
+}
+
+func NarrowInt8FromInt(f *Failure, v int64) int8 {
+	return narrowFromInt[int8](f, v, math.MinInt8, math.MaxInt8)
+}
+func NarrowInt8FromUint(f *Failure, v uint64) int8 { return narrowFromUint[int8](f, v, math.MaxInt8) }
+func NarrowInt16FromInt(f *Failure, v int64) int16 {
+	return narrowFromInt[int16](f, v, math.MinInt16, math.MaxInt16)
+}
+func NarrowInt16FromUint(f *Failure, v uint64) int16 {
+	return narrowFromUint[int16](f, v, math.MaxInt16)
+}
+func NarrowInt32FromInt(f *Failure, v int64) int32 {
+	return narrowFromInt[int32](f, v, math.MinInt32, math.MaxInt32)
+}
+func NarrowInt32FromUint(f *Failure, v uint64) int32 {
+	return narrowFromUint[int32](f, v, math.MaxInt32)
+}
+func NarrowUint8FromInt(f *Failure, v int64) uint8 {
+	return narrowFromInt[uint8](f, v, 0, math.MaxUint8)
+}
+func NarrowUint8FromUint(f *Failure, v uint64) uint8 {
+	return narrowFromUint[uint8](f, v, math.MaxUint8)
+}
+func NarrowUint16FromInt(f *Failure, v int64) uint16 {
+	return narrowFromInt[uint16](f, v, 0, math.MaxUint16)
+}
+func NarrowUint16FromUint(f *Failure, v uint64) uint16 {
+	return narrowFromUint[uint16](f, v, math.MaxUint16)
+}
+func NarrowUint32FromInt(f *Failure, v int64) uint32 {
+	return narrowFromInt[uint32](f, v, 0, math.MaxUint32)
+}
+func NarrowUint32FromUint(f *Failure, v uint64) uint32 {
+	return narrowFromUint[uint32](f, v, math.MaxUint32)
+}
+
+func NarrowInt64FromUint(f *Failure, v uint64) int64 {
+	if v > math.MaxInt64 {
+		f.Fail(Overflow)
+		return 0
+	}
+	return int64(v)
+}
+
+func NarrowUint64FromInt(f *Failure, v int64) uint64 {
+	if v < 0 {
+		f.Fail(Overflow)
+		return 0
+	}
+	return uint64(v)
+}

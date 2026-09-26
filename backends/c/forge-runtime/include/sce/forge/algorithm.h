@@ -234,4 +234,54 @@ static inline uint64_t sce_forge_checked_neg_u64(sce_forge_algorithm_failure_t *
     return a;
 }
 
+/*
+ * A value stored where a narrower integer type is declared: the same value,
+ * or 0 and an overflow when the type cannot hold it — never a wrapped one.
+ * The value arrives as `int64_t` (from a signed type) or `uint64_t` (from an
+ * unsigned one), either of which holds it exactly, so one helper per target
+ * and signedness serves every source width. A pair whose every value fits
+ * (`i64` from signed, `u64` from unsigned) has no helper: the generator
+ * emits no check there.
+ */
+#define SCE_FORGE_CHECKED_INTO(SUFFIX, T, LO, HI)                                                                      \
+    static inline T sce_forge_checked_narrow_##SUFFIX##_from_i(sce_forge_algorithm_failure_t *f, int64_t v) {          \
+        if (v < (int64_t)(LO) || v > (int64_t)(HI)) {                                                                  \
+            sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_OVERFLOW);                                                 \
+            return 0;                                                                                                  \
+        }                                                                                                              \
+        return (T)v;                                                                                                   \
+    }                                                                                                                  \
+    static inline T sce_forge_checked_narrow_##SUFFIX##_from_u(sce_forge_algorithm_failure_t *f, uint64_t v) {         \
+        if (v > (uint64_t)(HI)) {                                                                                      \
+            sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_OVERFLOW);                                                 \
+            return 0;                                                                                                  \
+        }                                                                                                              \
+        return (T)v;                                                                                                   \
+    }
+
+SCE_FORGE_CHECKED_INTO(i8, int8_t, INT8_MIN, INT8_MAX)
+SCE_FORGE_CHECKED_INTO(i16, int16_t, INT16_MIN, INT16_MAX)
+SCE_FORGE_CHECKED_INTO(i32, int32_t, INT32_MIN, INT32_MAX)
+SCE_FORGE_CHECKED_INTO(u8, uint8_t, 0, UINT8_MAX)
+SCE_FORGE_CHECKED_INTO(u16, uint16_t, 0, UINT16_MAX)
+SCE_FORGE_CHECKED_INTO(u32, uint32_t, 0, UINT32_MAX)
+
+#undef SCE_FORGE_CHECKED_INTO
+
+static inline int64_t sce_forge_checked_narrow_i64_from_u(sce_forge_algorithm_failure_t *f, uint64_t v) {
+    if (v > (uint64_t)INT64_MAX) {
+        sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_OVERFLOW);
+        return 0;
+    }
+    return (int64_t)v;
+}
+
+static inline uint64_t sce_forge_checked_narrow_u64_from_i(sce_forge_algorithm_failure_t *f, int64_t v) {
+    if (v < 0) {
+        sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_OVERFLOW);
+        return 0;
+    }
+    return (uint64_t)v;
+}
+
 #endif /* SCE_FORGE_ALGORITHM_H */

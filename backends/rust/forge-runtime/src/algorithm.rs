@@ -5,7 +5,8 @@
 //!
 //! An algorithm that declares `<sce:return may-fail="true">` returns
 //! `Result<T, AlgorithmError>`, and the generator lowers each of its integer
-//! `+ - * / %` and unary `-` to one of the helpers here, followed by `?`. A
+//! `+ - * / %` and unary `-`, and each store of an integer into a narrower
+//! integer type, to one of the helpers here, followed by `?`. A
 //! helper computes the operation at the declared width or reports why it
 //! has no value there: an overflow (a signed `MIN / -1` or `MIN % -1`
 //! included, which is one), or a division by zero, which is refused before
@@ -107,6 +108,12 @@ pub fn neg<T: CheckedInt>(a: T) -> Result<T, AlgorithmError> {
     a.checked_neg_().ok_or(AlgorithmError::Overflow)
 }
 
+/// A value of type `S` stored where a `T` is declared: the same value, or an
+/// overflow when `T` cannot hold it — never a wrapped one.
+pub fn narrow<T: CheckedInt + TryFrom<S>, S: CheckedInt>(v: S) -> Result<T, AlgorithmError> {
+    T::try_from(v).map_err(|_| AlgorithmError::Overflow)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,6 +132,15 @@ mod tests {
         assert_eq!(rem::<i8>(i8::MIN, -1), Err(AlgorithmError::Overflow));
         assert_eq!(neg::<i32>(i32::MIN), Err(AlgorithmError::Overflow));
         assert_eq!(neg::<i32>(5), Ok(-5));
+        assert_eq!(narrow::<i32, i64>(i64::from(i32::MAX)), Ok(i32::MAX));
+        assert_eq!(
+            narrow::<i32, i64>(i64::from(i32::MAX) + 1),
+            Err(AlgorithmError::Overflow)
+        );
+        assert_eq!(narrow::<u8, i64>(-1), Err(AlgorithmError::Overflow));
+        assert_eq!(narrow::<i8, u64>(u64::MAX), Err(AlgorithmError::Overflow));
+        assert_eq!(narrow::<u64, i8>(-1), Err(AlgorithmError::Overflow));
+        assert_eq!(narrow::<i64, u8>(200), Ok(200));
     }
 
     #[test]

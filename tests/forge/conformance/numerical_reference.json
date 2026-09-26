@@ -1344,6 +1344,22 @@
         { "args": [46341, 0, 7], "fails": "overflow", "note": "the condition's failure, before its branch" }
       ]
     },
+    "algorithm_checked_narrow": {
+      "fixture": "algorithm_checked_narrow",
+      "signature": "(x: i64, y: u32) -> i32 may-fail",
+      "formula": "small = y stored in a uint8; wide = x + small in int64; wide returned as an int32. A store whose type cannot hold the value fails 'overflow' rather than wrapping (SCE_FORGE.md §3.4.1)",
+      "cases": [
+        { "args": [5, 3], "expected": 8 },
+        { "args": [0, 255], "expected": 255, "note": "the largest uint8" },
+        { "args": [0, 256], "fails": "overflow", "note": "one past uint8, stored in the local" },
+        { "args": [0, 4294967295], "fails": "overflow", "note": "uint32 MAX into uint8" },
+        { "args": [2147483647, 0], "expected": 2147483647, "note": "the largest int32 return" },
+        { "args": [2147483647, 1], "fails": "overflow", "note": "one past int32, stored in the return" },
+        { "args": [-2147483648, 0], "expected": -2147483648, "note": "the smallest int32 return" },
+        { "args": [-2147483649, 0], "fails": "overflow", "note": "one below int32" },
+        { "args": [-9223372036854775808, 0], "fails": "overflow", "note": "int64 MIN" }
+      ]
+    },
     "algorithm_crc16": {
       "fixture": "algorithm_crc16",
       "signature": "(data: bytes) -> u16",

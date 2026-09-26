@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A value stored where a narrower integer type is declared, in an algorithm
+  that declares may-fail (SCE_FORGE.md §3.4.1): `y` lands in a uint8 local,
+  the int64 sum lands in the int32 return. Each store keeps its value when
+  the narrower type holds it and fails `overflow` when it does not — never a
+  wrapped value, which C, C++, Rust, Go, Kotlin and Python would otherwise
+  each produce in their own way (and Python not at all).
+
+  The oracle's cases hold both edges of both stores on every backend.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="x" type="int64"/>
+    <sce:param name="y" type="uint32"/>
+    <sce:return type="int32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="small" type="uint8" init="y"/>
+    <sce:var name="wide" type="int64" init="x + small"/>
+    <sce:return expr="wide"/>
+  </sce:body>
+</scxml>
