@@ -8,6 +8,7 @@ same as one that was checked.
 Asserted here:
 
     a guess the cases contradict is refuted, with the case and both values
+    a failure two guesses decide together refutes neither: both implicated
     a guess they agree with is held, by the cases that agreed
     a guess no case compares is untested        (the one a pass hides)
     a binding's guess behind a document's guess is credited too
@@ -70,15 +71,33 @@ CASE = {"name": "two counted",
 class AGapSaysWhatTheCasesFoundThere(Fixture):
     def setUp(self):
         super().setUp()
+        self.result = self.run_with(BINDING)
+        self.ledger = self.result.assumptions
+
+    def run_with(self, binding):
         (self.root / "guessed.scxml").write_text(GUESSED, encoding="utf-8")
         path = self.root / "guessed.binding.yaml"
-        path.write_text(yaml.safe_dump(BINDING), encoding="utf-8")
+        path.write_text(yaml.safe_dump(binding), encoding="utf-8")
         (self.pack_dir / "examples.yaml").write_text(yaml.safe_dump({
             "version": 1, "origin": "written for this test",
             "independent_cases": True, "cases": [CASE]}), encoding="utf-8")
-        self.result = verify(self.pack(), path)
-        self.assertTrue(self.result.ran, self.result.refusal)
-        self.ledger = self.result.assumptions
+        result = verify(self.pack(), path)
+        self.assertTrue(result.ran, result.refusal)
+        return result
+
+    def test_a_failure_two_guesses_decide_together_refutes_neither(self):
+        """⚠ The discriminator for `implicated`. With the binding ALSO
+        guessing about the level, the wrong value rests on two guesses; the
+        case says one of them is wrong and cannot say which, so neither is
+        reported refuted -- each is implicated, naming the other."""
+        rules = {**BINDING, "outputs": {**BINDING["outputs"], "level": {
+            **BINDING["outputs"]["level"], "assumed": "the level is passed through"}}}
+        found = self.run_with(rules).assumptions
+        by_doc, by_rule = found["document:level"], found["binding:output:level"]
+        self.assertEqual(("implicated", "implicated"), (by_doc.status, by_rule.status))
+        self.assertEqual([("two counted", "Plant.Out.Lamp.Value", 3, 4, ["output level"])],
+                         by_doc.implicated_by)
+        self.assertEqual(["level-scale"], by_rule.implicated_by[0][4])
 
     def test_a_contradicted_guess_is_refuted_with_its_evidence(self):
         level = self.ledger["document:level"]

@@ -117,6 +117,11 @@ def cmd_gaps(args) -> int:
             for case, address, want, got in gap.evidence:
                 print(f"             case {case!r}: {address} expected {want!r}, "
                       f"the guess gave {got!r}")
+        elif gap.kind == "implicated":
+            for case, address, want, got, others in gap.evidence:
+                print(f"             case {case!r}: {address} expected {want!r}, "
+                      f"got {got!r}; decided together with {', '.join(others)}")
+            print(f"             agreed in {gap.agreed} other case(s)")
         elif gap.kind == "held":
             print(f"             agreed in {len(gap.evidence)} case(s)")
         print(f"             -> {gap.fix}")

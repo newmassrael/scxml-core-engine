@@ -172,6 +172,11 @@ reason this is a command of its own: `verify` names a refuted guess beside its
 failure, and an untested one reads in a verdict of "all passed" exactly like a
 checked one. Every guess on the path to a position is credited, not only the
 nearest — a document's value and the binding's symbol for it are two decisions.
+⚠ Credit is not blame the same way round: a wrong value at a position several
+guesses decide together says at least one of them is wrong, not each, so each
+is **implicated** (naming the others) and only a guess that decides a failing
+position alone is refuted. Blaming all of them turned one component's report
+into thirteen refutations and nothing held.
 With `--prose` each gap is located in the text by file and line (never
 quoted, so the report can travel further than the specification may) and the
 text's own open questions are counted; `--out` writes every gap as NDJSON. A

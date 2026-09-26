@@ -422,7 +422,10 @@ def verification_payload(result) -> dict:
             {"subject": a.subject, "marker": a.marker, "status": a.status,
              "positions": a.positions, "held_in": len(a.held_in),
              "refuted_by": [{"case": c, "address": addr, "expected": want,
-                             "got": got} for c, addr, want, got in a.refuted_by]}
+                             "got": got} for c, addr, want, got in a.refuted_by],
+             "implicated_by": [{"case": c, "address": addr, "expected": want,
+                                "got": got, "with": others}
+                               for c, addr, want, got, others in a.implicated_by]}
             for a in result.assumptions.values()],
         # ⚠ What the binding declared it does NOT know, and what that cost.
         # The client most likely to read this is the model that wrote the

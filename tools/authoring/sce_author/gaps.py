@@ -8,6 +8,8 @@ product's cases. Put together, those two say, for each gap, which of three
 very different things is true:
 
     refuted    the product's tests answer it, and the answer is not the guess
+    implicated a case fails where it and other guesses decide together --
+               at least one of them is wrong, the cases do not say which
     held       the tests agree with the guess -- the text should still say so
     untested   nothing compares it -- neither the text nor the tests decide it
 
@@ -32,11 +34,16 @@ from dataclasses import dataclass, field
 # Most urgent first. A refutation is a known wrong answer; an untested guess
 # is an unknown one, which is worse than an open question only because nobody
 # is asking it.
-ORDER = ("refuted", "untested", "open", "question", "untestable", "held")
+ORDER = ("refuted", "implicated", "untested", "open", "question", "untestable",
+         "held")
 
 FIX = {
     "refuted": ("The product's tests answer this, and not as guessed. The "
                 "specification should state what they expect."),
+    "implicated": ("A case fails at a position this guess decides together "
+                   "with the others named; at least one of them is wrong, and "
+                   "the cases do not say which. The specification should "
+                   "settle each."),
     "untested": ("No case compares a position resting on this guess. Neither "
                  "the specification nor the tests decide it; both should."),
     "open": ("No answer could even be guessed. The specification, or the "
@@ -58,8 +65,13 @@ class Gap:
     positions: list = field(default_factory=list)
     # (file, line, the name found there): where the text touches it.
     where: list = field(default_factory=list)
-    # refuted: (case, address, expected, got); held: case names.
+    # refuted: (case, address, expected, got); implicated: the same plus the
+    # other guesses; held: case names.
     evidence: list = field(default_factory=list)
+    # Cases in which positions resting on this guess agreed. Carried for
+    # every status: an implicated guess that also agreed in forty cases is a
+    # weaker suspect than one that agreed in none, and the reader ranks them.
+    agreed: int = 0
 
     @property
     def fix(self) -> str:
@@ -72,6 +84,7 @@ class Gap:
                           for f, n, name in self.where],
                 "evidence": [list(e) if isinstance(e, tuple) else e
                              for e in self.evidence],
+                "agreed": self.agreed,
                 "fix": self.fix}
 
 
@@ -102,8 +115,9 @@ def report(verification, pack, prose=None, questions=()) -> list[Gap]:
             kind=a.status, subject=a.subject, reason=a.reason, marker=a.marker,
             positions=list(a.positions),
             where=_where(a.positions, pack.model, prose),
-            evidence=list(a.refuted_by) if a.status == "refuted"
-            else list(a.held_in)))
+            evidence={"refuted": a.refuted_by,
+                      "implicated": a.implicated_by}.get(a.status, a.held_in)[:],
+            agreed=len(a.held_in)))
     for name, why in sorted(verification.unresolved.items()):
         gaps.append(Gap(kind="open", subject=f"input {name}", reason=why))
     for name, why in sorted(verification.unresolved_outputs.items()):

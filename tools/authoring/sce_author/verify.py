@@ -584,13 +584,27 @@ class Assumption:
     positions: list = field(default_factory=list)
     # Case names in which a position resting on this guess agreed.
     held_in: list = field(default_factory=list)
-    # (case, address, expected, got) where a position resting on it failed.
+    # (case, address, expected, got) where a position resting on THIS guess
+    # ALONE failed: the case contradicts it and nothing else.
     refuted_by: list = field(default_factory=list)
+    # (case, address, expected, got, the other guesses) where a position
+    # resting on this guess AND others failed.
+    #
+    # ⚠ Not a refutation. A wrong value at a position that three guesses
+    # decide between them says at least one of the three is wrong, not that
+    # each is. Blaming every one of them was measured 2026-09-27: one
+    # component's report came back thirteen guesses refuted and none held,
+    # the same two cases blaming a dozen guesses on one output's path --
+    # a report that tells its reader to rewrite a dozen places in the text
+    # when the cases pin down at most a few.
+    implicated_by: list = field(default_factory=list)
 
     @property
     def status(self) -> str:
         if self.refuted_by:
             return "refuted"
+        if self.implicated_by:
+            return "implicated"
         return "held" if self.held_in else "untested"
 
 
@@ -1518,12 +1532,19 @@ class CaseJudge:
         for result in self.verification.results:
             failed = {address: (want, got) for address, want, got in result.failures}
             for address in result.compared:
-                for key in self._guesses_behind(self.writes.get(address)):
-                    if key not in known:
-                        continue
+                keys = [k for k in self._guesses_behind(self.writes.get(address))
+                        if k in known]
+                for key in keys:
                     if address in failed:
                         want, got = failed[address]
-                        known[key].refuted_by.append((result.name, address, want, got))
+                        others = [known[k].marker or known[k].subject
+                                  for k in keys if k != key]
+                        if others:
+                            known[key].implicated_by.append(
+                                (result.name, address, want, got, others))
+                        else:
+                            known[key].refuted_by.append(
+                                (result.name, address, want, got))
                     elif result.judged and result.name not in known[key].held_in:
                         known[key].held_in.append(result.name)
 
