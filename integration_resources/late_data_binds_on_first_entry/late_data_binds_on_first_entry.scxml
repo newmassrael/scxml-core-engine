@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 5.3 / Appendix D enterStates, late binding: a state's <data> is
+  bound on that state's FIRST entry, and never again.
+
+      for s in statesToEnter.toList().sort(entryOrder):
+          configuration.add(s)
+          ...
+          if binding == "late" and s.isFirstEntry:
+              initializeDataModel(datamodel.s, doc.s)
+              s.isFirstEntry = false
+          for content in s.onentry.sort(documentOrder): executeContent(content)
+
+  The drivers send go, bump, back, go: `s` is entered, its `v` is changed to
+  5, `s` is left, and `s` is entered again. Its <onentry> records the `v` it
+  sees on every entry, so the second entry shows whether the processor bound
+  `v` again:
+
+    seen        15 — 1 on the first entry, then 5 on the second. A processor
+                that binds on every entry records 11; one that never binds late
+                data records no value at all.
+    entries     2  — both entries ran, so `seen` is not measuring one.
+    contentSeen 7  — `c` is bound from inline content, not an `expr`; a
+                processor that binds only `expr` data leaves it unassigned.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="late_data_binds_on_first_entry" datamodel="ecmascript"
+       binding="late" initial="idle">
+
+  <datamodel>
+    <data id="entries" expr="0"/>
+    <data id="seen" expr="0"/>
+    <data id="contentSeen" expr="0"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="go" target="s"/>
+  </state>
+
+  <state id="s">
+    <datamodel>
+      <data id="v" expr="1"/>
+      <data id="c">7</data>
+    </datamodel>
+    <onentry>
+      <assign location="entries" expr="entries + 1"/>
+      <assign location="seen" expr="seen * 10 + v"/>
+      <assign location="contentSeen" expr="c"/>
+    </onentry>
+    <transition event="bump">
+      <assign location="v" expr="5"/>
+    </transition>
+    <transition event="back" target="idle"/>
+  </state>
+</scxml>

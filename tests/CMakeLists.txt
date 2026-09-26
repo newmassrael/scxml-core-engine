@@ -1031,6 +1031,8 @@ add_executable(integration_tests
     integration/OnexitRunsBeforeTheStateLeavesAotTest.cpp
     integration/TheRunEndsByExitingEveryStateTest.cpp
     integration/TheRunEndsByExitingEveryStateAotTest.cpp
+    integration/LateDataBindsOnFirstEntryTest.cpp
+    integration/LateDataBindsOnFirstEntryAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
     integration/EventDataArrivesAsSentAotTest.cpp
     integration/XmlDataIsADomTreeTest.cpp
@@ -1546,6 +1548,11 @@ sce_generate_static_integration_test(onexit_runs_before_the_state_leaves ${STATI
 # still in — at a top-level <final> after a step, and on stop() — innermost
 # first, leaving the configuration empty. The handlers record what ran.
 sce_generate_static_integration_test(the_run_ends_by_exiting_every_state ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 5.3 / Appendix D enterStates, late binding: a state's <data> is
+# bound on its FIRST entry only. The state is entered twice with its value
+# changed in between; its <onentry> records what it saw each time.
+sce_generate_static_integration_test(late_data_binds_on_first_entry ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach the
 # datamodel as a value. `raiseExternalEvent(name, data)` and

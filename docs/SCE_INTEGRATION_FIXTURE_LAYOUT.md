@@ -1125,6 +1125,22 @@ not be read back. A stopped run now leaves it readable in all seven, as
 one that ended in a final does; the session is released at teardown or
 when the next run starts.
 
+`late_data_binds_on_first_entry` covers §scxml-D-enterStates under late
+binding: `if binding == "late" and s.isFirstEntry` binds a state's `<data>`
+on that state's first entry, after it joins the configuration and before its
+`<onentry>`, and never again. The drivers enter `s`, change its `v`, leave
+it and enter it again; its `<onentry>` records the `v` it saw each time, and
+a second `<data>` bound from inline content catches a processor that binds
+only `expr` data.
+
+Measured 2026-09-26: the Interpreter and Python kept the first-entry rule in
+their runtime, though the Interpreter assigned only `expr` data. C++ AOT,
+Rust, Kotlin and C11 emitted the state's initialisers straight into its
+entry code and so bound them on every entry, and Go never bound late data at
+all. The rule now lives in each runtime (a per-run set of states already
+bound, cleared when a run starts and seeded by a configuration restore); the
+templates only say what binding means for each state.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

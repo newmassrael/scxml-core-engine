@@ -56,6 +56,7 @@ pub mod invoke_param_seeds_declared_child_data;
 pub mod invoke_precedes_dequeue_midrun;
 pub mod invoke_precedes_external_dequeue;
 pub mod invoke_unsupported_type;
+pub mod late_data_binds_on_first_entry;
 pub mod late_tick_honours_cancel;
 pub mod native_action;
 pub mod nested_final_not_terminal;
