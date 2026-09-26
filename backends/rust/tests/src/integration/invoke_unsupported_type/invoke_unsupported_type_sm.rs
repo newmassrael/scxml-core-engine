@@ -438,6 +438,20 @@ impl StatePolicy for InvokeUnsupportedTypePolicy {
         match state {
             _ => {}
         }
+        // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on
+        // state exit — after the onexit above, per §scxml-D-exitStates.
+        match state {
+            InvokeUnsupportedTypeState::Probe => {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
+                sce_rust_runtime::invoke::cancel_invokes_for_state(
+                    &mut self.pending_invokes,
+                    InvokeUnsupportedTypeState::Probe,
+                );
+            }
+            _ => {}
+        }
     }
 
     // Appendix D selectTransitions, the half only this document can answer:

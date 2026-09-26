@@ -98,11 +98,11 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 240
+engine-documents 241
 native-prefix-documents 2
-datamodel-variable-init 295
+datamodel-variable-init 296
 transition-guard 220
-assign-action 249
+assign-action 250
 child-invoke-needs-script-engine 46
 log-expr 45
 send-param-expr 33
@@ -184,7 +184,10 @@ never spelled correctly.
   `send-param-expr` by one, and gave `elseif-condition` its first three.
   Then `cancelling_an_invoke_raises_nothing.scxml` (one engine document:
   one counter and the two assigns that bump it) raised `engine-documents`,
-  `datamodel-variable-init` by one and `assign-action` by two.
+  `datamodel-variable-init` by one and `assign-action` by two. Then
+  `an_invoke_left_before_it_starts_raises_nothing.scxml` (one engine
+  document: one counter and the assign that bumps it) raised
+  `engine-documents`, `datamodel-variable-init` and `assign-action` by one.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
