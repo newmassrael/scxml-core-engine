@@ -1035,6 +1035,8 @@ add_executable(integration_tests
     integration/LateDataBindsOnFirstEntryAotTest.cpp
     integration/EventTypeNamesItsQueueTest.cpp
     integration/EventTypeNamesItsQueueAotTest.cpp
+    integration/CancellingAnInvokeRaisesNothingTest.cpp
+    integration/CancellingAnInvokeRaisesNothingAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
     integration/EventDataArrivesAsSentAotTest.cpp
     integration/XmlDataIsADomTreeTest.cpp
@@ -1559,6 +1561,13 @@ sce_generate_static_integration_test(late_data_binds_on_first_entry ${STATIC_INT
 # W3C SCXML 5.10.1: `_event.type` names the queue an event was taken from. An
 # external event is queued ahead of two internal ones; each records its type.
 sce_generate_static_integration_test(event_type_names_its_queue ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 6.4: cancelling an invocation raises no event in the invoking
+# session. Leaving `p` cancels a child that never ends; the next state counts
+# any `cancel.invoke` that reaches it.
+sce_generate_static_integration_test(cancelling_an_invoke_raises_nothing ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN child
+)
 
 # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach the
 # datamodel as a value. `raiseExternalEvent(name, data)` and

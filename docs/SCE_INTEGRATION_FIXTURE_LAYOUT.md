@@ -1158,6 +1158,20 @@ now decide at dequeue, where the queue is known (`isCurrentEventExternal` /
 from all three templates that carried it, and Python's internal queue types
 everything on it.
 
+`cancelling_an_invoke_raises_nothing` covers §scxml-6.4: cancelling an
+invocation places no event on the invoking session's queues. `p` invokes a
+child that never ends; the host sends `leave`, which exits `p` and cancels
+the child, and `s2` counts any `cancel.invoke` that reaches it before the
+host sends `finish`.
+
+Measured 2026-09-26: the analyzer listed `cancel.invoke` as a platform
+event in every document with an scxml `<invoke>`, and C++ AOT and Rust
+raised it internally whenever a still-running child was cancelled, so a
+`*` or `cancel.*` transition in the next state took an event the spec never
+defines. C11 in turn refused to autoforward an external event of that name.
+The event is now an ordinary name everywhere: the analyzer no longer adds
+or reserves it, both raises are gone, and the C11 forwarder filters no name.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

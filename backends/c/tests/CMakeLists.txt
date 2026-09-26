@@ -284,7 +284,7 @@ sce_generate_static_w3c_c_test(242 "${SCE_C_GENERATED_DIR}" NEEDS_INVOKE)  # W3C
 sce_generate_static_w3c_c_test(422 "${SCE_C_GENERATED_DIR}" NEEDS_INVOKE NEEDS_LUA)  # W3C SCXML 6.4 (test422): three `<invoke>` declarations across compound subtree (s1, s11, s12). `_init`'s macrostep loop runs eventless transitions BEFORE `execute_pending_invokes`, so s11's eventless `<transition target="s12"/>` fires first, s11's onexit cancels s11's pending entry via `sce_invoke_pending_cancel_for_state`, and s12's onentry pushes its own. At macrostep end only s1 + s12 children spawn — their `invokeS1` / `invokeS12` increment Var1 to 2, and the 2s timeout's cond `Var1==2` routes to pass. SCE_MAX_INVOKES=4 covers the three-invoke working set; if the cancel hook were missed s11's `invokeS11` would route parent → fail.
 
 # W3C SCXML 6.4 invoke namelist validation — the `<invoke namelist="...">` attribute names must each be declared in the PARENT's `<datamodel>`; if any name is missing, the processor MUST terminate the invocation and raise error.execution (cpp `InvokeExecutor::startInvoke` sce/src/runtime/InvokeExecutor.cpp:425-432 calls `destroySession + return ""` at runtime). c11 folds the membership check to a compile-time predicate: the codegen iterates `invoke_info.namelist.split()` against `model.variables | map(id)` and emits the error.execution raise + `continue` in `execute_pending_invokes` exactly when a name is undeclared. The skip-spawn branch sits before the child SM `_init` call so no resources are allocated. Verified non-regressing against test245 (declared namelist=Var2) — its error.execution emission count is unchanged.
-# W3C SCXML 6.4 invoke autoforward — `<invoke autoforward="true">` requires the parent to ship an exact copy of every external event to the invoked process. cpp `StateMachine::processEvent` (sce/src/runtime/StateMachine.cpp:683) forwards via `getAutoForwardSessions + child->processEvent`; c11 mirrors with a per-SM `forward_to_autoforward_children` helper (state_machine.c.jinja2, gated on `model.has_autoforward_invoke`) that switches on the popped event enum and calls the active child's `_raise_external_by_name` shim with the parent-side event-name string. Platform events (done.*, error.*, cancel.invoke), the wildcard sentinel, and the empty-name placeholder are excluded — they are state-machine internal. Helper is only emitted when at least one invoke carries `autoforward="true"`, so existing fixtures stay byte-identical.
+# W3C SCXML 6.4 invoke autoforward — `<invoke autoforward="true">` requires the parent to ship an exact copy of every external event to the invoked process. cpp `StateMachine::processEvent` (sce/src/runtime/StateMachine.cpp:683) forwards via `getAutoForwardSessions + child->processEvent`; c11 mirrors with a per-SM `forward_to_autoforward_children` helper (state_machine.c.jinja2, gated on `model.has_autoforward_invoke`) that switches on the popped event enum and calls the active child's `_raise_external_by_name` shim with the parent-side event-name string. No event name is filtered (Appendix D forwards whatever the external queue yielded); only the wildcard sentinel and the empty-name placeholder, which carry no name, are skipped. Helper is only emitted when at least one invoke carries `autoforward="true"`, so existing fixtures stay byte-identical.
 # W3C SCXML 6.4 invoke send-to-parent + finalize — `<send target="#_parent" event="X"><param name="K" expr="V"/></send>` in the child must carry param values to the parent's `_event.data.K`, AND each parent invoke's `<finalize>` body must run BEFORE transition selection so finalize-assigned parent vars are visible to the cond. cpp `StateMachine::processEvent` runs finalize via `InvokeExecutor::executeFinalize(invokeid)`; c11 mirrors via (a) parent_dispatch signature extended with `event_data` arg, (b) child's `<send target=#_parent>` with params codegen branch that builds a Lua-source table literal from each param expr (per-value formatter quotes strings, serialises numbers/booleans verbatim), (c) parent's `dispatch_external_by_name` shim copies `event_data` into `event_with_meta_t.data`, (d) parent's external dequeue runs `_event.data = (<table>)` then iterates registered finalize bodies, executing only those whose owning invoke's id matches `evt.invoke_id`. Per-invoke isolation pins test234's parallel-finalize fixture (each branch's finalize runs only for events from its own child).
 sce_generate_static_w3c_c_test(234 "${SCE_C_GENERATED_DIR}" NEEDS_INVOKE NEEDS_LUA)  # W3C SCXML 6.4 (test234): parallel parent (p0 with p01+p02 regions) each carrying its own `<invoke>` with its own `<finalize>`. p01's child has `<final>` initial that sends `<send target=#_parent><param aParam=2/>`; p02's child has a 2 s `<send event="timeout">` (intra-child, not to parent) so p02 never raises a `<send target=#_parent>` event. The test233 per-invoke_id finalize-arm matches only the p01 invoke when `childToParent` arrives → p01 finalize sets Var1=2, p02 finalize stays unrun → Var2=1. Parent's `cond="Var1==2"` transitions to s1, then s1's eventless `cond="Var2==1"` routes to pass. Pins per-invoke isolation: a sibling invoke's finalize must NOT run on another sibling's events.
 
@@ -1378,6 +1378,34 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         COMMAND sce_c_integration_event_type_names_its_queue
     )
     set_tests_properties(c11_integration_event_type_names_its_queue PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # W3C SCXML 6.4: cancelling an invocation raises no event in the invoking session.
+    sce_generate_static_integration_c_test(cancelling_an_invoke_raises_nothing "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN child
+    )
+
+    add_executable(sce_c_integration_cancelling_an_invoke_raises_nothing
+        integration/test_cancelling_an_invoke_raises_nothing.c
+        ${INTEGRATION_C_TEST_cancelling_an_invoke_raises_nothing_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_cancelling_an_invoke_raises_nothing PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_cancelling_an_invoke_raises_nothing PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_cancelling_an_invoke_raises_nothing PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_cancelling_an_invoke_raises_nothing
+        COMMAND sce_c_integration_cancelling_an_invoke_raises_nothing
+    )
+    set_tests_properties(c11_integration_cancelling_an_invoke_raises_nothing PROPERTIES
         TIMEOUT 30
         LABELS "integration;c11;aot"
     )

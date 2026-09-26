@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 6.4: when the state that owns an <invoke> is exited, the invoked
+  session is cancelled. The specification names no event for that — nothing
+  called `cancel.invoke` is placed on the invoking session's queues.
+
+  `p` invokes a child that never finishes. The host sends `leave`, which
+  exits `p` and so cancels the child, and `s2` then counts any `cancel.invoke`
+  (or `cancel.invoke.child`) that reaches it before the host sends `finish`.
+
+    spurious  0 — a processor that raises a cancel event of its own counts 1.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="cancelling_an_invoke_raises_nothing" datamodel="ecmascript"
+       initial="p">
+
+  <datamodel>
+    <data id="spurious" expr="0"/>
+  </datamodel>
+
+  <state id="p">
+    <invoke id="child" type="http://www.w3.org/TR/scxml/">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle">
+          <state id="idle"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="leave" target="s2"/>
+  </state>
+
+  <state id="s2">
+    <transition event="cancel.invoke">
+      <assign location="spurious" expr="spurious + 1"/>
+    </transition>
+    <transition event="cancel.invoke.child">
+      <assign location="spurious" expr="spurious + 1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>
