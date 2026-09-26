@@ -1461,6 +1461,28 @@ fn render_transform(
 
     let mut ctx = l.base_context(&m.name);
     ctx.insert("functions".into(), serde_json::json!(functions));
+    // The name this module gives each part of the document's surface, keyed
+    // by the id the document wrote, from the same calls the definitions above
+    // are spelled with. A host that drives the module by the document's ids
+    // looks them up here instead of re-deriving a casing rule — the second
+    // copy of a rule is the one that stops agreeing (a keyword the backend
+    // escapes, a delimiter it folds).
+    let by_id = |fields: &[ForgeField], spell: &dyn Fn(&str) -> String| {
+        fields
+            .iter()
+            .map(|f| (f.id.clone(), spell(&f.id)))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    ctx.insert(
+        "host_names".into(),
+        serde_json::json!({
+            "functions": by_id(&m.outputs, &|id| {
+                forge_stateless_def_symbol(&m.name, &forge_transform_symbol(id, lang), lang)
+            }),
+            "parameters": by_id(&m.inputs, &|id| l.local_id(id)),
+            "fields": by_id(&m.outputs, &|id| forge_transform_output_field(id, lang)),
+        }),
+    );
     l.insert_imports(&mut ctx, imports);
     if let Some(symbols) = transform_holder(m, lang) {
         ctx.insert(

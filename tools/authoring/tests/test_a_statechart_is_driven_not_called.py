@@ -545,6 +545,36 @@ class AnOutputTheDocumentDeclaresIsReadFromIt(unittest.TestCase):
         self.assertEqual(2, result.passed,
                          [(r.name, r.refusal, r.failures) for r in result.results])
 
+    def run_named(self, name):
+        """The same document and cases with the output renamed `name`."""
+        (self.tmp / "signal.scxml").write_text(
+            DECLARING.replace("roadSignal", name), encoding="utf-8")
+        binding = {**BINDING, "outputs": {name: {
+            "address": "plant/out/road-signal", "field": "value",
+            "map": {0: "DARK", 1: "FLASHING"}}}}
+        path = self.tmp / "b.yaml"
+        path.write_text(yaml.safe_dump(binding), encoding="utf-8")
+        return verify(load_pack(self.tmp), path)
+
+    def test_an_output_named_by_a_keyword_is_read_through_its_reader(self):
+        """W3C SCXML 5.3: `pass` is a legal ECMAScript name and a Python
+        keyword, so its reader is `pass_`. The reader's name is read from the
+        generated module (`SCE_HOST_NAMES`), not re-derived: a copy of the
+        casing rule looked for `pass` and found nothing to read."""
+        result = self.run_named("pass")
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual(2, result.passed,
+                         [(r.name, r.refusal, r.failures) for r in result.results])
+
+    def test_an_output_without_a_reader_is_refused_with_the_reason(self):
+        """`auto` is a C++ keyword with no escape, so no backend gives it a
+        reader, and the generator's manifest says so. The refusal quotes
+        that reason instead of guessing at one."""
+        result = self.run_named("auto")
+        refusals = [result.refusal] + [r.refusal for r in result.results]
+        self.assertTrue(any("keyword" in r and "in cpp" in r for r in refusals),
+                        refusals)
+
     def test_an_output_the_document_declares_nowhere_is_refused(self):
         """The configuration is what is left, and it is not an output."""
         binding = {**BINDING, "outputs": {"bell": {

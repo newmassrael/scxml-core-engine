@@ -611,6 +611,20 @@ State = {{ machine_name }}State
 Event = {{ machine_name }}Event
 Policy = {{ machine_name }}Policy
 
+# W3C SCXML 5.3: the policy method that reads each typed `<data>`, keyed by
+# the id the document wrote — the spelling `sce-build/src/reader_names.rs`
+# chose, keyword escape included. A host that reads variables by the
+# document's ids looks the method up here rather than re-deriving a casing
+# rule. A declared variable absent from `readers` has no reader, and the
+# generator's manifest (`unreadable_variables`) says why.
+SCE_HOST_NAMES = {
+    "readers": {
+{% for var in model.readable_variables %}
+        "{{ var.id | escape_python }}": "{{ var.reader.python | escape_python }}",
+{% endfor %}
+    },
+}
+
 __all__ = [
     "{{ machine_name }}State",
     "{{ machine_name }}Event",
@@ -618,5 +632,6 @@ __all__ = [
     "State",
     "Event",
     "Policy",
+    "SCE_HOST_NAMES",
     "create_engine",
 ]
