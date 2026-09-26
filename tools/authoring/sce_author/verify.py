@@ -692,11 +692,21 @@ def unreceived_drives(case, model) -> list:
     component's inputs were counted as eleven failures of the component that
     reads what the upstream one computes from them, and cases driving a
     namespace the component's own subscriptions do not contain as eight.
+
+    ⚠ An address the component WRITES is not one of these. A record that sets
+    it is writing the slot, not sending the document anything, and what that
+    leaves there is `Planted`'s to account for -- withholding the case for it
+    would refuse the very rounds a test plants a value in to judge.
     """
     if model is None:
         return []
+
+    def own_output(address: str) -> bool:
+        entry = model.owning(address)
+        return entry is not None and entry.role == "output"
+
     return sorted(a for a in dict.fromkeys(case.drove or ())
-                  if not received_by(model, a))
+                  if not received_by(model, a) and not own_output(a))
 
 
 def withhold_unreceived(result, case, model) -> bool:
@@ -904,6 +914,69 @@ def _held(name: str, rule: dict, value, history) -> object:
     if landing.mapped(rule["map"], value)[0]:
         return value
     return history.held.get(name, _NOT_WRITTEN)
+
+
+class Planted:
+    """Values a record wrote straight into positions this binding writes.
+
+    A product's own test may set an output slot itself -- an event's
+    identifier, before the round that is to turn that event off -- and the
+    slot then holds what the TEST wrote until the component writes it again.
+    A component that writes nothing there this round leaves that value for
+    the test to read, and the test expects it.
+
+    ⚠ This verifier did not know the test had written there. Measured
+    2026-09-27 over thirteen components: five had records that drive an
+    output position directly, 1,009 times between them; one document had
+    seven of its cases judged against a value the record never left there
+    (the identifier the document wrote rounds earlier, where the record had
+    since planted another) and more refused as "written by this binding and
+    nothing was written this round", when the product reads the planted
+    value in both.
+
+    ⚠ Only positions the binding writes. A position no rule claims is not
+    this document's to answer, planted or not, and stays `unchecked`.
+
+    ⚠ It lives for ONE case -- its setup rounds and the round judged. Across
+    cases the order is a promise the examples may not have made, and a value
+    carried from another case is exactly the kind of answer from nowhere the
+    `unwritten` refusal exists to stop.
+
+    ⚠ A planted value is the record's, not the document's: a case whose every
+    compared position held only planted values has judged nothing the
+    document computed, and `CaseJudge.judge` says so.
+    """
+
+    def __init__(self, bound: set):
+        self.bound = bound
+        self.values: dict = {}
+        self.owner = None
+
+    def plant(self, step, owner) -> None:
+        """What this step's record wrote into this binding's positions."""
+        if owner is not self.owner:
+            self.owner, self.values = owner, {}
+        given = step.given or {}
+        for address in step.drove or ():
+            if address in self.bound and address in given:
+                self.values[address] = given[address]
+
+    def overwritten(self, positions) -> None:
+        """The document wrote these this round: the slot holds its value now."""
+        for address in positions:
+            self.values.pop(address, None)
+
+    def stand_in(self, produced: dict, undetermined=frozenset()) -> set:
+        """Fill in what the slot holds where this round wrote nothing.
+
+        Called after `overwritten`, so every value left is newer than the
+        document's last write there -- including one a `hold_last` rule would
+        otherwise replay from before the record planted over it.
+        """
+        for address, value in self.values.items():
+            if address not in undetermined:
+                produced[address] = value
+        return set(self.values) - set(undetermined)
 
 
 class History:
@@ -1212,6 +1285,28 @@ class SendRecorder:
         return taken
 
 
+def positions_written_now(rule: dict, value) -> set:
+    """The positions one output's rule writes this round, whatever it writes.
+
+    `output_values` answers WHAT lands and refuses a value its map lacks; this
+    answers only WHERE, for rounds nobody judges (`Planted.overwritten`), and
+    so must not refuse: a setup round is never failed on its values.
+    A `hold_last` rule whose value has no entry in its map writes nothing --
+    the slot keeps what it held, which is the rule's whole meaning.
+    """
+    if rule.get("internal") or not rule.get("address"):
+        return set()
+    if "map" in rule and not landing.mapped(rule["map"], value)[0]:
+        if rule.get("hold_last"):
+            return set()
+    address = rule["address"]
+    out = {address + (f".{rule['field']}" if rule.get("field") else "")}
+    out.update(f"{address}.{f}" for v, fields in (rule.get("when") or {}).items()
+               if landing.names_value(v, value) for f in fields)
+    out.update(f"{address}.{f}" for f in (rule.get("also") or {}))
+    return out
+
+
 def sent_value(name: str, rule: dict, requests):
     """What one case's sends say this output became."""
     sent = rule.get("sent") or {}
@@ -1311,14 +1406,18 @@ class CaseJudge:
                 if "" in tails or any(position.endswith(t) for t in tails if t)]
 
     def judge(self, result: CaseResult, case, produced: dict,
-              undetermined=frozenset(), open_values=()) -> None:
+              undetermined=frozenset(), open_values=(), planted=frozenset()) -> None:
         """Compare every position the case expects, and close the verdict.
 
         `undetermined` is what the run itself could not settle; `open_values`
-        names what it rested on, for the refusal.
+        names what it rested on, for the refusal. `planted` are positions
+        whose value in `produced` is one the record itself wrote there
+        (`Planted`): compared, because the product reads them, and not
+        counted as anything the document computed.
         """
         resting_on: set = set()
         compared = 0
+        held_planted = []
         for address, want in sorted(case.expect.items()):
             maybe = self.landing_here(address)
             if address in undetermined or maybe:
@@ -1335,7 +1434,10 @@ class CaseJudge:
                 (result.unwritten if address in self.bound
                  else result.unchecked).append(address)
                 continue
-            compared += 1
+            if address in planted:
+                held_planted.append(address)
+            else:
+                compared += 1
             if not _same(want, produced[address], _field_at(self.model, address)):
                 result.failures.append((address, want, produced[address]))
                 rests_on = assumption_behind(self.writes.get(address),
@@ -1386,6 +1488,12 @@ class CaseJudge:
                 f"no rule of this binding writes any of the "
                 f"{len(result.unchecked)} position(s) this case expects "
                 f"({', '.join(result.unchecked)}), so nothing was compared")
+        elif case.expect and not compared and held_planted:
+            result.refusal = (
+                f"every position this case expects that agreed "
+                f"({', '.join(held_planted)}) held a value the record itself "
+                f"wrote there, and the document wrote none of them this round, "
+                f"so nothing the document computed was compared")
 
 
 def unchanged_drives(step, last: dict, model) -> set:
@@ -1702,6 +1810,7 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     # judged or skipped: the platform's values move whether or not a case of
     # ours is being judged.
     last_given: dict = {}
+    planted = Planted(bound)
     for case, owner, judged in rounds_of(examples.cases):
         # Under `on-change` the host runs the component only for an input
         # that changed; a record restating a value delivers nothing.
@@ -1713,6 +1822,9 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         # restatement -- the run is refused before it starts.
         unchanged = unchanged_drives(case, last_given, pack.model)
         remember_given(case, last_given)
+        # Before the round: the record's writes land first, the document's
+        # after them.
+        planted.plant(case, owner)
         if id(owner) in failed:
             continue
         result = CaseResult(name=owner.name)
@@ -1785,13 +1897,28 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             # path used to skip it -- `check` accepted a statechart binding
             # with `hold_last`, and `verify` then reported each case whose
             # round sent nothing as a value "the map has no entry for".
-            held_now = {name: _held(name, rule, reading(name, rule, requests), history)
-                        for name, rule in outputs.items()
-                        if rule.get("hold_last")
-                        and not (rule.get("unresolved") or rule.get("internal"))}
+            # What each output read this round. A setup round is not failed on
+            # what it read, so an output that cannot be read there is taken as
+            # having written everywhere it may -- a planted value there is then
+            # not trusted to have survived, which is the side that claims less.
+            now, unreadable = {}, set()
+            for name, rule in outputs.items():
+                if rule.get("unresolved") or rule.get("internal"):
+                    continue
+                try:
+                    now[name] = reading(name, rule, requests)
+                except VerifyError:
+                    if judged or rule.get("hold_last"):
+                        raise
+                    unreadable.update(written_positions({name: rule})[0])
+            held_now = {name: _held(name, rule, now[name], history)
+                        for name, rule in outputs.items() if name in now
+                        and rule.get("hold_last")}
             for name, value in held_now.items():
                 if value is not _NOT_WRITTEN:
                     history.held[name] = value
+            planted.overwritten(unreadable.union(
+                *(positions_written_now(outputs[n], v) for n, v in now.items())))
             if not judged:
                 # What the machine sent while being set up is not what the
                 # case is judged on: the case's own round starts clean.
@@ -1806,8 +1933,9 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                         continue
                     value = held_now[name]
                 else:
-                    value = reading(name, rule, requests)
+                    value = now[name]
                 produced.update(output_values(name, rule, value))
+            stood_in = planted.stand_in(produced)
         except VerifyError as exc:
             # A setup step that cannot be driven leaves the case unjudgeable,
             # and says which step it was.
@@ -1818,7 +1946,7 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         # After the round was driven, observed and its sends taken, so the
         # machine is where the record left it either way.
         if not withhold_unreceived(result, case, pack.model):
-            judge.judge(result, case, produced)
+            judge.judge(result, case, produced, planted=stood_in)
         verification.results.append(result)
     return verification
 
@@ -2102,9 +2230,13 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
               if holder else None)
     # Why what the document kept is no longer known, once it is not.
     lost = ""
+    planted = Planted(bound)
     for case, owner, judged in rounds_of(examples.cases):
         if id(owner) in failed:
             continue
+        # Before the round: the record's writes land first, the document's
+        # after them.
+        planted.plant(case, owner)
         result = CaseResult(name=owner.name or "(unnamed)")
         # Two passes, because a rule about the previous round names ANOTHER
         # input, and on the first round it may have to fall back to what that
@@ -2217,6 +2349,11 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
                     # the platform symbol it lands as -- mapping first would
                     # hand the document a word it never produced.
                     history.outputs[name] = computed if settled else _UNDETERMINED
+                # Where the document wrote this round, in any run: a planted
+                # value there no longer survives. Taken before `_held`, which
+                # replays an older write the record may since have planted over.
+                planted.overwritten(set().union(
+                    *(positions_written_now(rule, r) for r in runs)))
                 if rule.get("hold_last"):
                     # ⚠ The slot, not the document, holds. A component that
                     # does not write a slot leaves what it held, so a value
@@ -2251,9 +2388,10 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
             continue
         # Computed either way, so what the document keeps moves on as the
         # platform's would; only the claim about this case is withheld.
+        stood_in = planted.stand_in(produced, undetermined)
         if not (judged and withhold_unreceived(result, case, pack.model)):
             judge.judge(result, case, produced, undetermined,
-                        open_values=unknown + sorted(withheld))
+                        open_values=unknown + sorted(withheld), planted=stood_in)
         if history is not None:
             history.inputs = dict(values)
             history.started = True

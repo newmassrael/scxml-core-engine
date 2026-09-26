@@ -42,8 +42,12 @@ class ADriveTheComponentNeverReceivesJudgesNothing(unittest.TestCase):
         self.assertFalse(received_by(model, "plant/out/bell"),
                          "an output is written, not received")
         self.assertFalse(received_by(model, ELSEWHERE))
+        # ⚠ A drive of the component's OWN output is not among them: the
+        # record is writing the slot, not sending the document anything, and
+        # what it leaves there is `Planted`'s to judge
+        # (test_a_value_the_record_planted_stands).
         case = Case("", {}, {}, None, ("plant/in/obstacle", ELSEWHERE, "plant/out/bell"))
-        self.assertEqual(sorted([ELSEWHERE, "plant/out/bell"]), unreceived_drives(case, model))
+        self.assertEqual([ELSEWHERE], unreceived_drives(case, model))
         self.assertEqual([], unreceived_drives(case, None), "no model, nothing to ask")
 
     @unittest.skipUnless(codegen_is_built(), "the product's generator is not built")

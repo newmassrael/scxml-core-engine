@@ -856,7 +856,13 @@ nobody looked at — which a reader takes for a clean run.
 
 `hold_last: true` on a mapped output: a document value with no entry in `map`
 does not write the position, which then keeps the last value the rule wrote —
-and before there is one, is not written at all. That is the ADDRESS's
+and before there is one, is not written at all. ⚠ "Keeps" means the slot keeps
+whatever was last written there, which is not always this rule's value: a
+record may plant a value in an output position itself (a product's test
+setting an event's identifier before the round that turns it off), and a round
+that writes nothing leaves the planted value, which is what `verify` judges
+(`Planted`). A host that re-writes the rule's last value instead overwrites it.
+That is the ADDRESS's
 behaviour, not the document's: a position the component does not write keeps
 what it held. The identifier beside an event's status is the usual case — it
 says what is turning off, so it outlives the condition that set it. It lives in

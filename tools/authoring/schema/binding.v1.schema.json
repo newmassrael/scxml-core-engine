@@ -179,7 +179,7 @@
         },
         "hold_last": {
           "type": "boolean",
-          "description": "A document value with no entry in `map` does not write this position: it keeps the last value this rule wrote, and before there is one it is not written at all. ⚠ This is the ADDRESS's behaviour, not the document's -- a position the component does not write keeps what it held -- which is why it lives in the binding and not as an extra input fed back into every document that needs it. The identifier beside an event's status is the usual case: it says WHAT is turning off, so it outlives the condition that set it. Needs `map` and ordered examples."
+          "description": "A document value with no entry in `map` does not write this position: it keeps the last value this rule wrote, and before there is one it is not written at all. ⚠ It keeps what the SLOT holds, which a record may have planted over this rule's last value; a host re-writing that value instead of writing nothing overwrites the plant. ⚠ This is the ADDRESS's behaviour, not the document's -- a position the component does not write keeps what it held -- which is why it lives in the binding and not as an extra input fed back into every document that needs it. The identifier beside an event's status is the usual case: it says WHAT is turning off, so it outlives the condition that set it. Needs `map` and ordered examples."
         },
         "note": {"type": "string"}
       }
