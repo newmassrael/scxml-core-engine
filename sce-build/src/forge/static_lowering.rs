@@ -147,21 +147,21 @@ pub trait StaticTarget {
     fn assign(&self, target: &str, value: &str) -> String;
     /// Replace field `field` of the record at `target` with `value`.
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String;
-    /// Log `value`, prefixed with `label` when there is one (W3C SCXML 4.7).
+    /// Log `value`, prefixed with `label` when there is one (§scxml-4.7).
     fn log(&self, label: &str, value: &str) -> String;
     /// Append `value` to the list at `target` while it holds fewer than
     /// `capacity` elements; otherwise run `overflow`, if any.
     fn append(&self, target: &str, capacity: u32, value: &str, overflow: Option<&str>) -> String;
     /// Empty the list at `target`.
     fn clear(&self, target: &str) -> String;
-    /// Raise `error.execution` with `message` (W3C SCXML 5.10).
+    /// Raise `error.execution` with `message` (§scxml-3.12.2).
     fn raise_execution_error(&self, machine: &str, message: &str) -> String;
     /// `statement`, whose expressions can fail (SCE_FORGE.md §3.4.1), run
     /// where its failure is received: a failure stops it before it writes
     /// anything, and `failed` runs instead (E12 D5).
     fn receiving_statement(&self, statement: &str, failed: &str) -> String;
     /// A condition that can fail: its value, or `false` once `failed` has run
-    /// (W3C SCXML 5.9: a condition that cannot be evaluated is false, and
+    /// (§scxml-5.9.1: a condition that cannot be evaluated is false, and
     /// `error.execution` says why).
     fn receiving_condition(&self, value: &str, failed: &str) -> String;
     /// What `_event.data` is read through inside a guard or statement of an
@@ -750,7 +750,7 @@ pub fn lower(
                     InferredType::Bool,
                 )
                 .map_err(|r| refused("the condition", &transition.cond, r))?;
-                // W3C SCXML 5.9: a condition that fails is false, and
+                // §scxml-5.9.1: a condition that fails is false, and
                 // `error.execution` says why (E12 D5).
                 let lowered = if cond.can_fail {
                     target.receiving_condition(

@@ -1297,6 +1297,10 @@
           "file": "backends/go/runtime/engine.go",
           "symbol": "takeInternalEvent",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/static_lowering.rs",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -4091,6 +4095,12 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/forge/static_lowering.rs",
+          "kind": "implements"
+        }
+      ],
       "coverage_expectation": "informational",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
@@ -7234,6 +7244,10 @@
         {
           "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
           "symbol": "IScriptEngine",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/static_lowering.rs",
           "kind": "implements"
         }
       ],
