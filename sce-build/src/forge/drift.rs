@@ -202,6 +202,21 @@ impl SourceSet {
         descent_limit: usize,
     ) -> Result<Self, DriftHashError> {
         let mut entries: BTreeMap<PathBuf, [u8; 32]> = BTreeMap::new();
+        // A standard document is generated from the library it belongs to,
+        // which lives in the generator rather than under a directory: its
+        // source set is every standard document, under its `sce:std/...`
+        // name, and nothing on disk.
+        if crate::forge::stdlib::names_standard(input_root) {
+            for (name, content) in crate::forge::stdlib::documents() {
+                entries.insert(PathBuf::from(name), sha256_bytes(content.as_bytes()));
+            }
+            return Ok(Self {
+                root: input_root.to_path_buf(),
+                entries,
+                deploy_yaml: None,
+                members: BTreeSet::new(),
+            });
+        }
         walk_filtered(
             input_root,
             input_root,
@@ -290,6 +305,11 @@ impl SourceSet {
     /// Returns `false` when `path` does not exist: a file that is not
     /// there cannot be the one the set read.
     pub fn covers(&self, path: &Path) -> bool {
+        // A standard document has no file identity; it is named, and the
+        // name is what its entry is keyed by.
+        if crate::forge::stdlib::names_standard(path) {
+            return crate::forge::stdlib::lookup(path).is_some() && self.entries.contains_key(path);
+        }
         match fs::canonicalize(path) {
             Ok(real) => self.members.contains(&real),
             Err(_) => false,

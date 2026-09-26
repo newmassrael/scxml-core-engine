@@ -166,6 +166,72 @@ fn every_standard_document_generates_on_every_backend() {
     }
 }
 
+/// `sce-codegen generate` takes a standard document by the name a consumer
+/// imports it by, and writes a depfile a build system can keep fresh: the
+/// standard name is in the generator, so it is not listed as a file — a
+/// file that never exists reads as always out of date.
+#[test]
+fn the_cli_generates_a_standard_document_by_its_name() {
+    let out = tempfile::tempdir().expect("tempdir");
+    let depfile = out.path().join("days_in_month.d");
+    let run = std::process::Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
+        .args([
+            "generate",
+            "sce:std/calendar/days_in_month.scxml",
+            "-l",
+            "rust",
+            "-o",
+        ])
+        .arg(out.path())
+        .arg("--write-deps")
+        .arg(&depfile)
+        .current_dir(repo_root())
+        .output()
+        .expect("sce-codegen runs");
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "generation failed:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let written: Vec<String> = std::fs::read_dir(out.path())
+        .expect("output dir")
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        written.iter().any(|name| name.ends_with(".rs")),
+        "no Rust source was written: {written:?}"
+    );
+    let deps = std::fs::read_to_string(&depfile).expect("depfile written");
+    assert!(
+        !deps.contains("sce:std"),
+        "the depfile names a standard document:\n{deps}"
+    );
+
+    let missing = std::process::Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
+        .args([
+            "generate",
+            "sce:std/calendar/no_such_day.scxml",
+            "-l",
+            "rust",
+            "-o",
+        ])
+        .arg(out.path())
+        .current_dir(repo_root())
+        .output()
+        .expect("sce-codegen runs");
+    assert_ne!(
+        missing.status.code(),
+        Some(0),
+        "an unknown standard document generated"
+    );
+    assert!(
+        String::from_utf8_lossy(&missing.stderr).contains("standard library"),
+        "the refusal names the library: {}",
+        String::from_utf8_lossy(&missing.stderr)
+    );
+}
+
 /// A standard name the library does not hold is refused as a missing
 /// import, and the refusal says where it looked — so an author reading it
 /// does not go looking for a file on disk.

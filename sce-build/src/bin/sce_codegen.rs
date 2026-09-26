@@ -4029,7 +4029,20 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
 
     // SCE Forge: detect non-statechart kind and route to forge pipeline.
     // Read the file once; the same content is reused for both detection and compilation.
-    let scxml_content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
+    // A standard document (`sce:std/...`) is read from the library this
+    // generator embeds — the name a consumer imports it by is the name it
+    // generates it by.
+    let standard = sce_build::forge::stdlib::names_standard(Path::new(scxml_path))
+        .then(|| sce_build::forge::stdlib::lookup(Path::new(scxml_path)));
+    let scxml_content = match standard {
+        Some(Some(content)) => Ok(content.to_string()),
+        Some(None) => Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no such document in the SCE standard library built into this sce-codegen",
+        )),
+        None => fs::read_to_string(scxml_path),
+    }
+    .unwrap_or_else(|e| {
         error_format.emit_and_exit(
             &CliError::ReadInput {
                 path: scxml_path.to_string(),
@@ -5301,6 +5314,12 @@ fn write_depfile(depfile_path: &str, inputs: DepfileInputs<'_>) {
         .map(|p| depfile_identity(p))
         .collect();
     deps.retain(|p| !produced.contains(&depfile_identity(p)));
+
+    // A standard document — the input, or one the input imports — is in the
+    // generator, not on disk, so the generator binary declared above is its
+    // prerequisite. Named here it would be a file that never exists, which a
+    // build system reads as always out of date.
+    deps.retain(|p| !sce_build::forge::stdlib::names_standard(p));
 
     // Collapse duplicates while preserving first-seen order. The same
     // canonical path can land in `deps` more than once (e.g. a fragment
