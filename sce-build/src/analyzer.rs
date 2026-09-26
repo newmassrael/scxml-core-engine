@@ -136,8 +136,7 @@ fn classify_variables(model: &mut SCXMLModel) {
     }
     let mut unreadable = Vec::new();
     let candidates = readable_variables(model, &mut unreadable);
-    model.readable_variables =
-        crate::reader_names::assign(candidates, &model.name, &mut unreadable);
+    model.readable_variables = crate::reader_names::assign(candidates, model, &mut unreadable);
     model.unreadable_variables = unreadable;
 }
 

@@ -23,7 +23,7 @@ use std::process::Command;
 use std::str::FromStr;
 
 use sce_build::generator::Language;
-use sce_build::reader_names::{rendered_members, reserved};
+use sce_build::reader_names::{emitted_members, rendered_members, reserved};
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -126,6 +126,9 @@ fn every_member_a_generated_type_defines_is_reserved() {
                         .to_string()
                 })
                 .collect();
+            // What the generator adds beside the templates for this document,
+            // which reader naming reserves for it.
+            let emitted = emitted_members(language, &model);
             let (_, artifacts) = generate(
                 &fixture,
                 language,
@@ -139,7 +142,10 @@ fn every_member_a_generated_type_defines_is_reserved() {
                 let stem = artifact.file_stem().unwrap_or_default().to_string_lossy();
                 let machine = stem.strip_suffix("_sm").unwrap_or(&stem);
                 for name in rendered_members(language, &source, &format!("{machine}_")) {
-                    if !readers.contains(&name) && !reserved(language).covers(&name, machine) {
+                    if !readers.contains(&name)
+                        && !reserved(language).covers(&name, machine)
+                        && !emitted.contains(&name)
+                    {
                         unreserved.insert(format!(
                             "{} `{name}` in {}",
                             language.canonical_name(),

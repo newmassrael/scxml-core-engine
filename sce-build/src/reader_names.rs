@@ -615,6 +615,19 @@ pub fn reserved(language: Language) -> &'static Reserved {
     &RESERVED[language.canonical_name()]
 }
 
+/// The members `language`'s generator defines for `model` beside its
+/// templates ([`crate::generator::emitted_beside_templates`]), read the way
+/// [`rendered_members`] reads a generated file.
+///
+/// [`reserved`] reads the templates, and cannot see a member spelled in Rust
+/// — the typed payload channel's, a native action interface's, a typed
+/// host-run invoke's. Those are built from the document, so they are
+/// reserved for the document rather than for every machine.
+pub fn emitted_members(language: Language, model: &crate::model::SCXMLModel) -> BTreeSet<String> {
+    let code = crate::generator::emitted_beside_templates(model, language);
+    rendered_members(language, &code, &format!("{}_", model.name))
+}
+
 /// A spelling, or why there is none.
 enum Spelling {
     Name(String),
@@ -672,13 +685,24 @@ fn declared(name: &str) -> &str {
 /// `candidates` are the variables that passed the document-level rules, in
 /// emission order; `refused` already holds those that did not. A candidate
 /// refused in any backend is refused in all of them, and the first backend
-/// in [`Language::ALL`] order to refuse it is the one recorded. `machine` is
-/// the document's `name`, which some backends build members from.
+/// in [`Language::ALL`] order to refuse it is the one recorded. `model` is the
+/// document: its `name` is what some backends build members from, and what
+/// it declares decides the members the generator adds beside the templates
+/// ([`emitted_members`]).
 pub fn assign(
     candidates: Vec<crate::model::Variable>,
-    machine: &str,
+    model: &crate::model::SCXMLModel,
     refused: &mut Vec<UnreadableVariable>,
 ) -> Vec<crate::model::Variable> {
+    let machine = model.name.as_str();
+    let emitted: BTreeMap<&'static str, BTreeSet<String>> = if candidates.is_empty() {
+        BTreeMap::new()
+    } else {
+        Language::ALL
+            .iter()
+            .map(|&language| (language.canonical_name(), emitted_members(language, model)))
+            .collect()
+    };
     let mut named: Vec<(crate::model::Variable, ReaderNames)> = Vec::new();
     'candidate: for var in candidates {
         let mut spellings: BTreeMap<&'static str, String> = BTreeMap::new();
@@ -687,7 +711,11 @@ pub fn assign(
                 Spelling::Refused(reason, spelling) => Some((reason, spelling, None)),
                 Spelling::Name(name) => {
                     let bare = declared(&name);
-                    if reserved(language).covers(bare, machine) {
+                    if reserved(language).covers(bare, machine)
+                        || emitted
+                            .get(language.canonical_name())
+                            .is_some_and(|names| names.contains(bare))
+                    {
                         Some((UnreadableReason::MemberCollision, name, None))
                     } else if let Some((other, _)) = named
                         .iter()

@@ -302,6 +302,9 @@ fn the_invoke_half_is_reported_and_then_claimed() {
             // `timed`: a deadline that passes, and one that cannot be read.
             ("invoke-type", "slow"),
             ("invoke-type", "undated"),
+            // `typed`: a request and a result record (SCE Accepted Subset
+            // §2.12) — typed, and still a host-run invoke to name.
+            ("invoke-type", "perm"),
         ],
         "{causes:?}"
     );

@@ -2362,6 +2362,160 @@ pub fn generate_with_templates(
     )
 }
 
+/// The code `language`'s generator adds to a machine for `model` beside what
+/// its templates render: the `<sce:action>` interface, the typed payload
+/// channel, and a typed host-run invoke's interface — each from the same
+/// builder the render calls, with the same inputs.
+///
+/// Read by [`crate::reader_names::assign`], which must not give a reader a
+/// name these define: the template scan cannot see them, because they are
+/// spelled in Rust rather than in a template.
+///
+/// ⚠ A typed invoke's interface is emitted only once the host declares its
+/// type, and that happens after analysis names the readers. So here every
+/// typed invoke counts as declared: a name reserved for an interface that is
+/// never emitted costs one reader, while one missed is generated code that
+/// does not compile.
+pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> String {
+    // A declaration is per `type`, so it serves the type's untyped invokes
+    // too — which is what gives the adapter its fallback.
+    let mut model = model.clone();
+    let typed_types: std::collections::BTreeSet<String> = model
+        .states
+        .values()
+        .flat_map(|s| s.invokes.iter())
+        .filter_map(|invoke| match invoke {
+            crate::model::Invoke::Unsupported(info)
+                if !info.request_schema.is_empty() || !info.result_schema.is_empty() =>
+            {
+                Some(info.invoke_type.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    for state in model.states.values_mut() {
+        for invoke in &mut state.invokes {
+            if let crate::model::Invoke::Unsupported(info) = invoke {
+                if typed_types.contains(&info.invoke_type) {
+                    info.host_served = true;
+                }
+            }
+        }
+    }
+    let machine_name = filters::to_pascal_case(model.name.clone());
+    let mut lowered = model.clone();
+    // C11 names its types after the document's own name, as its render does.
+    let native_name = if language == Language::C11 {
+        model.name.clone()
+    } else {
+        machine_name.clone()
+    };
+    let native = crate::forge::native_action::render(&mut lowered, &native_name, language);
+    let mut out = native.interface_def.clone();
+    match language {
+        Language::Rust => {
+            let payload = crate::forge::generator::build_rust_event_payload(
+                &model,
+                &machine_name,
+                &native.payload_events,
+                "",
+                "",
+                false,
+            );
+            for part in [payload.defs, payload.entries, payload.lift] {
+                out.push_str(&part);
+            }
+            out.push_str(&crate::forge::host_invoker_interface::render_rust(
+                &model,
+                &machine_name,
+                "",
+                "",
+                false,
+            ));
+        }
+        Language::Cpp => {
+            let payload =
+                crate::forge::generator::build_cpp_event_payload(&model, &native.payload_events);
+            for part in [payload.defs, payload.policy_members, payload.inject_methods] {
+                out.push_str(&part);
+            }
+            let host = crate::forge::host_invoker_interface::render_cpp(&model);
+            out.push_str(&host.defs);
+            out.push_str(&host.members);
+        }
+        Language::C11 => {
+            let payload = crate::forge::generator::build_c11_event_payload(
+                &model,
+                &native.payload_events,
+                "",
+            );
+            for part in [
+                payload.defs,
+                payload.entry_decls,
+                payload.entry_defs,
+                payload.lift_storage,
+                payload.lift_decl,
+                payload.lift_def,
+            ] {
+                out.push_str(&part);
+            }
+            let host = crate::forge::host_invoker_interface::render_c11(&model, &model.name);
+            out.push_str(&host.decls);
+            out.push_str(&host.defs);
+        }
+        Language::Go => {
+            let payload =
+                crate::forge::generator::build_go_event_payload(&model, &native.payload_events);
+            for part in [
+                payload.defs,
+                payload.policy_fields,
+                payload.populate,
+                payload.lift,
+            ] {
+                out.push_str(&part);
+            }
+            out.push_str(&crate::forge::host_invoker_interface::render_go(
+                &model,
+                &machine_name,
+            ));
+        }
+        Language::Kotlin => {
+            // The render's payload events are the native actions' and the
+            // static datamodel's together; a document the static lowering
+            // refuses is refused at render, and reserves only the rest here.
+            let mut payload_events = native.payload_events.clone();
+            if let Ok(lowering) =
+                crate::forge::static_lowering::lower_kotlin(&mut lowered, &machine_name, &[])
+            {
+                payload_events.extend(lowering.payload_events);
+                out.push_str(&lowering.record_defs.join("\n"));
+            }
+            let payload =
+                crate::forge::generator::build_kotlin_event_payload(&model, &payload_events);
+            for part in [
+                payload.defs,
+                payload.policy_fields,
+                payload.populate,
+                payload.inject_methods,
+            ] {
+                out.push_str(&part);
+            }
+            let host = crate::forge::host_invoker_interface::render_kotlin(&model, &machine_name);
+            out.push_str(&host.defs);
+            out.push_str(&host.members);
+        }
+        Language::Python => {
+            let payload =
+                crate::forge::generator::build_python_event_payload(&model, &native.payload_events);
+            for part in [payload.defs, payload.init, payload.populate, payload.inject] {
+                out.push_str(&part);
+            }
+            out.push_str(&crate::forge::host_invoker_interface::render_python(&model));
+        }
+    }
+    out
+}
+
 fn render_rust(
     env: &mut Environment,
     model: &SCXMLModel,

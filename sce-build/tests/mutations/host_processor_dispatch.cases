@@ -161,11 +161,18 @@ edit("backends/rust/runtime/src/host_processor.rs",
      """        let token = self.started.remove(&key).unwrap_or_default();""")
 PY
 
+# The whole call is replaced rather than its head renamed: the call closes
+# with `}));`, so re-spelling the opening alone left an unmatched `)` and
+# the tree stopped compiling — INCONCLUSIVE, measured in CI on 0aa9b150e8.
+# Every name the call read stays used, or deny-warnings refuses the tree.
 mutation_case "the invoker is never told to stop" <<'PY'
 edit("backends/rust/runtime/src/host_processor.rs",
-     """        handler(HostInvokeEvent::Cancel(HostInvokeCancel {""",
-     """        let _ = handler;
-        let _unsent = (HostInvokeCancel {""")
+     """        handler(HostInvokeEvent::Cancel(HostInvokeCancel {
+            processor_type: processor_type.to_string(),
+            invoke_id: invoke_id.to_string(),
+            token,
+        }));""",
+     """        let _ = (handler, invoke_id, token);""")
 PY
 
 # ── …and it is accepted once, from its own run ─────────────────────
@@ -175,10 +182,13 @@ PY
 # tells the runs apart, and the dequeue refusal is what keeps a completion
 # from going around the check.
 
+# `token` stays used: ignoring it leaves the parameter unused, which
+# deny-warnings refuses — INCONCLUSIVE, measured in CI on 0aa9b150e8.
 mutation_case "a stale token completes the invocation" <<'PY'
 edit("backends/rust/runtime/src/host_processor.rs",
      "        if self.started.get(&key) != Some(&token) {",
-     "        if !self.started.contains_key(&key) {")
+     """        let _ = token;
+        if !self.started.contains_key(&key) {""")
 PY
 
 mutation_case "a done.invoke raised around the completion is accepted" <<'PY'
@@ -214,7 +224,19 @@ PY
 # contracts. One satisfying the other would let a host promise a
 # lifecycle it never implemented.
 
-mutation_case "the invoker registry answers with any invoker it holds" <<'PY'
+# Aimed at the pair — the registration check AND the lookup — because the
+# lookup alone is not observable: the engine asks whether the type is
+# registered before it looks the handler up, so a key-blind lookup is only
+# reached with the right type registered, and then it could only pick
+# another when two are, in a map whose order no test can fix. SURVIVED in
+# CI on 0aa9b150e8 for exactly that reason. The defect the pair describes
+# is the real one — a registry that runs this type's invoke on whatever it
+# holds — and a host that registered only another type observes it.
+mutation_case "the invoker registry runs this type on whatever invoker it holds" <<'PY'
+edit("backends/rust/runtime/src/host_processor.rs",
+     "        self.invokers.contains_key(processor_type)",
+     """        let _ = processor_type;
+        !self.invokers.is_empty()""")
 edit("backends/rust/runtime/src/host_processor.rs",
      "        let handler = self.invokers.get_mut(&request.processor_type)?;",
      "        let handler = self.invokers.values_mut().next()?;")
