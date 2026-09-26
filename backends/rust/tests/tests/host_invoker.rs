@@ -361,15 +361,19 @@ fn a_late_completion_is_accepted_exactly_once() {
     );
 }
 
-/// A machine on host-owned time, with an invoker that answers nothing and
-/// records, per start, the token and whether the request still carried the
-/// deadline param.
-fn timed() -> (
+/// What [`timed`] hands a case: the machine, its script engine, the
+/// invoker's log and every start's token.
+type Timed = (
     Engine<Policy>,
     Arc<dyn IScriptEngine>,
     Arc<Mutex<Vec<String>>>,
     Starts,
-) {
+);
+
+/// A machine on host-owned time, with an invoker that answers nothing and
+/// records, per start, the token and whether the request still carried the
+/// deadline param.
+fn timed() -> Timed {
     let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let starts: Starts = Arc::default();
     let (mut engine, script_engine) = started();
