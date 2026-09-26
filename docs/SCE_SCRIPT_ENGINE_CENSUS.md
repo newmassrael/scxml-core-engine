@@ -100,9 +100,9 @@ documents-floor 700
 documents-judged-floor 450
 engine-documents 237
 native-prefix-documents 2
-datamodel-variable-init 284
+datamodel-variable-init 286
 transition-guard 220
-assign-action 233
+assign-action 234
 child-invoke-needs-script-engine 46
 log-expr 45
 send-param-expr 32
@@ -166,7 +166,11 @@ never spelled correctly.
   natively, which is the point of the state. Then
   `the_run_ends_by_exiting_every_state.scxml` (one engine document: three
   handler records, four assigns, an `In()` inside an `<if>`) raised
-  `engine-documents`, `datamodel-variable-init` and `assign-action`. A consumer pairing `cond="cpp:…"` with
+  `engine-documents`, `datamodel-variable-init` and `assign-action`. Then
+  the `typed` state's typed request (the `scope` and `level` a
+  `PermRequest` is built from, and the `retype` assign that makes `level` a
+  text so the request no longer fits) raised `datamodel-variable-init` by
+  two and `assign-action` by one. A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
 - **49% of judged documents need an engine** (233 of 475). The remaining
