@@ -160,6 +160,24 @@ reason. A precondition read as a constant is not in the document at all, so a
 right reading and a wrong one pass identically -- the one kind of wrong a run
 cannot catch, which is why the run has to name it.
 
+**gaps** turns the same run around to face the SPECIFICATION. Every place an
+author had to decide what the text did not say is already recorded —
+`sce:assumed` in the document, `assumed` on a binding rule, `unresolved` where
+nothing could even be guessed, and the pack's assumed preconditions — and the
+run says, for each recorded guess, which of three things is true: **refuted**
+(the product's tests answer it, and not as guessed — the case and both values
+are given), **held** (the tests agree; the text should still say it) or
+**untested** (no case compares a position resting on it). ⚠ The last is the
+reason this is a command of its own: `verify` names a refuted guess beside its
+failure, and an untested one reads in a verdict of "all passed" exactly like a
+checked one. Every guess on the path to a position is credited, not only the
+nearest — a document's value and the binding's symbol for it are two decisions.
+With `--prose` each gap is located in the text by file and line (never
+quoted, so the report can travel further than the specification may) and the
+text's own open questions are counted; `--out` writes every gap as NDJSON. A
+run that could not happen reports nothing: without it every guess would read
+as untested, which is a claim about cases nobody ran.
+
 `--backend` picks which lowering is DRIVEN. The product emits six; this drives
 the one it can import and refuses the rest, rather than reporting on a program
 nobody started. `--codegen` names the generator, defaulting to the one built

@@ -121,6 +121,10 @@ class CaseResult:
     # (another document's, or none): that one is reported, and completeness
     # across documents is `coverage`'s question.
     unwritten: list[str] = field(default_factory=list)
+    # Positions the document's own value was compared at -- agreeing or not,
+    # and never one only a record's planted value stood at. What a guess is
+    # credited or blamed by (`CaseJudge.attribute`).
+    compared: list[str] = field(default_factory=list)
 
     @property
     def judged(self) -> bool:
@@ -192,6 +196,10 @@ class Verification:
     # value was a guess. Naming it turns the report into the one sentence
     # worth having: the guess you recorded is the thing that failed.
     refuted: dict = field(default_factory=dict)
+    # Every recorded guess of the document and binding, with the cases that
+    # agreed with it and the ones that refuted it: {key: Assumption}. The
+    # superset of `refuted`, and what `gaps` reports from.
+    assumptions: dict = field(default_factory=dict)
     # Inputs the binding declares UNRESOLVED, to the reason its author gave.
     #
     # ⚠ They used to stop the whole run, and that made honesty the expensive
@@ -489,26 +497,118 @@ def assumption_behind(writer: str | None, declared, binding: dict) -> str:
     document's own assumptions are, because the input a guess sits on is
     usually a step upstream of the value that failed.
     """
-    if not writer:
+    key = assumption_key_behind(writer, declared, binding)
+    if not key:
         return ""
-    found = declared.rests_on_an_assumption(writer)
-    if found:
-        return found
+    source, _, subject = key.partition(":")
+    if source == "document":
+        return declared.assumed[subject]
+    kind, _, name = subject.partition(":")
+    rule = (binding.get(f"{kind}s") or {}).get(name) or {}
+    return f"the binding's rule for {name}: {rule['assumed']}"
+
+
+def assumption_key_behind(writer: str | None, declared, binding: dict) -> str:
+    """Which recorded guess a position `writer` writes rests on, as the key
+    `recorded_assumptions` files it under -- or "" when it rests on none.
+
+    The first of `assumption_keys_behind`, which is the one a failure message
+    names."""
+    keys = assumption_keys_behind(writer, declared, binding)
+    return keys[0] if keys else ""
+
+
+def assumption_keys_behind(writer: str | None, declared, binding: dict) -> list:
+    """EVERY recorded guess a position `writer` writes rests on, nearest
+    first: the document's, then the binding's rule for that output, then the
+    binding's rules for the inputs it reads.
+
+    ⚠ All of them, for the gap report. A document's guess and the binding's
+    guess about the same output are two decisions -- which value, and which
+    platform symbol it lands as -- and crediting only the nearest left the
+    other listed as never compared while every case compared it.
+
+    The one walk both the failure message (`assumption_behind`) and the
+    attribution use, so a guess cannot be blamed by one and credited by the
+    other."""
+    if not writer:
+        return []
+    keys = []
     inputs = binding.get("inputs") or {}
     rule = (binding.get("outputs") or {}).get(writer) or {}
-    if rule.get("assumed"):
-        return f"the binding's rule for {writer}: {rule['assumed']}"
     seen, stack = set(), [writer]
     while stack:
         current = stack.pop()
         if current in seen:
             continue
         seen.add(current)
-        held = inputs.get(current) or {}
-        if held.get("assumed"):
-            return f"the binding's rule for {current}: {held['assumed']}"
+        if current in declared.assumed:
+            keys.append(f"document:{current}")
         stack.extend(declared.reads.get(current, ()))
-    return ""
+    # The document's walk above visits nearest first; the binding's rules
+    # come after it, the output's own before its inputs', as they always did.
+    if rule.get("assumed"):
+        keys.append(f"binding:output:{writer}")
+    seen, stack = set(), [writer]
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        if (inputs.get(current) or {}).get("assumed"):
+            keys.append(f"binding:input:{current}")
+        stack.extend(declared.reads.get(current, ()))
+    return keys
+
+
+@dataclass
+class Assumption:
+    """One thing an author had to decide because the specification did not.
+
+    ⚠ This is the gap report's unit, and the reason it is not just
+    `refuted`: a guess the cases CONTRADICT is a gap in the specification
+    that the product's tests already answer, a guess they AGREE with is a gap
+    the specification should close by saying so, and a guess no case ever
+    compared is a gap nobody has checked at all -- the most dangerous of the
+    three, and the one a pass says nothing about. `refuted` names only the
+    first; a reader of "all passed" was left to assume the other two away.
+    """
+
+    key: str
+    source: str            # "document" | "binding"
+    subject: str           # the identifier or rule name that carries it
+    marker: str            # the author's handle for it, when one was written
+    reason: str
+    # The positions the binding writes whose value rests on this guess --
+    # what a reader goes and finds in the specification.
+    positions: list = field(default_factory=list)
+    # Case names in which a position resting on this guess agreed.
+    held_in: list = field(default_factory=list)
+    # (case, address, expected, got) where a position resting on it failed.
+    refuted_by: list = field(default_factory=list)
+
+    @property
+    def status(self) -> str:
+        if self.refuted_by:
+            return "refuted"
+        return "held" if self.held_in else "untested"
+
+
+def recorded_assumptions(declared, binding: dict) -> dict:
+    """Every recorded guess of this document and binding, keyed as
+    `assumption_key_behind` names them, none of them attributed yet."""
+    found = {}
+    for ident, reason in sorted((declared.assumed if declared else {}).items()):
+        found[f"document:{ident}"] = Assumption(
+            key=f"document:{ident}", source="document", subject=ident,
+            marker=declared.assumed_marker.get(ident, ""), reason=reason)
+    for kind in ("input", "output"):
+        for name, rule in sorted((binding.get(f"{kind}s") or {}).items()):
+            if (rule or {}).get("assumed"):
+                found[f"binding:{kind}:{name}"] = Assumption(
+                    key=f"binding:{kind}:{name}", source="binding",
+                    subject=f"{kind} {name}", marker="", reason=rule["assumed"])
+    return found
 
 
 def withheld_outputs(declared) -> dict:
@@ -1397,6 +1497,42 @@ class CaseJudge:
         # and watch the pass count hold.
         self.unaddressed = {name: _suffixes_written(outputs[name])
                             for name in verification.unaddressed_outputs}
+        verification.assumptions = recorded_assumptions(declared, binding)
+        for position, writer in sorted(writes.items()):
+            for key in self._guesses_behind(writer):
+                if key in verification.assumptions:
+                    verification.assumptions[key].positions.append(position)
+
+    def attribute(self) -> None:
+        """Credit or blame every recorded guess by the JUDGED cases.
+
+        Run once the cases are done, over `results` rather than inside
+        `judge`: a setup round is judged too, and nothing is claimed on it,
+        so neither is anything credited to a guess by it.
+
+        ⚠ A case that was refused credits nothing -- its positions were not
+        an answer -- but a failure it recorded before refusing still blames:
+        a wrong value that WAS settled is wrong however the rest came out.
+        """
+        known = self.verification.assumptions
+        for result in self.verification.results:
+            failed = {address: (want, got) for address, want, got in result.failures}
+            for address in result.compared:
+                for key in self._guesses_behind(self.writes.get(address)):
+                    if key not in known:
+                        continue
+                    if address in failed:
+                        want, got = failed[address]
+                        known[key].refuted_by.append((result.name, address, want, got))
+                    elif result.judged and result.name not in known[key].held_in:
+                        known[key].held_in.append(result.name)
+
+    def _guesses_behind(self, writer) -> list:
+        """`assumption_keys_behind`, for a judge that may have no document
+        (one built to ask a single question of its positions)."""
+        if self.declared is None:
+            return []
+        return assumption_keys_behind(writer, self.declared, self.binding)
 
     def landing_here(self, position: str) -> list:
         """The unaddressed outputs this position could turn out to be."""
@@ -1438,6 +1574,7 @@ class CaseJudge:
                 held_planted.append(address)
             else:
                 compared += 1
+                result.compared.append(address)
             if not _same(want, produced[address], _field_at(self.model, address)):
                 result.failures.append((address, want, produced[address]))
                 rests_on = assumption_behind(self.writes.get(address),
@@ -1948,6 +2085,7 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         if not withhold_unreceived(result, case, pack.model):
             judge.judge(result, case, produced, planted=stood_in)
         verification.results.append(result)
+    judge.attribute()
     return verification
 
 
@@ -2399,6 +2537,7 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
         # and nothing is claimed on it.
         if judged:
             verification.results.append(result)
+    judge.attribute()
     return verification
 
 

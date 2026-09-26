@@ -29,7 +29,7 @@ import dataclasses
 import unittest
 
 from sce_author.mcp import verification_payload
-from sce_author.verify import CaseResult, Verification
+from sce_author.verify import Assumption, CaseResult, Verification
 
 # Every field of `Verification`, and where it goes on the wire. `None` means
 # deliberately not carried, and the comment beside it is the reason.
@@ -44,6 +44,9 @@ CARRIES = {
     "host_memory": "host_memory",
     "assumed_preconditions": "assumed_preconditions",
     "refuted": "refuted_assumptions",
+    # Every recorded guess with what the cases said of it -- the untested ones
+    # are what a pass is silent about, and the writer is who can settle them.
+    "assumptions": "assumptions",
     # ⚠ Carried, not left off: the model that wrote the binding is the
     # likeliest reader, and it will only keep declaring unknowns if it can see
     # that doing so now costs just the positions that turn on them.
@@ -74,6 +77,9 @@ class TheTransportCarriesTheWholeAnswer(unittest.TestCase):
                 "expression": "true",
                 "reason": "the controller only runs while energised"}},
             refuted={"plant/out/c.value": "the author called this a guess"},
+            assumptions={"document:c": Assumption(
+                key="document:c", source="document", subject="c",
+                marker="c-guess", reason="the author called this a guess")},
             unresolved={"override": "nobody has said which address this is"},
         )
         payload = verification_payload(result)

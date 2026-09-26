@@ -105,6 +105,9 @@ class Document:
     # Output identifier -> what its author wrote down as an assumption. See
     # `read_document` for why this is carried at all.
     assumed: dict = dataclasses.field(default_factory=dict)
+    # Identifier -> the marker itself (`sce:assumed="..."`), the handle an
+    # author and a gap report name the guess by; `assumed` holds the reason.
+    assumed_marker: dict = dataclasses.field(default_factory=dict)
     # Output identifier -> the reason its author gave for leaving it
     # `sce:unresolved`: a value nobody has decided, written as a question
     # rather than a guess. The product refuses to BUILD such a document for
@@ -184,6 +187,12 @@ class Document:
 
     def rests_on_an_assumption(self, ident: str) -> str:
         """The assumption this output depends on, transitively, if any."""
+        holder = self.assumption_holder(ident)
+        return self.assumed[holder] if holder else ""
+
+    def assumption_holder(self, ident: str) -> str:
+        """Which identifier carries the assumption `ident` rests on, if any:
+        itself, or the nearest one its expression reads, transitively."""
         seen, stack = set(), [ident]
         while stack:
             current = stack.pop()
@@ -191,7 +200,7 @@ class Document:
                 continue
             seen.add(current)
             if current in self.assumed:
-                return self.assumed[current]
+                return current
             stack.extend(self.reads.get(current, ()))
         return ""
 
@@ -349,6 +358,7 @@ def read_document(path: pathlib.Path) -> Document:
         ) from exc
     inputs, outputs, uncomputed, expressions = [], [], [], {}
     assumed, reads, unresolved, types = {}, {}, {}, {}
+    assumed_marker = {}
     kept: set = set()
     for data in root.iter(f"{SCXML_NS}data"):
         ident = data.get("id")
@@ -374,6 +384,7 @@ def read_document(path: pathlib.Path) -> Document:
         if data.get(f"{SCE_NS}assumed"):
             assumed[ident] = (data.get(f"{SCE_NS}assumed-reason")
                               or data.get(f"{SCE_NS}assumed"))
+            assumed_marker[ident] = data.get(f"{SCE_NS}assumed")
         if direction == "out" and data.get(f"{SCE_NS}unresolved"):
             # Both halves: the marker is the question's handle, the reason is
             # what to go and ask. The product's refusal named both.
@@ -421,6 +432,7 @@ def read_document(path: pathlib.Path) -> Document:
         sce_prefix_uri=bound.group(2) if bound else None,
         keeps=frozenset(kept) if kind == "transform" else frozenset(),
         assumed=assumed,
+        assumed_marker=assumed_marker,
         unresolved=unresolved,
         reads=reads,
         sends=tuple(sends),

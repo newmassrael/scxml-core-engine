@@ -49,6 +49,8 @@ BRIEF_LIMIT = 60_000
 from .check import check
 from .coverage import coverage as run_coverage
 from .errors import AuthoringError
+from .gaps import ORDER as GAP_ORDER
+from .gaps import report as gap_report
 from .pack import load_pack
 from .pseudo import render as render_pseudo
 from .verify import verify as run_verify
@@ -344,6 +346,36 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "gaps",
+        "description": (
+            "Where the SPECIFICATION is silent, and what running the document "
+            "found there. Every guess the document or binding records "
+            "(`sce:assumed`, `assumed`) comes back refuted (the tests answer "
+            "it, differently), untested (nothing compares it -- a pass says "
+            "nothing about these) or held (the tests agree, the text should "
+            "still say it); every unresolved value and assumed precondition "
+            "is listed too, most urgent first, each with what the text should "
+            "gain. Give `prose` to also locate each gap in the text and count "
+            "what the text leaves open before anything is run."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["pack", "binding"],
+            "properties": {
+                "pack": _PACK_ARG,
+                "binding": {
+                    "type": "string",
+                    "description": "The binding file, which names its own document.",
+                },
+                "prose": _PROSE_ARG,
+                "backend": {
+                    "type": "string",
+                    "description": "As for verify: the lowering to drive, default python.",
+                },
+            },
+        },
+    },
 ]
 
 
@@ -383,6 +415,15 @@ def verification_payload(result) -> dict:
         # draws a green bar from the counts alone draws it over these.
         "assumed_preconditions": result.assumed_preconditions,
         "refuted_assumptions": result.refuted,
+        # ⚠ Every recorded guess and what the cases said of it -- refuted,
+        # held, or UNTESTED. The last is the one a pass says nothing about,
+        # and the author is the reader best placed to go and settle it.
+        "assumptions": [
+            {"subject": a.subject, "marker": a.marker, "status": a.status,
+             "positions": a.positions, "held_in": len(a.held_in),
+             "refuted_by": [{"case": c, "address": addr, "expected": want,
+                             "got": got} for c, addr, want, got in a.refuted_by]}
+            for a in result.assumptions.values()],
         # ⚠ What the binding declared it does NOT know, and what that cost.
         # The client most likely to read this is the model that wrote the
         # binding -- and the reason the key was never used is that declaring
@@ -640,6 +681,31 @@ def call_tool(name: str, args: dict) -> dict:
             payload = verification_payload(result)
             text = json.dumps(payload, ensure_ascii=False, indent=1)
             return _failure(text) if result.failed else _text(text)
+
+        if name == "gaps":
+            pack = load_pack(_pack_arg(args))
+            binding = args.get("binding")
+            if not binding or not isinstance(binding, str):
+                raise ToolArgumentError("'binding' is required: the path to the "
+                                        "binding file, which names its own document")
+            backend = args.get("backend", "python")
+            if not isinstance(backend, str):
+                raise ToolArgumentError("'backend' has to be a language name, "
+                                        "as a string")
+            prose = load_prose(_prose_arg(args)) if args.get("prose") is not None else None
+            result = run_verify(pack, pathlib.Path(binding), None, backend)
+            if not result.ran:
+                # No run, no attribution -- every guess would read untested.
+                return _failure(result.refusal)
+            questions = (ask(prose, pack.model, pack.conventions, pack.examples)
+                         if prose is not None else ())
+            found = gap_report(result, pack, prose, questions)
+            # The prose's own questions are counted, not carried: `questions`
+            # is the tool that lists them, and there can be hundreds.
+            counts = {kind: sum(1 for g in found if g.kind == kind) for kind in GAP_ORDER}
+            payload = {"version": 1, "counts": counts,
+                       "gaps": [g.as_dict() for g in found if g.kind != "question"]}
+            return _text(json.dumps(payload, ensure_ascii=False, indent=1, default=str))
 
         return _failure(f"no tool named {name!r}")
     # ⚠ The BASE type. Listing `PackError` alone sent every document that could

@@ -17,6 +17,8 @@ from .brief import write as write_brief
 from .check import check
 from .coverage import coverage as run_coverage
 from .errors import AuthoringError
+from .gaps import ORDER as GAP_ORDER
+from .gaps import report as gap_report
 from .pack import load_pack
 from .prose import load_prose
 from .pseudo import render as render_pseudo
@@ -83,6 +85,46 @@ def cmd_check(args) -> int:
         print(f"  {f}")
     print(f"  {len(findings)} refusal(s)")
     return 1 if findings else 0
+
+
+def cmd_gaps(args) -> int:
+    pack = _pack(args)
+    prose = load_prose([pathlib.Path(p) for p in args.prose]) if args.prose else None
+    result = run_verify(pack, pathlib.Path(args.binding),
+                        pathlib.Path(args.codegen) if args.codegen else None,
+                        args.backend)
+    if not result.ran:
+        # No run, no attribution: a gap list without it would present every
+        # recorded guess as untested, which is a claim about cases nobody ran.
+        print(result.refusal)
+        return 1
+    questions = (ask(prose, pack.model, pack.conventions, pack.examples)
+                 if prose is not None else ())
+    gaps = gap_report(result, pack, prose, questions)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as fh:
+            for gap in gaps:
+                fh.write(json.dumps(gap.as_dict(), ensure_ascii=False, default=str) + "\n")
+    for gap in gaps:
+        if gap.kind == "question":
+            continue
+        head = f"{gap.marker} " if gap.marker else ""
+        print(f"  {gap.kind.upper():<10} {head}({gap.subject})")
+        print(f"             {gap.reason}")
+        for f, line, name in gap.where:
+            print(f"             in the text: {f}:{line} ({name})")
+        if gap.kind == "refuted":
+            for case, address, want, got in gap.evidence:
+                print(f"             case {case!r}: {address} expected {want!r}, "
+                      f"the guess gave {got!r}")
+        elif gap.kind == "held":
+            print(f"             agreed in {len(gap.evidence)} case(s)")
+        print(f"             -> {gap.fix}")
+    # The prose's own questions are counted, not listed: there can be hundreds,
+    # and `questions` is the command that lists them.
+    counts = collections.Counter(g.kind for g in gaps)
+    print("  " + " · ".join(f"{kind} {counts[kind]}" for kind in GAP_ORDER if counts[kind]))
+    return 0
 
 
 def cmd_verify(args) -> int:
@@ -340,6 +382,19 @@ def main(argv=None) -> int:
                         "refuses the rest rather than reporting on a program "
                         "nobody started")
     v.set_defaults(fn=cmd_verify)
+
+    g = with_pack(sub.add_parser(
+        "gaps", help="where the specification is silent, and what the run found there"))
+    g.add_argument("--binding", required=True,
+                   help="the binding file, which names its own document")
+    g.add_argument("--codegen",
+                   help="the product's code generator (default: the one in this tree)")
+    g.add_argument("--backend", default="python", help="as for verify")
+    g.add_argument("--prose", nargs="+",
+                   help="the specification: say where each gap sits in it, and "
+                        "add what it leaves open before anything is run")
+    g.add_argument("--out", help="write every gap as NDJSON as well")
+    g.set_defaults(fn=cmd_gaps)
 
     o = with_pack(sub.add_parser(
         "coverage", help="what the set of documents reaches, and what it does not"))
