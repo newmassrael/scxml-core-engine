@@ -10480,6 +10480,21 @@
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::startInvokeInternal",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_invoke_request.go",
+          "symbol": "RequestFieldWire",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/TypedRequest.kt",
+          "symbol": "wire",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/host_invoke_request.py",
+          "symbol": "request_field_wire",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

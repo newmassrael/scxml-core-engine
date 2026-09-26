@@ -711,3 +711,92 @@ func TestATypedCompletionIsReadAsItsRecord(t *testing.T) {
 		}
 	}
 }
+
+type permStart struct {
+	request StatechartHostInvokerPermRequest
+	token   uint64
+}
+
+// permHost implements the generated interface; its work outlives the call.
+type permHost struct {
+	starts  []permStart
+	cancels []uint64
+}
+
+func (h *permHost) StartPerm(request StatechartHostInvokerPermRequest, token uint64) *StatechartHostInvokerPermResult {
+	h.starts = append(h.starts, permStart{request, token})
+	return nil
+}
+
+func (h *permHost) CancelPerm(token uint64) {
+	h.cancels = append(h.cancels, token)
+}
+
+// typedHost is a machine driven into `typed` with a permHost registered
+// through the generated adapter, and the untyped invokes of the same type
+// served by runningInvoker.
+func typedHost(t *testing.T) (started, *permHost, *[]string) {
+	t.Helper()
+	host := &permHost{}
+	var log []string
+	var starts []hostStart
+	s := newStarted()
+	RegisterStatechartHostInvokerXSceHostInvoker(s.engine, host, runningInvoker(&log, &starts))
+	s.engine.Initialize()
+	s.engine.Step()
+	s.engine.ProcessEvent(StatechartHostInvokerEventType)
+	return s, host, &log
+}
+
+// SCE Accepted Subset §2.12: through the generated interface a host is handed
+// `perm`'s request as its PermRequest record — the datamodel's values at their
+// declared types — and completes it with a PermResult, which the document
+// reads as that record. An invoke of the same type the document does not type
+// still reaches the host, through the fallback.
+func TestATypedRequestReachesItsInvokerAsItsRecord(t *testing.T) {
+	s, host, log := typedHost(t)
+	if len(host.starts) != 1 {
+		t.Fatalf("perm started %d times, want 1", len(host.starts))
+	}
+	want := StatechartHostInvokerPermRequest{Scope: "calendar", Level: 2}
+	if host.starts[0].request != want {
+		t.Errorf("perm was asked with %+v, want %+v", host.starts[0].request, want)
+	}
+	if !slices.Contains(*log, "START id=probe") {
+		t.Errorf("the untyped `probe` never reached the fallback: %v", *log)
+	}
+	token := host.starts[0].token
+	if !CompleteStatechartHostInvokerPerm(s.engine, token, StatechartHostInvokerPermResult{Granted: true}) {
+		t.Fatal("a running invocation's typed completion was refused")
+	}
+	s.engine.Step()
+	if got := s.counter(t, "granted"); got != 1 {
+		t.Errorf("granted = %d, want 1", got)
+	}
+	if got := s.counter(t, "unreadable"); got != 0 {
+		t.Errorf("unreadable = %d, want 0", got)
+	}
+	// A completion is accepted once: the token now names nothing running.
+	if CompleteStatechartHostInvokerPerm(s.engine, token, StatechartHostInvokerPermResult{Granted: true}) {
+		t.Error("a second completion of the same start was accepted")
+	}
+}
+
+// SCE Accepted Subset §2.12, W3C SCXML 6.4.1: a request value its record's
+// field cannot hold is an argument that cannot be evaluated. `retype` sets
+// `level` to a text and re-enters `typed`: the running start is cancelled, and
+// the new one raises error.execution and is never handed to the host.
+func TestARequestThatDoesNotFitItsRecordStartsNothing(t *testing.T) {
+	s, host, _ := typedHost(t)
+	first := host.starts[0].token
+	s.engine.ProcessEvent(StatechartHostInvokerEventRetype)
+	if !slices.Equal(host.cancels, []uint64{first}) {
+		t.Errorf("cancels = %v, want the running start %d", host.cancels, first)
+	}
+	if len(host.starts) != 1 {
+		t.Errorf("the misfit request was started: %+v", host.starts)
+	}
+	if got := s.counter(t, "unreadable"); got != 1 {
+		t.Errorf("unreadable = %d, want 1", got)
+	}
+}

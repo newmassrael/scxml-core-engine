@@ -67,6 +67,38 @@ data class StatechartHostInvokerDoneInvokePermPayload(val granted: Boolean)
 
 // --- State Machine (W3C SCXML) ---
 
+// ── SCE Accepted Subset 2.12: typed host-run invoke interface ─────────
+/** `sce:request`: the record the host is asked to start `<invoke id="perm">` with (SCE Accepted Subset §2.12). */
+data class StatechartHostInvokerPermRequest(
+    val scope: String,
+    val level: UByte,
+)
+
+/** `sce:result`: the record the host completes `<invoke id="perm">` with (SCE Accepted Subset §2.12). */
+data class StatechartHostInvokerPermResult(
+    val granted: Boolean,
+) {
+    /** The JSON `done.invoke.perm` carries this record as. */
+    fun wire(): String = EventPayload.encode(mapOf("granted" to granted))
+}
+
+/**
+ * The host side of this document's typed `<invoke type="x-sce-host">`s
+ * (SCE Accepted Subset §2.12). Register it with `registerXSceHostInvoker`.
+ */
+interface StatechartHostInvokerXSceHostInvoker {
+    /**
+     * §scxml-6.4: begin `<invoke id="perm">`. [token] names this start;
+     * a host that finishes later hands it back to `completePerm` (or
+     * `completeHostInvoke`). Non-null completes the invocation now.
+     */
+    fun startPerm(request: StatechartHostInvokerPermRequest, token: Long): StatechartHostInvokerPermResult?
+
+    /** §scxml-6.4: `<invoke id="perm">`'s state exited while the start [token] names was still running. */
+    fun cancelPerm(token: Long)
+}
+
+
 class StatechartHostInvokerStateMachine(
     scriptEngine: ScxmlScriptEngine,
 ) : StateMachineEngine<StatechartHostInvokerState, StatechartHostInvokerEvent>(scriptEngine) {
@@ -381,6 +413,51 @@ class StatechartHostInvokerStateMachine(
     }
 
     // NL→IR Item C1 Path A: per-event typed `_event.data` inject seams.
+
+
+    // SCE Accepted Subset 2.12: registration and typed completion for this
+    // document's typed host-run invokes.
+
+    /**
+     * Complete `<invoke id="perm">`'s start [token] with its record —
+     * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
+     * refused the same way (`false`).
+     */
+    fun completePerm(token: Long, result: StatechartHostInvokerPermResult): Boolean =
+        completeHostInvoke("x-sce-host", "perm", token, result.wire())
+
+    /**
+     * Register [invoker] as the handler for `type="x-sce-host"`.
+     * [fallback] serves the invokes of this type the document does not type.
+     */
+    fun registerXSceHostInvoker(invoker: StatechartHostInvokerXSceHostInvoker, fallback: (HostInvokeEvent) -> HostInvokeResponse?) {
+        registerInvoker("x-sce-host") { event ->
+            val start = event.start
+            val cancel = event.cancel
+            if (start != null) {
+                when (start.invokeId) {
+                    "perm" -> {
+                        val typed = StatechartHostInvokerPermRequest(
+                            scope = TypedRequest.string(start.params, start.invokeId, "scope"),
+                            level = TypedRequest.uint8(start.params, start.invokeId, "level"),
+                        )
+                        invoker.startPerm(typed, start.token)?.let { HostInvokeResponse(doneData = it.wire()) }
+                    }
+                    else -> fallback(event)
+                }
+            } else if (cancel != null) {
+                when (cancel.invokeId) {
+                    "perm" -> {
+                        invoker.cancelPerm(cancel.token)
+                        null
+                    }
+                    else -> fallback(event)
+                }
+            } else {
+                null
+            }
+        }
+    }
 
 
     override val initialState: StatechartHostInvokerState = StatechartHostInvokerState.Invoking
@@ -1195,7 +1272,7 @@ class StatechartHostInvokerStateMachine(
                         // location that cannot take the id starts nothing.
                         if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("doneId", "doneId"), "done._invoke_0", "<invoke>")) return@deferInvoke
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
-val started = performHostInvoke(
+                        val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "done._invoke_0",
@@ -1281,7 +1358,7 @@ val started = performHostInvoke(
                             // could not produce.
                             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='bad'> expr failed to evaluate")
                         }
-val started = performHostInvoke(
+                        val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "req",
@@ -1327,7 +1404,7 @@ val started = performHostInvoke(
                             return@deferInvoke
                         }
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
-val started = performHostInvoke(
+                        val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "req2",
@@ -1373,7 +1450,7 @@ val started = performHostInvoke(
                             return@deferInvoke
                         }
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
-val started = performHostInvoke(
+                        val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "req3",
@@ -1413,7 +1490,7 @@ val started = performHostInvoke(
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         hostInvokeParams["within"] =
                             (hostInvokeParams["within"] ?: emptyList()) + "2500"
-val started = performHostInvoke(
+                        val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "probe",
@@ -1445,7 +1522,7 @@ val started = performHostInvoke(
                     val generatedInvokeId = "invoking.${System.identityHashCode(this)}.probe2"
                     deferInvoke(state, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
-val started = performHostInvoke(
+                        val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "probe2",
@@ -1519,7 +1596,7 @@ val started = performHostInvoke(
                         // location that cannot take the id starts nothing.
                         if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("slot.id", "slot.id"), "locating._invoke_1", "<invoke>")) return@deferInvoke
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
-val started = performHostInvoke(
+                        val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "locating._invoke_1",
@@ -1566,7 +1643,7 @@ val started = performHostInvoke(
                         // location that cannot take the id starts nothing.
                         if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper"), "locating._invoke_2", "<invoke>")) return@deferInvoke
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
-val started = performHostInvoke(
+                        val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "locating._invoke_2",
@@ -1621,7 +1698,7 @@ val started = performHostInvoke(
                             // could not produce.
                             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='_sce_deadline_ms'> expr failed to evaluate")
                         }
-val started = performHostInvoke(
+                        val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "slow",
@@ -1655,7 +1732,7 @@ val started = performHostInvoke(
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         hostInvokeParams["_sce_deadline_ms"] =
                             (hostInvokeParams["_sce_deadline_ms"] ?: emptyList()) + "soon"
-val started = performHostInvoke(
+                        val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "undated",
@@ -1698,31 +1775,29 @@ val started = performHostInvoke(
                         val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                         val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // SCE Accepted Subset 2.12: `sce:request` makes the
+                        // params a record, so each value is held to its field
+                        // here, where the invocation starts; one that cannot
+                        // be evaluated or does not fit starts nothing.
                         try {
-                            // The param crosses as text, and `toString()` is the platform's
-                            // spelling of the value; this is the document's.
                             val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("scope", "scope"))
                             hostInvokeParams["scope"] =
-                                (hostInvokeParams["scope"] ?: emptyList()) + valueToWireString(v)
-                        } catch (_: Exception) {
-                            // W3C SCXML 5.7.1: report the failure and omit the name and the
-                            // value — the act still happens, without a field the document
-                            // could not produce.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='scope'> expr failed to evaluate")
+                                (hostInvokeParams["scope"] ?: emptyList()) +
+                                    TypedRequest.wire(v, "scope", TypedRequest.FieldType.STRING, ::valueToWireString)
+                        } catch (refusal: Exception) {
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='scope'> cannot be its request field: ${refusal.message}")
+                            return@deferInvoke
                         }
                         try {
-                            // The param crosses as text, and `toString()` is the platform's
-                            // spelling of the value; this is the document's.
                             val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("level", "level"))
                             hostInvokeParams["level"] =
-                                (hostInvokeParams["level"] ?: emptyList()) + valueToWireString(v)
-                        } catch (_: Exception) {
-                            // W3C SCXML 5.7.1: report the failure and omit the name and the
-                            // value — the act still happens, without a field the document
-                            // could not produce.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='level'> expr failed to evaluate")
+                                (hostInvokeParams["level"] ?: emptyList()) +
+                                    TypedRequest.wire(v, "level", TypedRequest.FieldType.UINT8, ::valueToWireString)
+                        } catch (refusal: Exception) {
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='level'> cannot be its request field: ${refusal.message}")
+                            return@deferInvoke
                         }
-val started = performHostInvoke(
+                        val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "perm",

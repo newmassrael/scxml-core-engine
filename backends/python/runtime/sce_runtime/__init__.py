@@ -25,6 +25,7 @@ from .host_processor import (
     HostSendResponse,
     parse_host_invoke_deadline_ms,
 )
+from .host_invoke_request import RequestFieldType, request_field, request_field_wire
 from .http import HttpSendRequest, HttpSendResponse
 from .io_processors import published_origin, session_id_from_scxml_location
 from .invoke import (
@@ -70,6 +71,7 @@ __all__ = [
     "Invoke",
     "LuaScriptEngine",
     "PendingInvoke",
+    "RequestFieldType",
     "ScheduledEvent",
     "Scheduler",
     "ScriptError",
@@ -81,6 +83,8 @@ __all__ = [
     "create_done_invoke_event_name",
     "parse_host_invoke_deadline_ms",
     "published_origin",
+    "request_field",
+    "request_field_wire",
     "session_id_from_scxml_location",
     "scripting",
     "validate_configuration",

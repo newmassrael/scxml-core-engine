@@ -41,3 +41,30 @@
 {% endif %}
 {% endfor %}
 {% endmacro %}
+
+{# SCE Accepted Subset 2.12: one `<param>` of a typed host-run `<invoke>`, held
+   to the request-record field it supplies (`field_type`, a
+   `TypedRequest.FieldType`) and collected into `map`.
+
+   Unlike `collect_wire_params_into`, a value that cannot be evaluated or does
+   not fit its field is not left out: the host was promised the whole record,
+   so W3C SCXML 6.4.1's rule for an argument that cannot be evaluated applies —
+   error.execution, and the invocation starts nothing (the enclosing deferred
+   closure returns). A string literal was held to its field at build time
+   (`validation/typed-invoke-request`), so it passes as written. #}
+{% macro collect_typed_wire_param_into(param, field_type, model, map, eng, sid, machine_name, indent) %}
+{% if param.is_static_literal %}
+{{ indent }}{{ map }}["{{ param.name | escape_kotlin }}"] =
+{{ indent }}    ({{ map }}["{{ param.name | escape_kotlin }}"] ?: emptyList()) + "{{ param.static_value | escape_kotlin }}"
+{% elif (param.expr or param.location) and model.needs_script_engine %}
+{{ indent }}try {
+{{ indent }}    val v = {{ eng }}.evaluateExpr({{ sid }}, {% if param.expr %}{{ param.expr | to_script_source_expr }}{% else %}{{ param.location | to_script_source_expr }}{% endif %})
+{{ indent }}    {{ map }}["{{ param.name | escape_kotlin }}"] =
+{{ indent }}        ({{ map }}["{{ param.name | escape_kotlin }}"] ?: emptyList()) +
+{{ indent }}            TypedRequest.wire(v, "{{ param.name | escape_kotlin }}", {{ field_type }}, ::valueToWireString)
+{{ indent }}} catch (refusal: Exception) {
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> cannot be its request field: ${refusal.message}")
+{{ indent }}    return@deferInvoke
+{{ indent }}}
+{% endif %}
+{% endmacro %}

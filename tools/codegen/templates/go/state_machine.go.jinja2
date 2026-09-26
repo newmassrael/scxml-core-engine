@@ -227,6 +227,10 @@ func (e {{ machine_name }}Event) String() string {
 // ── W3C SCXML G.7: `<sce:action>` host dispatch ───────────────────────
 {{ native_actions_defs }}
 {% endif %}
+{% if host_invoker_interface %}
+// ── SCE Accepted Subset 2.12: typed host-run invoke interface ──────────
+{{ host_invoker_interface }}
+{% endif %}
 // ======================================================================
 // Policy struct
 // ======================================================================

@@ -45,3 +45,40 @@
 {% endif %}
 {% endfor %}
 {% endmacro %}
+
+{# SCE Accepted Subset 2.12: one `<param>` of a typed host-run `<invoke>`, held
+   to the request-record field it supplies (`field_type`, an
+   `sce.RequestField*` descriptor) and collected into `map`.
+
+   Unlike `collect_params_into`, a value that cannot be evaluated or does not
+   fit its field is not left out: the host was promised the whole record, so
+   W3C SCXML 6.4.1's rule for an argument that cannot be evaluated applies —
+   error.execution, and the invocation starts nothing. The caller declares
+   `requestRefused` and stops after the first refusal. A string literal was
+   held to its field at build time (`validation/typed-invoke-request`), so it
+   passes as written. #}
+{% macro collect_typed_param_into(param, field_type, model, map, machine_name) %}
+{% if param.is_static_literal %}
+			{{ map }}["{{ param.name | escape_go }}"] = append({{ map }}["{{ param.name | escape_go }}"], "{{ param.static_value | escape_go }}")
+{% elif (param.expr or param.location) and model.needs_script_engine %}
+			if !requestRefused {
+{% if param.expr %}
+				paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`)
+{% else %}
+				paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.location }}`)
+{% endif %}
+				var paramText string
+				if paramErr == nil {
+					paramText, paramErr = sce.RequestFieldWire(paramVal, "{{ param.name | escape_go }}", {{ field_type }})
+				}
+				if paramErr == nil {
+					{{ map }}["{{ param.name | escape_go }}"] = append({{ map }}["{{ param.name | escape_go }}"], paramText)
+				} else {
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> cannot be its request field: "+paramErr.Error()))
+{% endif %}
+					requestRefused = true
+				}
+			}
+{% endif %}
+{% endmacro %}

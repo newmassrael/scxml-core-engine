@@ -162,7 +162,22 @@
                         }
 {% endfor %}
 {% endif %}
+{% if inv.invoke_id in host_invoke_request_checks %}
+{% set request_checks = host_invoke_request_checks[inv.invoke_id] %}
+                        // SCE Accepted Subset 2.12: `sce:request` makes the
+                        // params a record, so each value is held to its field
+                        // here, where the invocation starts; one that cannot
+                        // be evaluated or does not fit starts nothing.
+{% for param in inv.params %}
+{% if param.name in request_checks %}
+{{ param_macros.collect_typed_wire_param_into(param, request_checks[param.name], model, 'hostInvokeParams', 'hostEngine', 'hostSid', machine_name, '                        ') -}}
+{% else %}
+{{ param_macros.collect_wire_params_into([param], model, 'hostInvokeParams', 'hostEngine', 'hostSid', machine_name, '<invoke>', '                        ') -}}
+{% endif %}
+{% endfor %}
+{% else %}
 {{ param_macros.collect_wire_params_into(inv.params, model, 'hostInvokeParams', 'hostEngine', 'hostSid', machine_name, '<invoke>', '                        ') -}}
+{% endif %}
                         val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "{{ inv.invoke_type | escape_kotlin }}",

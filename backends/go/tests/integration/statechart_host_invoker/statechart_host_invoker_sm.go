@@ -265,6 +265,76 @@ type StatechartHostInvokerDoneInvokePermPayload struct {
 }
 
 
+// ── SCE Accepted Subset 2.12: typed host-run invoke interface ──────────
+// StatechartHostInvokerPermRequest is `sce:request`: the record the host is asked to start `<invoke id="perm">`
+// with (SCE Accepted Subset §2.12).
+type StatechartHostInvokerPermRequest struct {
+	Scope string
+	Level uint8
+}
+
+// StatechartHostInvokerPermResult is `sce:result`: the record the host completes `<invoke id="perm">`
+// with (SCE Accepted Subset §2.12).
+type StatechartHostInvokerPermResult struct {
+	Granted bool
+}
+
+// Wire is the JSON `done.invoke.perm` carries this record as.
+func (r StatechartHostInvokerPermResult) Wire() string {
+	return sce.PayloadJSON(map[string]any{"granted": r.Granted})
+}
+
+// StatechartHostInvokerXSceHostInvoker is the host side of this document's typed
+// `<invoke type="x-sce-host">`s (SCE Accepted Subset §2.12). Register it with
+// RegisterStatechartHostInvokerXSceHostInvoker.
+type StatechartHostInvokerXSceHostInvoker interface {
+	// StartPerm is §scxml-6.4: begin `<invoke id="perm">`. token names
+	// this start; a host that finishes later hands it back to
+	// CompleteStatechartHostInvokerPerm (or CompleteHostInvoke). Non-nil completes
+	// the invocation now.
+	StartPerm(request StatechartHostInvokerPermRequest, token uint64) *StatechartHostInvokerPermResult
+	// CancelPerm is §scxml-6.4: `<invoke id="perm">`'s state exited while
+	// the start token names was still running. Stop it.
+	CancelPerm(token uint64)
+}
+
+// RegisterStatechartHostInvokerXSceHostInvoker registers invoker as the handler for
+// `type="x-sce-host"`.
+// fallback serves the invokes of this type the document does not type.
+func RegisterStatechartHostInvokerXSceHostInvoker(e *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent], invoker StatechartHostInvokerXSceHostInvoker, fallback sce.HostInvokeHandler) {
+	e.RegisterInvoker("x-sce-host", func(event sce.HostInvokeEvent) *sce.HostInvokeResponse {
+		if start := event.Start; start != nil {
+			switch start.InvokeID {
+			case "perm":
+				typed := StatechartHostInvokerPermRequest{Scope: sce.RequestString(*start, "scope"), Level: sce.RequestUnsigned[uint8](*start, "level")}
+				if result := invoker.StartPerm(typed, start.Token); result != nil {
+					data := result.Wire()
+					return &sce.HostInvokeResponse{DoneData: &data}
+				}
+				return nil
+			}
+			return fallback(event)
+		}
+		if cancel := event.Cancel; cancel != nil {
+			switch cancel.InvokeID {
+			case "perm":
+				invoker.CancelPerm(cancel.Token)
+				return nil
+			}
+			return fallback(event)
+		}
+		return nil
+	})
+}
+
+// CompleteStatechartHostInvokerPerm completes `<invoke id="perm">`'s start token
+// with its record — CompleteHostInvoke with the record's JSON, so a stale
+// or unknown token is refused the same way (false).
+func CompleteStatechartHostInvokerPerm(e *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent], token uint64, result StatechartHostInvokerPermResult) bool {
+	return e.CompleteHostInvoke("x-sce-host", "perm", token, result.Wire())
+}
+
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -1042,7 +1112,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
-if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "done._invoke_0",
 				Src:           hostInvokeSrc,
@@ -1115,7 +1185,7 @@ if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				// reported.
 				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='bad'> expr failed to evaluate"))
 			}
-if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "req",
 				Src:           hostInvokeSrc,
@@ -1150,7 +1220,7 @@ if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
-if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "req2",
 				Src:           hostInvokeSrc,
@@ -1185,7 +1255,7 @@ if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
-if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "req3",
 				Src:           hostInvokeSrc,
@@ -1214,7 +1284,7 @@ if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 			hostInvokeContent := ""
 			hostInvokeParams := map[string][]string{}
 			hostInvokeParams["within"] = append(hostInvokeParams["within"], "2500")
-if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "probe",
 				Src:           hostInvokeSrc,
@@ -1242,7 +1312,7 @@ if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 			hostInvokeSrc := "pane://other"
 			hostInvokeContent := ""
 			hostInvokeParams := map[string][]string{}
-if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "probe2",
 				Src:           hostInvokeSrc,
@@ -1281,7 +1351,7 @@ if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
-if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "locating._invoke_1",
 				Src:           hostInvokeSrc,
@@ -1320,7 +1390,7 @@ if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
-if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "locating._invoke_2",
 				Src:           hostInvokeSrc,
@@ -1359,7 +1429,7 @@ if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				// reported.
 				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='_sce_deadline_ms'> expr failed to evaluate"))
 			}
-if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "slow",
 				Src:           hostInvokeSrc,
@@ -1388,7 +1458,7 @@ if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 			hostInvokeContent := ""
 			hostInvokeParams := map[string][]string{}
 			hostInvokeParams["_sce_deadline_ms"] = append(hostInvokeParams["_sce_deadline_ms"], "soon")
-if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "undated",
 				Src:           hostInvokeSrc,
@@ -1417,27 +1487,40 @@ if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 			hostInvokeContent := ""
 			p.ensureScriptEngine()
 			hostInvokeParams := map[string][]string{}
-			if paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `scope`); paramErr == nil {
-				// W3C SCXML C.2: the value crosses as text, rendered by the
-				// neutral helper — an engine literal would put this machine's
-				// language on the wire.
-				hostInvokeParams["scope"] = append(hostInvokeParams["scope"], sce.ToWireString(paramVal))
-			} else {
-				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
-				// reported.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='scope'> expr failed to evaluate"))
+			// SCE Accepted Subset 2.12: `sce:request` makes the params a record,
+			// so each value is held to its field here, where the invocation
+			// starts; one that does not fit starts nothing.
+			requestRefused := false
+			if !requestRefused {
+				paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `scope`)
+				var paramText string
+				if paramErr == nil {
+					paramText, paramErr = sce.RequestFieldWire(paramVal, "scope", sce.RequestFieldString)
+				}
+				if paramErr == nil {
+					hostInvokeParams["scope"] = append(hostInvokeParams["scope"], paramText)
+				} else {
+					engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='scope'> cannot be its request field: "+paramErr.Error()))
+					requestRefused = true
+				}
 			}
-			if paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `level`); paramErr == nil {
-				// W3C SCXML C.2: the value crosses as text, rendered by the
-				// neutral helper — an engine literal would put this machine's
-				// language on the wire.
-				hostInvokeParams["level"] = append(hostInvokeParams["level"], sce.ToWireString(paramVal))
-			} else {
-				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
-				// reported.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='level'> expr failed to evaluate"))
+			if !requestRefused {
+				paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `level`)
+				var paramText string
+				if paramErr == nil {
+					paramText, paramErr = sce.RequestFieldWire(paramVal, "level", sce.RequestFieldUint8)
+				}
+				if paramErr == nil {
+					hostInvokeParams["level"] = append(hostInvokeParams["level"], paramText)
+				} else {
+					engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='level'> cannot be its request field: "+paramErr.Error()))
+					requestRefused = true
+				}
 			}
-if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+			if requestRefused {
+				continue
+			}
+			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "perm",
 				Src:           hostInvokeSrc,

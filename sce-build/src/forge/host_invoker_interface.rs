@@ -78,25 +78,46 @@ fn host_invokes(model: &SCXMLModel) -> impl Iterator<Item = &crate::model::Unsup
         })
 }
 
-/// What the Rust start site holds each typed request field to: invoke id →
-/// field name → the `RequestFieldType` it names.
-pub fn rust_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<String, String>> {
-    typed_host_invokes(model)
-        .into_iter()
-        .filter_map(|typed| {
-            let request = typed.request?;
-            let fields = request
-                .fields
-                .iter()
-                .map(|f| (f.id.clone(), rust_request_field_type(f)))
-                .collect();
-            Some((typed.invoke_id.to_string(), fields))
-        })
-        .collect()
+/// `invokes` grouped by the `type` they name, in name order — one generated
+/// invoker interface and one registration per group.
+fn by_type<'a, 'm>(
+    invokes: &'a [TypedHostInvoke<'m>],
+) -> BTreeMap<&'m str, Vec<&'a TypedHostInvoke<'m>>> {
+    let mut groups: BTreeMap<&'m str, Vec<&'a TypedHostInvoke<'m>>> = BTreeMap::new();
+    for invoke in invokes {
+        groups.entry(invoke.invoke_type).or_default().push(invoke);
+    }
+    groups
 }
 
-fn rust_request_field_type(f: &ForgeField) -> String {
-    let variant = match &f.sce_type {
+/// An invoke's two records, each with the name suffix its generated type
+/// takes and the sentence that type's documentation opens with.
+fn records_of<'m>(
+    invoke: &TypedHostInvoke<'m>,
+) -> [(Option<&'m EventSchemaModel>, &'static str, &'static str); 2] {
+    [
+        (
+            invoke.request,
+            "Request",
+            "`sce:request`: the record the host is asked to start",
+        ),
+        (
+            invoke.result,
+            "Result",
+            "`sce:result`: the record the host completes",
+        ),
+    ]
+}
+
+/// A request field's type as every runtime's descriptor names it: a scalar's
+/// variant name, or a `bytes` field's capacity.
+pub enum RequestFieldSpelling {
+    Scalar(&'static str),
+    Bytes(u32),
+}
+
+fn request_field_spelling(f: &ForgeField) -> RequestFieldSpelling {
+    RequestFieldSpelling::Scalar(match &f.sce_type {
         SceType::Uint8 => "Uint8",
         SceType::Uint16 => "Uint16",
         SceType::Uint32 => "Uint32",
@@ -110,14 +131,49 @@ fn rust_request_field_type(f: &ForgeField) -> String {
         SceType::Bool => "Bool",
         SceType::String => "String",
         SceType::Bytes => {
-            let cap = crate::forge::limits::resolve_bytes_max(f.max_size);
-            return format!("Bytes({cap})");
+            return RequestFieldSpelling::Bytes(crate::forge::limits::resolve_bytes_max(f.max_size))
         }
         SceType::Enum(_) => {
             unreachable!("typed_invoke::validate refuses an enum-typed field in a host-run record")
         }
-    };
-    variant.to_string()
+    })
+}
+
+/// What a start site holds each typed request field to: invoke id → field
+/// name → the runtime's field-type descriptor, as `spell` writes it.
+pub fn request_checks(
+    model: &SCXMLModel,
+    spell: impl Fn(RequestFieldSpelling) -> String,
+) -> BTreeMap<String, BTreeMap<String, String>> {
+    typed_host_invokes(model)
+        .into_iter()
+        .filter_map(|typed| {
+            let request = typed.request?;
+            let fields = request
+                .fields
+                .iter()
+                .map(|f| (f.id.clone(), spell(request_field_spelling(f))))
+                .collect();
+            Some((typed.invoke_id.to_string(), fields))
+        })
+        .collect()
+}
+
+/// [`request_checks`] spelled as the Rust runtime's `RequestFieldType`
+/// variant.
+pub fn rust_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<String, String>> {
+    request_checks(model, |spelling| match spelling {
+        RequestFieldSpelling::Scalar(variant) => variant.to_string(),
+        RequestFieldSpelling::Bytes(cap) => format!("Bytes({cap})"),
+    })
+}
+
+/// [`request_checks`] spelled as the Go runtime's `sce.RequestField*`.
+pub fn go_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<String, String>> {
+    request_checks(model, |spelling| match spelling {
+        RequestFieldSpelling::Scalar(variant) => format!("sce.RequestField{variant}"),
+        RequestFieldSpelling::Bytes(cap) => format!("sce.RequestFieldBytes({cap})"),
+    })
 }
 
 /// The Rust host interface for `model`'s typed host-run invokes; empty when
@@ -134,22 +190,9 @@ pub fn render_rust(
         return String::new();
     }
     let mut records = String::new();
-    let mut by_type: BTreeMap<&str, Vec<&TypedHostInvoke>> = BTreeMap::new();
     for invoke in &typed {
-        by_type.entry(invoke.invoke_type).or_default().push(invoke);
         let pascal = filters::to_pascal_case(invoke.invoke_id.to_string());
-        for (record, what, role) in [
-            (
-                invoke.request,
-                "Request",
-                "`sce:request`: the record the host is asked to start",
-            ),
-            (
-                invoke.result,
-                "Result",
-                "`sce:result`: the record the host completes",
-            ),
-        ] {
+        for (record, what, role) in records_of(invoke) {
             if let Some(schema) = record {
                 records.push_str(&format!(
                     "/// {role} `<invoke id=\"{id}\">`\n/// with (SCE Accepted Subset \u{a7}2.12).\n\
@@ -172,7 +215,7 @@ pub fn render_rust(
     let mut interfaces = String::new();
     let mut ext_methods = String::new();
     let mut ext_impls = String::new();
-    for (invoke_type, invokes) in &by_type {
+    for (invoke_type, invokes) in &by_type(&typed) {
         let type_pascal = filters::to_pascal_case(invoke_type.to_string());
         let type_snake = filters::to_snake_case(invoke_type.to_string());
         let trait_name = format!("{machine_name}{type_pascal}Invoker");
@@ -321,4 +364,581 @@ self.register_invoker(\"{invoke_type}\", move |event| match event {{\n          
 pub trait {machine_name}HostInvokers {{\n{ext_methods}}}\n\n\
 impl{policy_generics_decl} {machine_name}HostInvokers for ::sce_rust_runtime::Engine<{machine_name}Policy{policy_generics_use}> {{\n{ext_impls}}}\n"
     )
+}
+
+/// The Go host interface for `model`'s typed host-run invokes; empty when it
+/// has none.
+///
+/// The shapes are the Rust ones in Go's idiom: record structs with exported
+/// fields, an invoker interface per declared `type`, and — because `Engine`
+/// is a foreign type — free functions for registration and completion.
+pub fn render_go(model: &SCXMLModel, machine_name: &str) -> String {
+    let typed = typed_host_invokes(model);
+    if typed.is_empty() {
+        return String::new();
+    }
+    let engine = format!("*sce.Engine[{machine_name}State, {machine_name}Event]");
+    let exported = |id: &str| filters::to_pascal_case(id.to_string());
+    let mut out = String::new();
+    for invoke in &typed {
+        let pascal = exported(invoke.invoke_id);
+        for (record, what, role) in records_of(invoke) {
+            let Some(schema) = record else { continue };
+            let name = format!("{machine_name}{pascal}{what}");
+            let fields: String = schema
+                .fields
+                .iter()
+                .map(|f| {
+                    format!(
+                        "\t{} {}\n",
+                        exported(&f.id),
+                        crate::forge::generator::go_type(&f.sce_type)
+                    )
+                })
+                .collect();
+            out.push_str(&format!(
+                "// {name} is {role} `<invoke id=\"{id}\">`\n// with (SCE Accepted Subset \u{a7}2.12).\n\
+type {name} struct {{\n{fields}}}\n\n",
+                id = invoke.invoke_id,
+            ));
+            if what == "Result" {
+                let items: String = schema
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        let value = format!("r.{}", exported(&f.id));
+                        let value = if matches!(f.sce_type, SceType::Bytes) {
+                            format!("sce.BytesAsPayloadText({value})")
+                        } else {
+                            value
+                        };
+                        format!("\"{}\": {value}, ", f.id)
+                    })
+                    .collect();
+                out.push_str(&format!(
+                    "// Wire is the JSON `done.invoke.{id}` carries this record as.\n\
+func (r {name}) Wire() string {{\n\treturn sce.PayloadJSON(map[string]any{{{items}}})\n}}\n\n",
+                    id = invoke.invoke_id,
+                    items = items.trim_end_matches(", "),
+                ));
+            }
+        }
+    }
+    for (invoke_type, invokes) in &by_type(&typed) {
+        let interface = format!(
+            "{machine_name}{}Invoker",
+            filters::to_pascal_case(invoke_type.to_string())
+        );
+        let fallback = has_untyped_invoke_of(model, invoke_type);
+        let mut methods = String::new();
+        let mut start_cases = String::new();
+        let mut cancel_cases = String::new();
+        let mut completions = String::new();
+        for invoke in invokes {
+            let id = invoke.invoke_id;
+            let pascal = exported(id);
+            let request_param = invoke
+                .request
+                .map(|_| format!("request {machine_name}{pascal}Request, "))
+                .unwrap_or_default();
+            let returns = if invoke.result.is_some() {
+                format!("*{machine_name}{pascal}Result")
+            } else {
+                "*sce.HostInvokeResponse".to_string()
+            };
+            methods.push_str(&format!(
+                "\t// Start{pascal} is \u{a7}scxml-6.4: begin `<invoke id=\"{id}\">`. token names\n\
+\t// this start; a host that finishes later hands it back to\n\
+\t// Complete{machine_name}{pascal} (or CompleteHostInvoke). Non-nil completes\n\
+\t// the invocation now.\n\
+\tStart{pascal}({request_param}token uint64) {returns}\n\
+\t// Cancel{pascal} is \u{a7}scxml-6.4: `<invoke id=\"{id}\">`'s state exited while\n\
+\t// the start token names was still running. Stop it.\n\
+\tCancel{pascal}(token uint64)\n"
+            ));
+            let (read_request, typed_arg) = match invoke.request {
+                Some(schema) => {
+                    let fields: String = schema
+                        .fields
+                        .iter()
+                        .map(|f| format!("{}: {}, ", exported(&f.id), go_request_reader(f)))
+                        .collect();
+                    (
+                        format!(
+                            "\t\t\t\ttyped := {machine_name}{pascal}Request{{{}}}\n",
+                            fields.trim_end_matches(", ")
+                        ),
+                        "typed, ",
+                    )
+                }
+                None => (String::new(), ""),
+            };
+            let start = if invoke.result.is_some() {
+                format!(
+                    "\t\t\t\tif result := invoker.Start{pascal}({typed_arg}start.Token); result != nil {{\n\
+\t\t\t\t\tdata := result.Wire()\n\t\t\t\t\treturn &sce.HostInvokeResponse{{DoneData: &data}}\n\
+\t\t\t\t}}\n\t\t\t\treturn nil\n"
+                )
+            } else {
+                format!("\t\t\t\treturn invoker.Start{pascal}({typed_arg}start.Token)\n")
+            };
+            start_cases.push_str(&format!("\t\t\tcase \"{id}\":\n{read_request}{start}"));
+            cancel_cases.push_str(&format!(
+                "\t\t\tcase \"{id}\":\n\t\t\t\tinvoker.Cancel{pascal}(cancel.Token)\n\t\t\t\treturn nil\n"
+            ));
+            if invoke.result.is_some() {
+                completions.push_str(&format!(
+                    "// Complete{machine_name}{pascal} completes `<invoke id=\"{id}\">`'s start token\n\
+// with its record — CompleteHostInvoke with the record's JSON, so a stale\n\
+// or unknown token is refused the same way (false).\n\
+func Complete{machine_name}{pascal}(e {engine}, token uint64, result {machine_name}{pascal}Result) bool {{\n\
+\treturn e.CompleteHostInvoke(\"{invoke_type}\", \"{id}\", token, result.Wire())\n}}\n\n"
+                ));
+            }
+        }
+        // An invoke of this type the document does not type still needs a
+        // handler; without one the adapter could only drop it, and a start
+        // nobody performed must read as error.execution, not as running.
+        let (fallback_param, fallback_doc, rest) = if fallback {
+            (
+                ", fallback sce.HostInvokeHandler",
+                "\n// fallback serves the invokes of this type the document does not type.",
+                "fallback(event)",
+            )
+        } else {
+            // Every invoke of this type is typed, so no other id reaches this
+            // handler.
+            ("", "", "nil")
+        };
+        out.push_str(&format!(
+            "// {interface} is the host side of this document's typed\n\
+// `<invoke type=\"{invoke_type}\">`s (SCE Accepted Subset \u{a7}2.12). Register it with\n\
+// Register{interface}.\n\
+type {interface} interface {{\n{methods}}}\n\n\
+// Register{interface} registers invoker as the handler for\n\
+// `type=\"{invoke_type}\"`.{fallback_doc}\n\
+func Register{interface}(e {engine}, invoker {interface}{fallback_param}) {{\n\
+\te.RegisterInvoker(\"{invoke_type}\", func(event sce.HostInvokeEvent) *sce.HostInvokeResponse {{\n\
+\t\tif start := event.Start; start != nil {{\n\t\t\tswitch start.InvokeID {{\n{start_cases}\t\t\t}}\n\t\t\treturn {rest}\n\t\t}}\n\
+\t\tif cancel := event.Cancel; cancel != nil {{\n\t\t\tswitch cancel.InvokeID {{\n{cancel_cases}\t\t\t}}\n\t\t\treturn {rest}\n\t\t}}\n\
+\t\treturn nil\n\t}})\n}}\n\n{completions}"
+        ));
+    }
+    out
+}
+
+/// [`request_checks`] spelled as the Python runtime's `RequestFieldType`,
+/// imported by the generated module as `_RequestFieldType`.
+pub fn python_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<String, String>> {
+    request_checks(model, python_spelling)
+}
+
+/// The Python host interface for `model`'s typed host-run invokes; empty
+/// when it has none.
+///
+/// The shapes are the Rust ones in Python's idiom: dataclass records, a
+/// `Protocol` invoker per declared `type`, and module-level functions for
+/// registration and completion. The names the generated module imports for
+/// it (`dataclass`, `Protocol`, `_json`, `_request_field`,
+/// `_RequestFieldType`) are gated in its header on this being non-empty.
+pub fn render_python(model: &SCXMLModel) -> String {
+    let typed = typed_host_invokes(model);
+    if typed.is_empty() {
+        return String::new();
+    }
+    let l = |ty: &SceType| -> &'static str {
+        match ty {
+            SceType::Float32 | SceType::Float64 => "float",
+            SceType::Bool => "bool",
+            SceType::String => "str",
+            SceType::Bytes => "bytes",
+            SceType::Enum(_) => unreachable!(
+                "typed_invoke::validate refuses an enum-typed field in a host-run record"
+            ),
+            _ => "int",
+        }
+    };
+    let mut out = String::new();
+    for invoke in &typed {
+        let pascal = filters::to_pascal_case(invoke.invoke_id.to_string());
+        for (record, what, role) in records_of(invoke) {
+            let Some(schema) = record else { continue };
+            let fields: String = schema
+                .fields
+                .iter()
+                .map(|f| format!("    {}: {}\n", f.id, l(&f.sce_type)))
+                .collect();
+            let wire = if what == "Result" {
+                let items: Vec<String> = schema
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        // JSON has no byte string, so a `bytes` field rides
+                        // as its byte-exact Latin-1 text.
+                        if matches!(f.sce_type, SceType::Bytes) {
+                            format!("\"{0}\": self.{0}.decode(\"latin-1\")", f.id)
+                        } else {
+                            format!("\"{0}\": self.{0}", f.id)
+                        }
+                    })
+                    .collect();
+                format!(
+                    "\n    def wire(self) -> str:\n        \
+\"\"\"The JSON `done.invoke.{id}` carries this record as.\"\"\"\n        \
+return _json.dumps({{{}}}, separators=(\",\", \":\"))\n",
+                    items.join(", "),
+                    id = invoke.invoke_id,
+                )
+            } else {
+                String::new()
+            };
+            out.push_str(&format!(
+                "@dataclass\nclass {pascal}{what}:\n    \
+\"\"\"{role} `<invoke id=\"{id}\">` with (SCE Accepted\n    \
+Subset \u{a7}2.12).\"\"\"\n\n{fields}{wire}\n\n",
+                id = invoke.invoke_id,
+            ));
+        }
+    }
+    for (invoke_type, invokes) in &by_type(&typed) {
+        let type_pascal = filters::to_pascal_case(invoke_type.to_string());
+        let type_snake = filters::to_snake_case(invoke_type.to_string());
+        let protocol = format!("{type_pascal}Invoker");
+        let fallback = has_untyped_invoke_of(model, invoke_type);
+        let mut methods = String::new();
+        let mut start_arms = String::new();
+        let mut cancel_arms = String::new();
+        let mut completions = String::new();
+        for invoke in invokes {
+            let id = invoke.invoke_id;
+            let pascal = filters::to_pascal_case(id.to_string());
+            let snake = filters::to_snake_case(id.to_string());
+            let request_param = invoke
+                .request
+                .map(|_| format!("request: {pascal}Request, "))
+                .unwrap_or_default();
+            let returns = if invoke.result.is_some() {
+                format!("Optional[{pascal}Result]")
+            } else {
+                "Optional[_HostInvokeResponse]".to_string()
+            };
+            methods.push_str(&format!(
+                "    def start_{snake}(self, {request_param}token: int) -> {returns}:\n        \
+\"\"\"W3C SCXML 6.4: begin `<invoke id=\"{id}\">`. `token` names this\n        \
+start; a host that finishes later hands it back to `complete_{snake}`\n        \
+(or `complete_host_invoke`). A value completes the invocation now.\"\"\"\n        \
+...\n\n    \
+def cancel_{snake}(self, token: int) -> None:\n        \
+\"\"\"W3C SCXML 6.4: `<invoke id=\"{id}\">`'s state exited while the start\n        \
+`token` names was still running. Stop it.\"\"\"\n        \
+...\n\n"
+            ));
+            let (read_request, typed_arg) = match invoke.request {
+                Some(schema) => {
+                    let fields: Vec<String> = schema
+                        .fields
+                        .iter()
+                        .map(|f| {
+                            format!(
+                                "                    {0}=_request_field(start, \"{0}\", {1}),\n",
+                                f.id,
+                                python_spelling(request_field_spelling(f))
+                            )
+                        })
+                        .collect();
+                    (
+                        format!(
+                            "                typed = {pascal}Request(\n{}                )\n",
+                            fields.concat()
+                        ),
+                        "typed, ",
+                    )
+                }
+                None => (String::new(), ""),
+            };
+            let start = if invoke.result.is_some() {
+                format!(
+                    "                result = invoker.start_{snake}({typed_arg}start.token)\n                \
+return None if result is None else _HostInvokeResponse(done_data=result.wire())\n"
+                )
+            } else {
+                format!("                return invoker.start_{snake}({typed_arg}start.token)\n")
+            };
+            start_arms.push_str(&format!(
+                "            if start.invoke_id == \"{id}\":\n{read_request}{start}"
+            ));
+            cancel_arms.push_str(&format!(
+                "            if cancel.invoke_id == \"{id}\":\n                \
+invoker.cancel_{snake}(cancel.token)\n                return None\n"
+            ));
+            if invoke.result.is_some() {
+                completions.push_str(&format!(
+                    "def complete_{snake}(engine, token: int, result: {pascal}Result) -> bool:\n    \
+\"\"\"Complete `<invoke id=\"{id}\">`'s start `token` with its record —\n    \
+`complete_host_invoke` with the record's JSON, so a stale or unknown token\n    \
+is refused the same way (False).\"\"\"\n    \
+return engine.complete_host_invoke(\"{invoke_type}\", \"{id}\", token, result.wire())\n\n\n"
+                ));
+            }
+        }
+        // An invoke of this type the document does not type still needs a
+        // handler; without one the adapter could only drop it, and a start
+        // nobody performed must read as error.execution, not as running.
+        let (fallback_param, fallback_doc, rest) = if fallback {
+            (
+                ", fallback",
+                "\n\n    `fallback` serves the invokes of this type the document does not type.",
+                "fallback(event)",
+            )
+        } else {
+            // Every invoke of this type is typed, so no other id reaches this
+            // handler.
+            ("", "", "None")
+        };
+        out.push_str(&format!(
+            "class {protocol}(Protocol):\n    \
+\"\"\"The host side of this document's typed `<invoke type=\"{invoke_type}\">`s\n    \
+(SCE Accepted Subset \u{a7}2.12). Register it with\n    \
+`register_{type_snake}_invoker`.\"\"\"\n\n{methods}\n\
+def register_{type_snake}_invoker(engine, invoker: {protocol}{fallback_param}) -> None:\n    \
+\"\"\"Register `invoker` as the handler for `type=\"{invoke_type}\"`.{fallback_doc}\"\"\"\n\n    \
+def handler(event):\n        \
+start = event.start\n        \
+if start is not None:\n{start_arms}            \
+return {rest}\n        \
+cancel = event.cancel\n        \
+if cancel is not None:\n{cancel_arms}            \
+return {rest}\n        \
+return None\n\n    \
+engine.register_invoker(\"{invoke_type}\", handler)\n\n\n{completions}"
+        ));
+    }
+    out
+}
+
+/// [`request_checks`] spelled as the Kotlin runtime's
+/// `TypedRequest.FieldType`.
+pub fn kotlin_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<String, String>> {
+    request_checks(model, |spelling| match spelling {
+        RequestFieldSpelling::Scalar(variant) => {
+            format!("TypedRequest.FieldType.{}", variant.to_ascii_uppercase())
+        }
+        RequestFieldSpelling::Bytes(cap) => format!("TypedRequest.FieldType.bytes({cap})"),
+    })
+}
+
+/// The Kotlin host interface: what goes beside the machine class (`defs` —
+/// the records and one invoker interface per declared `type`) and what goes
+/// inside it (`members` — registration and typed completion, which reach the
+/// engine's own `registerInvoker` / `completeHostInvoke`). Both empty when
+/// the document has no typed host-run invoke.
+pub struct KotlinHostInvokerInterface {
+    pub defs: String,
+    pub members: String,
+}
+
+/// The Kotlin host interface for `model`'s typed host-run invokes.
+pub fn render_kotlin(model: &SCXMLModel, machine_name: &str) -> KotlinHostInvokerInterface {
+    let mut defs = String::new();
+    let mut members = String::new();
+    let typed = typed_host_invokes(model);
+    if typed.is_empty() {
+        return KotlinHostInvokerInterface { defs, members };
+    }
+    for invoke in &typed {
+        let pascal = filters::to_pascal_case(invoke.invoke_id.to_string());
+        for (record, what, role) in records_of(invoke) {
+            let Some(schema) = record else { continue };
+            let params: Vec<String> = schema
+                .fields
+                .iter()
+                .map(|f| {
+                    format!(
+                        "    val {}: {},\n",
+                        f.id,
+                        crate::forge::generator::kotlin_type(&f.sce_type)
+                    )
+                })
+                .collect();
+            let body = if what == "Result" {
+                let items: Vec<String> = schema
+                    .fields
+                    .iter()
+                    .map(|f| format!("\"{0}\" to {0}", f.id))
+                    .collect();
+                format!(
+                    " {{\n    /** The JSON `done.invoke.{id}` carries this record as. */\n    \
+fun wire(): String = EventPayload.encode(mapOf({}))\n}}",
+                    items.join(", "),
+                    id = invoke.invoke_id,
+                )
+            } else {
+                String::new()
+            };
+            defs.push_str(&format!(
+                "/** {role} `<invoke id=\"{id}\">` with (SCE Accepted Subset \u{a7}2.12). */\n\
+data class {machine_name}{pascal}{what}(\n{}){body}\n\n",
+                params.concat(),
+                id = invoke.invoke_id,
+            ));
+        }
+    }
+    for (invoke_type, invokes) in &by_type(&typed) {
+        let type_pascal = filters::to_pascal_case(invoke_type.to_string());
+        let interface = format!("{machine_name}{type_pascal}Invoker");
+        let fallback = has_untyped_invoke_of(model, invoke_type);
+        let mut methods = String::new();
+        let mut start_arms = String::new();
+        let mut cancel_arms = String::new();
+        for invoke in invokes {
+            let id = invoke.invoke_id;
+            let pascal = filters::to_pascal_case(id.to_string());
+            let request_param = invoke
+                .request
+                .map(|_| format!("request: {machine_name}{pascal}Request, "))
+                .unwrap_or_default();
+            let returns = if invoke.result.is_some() {
+                format!("{machine_name}{pascal}Result?")
+            } else {
+                "StateMachineEngine.HostInvokeResponse?".to_string()
+            };
+            methods.push_str(&format!(
+                "    /**\n     * \u{a7}scxml-6.4: begin `<invoke id=\"{id}\">`. [token] names this start;\n     \
+* a host that finishes later hands it back to `complete{pascal}` (or\n     \
+* `completeHostInvoke`). Non-null completes the invocation now.\n     */\n    \
+fun start{pascal}({request_param}token: Long): {returns}\n\n    \
+/** \u{a7}scxml-6.4: `<invoke id=\"{id}\">`'s state exited while the start [token] names was still running. */\n    \
+fun cancel{pascal}(token: Long)\n"
+            ));
+            let (read_request, typed_arg) = match invoke.request {
+                Some(schema) => {
+                    let fields: Vec<String> = schema
+                        .fields
+                        .iter()
+                        .map(|f| {
+                            format!(
+                                "                            {0} = TypedRequest.{1}(start.params, start.invokeId, \"{0}\"),\n",
+                                f.id,
+                                kotlin_request_reader(&f.sce_type)
+                            )
+                        })
+                        .collect();
+                    (
+                        format!(
+                            "                        val typed = {machine_name}{pascal}Request(\n{}                        )\n",
+                            fields.concat()
+                        ),
+                        "typed, ",
+                    )
+                }
+                None => (String::new(), ""),
+            };
+            let answer = if invoke.result.is_some() {
+                "?.let { HostInvokeResponse(doneData = it.wire()) }"
+            } else {
+                ""
+            };
+            let start_method = format!("start{pascal}");
+            start_arms.push_str(&format!(
+                "                    \"{id}\" -> {{\n{read_request}                        \
+invoker.{start_method}({typed_arg}start.token){answer}\n                    }}\n"
+            ));
+            cancel_arms.push_str(&format!(
+                "                    \"{id}\" -> {{\n                        invoker.cancel{pascal}(cancel.token)\n                        null\n                    }}\n"
+            ));
+            if invoke.result.is_some() {
+                members.push_str(&format!(
+                    "\n    /**\n     * Complete `<invoke id=\"{id}\">`'s start [token] with its record —\n     \
+* `completeHostInvoke` with the record's JSON, so a stale or unknown token is\n     \
+* refused the same way (`false`).\n     */\n    \
+fun complete{pascal}(token: Long, result: {machine_name}{pascal}Result): Boolean =\n        \
+completeHostInvoke(\"{invoke_type}\", \"{id}\", token, result.wire())\n"
+                ));
+            }
+        }
+        // An invoke of this type the document does not type still needs a
+        // handler; without one the adapter could only drop it, and a start
+        // nobody performed must read as error.execution, not as running.
+        let (fallback_param, fallback_doc, rest) = if fallback {
+            (
+                ", fallback: (HostInvokeEvent) -> HostInvokeResponse?",
+                "\n     * [fallback] serves the invokes of this type the document does not type.",
+                "fallback(event)",
+            )
+        } else {
+            // Every invoke of this type is typed, so no other id reaches this
+            // handler.
+            ("", "", "null")
+        };
+        defs.push_str(&format!(
+            "/**\n * The host side of this document's typed `<invoke type=\"{invoke_type}\">`s\n \
+* (SCE Accepted Subset \u{a7}2.12). Register it with `register{type_pascal}Invoker`.\n */\n\
+interface {interface} {{\n{methods}}}\n\n"
+        ));
+        members.push_str(&format!(
+            "\n    /**\n     * Register [invoker] as the handler for `type=\"{invoke_type}\"`.{fallback_doc}\n     */\n    \
+fun register{type_pascal}Invoker(invoker: {interface}{fallback_param}) {{\n        \
+registerInvoker(\"{invoke_type}\") {{ event ->\n            \
+val start = event.start\n            \
+val cancel = event.cancel\n            \
+if (start != null) {{\n                \
+when (start.invokeId) {{\n{start_arms}                    else -> {rest}\n                }}\n            \
+}} else if (cancel != null) {{\n                \
+when (cancel.invokeId) {{\n{cancel_arms}                    else -> {rest}\n                }}\n            \
+}} else {{\n                null\n            }}\n        }}\n    }}\n"
+        ));
+    }
+    KotlinHostInvokerInterface { defs, members }
+}
+
+/// The `TypedRequest` reader for a field of type `ty`.
+fn kotlin_request_reader(ty: &SceType) -> &'static str {
+    match ty {
+        SceType::Uint8 => "uint8",
+        SceType::Uint16 => "uint16",
+        SceType::Uint32 => "uint32",
+        SceType::Uint64 => "uint64",
+        SceType::Int8 => "int8",
+        SceType::Int16 => "int16",
+        SceType::Int32 => "int32",
+        SceType::Int64 => "int64",
+        SceType::Float32 => "float32",
+        SceType::Float64 => "float64",
+        SceType::Bool => "boolean",
+        SceType::String => "string",
+        SceType::Bytes => "bytes",
+        SceType::Enum(_) => {
+            unreachable!("typed_invoke::validate refuses an enum-typed field in a host-run record")
+        }
+    }
+}
+
+fn python_spelling(spelling: RequestFieldSpelling) -> String {
+    match spelling {
+        RequestFieldSpelling::Scalar(variant) => {
+            format!("_RequestFieldType(\"{}\")", variant.to_ascii_lowercase())
+        }
+        RequestFieldSpelling::Bytes(cap) => format!("_RequestFieldType(\"bytes\", {cap})"),
+    }
+}
+
+/// The Go expression reading `f` out of the checked request `start`.
+fn go_request_reader(f: &ForgeField) -> String {
+    let id = &f.id;
+    let ty = crate::forge::generator::go_type(&f.sce_type);
+    match &f.sce_type {
+        SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => {
+            format!("sce.RequestUnsigned[{ty}](*start, \"{id}\")")
+        }
+        SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64 => {
+            format!("sce.RequestSigned[{ty}](*start, \"{id}\")")
+        }
+        SceType::Float32 | SceType::Float64 => format!("sce.RequestFloat[{ty}](*start, \"{id}\")"),
+        SceType::Bool => format!("sce.RequestBool(*start, \"{id}\")"),
+        SceType::String => format!("sce.RequestString(*start, \"{id}\")"),
+        SceType::Bytes => format!("sce.RequestBytes(*start, \"{id}\")"),
+        SceType::Enum(_) => {
+            unreachable!("typed_invoke::validate refuses an enum-typed field in a host-run record")
+        }
+    }
 }

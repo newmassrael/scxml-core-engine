@@ -379,6 +379,45 @@
 {% endfor %}
                 if _host_failed:
                     continue
+{% if inv.invoke_id in host_invoke_request_checks %}
+{% set request_checks = host_invoke_request_checks[inv.invoke_id] %}
+                # SCE Accepted Subset 2.12: `sce:request` makes the params a
+                # record, so each value is held to its field here, where the
+                # invocation starts; one that cannot be evaluated or does not
+                # fit starts nothing. A string literal was held to its field
+                # at build time, so it passes as written.
+                _host_params: dict = {}
+                _request_refused = False
+{% for param in inv.params %}
+{% if param.name in request_checks and param.is_static_literal %}
+                _host_params.setdefault({{ param.name | py_string_literal }}, []).append({{ param.static_value | py_string_literal }})
+{% elif param.name in request_checks %}
+                if not _request_refused:
+                    try:
+                        _host_params.setdefault({{ param.name | py_string_literal }}, []).append(_request_field_wire(
+                            engine._script_engine.evaluate_expression(
+                                self._session_id, {% if param.expr %}{{ param.expr | to_lua_expr | py_string_literal }}{% else %}{{ param.location | py_string_literal }}{% endif %}
+                            ),
+                            {{ param.name | py_string_literal }},
+                            {{ request_checks[param.name] }},
+                        ))
+                    except (_ScriptError, _RequestRefusal) as _refusal:
+                        self._raise_error_execution(
+                            engine,
+                            "<invoke> <param name='{{ param.name }}'> cannot be its request field: " + str(_refusal),
+                        )
+                        _request_refused = True
+{% else %}
+                try:
+                    for _name, _values in self._build_http_params(engine, [({{ param.name | py_string_literal }}, {% if param.expr %}{{ param.expr | to_lua_expr | py_string_literal }}{% else %}{{ param.location | py_string_literal }}{% endif %})], "", "<invoke>").items():
+                        _host_params.setdefault(_name, []).extend(_values)
+                except _ActionAbort:
+                    continue
+{% endif %}
+{% endfor %}
+                if _request_refused:
+                    continue
+{% else %}
                 try:
                     # The same collection a `<send>` over BasicHTTP makes: text
                     # under a name that may repeat, namelist entries first.
@@ -389,6 +428,7 @@
 ], {{ inv.namelist | default('', true) | py_string_literal }}, "<invoke>")
                 except _ActionAbort:
                     continue
+{% endif %}
 {% else %}
                 _host_params: dict = {}
 {% for param in inv.params %}

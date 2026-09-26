@@ -452,9 +452,10 @@ pub enum RequestFieldType {
 /// for a completion that does not fit its record, because the two are the
 /// same judgement made on the two halves of one invocation.
 ///
-/// The text returned is the value's own `Display` at the field's type, which
-/// is what [`request_field`] parses back — so the adapter reading a checked
-/// request cannot fail. A byte string rides as its byte-exact Latin-1 text,
+/// The text returned is the value at the field's type — a whole number's
+/// digits, a fraction as every untyped `<param>` spells one — which is what
+/// [`request_field`] parses back, so the adapter reading a checked request
+/// cannot fail. A byte string rides as its byte-exact Latin-1 text,
 /// the spelling a completion's byte field uses.
 pub fn request_field_wire(
     value: &crate::ScriptValue,
@@ -501,6 +502,12 @@ pub fn request_field_wire(
         }
         Ok(f)
     }
+    // Spelled as every untyped `<param>` is (ECMAScript's `String()`), of the
+    // value at its declared width — so a host reading the request without the
+    // adapter sees what an untyped one would, in every runtime alike.
+    fn fractional_wire(f: f64) -> String {
+        crate::helpers::event_data::script_value_to_wire_string(&ScriptValue::Double(f))
+    }
     match ty {
         RequestFieldType::Uint8 => whole::<u8>(value, name),
         RequestFieldType::Uint16 => whole::<u16>(value, name),
@@ -517,9 +524,9 @@ pub fn request_field_wire(
                     "'{name}' does not fit the width its schema declares"
                 )));
             }
-            Ok(narrowed.to_string())
+            Ok(fractional_wire(f64::from(narrowed)))
         }
-        RequestFieldType::Float64 => fractional(value, name).map(|f| f.to_string()),
+        RequestFieldType::Float64 => fractional(value, name).map(fractional_wire),
         RequestFieldType::Bool => match value {
             ScriptValue::Bool(b) => Ok(b.to_string()),
             _ => Err(PayloadRefusal::new(format!(

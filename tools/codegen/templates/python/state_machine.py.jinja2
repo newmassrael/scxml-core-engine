@@ -22,11 +22,14 @@ and entry sets, history.
 
 from __future__ import annotations
 
-{% if event_payload_active %}
+{% if host_invoker_interface %}
+import json as _json
+{% endif %}
+{% if event_payload_active or host_invoker_interface %}
 from dataclasses import dataclass
 {% endif %}
 from enum import IntEnum
-{% if has_native_actions %}
+{% if has_native_actions or host_invoker_interface %}
 from typing import Any, Dict, List, Optional, Protocol, Tuple
 {% else %}
 from typing import Any, Dict, List, Optional, Tuple
@@ -59,6 +62,16 @@ from sce_runtime import HostSendRequest as _HostSendRequest
 # reason — a machine the host serves sends for but runs no invokes for carries
 # no unused name.
 from sce_runtime import HostInvokeRequest as _HostInvokeRequest
+{% endif %}
+{% if host_invoker_interface %}
+# SCE Accepted Subset 2.12: the typed host-run invoke interface — its start
+# site's field check and its adapter's reading, and the reply type its
+# invoker returns.
+from sce_runtime import HostInvokeResponse as _HostInvokeResponse
+from sce_runtime import RequestFieldType as _RequestFieldType
+from sce_runtime import request_field as _request_field
+from sce_runtime import request_field_wire as _request_field_wire
+from sce_runtime.event_payload import TypedPayloadError as _RequestRefusal
 {% endif %}
 from sce_runtime.scripting import (
     LuaScriptEngine as _LuaScriptEngine,
@@ -246,6 +259,13 @@ def _parse_delay_text(text: str) -> int:
 # ======================================================================
 
 {{ native_actions_defs }}
+{% endif %}
+{% if host_invoker_interface %}
+# ======================================================================
+# SCE Accepted Subset 2.12: typed host-run invoke interface
+# ======================================================================
+
+{{ host_invoker_interface }}
 {% endif %}
 # ======================================================================
 # Policy

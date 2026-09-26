@@ -54,6 +54,10 @@ import com.sce.runtime.*
 // ── W3C SCXML G.7: `<sce:action>` host dispatch ───────────────────────
 {{ native_actions_defs }}
 {% endif %}
+{% if host_invoker_defs %}
+// ── SCE Accepted Subset 2.12: typed host-run invoke interface ─────────
+{{ host_invoker_defs }}
+{% endif %}
 class {{ machine_name }}StateMachine(
 {% if has_native_actions %}
     /**
@@ -208,6 +212,12 @@ class {{ machine_name }}StateMachine(
 
     // NL→IR Item C1 Path A: per-event typed `_event.data` inject seams.
 {{ event_payload_inject }}
+{% endif %}
+{% if host_invoker_members %}
+
+    // SCE Accepted Subset 2.12: registration and typed completion for this
+    // document's typed host-run invokes.
+{{ host_invoker_members }}
 {% endif %}
 
     override val initialState: {{ machine_name }}State = {{ machine_name }}State.{{ model.initial_leaf | to_state_class_name if model.initial_leaf else model.initial | to_state_class_name }}

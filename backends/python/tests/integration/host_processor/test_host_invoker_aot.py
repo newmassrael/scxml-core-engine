@@ -579,3 +579,116 @@ def test_a_typed_completion_is_read_as_its_record() -> None:
     assert _typed_completion('{"granted":true}') == (1, 0, 0), "granted"
     assert _typed_completion('{"granted":false}') == (0, 1, 0), "denied"
     assert _typed_completion("yes") == (0, 0, 1), "not the record"
+
+
+class _PermHost:
+    """A host implementing the generated interface; its work outlives the
+    call."""
+
+    def __init__(self) -> None:
+        self.starts: List[tuple] = []
+        self.cancels: List[int] = []
+
+    def start_perm(self, request, token: int):
+        self.starts.append((request, token))
+        return None
+
+    def cancel_perm(self, token: int) -> None:
+        self.cancels.append(token)
+
+
+def _typed_host():
+    """A machine driven into `typed` with a `_PermHost` registered through
+    the generated adapter, and the untyped invokes of the same type served by
+    `_running_invoker`."""
+    engine = _sm.create_engine()
+    host = _PermHost()
+    log: List[str] = []
+    _sm.register_x_sce_host_invoker(engine, host, _running_invoker(log, []))
+    engine.initialize()
+    _deliver(engine, Event.TYPE)
+    return engine, host, log
+
+
+def test_a_typed_request_reaches_its_invoker_as_its_record() -> None:
+    """SCE Accepted Subset §2.12: through the generated interface a host is
+    handed ``perm``'s request as its ``PermRequest`` record — the datamodel's
+    values at their declared types — and completes it with a ``PermResult``,
+    which the document reads as that record. An invoke of the same type the
+    document does not type still reaches the host, through the fallback."""
+    engine, host, log = _typed_host()
+    assert len(host.starts) == 1, f"perm started {len(host.starts)} times"
+    request, token = host.starts[0]
+    assert request == _sm.PermRequest(scope="calendar", level=2)
+    assert "START id=probe" in log, f"the untyped `probe` never reached the fallback: {log}"
+    assert _sm.complete_perm(engine, token, _sm.PermResult(granted=True))
+    engine.advance_time(0)
+    assert _counter(engine, "granted") == 1
+    assert _counter(engine, "unreadable") == 0
+    # A completion is accepted once: the token now names nothing running.
+    assert not _sm.complete_perm(engine, token, _sm.PermResult(granted=True))
+
+
+def test_a_request_that_does_not_fit_its_record_starts_nothing() -> None:
+    """SCE Accepted Subset §2.12, W3C SCXML 6.4.1: a request value its
+    record's field cannot hold is an argument that cannot be evaluated.
+    ``retype`` sets ``level`` to a text and re-enters ``typed``: the running
+    start is cancelled, and the new one raises error.execution and is never
+    handed to the host."""
+    engine, host, _log = _typed_host()
+    first = host.starts[0][1]
+    _deliver(engine, Event.RETYPE)
+    assert host.cancels == [first], "the running start was cancelled"
+    assert len(host.starts) == 1, f"the misfit request was started: {host.starts}"
+    assert _counter(engine, "unreadable") == 1
+
+
+def test_a_request_field_is_checked_and_read_back_by_one_rule() -> None:
+    """The start site's check and the adapter's reading are one rule: every
+    value the check accepts is spelled as text its field's type parses back to
+    the same value, and a value the field cannot hold is refused rather than
+    narrowed."""
+    import struct
+
+    from sce_runtime import (
+        HostInvokeRequest,
+        RequestFieldType,
+        ScriptValue,
+        request_field,
+        request_field_wire,
+    )
+    from sce_runtime.event_payload import TypedPayloadError
+
+    def round_trip(value, kind: str, cap: int = 0):
+        field_type = RequestFieldType(kind, cap)
+        text = request_field_wire(ScriptValue.of(value), "f", field_type)
+        return request_field(
+            HostInvokeRequest(invoke_id="perm", params={"f": [text]}), "f", field_type
+        )
+
+    assert round_trip(255, "uint8") == 255
+    assert round_trip(-3.0, "int16") == -3
+    assert round_trip(0.1, "float64") == 0.1
+    f32 = struct.unpack("<f", struct.pack("<f", 0.1))[0]
+    assert round_trip(0.1, "float32") == f32
+    assert round_trip(False, "bool") is False
+    assert round_trip("a b", "string") == "a b"
+    assert round_trip("ab", "bytes", 2) == b"ab"
+
+    for value, kind, cap, why in [
+        (256, "uint8", 0, "past the width"),
+        (-1, "uint32", 0, "below zero"),
+        (1.5, "int32", 0, "not whole"),
+        (float("nan"), "float64", 0, "not finite"),
+        (1e39, "float32", 0, "past float32"),
+        ("2", "uint8", 0, "a text"),
+        (1, "bool", 0, "a number"),
+        (1, "string", 0, "a number"),
+        ("abc", "bytes", 2, "past cap"),
+        ("Ā", "bytes", 8, "no byte"),
+    ]:
+        try:
+            request_field_wire(ScriptValue.of(value), "f", RequestFieldType(kind, cap))
+        except TypedPayloadError:
+            continue
+        raise AssertionError(f"{why}: {value!r} as {kind} was accepted")

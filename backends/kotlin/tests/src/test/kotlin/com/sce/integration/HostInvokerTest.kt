@@ -26,9 +26,14 @@
 package com.sce.integration
 
 import com.sce.integration.statechart_host_invoker.StatechartHostInvokerEvent
+import com.sce.integration.statechart_host_invoker.StatechartHostInvokerPermRequest
+import com.sce.integration.statechart_host_invoker.StatechartHostInvokerPermResult
 import com.sce.integration.statechart_host_invoker.StatechartHostInvokerState
 import com.sce.integration.statechart_host_invoker.StatechartHostInvokerStateMachine
+import com.sce.integration.statechart_host_invoker.StatechartHostInvokerXSceHostInvoker
 import com.sce.runtime.EventMetadata
+import com.sce.runtime.EventPayload
+import com.sce.runtime.TypedRequest
 import com.sce.runtime.HOST_INVOKE_DEADLINE_PARAM
 import com.sce.runtime.ManualClock
 import com.sce.runtime.StateMachineEngine
@@ -677,6 +682,117 @@ class HostInvokerTest {
             assertTrue(log.isEmpty(), "the other type's invoker was called: $log")
         } finally {
             sm.cleanup()
+        }
+    }
+
+    /** A host implementing the generated interface; its work outlives the call. */
+    private class PermHost : StatechartHostInvokerXSceHostInvoker {
+        val starts = mutableListOf<Pair<StatechartHostInvokerPermRequest, Long>>()
+        val cancels = mutableListOf<Long>()
+
+        override fun startPerm(request: StatechartHostInvokerPermRequest, token: Long): StatechartHostInvokerPermResult? {
+            starts.add(request to token)
+            return null
+        }
+
+        override fun cancelPerm(token: Long) {
+            cancels.add(token)
+        }
+    }
+
+    /**
+     * A machine driven into `typed` with a [PermHost] registered through the
+     * generated adapter, and the untyped invokes of the same type served by
+     * [runningInvoker].
+     */
+    private fun <T> withTypedHost(body: (StatechartHostInvokerStateMachine, PermHost, List<String>) -> T): T {
+        val sm = machine()
+        val host = PermHost()
+        val log = mutableListOf<String>()
+        sm.registerXSceHostInvoker(host, runningInvoker(log, mutableListOf()))
+        sm.initialize()
+        try {
+            deliver(sm, StatechartHostInvokerEvent.Type)
+            return body(sm, host, log)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * SCE Accepted Subset §2.12: through the generated interface a host is
+     * handed `perm`'s request as its `PermRequest` record — the datamodel's
+     * values at their declared types — and completes it with a `PermResult`,
+     * which the document reads as that record. An invoke of the same type the
+     * document does not type still reaches the host, through the fallback.
+     */
+    @Test
+    fun aTypedRequestReachesItsInvokerAsItsRecord() = withTypedHost { sm, host, log ->
+        assertEquals(1, host.starts.size, "perm started once")
+        val (request, token) = host.starts[0]
+        assertEquals(StatechartHostInvokerPermRequest(scope = "calendar", level = 2u), request)
+        assertTrue("START id=probe" in log, "the untyped `probe` never reached the fallback: $log")
+        assertTrue(sm.completePerm(token, StatechartHostInvokerPermResult(granted = true)))
+        sm.tick()
+        assertEquals(1L, counter(sm, "granted"))
+        assertEquals(0L, counter(sm, "unreadable"))
+        // A completion is accepted once: the token now names nothing running.
+        assertFalse(sm.completePerm(token, StatechartHostInvokerPermResult(granted = true)))
+    }
+
+    /**
+     * SCE Accepted Subset §2.12, W3C SCXML 6.4.1: a request value its record's
+     * field cannot hold is an argument that cannot be evaluated. `retype` sets
+     * `level` to a text and re-enters `typed`: the running start is cancelled,
+     * and the new one raises error.execution and is never handed to the host.
+     */
+    @Test
+    fun aRequestThatDoesNotFitItsRecordStartsNothing() = withTypedHost { sm, host, _ ->
+        val first = host.starts[0].second
+        deliver(sm, StatechartHostInvokerEvent.Retype)
+        assertEquals(listOf(first), host.cancels, "the running start was cancelled")
+        assertEquals(1, host.starts.size, "the misfit request was started: ${host.starts}")
+        assertEquals(1L, counter(sm, "unreadable"))
+    }
+
+    /**
+     * The start site's check and the adapter's reading are one rule: every
+     * value the check accepts is spelled as text its field's type parses back
+     * to the same value, and a value the field cannot hold is refused rather
+     * than narrowed.
+     */
+    @Test
+    fun aRequestFieldIsCheckedAndReadBackByOneRule() {
+        val fractional: (Any?) -> String = { (it as Double).toString() }
+        fun text(value: Any?, type: TypedRequest.FieldType) =
+            mapOf("f" to listOf(TypedRequest.wire(value, "f", type, fractional)))
+
+        assertEquals(255.toUByte(), TypedRequest.uint8(text(255, TypedRequest.FieldType.UINT8), "perm", "f"))
+        assertEquals((-3).toShort(), TypedRequest.int16(text(-3.0, TypedRequest.FieldType.INT16), "perm", "f"))
+        assertEquals(0.1, TypedRequest.float64(text(0.1, TypedRequest.FieldType.FLOAT64), "perm", "f"))
+        assertEquals(0.1f, TypedRequest.float32(text(0.1, TypedRequest.FieldType.FLOAT32), "perm", "f"))
+        assertEquals(false, TypedRequest.boolean(text(false, TypedRequest.FieldType.BOOL), "perm", "f"))
+        assertEquals("a b", TypedRequest.string(text("a b", TypedRequest.FieldType.STRING), "perm", "f"))
+        assertEquals(
+            18446744073709549568uL,
+            TypedRequest.uint64(text(1.8446744073709550e19, TypedRequest.FieldType.UINT64), "perm", "f"),
+        )
+
+        for ((value, type, why) in listOf(
+            Triple(256, TypedRequest.FieldType.UINT8, "past the width"),
+            Triple(-1, TypedRequest.FieldType.UINT32, "below zero"),
+            Triple(1.5, TypedRequest.FieldType.INT32, "not whole"),
+            Triple(Double.NaN, TypedRequest.FieldType.FLOAT64, "not finite"),
+            Triple(1e39, TypedRequest.FieldType.FLOAT32, "past float32"),
+            Triple("2", TypedRequest.FieldType.UINT8, "a text"),
+            Triple(1, TypedRequest.FieldType.BOOL, "a number"),
+            Triple(1, TypedRequest.FieldType.STRING, "a number"),
+            Triple("abc", TypedRequest.FieldType.bytes(2), "past cap"),
+            Triple("Ā", TypedRequest.FieldType.bytes(8), "no byte"),
+        )) {
+            val refused = runCatching { TypedRequest.wire(value, "f", type, fractional) }
+                .exceptionOrNull() is EventPayload.Refusal
+            assertTrue(refused, "$why: $value was accepted")
         }
     }
 }

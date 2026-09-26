@@ -965,6 +965,8 @@ fn a_request_field_is_checked_and_read_back_by_one_rule() {
     assert_eq!(request_field::<i16>(&request_of(text), "f"), -3);
     let text = read(ScriptValue::Double(0.1), RequestFieldType::Float64).expect("finite");
     assert_eq!(request_field::<f64>(&request_of(text), "f"), 0.1);
+    let text = read(ScriptValue::Double(0.1), RequestFieldType::Float32).expect("finite");
+    assert_eq!(request_field::<f32>(&request_of(text), "f"), 0.1_f32);
     let text = read(ScriptValue::Bool(false), RequestFieldType::Bool).expect("truth");
     assert!(!request_field::<bool>(&request_of(text), "f"));
     let text = read(ScriptValue::String("a b".into()), RequestFieldType::String).expect("text");

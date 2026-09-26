@@ -323,7 +323,25 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				continue
 			}
 {% endif %}
+{% if invoke_info.invoke_id in host_invoke_request_checks %}
+{% set request_checks = host_invoke_request_checks[invoke_info.invoke_id] %}
+			// SCE Accepted Subset 2.12: `sce:request` makes the params a record,
+			// so each value is held to its field here, where the invocation
+			// starts; one that does not fit starts nothing.
+			requestRefused := false
+{% for param in invoke_info.params %}
+{% if param.name in request_checks %}
+{{ param_macros.collect_typed_param_into(param, request_checks[param.name], model, 'hostInvokeParams', machine_name) -}}
+{% else %}
+{{ param_macros.collect_params_into([param], model, 'hostInvokeParams', machine_name, '<invoke>') -}}
+{% endif %}
+{% endfor %}
+			if requestRefused {
+				continue
+			}
+{% else %}
 {{ param_macros.collect_params_into(invoke_info.params, model, 'hostInvokeParams', machine_name, '<invoke>') -}}
+{% endif %}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "{{ invoke_info.invoke_type | escape_go }}",
 				InvokeID:      "{{ invoke_info.invoke_id }}",

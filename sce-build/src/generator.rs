@@ -2949,6 +2949,14 @@ fn render_kotlin(
         .collect();
     let payload = crate::forge::generator::build_kotlin_event_payload(model, &payload_events);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
+    // the start site holds each request field to; all empty without one.
+    let host_invoker = crate::forge::host_invoker_interface::render_kotlin(
+        model,
+        &filters::to_pascal_case(model.name.clone()),
+    );
+    let host_invoke_request_checks =
+        crate::forge::host_invoker_interface::kotlin_request_checks(model);
     model_lowered.into_artifact_coordinates();
     let model = &model_lowered;
 
@@ -2997,6 +3005,9 @@ fn render_kotlin(
         event_payload_policy_fields => &payload.policy_fields,
         event_payload_populate => &payload.populate,
         event_payload_inject => &payload.inject_methods,
+        host_invoker_defs => &host_invoker.defs,
+        host_invoker_members => &host_invoker.members,
+        host_invoke_request_checks => &host_invoke_request_checks,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         // The `sce:direction="out"` variables — what the host reads and the
         // snapshot carries (SCE Accepted Subset §2.15).
@@ -3285,6 +3296,11 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
     let payload =
         crate::forge::generator::build_python_event_payload(model, &native.payload_events);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
+    // the start site holds each request field to; both empty without one.
+    let host_invoker_interface = crate::forge::host_invoker_interface::render_python(model);
+    let host_invoke_request_checks =
+        crate::forge::host_invoker_interface::python_request_checks(model);
     model_lowered.into_artifact_coordinates();
     let model = &model_lowered;
 
@@ -3300,6 +3316,8 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
         event_payload_init => &payload.init,
         event_payload_populate => &payload.populate,
         event_payload_inject => &payload.inject,
+        host_invoker_interface => &host_invoker_interface,
+        host_invoke_request_checks => &host_invoke_request_checks,
         has_native_actions => native.any,
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,
@@ -3335,6 +3353,11 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
         crate::forge::native_action::render(&mut model_lowered, &machine_name, Language::Go);
     let payload = crate::forge::generator::build_go_event_payload(model, &native.payload_events);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
+    // the start site holds each request field to; both empty without one.
+    let host_invoker_interface =
+        crate::forge::host_invoker_interface::render_go(model, &machine_name);
+    let host_invoke_request_checks = crate::forge::host_invoker_interface::go_request_checks(model);
     model_lowered.into_artifact_coordinates();
     let model = &model_lowered;
 
@@ -3351,6 +3374,8 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
         event_payload_populate => &payload.populate,
         event_payload_lift => &payload.lift,
         event_payload_clear => &payload.clear,
+        host_invoker_interface => &host_invoker_interface,
+        host_invoke_request_checks => &host_invoke_request_checks,
         has_native_actions => native.any,
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,
