@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A read-only `list<T>` parameter (SCE_FORGE.md §4.12): the caller's
+  elements, read by `<sce:foreach>`, `len` and an index, never written. The
+  sum of `xs`, plus its last element once more when there is one.
+
+  It declares may-fail because the sum grows with the list, which no guard
+  bounds; the oracle's cases stay inside int64. The empty list is a case: a
+  list parameter may be empty, and every backend's view says so.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="xs" type="list&lt;int32&gt;"/>
+    <sce:return type="int64" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="s" type="int64" init="0"/>
+    <sce:foreach item="x" in="xs">
+      <sce:assign target="s" expr="s + x"/>
+    </sce:foreach>
+    <sce:var name="n" type="uint32" init="len(xs)"/>
+    <sce:if cond="n &gt; 0">
+      <sce:assign target="s" expr="s + xs[n - 1]"/>
+    </sce:if>
+    <sce:return expr="s"/>
+  </sce:body>
+</scxml>

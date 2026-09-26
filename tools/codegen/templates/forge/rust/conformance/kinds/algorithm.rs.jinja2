@@ -24,7 +24,7 @@
    AlgorithmError>`. A case that names a failure (`"fails": "overflow"`)
    carries no `expected`; it is judged by the error's contract name before
    anything reads `expected`, and every other case unwraps the value. #}
-{% set call %}fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
+{% set call %}fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" or arg_ty.list_of is defined %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
 {% if f.output.compare == "tolerance" %}
     let tol = tolerance(&reference);
 {% endif %}
@@ -38,6 +38,13 @@
             {{ fld.ident }}: {{ ("case[\"args\"][" ~ i ~ "][\"" ~ fld.name ~ "\"]") | rust_unmarshal(fld.type) }},
 {% endfor %}
         };
+{% elif arg_ty.list_of is defined %}
+        let arg{{ i }}: Vec<{{ arg_ty.list_of | rust_type }}> = case["args"][{{ i }}]
+            .as_array()
+            .expect("a list argument is an array")
+            .iter()
+            .map(|x| {{ "x" | rust_unmarshal(arg_ty.list_of) }})
+            .collect();
 {% else %}
         let arg{{ i }} = {{ ("case[\"args\"][" ~ i ~ "]") | rust_unmarshal(arg_ty) }};
 {% endif %}

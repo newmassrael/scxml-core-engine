@@ -21111,6 +21111,44 @@ fn render_observer(
 
 // ── Algorithm (RFC §synth-5-A) ──────────────────────────────────────
 
+/// The declared type a list's element is — the inverse of
+/// [`ListElem::of`](crate::forge::types::ListElem::of), which admits only
+/// these.
+fn sce_type_of_list_elem(elem: crate::forge::types::ListElem) -> SceType {
+    use crate::forge::types::InferredType;
+    match elem.element_type() {
+        InferredType::Int {
+            signed: false,
+            bits: 8,
+        } => SceType::Uint8,
+        InferredType::Int {
+            signed: false,
+            bits: 16,
+        } => SceType::Uint16,
+        InferredType::Int {
+            signed: false,
+            bits: 32,
+        } => SceType::Uint32,
+        InferredType::Int { signed: false, .. } => SceType::Uint64,
+        InferredType::Int {
+            signed: true,
+            bits: 8,
+        } => SceType::Int8,
+        InferredType::Int {
+            signed: true,
+            bits: 16,
+        } => SceType::Int16,
+        InferredType::Int {
+            signed: true,
+            bits: 32,
+        } => SceType::Int32,
+        InferredType::Int { signed: true, .. } => SceType::Int64,
+        InferredType::Float { bits: 32 } => SceType::Float32,
+        InferredType::Float { .. } => SceType::Float64,
+        _ => SceType::Bool,
+    }
+}
+
 /// Per-language parameter type for an algorithm signature.
 ///
 /// RFC §synth-5-A diverges from `cpp_param_type` for `bytes`: algorithms
@@ -21517,6 +21555,24 @@ impl<'a> ListSpelling<'a> {
             lang: l.lang,
             elem,
             elem_name: l.type_name(elem).into_owned(),
+        }
+    }
+
+    /// A read-only `list<T>` parameter: a borrowed view of the caller's
+    /// elements on every backend, as a `bytes` parameter is — Rust a slice,
+    /// C++ a `std::span`, C11 the runtime's `{const T *data; size_t len}`
+    /// view for the element, Go a slice, Kotlin the element's primitive
+    /// array, Python a list.
+    fn param_type(&self) -> String {
+        use crate::generator::Language;
+        let t = &self.elem_name;
+        match self.lang {
+            Language::Rust => format!("&[{t}]"),
+            Language::Cpp => format!("std::span<const {t}>"),
+            Language::C11 => format!("sce_forge_{}_view_t", t.trim_end_matches("_t")),
+            Language::Go => format!("[]{t}"),
+            Language::Python => format!("list[{t}]"),
+            Language::Kotlin => self.kotlin_array_type().to_string(),
         }
     }
 
@@ -22656,11 +22712,20 @@ fn lower_algorithm_stmt(
                 // (bytes-typed params + BC import aliases) so the JSON
                 // wire's `key_fragments` content-hash stays
                 // discriminating per source-name shape.
-                if !matches!(type_ctx.lookup_var(source), InferredType::Bytes) {
+                // A read-only `list<T>` parameter iterates the same way, its
+                // item typed as the element.
+                let item_type: SceType = match type_ctx.lookup_var(source) {
+                    InferredType::Bytes => SceType::Uint8,
+                    InferredType::List(elem) => sce_type_of_list_elem(elem),
+                    _ => SceType::Bytes,
+                };
+                if item_type == SceType::Bytes {
                     let mut candidates: Vec<String> = type_ctx
                         .vars
                         .iter()
-                        .filter(|(_, ty)| matches!(**ty, InferredType::Bytes))
+                        .filter(|(_, ty)| {
+                            matches!(**ty, InferredType::Bytes | InferredType::List(_))
+                        })
                         .map(|(name, _)| (*name).to_string())
                         .collect();
                     candidates.extend(
@@ -22689,21 +22754,28 @@ fn lower_algorithm_stmt(
                 )
                 .map_err(|refusal| source_site.place(refusal))?;
                 let it = l.local_id(item);
+                let item_name = l.type_name(&item_type);
                 let header = match lang {
                     Language::Rust => format!("{pad}for &{it} in {src_lowered}.iter() {{\n"),
-                    Language::Cpp => format!("{pad}for (std::uint8_t {it} : {src_lowered}) {{\n"),
+                    Language::Cpp => format!("{pad}for ({item_name} {it} : {src_lowered}) {{\n"),
                     Language::C11 => format!(
-                        "{pad}for (size_t __i = 0; __i < {src_lowered}.len; ++__i) {{\n{pad}    uint8_t {it} = {src_lowered}.data[__i];\n"
+                        "{pad}for (size_t __i = 0; __i < {src_lowered}.len; ++__i) {{\n{pad}    {item_name} {it} = {src_lowered}.data[__i];\n"
                     ),
                     // Kotlin's `ByteArray` iteration yields signed `Byte`,
                     // but RFC §synth-5-A v1 declares the foreach item as `uint8`
                     // — the type ctx hands the body a `UByte`. Reinterpret
                     // each iteration's `Byte` as `UByte` (bit-pattern
                     // preserved) so subsequent `<sce:var type="uintN" init="b">`
-                    // widenings via `.toUShort()` zero-extend correctly.
-                    Language::Kotlin => format!(
-                        "{pad}for (__raw_{it} in {src_lowered}) {{\n{pad}    val {it}: UByte = __raw_{it}.toUByte()\n"
-                    ),
+                    // widenings via `.toUShort()` zero-extend correctly. A list
+                    // parameter's primitive array already yields its element.
+                    Language::Kotlin if item_type == SceType::Uint8
+                        && matches!(type_ctx.lookup_var(source), InferredType::Bytes) =>
+                    {
+                        format!(
+                            "{pad}for (__raw_{it} in {src_lowered}) {{\n{pad}    val {it}: UByte = __raw_{it}.toUByte()\n"
+                        )
+                    }
+                    Language::Kotlin => format!("{pad}for ({it} in {src_lowered}) {{\n"),
                     Language::Go => format!("{pad}for _, {it} := range {src_lowered} {{\n"),
                     Language::Python => format!("{pad}for {it} in {src_lowered}:\n"),
                 };
@@ -23710,6 +23782,9 @@ fn reject_may_fail_in_unsupported_lang(
 pub(crate) struct AlgorithmTypes<'a> {
     /// Parameters, locals and byte foreach items, each a scalar.
     env: Vec<(String, SceType)>,
+    /// Every `list<T>` parameter and its element type: read by `xs[i]`,
+    /// `len(xs)` and `<sce:foreach in="xs">`, never written.
+    list_params: Vec<(String, SceType)>,
     /// Foreach items over a bounded collection, and whether their element
     /// schema was threaded (closed) or not (open).
     record_items: Vec<(&'a str, crate::forge::types::RecordShape)>,
@@ -23737,14 +23812,20 @@ impl<'a> AlgorithmTypes<'a> {
         options: &crate::ForgeCompileOptions,
     ) -> Result<Self, ForgeError> {
         use crate::forge::types::RecordShape;
-        // A `list<T>` parameter is refused by the parser in v1, so every
-        // parameter here is a scalar; `filter_map` states that rather than
-        // assuming it.
+        // A scalar parameter is a value; a `list<T>` one is a read-only
+        // collection, typed below as a list of its element. A record one is
+        // registered with its fields from the record bindings.
         let mut env: Vec<(String, SceType)> = m
             .signature
             .params
             .iter()
             .filter_map(|p| p.sce_type.scalar().map(|t| (p.name.clone(), t.clone())))
+            .collect();
+        let list_params: Vec<(String, SceType)> = m
+            .signature
+            .params
+            .iter()
+            .filter_map(|p| p.sce_type.list_elem().map(|t| (p.name.clone(), t.clone())))
             .collect();
         // An item over a bounded collection is an element — a record whose
         // fields `members` below registers when the element schema was
@@ -23786,7 +23867,12 @@ impl<'a> AlgorithmTypes<'a> {
                         record_items.push((name, shape));
                         continue;
                     }
-                    SceType::Uint8
+                    // An item over a `list<T>` parameter is an element; over
+                    // `bytes`, a byte.
+                    match list_params.iter().find(|(p, _)| p == source) {
+                        Some((_, elem)) => elem.clone(),
+                        None => SceType::Uint8,
+                    }
                 }
                 // Registered with its fields from the record bindings below.
                 crate::forge::model::AlgorithmBinding::RecordLocal { .. } => continue,
@@ -23852,6 +23938,7 @@ impl<'a> AlgorithmTypes<'a> {
 
         Ok(Self {
             env,
+            list_params,
             record_items,
             records,
             members,
@@ -23869,6 +23956,14 @@ impl<'a> AlgorithmTypes<'a> {
         let mut type_ctx = TypeCtx::new();
         for (name, ty) in &self.env {
             type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
+        }
+        // A list parameter is a list as a value (`len(xs)`, a foreach source)
+        // and its element under an index (`xs[i]`).
+        for (name, elem) in &self.list_params {
+            if let Some(list_elem) = crate::forge::types::ListElem::of(elem) {
+                type_ctx.insert_var(name.as_str(), InferredType::List(list_elem));
+            }
+            type_ctx.insert_array_elem(name.as_str(), InferredType::from_sce_type(elem));
         }
         for &(name, shape) in &self.record_items {
             type_ctx.insert_record(name, shape);
@@ -24042,8 +24137,8 @@ fn render_algorithm(
     // declared `<sce:param>` entries. Existing algorithm fixtures
     // without imports are unaffected (BC-import filter is empty →
     // params_str byte-identical to v1).
-    // A `list<T>` parameter is refused by the parser in v1; one reaching here
-    // is a gate that failed, and it says so rather than emitting a signature.
+    // A `list<T>` parameter is a borrowed, read-only view of the caller's
+    // elements ([`ListSpelling::param_type`]).
     let declared_params: Vec<String> = m
         .signature
         .params
@@ -24059,6 +24154,9 @@ fn render_algorithm(
                     &format!("<sce:param name=\"{}\">", p.name),
                 )?;
                 return Ok(l.place_param(&p.name, &record.qualified_type));
+            }
+            if let Some(elem) = p.sce_type.list_elem() {
+                return Ok(l.place_param(&p.name, &ListSpelling::new(&l, elem).param_type()));
             }
             p.sce_type
                 .scalar()
@@ -24374,6 +24472,14 @@ fn render_algorithm(
     ctx.insert("body".into(), body.into());
     ctx.insert("may_fail".into(), may_fail.into());
     ctx.insert("needs_span".into(), needs_span.into());
+    // C11 declares a read-only `list<T>` parameter as the runtime's view for
+    // its element (`sce/forge/list_view.h`).
+    let needs_list_view = m
+        .signature
+        .params
+        .iter()
+        .any(|p| p.sce_type.list_elem().is_some());
+    ctx.insert("needs_list_view".into(), needs_list_view.into());
     // RFC §synth-5-A: Rust `#![no_std]`-clean when no `bytes` parameter
     // *and* no array-form consts (the latter pull in
     // `core::array`-equivalent imports on some target backends —
@@ -24386,13 +24492,18 @@ fn render_algorithm(
     ctx.insert("consts_prelude".into(), consts_prelude.into());
     ctx.insert("needs_std_array".into(), needs_std_array.into());
     ctx.insert("needs_vector".into(), needs_vector.into());
-    // A `list<T>` of an unsigned element returns the stdlib's unsigned array
-    // (`ULongArray`, …), which is behind the same opt-in as an unsigned
-    // const table.
+    // A `list<T>` of an unsigned element — returned or taken — is the
+    // stdlib's unsigned array (`ULongArray`, …), which is behind the same
+    // opt-in as an unsigned const table.
     let kotlin_needs_opt_in_unsigned = kotlin_needs_opt_in_unsigned
         || return_list
             .as_ref()
-            .is_some_and(|list| list.kotlin_needs_unsigned_opt_in());
+            .is_some_and(|list| list.kotlin_needs_unsigned_opt_in())
+        || m.signature.params.iter().any(|p| {
+            p.sce_type
+                .list_elem()
+                .is_some_and(|elem| ListSpelling::new(&l, elem).kotlin_needs_unsigned_opt_in())
+        });
     ctx.insert(
         "kotlin_needs_opt_in_unsigned".into(),
         kotlin_needs_opt_in_unsigned.into(),

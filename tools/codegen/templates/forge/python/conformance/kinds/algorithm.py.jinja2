@@ -32,6 +32,8 @@
             )
 {% elif arg_ty == "bytes" %}
             arg{{ ai }} = bytes(case["args"][{{ ai }}])
+{% elif arg_ty.list_of is defined %}
+            arg{{ ai }} = list(case["args"][{{ ai }}])
 {% else %}
             arg{{ ai }} = case["args"][{{ ai }}]
 {% endif %}

@@ -48,6 +48,18 @@ static void test_{{ f.name }}(void) {
 {% elif arg_ty == "bytes" %}
         uint8_t input_arg{{ loop.index0 }}[256];
         size_t  input_arg{{ loop.index0 }}_len;
+{% elif arg_ty.list_of is defined %}
+{# A `list<T>` argument is baked as long as its longest case (at least one
+   slot, since C11 has no empty array) and passed as the element's view. #}
+{% set ai = loop.index0 %}
+{% set w = namespace(n=1) %}
+{% for c in f.cases %}
+{% if c.args[ai] | length > w.n %}
+{% set w.n = c.args[ai] | length %}
+{% endif %}
+{% endfor %}
+        {{ arg_ty.list_of | c_type }} input_arg{{ ai }}[{{ w.n }}];
+        size_t  input_arg{{ ai }}_len;
 {% else %}
         {{ arg_ty | c_type }} input_arg{{ loop.index0 }};
 {% endif %}
@@ -72,6 +84,9 @@ static void test_{{ f.name }}(void) {
             .input_arg{{ ai }} = { {% for fld in arg_ty.fields %}.{{ fld.ident }} = {{ c.args[ai][fld.name] | c_literal(fld.type) }}, {% endfor %}},
 {% elif arg_ty == "bytes" %}
             .input_arg{{ ai }} = {{ c.args[ai] | c_literal(arg_ty) }},
+            .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
+{% elif arg_ty.list_of is defined %}
+            .input_arg{{ ai }} = { {% for v in c.args[ai] %}{{ v | c_literal(arg_ty.list_of) }}, {% else %}0{% endfor %} },
             .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
 {% else %}
             .input_arg{{ ai }} = {{ c.args[ai] | c_literal(arg_ty) }},
@@ -99,6 +114,8 @@ static void test_{{ f.name }}(void) {
         sce_forge_bytes_t arg{{ loop.index0 }} = {0};
         memcpy(arg{{ loop.index0 }}.data, cases[i].input_arg{{ loop.index0 }}, cases[i].input_arg{{ loop.index0 }}_len);
         arg{{ loop.index0 }}.len = cases[i].input_arg{{ loop.index0 }}_len;
+{% elif arg_ty.list_of is defined %}
+        const sce_forge_{{ (arg_ty.list_of | c_type) | replace("_t", "") }}_view_t arg{{ loop.index0 }} = { cases[i].input_arg{{ loop.index0 }}, cases[i].input_arg{{ loop.index0 }}_len };
 {% else %}
         {{ arg_ty | c_type }} arg{{ loop.index0 }} = cases[i].input_arg{{ loop.index0 }};
 {% endif %}

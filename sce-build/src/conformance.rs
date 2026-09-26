@@ -128,16 +128,26 @@ pub enum AlgorithmOutput {
     Scalar(ScalarOutput),
 }
 
-/// One argument of an algorithm fixture: a canonical scalar (`"i64"`), or a
-/// record typed by an event-schema fixture (`{"record": "<fixture>"}`) —
-/// SCE_FORGE.md §4.12. Untagged so a scalar argument keeps its bare-string
-/// spelling.
+/// One argument of an algorithm fixture: a canonical scalar (`"i64"`), a
+/// record typed by an event-schema fixture (`{"record": "<fixture>"}`), or a
+/// read-only `list<T>` (`{"list_of": "i64"}`) — SCE_FORGE.md §4.12. Untagged
+/// so a scalar argument keeps its bare-string spelling.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum AlgorithmArg {
     Scalar(CanonicalType),
     Record(RecordRef),
+    List(ListArg),
+}
+
+/// A `list<T>` argument: the oracle writes it as a JSON array of `list_of`
+/// values, and each fragment builds the backend's list from it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ListArg {
+    pub list_of: CanonicalType,
 }
 
 /// A record argument or output: the event-schema fixture whose payload
@@ -1331,7 +1341,7 @@ impl Manifest {
                         .iter()
                         .filter_map(|a| match a {
                             AlgorithmArg::Record(r) => Some(r),
-                            AlgorithmArg::Scalar(_) => None,
+                            AlgorithmArg::Scalar(_) | AlgorithmArg::List(_) => None,
                         })
                         .chain(match output {
                             AlgorithmOutput::Record(r) => Some(r),

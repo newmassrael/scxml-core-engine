@@ -1373,6 +1373,17 @@
         { "args": [-9223372036854775808, 0], "fails": "overflow", "note": "int64 MIN" }
       ]
     },
+    "algorithm_list_param_sum": {
+      "fixture": "algorithm_list_param_sum",
+      "signature": "(xs: list<i32>) -> i64 may-fail",
+      "formula": "the sum of xs, plus its last element again when xs is not empty — a read-only list<T> parameter read by foreach, len and an index (SCE_FORGE.md §4.12)",
+      "cases": [
+        { "args": [[1, 2, 3]], "expected": 9 },
+        { "args": [[]], "expected": 0, "note": "an empty list" },
+        { "args": [[-5]], "expected": -10 },
+        { "args": [[2147483647, 2147483647]], "expected": 6442450941, "note": "the sum leaves int32; the elements do not" }
+      ]
+    },
     "algorithm_crc16": {
       "fixture": "algorithm_crc16",
       "signature": "(data: bytes) -> u16",

@@ -6595,10 +6595,12 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         }
         ExprKind::Index { object, index } => {
             // A `bytes` operand lowers to `sce_forge_bytes_view_t`
-            // (`{const uint8_t *data; size_t len}`), so a random byte
-            // read projects through `.data` — mirroring the foreach
-            // arm's `src.data[__i]`. Item C7 wildcard-keyexpr lowering.
-            let accessor = if matches!(object.ty, InferredType::Bytes) {
+            // (`{const uint8_t *data; size_t len}`), and a `list<T>`
+            // parameter to its element's `sce_forge_<T>_view_t` of the same
+            // shape, so a random read projects through `.data` — mirroring
+            // the foreach arm's `src.data[__i]`. Item C7 wildcard-keyexpr
+            // lowering.
+            let accessor = if matches!(object.ty, InferredType::Bytes | InferredType::List(_)) {
                 ".data"
             } else {
                 ""

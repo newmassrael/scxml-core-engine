@@ -26,13 +26,16 @@
   },
   "definitions": {
     "AlgorithmArg": {
-      "description": "One argument of an algorithm fixture: a canonical scalar (`\"i64\"`), or a record typed by an event-schema fixture (`{\"record\": \"<fixture>\"}`) — SCE_FORGE.md §4.12. Untagged so a scalar argument keeps its bare-string spelling.",
+      "description": "One argument of an algorithm fixture: a canonical scalar (`\"i64\"`), a record typed by an event-schema fixture (`{\"record\": \"<fixture>\"}`), or a read-only `list<T>` (`{\"list_of\": \"i64\"}`) — SCE_FORGE.md §4.12. Untagged so a scalar argument keeps its bare-string spelling.",
       "anyOf": [
         {
           "$ref": "#/definitions/CanonicalType"
         },
         {
           "$ref": "#/definitions/RecordRef"
+        },
+        {
+          "$ref": "#/definitions/ListArg"
         }
       ]
     },
@@ -650,6 +653,19 @@
           "$ref": "#/definitions/StubKind"
         }
       }
+    },
+    "ListArg": {
+      "description": "A `list<T>` argument: the oracle writes it as a JSON array of `list_of` values, and each fragment builds the backend's list from it.",
+      "type": "object",
+      "required": [
+        "list_of"
+      ],
+      "properties": {
+        "list_of": {
+          "$ref": "#/definitions/CanonicalType"
+        }
+      },
+      "additionalProperties": false
     },
     "ListOutput": {
       "description": "List output descriptor for an algorithm that returns `list<T>` (SCE_FORGE.md §4.12): `expected` is a JSON array, compared element by element and by length. `list_of` names the element's canonical type; `compare` applies to each element.\n\n⚠ Cases stay within the declared capacity. Past it the backends differ by contract (Rust/C11 fail, the heap backends grow), so an overflowing case would measure that difference rather than the algorithm.",

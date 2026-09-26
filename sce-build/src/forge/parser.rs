@@ -6990,25 +6990,10 @@ fn parse_algorithm_signature(
                     "type",
                     type_str,
                 )?;
-                // v1 lists are built and returned, not passed in: a list
-                // parameter needs a borrowed view per element type on C11 and
-                // an iteration rule on every backend, which v1 does not
-                // define. Refused on the element that declares it.
-                if sce_type.list_elem().is_some() {
-                    return Err(located(
-                        &child,
-                        doc_name,
-                        ValidationError::AttributeRuleViolated {
-                            element: format!("<sce:param name=\"{name}\">"),
-                            attr: "type".into(),
-                            value: value_as_written(&child, "type", type_str),
-                            rule: "a scalar or bytes — a list<T> is a buffer an algorithm \
-                                   builds and returns; list<T> parameters are not supported in \
-                                   v1 (SCE_FORGE.md §4.12)"
-                                .into(),
-                        },
-                    ));
-                }
+                // A `list<T>` parameter is a read-only view of the caller's
+                // elements (SCE_FORGE.md §4.12): read by index, `len` and
+                // `<sce:foreach>`, and refused as an assignment or append
+                // target like every parameter (`reject_param_assignment`).
                 params.push(AlgorithmParam {
                     name,
                     sce_type,

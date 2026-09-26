@@ -45,6 +45,9 @@
 		for __i, __v := range arg{{ loop.index0 }}_buf {
 			arg{{ loop.index0 }}[__i] = byte(__v)
 		}
+{% elif arg_ty.list_of is defined %}
+		var arg{{ loop.index0 }} []{{ arg_ty.list_of | go_type }}
+		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
 {% else %}
 		var arg{{ loop.index0 }} {{ arg_ty | go_type }}
 		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")

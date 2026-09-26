@@ -1358,9 +1358,9 @@ Some algorithms produce a data-dependent number of *numbers* rather than bytes �
 
 `SceBytes<N>` is `SceOwnedList<u8, N>` under another name — one bounded-buffer type in the Rust runtime, not two. Kotlin's `SceListBuf` holds every element in a 64-bit slot and converts once at the return, so one buffer class serves every `T` without boxing.
 
-**v1 scope — a list crosses only the host boundary.** A `list<T>` is something an algorithm builds and hands to its host:
+**v1 scope — a list crosses only the host boundary.** A `list<T>` is something an algorithm builds and hands to its host, or takes from it:
 
-- a `list<T>` **parameter** is refused (`validation/attribute-rule-violated`);
+- a `list<T>` **parameter** is a read-only view of the caller's elements, never copied: Rust `&[T]`, C++ `std::span<const T>`, C11 the runtime's `sce_forge_<T>_view_t` (`{const T *data; size_t len}`, `sce/forge/list_view.h`, the byte view's shape), Go `[]T`, Kotlin the element's primitive array, Python `list[T]`. The body reads it by `xs[i]`, `len(xs)` and `<sce:foreach in="xs">` (the item typed as the element); it is never an assignment or append target, as no parameter is (`algorithm/lvalue-unsupported`). Conformance: `algorithm_list_param_sum`, whose cases include an empty list;
 - an algorithm whose signature takes or returns a list cannot be **called from another algorithm**, in either the `<sce:call>` statement or an expression (`expression/unsupported-construct`, at the call target). Its signature is kept out of the caller's type table rather than entered with an unknown type, so the refusal comes from that fact and never from a call that went unjudged;
 - a `<sce:test-vector>` on a list-returning algorithm is refused — the vector's `value=` is a scalar.
 

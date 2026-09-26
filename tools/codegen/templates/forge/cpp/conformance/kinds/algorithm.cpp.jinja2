@@ -37,6 +37,10 @@
             arg{{ loop.index0 }}_buf.push_back(static_cast<std::uint8_t>(b.get<unsigned int>()));
         }
         std::span<const std::uint8_t> arg{{ loop.index0 }}{ arg{{ loop.index0 }}_buf };
+{% elif arg_ty.list_of is defined %}
+{# A `list<T>` argument: the elements held in a vector, which the
+   parameter's `std::span<const T>` views. #}
+        const auto arg{{ loop.index0 }} = c["args"][{{ loop.index0 }}].get<std::vector<{{ arg_ty.list_of | cpp_type }}>>();
 {% else %}
         auto arg{{ loop.index0 }} = c["args"][{{ loop.index0 }}].get<{{ arg_ty | cpp_type }}>();
 {% endif %}
