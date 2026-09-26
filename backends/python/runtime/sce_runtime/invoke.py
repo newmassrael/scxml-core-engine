@@ -219,6 +219,17 @@ DONE_INVOKE_PREFIX = "done.invoke."
 #: names no specific ``done.invoke.<id>`` matches every completion through it.
 DONE_INVOKE_EVENT = "done.invoke"
 
+#: The event an invocation that did not finish raises instead of its
+#: completion — a host-run invocation past its ``_sce_deadline_ms`` — named the
+#: way ``sce:mesh-rpc`` names a request that ran out of time (SCE_MESH.md
+#: §9.5), so a document handles the two alike. Specific form:
+#: ``error.invoke.<id>``.
+ERROR_INVOKE_PREFIX = "error.invoke."
+
+#: The generic form of `ERROR_INVOKE_PREFIX`, for a document that names no
+#: specific ``error.invoke.<id>`` — as `DONE_INVOKE_EVENT` is for a completion.
+ERROR_INVOKE_EVENT = "error.invoke"
+
 
 def create_done_invoke_event_name(invoke_id: str) -> str:
     """W3C SCXML 6.3.1 — `done.invoke.<id>` event name."""

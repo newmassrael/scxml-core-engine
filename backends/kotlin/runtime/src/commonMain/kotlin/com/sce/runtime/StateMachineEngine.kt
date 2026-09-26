@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 // Process-wide counter for scriptSessionId allocation. Using hashCode() here
 // would collide across instances (32-bit identity hash has no uniqueness
@@ -40,6 +41,57 @@ const val DONE_INVOKE_PREFIX = "done.invoke."
  * specific `done.invoke.<id>` matches every completion through it.
  */
 const val DONE_INVOKE_EVENT = "done.invoke"
+
+/**
+ * The event an invocation that did not finish raises instead of its
+ * completion — a host-run invocation past its [HOST_INVOKE_DEADLINE_PARAM] —
+ * named the way `sce:mesh-rpc` names a request that ran out of time
+ * (SCE_MESH.md §9.5), so a document handles the two alike. Specific form:
+ * `error.invoke.<id>`.
+ */
+const val ERROR_INVOKE_PREFIX = "error.invoke."
+
+/**
+ * The generic form of [ERROR_INVOKE_PREFIX], for a document that names no
+ * specific `error.invoke.<id>` — as [DONE_INVOKE_EVENT] is for a completion.
+ */
+const val ERROR_INVOKE_EVENT = "error.invoke"
+
+/**
+ * The reserved `<param>` a host-run `<invoke>` names its deadline with, in
+ * milliseconds. The engine reads it and does not hand it to the host: past the
+ * deadline, an invocation still running is cancelled and the document receives
+ * `error.invoke.<id>` instead of its completion. A neutral name rather than
+ * `sce:mesh-rpc`'s `_mesh_deadline_ms`, so the two invoke types converge on one
+ * spelling.
+ */
+const val HOST_INVOKE_DEADLINE_PARAM = "_sce_deadline_ms"
+
+/**
+ * Read the text of a [HOST_INVOKE_DEADLINE_PARAM] value as milliseconds.
+ *
+ * One or more ASCII digits, optionally followed by `.` and one or more `0` — a
+ * `<param expr>` reaches the request as the text of its value, and a script
+ * engine may render a whole number `5000.0` — within a signed 64-bit count.
+ * Anything else is `null`: no sign, no whitespace, no exponent, no digit
+ * separator.
+ *
+ * Spelled out rather than left to `toLongOrNull`/`toDoubleOrNull`, because
+ * every runtime implements it and the languages' number parsers disagree; the
+ * table they are all held to is
+ * `sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json`.
+ */
+fun parseHostInvokeDeadlineMs(written: String): Long? {
+    val dot = written.indexOf('.')
+    val whole = if (dot < 0) written else written.substring(0, dot)
+    if (whole.isEmpty() || whole.any { it !in '0'..'9' }) return null
+    if (dot >= 0) {
+        val fraction = written.substring(dot + 1)
+        if (fraction.isEmpty() || fraction.any { it != '0' }) return null
+    }
+    // All ASCII digits, so the only way this fails is a value past Long.MAX_VALUE.
+    return whole.toLongOrNull()
+}
 
 /**
  * §scxml-5.10: Event metadata for _event system variable.
@@ -805,9 +857,42 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     protected fun performHostInvoke(request: HostInvokeRequest): Boolean {
         val handler = hostInvokers[request.processorType] ?: return false
+        // A [HOST_INVOKE_DEADLINE_PARAM] is the engine's, not the host's: it is
+        // taken out of the request and armed with the start. A value that is not
+        // a whole number of milliseconds raises `error.execution` and starts
+        // nothing — an argument of the element that cannot be evaluated
+        // (§scxml-6.4.1) — and the call answers `true` because the report has
+        // been made; `false` is kept for "no invoker ran it", asked first above
+        // because it is the prior fact.
+        val deadlineValues = request.params[HOST_INVOKE_DEADLINE_PARAM]
+        val deadlineMs = deadlineValues?.singleOrNull()?.let(::parseHostInvokeDeadlineMs)
+        if (deadlineValues != null && deadlineMs == null) {
+            resolveEventByName("error.execution")?.let {
+                raisePlatformError(
+                    it,
+                    "<invoke type='${request.processorType}' id='${request.invokeId}'>: " +
+                        "$HOST_INVOKE_DEADLINE_PARAM='${deadlineValues.joinToString(",")}' " +
+                        "is not a whole number of milliseconds"
+                )
+            }
+            return true
+        }
         val token = nextHostInvokeToken++
-        val started = request.copy(token = token)
+        val started = request.copy(token = token, params = request.params - HOST_INVOKE_DEADLINE_PARAM)
         startedHostInvokes[started.processorType to started.invokeId] = token
+        if (deadlineMs != null) {
+            scheduledSends.add(
+                ScheduledSendEntry(
+                    fireTimeMs = saturatingAddMs(engineElapsedMs(), deadlineMs),
+                    sequenceNum = schedulerSequence++,
+                    sendId = "",
+                    event = null,
+                    metadata = EventMetadata.EMPTY,
+                    hostInvokeDeadline = HostInvokeDeadline(started.processorType, started.invokeId, token)
+                )
+            )
+            scheduledSends.sortWith(compareBy<ScheduledSendEntry> { it.fireTimeMs }.thenBy { it.sequenceNum })
+        }
         val doneData = handler(HostInvokeEvent(start = started))?.doneData
         if (doneData != null) {
             // §scxml-6.4: a completion the host reported NOW takes the same
@@ -839,6 +924,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val key = processorType to invokeId
         if (startedHostInvokes[key] != token) return false
         startedHostInvokes.remove(key)
+        dropHostInvokeDeadline(token)
         // Under the id the AUTHOR wrote a transition for, or — §scxml-3.12.1 —
         // the generic `done.invoke` its descriptor matches when the document
         // names no specific completion, as an SCXML child's completion does.
@@ -862,9 +948,38 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     fun cancelHostInvoke(processorType: String, invokeId: String): Boolean {
         val token = startedHostInvokes.remove(processorType to invokeId) ?: return false
+        dropHostInvokeDeadline(token)
+        return deliverHostInvokeCancel(processorType, invokeId, token)
+    }
+
+    /** Tell the host to stop start [token] of [invokeId]. */
+    private fun deliverHostInvokeCancel(processorType: String, invokeId: String, token: Long): Boolean {
         val handler = hostInvokers[processorType] ?: return false
         handler(HostInvokeEvent(cancel = HostInvokeCancel(processorType, invokeId, token)))
         return true
+    }
+
+    /**
+     * The deadline of a host-run invocation start came due. If that start is
+     * still running, end it: the host is told to stop, and the document
+     * receives `error.invoke.<id>` — or the generic `error.invoke` when it names
+     * no specific one — with `_event.invokeid` set and `_event.data` the string
+     * `"deadline"`.
+     *
+     * Through the same door a completion takes, so exactly one of the two
+     * happens: a completion that arrives afterwards finds nothing, and a
+     * deadline that fires after a completion finds nothing either.
+     */
+    private fun expireHostInvoke(deadline: HostInvokeDeadline) {
+        val key = deadline.processorType to deadline.invokeId
+        if (startedHostInvokes[key] != deadline.token) return
+        startedHostInvokes.remove(key)
+        if (!deliverHostInvokeCancel(deadline.processorType, deadline.invokeId, deadline.token)) return
+        val expired = resolveEventByName(ERROR_INVOKE_PREFIX + deadline.invokeId)
+            ?: resolveEventByName(ERROR_INVOKE_EVENT)
+            ?: return
+        // The JSON spelling of the string, as every other backend carries it.
+        send(expired, EventMetadata(type = "external", data = "\"deadline\"", invokeId = deadline.invokeId))
     }
 
     /**
@@ -1073,9 +1188,38 @@ abstract class StateMachineEngine<S : State, E : Event>(
          * drained in its own loop, so its entries neither interleave by deadline
          * with these nor get a macrostep between them.
          */
-        val hostSend: HostSendRequest? = null
+        val hostSend: HostSendRequest? = null,
+        /**
+         * The deadline of one start of a host-run invocation, judged when this
+         * entry comes due. In this queue for the reason [hostSend] is. Its
+         * [sendId] is empty and no `<cancel>` reaches it — a deadline is the
+         * engine's, not the document's — so it leaves by firing or through
+         * [dropHostInvokeDeadline].
+         */
+        val hostInvokeDeadline: HostInvokeDeadline? = null
     )
+
+    /** Which start of which host-run invocation a scheduled deadline ends. */
+    private data class HostInvokeDeadline(val processorType: String, val invokeId: String, val token: Long)
+
     private val scheduledSends = mutableListOf<ScheduledSendEntry>()
+
+    /**
+     * Drop the pending deadline of host-run start [token], whose invocation
+     * ended another way — completed or cancelled. Leaving it would keep a host
+     * ticking toward a deadline that can no longer do anything.
+     */
+    private fun dropHostInvokeDeadline(token: Long) {
+        scheduledSends.removeAll { it.hostInvokeDeadline?.token == token }
+    }
+
+    /**
+     * Now plus a deadline, held at [Long.MAX_VALUE]: a deadline may be as large
+     * as that itself, and a wrapped sum would put it in the past and end the
+     * invocation at once.
+     */
+    private fun saturatingAddMs(nowMs: Long, deadlineMs: Long): Long =
+        if (deadlineMs > Long.MAX_VALUE - nowMs) Long.MAX_VALUE else nowMs + deadlineMs
     private var schedulerSequence = 0L
 
     // --- Lifecycle ---
@@ -1549,7 +1693,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // §scxml-3.7: Only enter event loop if not already in final state
             // (child SMs may reach final state during drainEventlessAndInternal)
             if (!isInFinalState) {
-                for (queued in eventChannel) {
+                while (true) {
+                    val queued = awaitNextExternalEvent() ?: break
                     if (isInFinalState) break
                     // §scxml-6.4: the refusal the sync loop applies at its
                     // dequeue, applied at this one.
@@ -2128,6 +2273,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
         if (entry.hostSend != null) {
             // §scxml-6.2.4: the wait is over, so now the act happens.
             performDeferredHostSend(entry.hostSend)
+        } else if (entry.hostInvokeDeadline != null) {
+            expireHostInvoke(entry.hostInvokeDeadline)
         } else if (entry.isParentSend) {
             onSendToParent?.invoke(entry.parentEventName, entry.parentEventData)
         } else {
@@ -2454,8 +2601,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * @param sendId Identifier of the send to cancel
      */
     protected fun cancelSend(sendId: String) {
+        // A delayed host-served send is in [scheduledSends] in both modes, so
+        // a `<cancel>` has to look there in both (§scxml-6.3). A host-run
+        // invocation's deadline also carries an empty id, and a
+        // `<cancel sendidexpr>` that evaluates to "" must not reach it.
+        scheduledSends.removeAll { it.hostInvokeDeadline == null && it.sendId == sendId }
         if (syncMode) {
-            scheduledSends.removeAll { it.sendId == sendId }
             scheduledHttpSends.removeAll { it.sendId == sendId }
         } else {
             delayedSendJobs.remove(sendId)?.cancel()
@@ -2981,12 +3132,61 @@ abstract class StateMachineEngine<S : State, E : Event>(
             discardedExternalEventCount++
             lastDiscarded = event
         }
+        finishMacrostep()
+    }
+
+    /**
+     * The rest of a coroutine-mode macrostep once whatever started it has run:
+     * an external event taken by [processMicrostep], or a scheduled act
+     * performed by [awaitNextExternalEvent]. One body for both, because a
+     * macrostep an act starts is a macrostep like any other.
+     */
+    private fun finishMacrostep() {
         drainEventlessAndInternal()
         // §scxml-6.4: Execute deferred invokes at macrostep end
         executePendingInvokes()
         macrostepSettled()
         // §scxml-6.5: Clean up completed invokes (deferred from monitor coroutine)
         cleanupCompletedInvokes()
+    }
+
+    /**
+     * The coroutine loop's wait: the next external event, or — whichever comes
+     * first — the deadline of the earliest scheduled act, which is then
+     * performed here. `null` once the channel is closed or the machine has
+     * reached a final state.
+     *
+     * §scxml-6.2.4 + §scxml-6.4: a delayed host-served send and a host-run
+     * invocation's deadline live in [scheduledSends] in this mode too, and the
+     * loop used to wait on the channel alone — so neither ever happened: the
+     * send was never performed and the deadline never expired, with nothing
+     * to say so. Performing them on this coroutine keeps them on the one
+     * thread every other macrostep of this mode runs on.
+     */
+    private suspend fun awaitNextExternalEvent(): QueuedEvent<E>? {
+        while (!isInFinalState) {
+            val due = scheduledSends.firstOrNull()?.fireTimeMs
+            val received = if (due == null) {
+                eventChannel.receiveCatching()
+            } else {
+                val waitMs = due - clock.elapsedMs()
+                if (waitMs > 0) withTimeoutOrNull(waitMs) { eventChannel.receiveCatching() } else null
+            }
+            if (received != null) {
+                return received.getOrNull()
+            }
+            val opened = beginTurn()
+            try {
+                while (!isInFinalState && promoteNextDueSend()) {
+                    macrostepTruncated = false
+                    macrostepMicrostepsTaken = 0
+                    finishMacrostep()
+                }
+            } finally {
+                endTurn(opened)
+            }
+        }
+        return null
     }
 
     /**

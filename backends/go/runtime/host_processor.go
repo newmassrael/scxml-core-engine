@@ -4,7 +4,10 @@
 package sce
 
 import (
+	"fmt"
+	"math"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -324,10 +327,25 @@ func (e *Engine[S, E]) HasInvoker(processorType string) bool {
 // would be the same bookkeeping written once per language. The token is
 // assigned and recorded BEFORE the handler runs, so a handler that completes
 // synchronously completes an invocation the engine already knows is running.
+//
+// A `_sce_deadline_ms` param is the engine's, not the host's: it is taken out
+// of the request and armed with the start. A value that is not a whole number
+// of milliseconds raises `error.execution` and starts nothing — an argument of
+// the element that cannot be evaluated (§scxml-6.4.1) — and the call answers
+// true because the report has been made; false is kept for "no invoker ran
+// it".
 func (e *Engine[S, E]) PerformHostInvoke(request HostInvokeRequest) bool {
 	handler, ok := e.hostInvokers[request.ProcessorType]
 	if !ok {
 		return false
+	}
+	deadlineMs, hasDeadline, err := takeHostInvokeDeadline(&request)
+	if err != nil {
+		if evt, known := e.policy.GetEventFromName("error.execution"); known {
+			e.Raise(NewPlatformError(evt, fmt.Sprintf(
+				"<invoke type='%s' id='%s'>: %v", request.ProcessorType, request.InvokeID, err)))
+		}
+		return true
 	}
 	token := e.nextHostInvokeToken
 	e.nextHostInvokeToken++
@@ -336,6 +354,13 @@ func (e *Engine[S, E]) PerformHostInvoke(request HostInvokeRequest) bool {
 		e.startedHostInvokes = make(map[hostInvokeKey]uint64)
 	}
 	e.startedHostInvokes[hostInvokeKey{request.ProcessorType, request.InvokeID}] = token
+	if hasDeadline {
+		e.scheduler.ScheduleHostInvokeDeadlineAt(HostInvokeDeadline{
+			ProcessorType: request.ProcessorType,
+			InvokeID:      request.InvokeID,
+			Token:         token,
+		}, saturatingAddMs(e.schedNowMs(), deadlineMs))
+	}
 	response := handler(HostInvokeEvent{Start: &request})
 	if response != nil && response.DoneData != nil {
 		// §scxml-6.4: a completion the host reported NOW takes the same door as
@@ -367,6 +392,7 @@ func (e *Engine[S, E]) CompleteHostInvoke(processorType, invokeID string, token 
 		return false
 	}
 	delete(e.startedHostInvokes, key)
+	e.scheduler.DropHostInvokeDeadline(token)
 	// The id is the DOCUMENT's, because `done.invoke.<id>` is the name the
 	// author wrote a transition for. §scxml-3.12.1: when the document names no
 	// specific completion, the generic `done.invoke` its descriptor matches —
@@ -414,6 +440,11 @@ func (e *Engine[S, E]) CancelHostInvoke(processorType, invokeID string) bool {
 		return false
 	}
 	delete(e.startedHostInvokes, key)
+	e.scheduler.DropHostInvokeDeadline(token)
+	return e.deliverHostInvokeCancel(processorType, invokeID, token)
+}
+
+func (e *Engine[S, E]) deliverHostInvokeCancel(processorType, invokeID string, token uint64) bool {
 	handler, ok := e.hostInvokers[processorType]
 	if !ok {
 		return false
@@ -424,6 +455,98 @@ func (e *Engine[S, E]) CancelHostInvoke(processorType, invokeID string) bool {
 		Token:         token,
 	}})
 	return true
+}
+
+// expireHostInvoke ends the start the deadline names, if it is still running:
+// the host is told to stop, and the document receives `error.invoke.<id>` — or
+// the generic `error.invoke` when it names no specific one — with
+// `_event.invokeid` set and `_event.data` the string "deadline". Through the
+// same door a completion takes, so exactly one of the two happens.
+func (e *Engine[S, E]) expireHostInvoke(deadline HostInvokeDeadline) {
+	key := hostInvokeKey{deadline.ProcessorType, deadline.InvokeID}
+	if running, ok := e.startedHostInvokes[key]; !ok || running != deadline.Token {
+		return
+	}
+	delete(e.startedHostInvokes, key)
+	if !e.deliverHostInvokeCancel(deadline.ProcessorType, deadline.InvokeID, deadline.Token) {
+		return
+	}
+	evt, known := e.policy.GetEventFromName(ErrorInvokePrefix + deadline.InvokeID)
+	if !known {
+		evt, known = e.policy.GetEventFromName(ErrorInvokeEvent)
+	}
+	if known {
+		meta := NewEventWithMetadata(evt)
+		meta.Metadata = ExternalMetadata("", "")
+		meta.Metadata.Data = `"deadline"`
+		meta.Metadata.InvokeID = deadline.InvokeID
+		e.externalQueue.Raise(meta)
+	}
+}
+
+// HostInvokeDeadlineParam is the reserved `<param>` a host-run `<invoke>`
+// names its deadline with, in milliseconds. The engine reads it and does not
+// hand it to the host. A neutral name rather than `sce:mesh-rpc`'s
+// `_mesh_deadline_ms`, so the two invoke types converge on one spelling.
+const HostInvokeDeadlineParam = "_sce_deadline_ms"
+
+// ParseHostInvokeDeadlineMs reads the text of a HostInvokeDeadlineParam value
+// as milliseconds.
+//
+// One or more ASCII digits, optionally followed by `.` and one or more `0` — a
+// `<param expr>` reaches the request as the text of its value, and a script
+// engine may render a whole number `5000.0` — within a signed 64-bit count.
+// Anything else is refused: no sign, no whitespace, no exponent, no digit
+// separator.
+//
+// Spelled out rather than left to strconv because every runtime implements it
+// and the languages' parsers disagree (ParseFloat reads hex floats, Python
+// reads `1_000`); the table they are all held to is
+// sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json.
+func ParseHostInvokeDeadlineMs(written string) (int64, bool) {
+	whole, fraction, dotted := strings.Cut(written, ".")
+	if whole == "" || strings.IndexFunc(whole, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
+		return 0, false
+	}
+	if dotted && (fraction == "" || strings.Trim(fraction, "0") != "") {
+		return 0, false
+	}
+	// All ASCII digits, so the only way this fails is a value past MaxInt64.
+	ms, err := strconv.ParseInt(whole, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return ms, true
+}
+
+// saturatingAddMs is now plus a deadline, held at MaxInt64: a deadline may be
+// as large as MaxInt64 itself, and a wrapped sum would put it in the past and
+// end the invocation at once.
+func saturatingAddMs(nowMs, deadlineMs int64) int64 {
+	if deadlineMs > math.MaxInt64-nowMs {
+		return math.MaxInt64
+	}
+	return nowMs + deadlineMs
+}
+
+// takeHostInvokeDeadline takes `_sce_deadline_ms` out of request.
+//
+// It returns (ms, true, nil) for one value ParseHostInvokeDeadlineMs reads,
+// (0, false, nil) when the document gave none, and an error naming what was
+// written otherwise, including the name given twice, for the caller to report.
+func takeHostInvokeDeadline(request *HostInvokeRequest) (int64, bool, error) {
+	values, present := request.Params[HostInvokeDeadlineParam]
+	if !present {
+		return 0, false, nil
+	}
+	delete(request.Params, HostInvokeDeadlineParam)
+	if len(values) == 1 {
+		if ms, ok := ParseHostInvokeDeadlineMs(values[0]); ok {
+			return ms, true, nil
+		}
+	}
+	return 0, false, fmt.Errorf("%s=%q is not a whole number of milliseconds",
+		HostInvokeDeadlineParam, strings.Join(values, ","))
 }
 
 // HostInvokePolicy is implemented by a generated policy whose document hands

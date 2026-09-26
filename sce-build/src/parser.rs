@@ -4259,32 +4259,40 @@ impl SCXMLParser {
                     }));
                 }
                 mesh_event = Some(extract_static_string_literal(&expr));
-            } else if name == "_mesh_deadline_ms" {
+            } else if name == "_mesh_deadline_ms"
+                || name == crate::host_processor_analyzer::HOST_INVOKE_DEADLINE_PARAM
+            {
+                // `_sce_deadline_ms` is the name a host-run `<invoke>` gives its
+                // deadline, accepted here as an alias so one document spells a
+                // deadline one way whichever invoke type it names. Either
+                // spelling counts toward the one deadline an invoke may have:
+                // two would be two answers to one question.
                 deadline_count += 1;
                 if deadline_count > 1 {
                     return Err(locate(ValidationError::MeshRpcReservedParam {
-                        param: "_mesh_deadline_ms".into(),
-                        detail: "<param name=\"_mesh_deadline_ms\"> may appear at most once".into(),
+                        param: name.clone(),
+                        detail: format!(
+                            "a deadline may be given once — `_mesh_deadline_ms` or its alias `{}`",
+                            crate::host_processor_analyzer::HOST_INVOKE_DEADLINE_PARAM
+                        ),
                     }));
                 }
-                // §9.5: `_mesh_deadline_ms` is an integer in
-                // milliseconds. The literal may be quoted (`expr="'50'"`)
-                // or bare (`expr="50"`); both resolve to a non-negative
-                // decimal integer string via the existing static-literal
-                // extractor.
+                // §9.5: the deadline is a whole number of milliseconds. The
+                // literal may be quoted (`expr="'50'"`) or bare
+                // (`expr="50"`); either is read by the deadline grammar every
+                // runtime shares, so this build accepts exactly what a host
+                // invoke's runtime would.
                 let raw = if is_static_string_literal(&expr) {
                     extract_static_string_literal(&expr)
                 } else {
                     expr.trim().to_string()
                 };
-                match raw.parse::<u64>() {
-                    Ok(v) => deadline_ms = Some(v),
-                    Err(_) => {
+                match crate::host_processor_analyzer::parse_deadline_ms(&raw) {
+                    Some(v) => deadline_ms = Some(v),
+                    None => {
                         return Err(locate(ValidationError::MeshRpcReservedParam {
-                            param: "_mesh_deadline_ms".into(),
-                            detail: format!(
-                                "value '{raw}' is not a non-negative integer (milliseconds)"
-                            ),
+                            param: name.clone(),
+                            detail: format!("value '{raw}' is not a whole number of milliseconds"),
                         }));
                     }
                 }
@@ -8471,6 +8479,43 @@ mod tests {
     }
 
     #[test]
+    fn mesh_rpc_invoke_reads_the_host_invoke_deadline_name_as_its_own() {
+        // `_sce_deadline_ms` is the deadline name a host-run `<invoke>` uses,
+        // so a document spells a deadline one way whichever invoke type it
+        // names. It is stripped from the payload like the mesh spelling.
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="sce:mesh-rpc" src="#motor">
+                    <param name="_mesh_event" expr="'service.request.compute_force'"/>
+                    <param name="_sce_deadline_ms" expr="250"/>
+                    <param name="torque" expr="'42'"/>
+                </invoke>
+            </state>
+        </scxml>"##;
+        let info = first_mesh_rpc_invoke(scxml);
+        assert_eq!(info.deadline_ms, Some(250));
+        assert_eq!(info.base.params.len(), 1);
+        assert_eq!(info.base.params[0].name, "torque");
+    }
+
+    #[test]
+    fn mesh_rpc_invoke_refuses_a_deadline_under_both_names() {
+        // Two spellings of one deadline are two answers to one question.
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="sce:mesh-rpc" src="#motor">
+                    <param name="_mesh_event" expr="'service.request.compute_force'"/>
+                    <param name="_mesh_deadline_ms" expr="250"/>
+                    <param name="_sce_deadline_ms" expr="100"/>
+                </invoke>
+            </state>
+        </scxml>"##;
+        let (param, detail) = first_mesh_rpc_violation(scxml);
+        assert_eq!(param, "_sce_deadline_ms");
+        assert!(detail.contains("may be given once"), "{detail}");
+    }
+
+    #[test]
     fn mesh_rpc_srcexpr_promotes_needs_script_engine() {
         // SCE Mesh §9.5: the srcexpr entry block calls
         // `evaluateExpression` unconditionally, so `parse_invoke` must
@@ -8580,8 +8625,8 @@ mod tests {
         let (param, detail) = first_mesh_rpc_violation(scxml);
         assert_eq!(param, "_mesh_deadline_ms");
         assert!(
-            detail.contains("non-negative integer"),
-            "expected 'non-negative integer' phrasing, got: {detail}",
+            detail.contains("whole number of milliseconds"),
+            "expected 'whole number of milliseconds' phrasing, got: {detail}",
         );
     }
 

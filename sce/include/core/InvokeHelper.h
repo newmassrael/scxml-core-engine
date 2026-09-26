@@ -282,6 +282,23 @@ public:
     static constexpr std::string_view DONE_INVOKE_EVENT = "done.invoke";
 
     /**
+     * @brief The event an invocation that did not finish raises instead of
+     *        its completion
+     *
+     * A host-run invocation past its `_sce_deadline_ms`, named the way
+     * `sce:mesh-rpc` names a request that ran out of time (SCE_MESH.md §9.5),
+     * so a document handles the two alike. Specific form: `error.invoke.<id>`.
+     */
+    static constexpr std::string_view ERROR_INVOKE_PREFIX = "error.invoke.";
+
+    /**
+     * @brief The generic form of ERROR_INVOKE_PREFIX, for a document that names
+     *        no specific `error.invoke.<id>` — as DONE_INVOKE_EVENT is for a
+     *        completion
+     */
+    static constexpr std::string_view ERROR_INVOKE_EVENT = "error.invoke";
+
+    /**
      * @brief §scxml-6.4.1: Validate invoke ID format
      *
      * Single Source of Truth for invoke ID validation.

@@ -218,6 +218,72 @@ struct HostInvokeResponse {
 using HostInvokeHandler = std::function<std::optional<HostInvokeResponse>(const HostInvokeEvent &)>;
 
 /**
+ * @brief The reserved `<param>` a host-run `<invoke>` names its deadline with,
+ *        in milliseconds
+ *
+ * The engine reads it and does not hand it to the host: past the deadline, an
+ * invocation still running is cancelled and the document receives
+ * `error.invoke.<id>` instead of its completion. A neutral name rather than
+ * `sce:mesh-rpc`'s `_mesh_deadline_ms`, so the two invoke types converge on one
+ * spelling.
+ */
+inline constexpr std::string_view HOST_INVOKE_DEADLINE_PARAM = "_sce_deadline_ms";
+
+/**
+ * @brief Read the text of a HOST_INVOKE_DEADLINE_PARAM value as milliseconds
+ *
+ * One or more ASCII digits, optionally followed by `.` and one or more `0` — a
+ * `<param expr>` reaches the request as the text of its value, and a script
+ * engine may render a whole number `5000.0` — within a signed 64-bit count.
+ * Anything else is `std::nullopt`: no sign, no whitespace, no exponent, no
+ * digit separator.
+ *
+ * Spelled out rather than left to `strtoull`, which skips leading whitespace
+ * and reads a sign, because every runtime implements this and the languages'
+ * parsers disagree; the table they are all held to is
+ * `sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json`.
+ */
+inline std::optional<uint64_t> parseHostInvokeDeadlineMs(std::string_view written) {
+    const auto dot = written.find('.');
+    const std::string_view whole = written.substr(0, dot);
+    if (whole.empty()) {
+        return std::nullopt;
+    }
+    constexpr uint64_t max = static_cast<uint64_t>(INT64_MAX);
+    uint64_t ms = 0;
+    for (const char c : whole) {
+        if (c < '0' || c > '9') {
+            return std::nullopt;
+        }
+        const auto digit = static_cast<uint64_t>(c - '0');
+        if (ms > (max - digit) / 10) {
+            return std::nullopt;
+        }
+        ms = ms * 10 + digit;
+    }
+    if (dot != std::string_view::npos) {
+        const std::string_view fraction = written.substr(dot + 1);
+        if (fraction.empty() || fraction.find_first_not_of('0') != std::string_view::npos) {
+            return std::nullopt;
+        }
+    }
+    return ms;
+}
+
+/**
+ * @brief Which start of which host-run invocation a scheduled deadline ends
+ */
+struct HostInvokeDeadline {
+    /// The invocation's `type`.
+    std::string processorType;
+    /// The invocation's id.
+    std::string invokeId;
+    /// The start this deadline belongs to; a restart under the same id has its
+    /// own.
+    uint64_t token = 0;
+};
+
+/**
  * @brief Whether an event named `eventName` carrying `_event.invokeid` =
  *        `invokeId` is the completion of a host-run invocation
  *

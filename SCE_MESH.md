@@ -1388,6 +1388,9 @@ Remote `<invoke>` inherits all distributed system constraints:
 |---|---|---|
 | `_mesh_event` | SCXML event name of the request (e.g. `'service.request.compute_force'`) | Yes |
 | `_mesh_deadline_ms` | Request timeout in milliseconds (integer). Absent ⇒ no deadline | No |
+| `_sce_deadline_ms` | Alias of `_mesh_deadline_ms` — the name a host-run `<invoke>` gives its deadline, so a document spells a deadline one way whichever invoke type it names. At most one of the two may appear. | No |
+
+A deadline value, under either name, is one or more ASCII digits, optionally followed by `.` and one or more `0`, within a signed 64-bit count — the grammar every runtime applies to a host-run invocation's deadline, held to one table (`sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json`). A sign, whitespace, an exponent or a digit separator is refused at build time.
 
 The `_mesh_` prefix is W3C-identifier-safe and highly unlikely to collide with natural SCXML author payloads. Any additional `_mesh_*` name is reserved for future metadata; `sce-build` rejects **unknown** `_mesh_*` names at build time.
 

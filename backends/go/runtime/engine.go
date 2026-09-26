@@ -406,13 +406,15 @@ func (e *Engine[S, E]) Tick() {
 	// entries the host had not yet reached, in a loop the host cannot get
 	// between (see beginTurn).
 	for {
-		event, data, hostSend, ok := e.scheduler.PopReadyActAt(e.turnNowMs)
+		event, data, hostSend, deadline, ok := e.scheduler.PopReadyActAt(e.turnNowMs)
 		if !ok {
 			break
 		}
 		if hostSend != nil {
 			// §scxml-6.2.4: the wait is over, so now the act happens.
 			e.performDeferredHostSend(*hostSend)
+		} else if deadline != nil {
+			e.expireHostInvoke(*deadline)
 		} else {
 			e.RaiseExternal(event, data, "")
 		}

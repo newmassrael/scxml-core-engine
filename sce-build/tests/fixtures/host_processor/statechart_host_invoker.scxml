@@ -68,6 +68,23 @@
                is never asked to start that invoke, and `leaked` stays 0
                because that message is never sent. So `lost` is 2.
 
+  A host-run invocation may be given a deadline, the reserved param
+  `_sce_deadline_ms`, which the engine keeps rather than handing to the host.
+  `timed` holds its two outcomes apart:
+
+    expired  — the deadline passed while `slow` was still running, so the
+               host was told to stop and the document received
+               `error.invoke.slow` with `_event.data` "deadline". A reply the
+               host sends afterwards is refused, so `finished` stays 0. A
+               `<cancel>` of the empty send id (`forget`) does not reach the
+               deadline, which is the engine's and not the document's.
+    finished — `slow` completed before its deadline; the deadline then does
+               nothing, and `expired` stays 0.
+    misdated — `undated` names a deadline that is not a whole number of
+               milliseconds, an argument that cannot be evaluated (W3C SCXML
+               6.4.1): error.execution, and the host is never asked to start
+               it. So 1, whichever way `slow` ends.
+
   The generated machine is compiled with the host-invoker declaration
   `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
   comment cannot spell a double hyphen).
@@ -94,6 +111,9 @@
     <data id="pinged" expr="0"/>
     <data id="leaked" expr="0"/>
     <data id="lost" expr="0"/>
+    <data id="expired" expr="0"/>
+    <data id="finished" expr="0"/>
+    <data id="misdated" expr="0"/>
   </datamodel>
 
   <state id="invoking">
@@ -120,6 +140,7 @@
     <transition event="leave" target="done"/>
     <transition event="evaluate" target="evaluating"/>
     <transition event="locate" target="locating"/>
+    <transition event="time" target="timed"/>
   </state>
 
   <state id="evaluating">
@@ -168,6 +189,35 @@
     </transition>
     <transition event="error.execution">
       <assign location="lost" expr="lost + 1"/>
+    </transition>
+  </state>
+
+  <state id="timed">
+    <invoke id="slow" type="x-sce-host">
+      <param name="_sce_deadline_ms" expr="50"/>
+    </invoke>
+    <invoke id="undated" type="x-sce-host">
+      <param name="_sce_deadline_ms" expr="'soon'"/>
+    </invoke>
+    <transition event="error.execution">
+      <assign location="misdated" expr="misdated + 1"/>
+    </transition>
+    <!-- A deadline is the engine's and carries no send id, so a `<cancel>`
+         whose sendid evaluates to "" does not reach it: `expired` still
+         becomes 1 after `forget`. -->
+    <transition event="forget">
+      <cancel sendidexpr="''"/>
+    </transition>
+    <!-- A way out whose effect a host can observe: the coroutine mode's
+         driver waits for `done` to know the expiry's own macrostep has run
+         before it stops the engine. -->
+    <transition event="leave" target="done"/>
+    <transition event="error.invoke.slow"
+                cond="_event.invokeid === 'slow' &amp;&amp; _event.data === 'deadline'">
+      <assign location="expired" expr="expired + 1"/>
+    </transition>
+    <transition event="done.invoke.slow" cond="_event.invokeid === 'slow'">
+      <assign location="finished" expr="finished + 1"/>
     </transition>
   </state>
 </scxml>

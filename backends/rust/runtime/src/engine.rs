@@ -230,6 +230,20 @@ pub enum ScheduledAct<E> {
     /// Boxed because a `HostSendRequest` is several strings and a map, and an
     /// unboxed variant would make every ordinary delayed event pay its size.
     HostSend(Box<crate::host_processor::HostSendRequest>),
+    /// The deadline (`_sce_deadline_ms`) of one start of a host-run
+    /// invocation. When it comes due the engine ends that start if it is
+    /// still running — cancel to the host, `error.invoke.<id>` to the
+    /// document. On the same queue as a delayed event for the reason above:
+    /// one deadline order, one answer about when the host must next tick.
+    HostInvokeDeadline {
+        /// The invocation's `type`.
+        processor_type: String,
+        /// The invocation's id.
+        invoke_id: String,
+        /// The start this deadline belongs to; a restart under the same id
+        /// has its own.
+        token: u64,
+    },
 }
 
 #[derive(Debug)]
@@ -371,10 +385,50 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         }
     }
 
+    /// Arm the deadline of the host-run invocation start `token`.
+    ///
+    /// With no send id: a deadline is the engine's, not the document's, so no
+    /// `<cancel sendid>` the author writes can name it. It leaves the queue
+    /// when it fires or through [`Self::drop_host_invoke_deadline`].
+    #[cfg(not(feature = "no_std"))]
+    pub fn schedule_host_invoke_deadline_at(
+        &mut self,
+        processor_type: &str,
+        invoke_id: &str,
+        token: u64,
+        ready_at: SchedTimePoint,
+    ) {
+        let entry = ScheduledEntry {
+            act: ScheduledAct::HostInvokeDeadline {
+                processor_type: processor_type.to_string(),
+                invoke_id: invoke_id.to_string(),
+                token,
+            },
+            send_id: S::store(&SceString::new()),
+            ready_at,
+        };
+        self.push_scheduled(entry);
+    }
+
+    /// Drop the pending deadline of start `token`, whose invocation ended
+    /// another way — completed or cancelled. Leaving it would keep a host
+    /// ticking toward a deadline that can no longer do anything.
+    #[cfg(not(feature = "no_std"))]
+    pub fn drop_host_invoke_deadline(&mut self, token: u64) {
+        self.entries.retain(
+            |e| !matches!(e.act, ScheduledAct::HostInvokeDeadline { token: t, .. } if t == token),
+        );
+    }
+
     /// §scxml-6.2.5: Cancel a scheduled event by send ID. Returns `true` if found.
     pub fn cancel_event(&mut self, send_id: &str) -> bool {
         let before = self.entries.len();
-        self.entries.retain(|e| !e.send_id.matches(send_id));
+        // A host-run invocation's deadline carries an empty send id and is the
+        // engine's, so a `<cancel sendidexpr>` that evaluates to "" must not
+        // reach it.
+        self.entries.retain(|e| {
+            matches!(e.act, ScheduledAct::HostInvokeDeadline { .. }) || !e.send_id.matches(send_id)
+        });
         self.entries.len() < before
     }
 
@@ -483,6 +537,31 @@ fn format_auto_send_id(counter: u64) -> SceString {
         let mut s = SceString::new();
         let _ = write!(&mut s, "auto_send_{}", counter);
         s
+    }
+}
+
+/// Take `_sce_deadline_ms` out of a host invoke request.
+///
+/// `Ok(None)` when the document gave none, `Ok(Some(ms))` for one value
+/// [`parse_host_invoke_deadline_ms`](crate::host_processor::parse_host_invoke_deadline_ms)
+/// reads. Anything else, including the name given twice, is `Err` with what
+/// was written, for the caller to report.
+#[cfg(not(feature = "no_std"))]
+fn take_host_invoke_deadline(
+    request: &mut crate::host_processor::HostInvokeRequest,
+) -> Result<Option<u64>, String> {
+    let Some(values) = request
+        .params
+        .remove(crate::host_processor::HOST_INVOKE_DEADLINE_PARAM)
+    else {
+        return Ok(None);
+    };
+    let [written] = values.as_slice() else {
+        return Err(values.join(","));
+    };
+    match crate::host_processor::parse_host_invoke_deadline_ms(written) {
+        Some(ms) => Ok(Some(ms)),
+        None => Err(written.clone()),
     }
 }
 
@@ -1222,6 +1301,13 @@ impl<P: StatePolicy> Engine<P> {
                     // returned long before the deadline.
                     ScheduledAct::HostSend(request) => {
                         self.perform_deferred_host_send(*request);
+                    }
+                    ScheduledAct::HostInvokeDeadline {
+                        processor_type,
+                        invoke_id,
+                        token,
+                    } => {
+                        self.expire_host_invoke(&processor_type, &invoke_id, token);
                     }
                 }
             }
@@ -2337,16 +2423,52 @@ impl<P: StatePolicy> Engine<P> {
     /// and none was.
     ///
     /// Called from the generated invoke site, which is why it is public.
+    ///
+    /// A `_sce_deadline_ms` param is the engine's, not the host's: it is taken
+    /// out of the request and armed after the start. A value that is not a
+    /// whole number of milliseconds raises `error.execution` and starts
+    /// nothing — an argument of the element that cannot be evaluated
+    /// (§scxml-6.4.1) — and the call answers `true` because the report has
+    /// been made; `false` is kept for "no invoker ran it", which is asked
+    /// first because it is the prior fact: with nobody to run the invocation,
+    /// what its deadline says is moot.
     #[cfg(not(feature = "no_std"))]
     pub fn perform_host_invoke(
         &mut self,
-        request: crate::host_processor::HostInvokeRequest,
+        mut request: crate::host_processor::HostInvokeRequest,
     ) -> bool {
         let processor_type = request.processor_type.clone();
         let invoke_id = request.invoke_id.clone();
+        if !self.has_invoker(&processor_type) {
+            return false;
+        }
+        let deadline = match take_host_invoke_deadline(&mut request) {
+            Ok(deadline) => deadline,
+            Err(written) => {
+                if let Some(evt) = P::get_event_from_name("error.execution") {
+                    self.raise(EventWithMetadata::platform_error(
+                        evt,
+                        &format!(
+                            "<invoke type='{processor_type}' id='{invoke_id}'>: {}={written:?} is not a whole number of milliseconds",
+                            crate::host_processor::HOST_INVOKE_DEADLINE_PARAM
+                        ),
+                    ));
+                }
+                return true;
+            }
+        };
         let Some((token, response)) = self.host_processors.start_invoke(request) else {
             return false;
         };
+        if let Some(ms) = deadline {
+            let ready_at = self.sched_now_plus(Duration::from_millis(ms));
+            self.scheduler.schedule_host_invoke_deadline_at(
+                &processor_type,
+                &invoke_id,
+                token,
+                ready_at,
+            );
+        }
         // §scxml-6.4: a completion the host reported now takes the same door
         // as one it reports later, so the two cannot disagree about whether
         // the invocation is over. The engine never synthesises a completion
@@ -2388,6 +2510,7 @@ impl<P: StatePolicy> Engine<P> {
         {
             return false;
         }
+        self.scheduler.drop_host_invoke_deadline(token);
         // §scxml-3.12.1: the specific `done.invoke.<id>` when the document
         // names it, and otherwise the generic `done.invoke` its descriptor
         // matches — as an SCXML child's completion does. Looking up only the
@@ -2430,8 +2553,40 @@ impl<P: StatePolicy> Engine<P> {
     /// delivered.
     #[cfg(not(feature = "no_std"))]
     pub fn cancel_host_invoke(&mut self, processor_type: &str, invoke_id: &str) -> bool {
-        self.host_processors
+        let Some(token) = self
+            .host_processors
             .cancel_invoke(processor_type, invoke_id)
+        else {
+            return false;
+        };
+        self.scheduler.drop_host_invoke_deadline(token);
+        true
+    }
+
+    /// The deadline of start `token` came due. If that start is still
+    /// running, end it: the host is told to stop, and the document receives
+    /// `error.invoke.<id>` — or the generic `error.invoke` when it names no
+    /// specific one — with `_event.invokeid` set and `_event.data` the string
+    /// `"deadline"`. A start that already completed or was cancelled finds
+    /// nothing, so the deadline does nothing.
+    #[cfg(not(feature = "no_std"))]
+    fn expire_host_invoke(&mut self, processor_type: &str, invoke_id: &str, token: u64) {
+        if !self
+            .host_processors
+            .expire_invoke(processor_type, invoke_id, token)
+        {
+            return;
+        }
+        let event_name = format!("{}{invoke_id}", crate::invoke::ERROR_INVOKE_PREFIX);
+        if let Some(evt) = P::get_event_from_name(&event_name)
+            .or_else(|| P::get_event_from_name(crate::invoke::ERROR_INVOKE_EVENT))
+        {
+            let mut meta = EventWithMetadata::new(evt);
+            meta.metadata = EventMetadata::external(SceString::new(), SceString::new());
+            meta.metadata.data = crate::sce_string_from_str("\"deadline\"");
+            meta.metadata.invoke_id = crate::sce_string_from_str(invoke_id);
+            self.external_queue.raise(meta);
+        }
     }
 
     /// Whether a handler is registered for `processor_type`.

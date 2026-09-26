@@ -45,6 +45,12 @@ class ScheduledEvent(Generic[E]):
     #: ``peek_next_due_ms`` answer. A parallel list would oblige every
     #: present and future query to remember it existed.
     host_send: Any = field(default=None, compare=False)
+    #: The `HostInvokeDeadline` this entry is, or ``None``. In this queue for
+    #: the reason `host_send` is: one deadline order, one answer about when
+    #: the host must next advance time. It carries no sendid — a deadline is
+    #: the engine's, not the document's, so no ``<cancel sendid>`` can name
+    #: it — and leaves through `drop_host_invoke_deadline` or by firing.
+    host_invoke_deadline: Any = field(default=None, compare=False)
 
 
 class Scheduler(Generic[E]):
@@ -66,6 +72,7 @@ class Scheduler(Generic[E]):
         event: E,
         data: Any = "",
         host_send: Any = None,
+        host_invoke_deadline: Any = None,
     ) -> None:
         """Queue `event` for delivery at `due_ms`. `sendid` identifies the
         entry for later `<cancel>` lookups; empty string ids cannot be
@@ -76,7 +83,10 @@ class Scheduler(Generic[E]):
         `host_send` makes the entry a W3C SCXML 6.2.5 host-served send to
         be PERFORMED at `due_ms` rather than an event to be delivered —
         the same queue, so it is ordered against every other delayed send
-        by deadline and cancelled by the same id."""
+        by deadline and cancelled by the same id.
+
+        `host_invoke_deadline` makes the entry the deadline of a host-run
+        invocation start, to be judged at `due_ms`."""
         heapq.heappush(
             self._heap,
             ScheduledEvent(
@@ -86,8 +96,24 @@ class Scheduler(Generic[E]):
                 event=event,
                 data=data,
                 host_send=host_send,
+                host_invoke_deadline=host_invoke_deadline,
             ),
         )
+
+    def drop_host_invoke_deadline(self, token: int) -> None:
+        """Drop the pending deadline of host-run invocation start `token`,
+        whose invocation ended another way — completed or cancelled. Leaving
+        it would keep a host advancing time toward a deadline that can no
+        longer do anything."""
+        kept = [
+            entry
+            for entry in self._heap
+            if entry.host_invoke_deadline is None
+            or entry.host_invoke_deadline.token != token
+        ]
+        if len(kept) != len(self._heap):
+            heapq.heapify(kept)
+            self._heap = kept
 
     def cancel(self, sendid: str) -> None:
         """W3C SCXML 6.2.2 — mark `sendid` cancelled; the matching entry

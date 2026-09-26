@@ -123,6 +123,18 @@ pub const DONE_INVOKE_PREFIX: &str = "done.invoke.";
 /// document declares.
 pub const DONE_INVOKE_EVENT: &str = "done.invoke";
 
+/// The event an invocation that did not finish raises instead of its
+/// completion — a host-run invocation past its `_sce_deadline_ms` — named
+/// the way `sce:mesh-rpc` names a request that ran out of time
+/// (SCE_MESH.md §9.5), so a document handles the two alike. Specific form:
+/// `error.invoke.<id>`.
+pub const ERROR_INVOKE_PREFIX: &str = "error.invoke.";
+
+/// The generic form of [`ERROR_INVOKE_PREFIX`], for a document that names
+/// no specific `error.invoke.<id>` — as [`DONE_INVOKE_EVENT`] is for a
+/// completion.
+pub const ERROR_INVOKE_EVENT: &str = "error.invoke";
+
 /// §scxml-6.3.1: Create done.invoke event name.
 ///
 /// 1:1 port of C++ `InvokeHelper::createDoneInvokeEventName`.

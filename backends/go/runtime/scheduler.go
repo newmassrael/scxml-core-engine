@@ -37,6 +37,20 @@ type scheduledEntry[E any] struct {
 	// A parallel list would oblige every present and future query to remember
 	// it existed.
 	hostSend *HostSendRequest
+	// deadline is the `_sce_deadline_ms` of one start of a host-run
+	// invocation this entry ends when it comes due, or nil. On this queue for
+	// the reason hostSend is: one deadline order, one answer about when the
+	// host must next tick.
+	deadline *HostInvokeDeadline
+}
+
+// HostInvokeDeadline identifies the start of a host-run invocation whose
+// deadline an entry carries: its type, its id, and the token of that start,
+// since a restart under the same id has its own.
+type HostInvokeDeadline struct {
+	ProcessorType string
+	InvokeID      string
+	Token         uint64
 }
 
 // NewPullScheduler constructs an empty scheduler.
@@ -93,6 +107,34 @@ func (s *PullScheduler[E]) ScheduleHostSendAt(request HostSendRequest, readyAtMs
 	return effectiveSendID
 }
 
+// ScheduleHostInvokeDeadlineAt arms the deadline of one host-run invocation
+// start to come due at readyAtMs.
+//
+// With no send id: a deadline is the engine's, not the document's, so no
+// `<cancel sendid>` the author writes can name it. It leaves the queue when it
+// fires or through DropHostInvokeDeadline.
+func (s *PullScheduler[E]) ScheduleHostInvokeDeadlineAt(deadline HostInvokeDeadline, readyAtMs int64) {
+	held := deadline
+	s.entries = append(s.entries, scheduledEntry[E]{
+		readyAtMs: readyAtMs,
+		deadline:  &held,
+	})
+}
+
+// DropHostInvokeDeadline drops the pending deadline of start token, whose
+// invocation ended another way — completed or cancelled. Leaving it would keep
+// a host ticking toward a deadline that can no longer do anything.
+func (s *PullScheduler[E]) DropHostInvokeDeadline(token uint64) {
+	n := 0
+	for _, e := range s.entries {
+		if e.deadline == nil || e.deadline.Token != token {
+			s.entries[n] = e
+			n++
+		}
+	}
+	s.entries = s.entries[:n]
+}
+
 // CancelEvent cancels a scheduled event by send ID (§scxml-6.2.5).
 // Returns true if the event was found and removed.
 //
@@ -101,7 +143,10 @@ func (s *PullScheduler[E]) CancelEvent(sendID string) bool {
 	before := len(s.entries)
 	n := 0
 	for _, e := range s.entries {
-		if e.sendID != sendID {
+		// A host-run invocation's deadline carries an empty send id and is the
+		// engine's, so a `<cancel sendidexpr>` that evaluates to "" must not
+		// reach it.
+		if e.deadline != nil || e.sendID != sendID {
 			s.entries[n] = e
 			n++
 		}
@@ -136,7 +181,7 @@ func (s *PullScheduler[E]) HasReadyEventsAt(nowMs int64) bool {
 //
 // Matches Rust PullScheduler::pop_ready_event_at.
 func (s *PullScheduler[E]) PopReadyEventAt(nowMs int64) (E, string, bool) {
-	event, data, _, ok := s.PopReadyActAt(nowMs)
+	event, data, _, _, ok := s.PopReadyActAt(nowMs)
 	return event, data, ok
 }
 
@@ -145,12 +190,13 @@ func (s *PullScheduler[E]) PopReadyEventAt(nowMs int64) (E, string, bool) {
 //
 // The returned *HostSendRequest is nil for an ordinary delayed send, in which
 // case the event and data are what to raise; when it is non-nil the entry IS
-// the act and the event fields carry nothing meaningful. Deadline order is the
-// queue's, so the two kinds interleave by when the document said they were due
-// and by nothing else.
+// the act and the event fields carry nothing meaningful. The same holds for
+// the *HostInvokeDeadline, a host-run invocation's deadline. Deadline order is
+// the queue's, so the kinds interleave by when they were due and by nothing
+// else.
 //
 // Matches Rust PullScheduler::pop_ready_act_at.
-func (s *PullScheduler[E]) PopReadyActAt(nowMs int64) (E, string, *HostSendRequest, bool) {
+func (s *PullScheduler[E]) PopReadyActAt(nowMs int64) (E, string, *HostSendRequest, *HostInvokeDeadline, bool) {
 	best := -1
 	for i, e := range s.entries {
 		if e.readyAtMs > nowMs {
@@ -162,11 +208,11 @@ func (s *PullScheduler[E]) PopReadyActAt(nowMs int64) (E, string, *HostSendReque
 	}
 	if best < 0 {
 		var zero E
-		return zero, "", nil, false
+		return zero, "", nil, nil, false
 	}
 	entry := s.entries[best]
 	s.entries = append(s.entries[:best], s.entries[best+1:]...)
-	return entry.event, entry.eventData, entry.hostSend, true
+	return entry.event, entry.eventData, entry.hostSend, entry.deadline, true
 }
 
 // HasPendingEvents returns whether there are any scheduled events (ready or not).

@@ -14,6 +14,7 @@ from .configuration import ConfigurationRejection, validate_configuration
 from .engine import Engine
 from .event import Event, EventMetadata, EventWithMetadata
 from .host_processor import (
+    HOST_INVOKE_DEADLINE_PARAM,
     HostInvokeCancel,
     HostInvokeEvent,
     HostInvokeHandler,
@@ -22,6 +23,7 @@ from .host_processor import (
     HostSendHandler,
     HostSendRequest,
     HostSendResponse,
+    parse_host_invoke_deadline_ms,
 )
 from .http import HttpSendRequest, HttpSendResponse
 from .io_processors import published_origin, session_id_from_scxml_location
@@ -52,6 +54,7 @@ __all__ = [
     "Event",
     "EventMetadata",
     "EventWithMetadata",
+    "HOST_INVOKE_DEADLINE_PARAM",
     "HistoryTarget",
     "HostSendHandler",
     "HostInvokeCancel",
@@ -76,6 +79,7 @@ __all__ = [
     "StatePolicy",
     "StateTarget",
     "create_done_invoke_event_name",
+    "parse_host_invoke_deadline_ms",
     "published_origin",
     "session_id_from_scxml_location",
     "scripting",

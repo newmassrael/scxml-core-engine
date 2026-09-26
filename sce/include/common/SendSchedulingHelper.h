@@ -41,6 +41,15 @@ namespace SCE {
 struct HostSendRequest;
 
 /**
+ * @brief Which start of which host-run invocation a scheduled deadline ends
+ *
+ * Forward-declared for the reason HostSendRequest is. The queue indexes a
+ * deadline by the token it is handed beside the pointer, so it never needs the
+ * complete type.
+ */
+struct HostInvokeDeadline;
+
+/**
  * @brief Helper for W3C SCXML <send> delay parsing
  *
  * Single Source of Truth for delay parsing logic shared between:
@@ -151,11 +160,26 @@ public:
          * its size on every scheduled event.
          */
         std::shared_ptr<const HostSendRequest> hostSend;
+        /**
+         * @brief The deadline of one start of a host-run invocation, judged when
+         *        this entry comes due, or null
+         *
+         * In this queue for the reason `hostSend` is: one deadline order, one
+         * `nextFireTime()`. It has no send id — a deadline is the engine's, not
+         * the document's, so no `<cancel>` can name it — and leaves by firing or
+         * through `dropHostInvokeDeadline()`.
+         */
+        std::shared_ptr<const HostInvokeDeadline> hostInvokeDeadline;
+        /// The start token `hostInvokeDeadline` belongs to, kept beside it so
+        /// the queue can index it without the complete type.
+        uint64_t hostInvokeDeadlineToken = 0;
 
         ScheduledEntry(EventType evt, TimePoint fire, std::string id, EventDataType data, uint64_t seq,
-                       std::shared_ptr<const HostSendRequest> host = nullptr)
+                       std::shared_ptr<const HostSendRequest> host = nullptr,
+                       std::shared_ptr<const HostInvokeDeadline> deadline = nullptr, uint64_t deadlineToken = 0)
             : event(std::move(evt)), fireTime(fire), sendId(std::move(id)), eventData(std::move(data)),
-              sequenceNum(seq), hostSend(std::move(host)) {}
+              sequenceNum(seq), hostSend(std::move(host)), hostInvokeDeadline(std::move(deadline)),
+              hostInvokeDeadlineToken(deadlineToken) {}
     };
 
     using EntryPtr = std::shared_ptr<ScheduledEntry>;
@@ -205,6 +229,39 @@ public:
         sendIdIndex_[actualSendId] = it.first;
 
         return actualSendId;
+    }
+
+    /**
+     * @brief Arm the deadline of host-run invocation start `deadline.token`
+     *
+     * Kept out of `sendIdIndex_`: `schedule()` would give it an `auto_<n>` id,
+     * and a `<cancel sendidexpr>` that happened to evaluate to that string would
+     * then reach a deadline that belongs to the engine. Indexed by token instead,
+     * which only `dropHostInvokeDeadline()` asks by.
+     */
+    void scheduleHostInvokeDeadline(TimePoint fireTime, uint64_t token,
+                                    std::shared_ptr<const HostInvokeDeadline> deadline) {
+        uint64_t seqNum = sequenceCounter_++;
+        auto entry = std::make_shared<ScheduledEntry>(EventType{}, fireTime, std::string{}, EventDataType{}, seqNum,
+                                                      nullptr, std::move(deadline), token);
+        auto it = queue_.emplace(OrderKey{fireTime, seqNum}, entry);
+        deadlineIndex_[token] = it.first;
+    }
+
+    /**
+     * @brief Drop the pending deadline of host-run start `token`, whose
+     *        invocation ended another way — completed or cancelled
+     *
+     * Leaving it would keep a host ticking toward a deadline that can no longer
+     * do anything.
+     */
+    void dropHostInvokeDeadline(uint64_t token) {
+        auto indexIt = deadlineIndex_.find(token);
+        if (indexIt == deadlineIndex_.end()) {
+            return;
+        }
+        queue_.erase(indexIt->second);
+        deadlineIndex_.erase(indexIt);
     }
 
     /**
@@ -268,6 +325,17 @@ public:
         return popReadyEventImpl(now, outEvent, outEventData, outSendId, &outHostSend);
     }
 
+    /**
+     * @brief popReadyAct, with a host-run invocation's deadline as a third
+     *        kind of act: when `outDeadline` is non-null the entry is that
+     *        deadline and the other fields carry nothing meaningful
+     */
+    bool popReadyAct(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId,
+                     std::shared_ptr<const HostSendRequest> &outHostSend,
+                     std::shared_ptr<const HostInvokeDeadline> &outDeadline) {
+        return popReadyEventImpl(now, outEvent, outEventData, outSendId, &outHostSend, &outDeadline);
+    }
+
     bool hasPendingEvents() const {
         return !queue_.empty();
     }
@@ -296,6 +364,7 @@ public:
     void clear() {
         queue_.clear();
         sendIdIndex_.clear();
+        deadlineIndex_.clear();
     }
 
     bool hasEvent(const std::string &sendId) const {
@@ -308,7 +377,8 @@ public:
 
 private:
     bool popReadyEventImpl(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId,
-                           std::shared_ptr<const HostSendRequest> *outHostSend = nullptr) {
+                           std::shared_ptr<const HostSendRequest> *outHostSend = nullptr,
+                           std::shared_ptr<const HostInvokeDeadline> *outDeadline = nullptr) {
         if (queue_.empty() || queue_.begin()->first.fireTime > now) {
             return false;
         }
@@ -320,8 +390,14 @@ private:
         if (outHostSend != nullptr) {
             *outHostSend = std::move(it->second->hostSend);
         }
-
-        sendIdIndex_.erase(it->second->sendId);
+        if (it->second->hostInvokeDeadline) {
+            deadlineIndex_.erase(it->second->hostInvokeDeadlineToken);
+            if (outDeadline != nullptr) {
+                *outDeadline = std::move(it->second->hostInvokeDeadline);
+            }
+        } else {
+            sendIdIndex_.erase(it->second->sendId);
+        }
         queue_.erase(it);
         return true;
     }
@@ -333,6 +409,8 @@ private:
 
     std::map<OrderKey, EntryPtr> queue_;
     std::unordered_map<std::string, typename std::map<OrderKey, EntryPtr>::iterator> sendIdIndex_;
+    // Host-run invocation deadlines by start token; see scheduleHostInvokeDeadline().
+    std::unordered_map<uint64_t, typename std::map<OrderKey, EntryPtr>::iterator> deadlineIndex_;
     uint64_t sequenceCounter_ = 0;
 };
 
@@ -375,6 +453,23 @@ public:
         return core_.schedule(EventType{}, fireTimeMs, sendId, std::string{}, std::move(request));
     }
 
+    /**
+     * @brief Arm a host-run invocation start's deadline at `fireTimeMs` —
+     *        see `SchedulerQueueCore::scheduleHostInvokeDeadline`
+     */
+    void scheduleHostInvokeDeadlineAt(uint64_t token, std::shared_ptr<const HostInvokeDeadline> deadline,
+                                      uint64_t fireTimeMs) {
+        core_.scheduleHostInvokeDeadline(fireTimeMs, token, std::move(deadline));
+    }
+
+    /**
+     * @brief Drop start `token`'s pending deadline — see
+     *        `SchedulerQueueCore::dropHostInvokeDeadline`
+     */
+    void dropHostInvokeDeadline(uint64_t token) {
+        core_.dropHostInvokeDeadline(token);
+    }
+
     bool hasReadyEvents(uint64_t nowMs) const {
         return core_.hasReadyEvents(nowMs);
     }
@@ -390,6 +485,16 @@ public:
                      std::shared_ptr<const HostSendRequest> &outHostSend) {
         std::string sendId;
         return core_.popReadyAct(nowMs, outEvent, outEventData, sendId, outHostSend);
+    }
+
+    /**
+     * @brief Pop the act due first, a host-run invocation's deadline included
+     */
+    bool popReadyAct(uint64_t nowMs, EventType &outEvent, std::string &outEventData,
+                     std::shared_ptr<const HostSendRequest> &outHostSend,
+                     std::shared_ptr<const HostInvokeDeadline> &outDeadline) {
+        std::string sendId;
+        return core_.popReadyAct(nowMs, outEvent, outEventData, sendId, outHostSend, outDeadline);
     }
 
     bool hasPendingEvents() const {

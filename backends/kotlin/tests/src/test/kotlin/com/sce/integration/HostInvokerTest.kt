@@ -26,16 +26,26 @@
 package com.sce.integration
 
 import com.sce.integration.statechart_host_invoker.StatechartHostInvokerEvent
+import com.sce.integration.statechart_host_invoker.StatechartHostInvokerState
 import com.sce.integration.statechart_host_invoker.StatechartHostInvokerStateMachine
 import com.sce.runtime.EventMetadata
+import com.sce.runtime.HOST_INVOKE_DEADLINE_PARAM
+import com.sce.runtime.ManualClock
 import com.sce.runtime.StateMachineEngine
+import com.sce.runtime.parseHostInvokeDeadlineMs
 import com.sce.w3c.W3CTestBase
+import java.io.File
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -71,6 +81,9 @@ class HostInvokerTest {
             "pinged" -> sm.pinged()
             "leaked" -> sm.leaked()
             "lost" -> sm.lost()
+            "expired" -> sm.expired()
+            "finished" -> sm.finished()
+            "misdated" -> sm.misdated()
             else -> error("the fixture declares no counter named `$name`")
         }
         assertNotNull(value, "the fixture declares `$name` and the machine could not read it")
@@ -452,6 +465,167 @@ class HostInvokerTest {
             assertEquals(0L, counter(sm, "started"), "done.invoke arrived for an invocation nobody ran")
         } finally {
             sm.cleanup()
+        }
+    }
+
+    /**
+     * A machine on [ManualClock] whose invoker answers nothing and records,
+     * per start, whether the request still carried the deadline param, driven
+     * into `timed`. The clock is installed before `initialize()`, which arms
+     * against it.
+     */
+    private fun timed(
+        log: MutableList<String>,
+        starts: MutableList<Pair<String, Long>>,
+    ): StatechartHostInvokerStateMachine {
+        val sm = machine()
+        sm.clock = ManualClock(0L)
+        sm.registerInvoker(declaredType) { ev ->
+            ev.start?.let {
+                log.add("START id=${it.invokeId} deadline-param=${HOST_INVOKE_DEADLINE_PARAM in it.params}")
+                starts.add(it.invokeId to it.token)
+            }
+            ev.cancel?.let { log.add("CANCEL id=${it.invokeId}") }
+            null
+        }
+        sm.initialize()
+        deliver(sm, StatechartHostInvokerEvent.Time)
+        return sm
+    }
+
+    /**
+     * A deadline that passes while the invocation is still running ends it:
+     * the host is told to stop, the document receives `error.invoke.slow` with
+     * `_event.data` "deadline", and a reply afterwards is refused. The param is
+     * the engine's — the host never sees it.
+     */
+    @Test
+    fun aDeadlineThatPassesEndsTheInvocation() {
+        val log = mutableListOf<String>()
+        val starts = mutableListOf<Pair<String, Long>>()
+        val sm = timed(log, starts)
+        try {
+            assertTrue("START id=slow deadline-param=false" in log, "the host was handed the deadline param, or `slow` never started: $log")
+            // A `<cancel>` of the empty send id must not reach the deadline.
+            deliver(sm, StatechartHostInvokerEvent.Forget)
+            sm.advanceTimeMs(49)
+            assertEquals(0L, counter(sm, "expired"), "expired early")
+            sm.advanceTimeMs(1)
+            assertEquals(1L, counter(sm, "expired"))
+            assertTrue("CANCEL id=slow" in log, "the host was not told to stop: $log")
+
+            assertFalse(sm.completeHostInvoke(declaredType, "slow", tokenOf(starts, "slow"), "late"), "a reply after the deadline was accepted")
+            sm.tick()
+            assertEquals(0L, counter(sm, "finished"))
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * The discriminator: a completion before the deadline is the outcome, and
+     * the deadline that comes due afterwards does nothing — no cancel, no
+     * `error.invoke`, and nothing left for the host to tick toward.
+     */
+    @Test
+    fun aCompletionBeforeTheDeadlineDisarmsIt() {
+        val log = mutableListOf<String>()
+        val starts = mutableListOf<Pair<String, Long>>()
+        val sm = timed(log, starts)
+        try {
+            assertTrue(sm.completeHostInvoke(declaredType, "slow", tokenOf(starts, "slow"), "ok"))
+            sm.tick()
+            assertEquals(1L, counter(sm, "finished"))
+            assertNull(sm.timeUntilNextScheduledMs(), "the disarmed deadline is still keeping the host ticking")
+
+            sm.advanceTimeMs(100)
+            assertEquals(0L, counter(sm, "expired"))
+            assertFalse("CANCEL id=slow" in log, "a completed invocation was cancelled by its deadline: $log")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * §scxml-6.4.1: a deadline that is not a whole number of milliseconds is an
+     * argument that cannot be evaluated — `error.execution`, and the host is
+     * never asked to start the invocation.
+     */
+    @Test
+    fun aDeadlineThatIsNotMillisecondsStartsNothing() {
+        val log = mutableListOf<String>()
+        val sm = timed(log, mutableListOf())
+        try {
+            assertEquals(1L, counter(sm, "misdated"))
+            assertFalse(log.any { it.startsWith("START id=undated") }, "an invocation with an unreadable deadline was started: $log")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * The coroutine mode keeps its deadlines too. Its loop used to wait on the
+     * event channel alone, so a deadline armed in `scheduledSends` never came
+     * due there and the host was never told to stop. Real time, because the
+     * engine's coroutine runs on `Dispatchers.Default`, outside any test
+     * scheduler; the wait is bounded far above the 50 ms deadline. The signal
+     * is the host's own cancel, which arrives on the engine's thread — nothing
+     * here reads the datamodel from another one.
+     */
+    @Test
+    fun aDeadlineExpiresInCoroutineMode() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val cancelled = CompletableDeferred<Unit>()
+        val sm = machine()
+        sm.registerInvoker(declaredType) { ev ->
+            if (ev.start?.invokeId == "slow") started.complete(Unit)
+            if (ev.cancel?.invokeId == "slow") cancelled.complete(Unit)
+            null
+        }
+        sm.start(this)
+        try {
+            // Each wait is bounded well inside the runner's own per-test limit,
+            // so a stall names its stage instead of surfacing as that limit.
+            sm.send(StatechartHostInvokerEvent.Time)
+            assertNotNull(withTimeoutOrNull(3_000) { started.await() }, "`slow` was never started in coroutine mode")
+            assertNotNull(withTimeoutOrNull(3_000) { cancelled.await() }, "`slow` started, and its 50 ms deadline never expired")
+            // The loop goes on serving events after performing an act, and
+            // `done` is reached only once the expiry's own macrostep has run —
+            // so the engine is idle when it is stopped below.
+            val after = withTimeoutOrNull(3_000) { sm.sendAndAwait(StatechartHostInvokerEvent.Leave) }
+            assertEquals(StatechartHostInvokerState.Done, after, "the loop stopped serving events after the deadline")
+        } finally {
+            sm.stop()
+        }
+    }
+
+    /**
+     * Every runtime reads a deadline's text by one grammar, held to one table.
+     * `toLongOrNull` would not do on its own: it reads a sign, and a deadline
+     * this backend honours while another refuses it makes a document depend on
+     * where it was compiled.
+     */
+    @Test
+    fun aDeadlineIsReadByTheSharedTable() {
+        // Found by walking up rather than by a fixed depth, because Gradle's
+        // working directory is the project's and that is a build detail.
+        val root = generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
+            .firstOrNull { File(it, "sce-build").isDirectory }
+            ?: error("no ancestor of ${System.getProperty("user.dir")} holds sce-build/")
+        val table = Json.parseToJsonElement(
+            File(root, "sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json").readText()
+        ).jsonObject
+        val accepted = table.getValue("accepted").jsonArray
+        val refused = table.getValue("refused").jsonArray
+        // A floor: an empty table would pass every assertion below.
+        assertTrue(accepted.isNotEmpty() && refused.isNotEmpty(), "the table is empty")
+        for (pair in accepted) {
+            val (written, ms) = pair.jsonArray.map { it.jsonPrimitive.content }
+            assertEquals(ms.toLong(), parseHostInvokeDeadlineMs(written), "\"$written\"")
+        }
+        for (value in refused) {
+            val written = value.jsonPrimitive.content
+            assertNull(parseHostInvokeDeadlineMs(written), "\"$written\" was accepted")
         }
     }
 

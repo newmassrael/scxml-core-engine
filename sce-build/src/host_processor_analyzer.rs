@@ -253,6 +253,39 @@ pub fn declare_host_processors(model: &mut SCXMLModel, types: &[String]) {
 /// the same words §scxml-6.2.5 uses for `<send>`, and SCE keeps the two
 /// answers separable for the same reason the specification states them
 /// separately.
+/// The reserved `<param>` a host-run `<invoke>` names its deadline with, in
+/// milliseconds — read by each runtime, never handed to the host. One name
+/// for both invoke types that have a deadline; `sce:mesh-rpc` accepts it
+/// beside its own `_mesh_deadline_ms`.
+pub const HOST_INVOKE_DEADLINE_PARAM: &str = "_sce_deadline_ms";
+
+/// Read the text of a deadline value as milliseconds: one or more ASCII
+/// digits, optionally followed by `.` and one or more `0`, within a signed
+/// 64-bit count; anything else is `None`.
+///
+/// The build's copy of the grammar each runtime applies at run time
+/// (`parse_host_invoke_deadline_ms` and its siblings), for the deadlines
+/// this crate reads itself — a `sce:mesh-rpc` invoke's, under either name.
+/// Every copy is held to one table,
+/// `sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json`,
+/// so a deadline the build accepts is one every runtime accepts.
+pub fn parse_deadline_ms(written: &str) -> Option<u64> {
+    let (whole, fraction) = match written.split_once('.') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (written, None),
+    };
+    if whole.is_empty() || !whole.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    if let Some(fraction) = fraction {
+        if fraction.is_empty() || !fraction.bytes().all(|b| b == b'0') {
+            return None;
+        }
+    }
+    // All ASCII digits, so the only way this fails is a value past i64::MAX.
+    whole.parse::<i64>().ok().map(|ms| ms as u64)
+}
+
 pub fn declare_host_surfaces(
     model: &mut SCXMLModel,
     send_types: &[String],
@@ -282,6 +315,19 @@ pub fn declare_host_surfaces(
             .any(|i| matches!(i, Invoke::Unsupported(info) if info.host_served))
         {
             model.events.insert("done.invoke".to_string());
+        }
+        // A deadline (`_sce_deadline_ms`) is armed on the engine's scheduler
+        // and, if it passes, raises `error.invoke.<id>` — or the generic
+        // `error.invoke` — so the machine must be driven with `tick()` and the
+        // generic event must exist. `needs_tick_driving` was settled by
+        // analysis before this declaration, so it is settled again here.
+        if model.invokes.iter().any(|i| {
+            matches!(i, Invoke::Unsupported(info) if info.host_served
+                && info.base.params.iter().any(|p| p.name == HOST_INVOKE_DEADLINE_PARAM))
+        }) {
+            model.events.insert("error.invoke".to_string());
+            model.needs_event_scheduler = Some(true);
+            model.needs_tick_driving = model.needs_event_scheduler_driving();
         }
         // A host-served invoke evaluates its request when it starts, which
         // analysis — run before this declaration — could not know it would.
@@ -526,6 +572,36 @@ mod tests {
 
     fn parse(scxml: &str) -> SCXMLModel {
         SCXMLParser::new().parse_string(scxml, "test").unwrap()
+    }
+
+    /// The build reads a deadline by the grammar every runtime reads it by,
+    /// held to the same table they are.
+    #[test]
+    fn a_deadline_is_read_by_the_shared_table() {
+        let table: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/host_processor/host_invoke_deadline_values.json"
+        ))
+        .expect("the table is JSON");
+        let accepted = table["accepted"].as_array().expect("`accepted` is a list");
+        let refused = table["refused"].as_array().expect("`refused` is a list");
+        // A floor: an empty table would pass every assertion below.
+        assert!(
+            !accepted.is_empty() && !refused.is_empty(),
+            "the table is empty"
+        );
+        for pair in accepted {
+            let written = pair[0].as_str().expect("written is a string");
+            let ms: u64 = pair[1]
+                .as_str()
+                .expect("ms is a string")
+                .parse()
+                .expect("ms is a number");
+            assert_eq!(parse_deadline_ms(written), Some(ms), "{written:?}");
+        }
+        for written in refused {
+            let written = written.as_str().expect("a refused value is a string");
+            assert_eq!(parse_deadline_ms(written), None, "{written:?} was accepted");
+        }
     }
 
     /// Wrap `body` in the smallest document that parses, so each test

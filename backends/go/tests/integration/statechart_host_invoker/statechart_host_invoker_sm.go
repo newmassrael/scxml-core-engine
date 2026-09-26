@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e9c8544fc577b0f10a7b3d3f2c55aa52bb95a3f439b9ed10ddb1632871bd6aa8
+// source-hash: 60d37a50f72b4e19939a11e38d8cae46cb86df5c80d4ebbf91197dce6673d94c
 
 
 // SPDX-License-Identifier: MIT
@@ -18,7 +18,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: statechart_host_invoker.scxml:75 :: _machine
+// SCE-MAP: statechart_host_invoker.scxml:92 :: _machine
 
 package statechart_host_invoker
 
@@ -50,6 +50,7 @@ const (
 	StatechartHostInvokerStateEvaluating StatechartHostInvokerState = 1
 	StatechartHostInvokerStateInvoking StatechartHostInvokerState = 2
 	StatechartHostInvokerStateLocating StatechartHostInvokerState = 3
+	StatechartHostInvokerStateTimed StatechartHostInvokerState = 4
 )
 
 func (s StatechartHostInvokerState) String() string {
@@ -62,6 +63,8 @@ func (s StatechartHostInvokerState) String() string {
 		return "invoking"
 	case StatechartHostInvokerStateLocating:
 		return "locating"
+	case StatechartHostInvokerStateTimed:
+		return "timed"
 	}
 	return "unknown"
 }
@@ -92,6 +95,8 @@ func StatechartHostInvokerStateFromName(name string) (StatechartHostInvokerState
 		return StatechartHostInvokerStateInvoking, true
 	case "locating":
 		return StatechartHostInvokerStateLocating, true
+	case "timed":
+		return StatechartHostInvokerStateTimed, true
 	}
 	var zero StatechartHostInvokerState
 	return zero, false
@@ -108,6 +113,7 @@ var StatechartHostInvokerAllStates = []StatechartHostInvokerState{
 	StatechartHostInvokerStateEvaluating,
 	StatechartHostInvokerStateInvoking,
 	StatechartHostInvokerStateLocating,
+	StatechartHostInvokerStateTimed,
 }
 
 // StatechartHostInvokerTarget is one token of a target list, as the document wrote
@@ -125,12 +131,12 @@ type StatechartHostInvokerTarget = sce.EntryTarget[StatechartHostInvokerState, s
 
 // childStatesOfStatechartHostInvoker is §scxml-D-getChildStates per state: its
 // <state>, <parallel> and <final> children, in document order.
-var childStatesOfStatechartHostInvoker = [4][]StatechartHostInvokerState{
+var childStatesOfStatechartHostInvoker = [5][]StatechartHostInvokerState{
 }
 
 // initialTargetsOfStatechartHostInvoker is each compound state's initial transition
 // target, as written (§scxml-3.3).
-var initialTargetsOfStatechartHostInvoker = [4][]StatechartHostInvokerTarget{
+var initialTargetsOfStatechartHostInvoker = [5][]StatechartHostInvokerTarget{
 }
 
 // documentInitialTargetsOfStatechartHostInvoker is the target of the document's own
@@ -140,7 +146,7 @@ var documentInitialTargetsOfStatechartHostInvoker = []StatechartHostInvokerTarge
 // transitionTargetsOfStatechartHostInvoker is each transition's target list, as
 // written (§scxml-3.13), by source state and the transition's index among its
 // source's own transitions. A targetless transition's entry is empty.
-var transitionTargetsOfStatechartHostInvoker = [4][][]StatechartHostInvokerTarget{
+var transitionTargetsOfStatechartHostInvoker = [5][][]StatechartHostInvokerTarget{
 	StatechartHostInvokerStateDone: {
 		1: {sce.StateTarget[StatechartHostInvokerState, sce.HistoryID](StatechartHostInvokerStateInvoking)},
 	},
@@ -148,6 +154,10 @@ var transitionTargetsOfStatechartHostInvoker = [4][][]StatechartHostInvokerTarge
 		3: {sce.StateTarget[StatechartHostInvokerState, sce.HistoryID](StatechartHostInvokerStateDone)},
 		4: {sce.StateTarget[StatechartHostInvokerState, sce.HistoryID](StatechartHostInvokerStateEvaluating)},
 		5: {sce.StateTarget[StatechartHostInvokerState, sce.HistoryID](StatechartHostInvokerStateLocating)},
+		6: {sce.StateTarget[StatechartHostInvokerState, sce.HistoryID](StatechartHostInvokerStateTimed)},
+	},
+	StatechartHostInvokerStateTimed: {
+		2: {sce.StateTarget[StatechartHostInvokerState, sce.HistoryID](StatechartHostInvokerStateDone)},
 	},
 }
 
@@ -162,14 +172,19 @@ const (
 	StatechartHostInvokerEventDoneInvoke StatechartHostInvokerEvent = 1
 	StatechartHostInvokerEventDoneInvokeProbe StatechartHostInvokerEvent = 2
 	StatechartHostInvokerEventDoneInvokeProbe2 StatechartHostInvokerEvent = 3
-	StatechartHostInvokerEventErrorExecution StatechartHostInvokerEvent = 4
-	StatechartHostInvokerEventEvaluate StatechartHostInvokerEvent = 5
-	StatechartHostInvokerEventLeak StatechartHostInvokerEvent = 6
-	StatechartHostInvokerEventLeave StatechartHostInvokerEvent = 7
-	StatechartHostInvokerEventLocate StatechartHostInvokerEvent = 8
-	StatechartHostInvokerEventPing StatechartHostInvokerEvent = 9
+	StatechartHostInvokerEventDoneInvokeSlow StatechartHostInvokerEvent = 4
+	StatechartHostInvokerEventErrorExecution StatechartHostInvokerEvent = 5
+	StatechartHostInvokerEventErrorInvoke StatechartHostInvokerEvent = 6
+	StatechartHostInvokerEventErrorInvokeSlow StatechartHostInvokerEvent = 7
+	StatechartHostInvokerEventEvaluate StatechartHostInvokerEvent = 8
+	StatechartHostInvokerEventForget StatechartHostInvokerEvent = 9
+	StatechartHostInvokerEventLeak StatechartHostInvokerEvent = 10
+	StatechartHostInvokerEventLeave StatechartHostInvokerEvent = 11
+	StatechartHostInvokerEventLocate StatechartHostInvokerEvent = 12
+	StatechartHostInvokerEventPing StatechartHostInvokerEvent = 13
+	StatechartHostInvokerEventTime StatechartHostInvokerEvent = 14
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StatechartHostInvokerEventNull StatechartHostInvokerEvent = 10
+	StatechartHostInvokerEventNull StatechartHostInvokerEvent = 15
 )
 
 func (e StatechartHostInvokerEvent) String() string {
@@ -182,10 +197,18 @@ func (e StatechartHostInvokerEvent) String() string {
 		return "done.invoke.probe"
 	case StatechartHostInvokerEventDoneInvokeProbe2:
 		return "done.invoke.probe2"
+	case StatechartHostInvokerEventDoneInvokeSlow:
+		return "done.invoke.slow"
 	case StatechartHostInvokerEventErrorExecution:
 		return "error.execution"
+	case StatechartHostInvokerEventErrorInvoke:
+		return "error.invoke"
+	case StatechartHostInvokerEventErrorInvokeSlow:
+		return "error.invoke.slow"
 	case StatechartHostInvokerEventEvaluate:
 		return "evaluate"
+	case StatechartHostInvokerEventForget:
+		return "forget"
 	case StatechartHostInvokerEventLeak:
 		return "leak"
 	case StatechartHostInvokerEventLeave:
@@ -194,6 +217,8 @@ func (e StatechartHostInvokerEvent) String() string {
 		return "locate"
 	case StatechartHostInvokerEventPing:
 		return "ping"
+	case StatechartHostInvokerEventTime:
+		return "time"
 	case StatechartHostInvokerEventNull:
 		return ""
 	}
@@ -427,6 +452,42 @@ func (p *StatechartHostInvokerPolicy) Lost() (int64, bool) {
 	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "lost")
 }
 
+// Expired reports what the `expired` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `expired` was assigned a value of another type, or the engine refused.
+func (p *StatechartHostInvokerPolicy) Expired() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "expired")
+}
+
+// Finished reports what the `finished` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `finished` was assigned a value of another type, or the engine refused.
+func (p *StatechartHostInvokerPolicy) Finished() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "finished")
+}
+
+// Misdated reports what the `misdated` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `misdated` was assigned a value of another type, or the engine refused.
+func (p *StatechartHostInvokerPolicy) Misdated() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "misdated")
+}
+
 
 
 
@@ -622,6 +683,36 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		} else {
 			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='lost'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "lost", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize expired from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "expired", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='expired'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "expired", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize finished from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "finished", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='finished'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "finished", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize misdated from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "misdated", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='misdated'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "misdated", nil)
 		}
 	}
 
@@ -1087,6 +1178,74 @@ if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 			}
 			continue
 		}
+		if pending.DocumentID == "slow" {
+			// W3C SCXML 6.4.1: the host declared this `type`, so START the
+			// invocation rather than refusing it. The id handed over is the
+			// DOCUMENT's, not the per-instance one the pending queue carries:
+			// `done.invoke.<id>` is the name the author wrote a transition
+			// for, so it is the name the host must answer on.
+			// W3C SCXML 6.4.1: what the request says is evaluated now, when the
+			// invocation starts, by the rules the other invoke kinds follow: an
+			// attribute that cannot be evaluated starts nothing, and a `<param>`
+			// that cannot is reported and left out (W3C SCXML 5.7.1).
+			hostInvokeSrc := ""
+			hostInvokeContent := ""
+			p.ensureScriptEngine()
+			hostInvokeParams := map[string][]string{}
+			if paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `50`); paramErr == nil {
+				// W3C SCXML C.2: the value crosses as text, rendered by the
+				// neutral helper — an engine literal would put this machine's
+				// language on the wire.
+				hostInvokeParams["_sce_deadline_ms"] = append(hostInvokeParams["_sce_deadline_ms"], sce.ToWireString(paramVal))
+			} else {
+				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
+				// reported.
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='_sce_deadline_ms'> expr failed to evaluate"))
+			}
+if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+				ProcessorType: "x-sce-host",
+				InvokeID:      "slow",
+				Src:           hostInvokeSrc,
+				Params:        hostInvokeParams,
+				Content:       hostInvokeContent,
+			}) {
+				// W3C SCXML 6.4.1: declared but no invoker registered. The
+				// document asked for a process to be run and none was, which
+				// is the same fact as an unsupported type — so the same
+				// event, rather than a silence that reads as started.
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+			}
+			continue
+		}
+		if pending.DocumentID == "undated" {
+			// W3C SCXML 6.4.1: the host declared this `type`, so START the
+			// invocation rather than refusing it. The id handed over is the
+			// DOCUMENT's, not the per-instance one the pending queue carries:
+			// `done.invoke.<id>` is the name the author wrote a transition
+			// for, so it is the name the host must answer on.
+			// W3C SCXML 6.4.1: what the request says is evaluated now, when the
+			// invocation starts, by the rules the other invoke kinds follow: an
+			// attribute that cannot be evaluated starts nothing, and a `<param>`
+			// that cannot is reported and left out (W3C SCXML 5.7.1).
+			hostInvokeSrc := ""
+			hostInvokeContent := ""
+			hostInvokeParams := map[string][]string{}
+			hostInvokeParams["_sce_deadline_ms"] = append(hostInvokeParams["_sce_deadline_ms"], "soon")
+if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+				ProcessorType: "x-sce-host",
+				InvokeID:      "undated",
+				Src:           hostInvokeSrc,
+				Params:        hostInvokeParams,
+				Content:       hostInvokeContent,
+			}) {
+				// W3C SCXML 6.4.1: declared but no invoker registered. The
+				// document asked for a process to be run and none was, which
+				// is the same fact as an unsupported type — so the same
+				// event, rather than a silence that reads as started.
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+			}
+			continue
+		}
 	}
 }
 
@@ -1177,6 +1336,8 @@ func (p *StatechartHostInvokerPolicy) GetDocumentOrder(state StatechartHostInvok
 		return 0
 	case StatechartHostInvokerStateLocating:
 		return 3
+	case StatechartHostInvokerStateTimed:
+		return 4
 	}
 	return -1
 }
@@ -1197,10 +1358,18 @@ func (p *StatechartHostInvokerPolicy) GetEventFromName(name string) (StatechartH
 		return StatechartHostInvokerEventDoneInvokeProbe, true
 	case "done.invoke.probe2":
 		return StatechartHostInvokerEventDoneInvokeProbe2, true
+	case "done.invoke.slow":
+		return StatechartHostInvokerEventDoneInvokeSlow, true
 	case "error.execution":
 		return StatechartHostInvokerEventErrorExecution, true
+	case "error.invoke":
+		return StatechartHostInvokerEventErrorInvoke, true
+	case "error.invoke.slow":
+		return StatechartHostInvokerEventErrorInvokeSlow, true
 	case "evaluate":
 		return StatechartHostInvokerEventEvaluate, true
+	case "forget":
+		return StatechartHostInvokerEventForget, true
 	case "leak":
 		return StatechartHostInvokerEventLeak, true
 	case "leave":
@@ -1209,6 +1378,8 @@ func (p *StatechartHostInvokerPolicy) GetEventFromName(name string) (StatechartH
 		return StatechartHostInvokerEventLocate, true
 	case "ping":
 		return StatechartHostInvokerEventPing, true
+	case "time":
+		return StatechartHostInvokerEventTime, true
 	}
 	return StatechartHostInvokerEventNull, false
 }
@@ -1226,6 +1397,8 @@ func (p *StatechartHostInvokerPolicy) HostInvokeIDs() []string {
 		"done._invoke_0",
 		"locating._invoke_1",
 		"locating._invoke_2",
+		"slow",
+		"undated",
 	}
 }
 
@@ -1270,7 +1443,7 @@ func (p *StatechartHostInvokerPolicy) NeedsScriptEngine() bool {
 // waits forever with nothing said. Same verdict the generate manifest
 // publishes as needs_event_scheduler.
 func (p *StatechartHostInvokerPolicy) NeedsEventScheduler() bool {
-	return false
+	return true
 }
 
 // NeedsDataModelInit returns whether the SM needs datamodel init.
@@ -1337,12 +1510,12 @@ func (p *StatechartHostInvokerPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line statechart_host_invoker.scxml:75
+//line statechart_host_invoker.scxml:92
 func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostInvokerState, engine *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case StatechartHostInvokerStateDone:
-		//line statechart_host_invoker.scxml:141
+		//line statechart_host_invoker.scxml:162
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1367,7 +1540,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateEvaluating:
-		//line statechart_host_invoker.scxml:125
+		//line statechart_host_invoker.scxml:146
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1397,7 +1570,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateInvoking:
-		//line statechart_host_invoker.scxml:99
+		//line statechart_host_invoker.scxml:119
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1430,7 +1603,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateLocating:
-		//line statechart_host_invoker.scxml:152
+		//line statechart_host_invoker.scxml:173
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1499,6 +1672,28 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 				DocumentID: "locating._invoke_2",
 			})
 		}
+	case StatechartHostInvokerStateTimed:
+		//line statechart_host_invoker.scxml:195
+		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
+		// Defer only — the error.execution raise happens in
+		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
+		// CancelInvokesForState drops the entry if the state exits first.
+		{
+			generatedInvokeID := fmt.Sprintf("%s.%d.slow", "timed", sce.NextInvokeCounter())
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StatechartHostInvokerState]{
+				InvokeID:   generatedInvokeID,
+				State:      StatechartHostInvokerStateTimed,
+				DocumentID: "slow",
+			})
+		}
+		{
+			generatedInvokeID := fmt.Sprintf("%s.%d.undated", "timed", sce.NextInvokeCounter())
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StatechartHostInvokerState]{
+				InvokeID:   generatedInvokeID,
+				State:      StatechartHostInvokerStateTimed,
+				DocumentID: "undated",
+			})
+		}
 	default:
 		// No entry actions
 	}
@@ -1509,7 +1704,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line statechart_host_invoker.scxml:75
+//line statechart_host_invoker.scxml:92
 func (p *StatechartHostInvokerPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1517,7 +1712,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteHistoryDefaultContent(history sce.H
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line statechart_host_invoker.scxml:75
+//line statechart_host_invoker.scxml:92
 func (p *StatechartHostInvokerPolicy) ExecuteExitActions(state StatechartHostInvokerState, engine *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent], configurationBeforeExit []StatechartHostInvokerState) {
 	p.ensureScriptEngine()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
@@ -1578,6 +1773,18 @@ func (p *StatechartHostInvokerPolicy) ExecuteExitActions(state StatechartHostInv
 		// ever started and stays silent when it did not, so the emitted chain
 		// does not need its own bookkeeping.
 		engine.CancelHostInvoke("x-sce-host", "locating._invoke_2")
+	case StatechartHostInvokerStateTimed:
+		sce.CancelInvokesForState(&p.pendingInvokes, StatechartHostInvokerStateTimed)
+		// W3C SCXML 6.4: the host's invocation ends with the state that
+		// started it. Unconditional here: the engine knows whether this one
+		// ever started and stays silent when it did not, so the emitted chain
+		// does not need its own bookkeeping.
+		engine.CancelHostInvoke("x-sce-host", "slow")
+		// W3C SCXML 6.4: the host's invocation ends with the state that
+		// started it. Unconditional here: the engine knows whether this one
+		// ever started and stays silent when it did not, so the emitted chain
+		// does not need its own bookkeeping.
+		engine.CancelHostInvoke("x-sce-host", "undated")
 	default:
 	}
 }
@@ -1587,7 +1794,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteExitActions(state StatechartHostInv
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line statechart_host_invoker.scxml:75
+//line statechart_host_invoker.scxml:92
 func (p *StatechartHostInvokerPolicy) BindCurrentEvent(event StatechartHostInvokerEvent, engine *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent]) {
 	if event != StatechartHostInvokerEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
@@ -1602,11 +1809,11 @@ func (p *StatechartHostInvokerPolicy) BindCurrentEvent(event StatechartHostInvok
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line statechart_host_invoker.scxml:75
+//line statechart_host_invoker.scxml:92
 func (p *StatechartHostInvokerPolicy) FirstEnabledTransition(state StatechartHostInvokerState, event StatechartHostInvokerEvent, engine *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent]) (sce.EnabledTransition[StatechartHostInvokerState, sce.HistoryID], bool) {
 	switch state {
 	case StatechartHostInvokerStateDone:
-		if event == StatechartHostInvokerEventDoneInvoke || event == StatechartHostInvokerEventDoneInvokeProbe || event == StatechartHostInvokerEventDoneInvokeProbe2 {
+		if event == StatechartHostInvokerEventDoneInvoke || event == StatechartHostInvokerEventDoneInvokeProbe || event == StatechartHostInvokerEventDoneInvokeProbe2 || event == StatechartHostInvokerEventDoneInvokeSlow {
 			if p.evaluateGuard(`(_event.invokeid == doneId)`, engine) {
 				return sce.EnabledTransition[StatechartHostInvokerState, sce.HistoryID]{
 					Source:          state,
@@ -1702,8 +1909,19 @@ func (p *StatechartHostInvokerPolicy) FirstEnabledTransition(state StatechartHos
 				}, true
 			}
 		}
+		if event == StatechartHostInvokerEventTime {
+			{
+				return sce.EnabledTransition[StatechartHostInvokerState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStatechartHostInvoker[state][6],
+					TransitionIndex: 6,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
+		}
 	case StatechartHostInvokerStateLocating:
-		if event == StatechartHostInvokerEventDoneInvoke || event == StatechartHostInvokerEventDoneInvokeProbe || event == StatechartHostInvokerEventDoneInvokeProbe2 {
+		if event == StatechartHostInvokerEventDoneInvoke || event == StatechartHostInvokerEventDoneInvokeProbe || event == StatechartHostInvokerEventDoneInvokeProbe2 || event == StatechartHostInvokerEventDoneInvokeSlow {
 			if p.evaluateGuard(`(_event.invokeid == slot.id)`, engine) {
 				return sce.EnabledTransition[StatechartHostInvokerState, sce.HistoryID]{
 					Source:          state,
@@ -1743,20 +1961,72 @@ func (p *StatechartHostInvokerPolicy) FirstEnabledTransition(state StatechartHos
 				}, true
 			}
 		}
+	case StatechartHostInvokerStateTimed:
+		if event == StatechartHostInvokerEventErrorExecution {
+			{
+				return sce.EnabledTransition[StatechartHostInvokerState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == StatechartHostInvokerEventForget {
+			{
+				return sce.EnabledTransition[StatechartHostInvokerState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == StatechartHostInvokerEventLeave {
+			{
+				return sce.EnabledTransition[StatechartHostInvokerState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStatechartHostInvoker[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == StatechartHostInvokerEventErrorInvokeSlow {
+			if p.evaluateGuard(`((_event.invokeid == "slow") and (_event.data == "deadline"))`, engine) {
+				return sce.EnabledTransition[StatechartHostInvokerState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 3,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == StatechartHostInvokerEventDoneInvokeSlow {
+			if p.evaluateGuard(`(_event.invokeid == "slow")`, engine) {
+				return sce.EnabledTransition[StatechartHostInvokerState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 4,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
 	}
 	return sce.EnabledTransition[StatechartHostInvokerState, sce.HistoryID]{}, false
 }
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line statechart_host_invoker.scxml:75
+//line statechart_host_invoker.scxml:92
 func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source StatechartHostInvokerState, transitionIndex int, engine *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent]) {
 	p.ensureScriptEngine()
 	switch source {
 	case StatechartHostInvokerStateDone:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:146
+			//line statechart_host_invoker.scxml:167
 
 	// W3C SCXML 5.3: <assign location="matched" expr="matched + 1">
 	if err := p.assignVariable(`matched`, `_scxml_add(matched, 1)`); err != nil {
@@ -1767,7 +2037,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateEvaluating:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:136
+			//line statechart_host_invoker.scxml:157
 
 	// W3C SCXML 5.3: <assign location="dropped" expr="dropped + 1">
 	if err := p.assignVariable(`dropped`, `_scxml_add(dropped, 1)`); err != nil {
@@ -1778,7 +2048,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateInvoking:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:109
+			//line statechart_host_invoker.scxml:129
 
 	// W3C SCXML 5.3: <assign location="started" expr="started + 1">
 	if err := p.assignVariable(`started`, `_scxml_add(started, 1)`); err != nil {
@@ -1786,7 +2056,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 1:
-			//line statechart_host_invoker.scxml:112
+			//line statechart_host_invoker.scxml:132
 
 	// W3C SCXML 5.3: <assign location="started2" expr="started2 + 1">
 	if err := p.assignVariable(`started2`, `_scxml_add(started2, 1)`); err != nil {
@@ -1794,7 +2064,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 2:
-			//line statechart_host_invoker.scxml:115
+			//line statechart_host_invoker.scxml:135
 
 	// W3C SCXML 5.3: <assign location="refused" expr="refused + 1">
 	if err := p.assignVariable(`refused`, `_scxml_add(refused, 1)`); err != nil {
@@ -1805,7 +2075,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateLocating:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:160
+			//line statechart_host_invoker.scxml:181
 
 	// W3C SCXML 5.3: <assign location="slotted" expr="slotted + 1">
 	if err := p.assignVariable(`slotted`, `_scxml_add(slotted, 1)`); err != nil {
@@ -1813,7 +2083,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 1:
-			//line statechart_host_invoker.scxml:163
+			//line statechart_host_invoker.scxml:184
 
 	// W3C SCXML 5.3: <assign location="pinged" expr="pinged + 1">
 	if err := p.assignVariable(`pinged`, `_scxml_add(pinged, 1)`); err != nil {
@@ -1821,7 +2091,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 2:
-			//line statechart_host_invoker.scxml:166
+			//line statechart_host_invoker.scxml:187
 
 	// W3C SCXML 5.3: <assign location="leaked" expr="leaked + 1">
 	if err := p.assignVariable(`leaked`, `_scxml_add(leaked, 1)`); err != nil {
@@ -1829,11 +2099,48 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 3:
-			//line statechart_host_invoker.scxml:169
+			//line statechart_host_invoker.scxml:190
 
 	// W3C SCXML 5.3: <assign location="lost" expr="lost + 1">
 	if err := p.assignVariable(`lost`, `_scxml_add(lost, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'lost' failed"))
+	}
+
+		}
+	case StatechartHostInvokerStateTimed:
+		switch transitionIndex {
+		case 0:
+			//line statechart_host_invoker.scxml:202
+
+	// W3C SCXML 5.3: <assign location="misdated" expr="misdated + 1">
+	if err := p.assignVariable(`misdated`, `_scxml_add(misdated, 1)`); err != nil {
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'misdated' failed"))
+	}
+
+		case 1:
+			//line statechart_host_invoker.scxml:208
+
+	{
+		cancelSendIDVal, cancelErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `""`)
+		if cancelErr == nil && cancelSendIDVal != nil {
+			engine.CancelEvent(fmt.Sprintf("%v", cancelSendIDVal))
+		}
+	}
+
+		case 3:
+			//line statechart_host_invoker.scxml:215
+
+	// W3C SCXML 5.3: <assign location="expired" expr="expired + 1">
+	if err := p.assignVariable(`expired`, `_scxml_add(expired, 1)`); err != nil {
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'expired' failed"))
+	}
+
+		case 4:
+			//line statechart_host_invoker.scxml:219
+
+	// W3C SCXML 5.3: <assign location="finished" expr="finished + 1">
+	if err := p.assignVariable(`finished`, `_scxml_add(finished, 1)`); err != nil {
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'finished' failed"))
 	}
 
 		}

@@ -8411,6 +8411,11 @@
           "file": "sce/include/common/AssignmentExecutionHelper.h",
           "symbol": "storeIdInLocation",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "awaitNextExternalEvent",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -10074,6 +10079,16 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "completeHostInvoke",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "finishMacrostep",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "awaitNextExternalEvent",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -10798,6 +10813,11 @@
         {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "execute_finalize_for_child_event",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "finishMacrostep",
           "kind": "implements"
         }
       ],
@@ -12365,6 +12385,11 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::bindCurrentEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_expire_host_invoke",
           "kind": "references"
         }
       ],

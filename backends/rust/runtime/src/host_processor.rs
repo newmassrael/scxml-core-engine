@@ -118,6 +118,43 @@ pub struct HostSendResponse {
 pub(crate) type HostSendHandler =
     Box<dyn FnMut(HostSendRequest) -> Vec<HostSendResponse> + Send + 'static>;
 
+/// The reserved `<param>` a host-run `<invoke>` names its deadline with, in
+/// milliseconds. The engine reads it and does not hand it to the host: past
+/// the deadline, an invocation still running is cancelled and the document
+/// receives `error.invoke.<id>` instead of its completion. A neutral name
+/// rather than `sce:mesh-rpc`'s `_mesh_deadline_ms`, so the two invoke types
+/// converge on one spelling.
+pub const HOST_INVOKE_DEADLINE_PARAM: &str = "_sce_deadline_ms";
+
+/// Read the text of a [`HOST_INVOKE_DEADLINE_PARAM`] value as milliseconds.
+///
+/// One or more ASCII digits, optionally followed by `.` and one or more `0` —
+/// a `<param expr>` reaches the request as the text of its value, and a script
+/// engine may render a whole number `5000.0` — within a signed 64-bit count.
+/// Anything else is `None`: no sign, no whitespace, no exponent, no digit
+/// separator.
+///
+/// Spelled out rather than left to a number parser because every runtime
+/// implements it and the languages' parsers disagree (Go reads hex floats,
+/// Python reads `1_000`); the table they are all held to is
+/// `sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json`.
+pub fn parse_host_invoke_deadline_ms(written: &str) -> Option<u64> {
+    let (whole, fraction) = match written.split_once('.') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (written, None),
+    };
+    if whole.is_empty() || !whole.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    if let Some(fraction) = fraction {
+        if fraction.is_empty() || !fraction.bytes().all(|b| b == b'0') {
+            return None;
+        }
+    }
+    // All ASCII digits, so the only way this fails is a value past i64::MAX.
+    whole.parse::<i64>().ok().map(|ms| ms as u64)
+}
+
 /// An `<invoke>` the host runs, at the point the state was entered.
 ///
 /// §scxml-6.4.1 leaves the invokable set to the platform in the same
@@ -327,14 +364,35 @@ impl HostProcessorRegistry {
 
     /// Cancel an invocation, if it is still running.
     ///
-    /// Returns whether a `Cancel` was delivered. One whose state exited
-    /// before the macrostep settled never started, and one that already
-    /// completed is over, so neither has anything to tear down.
-    pub(crate) fn cancel_invoke(&mut self, processor_type: &str, invoke_id: &str) -> bool {
+    /// Returns the token of the start that was cancelled, or `None` when no
+    /// `Cancel` was delivered. One whose state exited before the macrostep
+    /// settled never started, and one that already completed is over, so
+    /// neither has anything to tear down. The token is what lets the engine
+    /// drop that start's pending deadline.
+    pub(crate) fn cancel_invoke(&mut self, processor_type: &str, invoke_id: &str) -> Option<u64> {
         let key = (processor_type.to_string(), invoke_id.to_string());
-        let Some(token) = self.started.remove(&key) else {
-            return false;
-        };
+        let token = self.started.remove(&key)?;
+        self.deliver_cancel(processor_type, invoke_id, token)
+            .then_some(token)
+    }
+
+    /// End the start `(processor_type, invoke_id, token)` because its
+    /// deadline passed: take it out of the set and tell the host to stop.
+    ///
+    /// Through the same door a completion takes, so exactly one of the two
+    /// happens: a completion that arrives afterwards finds nothing, and a
+    /// deadline that fires after a completion finds nothing either.
+    pub(crate) fn expire_invoke(
+        &mut self,
+        processor_type: &str,
+        invoke_id: &str,
+        token: u64,
+    ) -> bool {
+        self.take_started(processor_type, invoke_id, token)
+            && self.deliver_cancel(processor_type, invoke_id, token)
+    }
+
+    fn deliver_cancel(&mut self, processor_type: &str, invoke_id: &str, token: u64) -> bool {
         let Some(handler) = self.invokers.get_mut(processor_type) else {
             return false;
         };

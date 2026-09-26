@@ -2601,11 +2601,15 @@ public:
             std::string eventData;
             Event event;
             std::shared_ptr<const ::SCE::HostSendRequest> hostSend;
-            while (scheduler_.popReadyAct(schedNowMs(), event, eventData, hostSend)) {
+            std::shared_ptr<const ::SCE::HostInvokeDeadline> deadline;
+            while (scheduler_.popReadyAct(schedNowMs(), event, eventData, hostSend, deadline)) {
                 if (hostSend) {
                     // §scxml-6.2.4: the wait is over, so now the act happens.
                     performDeferredHostSend(*hostSend);
                     hostSend.reset();
+                } else if (deadline) {
+                    expireHostInvoke(*deadline);
+                    deadline.reset();
                 } else {
                     raiseExternal(event, eventData);
                 }
@@ -2779,17 +2783,57 @@ public:
      * it reports later, completeHostInvoke(), so the two cannot disagree about
      * whether the invocation is over. The engine never synthesises a
      * completion the host did not report.
+     *
+     * A `_sce_deadline_ms` param is the engine's, not the host's: it is taken
+     * out of the request and armed with the start. A value that is not a whole
+     * number of milliseconds raises `error.execution` and starts nothing — an
+     * argument of the element that cannot be evaluated (§scxml-6.4.1) — and
+     * the call answers `true` because the report has been made; `false` is
+     * kept for "no invoker ran it", asked first because it is the prior fact.
      */
     bool performHostInvoke(const ::SCE::HostInvokeRequest &request) {
         const auto it = hostInvokers_.find(request.processorType);
         if (it == hostInvokers_.end()) {
             return false;
         }
-        const uint64_t token = nextHostInvokeToken_++;
         ::SCE::HostInvokeEvent event;
         event.start = request;
+        std::optional<uint64_t> deadlineMs;
+        const auto deadlineParam = event.start->params.find(std::string(::SCE::HOST_INVOKE_DEADLINE_PARAM));
+        if (deadlineParam != event.start->params.end()) {
+            const std::vector<std::string> written = deadlineParam->second;
+            event.start->params.erase(deadlineParam);
+            if (written.size() == 1) {
+                deadlineMs = ::SCE::parseHostInvokeDeadlineMs(written.front());
+            }
+            if (!deadlineMs.has_value()) {
+                if (auto error = policy_.getEventFromName("error.execution")) {
+                    std::string joined;
+                    for (const auto &value : written) {
+                        joined += (joined.empty() ? "" : ",") + value;
+                    }
+                    raise(EventWithMetadata(*error, "<invoke type='" + request.processorType + "' id='" +
+                                                        request.invokeId +
+                                                        "'>: " + std::string(::SCE::HOST_INVOKE_DEADLINE_PARAM) + "='" +
+                                                        joined + "' is not a whole number of milliseconds"));
+                }
+                return true;
+            }
+        }
+        const uint64_t token = nextHostInvokeToken_++;
         event.start->token = token;
         startedHostInvokes_[std::make_pair(request.processorType, request.invokeId)] = token;
+        if (deadlineMs.has_value()) {
+            // Held at the clock's maximum: the largest deadline the grammar
+            // admits would otherwise wrap into the past and fire at once.
+            const uint64_t now = schedNowMs();
+            const uint64_t fireTimeMs = *deadlineMs > UINT64_MAX - now ? UINT64_MAX : now + *deadlineMs;
+            scheduler_.scheduleHostInvokeDeadlineAt(
+                token,
+                std::make_shared<const ::SCE::HostInvokeDeadline>(
+                    ::SCE::HostInvokeDeadline{request.processorType, request.invokeId, token}),
+                fireTimeMs);
+        }
         const auto response = it->second(event);
         if (response.has_value() && response->doneData.has_value()) {
             completeHostInvoke(request.processorType, request.invokeId, token, *response->doneData);
@@ -2822,6 +2866,7 @@ public:
             return false;
         }
         startedHostInvokes_.erase(running);
+        scheduler_.dropHostInvokeDeadline(token);
         // §scxml-5.10.1: the completion is an event of the invocation, so its
         // `_event.invokeid` is the invocation's id — the one `done.invoke.<id>`
         // names and the host was handed.
@@ -2876,6 +2921,15 @@ public:
         }
         const uint64_t token = running->second;
         startedHostInvokes_.erase(running);
+        scheduler_.dropHostInvokeDeadline(token);
+        return deliverHostInvokeCancel(processorType, invokeId, token);
+    }
+
+private:
+    /**
+     * @brief Tell the host to stop start `token` of `invokeId`
+     */
+    bool deliverHostInvokeCancel(const std::string &processorType, const std::string &invokeId, uint64_t token) {
         const auto it = hostInvokers_.find(processorType);
         if (it == hostInvokers_.end()) {
             return false;
@@ -2886,6 +2940,36 @@ public:
         return true;
     }
 
+    /**
+     * @brief The deadline of a host-run invocation start came due
+     *
+     * If that start is still running, end it: the host is told to stop, and
+     * the document receives `error.invoke.<id>` — or the generic
+     * `error.invoke` when it names no specific one — with `_event.invokeid`
+     * set and `_event.data` the string `"deadline"`. Through the same door a
+     * completion takes, so exactly one of the two happens.
+     */
+    void expireHostInvoke(const ::SCE::HostInvokeDeadline &deadline) {
+        const auto running = startedHostInvokes_.find(std::make_pair(deadline.processorType, deadline.invokeId));
+        if (running == startedHostInvokes_.end() || running->second != deadline.token) {
+            return;
+        }
+        startedHostInvokes_.erase(running);
+        if (!deliverHostInvokeCancel(deadline.processorType, deadline.invokeId, deadline.token)) {
+            return;
+        }
+        auto expired =
+            policy_.getEventFromName(std::string(::SCE::Core::InvokeHelper::ERROR_INVOKE_PREFIX) + deadline.invokeId);
+        if (!expired) {
+            expired = policy_.getEventFromName(std::string(::SCE::Core::InvokeHelper::ERROR_INVOKE_EVENT));
+        }
+        if (expired) {
+            // The JSON spelling of the string, as every other backend carries it.
+            raiseExternal(EventWithMetadata(*expired, "\"deadline\"", "", "", "external", "", deadline.invokeId));
+        }
+    }
+
+public:
     /**
      * @brief §scxml-6.2.4 + §scxml-6.2.5: arm a host-served `<send delay>`,
      *        to be performed when the delay elapses

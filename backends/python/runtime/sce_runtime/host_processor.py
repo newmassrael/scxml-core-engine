@@ -193,6 +193,57 @@ class HostInvokeResponse:
 #: A registered invoke-lifecycle handler.
 HostInvokeHandler = Callable[[HostInvokeEvent], Optional[HostInvokeResponse]]
 
+#: The reserved ``<param>`` a host-run ``<invoke>`` names its deadline with, in
+#: milliseconds. The engine reads it and does not hand it to the host: past the
+#: deadline, an invocation still running is cancelled and the document receives
+#: ``error.invoke.<id>`` instead of its completion. A neutral name rather than
+#: ``sce:mesh-rpc``'s ``_mesh_deadline_ms``, so the two invoke types converge on
+#: one spelling.
+HOST_INVOKE_DEADLINE_PARAM = "_sce_deadline_ms"
+
+#: The widest count of milliseconds every runtime's clock arithmetic shares.
+_MAX_DEADLINE_MS = (1 << 63) - 1
+
+
+def parse_host_invoke_deadline_ms(written: str) -> Optional[int]:
+    """Read the text of a `HOST_INVOKE_DEADLINE_PARAM` value as milliseconds.
+
+    One or more ASCII digits, optionally followed by ``.`` and one or more
+    ``0`` — a ``<param expr>`` reaches the request as the text of its value,
+    and a script engine may render a whole number ``5000.0`` — within a signed
+    64-bit count. Anything else is ``None``: no sign, no whitespace, no
+    exponent, no digit separator.
+
+    Spelled out rather than left to ``int``/``float``, which read ``1_000``,
+    surrounding whitespace and non-ASCII digits, because every runtime
+    implements this and a deadline one backend honours while another refuses
+    it would make a document depend on where it was compiled. The table they
+    are all held to is
+    ``sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json``.
+    """
+    whole, dot, fraction = written.partition(".")
+    if not whole or any(not ("0" <= c <= "9") for c in whole):
+        return None
+    if dot and (not fraction or fraction.strip("0")):
+        return None
+    ms = int(whole)
+    return ms if ms <= _MAX_DEADLINE_MS else None
+
+
+@dataclass
+class HostInvokeDeadline:
+    """The deadline of one start of a host-run invocation, as the scheduler
+    holds it. When it comes due the engine ends that start if it is still
+    running — cancel to the host, ``error.invoke.<id>`` to the document."""
+
+    #: The invocation's `type`.
+    processor_type: str
+    #: The invocation's id.
+    invoke_id: str
+    #: The start this deadline belongs to; a restart under the same id has its
+    #: own.
+    token: int
+
 
 def is_host_invoke_completion(event_name: str, invoke_id: str, host_invoke_ids) -> bool:
     """Whether an event named ``event_name`` carrying ``_event.invokeid`` =

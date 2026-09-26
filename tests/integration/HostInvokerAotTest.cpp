@@ -32,6 +32,9 @@
 
 #include "statechart_host_invoker_sm.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <map>
 #include <memory>
@@ -40,7 +43,12 @@
 #include <string>
 #include <vector>
 
+#include "common/SceClock.h"
 #include "core/HostProcessor.h"
+
+#ifndef SCE_PROJECT_ROOT
+#error "SCE_PROJECT_ROOT must name the checkout: the deadline table is read from it"
+#endif
 #include "scripting/JSEngine.h"
 #include "scripting/ScriptEngineProvider.h"
 
@@ -467,6 +475,129 @@ TEST_F(HostInvokerAotTest, AnInvokerRegisteredForAnotherTypeDoesNotRunThisOne) {
     EXPECT_EQ(sm.getPolicy().started(), std::optional<int64_t>(0)) << "an invoker for a different type ran this one";
     EXPECT_EQ(sm.getPolicy().refused(), std::optional<int64_t>(2)) << "the unregistered type was not reported";
     EXPECT_TRUE(log.empty()) << "the other type's invoker was called";
+}
+
+namespace {
+
+/// A machine on a ManualClock whose invoker answers nothing and records, per
+/// start, whether the request still carried the deadline param, driven into
+/// `timed`. The clock is installed before initialize(), which arms against it.
+struct Timed {
+    std::shared_ptr<SCE::ManualClock> clock = std::make_shared<SCE::ManualClock>(0);
+    std::vector<std::string> log;
+    std::vector<std::pair<std::string, uint64_t>> starts;
+    Machine sm;
+
+    Timed() {
+        sm.registerInvoker(DECLARED_TYPE, [this](const SCE::HostInvokeEvent &ev) {
+            if (ev.start.has_value()) {
+                const bool carried = ev.start->params.count(std::string(SCE::HOST_INVOKE_DEADLINE_PARAM)) > 0;
+                log.push_back("START id=" + ev.start->invokeId + " deadline-param=" + (carried ? "true" : "false"));
+                starts.emplace_back(ev.start->invokeId, ev.start->token);
+            }
+            if (ev.cancel.has_value()) {
+                log.push_back("CANCEL id=" + ev.cancel->invokeId);
+            }
+            return std::optional<SCE::HostInvokeResponse>();
+        });
+        sm.setClock(clock);
+        sm.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
+                                                               [](SCE::IScriptEngine *) {}));
+        sm.initialize();
+        sm.step();
+        sm.processEvent(Event::Time);
+    }
+
+    bool logged(const std::string &line) const {
+        return std::find(log.begin(), log.end(), line) != log.end();
+    }
+
+    uint64_t tokenOf(const std::string &invokeId) const {
+        for (auto it = starts.rbegin(); it != starts.rend(); ++it) {
+            if (it->first == invokeId) {
+                return it->second;
+            }
+        }
+        ADD_FAILURE() << "`" << invokeId << "` never started";
+        return 0;
+    }
+};
+
+}  // namespace
+
+// A deadline that passes while the invocation is still running ends it: the
+// host is told to stop, the document receives `error.invoke.slow` with
+// `_event.data` "deadline", and a reply afterwards is refused. The param is the
+// engine's — the host never sees it.
+TEST_F(HostInvokerAotTest, ADeadlineThatPassesEndsTheInvocation) {
+    Timed t;
+    EXPECT_TRUE(t.logged("START id=slow deadline-param=false"))
+        << "the host was handed the deadline param, or `slow` never started";
+
+    // A `<cancel>` of the empty send id must not reach the deadline.
+    t.sm.processEvent(Event::Forget);
+    t.sm.advanceTimeMs(49);
+    EXPECT_EQ(t.sm.getPolicy().expired(), std::optional<int64_t>(0)) << "expired early";
+    t.sm.advanceTimeMs(1);
+    EXPECT_EQ(t.sm.getPolicy().expired(), std::optional<int64_t>(1));
+    EXPECT_TRUE(t.logged("CANCEL id=slow")) << "the host was not told to stop";
+
+    EXPECT_FALSE(t.sm.completeHostInvoke(DECLARED_TYPE, "slow", t.tokenOf("slow"), "late"))
+        << "a reply after the deadline was accepted";
+    t.sm.step();
+    EXPECT_EQ(t.sm.getPolicy().finished(), std::optional<int64_t>(0));
+}
+
+// The discriminator: a completion before the deadline is the outcome, and the
+// deadline that comes due afterwards does nothing — no cancel, no
+// `error.invoke`, and nothing left for the host to tick toward.
+TEST_F(HostInvokerAotTest, ACompletionBeforeTheDeadlineDisarmsIt) {
+    Timed t;
+    EXPECT_TRUE(t.sm.completeHostInvoke(DECLARED_TYPE, "slow", t.tokenOf("slow"), "ok"));
+    t.sm.step();
+    EXPECT_EQ(t.sm.getPolicy().finished(), std::optional<int64_t>(1));
+    EXPECT_FALSE(t.sm.timeUntilNextScheduled().has_value())
+        << "the disarmed deadline is still keeping the host ticking";
+
+    t.sm.advanceTimeMs(100);
+    EXPECT_EQ(t.sm.getPolicy().expired(), std::optional<int64_t>(0));
+    EXPECT_FALSE(t.logged("CANCEL id=slow")) << "a completed invocation was cancelled by its deadline";
+}
+
+// §scxml-6.4.1: a deadline that is not a whole number of milliseconds is an
+// argument that cannot be evaluated — error.execution, and the host is never
+// asked to start the invocation.
+TEST_F(HostInvokerAotTest, ADeadlineThatIsNotMillisecondsStartsNothing) {
+    Timed t;
+    EXPECT_EQ(t.sm.getPolicy().misdated(), std::optional<int64_t>(1));
+    for (const auto &line : t.log) {
+        EXPECT_NE(line.rfind("START id=undated", 0), 0u) << "an invocation with an unreadable deadline was started";
+    }
+}
+
+// Every runtime reads a deadline's text by one grammar, held to one table.
+// strtoull would not do: it skips leading whitespace and reads a sign, and a
+// deadline this backend honours while another refuses it makes a document
+// depend on where it was compiled.
+TEST_F(HostInvokerAotTest, ADeadlineIsReadByTheSharedTable) {
+    const std::string path =
+        std::string(SCE_PROJECT_ROOT) + "/sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json";
+    std::ifstream in(path);
+    ASSERT_TRUE(in.is_open()) << "the shared table is not readable: " << path;
+    const auto table = nlohmann::json::parse(in);
+    const auto &accepted = table.at("accepted");
+    const auto &refused = table.at("refused");
+    // A floor: an empty table would pass every assertion below.
+    ASSERT_FALSE(accepted.empty() || refused.empty()) << "the table is empty";
+    for (const auto &pair : accepted) {
+        const auto written = pair.at(0).get<std::string>();
+        const auto ms = std::stoull(pair.at(1).get<std::string>());
+        EXPECT_EQ(SCE::parseHostInvokeDeadlineMs(written), std::optional<uint64_t>(ms)) << '"' << written << '"';
+    }
+    for (const auto &value : refused) {
+        const auto written = value.get<std::string>();
+        EXPECT_FALSE(SCE::parseHostInvokeDeadlineMs(written).has_value()) << '"' << written << "\" was accepted";
+    }
 }
 
 }  // namespace SCE::Tests

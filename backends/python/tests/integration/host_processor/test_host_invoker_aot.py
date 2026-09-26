@@ -42,7 +42,12 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(_HERE.parents[2] / "runtime"))
 
-from sce_runtime import HostInvokeEvent, HostInvokeResponse  # noqa: E402
+from sce_runtime import (  # noqa: E402
+    HOST_INVOKE_DEADLINE_PARAM,
+    HostInvokeEvent,
+    HostInvokeResponse,
+    parse_host_invoke_deadline_ms,
+)
 
 import statechart_host_invoker_sm as _sm  # noqa: E402 — path inserted above
 
@@ -432,6 +437,107 @@ def test_a_declared_type_with_no_invoker_still_raises_error_execution() -> None:
     # One error.execution per invocation nobody ran.
     assert _counter(engine, "refused") == 2, "an unregistered invoker was silently treated as started"
     assert _counter(engine, "started") == 0, "done.invoke arrived for an invocation nobody ran"
+
+
+def _timed():
+    """A machine whose invoker answers nothing and records, per start, whether
+    the request still carried the deadline param, driven into ``timed``. This
+    backend's clock is virtual and starts at 0, so ``advance_time`` alone
+    decides when a deadline comes due."""
+    engine = _sm.create_engine()
+    log: List[str] = []
+    starts: List[tuple] = []
+
+    def handler(ev: HostInvokeEvent) -> Optional[HostInvokeResponse]:
+        if ev.start is not None:
+            carried = HOST_INVOKE_DEADLINE_PARAM in ev.start.params
+            log.append(f"START id={ev.start.invoke_id} deadline-param={carried}")
+            starts.append((ev.start.invoke_id, ev.start.token))
+        if ev.cancel is not None:
+            log.append(f"CANCEL id={ev.cancel.invoke_id}")
+        return None
+
+    engine.register_invoker(DECLARED_TYPE, handler)
+    engine.initialize()
+    _deliver(engine, Event.TIME)
+    return engine, log, starts
+
+
+def test_a_deadline_that_passes_ends_the_invocation() -> None:
+    """A deadline that passes while the invocation is still running ends it:
+    the host is told to stop, the document receives ``error.invoke.slow`` with
+    ``_event.data`` "deadline", and a reply afterwards is refused. The param is
+    the engine's — the host never sees it."""
+    engine, log, starts = _timed()
+    assert "START id=slow deadline-param=False" in log, (
+        f"the host was handed the deadline param, or `slow` never started: {log}"
+    )
+
+    # A `<cancel>` of the empty send id must not reach the deadline.
+    _deliver(engine, Event.FORGET)
+    engine.advance_time(49)
+    assert _counter(engine, "expired") == 0, "expired early"
+    engine.advance_time(1)
+    assert _counter(engine, "expired") == 1
+    assert "CANCEL id=slow" in log, f"the host was not told to stop: {log}"
+
+    assert not engine.complete_host_invoke(
+        DECLARED_TYPE, "slow", _token_of(starts, "slow"), "late"
+    ), "a reply after the deadline was accepted"
+    engine.advance_time(0)
+    assert _counter(engine, "finished") == 0
+
+
+def test_a_completion_before_the_deadline_disarms_it() -> None:
+    """The discriminator: a completion before the deadline is the outcome, and
+    the deadline that comes due afterwards does nothing — no cancel, no
+    ``error.invoke``, and nothing left for the host to advance time toward."""
+    engine, log, starts = _timed()
+    assert engine.complete_host_invoke(
+        DECLARED_TYPE, "slow", _token_of(starts, "slow"), "ok"
+    )
+    engine.advance_time(0)
+    assert _counter(engine, "finished") == 1
+    assert engine.time_until_next_scheduled_ms() is None, (
+        "the disarmed deadline is still keeping the host advancing time"
+    )
+
+    engine.advance_time(100)
+    assert _counter(engine, "expired") == 0
+    assert "CANCEL id=slow" not in log, (
+        f"a completed invocation was cancelled by its deadline: {log}"
+    )
+
+
+def test_a_deadline_that_is_not_milliseconds_starts_nothing() -> None:
+    """§scxml-6.4.1: a deadline that is not a whole number of milliseconds is
+    an argument that cannot be evaluated — error.execution, and the host is
+    never asked to start the invocation."""
+    engine, log, _starts = _timed()
+    assert _counter(engine, "misdated") == 1
+    assert not [e for e in log if e.startswith("START id=undated")], (
+        f"an invocation with an unreadable deadline was started: {log}"
+    )
+
+
+def test_a_deadline_is_read_by_the_shared_table() -> None:
+    """Every runtime reads a deadline's text by one grammar, held to one table.
+    ``int``/``float`` would not do: they read ``1_000``, surrounding whitespace
+    and non-ASCII digits, and a deadline this backend honours while another
+    refuses it makes a document depend on where it was compiled."""
+    table_path = (
+        _HERE.parents[4]
+        / "sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json"
+    )
+    table = json.loads(table_path.read_text(encoding="utf-8"))
+    # A floor: an empty table would pass every assertion below.
+    assert table["accepted"] and table["refused"], "the table is empty"
+    for written, ms in table["accepted"]:
+        assert parse_host_invoke_deadline_ms(written) == int(ms), repr(written)
+    for written in table["refused"]:
+        assert parse_host_invoke_deadline_ms(written) is None, (
+            f"{written!r} was accepted"
+        )
 
 
 def test_an_invoker_registered_for_another_type_does_not_run_this_one() -> None:

@@ -35,6 +35,7 @@ package statechart_host_invoker
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -574,5 +575,101 @@ func TestAnInvokerRegisteredForAnotherTypeDoesNotRunThisOne(t *testing.T) {
 	}
 	if len(log) != 0 {
 		t.Fatalf("the other type's invoker was called: %v", log)
+	}
+}
+
+// timed builds a machine on host-owned time whose invoker answers nothing and
+// records, per start, whether the request still carried the deadline param,
+// and drives it into `timed`.
+func timed(t *testing.T) (started, *[]string, *[]hostStart) {
+	t.Helper()
+	var log []string
+	var starts []hostStart
+	s := newStarted()
+	s.engine.SetClock(sce.NewManualClock(0))
+	s.engine.RegisterInvoker(declaredType, func(ev sce.HostInvokeEvent) *sce.HostInvokeResponse {
+		if ev.Start != nil {
+			_, carried := ev.Start.Params["_sce_deadline_ms"]
+			log = append(log, fmt.Sprintf("START id=%s deadline-param=%v", ev.Start.InvokeID, carried))
+			starts = append(starts, hostStart{ev.Start.InvokeID, ev.Start.Token})
+		}
+		if ev.Cancel != nil {
+			log = append(log, "CANCEL id="+ev.Cancel.InvokeID)
+		}
+		return nil
+	})
+	s.engine.Initialize()
+	s.engine.Step()
+	s.engine.ProcessEvent(StatechartHostInvokerEventTime)
+	return s, &log, &starts
+}
+
+// A deadline that passes while the invocation is still running ends it: the
+// host is told to stop, the document receives `error.invoke.slow` with
+// `_event.data` "deadline", and a reply afterwards is refused. The param is the
+// engine's — the host never sees it.
+func TestADeadlineThatPassesEndsTheInvocation(t *testing.T) {
+	s, log, starts := timed(t)
+	if !slices.Contains(*log, "START id=slow deadline-param=false") {
+		t.Fatalf("the host was handed the deadline param, or `slow` never started: %v", *log)
+	}
+	// A `<cancel>` of the empty send id must not reach the deadline.
+	s.engine.ProcessEvent(StatechartHostInvokerEventForget)
+	s.engine.AdvanceTimeMs(49)
+	if got := s.counter(t, "expired"); got != 0 {
+		t.Fatalf("expired early: expired = %d", got)
+	}
+	s.engine.AdvanceTimeMs(1)
+	if got := s.counter(t, "expired"); got != 1 {
+		t.Fatalf("expired = %d, want 1", got)
+	}
+	if !slices.Contains(*log, "CANCEL id=slow") {
+		t.Fatalf("the host was not told to stop: %v", *log)
+	}
+	if s.engine.CompleteHostInvoke(declaredType, "slow", tokenOf(t, *starts, "slow"), "late") {
+		t.Fatalf("a reply after the deadline was accepted")
+	}
+	s.engine.Step()
+	if got := s.counter(t, "finished"); got != 0 {
+		t.Fatalf("finished = %d, want 0", got)
+	}
+}
+
+// The discriminator: a completion before the deadline is the outcome, and the
+// deadline that comes due afterwards does nothing — no cancel, no
+// error.invoke, and nothing left for the host to tick toward.
+func TestACompletionBeforeTheDeadlineDisarmsIt(t *testing.T) {
+	s, log, starts := timed(t)
+	if !s.engine.CompleteHostInvoke(declaredType, "slow", tokenOf(t, *starts, "slow"), "ok") {
+		t.Fatalf("a running invocation's completion was refused")
+	}
+	s.engine.Step()
+	if got := s.counter(t, "finished"); got != 1 {
+		t.Fatalf("finished = %d, want 1", got)
+	}
+	if _, pending := s.engine.TimeUntilNextScheduled(); pending {
+		t.Fatalf("the disarmed deadline is still keeping the host ticking")
+	}
+	s.engine.AdvanceTimeMs(100)
+	if got := s.counter(t, "expired"); got != 0 {
+		t.Fatalf("expired = %d, want 0", got)
+	}
+	if slices.Contains(*log, "CANCEL id=slow") {
+		t.Fatalf("a completed invocation was cancelled by its deadline: %v", *log)
+	}
+}
+
+// §scxml-6.4.1: a deadline that is not a whole number of milliseconds is an
+// argument that cannot be evaluated — error.execution, and the host is never
+// asked to start the invocation.
+func TestADeadlineThatIsNotMillisecondsStartsNothing(t *testing.T) {
+	s, log, _ := timed(t)
+	if got := s.counter(t, "misdated"); got != 1 {
+		t.Fatalf("misdated = %d, want 1", got)
+	}
+	for _, line := range *log {
+		if strings.HasPrefix(line, "START id=undated") {
+			t.Fatalf("an invocation with an unreadable deadline was started: %v", *log)
+		}
 	}
 }

@@ -361,6 +361,178 @@ fn a_late_completion_is_accepted_exactly_once() {
     );
 }
 
+/// A machine on host-owned time, with an invoker that answers nothing and
+/// records, per start, the token and whether the request still carried the
+/// deadline param.
+fn timed() -> (
+    Engine<Policy>,
+    Arc<dyn IScriptEngine>,
+    Arc<Mutex<Vec<String>>>,
+    Starts,
+) {
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let starts: Starts = Arc::default();
+    let (mut engine, script_engine) = started();
+    engine.set_clock(sce_rust_runtime::SceClock::Manual(0));
+    let (log_in, starts_in) = (Arc::clone(&log), Arc::clone(&starts));
+    engine.register_invoker(DECLARED_TYPE, move |ev: HostInvokeEvent| {
+        match ev {
+            HostInvokeEvent::Start(req) => {
+                log_in.lock().expect("log").push(format!(
+                    "START id={} deadline-param={}",
+                    req.invoke_id,
+                    req.params.contains_key("_sce_deadline_ms"),
+                ));
+                starts_in
+                    .lock()
+                    .expect("starts")
+                    .push((req.invoke_id, req.token));
+            }
+            HostInvokeEvent::Cancel(c) => {
+                log_in
+                    .lock()
+                    .expect("log")
+                    .push(format!("CANCEL id={}", c.invoke_id));
+            }
+        }
+        None
+    });
+    engine.initialize();
+    engine.step();
+    engine.process_event(Event::Time);
+    (engine, script_engine, log, starts)
+}
+
+/// A deadline that passes while the invocation is still running ends it:
+/// the host is told to stop, the document receives `error.invoke.slow` with
+/// `_event.data` "deadline", and a reply the host sends afterwards is refused.
+/// The param is the engine's — the host never sees it.
+#[test]
+fn a_deadline_that_passes_ends_the_invocation() {
+    let (mut engine, script_engine, log, starts) = timed();
+    assert!(
+        log.lock()
+            .expect("log")
+            .contains(&"START id=slow deadline-param=false".to_string()),
+        "the host was handed the deadline param, or `slow` never started: {:?}",
+        log.lock().expect("log"),
+    );
+
+    // A `<cancel>` of the empty send id must not reach the deadline.
+    engine.process_event(Event::Forget);
+    engine.advance_time_ms(49);
+    assert_eq!(
+        counter(&engine, &script_engine, "expired"),
+        0,
+        "expired early"
+    );
+
+    engine.advance_time_ms(1);
+    assert_eq!(counter(&engine, &script_engine, "expired"), 1);
+    assert!(
+        log.lock()
+            .expect("log")
+            .contains(&"CANCEL id=slow".to_string()),
+        "the host was not told to stop: {:?}",
+        log.lock().expect("log"),
+    );
+
+    let token = token_of(&starts, "slow");
+    assert!(
+        !engine.complete_host_invoke(DECLARED_TYPE, "slow", token, "late"),
+        "a reply after the deadline was accepted",
+    );
+    engine.step();
+    assert_eq!(counter(&engine, &script_engine, "finished"), 0);
+}
+
+/// The discriminator: a completion before the deadline is the outcome, and
+/// the deadline that comes due afterwards does nothing — no cancel, no
+/// `error.invoke`, and nothing left for the host to tick toward.
+#[test]
+fn a_completion_before_the_deadline_disarms_it() {
+    let (mut engine, script_engine, log, starts) = timed();
+    let token = token_of(&starts, "slow");
+    assert!(engine.complete_host_invoke(DECLARED_TYPE, "slow", token, "ok"));
+    engine.step();
+    assert_eq!(counter(&engine, &script_engine, "finished"), 1);
+    assert_eq!(
+        engine.time_until_next_scheduled_ms(),
+        None,
+        "the disarmed deadline is still keeping the host ticking",
+    );
+
+    engine.advance_time_ms(100);
+    assert_eq!(counter(&engine, &script_engine, "expired"), 0);
+    assert!(
+        !log.lock()
+            .expect("log")
+            .contains(&"CANCEL id=slow".to_string()),
+        "a completed invocation was cancelled by its deadline",
+    );
+}
+
+/// §scxml-6.4.1: a deadline that is not a whole number of milliseconds is an
+/// argument that cannot be evaluated — `error.execution`, and the host is
+/// never asked to start the invocation.
+#[test]
+fn a_deadline_that_is_not_milliseconds_starts_nothing() {
+    let (engine, script_engine, log, _starts) = timed();
+    assert_eq!(counter(&engine, &script_engine, "misdated"), 1);
+    assert!(
+        !log.lock()
+            .expect("log")
+            .iter()
+            .any(|e| e.starts_with("START id=undated")),
+        "an invocation with an unreadable deadline was started: {:?}",
+        log.lock().expect("log"),
+    );
+}
+
+/// Every runtime reads a deadline's text by one grammar, held to one table.
+/// A number parser would not do: the languages' parsers disagree about hex
+/// floats, digit separators and whitespace, and a deadline one backend
+/// honours and another refuses makes a document depend on where it was
+/// compiled.
+#[test]
+fn a_deadline_is_read_by_the_shared_table() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json");
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let table: serde_json::Value = serde_json::from_str(&text).expect("the table is JSON");
+
+    let accepted = table["accepted"].as_array().expect("`accepted` is a list");
+    let refused = table["refused"].as_array().expect("`refused` is a list");
+    // A floor: an empty table would pass every assertion below.
+    assert!(
+        !accepted.is_empty() && !refused.is_empty(),
+        "the table is empty"
+    );
+
+    for pair in accepted {
+        let written = pair[0].as_str().expect("written is a string");
+        let ms: u64 = pair[1]
+            .as_str()
+            .expect("milliseconds are a string")
+            .parse()
+            .expect("milliseconds are a number");
+        assert_eq!(
+            sce_rust_runtime::parse_host_invoke_deadline_ms(written),
+            Some(ms),
+            "{written:?}",
+        );
+    }
+    for written in refused {
+        let written = written.as_str().expect("a refused value is a string");
+        assert_eq!(
+            sce_rust_runtime::parse_host_invoke_deadline_ms(written),
+            None,
+            "{written:?} was accepted",
+        );
+    }
+}
+
 /// §scxml-6.4: once the state has exited, what the cancelled process sends
 /// is ignored. The host's reply arrives after the cancel and is refused.
 #[test]

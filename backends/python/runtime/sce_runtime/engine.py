@@ -47,7 +47,9 @@ from typing import (
 from .configuration import ConfigurationRejection, validate_configuration
 from .event import EventMetadata, EventWithMetadata, is_error_event
 from .host_processor import (
+    HOST_INVOKE_DEADLINE_PARAM,
     HostInvokeCancel,
+    HostInvokeDeadline,
     HostInvokeEvent,
     HostInvokeHandler,
     HostInvokeRequest,
@@ -55,10 +57,17 @@ from .host_processor import (
     HostSendRequest,
     HostSendResponse,
     is_host_invoke_completion,
+    parse_host_invoke_deadline_ms,
 )
 from .http import HttpSendRequest, HttpSendResponse
 from . import io_processors
-from .invoke import Invoke, PendingInvoke, create_done_invoke_event_name
+from .invoke import (
+    ERROR_INVOKE_EVENT,
+    ERROR_INVOKE_PREFIX,
+    Invoke,
+    PendingInvoke,
+    create_done_invoke_event_name,
+)
 from .microstep import (
     EnabledTransition,
     EntryTarget,
@@ -1010,14 +1019,50 @@ class Engine(Generic[S, E]):
         W3C SCXML 6.4: a completion the host reports NOW takes the same door
         as one it reports later, `complete_host_invoke`, so the two cannot
         disagree about whether the invocation is over. The engine never
-        synthesises a completion the host did not report."""
+        synthesises a completion the host did not report.
+
+        A ``_sce_deadline_ms`` param is the engine's, not the host's: it is
+        taken out of the request and armed with the start. A value that is not
+        a whole number of milliseconds raises `error.execution` and starts
+        nothing — an argument of the element that cannot be evaluated
+        (§scxml-6.4.1) — and the call answers `True` because the report has
+        been made; `False` is kept for "no invoker ran it", which is asked
+        first because it is the prior fact."""
         handler = self._host_invokers.get(request.processor_type)
         if handler is None:
             return False
+        try:
+            deadline_ms = self._take_host_invoke_deadline(request)
+        except ValueError as unreadable:
+            event = self._policy.get_event_from_name("error.execution")
+            if event is not None:
+                self.raise_internal(
+                    event,
+                    EventMetadata(
+                        event_type="platform",
+                        data=(
+                            f"<invoke type='{request.processor_type}' "
+                            f"id='{request.invoke_id}'>: {unreadable}"
+                        ),
+                    ),
+                )
+            return True
         token = self._next_host_invoke_token
         self._next_host_invoke_token += 1
         request.token = token
         self._started_host_invokes[(request.processor_type, request.invoke_id)] = token
+        if deadline_ms is not None:
+            self._scheduler.schedule(
+                self._now_ms + deadline_ms,
+                "",
+                None,
+                "",
+                host_invoke_deadline=HostInvokeDeadline(
+                    processor_type=request.processor_type,
+                    invoke_id=request.invoke_id,
+                    token=token,
+                ),
+            )
         response = handler(HostInvokeEvent(start=request))
         if response is not None and response.done_data is not None:
             self.complete_host_invoke(
@@ -1047,6 +1092,7 @@ class Engine(Generic[S, E]):
         if self._started_host_invokes.get(key) != token:
             return False
         del self._started_host_invokes[key]
+        self._scheduler.drop_host_invoke_deadline(token)
         # §scxml-5.10.1: the completion is an event of the invocation, so
         # `_event.invokeid` is the invocation's id — the one
         # `done.invoke.<id>` names and the host was handed.
@@ -1093,6 +1139,13 @@ class Engine(Generic[S, E]):
         token = self._started_host_invokes.pop(key, None)
         if token is None:
             return False
+        self._scheduler.drop_host_invoke_deadline(token)
+        return self._deliver_host_invoke_cancel(processor_type, invoke_id, token)
+
+    def _deliver_host_invoke_cancel(
+        self, processor_type: str, invoke_id: str, token: int
+    ) -> bool:
+        """Tell the host to stop start `token` of `invoke_id`."""
         handler = self._host_invokers.get(processor_type)
         if handler is None:
             return False
@@ -1104,6 +1157,64 @@ class Engine(Generic[S, E]):
             )
         )
         return True
+
+    def _expire_host_invoke(self, deadline: HostInvokeDeadline) -> None:
+        """The deadline of a host-run invocation start came due. If that start
+        is still running, end it: the host is told to stop, and the document
+        receives ``error.invoke.<id>`` — or the generic ``error.invoke`` when it
+        names no specific one — with ``_event.invokeid`` set and
+        ``_event.data`` the string ``"deadline"``.
+
+        Through the same door a completion takes, so exactly one of the two
+        happens: a completion that arrives afterwards finds nothing, and a
+        deadline that fires after a completion finds nothing either."""
+        key = (deadline.processor_type, deadline.invoke_id)
+        if self._started_host_invokes.get(key) != deadline.token:
+            return
+        del self._started_host_invokes[key]
+        if not self._deliver_host_invoke_cancel(
+            deadline.processor_type, deadline.invoke_id, deadline.token
+        ):
+            return
+        event = self._policy.get_event_from_name(
+            f"{ERROR_INVOKE_PREFIX}{deadline.invoke_id}"
+        )
+        if event is None:
+            event = self._policy.get_event_from_name(ERROR_INVOKE_EVENT)
+        if event is None:
+            return
+        # The JSON spelling of the string, as every other backend carries it:
+        # §scxml-B-2-8-1 reads data as JSON first, so a bare word would reach
+        # `_event.data` only through the fallback rung.
+        self._external_queue.append(
+            EventWithMetadata(
+                event=event,
+                metadata=EventMetadata(
+                    event_type="external",
+                    data='"deadline"',
+                    invoke_id=deadline.invoke_id,
+                ),
+            )
+        )
+
+    @staticmethod
+    def _take_host_invoke_deadline(request: HostInvokeRequest) -> Optional[int]:
+        """Take ``_sce_deadline_ms`` out of `request`.
+
+        ``None`` when the document gave none, the milliseconds for one value
+        `parse_host_invoke_deadline_ms` reads, and `ValueError` naming what was
+        written otherwise, including the name given twice."""
+        values = request.params.pop(HOST_INVOKE_DEADLINE_PARAM, None)
+        if values is None:
+            return None
+        if len(values) == 1:
+            ms = parse_host_invoke_deadline_ms(values[0])
+            if ms is not None:
+                return ms
+        raise ValueError(
+            f"{HOST_INVOKE_DEADLINE_PARAM}={','.join(values)!r} "
+            "is not a whole number of milliseconds"
+        )
 
     # ── <send> / <cancel> / scheduler API (§scxml-6.2) ─────────
 
@@ -1321,6 +1432,8 @@ class Engine(Generic[S, E]):
                 # which that site cannot do for a deferred send because it
                 # returned long before the deadline.
                 self._perform_deferred_host_send(entry.host_send)
+            elif entry.host_invoke_deadline is not None:
+                self._expire_host_invoke(entry.host_invoke_deadline)
             else:
                 # §scxml-C-1: scheduler drain is the SCXML processor's
                 # delayed-delivery path — origintype mirrors send_external.

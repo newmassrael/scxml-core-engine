@@ -31,6 +31,9 @@ import com.sce.integration.statechart_delayed_host_send.StatechartDelayedHostSen
 import com.sce.integration.statechart_delayed_host_send.StatechartDelayedHostSendStateMachine
 import com.sce.runtime.ManualClock
 import com.sce.runtime.StateMachineEngine
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.DisplayName
@@ -236,6 +239,30 @@ class DelayedHostSendTest {
             )
         } finally {
             h.sm.stop()
+        }
+    }
+
+    /**
+     * The coroutine mode performs a delayed host-served send too. Its loop
+     * used to wait on the event channel alone, and the act sits in
+     * `scheduledSends` in both modes, so the handler was never asked at all —
+     * the document waited for a reply that had nobody to come from. Real time,
+     * because the engine's coroutine runs on `Dispatchers.Default`; the wait is
+     * bounded far above the fixture's 200 ms.
+     */
+    @Test
+    fun aHostServedSendIsPerformedInCoroutineMode() = runBlocking {
+        val asked = CompletableDeferred<Unit>()
+        val sm = StatechartDelayedHostSendStateMachine()
+        sm.registerEventProcessor(declaredType) {
+            asked.complete(Unit)
+            listOf(StateMachineEngine.HostSendResponse("turn.done"))
+        }
+        sm.start(this)
+        try {
+            withTimeout(10_000) { asked.await() }
+        } finally {
+            sm.stop()
         }
     }
 }

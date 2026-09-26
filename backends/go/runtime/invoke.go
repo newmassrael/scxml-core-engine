@@ -93,6 +93,18 @@ const DoneInvokePrefix = "done.invoke."
 // through it, so it is the event a completion falls back to.
 const DoneInvokeEvent = "done.invoke"
 
+// ErrorInvokePrefix names the event an invocation that did not finish raises
+// instead of its completion — a host-run invocation past its
+// `_sce_deadline_ms` — the way `sce:mesh-rpc` names a request that ran out of
+// time (SCE_MESH.md §9.5), so a document handles the two alike. Specific
+// form: `error.invoke.<id>`.
+const ErrorInvokePrefix = "error.invoke."
+
+// ErrorInvokeEvent is the generic form of ErrorInvokePrefix, for a document
+// that names no specific `error.invoke.<id>`, as DoneInvokeEvent is for a
+// completion.
+const ErrorInvokeEvent = "error.invoke"
+
 // CreateDoneInvokeEventName creates a done.invoke event name (§scxml-6.3.1).
 //
 // Ports Rust create_done_invoke_event_name from backends/rust/runtime/src/invoke.rs.
