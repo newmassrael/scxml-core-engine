@@ -1532,6 +1532,26 @@
         }
       ]
     },
+    "add_months": {
+      "fixture": "add_months",
+      "signature": "(year: i32, month: u8, day: u8, n: i32) -> record:CivilDate may-fail",
+      "formula": "the date n months after year-month-day, its day clamped to the length of the month it lands in; a date that does not exist fails 'precondition', and a year past int32 fails 'overflow' (the standard document sce:std/time/add_months.scxml)",
+      "cases": [
+        { "args": [2024, 1, 31, 1], "expected": { "year": 2024, "month": 2, "day": 29 }, "note": "clamped to a leap February" },
+        { "args": [2023, 1, 31, 1], "expected": { "year": 2023, "month": 2, "day": 28 }, "note": "clamped to a common February" },
+        { "args": [2026, 11, 15, 3], "expected": { "year": 2027, "month": 2, "day": 15 }, "note": "across a year" },
+        { "args": [2026, 3, 31, -1], "expected": { "year": 2026, "month": 2, "day": 28 }, "note": "backwards, clamped" },
+        { "args": [2026, 1, 15, -13], "expected": { "year": 2024, "month": 12, "day": 15 }, "note": "the year floors for a negative count" },
+        { "args": [2026, 9, 23, 0], "expected": { "year": 2026, "month": 9, "day": 23 } },
+        { "args": [2000, 2, 29, 12], "expected": { "year": 2001, "month": 2, "day": 28 } },
+        { "args": [2000, 2, 29, 48], "expected": { "year": 2004, "month": 2, "day": 29 } },
+        { "args": [1, 1, 1, -1], "expected": { "year": 0, "month": 12, "day": 1 }, "note": "into year 0" },
+        { "args": [2026, 2, 30, 1], "fails": "precondition", "note": "no 30th of February" },
+        { "args": [2026, 13, 1, 1], "fails": "precondition", "note": "no month 13" },
+        { "args": [2147483647, 12, 1, 1], "fails": "overflow", "note": "the year after the largest int32" },
+        { "args": [-2147483648, 1, 1, -1], "fails": "overflow", "note": "the year before the smallest int32" }
+      ]
+    },
     "civil_from_days": {
       "fixture": "civil_from_days",
       "signature": "(days: i64) -> record:CivilDate may-fail",

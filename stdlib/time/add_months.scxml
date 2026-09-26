@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/time/add_months.scxml — the date `n` months after (or, for a
+  negative `n`, before) a proleptic Gregorian date, its day clamped to the
+  length of the month it lands in: 2024-01-31 plus one month is
+  2024-02-29, and 2023-01-31 plus one month is 2023-02-28. The clamp is
+  the rule a monthly repetition needs — a meeting on the 31st still falls
+  in every month — and it is written here once, rather than by each caller.
+
+  The date is taken as its three fields rather than as a day count: an
+  algorithm does not call one that returns a record (SCE_FORGE.md §4.12),
+  so a day count would have to be unfolded here a second time. A date that
+  does not exist fails `precondition`, and a result whose year does not fit
+  the date's int32 fails `overflow` — the store into the narrower year is
+  checked (§3.4.1).
+
+  (2024, 1, 31, 1) → 2024-02-29 · (2023, 1, 31, 1) → 2023-02-28 ·
+  (2026, 11, 15, 3) → 2027-02-15 · (2026, 3, 31, -1) → 2026-02-28 ·
+  (2026, 1, 15, -13) → 2024-12-15.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="add_months" version="1.0">
+  <sce:import kind="event-schema" src="civil_date.scxml" as="CivilDate"/>
+  <sce:import kind="algorithm" src="days_in_month.scxml" as="monthLength"/>
+  <sce:signature>
+    <sce:param name="year" type="int32"/>
+    <sce:param name="month" type="uint8"/>
+    <sce:param name="day" type="uint8"/>
+    <sce:param name="n" type="int32"/>
+    <sce:return type="record:CivilDate" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="month &gt;= 1 &amp;&amp; month &lt;= 12"/>
+    <sce:require cond="day &gt;= 1 &amp;&amp; day &lt;= monthLength(year, month)"/>
+    <!-- Months since year 0's January, moved by n; the floor of its twelfth
+         is the year, taken from the truncated quotient and remainder. -->
+    <sce:var name="total" type="int64" init="year * 12 + (month - 1) + n"/>
+    <sce:var name="q" type="int64" init="total / 12"/>
+    <sce:var name="r" type="int64" init="total % 12"/>
+    <sce:var name="ny" type="int64" init="r &lt; 0 ? q - 1 : q"/>
+    <sce:var name="nm" type="int64" init="(r &lt; 0 ? r + 12 : r) + 1"/>
+    <sce:var name="last" type="uint8" init="monthLength(ny, nm)"/>
+    <sce:var name="date" type="record:CivilDate">
+      <sce:set name="year" expr="ny"/>
+      <sce:set name="month" expr="nm"/>
+      <sce:set name="day" expr="day &lt; last ? day : last"/>
+    </sce:var>
+    <sce:return expr="date"/>
+  </sce:body>
+</scxml>

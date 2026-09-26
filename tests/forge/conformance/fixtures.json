@@ -1158,6 +1158,22 @@
       }
     },
     {
+      "name": "add_months",
+      "document": "sce:std/time/add_months.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "add_months",
+      "args": [
+        "i32",
+        "u8",
+        "u8",
+        "i32"
+      ],
+      "output": {
+        "record": "civil_date"
+      }
+    },
+    {
       "name": "civil_from_days",
       "document": "sce:std/time/civil_from_days.scxml",
       "kind": "algorithm",
