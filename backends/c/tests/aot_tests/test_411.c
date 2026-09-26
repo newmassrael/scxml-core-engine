@@ -21,7 +21,7 @@ int main(void) {
     test411_init(&sm);
     test411_run(&sm);
 
-    int rc = test411_in_state(&sm, TEST411_STATE_PASS) ? 0 : 1;
+    int rc = test411_ended_in(&sm, TEST411_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test411: FAIL — active = 0x%08x\n", (unsigned)test411_active_states(&sm));
     }

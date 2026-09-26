@@ -29,7 +29,7 @@ int main(void) {
     test307_init(&sm);
     test307_run(&sm);
 
-    int rc = test307_in_state(&sm, TEST307_STATE_FINAL) ? 0 : 1;
+    int rc = test307_ended_in(&sm, TEST307_STATE_FINAL) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test307: FAIL — active = 0x%08x\n", (unsigned)test307_active_states(&sm));
     }

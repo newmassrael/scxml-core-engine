@@ -22,7 +22,7 @@ int main(void) {
     test310_init(&sm);
     test310_run(&sm);
 
-    int rc = test310_in_state(&sm, TEST310_STATE_PASS) ? 0 : 1;
+    int rc = test310_ended_in(&sm, TEST310_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test310: FAIL — active = 0x%08x\n", (unsigned)test310_active_states(&sm));
     }

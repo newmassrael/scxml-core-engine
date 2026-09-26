@@ -16,7 +16,7 @@ int main(void) {
     test319_init(&sm);
     test319_run(&sm);
 
-    int rc = test319_in_state(&sm, TEST319_STATE_PASS) ? 0 : 1;
+    int rc = test319_ended_in(&sm, TEST319_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test319: FAIL — active = 0x%08x\n", (unsigned)test319_active_states(&sm));
     }

@@ -12,8 +12,8 @@ fn test_301() {
     let completed = engine.run_until_completion(Duration::from_secs(3), Duration::from_millis(10));
     assert!(completed, "Test 301 timed out");
     assert_eq!(
-        engine.get_current_state(),
-        sce_rust_tests::generated::test301::Test301State::Pass,
+        engine.terminal_state(),
+        Some(sce_rust_tests::generated::test301::Test301State::Pass),
         "Test 301 reached wrong final state"
     );
 }

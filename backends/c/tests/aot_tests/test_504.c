@@ -16,7 +16,7 @@ int main(void) {
     test504_init(&sm);
     test504_run(&sm);
 
-    int rc = test504_in_state(&sm, TEST504_STATE_PASS) ? 0 : 1;
+    int rc = test504_ended_in(&sm, TEST504_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test504: FAIL — active = 0x%08x\n", (unsigned)test504_active_states(&sm));
     }

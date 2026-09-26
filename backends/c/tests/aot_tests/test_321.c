@@ -16,7 +16,7 @@ int main(void) {
     test321_init(&sm);
     test321_run(&sm);
 
-    int rc = test321_in_state(&sm, TEST321_STATE_PASS) ? 0 : 1;
+    int rc = test321_ended_in(&sm, TEST321_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test321: FAIL — active = 0x%08x\n", (unsigned)test321_active_states(&sm));
     }

@@ -16,7 +16,7 @@ int main(void) {
     test337_init(&sm);
     test337_run(&sm);
 
-    int rc = test337_in_state(&sm, TEST337_STATE_PASS) ? 0 : 1;
+    int rc = test337_ended_in(&sm, TEST337_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test337: FAIL — active = 0x%08x\n", (unsigned)test337_active_states(&sm));
     }

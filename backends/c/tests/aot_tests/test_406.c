@@ -35,7 +35,7 @@ int main(void) {
         test406_tick(&sm);
     }
 
-    int rc = test406_in_state(&sm, TEST406_STATE_PASS) ? 0 : 1;
+    int rc = test406_ended_in(&sm, TEST406_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test406: FAIL — active = 0x%08x\n", (unsigned)test406_active_states(&sm));
     }

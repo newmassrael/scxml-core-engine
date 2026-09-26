@@ -42,13 +42,13 @@ struct Test329 : public AotTestBase {
 
         bool isInFinal = sm.isInFinalState();
         auto currentState = sm.getCurrentState();
-        bool isPass = (currentState == SM::State::Pass);
+        bool isPass = (sm.terminalState() == SM::State::Pass);
 
         SCE_LOG_DEBUG("Test329 Debug: isInFinalState={}, currentState={}, Pass={}, Fail={}", isInFinal,
                       static_cast<int>(currentState), static_cast<int>(SM::State::Pass),
                       static_cast<int>(SM::State::Fail));
 
-        if (currentState == SM::State::Fail) {
+        if (sm.terminalState() == SM::State::Fail) {
             SCE_LOG_ERROR("Test329: Reached FAIL state instead of PASS!");
         }
 

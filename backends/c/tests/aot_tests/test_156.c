@@ -27,7 +27,7 @@ int main(void) {
     test156_init(&sm);
     test156_run(&sm);
 
-    int rc = test156_in_state(&sm, TEST156_STATE_PASS) ? 0 : 1;
+    int rc = test156_ended_in(&sm, TEST156_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test156: FAIL — active = 0x%08x\n", (unsigned)test156_active_states(&sm));
     }

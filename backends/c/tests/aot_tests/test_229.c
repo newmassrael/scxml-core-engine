@@ -80,7 +80,7 @@ int main(void) {
         test229_tick(&sm);
     }
 
-    int rc = test229_in_state(&sm, TEST229_STATE_PASS) ? 0 : 1;
+    int rc = test229_ended_in(&sm, TEST229_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test229: FAIL — active = 0x%08x\n", (unsigned)test229_active_states(&sm));
     }

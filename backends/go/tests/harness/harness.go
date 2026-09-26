@@ -32,11 +32,16 @@ func NewLuaEngine() sce.IScriptEngine {
 	return scelua.NewLuaEngine()
 }
 
-// AssertFinalState checks that the engine reached the expected final state.
-func AssertFinalState[S comparable](t *testing.T, actual, expected S, testID string) {
+// AssertEndedIn checks that the run ended at the expected top-level <final>,
+// given what Engine.TerminalState reported — the ending itself, not a reading
+// of the configuration, which Appendix D's exitInterpreter leaves empty.
+func AssertEndedIn[S comparable](t *testing.T, ended S, hasEnded bool, expected S, testID string) {
 	t.Helper()
-	if actual != expected {
-		t.Fatalf("Test %s reached wrong final state: got %v, want %v", testID, actual, expected)
+	if !hasEnded {
+		t.Fatalf("Test %s did not end at a top-level final state, want %v", testID, expected)
+	}
+	if ended != expected {
+		t.Fatalf("Test %s reached wrong final state: got %v, want %v", testID, ended, expected)
 	}
 }
 

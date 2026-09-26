@@ -16,7 +16,7 @@ int main(void) {
     test343_init(&sm);
     test343_run(&sm);
 
-    int rc = test343_in_state(&sm, TEST343_STATE_PASS) ? 0 : 1;
+    int rc = test343_ended_in(&sm, TEST343_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test343: FAIL — active = 0x%08x\n", (unsigned)test343_active_states(&sm));
     }

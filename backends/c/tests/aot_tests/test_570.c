@@ -19,7 +19,7 @@ int main(void) {
     test570_init(&sm);
     test570_run(&sm);
 
-    int rc = test570_in_state(&sm, TEST570_STATE_PASS) ? 0 : 1;
+    int rc = test570_ended_in(&sm, TEST570_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test570: FAIL — active = 0x%08x\n", (unsigned)test570_active_states(&sm));
     }

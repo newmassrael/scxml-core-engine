@@ -24,7 +24,7 @@ int main(void) {
     test534_init_with_basic_http(&sm, sce_w3c_http_test_access_uri(access_uri, sizeof access_uri));
     test534_run(&sm);
 
-    int rc = test534_in_state(&sm, TEST534_STATE_PASS) ? 0 : 1;
+    int rc = test534_ended_in(&sm, TEST534_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test534: FAIL — active = 0x%08x\n", (unsigned)test534_active_states(&sm));
     }

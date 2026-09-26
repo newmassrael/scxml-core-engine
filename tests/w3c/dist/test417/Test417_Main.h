@@ -83,11 +83,11 @@ struct Test417_Main : public PartitionBase {
             // the SM reaches a top-level final.
             sm.tick();
 
-            if (sm.getCurrentState() == gen::State::Pass) {
+            if (sm.terminalState() == gen::State::Pass) {
                 std::fprintf(stdout, "test417 main: PASS — done.state.s1p1 landed, SM in <final id=\"pass\">\n");
                 return 0;
             }
-            if (sm.getCurrentState() == gen::State::Fail) {
+            if (sm.terminalState() == gen::State::Fail) {
                 std::fprintf(stderr, "test417 main: FAIL — timeout raised before both regions converged "
                                      "(remote wire-21 did not arrive within 1 s)\n");
                 return 11;

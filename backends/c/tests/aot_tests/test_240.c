@@ -44,7 +44,7 @@ int main(void) {
         test240_tick(&sm);
     }
 
-    int rc = test240_in_state(&sm, TEST240_STATE_PASS) ? 0 : 1;
+    int rc = test240_ended_in(&sm, TEST240_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test240: FAIL — active = 0x%08x\n", (unsigned)test240_active_states(&sm));
     }

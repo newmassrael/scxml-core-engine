@@ -20,7 +20,7 @@ int main(void) {
     test403b_init(&sm);
     test403b_run(&sm);
 
-    int rc = test403b_in_state(&sm, TEST403B_STATE_PASS) ? 0 : 1;
+    int rc = test403b_ended_in(&sm, TEST403B_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test403b: FAIL — active = 0x%08x\n", (unsigned)test403b_active_states(&sm));
     }

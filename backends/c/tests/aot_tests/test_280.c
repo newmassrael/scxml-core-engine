@@ -19,7 +19,7 @@ int main(void) {
     test280_init(&sm);
     test280_run(&sm);
 
-    int rc = test280_in_state(&sm, TEST280_STATE_PASS) ? 0 : 1;
+    int rc = test280_ended_in(&sm, TEST280_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test280: FAIL — active = 0x%08x\n", (unsigned)test280_active_states(&sm));
     }

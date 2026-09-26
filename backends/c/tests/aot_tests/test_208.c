@@ -38,7 +38,7 @@ int main(void) {
         test208_tick(&sm);
     }
 
-    int rc = test208_in_state(&sm, TEST208_STATE_PASS) ? 0 : 1;
+    int rc = test208_ended_in(&sm, TEST208_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test208: FAIL — active = 0x%08x\n", (unsigned)test208_active_states(&sm));
     }

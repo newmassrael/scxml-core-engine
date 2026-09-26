@@ -23,7 +23,7 @@ int main(void) {
     test178_init(&sm);
     test178_run(&sm);
 
-    int rc = test178_in_state(&sm, TEST178_STATE_FINAL) ? 0 : 1;
+    int rc = test178_ended_in(&sm, TEST178_STATE_FINAL) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test178: FAIL — active = 0x%08x\n", (unsigned)test178_active_states(&sm));
     }

@@ -24,7 +24,7 @@ int main(void) {
     test349_init(&sm);
     test349_run(&sm);
 
-    int rc = test349_in_state(&sm, TEST349_STATE_PASS) ? 0 : 1;
+    int rc = test349_ended_in(&sm, TEST349_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test349: FAIL — active = 0x%08x\n", (unsigned)test349_active_states(&sm));
     }

@@ -57,7 +57,7 @@ int main(void) {
         test230_tick(&sm);
     }
 
-    int rc = test230_in_state(&sm, TEST230_STATE_FINAL) ? 0 : 1;
+    int rc = test230_ended_in(&sm, TEST230_STATE_FINAL) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test230: FAIL — active = 0x%08x\n", (unsigned)test230_active_states(&sm));
     }

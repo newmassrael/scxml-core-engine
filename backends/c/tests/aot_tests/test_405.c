@@ -16,7 +16,7 @@ int main(void) {
     test405_init(&sm);
     test405_run(&sm);
 
-    int rc = test405_in_state(&sm, TEST405_STATE_PASS) ? 0 : 1;
+    int rc = test405_ended_in(&sm, TEST405_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test405: FAIL — active = 0x%08x\n", (unsigned)test405_active_states(&sm));
     }

@@ -24,7 +24,7 @@ int main(void) {
     test519_init_with_basic_http(&sm, sce_w3c_http_test_access_uri(access_uri, sizeof access_uri));
     test519_run(&sm);
 
-    int rc = test519_in_state(&sm, TEST519_STATE_PASS) ? 0 : 1;
+    int rc = test519_ended_in(&sm, TEST519_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test519: FAIL — active = 0x%08x\n", (unsigned)test519_active_states(&sm));
     }

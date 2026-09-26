@@ -12,8 +12,8 @@ fn test_415() {
     let completed = engine.run_until_completion(Duration::from_secs(3), Duration::from_millis(10));
     assert!(completed, "Test 415 timed out");
     assert_eq!(
-        engine.get_current_state(),
-        sce_rust_tests::generated::test415::Test415State::Final,
+        engine.terminal_state(),
+        Some(sce_rust_tests::generated::test415::Test415State::Final),
         "Test 415 reached wrong final state"
     );
 }

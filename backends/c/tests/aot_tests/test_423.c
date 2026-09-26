@@ -35,7 +35,7 @@ int main(void) {
         test423_tick(&sm);
     }
 
-    int rc = test423_in_state(&sm, TEST423_STATE_PASS) ? 0 : 1;
+    int rc = test423_ended_in(&sm, TEST423_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test423: FAIL — active = 0x%08x\n", (unsigned)test423_active_states(&sm));
     }

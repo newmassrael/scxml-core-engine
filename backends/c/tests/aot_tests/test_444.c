@@ -20,7 +20,7 @@ int main(void) {
     test444_init(&sm);
     test444_run(&sm);
 
-    int rc = test444_in_state(&sm, TEST444_STATE_PASS) ? 0 : 1;
+    int rc = test444_ended_in(&sm, TEST444_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test444: FAIL — active = 0x%08x\n", (unsigned)test444_active_states(&sm));
     }

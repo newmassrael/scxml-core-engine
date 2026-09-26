@@ -88,7 +88,7 @@ int main(void) {
         test234_tick(&sm);
     }
 
-    int rc = test234_in_state(&sm, TEST234_STATE_PASS) ? 0 : 1;
+    int rc = test234_ended_in(&sm, TEST234_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test234: FAIL — active = 0x%08x\n", (unsigned)test234_active_states(&sm));
     }

@@ -17,7 +17,7 @@ int main(void) {
     test339_init(&sm);
     test339_run(&sm);
 
-    int rc = test339_in_state(&sm, TEST339_STATE_PASS) ? 0 : 1;
+    int rc = test339_ended_in(&sm, TEST339_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test339: FAIL — active = 0x%08x\n", (unsigned)test339_active_states(&sm));
     }

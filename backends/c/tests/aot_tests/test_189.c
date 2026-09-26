@@ -22,7 +22,7 @@ int main(void) {
     test189_init(&sm);
     test189_run(&sm);
 
-    int rc = test189_in_state(&sm, TEST189_STATE_PASS) ? 0 : 1;
+    int rc = test189_ended_in(&sm, TEST189_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test189: FAIL — active = 0x%08x\n", (unsigned)test189_active_states(&sm));
     }

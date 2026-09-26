@@ -24,7 +24,7 @@ int main(void) {
     test456_init(&sm);
     test456_run(&sm);
 
-    int rc = test456_in_state(&sm, TEST456_STATE_PASS) ? 0 : 1;
+    int rc = test456_ended_in(&sm, TEST456_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         (void)fprintf(stderr, "test456: FAIL — active = 0x%08x\n", (unsigned)test456_active_states(&sm));
     }

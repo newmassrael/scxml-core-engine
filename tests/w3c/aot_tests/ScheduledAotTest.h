@@ -54,18 +54,21 @@ public:
         }
 
         auto currentState = sm.getCurrentState();
+        // §scxml-D-exitInterpreter leaves the configuration empty, so the
+        // verdict is the final the run ENDED in, not the current state.
+        const auto ended = sm.terminalState();
 
         // W3C SCXML: Check success state (default: Pass, override with PASS_STATE)
         // Policy-based design: Derived class can define PASS_STATE for custom success states
         bool isPass;
         if constexpr (requires { Derived::PASS_STATE; }) {
             // Manual test or custom success state
-            isPass = (currentState == Derived::PASS_STATE);
+            isPass = (ended == Derived::PASS_STATE);
             SCE_LOG_DEBUG("ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, PASS_STATE={}, isPass={}",
                           static_cast<int>(currentState), static_cast<int>(Derived::PASS_STATE), isPass);
         } else {
             // Standard test: success = Pass state
-            isPass = (currentState == SM::State::Pass);
+            isPass = (ended == SM::State::Pass);
             SCE_LOG_DEBUG(
                 "ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, SM::State::Pass={}, isPass={}",
                 static_cast<int>(currentState), static_cast<int>(SM::State::Pass), isPass);

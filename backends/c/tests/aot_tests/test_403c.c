@@ -32,7 +32,7 @@ int main(void) {
     test403c_init(&sm);
     test403c_run(&sm);
 
-    int rc = test403c_in_state(&sm, TEST403C_STATE_PASS) ? 0 : 1;
+    int rc = test403c_ended_in(&sm, TEST403C_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test403c: FAIL — active = 0x%08x\n", (unsigned)test403c_active_states(&sm));
     }

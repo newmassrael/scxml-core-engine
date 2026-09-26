@@ -19,7 +19,7 @@ int main(void) {
     test194_init(&sm);
     test194_run(&sm);
 
-    int rc = test194_in_state(&sm, TEST194_STATE_PASS) ? 0 : 1;
+    int rc = test194_ended_in(&sm, TEST194_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test194: FAIL — active = 0x%08x\n", (unsigned)test194_active_states(&sm));
     }

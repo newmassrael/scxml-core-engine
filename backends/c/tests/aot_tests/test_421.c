@@ -23,7 +23,7 @@ int main(void) {
     test421_init(&sm);
     test421_run(&sm);
 
-    int rc = test421_in_state(&sm, TEST421_STATE_PASS) ? 0 : 1;
+    int rc = test421_ended_in(&sm, TEST421_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test421: FAIL — active = 0x%08x\n", (unsigned)test421_active_states(&sm));
     }

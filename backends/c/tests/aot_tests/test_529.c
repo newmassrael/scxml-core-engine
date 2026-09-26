@@ -16,7 +16,7 @@ int main(void) {
     test529_init(&sm);
     test529_run(&sm);
 
-    int rc = test529_in_state(&sm, TEST529_STATE_PASS) ? 0 : 1;
+    int rc = test529_ended_in(&sm, TEST529_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test529: FAIL — active = 0x%08x\n", (unsigned)test529_active_states(&sm));
     }

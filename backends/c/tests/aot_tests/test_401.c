@@ -22,7 +22,7 @@ int main(void) {
     test401_init(&sm);
     test401_run(&sm);
 
-    int rc = test401_in_state(&sm, TEST401_STATE_PASS) ? 0 : 1;
+    int rc = test401_ended_in(&sm, TEST401_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test401: FAIL — active = 0x%08x\n", (unsigned)test401_active_states(&sm));
     }

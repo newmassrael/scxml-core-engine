@@ -25,7 +25,7 @@ int main(void) {
     test303_init(&sm);
     test303_run(&sm);
 
-    int rc = test303_in_state(&sm, TEST303_STATE_PASS) ? 0 : 1;
+    int rc = test303_ended_in(&sm, TEST303_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         (void)fprintf(stderr, "test303: FAIL — active = 0x%08x\n", (unsigned)test303_active_states(&sm));
     }

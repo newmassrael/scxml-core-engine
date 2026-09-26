@@ -6684,8 +6684,8 @@ impl W3cBackend for RustBackend {
              \x20   );\n\
              \x20   assert!(completed, \"Test {test_id} timed out\");\n\
              \x20   assert_eq!(\n\
-             \x20       engine.get_current_state(),\n\
-             \x20       {suite}::generated::test{test_id}::{machine_name}State::{pass_variant},\n\
+             \x20       engine.terminal_state(),\n\
+             \x20       Some({suite}::generated::test{test_id}::{machine_name}State::{pass_variant}),\n\
              \x20       \"Test {test_id} reached wrong final state\"\n\
              \x20   );\n\
              }}\n"
@@ -6967,7 +6967,8 @@ impl W3cBackend for GoBackend {
              \tif !completed {{\n\
              \t\tt.Fatalf(\"Test {test_id} timed out\")\n\
              \t}}\n\
-             \tscegotest.AssertFinalState(t, engine.GetCurrentState(), {machine_name}State{pass_state}, \"{test_id}\")\n\
+             \tended, ok := engine.TerminalState()\n\
+             \tscegotest.AssertEndedIn(t, ended, ok, {machine_name}State{pass_state}, \"{test_id}\")\n\
              }}\n",
             specnum = metadata.specnum,
             description = metadata.description,
@@ -7654,7 +7655,7 @@ impl W3cBackend for PythonBackend {
              \x20       f\"test {test_id} did not reach a top-level <final> within {max_ms} ms; \"\n\
              \x20       f\"last leaf={{engine.current_state}}\"\n\
              \x20   )\n\
-             \x20   actual = str(engine.current_state)\n\
+             \x20   actual = str(engine.terminal_state)\n\
              \x20   assert actual == \"{pass_literal}\", (\n\
              \x20       f\"test {test_id} reached <final id={{actual!r}}>; W3C expected \\\"{pass_literal}\\\"\"\n\
              \x20   )\n",

@@ -35,7 +35,7 @@ int main(void) {
         test311_tick(&sm);
     }
 
-    int rc = test311_in_state(&sm, TEST311_STATE_PASS) ? 0 : 1;
+    int rc = test311_ended_in(&sm, TEST311_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test311: FAIL — active = 0x%08x\n", (unsigned)test311_active_states(&sm));
     }

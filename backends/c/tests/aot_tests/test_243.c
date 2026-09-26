@@ -47,7 +47,7 @@ int main(void) {
         test243_tick(&sm);
     }
 
-    int rc = test243_in_state(&sm, TEST243_STATE_PASS) ? 0 : 1;
+    int rc = test243_ended_in(&sm, TEST243_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test243: FAIL — active = 0x%08x\n", (unsigned)test243_active_states(&sm));
     }

@@ -57,7 +57,7 @@ int main(void) {
         test338_tick(&sm);
     }
 
-    int rc = test338_in_state(&sm, TEST338_STATE_PASS) ? 0 : 1;
+    int rc = test338_ended_in(&sm, TEST338_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test338: FAIL — active = 0x%08x\n", (unsigned)test338_active_states(&sm));
     }

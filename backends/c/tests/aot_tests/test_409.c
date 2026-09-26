@@ -41,7 +41,7 @@ int main(void) {
         test409_tick(&sm);
     }
 
-    int rc = test409_in_state(&sm, TEST409_STATE_PASS) ? 0 : 1;
+    int rc = test409_ended_in(&sm, TEST409_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test409: FAIL — active = 0x%08x\n", (unsigned)test409_active_states(&sm));
     }

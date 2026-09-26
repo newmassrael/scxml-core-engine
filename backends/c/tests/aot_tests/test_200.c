@@ -16,7 +16,7 @@ int main(void) {
     test200_init(&sm);
     test200_run(&sm);
 
-    int rc = test200_in_state(&sm, TEST200_STATE_PASS) ? 0 : 1;
+    int rc = test200_ended_in(&sm, TEST200_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test200: FAIL — active = 0x%08x\n", (unsigned)test200_active_states(&sm));
     }

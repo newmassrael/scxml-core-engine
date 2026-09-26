@@ -18,7 +18,7 @@ int main(void) {
     test183_init(&sm);
     test183_run(&sm);
 
-    int rc = test183_in_state(&sm, TEST183_STATE_PASS) ? 0 : 1;
+    int rc = test183_ended_in(&sm, TEST183_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test183: FAIL — active = 0x%08x\n", (unsigned)test183_active_states(&sm));
     }

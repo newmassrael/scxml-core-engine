@@ -20,7 +20,7 @@ int main(void) {
     test448_init(&sm);
     test448_run(&sm);
 
-    int rc = test448_in_state(&sm, TEST448_STATE_PASS) ? 0 : 1;
+    int rc = test448_ended_in(&sm, TEST448_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test448: FAIL — active = 0x%08x\n", (unsigned)test448_active_states(&sm));
     }

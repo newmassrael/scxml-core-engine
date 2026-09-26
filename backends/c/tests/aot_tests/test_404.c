@@ -16,7 +16,7 @@ int main(void) {
     test404_init(&sm);
     test404_run(&sm);
 
-    int rc = test404_in_state(&sm, TEST404_STATE_PASS) ? 0 : 1;
+    int rc = test404_ended_in(&sm, TEST404_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test404: FAIL — active = 0x%08x\n", (unsigned)test404_active_states(&sm));
     }

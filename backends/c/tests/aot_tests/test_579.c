@@ -46,7 +46,7 @@ int main(void) {
         test579_tick(&sm);
     }
 
-    int rc = test579_in_state(&sm, TEST579_STATE_PASS) ? 0 : 1;
+    int rc = test579_ended_in(&sm, TEST579_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test579: FAIL — active = 0x%08x\n", (unsigned)test579_active_states(&sm));
     }

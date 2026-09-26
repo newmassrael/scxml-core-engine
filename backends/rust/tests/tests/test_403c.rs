@@ -14,8 +14,8 @@ fn test_403c() {
     let completed = engine.run_until_completion(Duration::from_secs(3), Duration::from_millis(10));
     assert!(completed, "Test 403c timed out");
     assert_eq!(
-        engine.get_current_state(),
-        sce_rust_tests::generated::test403c::Test403cState::Pass,
+        engine.terminal_state(),
+        Some(sce_rust_tests::generated::test403c::Test403cState::Pass),
         "Test 403c reached wrong final state"
     );
 }

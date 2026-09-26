@@ -20,7 +20,7 @@ struct Test178 : public AotTestBase {
         SCE::Generated::test178::test178 sm;
         SCE::Test::inject_build_engine(sm);
         sm.initialize();
-        return sm.isInFinalState() && sm.getCurrentState() == SCE::Generated::test178::State::Final;
+        return sm.terminalState() == SCE::Generated::test178::State::Final;
     }
 
     int getTestId() const override {

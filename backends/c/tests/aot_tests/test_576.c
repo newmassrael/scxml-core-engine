@@ -25,7 +25,7 @@ int main(void) {
     test576_init(&sm);
     test576_run(&sm);
 
-    int rc = test576_in_state(&sm, TEST576_STATE_PASS) ? 0 : 1;
+    int rc = test576_ended_in(&sm, TEST576_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test576: FAIL — active = 0x%08x\n", (unsigned)test576_active_states(&sm));
     }

@@ -21,7 +21,7 @@ int main(void) {
     test173_init(&sm);
     test173_run(&sm);
 
-    int rc = test173_in_state(&sm, TEST173_STATE_PASS) ? 0 : 1;
+    int rc = test173_ended_in(&sm, TEST173_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test173: FAIL — active = 0x%08x\n", (unsigned)test173_active_states(&sm));
     }

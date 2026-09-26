@@ -30,7 +30,7 @@ int main(void) {
     test150_init(&sm);
     test150_run(&sm);
 
-    int rc = test150_in_state(&sm, TEST150_STATE_PASS) ? 0 : 1;
+    int rc = test150_ended_in(&sm, TEST150_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test150: FAIL — active = 0x%08x\n", (unsigned)test150_active_states(&sm));
     }

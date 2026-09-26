@@ -15,7 +15,7 @@ int main(void) {
     test445_init(&sm);
     test445_run(&sm);
 
-    int rc = test445_in_state(&sm, TEST445_STATE_PASS) ? 0 : 1;
+    int rc = test445_ended_in(&sm, TEST445_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test445: FAIL — active = 0x%08x\n", (unsigned)test445_active_states(&sm));
     }

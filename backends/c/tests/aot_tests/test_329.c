@@ -24,7 +24,7 @@ int main(void) {
     test329_init(&sm);
     test329_run(&sm);
 
-    int rc = test329_in_state(&sm, TEST329_STATE_PASS) ? 0 : 1;
+    int rc = test329_ended_in(&sm, TEST329_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test329: FAIL — active = 0x%08x\n", (unsigned)test329_active_states(&sm));
     }

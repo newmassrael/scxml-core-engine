@@ -15,7 +15,7 @@ int main(void) {
     test278_init(&sm);
     test278_run(&sm);
 
-    int rc = test278_in_state(&sm, TEST278_STATE_PASS) ? 0 : 1;
+    int rc = test278_ended_in(&sm, TEST278_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test278: FAIL — active = 0x%08x\n", (unsigned)test278_active_states(&sm));
     }

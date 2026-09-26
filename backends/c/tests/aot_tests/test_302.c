@@ -27,7 +27,7 @@ int main(void) {
     test302_init(&sm);
     test302_run(&sm);
 
-    int rc = test302_in_state(&sm, TEST302_STATE_PASS) ? 0 : 1;
+    int rc = test302_ended_in(&sm, TEST302_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         (void)fprintf(stderr, "test302: FAIL — active = 0x%08x\n", (unsigned)test302_active_states(&sm));
     }

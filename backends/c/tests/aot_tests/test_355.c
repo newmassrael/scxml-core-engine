@@ -24,7 +24,7 @@ int main(void) {
     test355_init(&sm);
     test355_run(&sm);
 
-    if (test355_in_state(&sm, TEST355_STATE_PASS)) {
+    if (test355_ended_in(&sm, TEST355_STATE_PASS)) {
         return 0;
     }
     fprintf(stderr, "test355: FAIL — active = 0x%08x\n", (unsigned)test355_active_states(&sm));

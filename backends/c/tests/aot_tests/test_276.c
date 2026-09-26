@@ -53,7 +53,7 @@ int main(void) {
         test276_step(&sm);
     }
 
-    int rc = test276_in_state(&sm, TEST276_STATE_PASS) ? 0 : 1;
+    int rc = test276_ended_in(&sm, TEST276_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test276: FAIL — active = 0x%08x\n", (unsigned)test276_active_states(&sm));
     }

@@ -19,7 +19,7 @@ int main(void) {
     test148_init(&sm);
     test148_run(&sm);
 
-    int rc = test148_in_state(&sm, TEST148_STATE_PASS) ? 0 : 1;
+    int rc = test148_ended_in(&sm, TEST148_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test148: FAIL — active = 0x%08x\n", (unsigned)test148_active_states(&sm));
     }

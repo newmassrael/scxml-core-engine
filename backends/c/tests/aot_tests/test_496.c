@@ -25,7 +25,7 @@ int main(void) {
     test496_init(&sm);
     test496_run(&sm);
 
-    int rc = test496_in_state(&sm, TEST496_STATE_PASS) ? 0 : 1;
+    int rc = test496_ended_in(&sm, TEST496_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test496: FAIL — active = 0x%08x\n", (unsigned)test496_active_states(&sm));
     }

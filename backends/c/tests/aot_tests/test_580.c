@@ -49,7 +49,7 @@ int main(void) {
         test580_tick(&sm);
     }
 
-    int rc = test580_in_state(&sm, TEST580_STATE_PASS) ? 0 : 1;
+    int rc = test580_ended_in(&sm, TEST580_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test580: FAIL — active = 0x%08x\n", (unsigned)test580_active_states(&sm));
     }

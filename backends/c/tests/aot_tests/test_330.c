@@ -20,7 +20,7 @@ int main(void) {
     test330_init(&sm);
     test330_run(&sm);
 
-    int rc = test330_in_state(&sm, TEST330_STATE_PASS) ? 0 : 1;
+    int rc = test330_ended_in(&sm, TEST330_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test330: FAIL — active = 0x%08x\n", (unsigned)test330_active_states(&sm));
     }

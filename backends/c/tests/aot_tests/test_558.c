@@ -15,7 +15,7 @@ int main(void) {
     test558_init(&sm);
     test558_run(&sm);
 
-    int rc = test558_in_state(&sm, TEST558_STATE_PASS) ? 0 : 1;
+    int rc = test558_ended_in(&sm, TEST558_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test558: FAIL — active = 0x%08x\n", (unsigned)test558_active_states(&sm));
     }

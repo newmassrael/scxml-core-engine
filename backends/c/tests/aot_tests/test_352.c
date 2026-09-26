@@ -34,7 +34,7 @@ int main(void) {
         test352_tick(&sm);
     }
 
-    int rc = test352_in_state(&sm, TEST352_STATE_PASS) ? 0 : 1;
+    int rc = test352_ended_in(&sm, TEST352_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test352: FAIL — active = 0x%08x\n", (unsigned)test352_active_states(&sm));
     }

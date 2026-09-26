@@ -15,7 +15,7 @@ int main(void) {
     test449_init(&sm);
     test449_run(&sm);
 
-    int rc = test449_in_state(&sm, TEST449_STATE_PASS) ? 0 : 1;
+    int rc = test449_ended_in(&sm, TEST449_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test449: FAIL — active = 0x%08x\n", (unsigned)test449_active_states(&sm));
     }

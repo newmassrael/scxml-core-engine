@@ -16,7 +16,7 @@ int main(void) {
     test528_init(&sm);
     test528_run(&sm);
 
-    int rc = test528_in_state(&sm, TEST528_STATE_PASS) ? 0 : 1;
+    int rc = test528_ended_in(&sm, TEST528_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test528: FAIL — active = 0x%08x\n", (unsigned)test528_active_states(&sm));
     }

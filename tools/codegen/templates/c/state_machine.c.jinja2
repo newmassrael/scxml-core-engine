@@ -5537,6 +5537,11 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_terminal_state(const {{ csym_pr
     *out = sm->terminal_state;
     return true;
 }
+
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_ended_in(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                                             {{ csym_prefix }}{{ model.name }}_state_t s) {
+    return sm->has_terminal_state && sm->terminal_state == s;
+}
 {% if model.on_sample_links %}
 
 /* ── SCE Protocol-Synthesis RFC §synth-5-E sample-callback codegen wire-up ────────────────── */

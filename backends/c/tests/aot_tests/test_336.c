@@ -30,7 +30,7 @@ int main(void) {
     test336_init(&sm);
     test336_run(&sm);
 
-    int rc = test336_in_state(&sm, TEST336_STATE_PASS) ? 0 : 1;
+    int rc = test336_ended_in(&sm, TEST336_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test336: FAIL — active = 0x%08x\n", (unsigned)test336_active_states(&sm));
     }

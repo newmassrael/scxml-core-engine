@@ -26,7 +26,7 @@ int main(void) {
     test415_init(&sm);
     test415_run(&sm);
 
-    int rc = test415_in_state(&sm, TEST415_STATE_FINAL) ? 0 : 1;
+    int rc = test415_ended_in(&sm, TEST415_STATE_FINAL) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test415: FAIL — active = 0x%08x\n", (unsigned)test415_active_states(&sm));
     }

@@ -43,7 +43,7 @@ int main(void) {
         test347_tick(&sm);
     }
 
-    int rc = test347_in_state(&sm, TEST347_STATE_PASS) ? 0 : 1;
+    int rc = test347_ended_in(&sm, TEST347_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test347: FAIL — active = 0x%08x\n", (unsigned)test347_active_states(&sm));
     }

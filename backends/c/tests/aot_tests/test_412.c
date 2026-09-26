@@ -33,7 +33,7 @@ int main(void) {
     test412_init(&sm);
     test412_run(&sm);
 
-    int rc = test412_in_state(&sm, TEST412_STATE_PASS) ? 0 : 1;
+    int rc = test412_ended_in(&sm, TEST412_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test412: FAIL — active = 0x%08x\n", (unsigned)test412_active_states(&sm));
     }

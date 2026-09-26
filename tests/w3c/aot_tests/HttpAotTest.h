@@ -180,8 +180,8 @@ public:
         httpServer.stop();
         SCE_LOG_DEBUG("HttpAotTest {}: HTTP server stopped", TestNum);
 
-        // Check if final state is Pass
-        bool isPass = sm.getCurrentState() == SM::State::Pass;
+        // Check the run ENDED in Pass (§scxml-D-exitInterpreter empties the configuration)
+        bool isPass = sm.terminalState() == SM::State::Pass;
         SCE_LOG_DEBUG("HttpAotTest {}: Final state={}, isPass={}", TestNum, static_cast<int>(sm.getCurrentState()),
                       isPass);
 
@@ -281,8 +281,8 @@ public:
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
-        // Check if final state is Pass
-        bool isPass = sm.getCurrentState() == SM::State::Pass;
+        // Check the run ENDED in Pass (§scxml-D-exitInterpreter empties the configuration)
+        bool isPass = sm.terminalState() == SM::State::Pass;
         SCE_LOG_DEBUG("HttpAotTest {}: WASM final state={}, isPass={}", TestNum, static_cast<int>(sm.getCurrentState()),
                       isPass);
 

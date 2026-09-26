@@ -47,7 +47,7 @@ int main(void) {
         test530_tick(&sm);
     }
 
-    int rc = test530_in_state(&sm, TEST530_STATE_PASS) ? 0 : 1;
+    int rc = test530_ended_in(&sm, TEST530_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test530: FAIL — active = 0x%08x\n", (unsigned)test530_active_states(&sm));
     }

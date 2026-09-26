@@ -27,7 +27,7 @@ int main(void) {
     test364_init(&sm);
     test364_run(&sm);
 
-    int rc = test364_in_state(&sm, TEST364_STATE_PASS) ? 0 : 1;
+    int rc = test364_ended_in(&sm, TEST364_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test364: FAIL — active = 0x%08x\n", (unsigned)test364_active_states(&sm));
     }

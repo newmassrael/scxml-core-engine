@@ -24,7 +24,7 @@ int main(void) {
     test509_init_with_basic_http(&sm, sce_w3c_http_test_access_uri(access_uri, sizeof access_uri));
     test509_run(&sm);
 
-    int rc = test509_in_state(&sm, TEST509_STATE_PASS) ? 0 : 1;
+    int rc = test509_ended_in(&sm, TEST509_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test509: FAIL — active = 0x%08x\n", (unsigned)test509_active_states(&sm));
     }

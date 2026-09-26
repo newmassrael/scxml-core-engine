@@ -194,7 +194,7 @@ std::unique_ptr<ITestExecutor> TestComponentFactory::createExecutor() {
                     // This ensures events from child invokes (event1, done.invoke) are processed
                     resources->eventRaiser->processQueuedEvents();
 
-                    currentState = stateMachine->getCurrentState();
+                    currentState = stateMachine->terminalState().value_or(stateMachine->getCurrentState());
 
                     // Check if we reached a final state (pass or fail)
                     if (currentState == "pass" || currentState == "fail") {
@@ -213,7 +213,7 @@ std::unique_ptr<ITestExecutor> TestComponentFactory::createExecutor() {
                 }
 
                 // Get final state - always read fresh state after loop exit
-                testContext.finalState = stateMachine->getCurrentState();
+                testContext.finalState = stateMachine->terminalState().value_or(stateMachine->getCurrentState());
                 SCE_LOG_DEBUG("StateMachineTestExecutor: Test completed with final state: {}", testContext.finalState);
 
                 auto endTime = std::chrono::steady_clock::now();
@@ -295,7 +295,7 @@ std::unique_ptr<ITestExecutor> TestComponentFactory::createExecutor() {
                     // This ensures events from child invokes (event1, done.invoke) are processed
                     resources->eventRaiser->processQueuedEvents();
 
-                    currentState = stateMachine->getCurrentState();
+                    currentState = stateMachine->terminalState().value_or(stateMachine->getCurrentState());
                     if (currentState == "pass" || currentState == "fail") {
                         SCE_LOG_DEBUG("StateMachineTestExecutor: Reached final state: {}", currentState);
                         break;
@@ -304,7 +304,7 @@ std::unique_ptr<ITestExecutor> TestComponentFactory::createExecutor() {
                 }
 
                 // Get final state - always read fresh state after loop exit
-                testContext.finalState = stateMachine->getCurrentState();
+                testContext.finalState = stateMachine->terminalState().value_or(stateMachine->getCurrentState());
                 SCE_LOG_DEBUG("StateMachineTestExecutor: Test completed with final state: {}", testContext.finalState);
 
                 auto endTime = std::chrono::steady_clock::now();
@@ -1795,7 +1795,7 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
             // W3C SCXML C.2: Use while loop with ASYNCIFY for both Native and WASM
             // ASYNCIFY allows emscripten_sleep() to yield to event loop for EM_ASYNC_JS HTTP callbacks
             while (std::chrono::steady_clock::now() - waitStart < timeout) {
-                currentState = stateMachine->getCurrentState();
+                currentState = stateMachine->terminalState().value_or(stateMachine->getCurrentState());
 
                 // Check if we reached a final state (pass or fail)
                 if (currentState == "pass" || currentState == "fail") {
@@ -2178,7 +2178,7 @@ TestReport W3CTestRunner::runManualTest178(const std::string &testDirectory, Tes
             std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
 
         // Get final state name
-        std::string finalState = stateMachine->getCurrentState();
+        std::string finalState = stateMachine->terminalState().value_or(stateMachine->getCurrentState());
         SCE_LOG_INFO("W3C Test 178: StateMachine reached state: {}", finalState);
 
         // W3C SCXML 6.2: Validate based on final state

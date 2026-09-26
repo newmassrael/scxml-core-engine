@@ -23,7 +23,7 @@ int main(void) {
     test495_init(&sm);
     test495_run(&sm);
 
-    int rc = test495_in_state(&sm, TEST495_STATE_PASS) ? 0 : 1;
+    int rc = test495_ended_in(&sm, TEST495_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test495: FAIL — active = 0x%08x\n", (unsigned)test495_active_states(&sm));
     }

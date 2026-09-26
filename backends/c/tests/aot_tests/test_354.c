@@ -26,7 +26,7 @@ int main(void) {
     test354_init(&sm);
     test354_run(&sm);
 
-    int rc = test354_in_state(&sm, TEST354_STATE_PASS) ? 0 : 1;
+    int rc = test354_ended_in(&sm, TEST354_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test354: FAIL — active = 0x%08x\n", (unsigned)test354_active_states(&sm));
     }

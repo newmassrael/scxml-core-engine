@@ -81,7 +81,7 @@ int main(void) {
         test422_tick(&sm);
     }
 
-    int rc = test422_in_state(&sm, TEST422_STATE_PASS) ? 0 : 1;
+    int rc = test422_ended_in(&sm, TEST422_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test422: FAIL — active = 0x%08x\n", (unsigned)test422_active_states(&sm));
     }

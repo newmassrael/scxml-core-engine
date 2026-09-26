@@ -18,7 +18,7 @@ int main(void) {
     test144_init(&sm);
     test144_run(&sm);
 
-    if (test144_in_state(&sm, TEST144_STATE_PASS)) {
+    if (test144_ended_in(&sm, TEST144_STATE_PASS)) {
         return 0;
     }
     fprintf(stderr, "test144: FAIL — active = 0x%08x\n", (unsigned)test144_active_states(&sm));

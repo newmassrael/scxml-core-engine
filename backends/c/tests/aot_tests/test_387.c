@@ -16,7 +16,7 @@ int main(void) {
     test387_init(&sm);
     test387_run(&sm);
 
-    int rc = test387_in_state(&sm, TEST387_STATE_PASS) ? 0 : 1;
+    int rc = test387_ended_in(&sm, TEST387_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test387: FAIL — active = 0x%08x\n", (unsigned)test387_active_states(&sm));
     }

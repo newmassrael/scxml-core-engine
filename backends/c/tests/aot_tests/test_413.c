@@ -32,7 +32,7 @@ int main(void) {
     test413_init(&sm);
     test413_run(&sm);
 
-    int rc = test413_in_state(&sm, TEST413_STATE_PASS) ? 0 : 1;
+    int rc = test413_ended_in(&sm, TEST413_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test413: FAIL — active = 0x%08x\n", (unsigned)test413_active_states(&sm));
     }

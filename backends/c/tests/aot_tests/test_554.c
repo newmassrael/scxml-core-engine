@@ -60,7 +60,7 @@ int main(void) {
         test554_tick(&sm);
     }
 
-    int rc = test554_in_state(&sm, TEST554_STATE_PASS) ? 0 : 1;
+    int rc = test554_ended_in(&sm, TEST554_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test554: FAIL — active = 0x%08x\n", (unsigned)test554_active_states(&sm));
     }

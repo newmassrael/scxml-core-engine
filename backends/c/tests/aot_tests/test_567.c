@@ -24,7 +24,7 @@ int main(void) {
     test567_init_with_basic_http(&sm, sce_w3c_http_test_access_uri(access_uri, sizeof access_uri));
     test567_run(&sm);
 
-    int rc = test567_in_state(&sm, TEST567_STATE_PASS) ? 0 : 1;
+    int rc = test567_ended_in(&sm, TEST567_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test567: FAIL — active = 0x%08x\n", (unsigned)test567_active_states(&sm));
     }

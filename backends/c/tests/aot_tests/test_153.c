@@ -23,7 +23,7 @@ int main(void) {
     test153_init(&sm);
     test153_run(&sm);
 
-    int rc = test153_in_state(&sm, TEST153_STATE_PASS) ? 0 : 1;
+    int rc = test153_ended_in(&sm, TEST153_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test153: FAIL — active = 0x%08x\n", (unsigned)test153_active_states(&sm));
     }

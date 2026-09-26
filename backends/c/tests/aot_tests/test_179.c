@@ -19,7 +19,7 @@ int main(void) {
     test179_init(&sm);
     test179_run(&sm);
 
-    int rc = test179_in_state(&sm, TEST179_STATE_PASS) ? 0 : 1;
+    int rc = test179_ended_in(&sm, TEST179_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test179: FAIL — active = 0x%08x\n", (unsigned)test179_active_states(&sm));
     }

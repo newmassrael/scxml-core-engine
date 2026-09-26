@@ -20,7 +20,7 @@ int main(void) {
     test304_init(&sm);
     test304_run(&sm);
 
-    int rc = test304_in_state(&sm, TEST304_STATE_PASS) ? 0 : 1;
+    int rc = test304_ended_in(&sm, TEST304_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         (void)fprintf(stderr, "test304: FAIL — active = 0x%08x\n", (unsigned)test304_active_states(&sm));
     }

@@ -16,7 +16,7 @@ int main(void) {
     test403a_init(&sm);
     test403a_run(&sm);
 
-    int rc = test403a_in_state(&sm, TEST403A_STATE_PASS) ? 0 : 1;
+    int rc = test403a_ended_in(&sm, TEST403A_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test403a: FAIL — active = 0x%08x\n", (unsigned)test403a_active_states(&sm));
     }

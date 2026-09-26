@@ -20,7 +20,7 @@ int main(void) {
     test176_init(&sm);
     test176_run(&sm);
 
-    int rc = test176_in_state(&sm, TEST176_STATE_PASS) ? 0 : 1;
+    int rc = test176_ended_in(&sm, TEST176_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test176: FAIL — active = 0x%08x\n", (unsigned)test176_active_states(&sm));
     }

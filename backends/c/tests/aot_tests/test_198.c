@@ -17,7 +17,7 @@ int main(void) {
     test198_init(&sm);
     test198_run(&sm);
 
-    int rc = test198_in_state(&sm, TEST198_STATE_PASS) ? 0 : 1;
+    int rc = test198_ended_in(&sm, TEST198_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test198: FAIL — active = 0x%08x\n", (unsigned)test198_active_states(&sm));
     }

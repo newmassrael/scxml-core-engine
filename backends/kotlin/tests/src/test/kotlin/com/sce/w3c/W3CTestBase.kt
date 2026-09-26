@@ -228,10 +228,13 @@ abstract class W3CTestBase<S : State, E : Event> {
         }
 
         try {
+            // The final the run ENDED in: the exit that ends a run leaves the
+            // configuration empty (Appendix D's exitInterpreter).
             assertEquals(
                 expectedPassState,
-                sm.currentState.value,
-                "W3C conformance failed: expected Pass but reached ${sm.currentState.value}"
+                sm.terminalState,
+                "W3C conformance failed: expected Pass but the run ended in ${sm.terminalState} " +
+                    "(current state ${sm.currentState.value})"
             )
         } finally {
             sm.cleanup()

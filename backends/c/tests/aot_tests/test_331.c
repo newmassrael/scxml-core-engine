@@ -28,7 +28,7 @@ int main(void) {
     test331_init(&sm);
     test331_run(&sm);
 
-    int rc = test331_in_state(&sm, TEST331_STATE_PASS) ? 0 : 1;
+    int rc = test331_ended_in(&sm, TEST331_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test331: FAIL — active = 0x%08x\n", (unsigned)test331_active_states(&sm));
     }

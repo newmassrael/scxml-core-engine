@@ -16,7 +16,7 @@ int main(void) {
     test294_init(&sm);
     test294_run(&sm);
 
-    int rc = test294_in_state(&sm, TEST294_STATE_PASS) ? 0 : 1;
+    int rc = test294_ended_in(&sm, TEST294_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test294: FAIL — active = 0x%08x\n", (unsigned)test294_active_states(&sm));
     }

@@ -54,7 +54,7 @@ int main(void) {
         test245_tick(&sm);
     }
 
-    int rc = test245_in_state(&sm, TEST245_STATE_PASS) ? 0 : 1;
+    int rc = test245_ended_in(&sm, TEST245_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test245: FAIL — active = 0x%08x\n", (unsigned)test245_active_states(&sm));
     }

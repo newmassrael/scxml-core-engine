@@ -35,7 +35,7 @@ int main(void) {
         test416_tick(&sm);
     }
 
-    int rc = test416_in_state(&sm, TEST416_STATE_PASS) ? 0 : 1;
+    int rc = test416_ended_in(&sm, TEST416_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test416: FAIL — active = 0x%08x\n", (unsigned)test416_active_states(&sm));
     }

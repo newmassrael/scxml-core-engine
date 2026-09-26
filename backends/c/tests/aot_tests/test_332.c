@@ -21,7 +21,7 @@ int main(void) {
     test332_init(&sm);
     test332_run(&sm);
 
-    int rc = test332_in_state(&sm, TEST332_STATE_PASS) ? 0 : 1;
+    int rc = test332_ended_in(&sm, TEST332_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test332: FAIL — active = 0x%08x\n", (unsigned)test332_active_states(&sm));
     }

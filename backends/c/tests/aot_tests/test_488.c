@@ -16,7 +16,7 @@ int main(void) {
     test488_init(&sm);
     test488_run(&sm);
 
-    int rc = test488_in_state(&sm, TEST488_STATE_PASS) ? 0 : 1;
+    int rc = test488_ended_in(&sm, TEST488_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr, "test488: FAIL — active = 0x%08x\n", (unsigned)test488_active_states(&sm));
     }
