@@ -1127,6 +1127,30 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
                     f"it a value. Read it where the specification uses it, or "
                     f"delete it and its rule."))
 
+    # An input the pack's cases leave unset, read in a way that refuses a case
+    # with nothing there (`delivery.owes_absence`). ⚠ `verify` refuses every
+    # such case, and a writer who is judged afterwards never sees it: measured
+    # 2026-09-26, a 43-input document passed this command with no refusal and
+    # then had all 196 of its cases refused for three inputs the cases never
+    # set. The cases may withhold their VALUES (an authoring pack does); which
+    # addresses each case sets is not an answer, and is all this needs.
+    if pack.examples.cases:
+        for name, rule in sorted(declared_inputs.items()):
+            if not isinstance(rule, dict) or not delivery.owes_absence(rule):
+                continue
+            address = rule["address"]
+            unset = sum(1 for case in pack.examples.cases
+                        if any(address not in step.given for step in (*case.before, case)))
+            if unset:
+                out.append(Finding(
+                    f"input {name}",
+                    f"{unset} of {len(pack.examples.cases)} case(s) set nothing at "
+                    f"{address}, and this rule hands the document the value there "
+                    f"with nothing said for when there is none -- so every one of "
+                    f"those cases is refused rather than guessed at. Say what an "
+                    f"unset {address} reads as with `when_absent`, and mark it "
+                    f"`assumed` if the specification does not say."))
+
     # Whether a run can start at all (`driving_refusals`).
     for where, why in driving_refusals(document, declared_inputs):
         out.append(Finding(where, why))

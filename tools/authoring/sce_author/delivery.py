@@ -198,6 +198,25 @@ def _carries(slot: str) -> str:
             "text": "a text", "boolean": "a truth value"}.get(slot, slot)
 
 
+# The rule keys that read an address some other way than handing its value
+# over, each of which has its own answer for an address a case never set.
+_READS_OTHERWISE = ("equals", "equals_any", "not_equals", "absent")
+
+
+def owes_absence(rule: dict) -> bool:
+    """Whether a case that sets nothing at this rule's address is refused.
+
+    True for a rule that hands the document the address's own value
+    (`read_as_is`) and does not say what nothing reads as. A comparison reads
+    a missing value as not matching, and every non-address reading -- event,
+    protocol, memory, clock, variant -- has its own. `check` asks this of the
+    pack's cases before any is run; `verify` meets it inside `read_as_is`.
+    """
+    return (bool(rule.get("address")) and hands(rule) == "as-is"
+            and not any(key in rule for key in _READS_OTHERWISE)
+            and "when_absent" not in rule)
+
+
 def read_as_is(name: str, rule: dict, value, present: bool, sce_type: str | None,
                field, absence_tokens=(), variants: dict | None = None):
     """The address's own value, as the document input's type reads it.

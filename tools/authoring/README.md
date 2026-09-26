@@ -758,6 +758,14 @@ the same writer produced -- shell right, `check` silent, every case unjudged:
   name-only check passed.
 - A transform input that no expression reads is refused: it decides nothing,
   and `verify` still refuses a case that leaves it without a value.
+- An input read as its address's own value, with no `when_absent`, is refused
+  when the pack's cases leave that address unset -- `verify` refuses every
+  such case rather than guess, and a writer judged afterwards never sees it.
+  Which addresses each case sets is not an answer, so a pack for writers may
+  carry its cases with the values (and the names, which can state them)
+  withheld; this is asked of those too. Measured 2026-09-26: a 43-input
+  document passed `check` with nothing said, and all 196 of its cases were
+  then refused over eleven inputs the cases seldom set.
 
 #### A statechart is driven, and answers by sending
 
