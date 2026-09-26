@@ -24,9 +24,6 @@ sealed interface HostEventReachesTheChildState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface HostEventReachesTheChildEvent : Event {
-    sealed interface Cancel : HostEventReachesTheChildEvent {
-        data object Invoke : Cancel
-    }
     sealed interface Done : HostEventReachesTheChildEvent {
         data object Invoke : Done
     }
@@ -171,7 +168,6 @@ class HostEventReachesTheChildStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): HostEventReachesTheChildEvent? = when (name) {
-        "cancel.invoke" -> HostEventReachesTheChildEvent.Cancel.Invoke
         "done.invoke" -> HostEventReachesTheChildEvent.Done.Invoke
         "error.execution" -> HostEventReachesTheChildEvent.Error.Execution
         "hostPing" -> HostEventReachesTheChildEvent.HostPing
@@ -184,7 +180,6 @@ class HostEventReachesTheChildStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: HostEventReachesTheChildEvent): String? = when (event) {
-        is HostEventReachesTheChildEvent.Cancel.Invoke -> "cancel.invoke"
         is HostEventReachesTheChildEvent.Done.Invoke -> "done.invoke"
         is HostEventReachesTheChildEvent.Error.Execution -> "error.execution"
         is HostEventReachesTheChildEvent.HostPing -> "hostPing"

@@ -23,9 +23,6 @@ sealed interface AutoforwardInternalQueueState : State {
 
 sealed interface AutoforwardInternalQueueEvent : Event {
     data object Boom : AutoforwardInternalQueueEvent
-    sealed interface Cancel : AutoforwardInternalQueueEvent {
-        data object Invoke : Cancel
-    }
     sealed interface Done : AutoforwardInternalQueueEvent {
         data object Invoke : Done
     }
@@ -133,7 +130,6 @@ class AutoforwardInternalQueueStateMachine(
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AutoforwardInternalQueueEvent? = when (name) {
         "boom" -> AutoforwardInternalQueueEvent.Boom
-        "cancel.invoke" -> AutoforwardInternalQueueEvent.Cancel.Invoke
         "done.invoke" -> AutoforwardInternalQueueEvent.Done.Invoke
         "error.execution" -> AutoforwardInternalQueueEvent.Error.Execution
         "probe" -> AutoforwardInternalQueueEvent.Probe
@@ -146,7 +142,6 @@ class AutoforwardInternalQueueStateMachine(
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AutoforwardInternalQueueEvent): String? = when (event) {
         is AutoforwardInternalQueueEvent.Boom -> "boom"
-        is AutoforwardInternalQueueEvent.Cancel.Invoke -> "cancel.invoke"
         is AutoforwardInternalQueueEvent.Done.Invoke -> "done.invoke"
         is AutoforwardInternalQueueEvent.Error.Execution -> "error.execution"
         is AutoforwardInternalQueueEvent.Probe -> "probe"

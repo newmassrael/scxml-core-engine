@@ -33,9 +33,6 @@ sealed interface InvokeParamSeedsDeclaredChildDataState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface InvokeParamSeedsDeclaredChildDataEvent : Event {
-    sealed interface Cancel : InvokeParamSeedsDeclaredChildDataEvent {
-        data object Invoke : Cancel
-    }
     sealed interface Done : InvokeParamSeedsDeclaredChildDataEvent {
         data object Invoke : Done
     }
@@ -337,7 +334,6 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokeParamSeedsDeclaredChildDataEvent? = when (name) {
-        "cancel.invoke" -> InvokeParamSeedsDeclaredChildDataEvent.Cancel.Invoke
         "done.invoke" -> InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke
         "error.execution" -> InvokeParamSeedsDeclaredChildDataEvent.Error.Execution
         "seed.collapsed" -> InvokeParamSeedsDeclaredChildDataEvent.Seed.Collapsed
@@ -350,7 +346,6 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokeParamSeedsDeclaredChildDataEvent): String? = when (event) {
-        is InvokeParamSeedsDeclaredChildDataEvent.Cancel.Invoke -> "cancel.invoke"
         is InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke -> "done.invoke"
         is InvokeParamSeedsDeclaredChildDataEvent.Error.Execution -> "error.execution"
         is InvokeParamSeedsDeclaredChildDataEvent.Seed.Collapsed -> "seed.collapsed"

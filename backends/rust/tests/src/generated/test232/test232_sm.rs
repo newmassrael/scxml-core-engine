@@ -99,7 +99,6 @@ pub enum Test232State {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Test232Event {
-    CancelInvoke,
     ChildToParent1,
     ChildToParent2,
     DoneInvoke,
@@ -528,7 +527,6 @@ impl StatePolicy for Test232Policy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
-            Test232Event::CancelInvoke => "cancel.invoke",
             Test232Event::ChildToParent1 => "childToParent1",
             Test232Event::ChildToParent2 => "childToParent2",
             Test232Event::DoneInvoke => "done.invoke",
@@ -540,7 +538,6 @@ impl StatePolicy for Test232Policy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
-            "cancel.invoke" => Some(Test232Event::CancelInvoke),
             "childToParent1" => Some(Test232Event::ChildToParent1),
             "childToParent2" => Some(Test232Event::ChildToParent2),
             "done.invoke" => Some(Test232Event::DoneInvoke),
@@ -681,11 +678,10 @@ impl StatePolicy for Test232Policy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child '_invoke_0'
                 if self.child_invoke_0.is_some() {
-                    if !self.pending_done_invoke_invoke_0 {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            Test232Event::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own

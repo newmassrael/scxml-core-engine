@@ -165,18 +165,15 @@ var transitionTargetsOfSessionIdsAreDistinct = [5][][]SessionIdsAreDistinctTarge
 type SessionIdsAreDistinctEvent int
 
 const (
-	SessionIdsAreDistinctEventCancelInvoke SessionIdsAreDistinctEvent = 0
-	SessionIdsAreDistinctEventDoneInvoke SessionIdsAreDistinctEvent = 1
-	SessionIdsAreDistinctEventErrorExecution SessionIdsAreDistinctEvent = 2
-	SessionIdsAreDistinctEventFromChild SessionIdsAreDistinctEvent = 3
+	SessionIdsAreDistinctEventDoneInvoke SessionIdsAreDistinctEvent = 0
+	SessionIdsAreDistinctEventErrorExecution SessionIdsAreDistinctEvent = 1
+	SessionIdsAreDistinctEventFromChild SessionIdsAreDistinctEvent = 2
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	SessionIdsAreDistinctEventNull SessionIdsAreDistinctEvent = 4
+	SessionIdsAreDistinctEventNull SessionIdsAreDistinctEvent = 3
 )
 
 func (e SessionIdsAreDistinctEvent) String() string {
 	switch e {
-	case SessionIdsAreDistinctEventCancelInvoke:
-		return "cancel.invoke"
 	case SessionIdsAreDistinctEventDoneInvoke:
 		return "done.invoke"
 	case SessionIdsAreDistinctEventErrorExecution:
@@ -779,8 +776,6 @@ func (p *SessionIdsAreDistinctPolicy) GetEventName(event SessionIdsAreDistinctEv
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *SessionIdsAreDistinctPolicy) GetEventFromName(name string) (SessionIdsAreDistinctEvent, bool) {
 	switch name {
-	case "cancel.invoke":
-		return SessionIdsAreDistinctEventCancelInvoke, true
 	case "done.invoke":
 		return SessionIdsAreDistinctEventDoneInvoke, true
 	case "error.execution":

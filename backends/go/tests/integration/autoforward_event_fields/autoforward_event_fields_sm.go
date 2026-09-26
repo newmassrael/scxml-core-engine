@@ -149,20 +149,17 @@ var transitionTargetsOfAutoforwardEventFields = [3][][]AutoforwardEventFieldsTar
 type AutoforwardEventFieldsEvent int
 
 const (
-	AutoforwardEventFieldsEventCancelInvoke AutoforwardEventFieldsEvent = 0
-	AutoforwardEventFieldsEventChildToParent AutoforwardEventFieldsEvent = 1
-	AutoforwardEventFieldsEventDoneInvoke AutoforwardEventFieldsEvent = 2
-	AutoforwardEventFieldsEventErrorExecution AutoforwardEventFieldsEvent = 3
-	AutoforwardEventFieldsEventFieldsPreserved AutoforwardEventFieldsEvent = 4
-	AutoforwardEventFieldsEventFieldsStripped AutoforwardEventFieldsEvent = 5
+	AutoforwardEventFieldsEventChildToParent AutoforwardEventFieldsEvent = 0
+	AutoforwardEventFieldsEventDoneInvoke AutoforwardEventFieldsEvent = 1
+	AutoforwardEventFieldsEventErrorExecution AutoforwardEventFieldsEvent = 2
+	AutoforwardEventFieldsEventFieldsPreserved AutoforwardEventFieldsEvent = 3
+	AutoforwardEventFieldsEventFieldsStripped AutoforwardEventFieldsEvent = 4
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	AutoforwardEventFieldsEventNull AutoforwardEventFieldsEvent = 6
+	AutoforwardEventFieldsEventNull AutoforwardEventFieldsEvent = 5
 )
 
 func (e AutoforwardEventFieldsEvent) String() string {
 	switch e {
-	case AutoforwardEventFieldsEventCancelInvoke:
-		return "cancel.invoke"
 	case AutoforwardEventFieldsEventChildToParent:
 		return "childToParent"
 	case AutoforwardEventFieldsEventDoneInvoke:
@@ -639,8 +636,6 @@ func (p *AutoforwardEventFieldsPolicy) GetEventName(event AutoforwardEventFields
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *AutoforwardEventFieldsPolicy) GetEventFromName(name string) (AutoforwardEventFieldsEvent, bool) {
 	switch name {
-	case "cancel.invoke":
-		return AutoforwardEventFieldsEventCancelInvoke, true
 	case "childToParent":
 		return AutoforwardEventFieldsEventChildToParent, true
 	case "done.invoke":

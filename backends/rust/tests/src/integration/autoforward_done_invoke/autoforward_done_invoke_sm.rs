@@ -96,7 +96,6 @@ pub enum AutoforwardDoneInvokeState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AutoforwardDoneInvokeEvent {
-    CancelInvoke,
     DoneInvoke,
     DoneInvokeInvShort,
     ErrorExecution,
@@ -688,7 +687,6 @@ impl StatePolicy for AutoforwardDoneInvokePolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
-            AutoforwardDoneInvokeEvent::CancelInvoke => "cancel.invoke",
             AutoforwardDoneInvokeEvent::DoneInvoke => "done.invoke",
             AutoforwardDoneInvokeEvent::DoneInvokeInvShort => "done.invoke.inv_short",
             AutoforwardDoneInvokeEvent::ErrorExecution => "error.execution",
@@ -701,7 +699,6 @@ impl StatePolicy for AutoforwardDoneInvokePolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
-            "cancel.invoke" => Some(AutoforwardDoneInvokeEvent::CancelInvoke),
             "done.invoke" => Some(AutoforwardDoneInvokeEvent::DoneInvoke),
             "done.invoke.inv_short" => Some(AutoforwardDoneInvokeEvent::DoneInvokeInvShort),
             "error.execution" => Some(AutoforwardDoneInvokeEvent::ErrorExecution),
@@ -832,11 +829,10 @@ impl StatePolicy for AutoforwardDoneInvokePolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_watch'
                 if self.child_inv_watch.is_some() {
-                    if !self.pending_done_invoke_inv_watch {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            AutoforwardDoneInvokeEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own
@@ -850,11 +846,10 @@ impl StatePolicy for AutoforwardDoneInvokePolicy {
                 self.pending_done_invoke_inv_watch = false;
                 // W3C SCXML 6.4: Cleanup running static child 'inv_short'
                 if self.child_inv_short.is_some() {
-                    if !self.pending_done_invoke_inv_short {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            AutoforwardDoneInvokeEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own

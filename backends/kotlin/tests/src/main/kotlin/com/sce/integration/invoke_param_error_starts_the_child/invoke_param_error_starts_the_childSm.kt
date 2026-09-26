@@ -25,9 +25,6 @@ sealed interface InvokeParamErrorStartsTheChildState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface InvokeParamErrorStartsTheChildEvent : Event {
-    sealed interface Cancel : InvokeParamErrorStartsTheChildEvent {
-        data object Invoke : Cancel
-    }
     data object ChildUp : InvokeParamErrorStartsTheChildEvent
     sealed interface Done : InvokeParamErrorStartsTheChildEvent {
         data object Invoke : Done
@@ -180,7 +177,6 @@ class InvokeParamErrorStartsTheChildStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokeParamErrorStartsTheChildEvent? = when (name) {
-        "cancel.invoke" -> InvokeParamErrorStartsTheChildEvent.Cancel.Invoke
         "childUp" -> InvokeParamErrorStartsTheChildEvent.ChildUp
         "done.invoke" -> InvokeParamErrorStartsTheChildEvent.Done.Invoke
         "error.execution" -> InvokeParamErrorStartsTheChildEvent.Error.Execution
@@ -190,7 +186,6 @@ class InvokeParamErrorStartsTheChildStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokeParamErrorStartsTheChildEvent): String? = when (event) {
-        is InvokeParamErrorStartsTheChildEvent.Cancel.Invoke -> "cancel.invoke"
         is InvokeParamErrorStartsTheChildEvent.ChildUp -> "childUp"
         is InvokeParamErrorStartsTheChildEvent.Done.Invoke -> "done.invoke"
         is InvokeParamErrorStartsTheChildEvent.Error.Execution -> "error.execution"

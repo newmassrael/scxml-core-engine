@@ -25,9 +25,6 @@ sealed interface Test234State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test234Event : Event {
-    sealed interface Cancel : Test234Event {
-        data object Invoke : Cancel
-    }
     data object ChildToParent : Test234Event
     sealed interface Done : Test234Event {
         data object Invoke : Done
@@ -205,7 +202,6 @@ class Test234StateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test234Event? = when (name) {
-        "cancel.invoke" -> Test234Event.Cancel.Invoke
         "childToParent" -> Test234Event.ChildToParent
         "done.invoke" -> Test234Event.Done.Invoke
         "error.execution" -> Test234Event.Error.Execution
@@ -215,7 +211,6 @@ class Test234StateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test234Event): String? = when (event) {
-        is Test234Event.Cancel.Invoke -> "cancel.invoke"
         is Test234Event.ChildToParent -> "childToParent"
         is Test234Event.Done.Invoke -> "done.invoke"
         is Test234Event.Error.Execution -> "error.execution"

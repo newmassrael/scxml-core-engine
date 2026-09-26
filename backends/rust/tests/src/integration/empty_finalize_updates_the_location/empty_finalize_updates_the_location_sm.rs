@@ -103,7 +103,6 @@ pub enum EmptyFinalizeUpdatesTheLocationState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EmptyFinalizeUpdatesTheLocationEvent {
-    CancelInvoke,
     DoneInvoke,
     ErrorExecution,
     FromAbsentChild,
@@ -1312,7 +1311,6 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
-            EmptyFinalizeUpdatesTheLocationEvent::CancelInvoke => "cancel.invoke",
             EmptyFinalizeUpdatesTheLocationEvent::DoneInvoke => "done.invoke",
             EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution => "error.execution",
             EmptyFinalizeUpdatesTheLocationEvent::FromAbsentChild => "fromAbsentChild",
@@ -1327,7 +1325,6 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
-            "cancel.invoke" => Some(EmptyFinalizeUpdatesTheLocationEvent::CancelInvoke),
             "done.invoke" => Some(EmptyFinalizeUpdatesTheLocationEvent::DoneInvoke),
             "error.execution" => Some(EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution),
             "fromAbsentChild" => Some(EmptyFinalizeUpdatesTheLocationEvent::FromAbsentChild),
@@ -1599,11 +1596,10 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_absent'
                 if self.child_inv_absent.is_some() {
-                    if !self.pending_done_invoke_inv_absent {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            EmptyFinalizeUpdatesTheLocationEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own
@@ -1626,11 +1622,10 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_empty'
                 if self.child_inv_empty.is_some() {
-                    if !self.pending_done_invoke_inv_empty {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            EmptyFinalizeUpdatesTheLocationEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own
@@ -1653,11 +1648,10 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_unmatched'
                 if self.child_inv_unmatched.is_some() {
-                    if !self.pending_done_invoke_inv_unmatched {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            EmptyFinalizeUpdatesTheLocationEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own

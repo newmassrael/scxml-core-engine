@@ -98,7 +98,6 @@ pub enum EventOriginIsALocationState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EventOriginIsALocationEvent {
-    CancelInvoke,
     DoneInvoke,
     ErrorCommunication,
     ErrorExecution,
@@ -728,7 +727,6 @@ impl StatePolicy for EventOriginIsALocationPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
-            EventOriginIsALocationEvent::CancelInvoke => "cancel.invoke",
             EventOriginIsALocationEvent::DoneInvoke => "done.invoke",
             EventOriginIsALocationEvent::ErrorCommunication => "error.communication",
             EventOriginIsALocationEvent::ErrorExecution => "error.execution",
@@ -741,7 +739,6 @@ impl StatePolicy for EventOriginIsALocationPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
-            "cancel.invoke" => Some(EventOriginIsALocationEvent::CancelInvoke),
             "done.invoke" => Some(EventOriginIsALocationEvent::DoneInvoke),
             "error.communication" => Some(EventOriginIsALocationEvent::ErrorCommunication),
             "error.execution" => Some(EventOriginIsALocationEvent::ErrorExecution),
@@ -885,11 +882,10 @@ impl StatePolicy for EventOriginIsALocationPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_peer'
                 if self.child_inv_peer.is_some() {
-                    if !self.pending_done_invoke_inv_peer {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            EventOriginIsALocationEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own

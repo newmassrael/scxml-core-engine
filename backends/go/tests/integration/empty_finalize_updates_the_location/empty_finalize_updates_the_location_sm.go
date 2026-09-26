@@ -201,23 +201,20 @@ var transitionTargetsOfEmptyFinalizeUpdatesTheLocation = [10][][]EmptyFinalizeUp
 type EmptyFinalizeUpdatesTheLocationEvent int
 
 const (
-	EmptyFinalizeUpdatesTheLocationEventCancelInvoke EmptyFinalizeUpdatesTheLocationEvent = 0
-	EmptyFinalizeUpdatesTheLocationEventDoneInvoke EmptyFinalizeUpdatesTheLocationEvent = 1
-	EmptyFinalizeUpdatesTheLocationEventErrorExecution EmptyFinalizeUpdatesTheLocationEvent = 2
-	EmptyFinalizeUpdatesTheLocationEventFromAbsentChild EmptyFinalizeUpdatesTheLocationEvent = 3
-	EmptyFinalizeUpdatesTheLocationEventFromEmptyChild EmptyFinalizeUpdatesTheLocationEvent = 4
-	EmptyFinalizeUpdatesTheLocationEventFromUnmatchedChild EmptyFinalizeUpdatesTheLocationEvent = 5
-	EmptyFinalizeUpdatesTheLocationEventTimeoutAbsent EmptyFinalizeUpdatesTheLocationEvent = 6
-	EmptyFinalizeUpdatesTheLocationEventTimeoutEmpty EmptyFinalizeUpdatesTheLocationEvent = 7
-	EmptyFinalizeUpdatesTheLocationEventTimeoutUnmatched EmptyFinalizeUpdatesTheLocationEvent = 8
+	EmptyFinalizeUpdatesTheLocationEventDoneInvoke EmptyFinalizeUpdatesTheLocationEvent = 0
+	EmptyFinalizeUpdatesTheLocationEventErrorExecution EmptyFinalizeUpdatesTheLocationEvent = 1
+	EmptyFinalizeUpdatesTheLocationEventFromAbsentChild EmptyFinalizeUpdatesTheLocationEvent = 2
+	EmptyFinalizeUpdatesTheLocationEventFromEmptyChild EmptyFinalizeUpdatesTheLocationEvent = 3
+	EmptyFinalizeUpdatesTheLocationEventFromUnmatchedChild EmptyFinalizeUpdatesTheLocationEvent = 4
+	EmptyFinalizeUpdatesTheLocationEventTimeoutAbsent EmptyFinalizeUpdatesTheLocationEvent = 5
+	EmptyFinalizeUpdatesTheLocationEventTimeoutEmpty EmptyFinalizeUpdatesTheLocationEvent = 6
+	EmptyFinalizeUpdatesTheLocationEventTimeoutUnmatched EmptyFinalizeUpdatesTheLocationEvent = 7
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	EmptyFinalizeUpdatesTheLocationEventNull EmptyFinalizeUpdatesTheLocationEvent = 9
+	EmptyFinalizeUpdatesTheLocationEventNull EmptyFinalizeUpdatesTheLocationEvent = 8
 )
 
 func (e EmptyFinalizeUpdatesTheLocationEvent) String() string {
 	switch e {
-	case EmptyFinalizeUpdatesTheLocationEventCancelInvoke:
-		return "cancel.invoke"
 	case EmptyFinalizeUpdatesTheLocationEventDoneInvoke:
 		return "done.invoke"
 	case EmptyFinalizeUpdatesTheLocationEventErrorExecution:
@@ -1069,8 +1066,6 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) GetEventName(event EmptyFinalize
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) GetEventFromName(name string) (EmptyFinalizeUpdatesTheLocationEvent, bool) {
 	switch name {
-	case "cancel.invoke":
-		return EmptyFinalizeUpdatesTheLocationEventCancelInvoke, true
 	case "done.invoke":
 		return EmptyFinalizeUpdatesTheLocationEventDoneInvoke, true
 	case "error.execution":

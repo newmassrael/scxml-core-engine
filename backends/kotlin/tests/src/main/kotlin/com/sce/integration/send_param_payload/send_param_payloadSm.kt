@@ -32,9 +32,6 @@ sealed interface SendParamPayloadState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface SendParamPayloadEvent : Event {
-    sealed interface Cancel : SendParamPayloadEvent {
-        data object Invoke : Cancel
-    }
     sealed interface Done : SendParamPayloadEvent {
         data object Invoke : Done
     }
@@ -285,7 +282,6 @@ class SendParamPayloadStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): SendParamPayloadEvent? = when (name) {
-        "cancel.invoke" -> SendParamPayloadEvent.Cancel.Invoke
         "done.invoke" -> SendParamPayloadEvent.Done.Invoke
         "error.execution" -> SendParamPayloadEvent.Error.Execution
         "fromChild" -> SendParamPayloadEvent.FromChild
@@ -297,7 +293,6 @@ class SendParamPayloadStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: SendParamPayloadEvent): String? = when (event) {
-        is SendParamPayloadEvent.Cancel.Invoke -> "cancel.invoke"
         is SendParamPayloadEvent.Done.Invoke -> "done.invoke"
         is SendParamPayloadEvent.Error.Execution -> "error.execution"
         is SendParamPayloadEvent.FromChild -> "fromChild"

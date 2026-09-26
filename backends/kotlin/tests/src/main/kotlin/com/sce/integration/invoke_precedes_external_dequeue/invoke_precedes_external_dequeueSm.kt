@@ -22,9 +22,6 @@ sealed interface InvokePrecedesExternalDequeueState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface InvokePrecedesExternalDequeueEvent : Event {
-    sealed interface Cancel : InvokePrecedesExternalDequeueEvent {
-        data object Invoke : Cancel
-    }
     sealed interface Done : InvokePrecedesExternalDequeueEvent {
         data object Invoke : Done
     }
@@ -132,7 +129,6 @@ class InvokePrecedesExternalDequeueStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokePrecedesExternalDequeueEvent? = when (name) {
-        "cancel.invoke" -> InvokePrecedesExternalDequeueEvent.Cancel.Invoke
         "done.invoke" -> InvokePrecedesExternalDequeueEvent.Done.Invoke
         "error.execution" -> InvokePrecedesExternalDequeueEvent.Error.Execution
         "kick" -> InvokePrecedesExternalDequeueEvent.Kick
@@ -145,7 +141,6 @@ class InvokePrecedesExternalDequeueStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokePrecedesExternalDequeueEvent): String? = when (event) {
-        is InvokePrecedesExternalDequeueEvent.Cancel.Invoke -> "cancel.invoke"
         is InvokePrecedesExternalDequeueEvent.Done.Invoke -> "done.invoke"
         is InvokePrecedesExternalDequeueEvent.Error.Execution -> "error.execution"
         is InvokePrecedesExternalDequeueEvent.Kick -> "kick"

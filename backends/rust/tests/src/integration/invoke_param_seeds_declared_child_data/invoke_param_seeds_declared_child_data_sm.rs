@@ -107,7 +107,6 @@ pub enum InvokeParamSeedsDeclaredChildDataState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InvokeParamSeedsDeclaredChildDataEvent {
-    CancelInvoke,
     DoneInvoke,
     ErrorExecution,
     SeedCollapsed,
@@ -1635,7 +1634,6 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
-            InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke => "cancel.invoke",
             InvokeParamSeedsDeclaredChildDataEvent::DoneInvoke => "done.invoke",
             InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution => "error.execution",
             InvokeParamSeedsDeclaredChildDataEvent::SeedCollapsed => "seed.collapsed",
@@ -1649,7 +1647,6 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
-            "cancel.invoke" => Some(InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke),
             "done.invoke" => Some(InvokeParamSeedsDeclaredChildDataEvent::DoneInvoke),
             "error.execution" => Some(InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution),
             "seed.collapsed" => Some(InvokeParamSeedsDeclaredChildDataEvent::SeedCollapsed),
@@ -1922,11 +1919,10 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_infinite'
                 if self.child_inv_infinite.is_some() {
-                    if !self.pending_done_invoke_inv_infinite {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own
@@ -1949,11 +1945,10 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_namelist'
                 if self.child_inv_namelist.is_some() {
-                    if !self.pending_done_invoke_inv_namelist {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own
@@ -1976,11 +1971,10 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_shadow'
                 if self.child_inv_shadow.is_some() {
-                    if !self.pending_done_invoke_inv_shadow {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own
@@ -2003,11 +1997,10 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_sole'
                 if self.child_inv_sole.is_some() {
-                    if !self.pending_done_invoke_inv_sole {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own
@@ -2030,11 +2023,10 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_unmatched'
                 if self.child_inv_unmatched.is_some() {
-                    if !self.pending_done_invoke_inv_unmatched {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own

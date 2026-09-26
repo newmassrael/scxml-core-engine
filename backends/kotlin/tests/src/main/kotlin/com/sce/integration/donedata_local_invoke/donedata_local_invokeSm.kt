@@ -23,9 +23,6 @@ sealed interface DonedataLocalInvokeState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface DonedataLocalInvokeEvent : Event {
-    sealed interface Cancel : DonedataLocalInvokeEvent {
-        data object Invoke : Cancel
-    }
     sealed interface Done : DonedataLocalInvokeEvent {
         sealed interface Invoke : Done {
             data object Self : Invoke
@@ -174,7 +171,6 @@ class DonedataLocalInvokeStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): DonedataLocalInvokeEvent? = when (name) {
-        "cancel.invoke" -> DonedataLocalInvokeEvent.Cancel.Invoke
         "done.invoke" -> DonedataLocalInvokeEvent.Done.Invoke.Self
         "done.invoke.inv_content" -> DonedataLocalInvokeEvent.Done.Invoke.InvContent
         "done.invoke.inv_param" -> DonedataLocalInvokeEvent.Done.Invoke.InvParam
@@ -184,7 +180,6 @@ class DonedataLocalInvokeStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: DonedataLocalInvokeEvent): String? = when (event) {
-        is DonedataLocalInvokeEvent.Cancel.Invoke -> "cancel.invoke"
         is DonedataLocalInvokeEvent.Done.Invoke.Self -> "done.invoke"
         is DonedataLocalInvokeEvent.Done.Invoke.InvContent -> "done.invoke.inv_content"
         is DonedataLocalInvokeEvent.Done.Invoke.InvParam -> "done.invoke.inv_param"

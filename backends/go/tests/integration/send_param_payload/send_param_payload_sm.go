@@ -224,21 +224,18 @@ var transitionTargetsOfSendParamPayload = [13][][]SendParamPayloadTarget{
 type SendParamPayloadEvent int
 
 const (
-	SendParamPayloadEventCancelInvoke SendParamPayloadEvent = 0
-	SendParamPayloadEventDoneInvoke SendParamPayloadEvent = 1
-	SendParamPayloadEventErrorExecution SendParamPayloadEvent = 2
-	SendParamPayloadEventFromChild SendParamPayloadEvent = 3
-	SendParamPayloadEventLoopback SendParamPayloadEvent = 4
-	SendParamPayloadEventTyped SendParamPayloadEvent = 5
-	SendParamPayloadEventWithBadParam SendParamPayloadEvent = 6
+	SendParamPayloadEventDoneInvoke SendParamPayloadEvent = 0
+	SendParamPayloadEventErrorExecution SendParamPayloadEvent = 1
+	SendParamPayloadEventFromChild SendParamPayloadEvent = 2
+	SendParamPayloadEventLoopback SendParamPayloadEvent = 3
+	SendParamPayloadEventTyped SendParamPayloadEvent = 4
+	SendParamPayloadEventWithBadParam SendParamPayloadEvent = 5
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	SendParamPayloadEventNull SendParamPayloadEvent = 7
+	SendParamPayloadEventNull SendParamPayloadEvent = 6
 )
 
 func (e SendParamPayloadEvent) String() string {
 	switch e {
-	case SendParamPayloadEventCancelInvoke:
-		return "cancel.invoke"
 	case SendParamPayloadEventDoneInvoke:
 		return "done.invoke"
 	case SendParamPayloadEventErrorExecution:
@@ -785,8 +782,6 @@ func (p *SendParamPayloadPolicy) GetEventName(event SendParamPayloadEvent) strin
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *SendParamPayloadPolicy) GetEventFromName(name string) (SendParamPayloadEvent, bool) {
 	switch name {
-	case "cancel.invoke":
-		return SendParamPayloadEventCancelInvoke, true
 	case "done.invoke":
 		return SendParamPayloadEventDoneInvoke, true
 	case "error.execution":

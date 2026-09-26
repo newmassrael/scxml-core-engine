@@ -97,7 +97,6 @@ pub enum AutoforwardInternalQueueState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AutoforwardInternalQueueEvent {
     Boom,
-    CancelInvoke,
     DoneInvoke,
     ErrorExecution,
     Probe,
@@ -541,7 +540,6 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             AutoforwardInternalQueueEvent::Boom => "boom",
-            AutoforwardInternalQueueEvent::CancelInvoke => "cancel.invoke",
             AutoforwardInternalQueueEvent::DoneInvoke => "done.invoke",
             AutoforwardInternalQueueEvent::ErrorExecution => "error.execution",
             AutoforwardInternalQueueEvent::Probe => "probe",
@@ -555,7 +553,6 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "boom" => Some(AutoforwardInternalQueueEvent::Boom),
-            "cancel.invoke" => Some(AutoforwardInternalQueueEvent::CancelInvoke),
             "done.invoke" => Some(AutoforwardInternalQueueEvent::DoneInvoke),
             "error.execution" => Some(AutoforwardInternalQueueEvent::ErrorExecution),
             "probe" => Some(AutoforwardInternalQueueEvent::Probe),
@@ -671,11 +668,10 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_watch'
                 if self.child_inv_watch.is_some() {
-                    if !self.pending_done_invoke_inv_watch {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            AutoforwardInternalQueueEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own

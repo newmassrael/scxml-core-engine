@@ -96,7 +96,6 @@ pub enum AutoforwardDequeuePointState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AutoforwardDequeuePointEvent {
-    CancelInvoke,
     DoneInvoke,
     ErrorExecution,
     First,
@@ -542,7 +541,6 @@ impl StatePolicy for AutoforwardDequeuePointPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
-            AutoforwardDequeuePointEvent::CancelInvoke => "cancel.invoke",
             AutoforwardDequeuePointEvent::DoneInvoke => "done.invoke",
             AutoforwardDequeuePointEvent::ErrorExecution => "error.execution",
             AutoforwardDequeuePointEvent::First => "first",
@@ -557,7 +555,6 @@ impl StatePolicy for AutoforwardDequeuePointPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
-            "cancel.invoke" => Some(AutoforwardDequeuePointEvent::CancelInvoke),
             "done.invoke" => Some(AutoforwardDequeuePointEvent::DoneInvoke),
             "error.execution" => Some(AutoforwardDequeuePointEvent::ErrorExecution),
             "first" => Some(AutoforwardDequeuePointEvent::First),
@@ -675,11 +672,10 @@ impl StatePolicy for AutoforwardDequeuePointPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_probe'
                 if self.child_inv_probe.is_some() {
-                    if !self.pending_done_invoke_inv_probe {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            AutoforwardDequeuePointEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own

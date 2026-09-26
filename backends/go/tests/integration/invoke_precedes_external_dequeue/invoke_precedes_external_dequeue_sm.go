@@ -148,22 +148,19 @@ var transitionTargetsOfInvokePrecedesExternalDequeue = [3][][]InvokePrecedesExte
 type InvokePrecedesExternalDequeueEvent int
 
 const (
-	InvokePrecedesExternalDequeueEventCancelInvoke InvokePrecedesExternalDequeueEvent = 0
-	InvokePrecedesExternalDequeueEventDoneInvoke InvokePrecedesExternalDequeueEvent = 1
-	InvokePrecedesExternalDequeueEventErrorExecution InvokePrecedesExternalDequeueEvent = 2
-	InvokePrecedesExternalDequeueEventKick InvokePrecedesExternalDequeueEvent = 3
-	InvokePrecedesExternalDequeueEventProbe InvokePrecedesExternalDequeueEvent = 4
-	InvokePrecedesExternalDequeueEventReady InvokePrecedesExternalDequeueEvent = 5
-	InvokePrecedesExternalDequeueEventSawKick InvokePrecedesExternalDequeueEvent = 6
-	InvokePrecedesExternalDequeueEventSawNoKick InvokePrecedesExternalDequeueEvent = 7
+	InvokePrecedesExternalDequeueEventDoneInvoke InvokePrecedesExternalDequeueEvent = 0
+	InvokePrecedesExternalDequeueEventErrorExecution InvokePrecedesExternalDequeueEvent = 1
+	InvokePrecedesExternalDequeueEventKick InvokePrecedesExternalDequeueEvent = 2
+	InvokePrecedesExternalDequeueEventProbe InvokePrecedesExternalDequeueEvent = 3
+	InvokePrecedesExternalDequeueEventReady InvokePrecedesExternalDequeueEvent = 4
+	InvokePrecedesExternalDequeueEventSawKick InvokePrecedesExternalDequeueEvent = 5
+	InvokePrecedesExternalDequeueEventSawNoKick InvokePrecedesExternalDequeueEvent = 6
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	InvokePrecedesExternalDequeueEventNull InvokePrecedesExternalDequeueEvent = 8
+	InvokePrecedesExternalDequeueEventNull InvokePrecedesExternalDequeueEvent = 7
 )
 
 func (e InvokePrecedesExternalDequeueEvent) String() string {
 	switch e {
-	case InvokePrecedesExternalDequeueEventCancelInvoke:
-		return "cancel.invoke"
 	case InvokePrecedesExternalDequeueEventDoneInvoke:
 		return "done.invoke"
 	case InvokePrecedesExternalDequeueEventErrorExecution:
@@ -465,8 +462,6 @@ func (p *InvokePrecedesExternalDequeuePolicy) GetEventName(event InvokePrecedesE
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *InvokePrecedesExternalDequeuePolicy) GetEventFromName(name string) (InvokePrecedesExternalDequeueEvent, bool) {
 	switch name {
-	case "cancel.invoke":
-		return InvokePrecedesExternalDequeueEventCancelInvoke, true
 	case "done.invoke":
 		return InvokePrecedesExternalDequeueEventDoneInvoke, true
 	case "error.execution":

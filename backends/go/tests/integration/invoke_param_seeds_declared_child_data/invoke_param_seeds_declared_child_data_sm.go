@@ -238,22 +238,19 @@ var transitionTargetsOfInvokeParamSeedsDeclaredChildData = [14][][]InvokeParamSe
 type InvokeParamSeedsDeclaredChildDataEvent int
 
 const (
-	InvokeParamSeedsDeclaredChildDataEventCancelInvoke InvokeParamSeedsDeclaredChildDataEvent = 0
-	InvokeParamSeedsDeclaredChildDataEventDoneInvoke InvokeParamSeedsDeclaredChildDataEvent = 1
-	InvokeParamSeedsDeclaredChildDataEventErrorExecution InvokeParamSeedsDeclaredChildDataEvent = 2
-	InvokeParamSeedsDeclaredChildDataEventSeedCollapsed InvokeParamSeedsDeclaredChildDataEvent = 3
-	InvokeParamSeedsDeclaredChildDataEventSeedLeaked InvokeParamSeedsDeclaredChildDataEvent = 4
-	InvokeParamSeedsDeclaredChildDataEventSeedMissing InvokeParamSeedsDeclaredChildDataEvent = 5
-	InvokeParamSeedsDeclaredChildDataEventSeedOk InvokeParamSeedsDeclaredChildDataEvent = 6
-	InvokeParamSeedsDeclaredChildDataEventSeedShadowed InvokeParamSeedsDeclaredChildDataEvent = 7
+	InvokeParamSeedsDeclaredChildDataEventDoneInvoke InvokeParamSeedsDeclaredChildDataEvent = 0
+	InvokeParamSeedsDeclaredChildDataEventErrorExecution InvokeParamSeedsDeclaredChildDataEvent = 1
+	InvokeParamSeedsDeclaredChildDataEventSeedCollapsed InvokeParamSeedsDeclaredChildDataEvent = 2
+	InvokeParamSeedsDeclaredChildDataEventSeedLeaked InvokeParamSeedsDeclaredChildDataEvent = 3
+	InvokeParamSeedsDeclaredChildDataEventSeedMissing InvokeParamSeedsDeclaredChildDataEvent = 4
+	InvokeParamSeedsDeclaredChildDataEventSeedOk InvokeParamSeedsDeclaredChildDataEvent = 5
+	InvokeParamSeedsDeclaredChildDataEventSeedShadowed InvokeParamSeedsDeclaredChildDataEvent = 6
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	InvokeParamSeedsDeclaredChildDataEventNull InvokeParamSeedsDeclaredChildDataEvent = 8
+	InvokeParamSeedsDeclaredChildDataEventNull InvokeParamSeedsDeclaredChildDataEvent = 7
 )
 
 func (e InvokeParamSeedsDeclaredChildDataEvent) String() string {
 	switch e {
-	case InvokeParamSeedsDeclaredChildDataEventCancelInvoke:
-		return "cancel.invoke"
 	case InvokeParamSeedsDeclaredChildDataEventDoneInvoke:
 		return "done.invoke"
 	case InvokeParamSeedsDeclaredChildDataEventErrorExecution:
@@ -1306,8 +1303,6 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetEventName(event InvokeParam
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetEventFromName(name string) (InvokeParamSeedsDeclaredChildDataEvent, bool) {
 	switch name {
-	case "cancel.invoke":
-		return InvokeParamSeedsDeclaredChildDataEventCancelInvoke, true
 	case "done.invoke":
 		return InvokeParamSeedsDeclaredChildDataEventDoneInvoke, true
 	case "error.execution":

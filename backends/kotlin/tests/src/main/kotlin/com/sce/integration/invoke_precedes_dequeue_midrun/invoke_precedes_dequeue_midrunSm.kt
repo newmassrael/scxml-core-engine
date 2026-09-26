@@ -23,9 +23,6 @@ sealed interface InvokePrecedesDequeueMidrunState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface InvokePrecedesDequeueMidrunEvent : Event {
-    sealed interface Cancel : InvokePrecedesDequeueMidrunEvent {
-        data object Invoke : Cancel
-    }
     sealed interface Done : InvokePrecedesDequeueMidrunEvent {
         data object Invoke : Done
     }
@@ -146,7 +143,6 @@ class InvokePrecedesDequeueMidrunStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokePrecedesDequeueMidrunEvent? = when (name) {
-        "cancel.invoke" -> InvokePrecedesDequeueMidrunEvent.Cancel.Invoke
         "done.invoke" -> InvokePrecedesDequeueMidrunEvent.Done.Invoke
         "error.execution" -> InvokePrecedesDequeueMidrunEvent.Error.Execution
         "go" -> InvokePrecedesDequeueMidrunEvent.Go
@@ -160,7 +156,6 @@ class InvokePrecedesDequeueMidrunStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokePrecedesDequeueMidrunEvent): String? = when (event) {
-        is InvokePrecedesDequeueMidrunEvent.Cancel.Invoke -> "cancel.invoke"
         is InvokePrecedesDequeueMidrunEvent.Done.Invoke -> "done.invoke"
         is InvokePrecedesDequeueMidrunEvent.Error.Execution -> "error.execution"
         is InvokePrecedesDequeueMidrunEvent.Go -> "go"

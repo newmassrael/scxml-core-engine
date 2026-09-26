@@ -149,20 +149,17 @@ var transitionTargetsOfDonedataLateCompletion = [3][][]DonedataLateCompletionTar
 type DonedataLateCompletionEvent int
 
 const (
-	DonedataLateCompletionEventCancelInvoke DonedataLateCompletionEvent = 0
-	DonedataLateCompletionEventDoneInvoke DonedataLateCompletionEvent = 1
-	DonedataLateCompletionEventDoneInvokeInvLate DonedataLateCompletionEvent = 2
-	DonedataLateCompletionEventErrorExecution DonedataLateCompletionEvent = 3
-	DonedataLateCompletionEventFinish DonedataLateCompletionEvent = 4
-	DonedataLateCompletionEventReady DonedataLateCompletionEvent = 5
+	DonedataLateCompletionEventDoneInvoke DonedataLateCompletionEvent = 0
+	DonedataLateCompletionEventDoneInvokeInvLate DonedataLateCompletionEvent = 1
+	DonedataLateCompletionEventErrorExecution DonedataLateCompletionEvent = 2
+	DonedataLateCompletionEventFinish DonedataLateCompletionEvent = 3
+	DonedataLateCompletionEventReady DonedataLateCompletionEvent = 4
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	DonedataLateCompletionEventNull DonedataLateCompletionEvent = 6
+	DonedataLateCompletionEventNull DonedataLateCompletionEvent = 5
 )
 
 func (e DonedataLateCompletionEvent) String() string {
 	switch e {
-	case DonedataLateCompletionEventCancelInvoke:
-		return "cancel.invoke"
 	case DonedataLateCompletionEventDoneInvoke:
 		return "done.invoke"
 	case DonedataLateCompletionEventDoneInvokeInvLate:
@@ -619,8 +616,6 @@ func (p *DonedataLateCompletionPolicy) GetEventName(event DonedataLateCompletion
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *DonedataLateCompletionPolicy) GetEventFromName(name string) (DonedataLateCompletionEvent, bool) {
 	switch name {
-	case "cancel.invoke":
-		return DonedataLateCompletionEventCancelInvoke, true
 	case "done.invoke":
 		return DonedataLateCompletionEventDoneInvoke, true
 	case "done.invoke.inv_late":

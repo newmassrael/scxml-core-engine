@@ -22,9 +22,6 @@ sealed interface AutoforwardDequeuePointState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface AutoforwardDequeuePointEvent : Event {
-    sealed interface Cancel : AutoforwardDequeuePointEvent {
-        data object Invoke : Cancel
-    }
     sealed interface Done : AutoforwardDequeuePointEvent {
         data object Invoke : Done
     }
@@ -133,7 +130,6 @@ class AutoforwardDequeuePointStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AutoforwardDequeuePointEvent? = when (name) {
-        "cancel.invoke" -> AutoforwardDequeuePointEvent.Cancel.Invoke
         "done.invoke" -> AutoforwardDequeuePointEvent.Done.Invoke
         "error.execution" -> AutoforwardDequeuePointEvent.Error.Execution
         "first" -> AutoforwardDequeuePointEvent.First
@@ -147,7 +143,6 @@ class AutoforwardDequeuePointStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AutoforwardDequeuePointEvent): String? = when (event) {
-        is AutoforwardDequeuePointEvent.Cancel.Invoke -> "cancel.invoke"
         is AutoforwardDequeuePointEvent.Done.Invoke -> "done.invoke"
         is AutoforwardDequeuePointEvent.Error.Execution -> "error.execution"
         is AutoforwardDequeuePointEvent.First -> "first"

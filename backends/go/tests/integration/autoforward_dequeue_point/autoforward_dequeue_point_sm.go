@@ -148,23 +148,20 @@ var transitionTargetsOfAutoforwardDequeuePoint = [3][][]AutoforwardDequeuePointT
 type AutoforwardDequeuePointEvent int
 
 const (
-	AutoforwardDequeuePointEventCancelInvoke AutoforwardDequeuePointEvent = 0
-	AutoforwardDequeuePointEventDoneInvoke AutoforwardDequeuePointEvent = 1
-	AutoforwardDequeuePointEventErrorExecution AutoforwardDequeuePointEvent = 2
-	AutoforwardDequeuePointEventFirst AutoforwardDequeuePointEvent = 3
-	AutoforwardDequeuePointEventMark AutoforwardDequeuePointEvent = 4
-	AutoforwardDequeuePointEventReady AutoforwardDequeuePointEvent = 5
-	AutoforwardDequeuePointEventSawMarkFirst AutoforwardDequeuePointEvent = 6
-	AutoforwardDequeuePointEventSawSecondEarly AutoforwardDequeuePointEvent = 7
-	AutoforwardDequeuePointEventSecond AutoforwardDequeuePointEvent = 8
+	AutoforwardDequeuePointEventDoneInvoke AutoforwardDequeuePointEvent = 0
+	AutoforwardDequeuePointEventErrorExecution AutoforwardDequeuePointEvent = 1
+	AutoforwardDequeuePointEventFirst AutoforwardDequeuePointEvent = 2
+	AutoforwardDequeuePointEventMark AutoforwardDequeuePointEvent = 3
+	AutoforwardDequeuePointEventReady AutoforwardDequeuePointEvent = 4
+	AutoforwardDequeuePointEventSawMarkFirst AutoforwardDequeuePointEvent = 5
+	AutoforwardDequeuePointEventSawSecondEarly AutoforwardDequeuePointEvent = 6
+	AutoforwardDequeuePointEventSecond AutoforwardDequeuePointEvent = 7
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	AutoforwardDequeuePointEventNull AutoforwardDequeuePointEvent = 9
+	AutoforwardDequeuePointEventNull AutoforwardDequeuePointEvent = 8
 )
 
 func (e AutoforwardDequeuePointEvent) String() string {
 	switch e {
-	case AutoforwardDequeuePointEventCancelInvoke:
-		return "cancel.invoke"
 	case AutoforwardDequeuePointEventDoneInvoke:
 		return "done.invoke"
 	case AutoforwardDequeuePointEventErrorExecution:
@@ -468,8 +465,6 @@ func (p *AutoforwardDequeuePointPolicy) GetEventName(event AutoforwardDequeuePoi
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *AutoforwardDequeuePointPolicy) GetEventFromName(name string) (AutoforwardDequeuePointEvent, bool) {
 	switch name {
-	case "cancel.invoke":
-		return AutoforwardDequeuePointEventCancelInvoke, true
 	case "done.invoke":
 		return AutoforwardDequeuePointEventDoneInvoke, true
 	case "error.execution":

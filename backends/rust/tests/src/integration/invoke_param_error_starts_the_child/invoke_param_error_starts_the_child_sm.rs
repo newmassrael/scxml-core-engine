@@ -99,7 +99,6 @@ pub enum InvokeParamErrorStartsTheChildState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InvokeParamErrorStartsTheChildEvent {
-    CancelInvoke,
     ChildUp,
     DoneInvoke,
     ErrorExecution,
@@ -854,7 +853,6 @@ impl StatePolicy for InvokeParamErrorStartsTheChildPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
-            InvokeParamErrorStartsTheChildEvent::CancelInvoke => "cancel.invoke",
             InvokeParamErrorStartsTheChildEvent::ChildUp => "childUp",
             InvokeParamErrorStartsTheChildEvent::DoneInvoke => "done.invoke",
             InvokeParamErrorStartsTheChildEvent::ErrorExecution => "error.execution",
@@ -865,7 +863,6 @@ impl StatePolicy for InvokeParamErrorStartsTheChildPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
-            "cancel.invoke" => Some(InvokeParamErrorStartsTheChildEvent::CancelInvoke),
             "childUp" => Some(InvokeParamErrorStartsTheChildEvent::ChildUp),
             "done.invoke" => Some(InvokeParamErrorStartsTheChildEvent::DoneInvoke),
             "error.execution" => Some(InvokeParamErrorStartsTheChildEvent::ErrorExecution),
@@ -1033,11 +1030,10 @@ impl StatePolicy for InvokeParamErrorStartsTheChildPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_probe'
                 if self.child_inv_probe.is_some() {
-                    if !self.pending_done_invoke_inv_probe {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            InvokeParamErrorStartsTheChildEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own

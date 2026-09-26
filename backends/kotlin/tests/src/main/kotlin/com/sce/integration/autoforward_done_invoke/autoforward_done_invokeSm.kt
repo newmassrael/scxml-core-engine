@@ -22,9 +22,6 @@ sealed interface AutoforwardDoneInvokeState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface AutoforwardDoneInvokeEvent : Event {
-    sealed interface Cancel : AutoforwardDoneInvokeEvent {
-        data object Invoke : Cancel
-    }
     sealed interface Done : AutoforwardDoneInvokeEvent {
         sealed interface Invoke : Done {
             data object Self : Invoke
@@ -133,7 +130,6 @@ class AutoforwardDoneInvokeStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AutoforwardDoneInvokeEvent? = when (name) {
-        "cancel.invoke" -> AutoforwardDoneInvokeEvent.Cancel.Invoke
         "done.invoke" -> AutoforwardDoneInvokeEvent.Done.Invoke.Self
         "done.invoke.inv_short" -> AutoforwardDoneInvokeEvent.Done.Invoke.InvShort
         "error.execution" -> AutoforwardDoneInvokeEvent.Error.Execution
@@ -145,7 +141,6 @@ class AutoforwardDoneInvokeStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AutoforwardDoneInvokeEvent): String? = when (event) {
-        is AutoforwardDoneInvokeEvent.Cancel.Invoke -> "cancel.invoke"
         is AutoforwardDoneInvokeEvent.Done.Invoke.Self -> "done.invoke"
         is AutoforwardDoneInvokeEvent.Done.Invoke.InvShort -> "done.invoke.inv_short"
         is AutoforwardDoneInvokeEvent.Error.Execution -> "error.execution"

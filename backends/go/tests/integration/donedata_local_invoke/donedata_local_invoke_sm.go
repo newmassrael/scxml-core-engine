@@ -160,19 +160,16 @@ var transitionTargetsOfDonedataLocalInvoke = [4][][]DonedataLocalInvokeTarget{
 type DonedataLocalInvokeEvent int
 
 const (
-	DonedataLocalInvokeEventCancelInvoke DonedataLocalInvokeEvent = 0
-	DonedataLocalInvokeEventDoneInvoke DonedataLocalInvokeEvent = 1
-	DonedataLocalInvokeEventDoneInvokeInvContent DonedataLocalInvokeEvent = 2
-	DonedataLocalInvokeEventDoneInvokeInvParam DonedataLocalInvokeEvent = 3
-	DonedataLocalInvokeEventErrorExecution DonedataLocalInvokeEvent = 4
+	DonedataLocalInvokeEventDoneInvoke DonedataLocalInvokeEvent = 0
+	DonedataLocalInvokeEventDoneInvokeInvContent DonedataLocalInvokeEvent = 1
+	DonedataLocalInvokeEventDoneInvokeInvParam DonedataLocalInvokeEvent = 2
+	DonedataLocalInvokeEventErrorExecution DonedataLocalInvokeEvent = 3
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	DonedataLocalInvokeEventNull DonedataLocalInvokeEvent = 5
+	DonedataLocalInvokeEventNull DonedataLocalInvokeEvent = 4
 )
 
 func (e DonedataLocalInvokeEvent) String() string {
 	switch e {
-	case DonedataLocalInvokeEventCancelInvoke:
-		return "cancel.invoke"
 	case DonedataLocalInvokeEventDoneInvoke:
 		return "done.invoke"
 	case DonedataLocalInvokeEventDoneInvokeInvContent:
@@ -746,8 +743,6 @@ func (p *DonedataLocalInvokePolicy) GetEventName(event DonedataLocalInvokeEvent)
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *DonedataLocalInvokePolicy) GetEventFromName(name string) (DonedataLocalInvokeEvent, bool) {
 	switch name {
-	case "cancel.invoke":
-		return DonedataLocalInvokeEventCancelInvoke, true
 	case "done.invoke":
 		return DonedataLocalInvokeEventDoneInvoke, true
 	case "done.invoke.inv_content":

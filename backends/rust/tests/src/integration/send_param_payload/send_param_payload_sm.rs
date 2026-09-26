@@ -106,7 +106,6 @@ pub enum SendParamPayloadState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SendParamPayloadEvent {
-    CancelInvoke,
     DoneInvoke,
     ErrorExecution,
     FromChild,
@@ -833,7 +832,6 @@ impl StatePolicy for SendParamPayloadPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
-            SendParamPayloadEvent::CancelInvoke => "cancel.invoke",
             SendParamPayloadEvent::DoneInvoke => "done.invoke",
             SendParamPayloadEvent::ErrorExecution => "error.execution",
             SendParamPayloadEvent::FromChild => "fromChild",
@@ -846,7 +844,6 @@ impl StatePolicy for SendParamPayloadPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
-            "cancel.invoke" => Some(SendParamPayloadEvent::CancelInvoke),
             "done.invoke" => Some(SendParamPayloadEvent::DoneInvoke),
             "error.execution" => Some(SendParamPayloadEvent::ErrorExecution),
             "fromChild" => Some(SendParamPayloadEvent::FromChild),
@@ -1232,11 +1229,10 @@ impl StatePolicy for SendParamPayloadPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_emitter'
                 if self.child_inv_emitter.is_some() {
-                    if !self.pending_done_invoke_inv_emitter {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            SendParamPayloadEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own

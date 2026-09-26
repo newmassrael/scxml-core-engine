@@ -149,23 +149,20 @@ type AutoforwardInternalQueueEvent int
 
 const (
 	AutoforwardInternalQueueEventBoom AutoforwardInternalQueueEvent = 0
-	AutoforwardInternalQueueEventCancelInvoke AutoforwardInternalQueueEvent = 1
-	AutoforwardInternalQueueEventDoneInvoke AutoforwardInternalQueueEvent = 2
-	AutoforwardInternalQueueEventErrorExecution AutoforwardInternalQueueEvent = 3
-	AutoforwardInternalQueueEventProbe AutoforwardInternalQueueEvent = 4
-	AutoforwardInternalQueueEventReady AutoforwardInternalQueueEvent = 5
-	AutoforwardInternalQueueEventSawInternal AutoforwardInternalQueueEvent = 6
-	AutoforwardInternalQueueEventSawProbeOnly AutoforwardInternalQueueEvent = 7
+	AutoforwardInternalQueueEventDoneInvoke AutoforwardInternalQueueEvent = 1
+	AutoforwardInternalQueueEventErrorExecution AutoforwardInternalQueueEvent = 2
+	AutoforwardInternalQueueEventProbe AutoforwardInternalQueueEvent = 3
+	AutoforwardInternalQueueEventReady AutoforwardInternalQueueEvent = 4
+	AutoforwardInternalQueueEventSawInternal AutoforwardInternalQueueEvent = 5
+	AutoforwardInternalQueueEventSawProbeOnly AutoforwardInternalQueueEvent = 6
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	AutoforwardInternalQueueEventNull AutoforwardInternalQueueEvent = 8
+	AutoforwardInternalQueueEventNull AutoforwardInternalQueueEvent = 7
 )
 
 func (e AutoforwardInternalQueueEvent) String() string {
 	switch e {
 	case AutoforwardInternalQueueEventBoom:
 		return "boom"
-	case AutoforwardInternalQueueEventCancelInvoke:
-		return "cancel.invoke"
 	case AutoforwardInternalQueueEventDoneInvoke:
 		return "done.invoke"
 	case AutoforwardInternalQueueEventErrorExecution:
@@ -467,8 +464,6 @@ func (p *AutoforwardInternalQueuePolicy) GetEventFromName(name string) (Autoforw
 	switch name {
 	case "boom":
 		return AutoforwardInternalQueueEventBoom, true
-	case "cancel.invoke":
-		return AutoforwardInternalQueueEventCancelInvoke, true
 	case "done.invoke":
 		return AutoforwardInternalQueueEventDoneInvoke, true
 	case "error.execution":

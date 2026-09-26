@@ -29,9 +29,6 @@ sealed interface EmptyFinalizeUpdatesTheLocationState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface EmptyFinalizeUpdatesTheLocationEvent : Event {
-    sealed interface Cancel : EmptyFinalizeUpdatesTheLocationEvent {
-        data object Invoke : Cancel
-    }
     sealed interface Done : EmptyFinalizeUpdatesTheLocationEvent {
         data object Invoke : Done
     }
@@ -251,7 +248,6 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): EmptyFinalizeUpdatesTheLocationEvent? = when (name) {
-        "cancel.invoke" -> EmptyFinalizeUpdatesTheLocationEvent.Cancel.Invoke
         "done.invoke" -> EmptyFinalizeUpdatesTheLocationEvent.Done.Invoke
         "error.execution" -> EmptyFinalizeUpdatesTheLocationEvent.Error.Execution
         "fromAbsentChild" -> EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild
@@ -265,7 +261,6 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: EmptyFinalizeUpdatesTheLocationEvent): String? = when (event) {
-        is EmptyFinalizeUpdatesTheLocationEvent.Cancel.Invoke -> "cancel.invoke"
         is EmptyFinalizeUpdatesTheLocationEvent.Done.Invoke -> "done.invoke"
         is EmptyFinalizeUpdatesTheLocationEvent.Error.Execution -> "error.execution"
         is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild -> "fromAbsentChild"

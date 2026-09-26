@@ -169,19 +169,16 @@ var transitionTargetsOfInvokeParamErrorStartsTheChild = [6][][]InvokeParamErrorS
 type InvokeParamErrorStartsTheChildEvent int
 
 const (
-	InvokeParamErrorStartsTheChildEventCancelInvoke InvokeParamErrorStartsTheChildEvent = 0
-	InvokeParamErrorStartsTheChildEventChildUp InvokeParamErrorStartsTheChildEvent = 1
-	InvokeParamErrorStartsTheChildEventDoneInvoke InvokeParamErrorStartsTheChildEvent = 2
-	InvokeParamErrorStartsTheChildEventErrorExecution InvokeParamErrorStartsTheChildEvent = 3
-	InvokeParamErrorStartsTheChildEventTimeout InvokeParamErrorStartsTheChildEvent = 4
+	InvokeParamErrorStartsTheChildEventChildUp InvokeParamErrorStartsTheChildEvent = 0
+	InvokeParamErrorStartsTheChildEventDoneInvoke InvokeParamErrorStartsTheChildEvent = 1
+	InvokeParamErrorStartsTheChildEventErrorExecution InvokeParamErrorStartsTheChildEvent = 2
+	InvokeParamErrorStartsTheChildEventTimeout InvokeParamErrorStartsTheChildEvent = 3
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	InvokeParamErrorStartsTheChildEventNull InvokeParamErrorStartsTheChildEvent = 5
+	InvokeParamErrorStartsTheChildEventNull InvokeParamErrorStartsTheChildEvent = 4
 )
 
 func (e InvokeParamErrorStartsTheChildEvent) String() string {
 	switch e {
-	case InvokeParamErrorStartsTheChildEventCancelInvoke:
-		return "cancel.invoke"
 	case InvokeParamErrorStartsTheChildEventChildUp:
 		return "childUp"
 	case InvokeParamErrorStartsTheChildEventDoneInvoke:
@@ -721,8 +718,6 @@ func (p *InvokeParamErrorStartsTheChildPolicy) GetEventName(event InvokeParamErr
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *InvokeParamErrorStartsTheChildPolicy) GetEventFromName(name string) (InvokeParamErrorStartsTheChildEvent, bool) {
 	switch name {
-	case "cancel.invoke":
-		return InvokeParamErrorStartsTheChildEventCancelInvoke, true
 	case "childUp":
 		return InvokeParamErrorStartsTheChildEventChildUp, true
 	case "done.invoke":

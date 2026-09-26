@@ -24,9 +24,6 @@ sealed interface SessionIdsAreDistinctState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface SessionIdsAreDistinctEvent : Event {
-    sealed interface Cancel : SessionIdsAreDistinctEvent {
-        data object Invoke : Cancel
-    }
     sealed interface Done : SessionIdsAreDistinctEvent {
         data object Invoke : Done
     }
@@ -194,7 +191,6 @@ class SessionIdsAreDistinctStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): SessionIdsAreDistinctEvent? = when (name) {
-        "cancel.invoke" -> SessionIdsAreDistinctEvent.Cancel.Invoke
         "done.invoke" -> SessionIdsAreDistinctEvent.Done.Invoke
         "error.execution" -> SessionIdsAreDistinctEvent.Error.Execution
         "fromChild" -> SessionIdsAreDistinctEvent.FromChild
@@ -203,7 +199,6 @@ class SessionIdsAreDistinctStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: SessionIdsAreDistinctEvent): String? = when (event) {
-        is SessionIdsAreDistinctEvent.Cancel.Invoke -> "cancel.invoke"
         is SessionIdsAreDistinctEvent.Done.Invoke -> "done.invoke"
         is SessionIdsAreDistinctEvent.Error.Execution -> "error.execution"
         is SessionIdsAreDistinctEvent.FromChild -> "fromChild"

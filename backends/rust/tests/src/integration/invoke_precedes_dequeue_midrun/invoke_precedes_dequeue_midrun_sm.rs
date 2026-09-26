@@ -97,7 +97,6 @@ pub enum InvokePrecedesDequeueMidrunState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InvokePrecedesDequeueMidrunEvent {
-    CancelInvoke,
     DoneInvoke,
     ErrorExecution,
     Go,
@@ -545,7 +544,6 @@ impl StatePolicy for InvokePrecedesDequeueMidrunPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
-            InvokePrecedesDequeueMidrunEvent::CancelInvoke => "cancel.invoke",
             InvokePrecedesDequeueMidrunEvent::DoneInvoke => "done.invoke",
             InvokePrecedesDequeueMidrunEvent::ErrorExecution => "error.execution",
             InvokePrecedesDequeueMidrunEvent::Go => "go",
@@ -560,7 +558,6 @@ impl StatePolicy for InvokePrecedesDequeueMidrunPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
-            "cancel.invoke" => Some(InvokePrecedesDequeueMidrunEvent::CancelInvoke),
             "done.invoke" => Some(InvokePrecedesDequeueMidrunEvent::DoneInvoke),
             "error.execution" => Some(InvokePrecedesDequeueMidrunEvent::ErrorExecution),
             "go" => Some(InvokePrecedesDequeueMidrunEvent::Go),
@@ -735,11 +732,10 @@ impl StatePolicy for InvokePrecedesDequeueMidrunPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_watch'
                 if self.child_inv_watch.is_some() {
-                    if !self.pending_done_invoke_inv_watch {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            InvokePrecedesDequeueMidrunEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own

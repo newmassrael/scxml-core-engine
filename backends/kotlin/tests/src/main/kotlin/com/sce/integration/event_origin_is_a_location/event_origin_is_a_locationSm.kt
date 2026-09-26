@@ -24,9 +24,6 @@ sealed interface EventOriginIsALocationState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface EventOriginIsALocationEvent : Event {
-    sealed interface Cancel : EventOriginIsALocationEvent {
-        data object Invoke : Cancel
-    }
     sealed interface Done : EventOriginIsALocationEvent {
         data object Invoke : Done
     }
@@ -168,7 +165,6 @@ class EventOriginIsALocationStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): EventOriginIsALocationEvent? = when (name) {
-        "cancel.invoke" -> EventOriginIsALocationEvent.Cancel.Invoke
         "done.invoke" -> EventOriginIsALocationEvent.Done.Invoke
         "error.communication" -> EventOriginIsALocationEvent.Error.Communication
         "error.execution" -> EventOriginIsALocationEvent.Error.Execution
@@ -180,7 +176,6 @@ class EventOriginIsALocationStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: EventOriginIsALocationEvent): String? = when (event) {
-        is EventOriginIsALocationEvent.Cancel.Invoke -> "cancel.invoke"
         is EventOriginIsALocationEvent.Done.Invoke -> "done.invoke"
         is EventOriginIsALocationEvent.Error.Communication -> "error.communication"
         is EventOriginIsALocationEvent.Error.Execution -> "error.execution"

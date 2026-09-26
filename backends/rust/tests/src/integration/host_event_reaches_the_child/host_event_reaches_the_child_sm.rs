@@ -98,7 +98,6 @@ pub enum HostEventReachesTheChildState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HostEventReachesTheChildEvent {
-    CancelInvoke,
     DoneInvoke,
     ErrorExecution,
     HostPing,
@@ -555,7 +554,6 @@ impl StatePolicy for HostEventReachesTheChildPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
-            HostEventReachesTheChildEvent::CancelInvoke => "cancel.invoke",
             HostEventReachesTheChildEvent::DoneInvoke => "done.invoke",
             HostEventReachesTheChildEvent::ErrorExecution => "error.execution",
             HostEventReachesTheChildEvent::HostPing => "hostPing",
@@ -569,7 +567,6 @@ impl StatePolicy for HostEventReachesTheChildPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
-            "cancel.invoke" => Some(HostEventReachesTheChildEvent::CancelInvoke),
             "done.invoke" => Some(HostEventReachesTheChildEvent::DoneInvoke),
             "error.execution" => Some(HostEventReachesTheChildEvent::ErrorExecution),
             "hostPing" => Some(HostEventReachesTheChildEvent::HostPing),
@@ -690,11 +687,10 @@ impl StatePolicy for HostEventReachesTheChildPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_probe'
                 if self.child_inv_probe.is_some() {
-                    if !self.pending_done_invoke_inv_probe {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            HostEventReachesTheChildEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own

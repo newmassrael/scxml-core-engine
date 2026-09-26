@@ -22,9 +22,6 @@ sealed interface DonedataLateCompletionState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface DonedataLateCompletionEvent : Event {
-    sealed interface Cancel : DonedataLateCompletionEvent {
-        data object Invoke : Cancel
-    }
     sealed interface Done : DonedataLateCompletionEvent {
         sealed interface Invoke : Done {
             data object Self : Invoke
@@ -139,7 +136,6 @@ class DonedataLateCompletionStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): DonedataLateCompletionEvent? = when (name) {
-        "cancel.invoke" -> DonedataLateCompletionEvent.Cancel.Invoke
         "done.invoke" -> DonedataLateCompletionEvent.Done.Invoke.Self
         "done.invoke.inv_late" -> DonedataLateCompletionEvent.Done.Invoke.InvLate
         "error.execution" -> DonedataLateCompletionEvent.Error.Execution
@@ -150,7 +146,6 @@ class DonedataLateCompletionStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: DonedataLateCompletionEvent): String? = when (event) {
-        is DonedataLateCompletionEvent.Cancel.Invoke -> "cancel.invoke"
         is DonedataLateCompletionEvent.Done.Invoke.Self -> "done.invoke"
         is DonedataLateCompletionEvent.Done.Invoke.InvLate -> "done.invoke.inv_late"
         is DonedataLateCompletionEvent.Error.Execution -> "error.execution"

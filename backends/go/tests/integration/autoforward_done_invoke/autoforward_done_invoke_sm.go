@@ -149,21 +149,18 @@ var transitionTargetsOfAutoforwardDoneInvoke = [3][][]AutoforwardDoneInvokeTarge
 type AutoforwardDoneInvokeEvent int
 
 const (
-	AutoforwardDoneInvokeEventCancelInvoke AutoforwardDoneInvokeEvent = 0
-	AutoforwardDoneInvokeEventDoneInvoke AutoforwardDoneInvokeEvent = 1
-	AutoforwardDoneInvokeEventDoneInvokeInvShort AutoforwardDoneInvokeEvent = 2
-	AutoforwardDoneInvokeEventErrorExecution AutoforwardDoneInvokeEvent = 3
-	AutoforwardDoneInvokeEventProbe AutoforwardDoneInvokeEvent = 4
-	AutoforwardDoneInvokeEventSawPlatform AutoforwardDoneInvokeEvent = 5
-	AutoforwardDoneInvokeEventSawProbeOnly AutoforwardDoneInvokeEvent = 6
+	AutoforwardDoneInvokeEventDoneInvoke AutoforwardDoneInvokeEvent = 0
+	AutoforwardDoneInvokeEventDoneInvokeInvShort AutoforwardDoneInvokeEvent = 1
+	AutoforwardDoneInvokeEventErrorExecution AutoforwardDoneInvokeEvent = 2
+	AutoforwardDoneInvokeEventProbe AutoforwardDoneInvokeEvent = 3
+	AutoforwardDoneInvokeEventSawPlatform AutoforwardDoneInvokeEvent = 4
+	AutoforwardDoneInvokeEventSawProbeOnly AutoforwardDoneInvokeEvent = 5
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	AutoforwardDoneInvokeEventNull AutoforwardDoneInvokeEvent = 7
+	AutoforwardDoneInvokeEventNull AutoforwardDoneInvokeEvent = 6
 )
 
 func (e AutoforwardDoneInvokeEvent) String() string {
 	switch e {
-	case AutoforwardDoneInvokeEventCancelInvoke:
-		return "cancel.invoke"
 	case AutoforwardDoneInvokeEventDoneInvoke:
 		return "done.invoke"
 	case AutoforwardDoneInvokeEventDoneInvokeInvShort:
@@ -557,8 +554,6 @@ func (p *AutoforwardDoneInvokePolicy) GetEventName(event AutoforwardDoneInvokeEv
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *AutoforwardDoneInvokePolicy) GetEventFromName(name string) (AutoforwardDoneInvokeEvent, bool) {
 	switch name {
-	case "cancel.invoke":
-		return AutoforwardDoneInvokeEventCancelInvoke, true
 	case "done.invoke":
 		return AutoforwardDoneInvokeEventDoneInvoke, true
 	case "done.invoke.inv_short":

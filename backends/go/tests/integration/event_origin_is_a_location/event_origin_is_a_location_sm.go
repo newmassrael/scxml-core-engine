@@ -165,21 +165,18 @@ var transitionTargetsOfEventOriginIsALocation = [5][][]EventOriginIsALocationTar
 type EventOriginIsALocationEvent int
 
 const (
-	EventOriginIsALocationEventCancelInvoke EventOriginIsALocationEvent = 0
-	EventOriginIsALocationEventDoneInvoke EventOriginIsALocationEvent = 1
-	EventOriginIsALocationEventErrorCommunication EventOriginIsALocationEvent = 2
-	EventOriginIsALocationEventErrorExecution EventOriginIsALocationEvent = 3
-	EventOriginIsALocationEventFromChild EventOriginIsALocationEvent = 4
-	EventOriginIsALocationEventReply EventOriginIsALocationEvent = 5
-	EventOriginIsALocationEventReplyArrived EventOriginIsALocationEvent = 6
+	EventOriginIsALocationEventDoneInvoke EventOriginIsALocationEvent = 0
+	EventOriginIsALocationEventErrorCommunication EventOriginIsALocationEvent = 1
+	EventOriginIsALocationEventErrorExecution EventOriginIsALocationEvent = 2
+	EventOriginIsALocationEventFromChild EventOriginIsALocationEvent = 3
+	EventOriginIsALocationEventReply EventOriginIsALocationEvent = 4
+	EventOriginIsALocationEventReplyArrived EventOriginIsALocationEvent = 5
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	EventOriginIsALocationEventNull EventOriginIsALocationEvent = 7
+	EventOriginIsALocationEventNull EventOriginIsALocationEvent = 6
 )
 
 func (e EventOriginIsALocationEvent) String() string {
 	switch e {
-	case EventOriginIsALocationEventCancelInvoke:
-		return "cancel.invoke"
 	case EventOriginIsALocationEventDoneInvoke:
 		return "done.invoke"
 	case EventOriginIsALocationEventErrorCommunication:
@@ -646,8 +643,6 @@ func (p *EventOriginIsALocationPolicy) GetEventName(event EventOriginIsALocation
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *EventOriginIsALocationPolicy) GetEventFromName(name string) (EventOriginIsALocationEvent, bool) {
 	switch name {
-	case "cancel.invoke":
-		return EventOriginIsALocationEventCancelInvoke, true
 	case "done.invoke":
 		return EventOriginIsALocationEventDoneInvoke, true
 	case "error.communication":

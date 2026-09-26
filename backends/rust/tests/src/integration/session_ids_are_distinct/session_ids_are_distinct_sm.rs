@@ -98,7 +98,6 @@ pub enum SessionIdsAreDistinctState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SessionIdsAreDistinctEvent {
-    CancelInvoke,
     DoneInvoke,
     ErrorExecution,
     FromChild,
@@ -940,7 +939,6 @@ impl StatePolicy for SessionIdsAreDistinctPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
-            SessionIdsAreDistinctEvent::CancelInvoke => "cancel.invoke",
             SessionIdsAreDistinctEvent::DoneInvoke => "done.invoke",
             SessionIdsAreDistinctEvent::ErrorExecution => "error.execution",
             SessionIdsAreDistinctEvent::FromChild => "fromChild",
@@ -950,7 +948,6 @@ impl StatePolicy for SessionIdsAreDistinctPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
-            "cancel.invoke" => Some(SessionIdsAreDistinctEvent::CancelInvoke),
             "done.invoke" => Some(SessionIdsAreDistinctEvent::DoneInvoke),
             "error.execution" => Some(SessionIdsAreDistinctEvent::ErrorExecution),
             "fromChild" => Some(SessionIdsAreDistinctEvent::FromChild),
@@ -1106,11 +1103,10 @@ impl StatePolicy for SessionIdsAreDistinctPolicy {
                 );
                 // W3C SCXML 6.4: Cleanup running static child 'inv_a'
                 if self.child_inv_a.is_some() {
-                    if !self.pending_done_invoke_inv_a {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            SessionIdsAreDistinctEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own
@@ -1124,11 +1120,10 @@ impl StatePolicy for SessionIdsAreDistinctPolicy {
                 self.pending_done_invoke_inv_a = false;
                 // W3C SCXML 6.4: Cleanup running static child 'inv_b'
                 if self.child_inv_b.is_some() {
-                    if !self.pending_done_invoke_inv_b {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            SessionIdsAreDistinctEvent::CancelInvoke,
-                        ));
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own

@@ -165,22 +165,19 @@ var transitionTargetsOfHostEventReachesTheChild = [5][][]HostEventReachesTheChil
 type HostEventReachesTheChildEvent int
 
 const (
-	HostEventReachesTheChildEventCancelInvoke HostEventReachesTheChildEvent = 0
-	HostEventReachesTheChildEventDoneInvoke HostEventReachesTheChildEvent = 1
-	HostEventReachesTheChildEventErrorExecution HostEventReachesTheChildEvent = 2
-	HostEventReachesTheChildEventHostPing HostEventReachesTheChildEvent = 3
-	HostEventReachesTheChildEventMarker HostEventReachesTheChildEvent = 4
-	HostEventReachesTheChildEventReady HostEventReachesTheChildEvent = 5
-	HostEventReachesTheChildEventSawHostPing HostEventReachesTheChildEvent = 6
-	HostEventReachesTheChildEventSawMarkerOnly HostEventReachesTheChildEvent = 7
+	HostEventReachesTheChildEventDoneInvoke HostEventReachesTheChildEvent = 0
+	HostEventReachesTheChildEventErrorExecution HostEventReachesTheChildEvent = 1
+	HostEventReachesTheChildEventHostPing HostEventReachesTheChildEvent = 2
+	HostEventReachesTheChildEventMarker HostEventReachesTheChildEvent = 3
+	HostEventReachesTheChildEventReady HostEventReachesTheChildEvent = 4
+	HostEventReachesTheChildEventSawHostPing HostEventReachesTheChildEvent = 5
+	HostEventReachesTheChildEventSawMarkerOnly HostEventReachesTheChildEvent = 6
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	HostEventReachesTheChildEventNull HostEventReachesTheChildEvent = 8
+	HostEventReachesTheChildEventNull HostEventReachesTheChildEvent = 7
 )
 
 func (e HostEventReachesTheChildEvent) String() string {
 	switch e {
-	case HostEventReachesTheChildEventCancelInvoke:
-		return "cancel.invoke"
 	case HostEventReachesTheChildEventDoneInvoke:
 		return "done.invoke"
 	case HostEventReachesTheChildEventErrorExecution:
@@ -490,8 +487,6 @@ func (p *HostEventReachesTheChildPolicy) GetEventName(event HostEventReachesTheC
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *HostEventReachesTheChildPolicy) GetEventFromName(name string) (HostEventReachesTheChildEvent, bool) {
 	switch name {
-	case "cancel.invoke":
-		return HostEventReachesTheChildEventCancelInvoke, true
 	case "done.invoke":
 		return HostEventReachesTheChildEventDoneInvoke, true
 	case "error.execution":

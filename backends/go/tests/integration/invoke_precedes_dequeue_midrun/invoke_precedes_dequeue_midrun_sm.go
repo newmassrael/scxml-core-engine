@@ -157,23 +157,20 @@ var transitionTargetsOfInvokePrecedesDequeueMidrun = [4][][]InvokePrecedesDequeu
 type InvokePrecedesDequeueMidrunEvent int
 
 const (
-	InvokePrecedesDequeueMidrunEventCancelInvoke InvokePrecedesDequeueMidrunEvent = 0
-	InvokePrecedesDequeueMidrunEventDoneInvoke InvokePrecedesDequeueMidrunEvent = 1
-	InvokePrecedesDequeueMidrunEventErrorExecution InvokePrecedesDequeueMidrunEvent = 2
-	InvokePrecedesDequeueMidrunEventGo InvokePrecedesDequeueMidrunEvent = 3
-	InvokePrecedesDequeueMidrunEventKick InvokePrecedesDequeueMidrunEvent = 4
-	InvokePrecedesDequeueMidrunEventProbe InvokePrecedesDequeueMidrunEvent = 5
-	InvokePrecedesDequeueMidrunEventReady InvokePrecedesDequeueMidrunEvent = 6
-	InvokePrecedesDequeueMidrunEventSawKick InvokePrecedesDequeueMidrunEvent = 7
-	InvokePrecedesDequeueMidrunEventSawNoKick InvokePrecedesDequeueMidrunEvent = 8
+	InvokePrecedesDequeueMidrunEventDoneInvoke InvokePrecedesDequeueMidrunEvent = 0
+	InvokePrecedesDequeueMidrunEventErrorExecution InvokePrecedesDequeueMidrunEvent = 1
+	InvokePrecedesDequeueMidrunEventGo InvokePrecedesDequeueMidrunEvent = 2
+	InvokePrecedesDequeueMidrunEventKick InvokePrecedesDequeueMidrunEvent = 3
+	InvokePrecedesDequeueMidrunEventProbe InvokePrecedesDequeueMidrunEvent = 4
+	InvokePrecedesDequeueMidrunEventReady InvokePrecedesDequeueMidrunEvent = 5
+	InvokePrecedesDequeueMidrunEventSawKick InvokePrecedesDequeueMidrunEvent = 6
+	InvokePrecedesDequeueMidrunEventSawNoKick InvokePrecedesDequeueMidrunEvent = 7
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	InvokePrecedesDequeueMidrunEventNull InvokePrecedesDequeueMidrunEvent = 9
+	InvokePrecedesDequeueMidrunEventNull InvokePrecedesDequeueMidrunEvent = 8
 )
 
 func (e InvokePrecedesDequeueMidrunEvent) String() string {
 	switch e {
-	case InvokePrecedesDequeueMidrunEventCancelInvoke:
-		return "cancel.invoke"
 	case InvokePrecedesDequeueMidrunEventDoneInvoke:
 		return "done.invoke"
 	case InvokePrecedesDequeueMidrunEventErrorExecution:
@@ -479,8 +476,6 @@ func (p *InvokePrecedesDequeueMidrunPolicy) GetEventName(event InvokePrecedesDeq
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *InvokePrecedesDequeueMidrunPolicy) GetEventFromName(name string) (InvokePrecedesDequeueMidrunEvent, bool) {
 	switch name {
-	case "cancel.invoke":
-		return InvokePrecedesDequeueMidrunEventCancelInvoke, true
 	case "done.invoke":
 		return InvokePrecedesDequeueMidrunEventDoneInvoke, true
 	case "error.execution":

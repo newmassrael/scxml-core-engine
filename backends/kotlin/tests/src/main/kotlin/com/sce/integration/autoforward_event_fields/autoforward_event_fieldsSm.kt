@@ -22,9 +22,6 @@ sealed interface AutoforwardEventFieldsState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface AutoforwardEventFieldsEvent : Event {
-    sealed interface Cancel : AutoforwardEventFieldsEvent {
-        data object Invoke : Cancel
-    }
     data object ChildToParent : AutoforwardEventFieldsEvent
     sealed interface Done : AutoforwardEventFieldsEvent {
         data object Invoke : Done
@@ -137,7 +134,6 @@ class AutoforwardEventFieldsStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AutoforwardEventFieldsEvent? = when (name) {
-        "cancel.invoke" -> AutoforwardEventFieldsEvent.Cancel.Invoke
         "childToParent" -> AutoforwardEventFieldsEvent.ChildToParent
         "done.invoke" -> AutoforwardEventFieldsEvent.Done.Invoke
         "error.execution" -> AutoforwardEventFieldsEvent.Error.Execution
@@ -148,7 +144,6 @@ class AutoforwardEventFieldsStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AutoforwardEventFieldsEvent): String? = when (event) {
-        is AutoforwardEventFieldsEvent.Cancel.Invoke -> "cancel.invoke"
         is AutoforwardEventFieldsEvent.ChildToParent -> "childToParent"
         is AutoforwardEventFieldsEvent.Done.Invoke -> "done.invoke"
         is AutoforwardEventFieldsEvent.Error.Execution -> "error.execution"
