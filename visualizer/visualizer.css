@@ -201,6 +201,21 @@ body {
     font-weight: 600;
 }
 
+/* The top-level final the run ended in. The run has no active states once it
+   ends (W3C SCXML Appendix D exitInterpreter), so this is a separate mark from
+   .active: where the run stopped, not what it is in. */
+.state.terminal rect {
+    fill: #dafbe1;
+    stroke: var(--color-green, #1a7f37);
+    stroke-width: 3px;
+    stroke-dasharray: 6 3;
+}
+
+.state.terminal text {
+    fill: var(--color-green, #1a7f37);
+    font-weight: 600;
+}
+
 /* Active highlighting for collapsed compound states */
 .collapsed-compound.active .collapsed-state-rect {
     fill: #ddf4ff;

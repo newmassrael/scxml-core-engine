@@ -107,6 +107,10 @@ class SCXMLVisualizer {
         this.transitions = scxmlStructure.transitions || [];
         this.initialState = scxmlStructure.initial || '';
         this.activeStates = new Set();
+        // The top-level final the run ended in, '' while it has not. An
+        // ended run's active set is empty (§scxml-D-exitInterpreter), so this
+        // is the only mark of where it stopped.
+        this.terminalState = '';
 
         // NL-IR closure ledger row G2. Null when the codegen WASM could
         // not be reached, which the node and link builders read as "no
@@ -438,7 +442,7 @@ class SCXMLVisualizer {
     updateLinks(fastMode = false) { return this.interactionHandler.updateLinks(fastMode); }
     updateLinksFast() { return this.interactionHandler.updateLinksFast(); }
     updateLinksOptimal() { return this.interactionHandler.updateLinksOptimal(); }
-    highlightActiveStates(activeStates) { return this.interactionHandler.highlightActiveStates(activeStates); }
+    highlightActiveStates(activeStates, terminalState = '') { return this.interactionHandler.highlightActiveStates(activeStates, terminalState); }
     highlightActiveStatesVisual() { return this.interactionHandler.highlightActiveStatesVisual(); }
     animateTransition(transitionId) { return this.interactionHandler.animateTransition(transitionId); }
     renderTransitionList(allTransitions) { return this.interactionHandler.renderTransitionList(allTransitions); }

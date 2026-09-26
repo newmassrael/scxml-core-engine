@@ -527,7 +527,9 @@ class UIUpdater {
                 this.controller.previousActiveStates = [];
             }
 
-            this.controller.visualizer.highlightActiveStates(activeStates);
+            // An ended run's configuration is empty (§scxml-D-exitInterpreter);
+            // the final it ended in is marked instead.
+            this.controller.visualizer.highlightActiveStates(activeStates, this.controller.runner.getTerminalState());
 
             // Update previous states for next comparison
             this.controller.previousActiveStates = [...activeStates];

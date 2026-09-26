@@ -1579,7 +1579,7 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
         this.visualizer.renderTransitionList();
 
         // Re-apply active state highlights after render
-        if (this.visualizer.activeStates && this.visualizer.activeStates.size > 0) {
+        if ((this.visualizer.activeStates && this.visualizer.activeStates.size > 0) || this.visualizer.terminalState) {
             this.visualizer.highlightActiveStatesVisual();
         }
 

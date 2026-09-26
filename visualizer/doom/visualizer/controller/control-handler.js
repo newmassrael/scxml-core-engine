@@ -106,9 +106,7 @@ class ControlHandler {
     checkAndHandleFinalState() {
         if (this.controller.runner.isInFinalState()) {
             this.controller.disableButton('btn-step-forward');
-            const activeStates = this.controller.runner.getActiveStates();
-            const stateList = activeStates.length > 0 ? activeStates.join(', ') : 'unknown';
-            logger.debug(`State machine in final state: ${stateList}`);
+            logger.debug(`State machine ended in: ${this.controller.runner.getTerminalState()}`);
         } else {
             this.controller.enableButton('btn-step-forward');
         }
