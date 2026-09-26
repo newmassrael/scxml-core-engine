@@ -64,9 +64,12 @@ PY
 
 mutation_case "a cancel passes over a deferred host send" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "        self.entries.retain(|e| !e.send_id.matches(send_id));",
-     """        self.entries
-            .retain(|e| !e.send_id.matches(send_id) || matches!(e.act, ScheduledAct::HostSend(_)));""")
+     """            .retain(|e| e.is_host_invoke_deadline() || !e.send_id.matches(send_id));""",
+     """            .retain(|e| {
+                e.is_host_invoke_deadline()
+                    || !e.send_id.matches(send_id)
+                    || matches!(e.act, ScheduledAct::HostSend(_))
+            });""")
 PY
 
 # ── The deferred act never happens ──────────────────────────────────
@@ -105,8 +108,10 @@ PY
 
 mutation_case "the report is looked up under a name no machine declares" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            if let Some(evt) = P::get_event_from_name("error.execution") {""",
-     """            if let Some(evt) = P::get_event_from_name("") {""")
+     """        if served.is_none() && !self.has_event_processor(&processor_type) {
+            if let Some(evt) = P::get_event_from_name("error.execution") {""",
+     """        if served.is_none() && !self.has_event_processor(&processor_type) {
+            if let Some(evt) = P::get_event_from_name("") {""")
 PY
 
 mutation_case "an unregistered type reports as served at the deadline" <<'PY'

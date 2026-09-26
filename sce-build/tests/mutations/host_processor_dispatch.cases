@@ -157,9 +157,7 @@ PY
 
 mutation_case "cancel is delivered for an invocation that never started" <<'PY'
 edit("backends/rust/runtime/src/host_processor.rs",
-     """        let Some(token) = self.started.remove(&key) else {
-            return false;
-        };""",
+     """        let token = self.started.remove(&key)?;""",
      """        let token = self.started.remove(&key).unwrap_or_default();""")
 PY
 
