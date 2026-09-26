@@ -1197,8 +1197,9 @@ bool StateMachine::isStateInFinalState(const std::string &stateId) const {
 
 bool StateMachine::isInFinalState() const {
     // §scxml-3.7 / §scxml-D-enterStates: only a top-level <final> ends the
-    // run — a compound state's <final> child (test294) and a <parallel> whose
-    // regions have all completed (test570) do not. Entering one records it as
+    // run — a compound state's <final> child (test294) does not, and neither
+    // does a <parallel> whose regions have all completed (§scxml-3.4,
+    // test570): it has raised done.state, which still has to be processed. Entering one records it as
     // the terminal state, which is the whole of this answer.
     return terminalState_.has_value();
 }
