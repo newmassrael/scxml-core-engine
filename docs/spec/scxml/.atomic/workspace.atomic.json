@@ -8900,6 +8900,11 @@
           "file": "sce-build/src/forge/typed_invoke.rs",
           "symbol": "DONE_INVOKE_PREFIX",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_drive_active_children",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

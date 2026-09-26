@@ -1824,7 +1824,7 @@ class Engine(Generic[S, E]):
             self._configuration.remove(state)
         self._is_running = False
 
-    # ── Invoke drivers (W3C SCXML 6.4) ────────────────────────────
+    # ── Invoke drivers ─────────────────────────────────────────
 
     def _start_pending_invokes(self) -> None:
         """W3C SCXML 6.4 — instantiate every invoke deferred during the
@@ -1868,7 +1868,7 @@ class Engine(Generic[S, E]):
                     origin=invoke.origin(),
                     origin_type=SCXML_EVENT_PROCESSOR_URI,
                 )
-            # W3C SCXML 6.3.1 — lift the child's terminal donedata onto
+            # §scxml-6.3.1 — lift the child's terminal donedata onto
             # `done.invoke.<id>._event.data`. Gated on the persistent
             # `_done_invoke_emitted` map (not a local `was_done` snapshot)
             # so the event is raised exactly once even when the child
