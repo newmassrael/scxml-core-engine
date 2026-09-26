@@ -2398,33 +2398,8 @@ pub fn build_rust_event_payload(
         }
         let mut field_lines = String::new();
         let mut lift_fields = String::new();
-        let mut data_items = String::new();
-        let mut data_args = String::new();
         for f in &schema.fields {
-            // Owned payload field types resolve through the runtime's
-            // profile-resolving aliases so this one emission compiles on both
-            // runtime profiles (the runtime owns the std-vs-heapless choice —
-            // single source of truth, like `StateChain`):
-            //   - `bytes`  -> `SceBytes<CAP>` (`Vec<u8>` under std, allocator-free
-            //     capacity-bounded `heapless::Vec<u8, CAP>` under no_std). CAP is
-            //     the field's `sce:max-size` (default `BYTES_DEFAULT_MAX`).
-            //   - `string` -> `SceString` (`String` under std, `heapless::String`
-            //     under no_std) — never a bare `String`, which a no-alloc no_std
-            //     target cannot resolve.
-            // Both deref to `[u8]` / `str`, so `&ev.<field>` coerces to the
-            // `&[u8]` / `&str` an `Actions` trait method takes. Every other
-            // primitive resolves through `LangCtx::type_name`; payload
-            // eligibility guarantees no enum-alias arm is hit.
-            let ty = match &f.sce_type {
-                crate::forge::model::SceType::Bytes => {
-                    let cap = f
-                        .max_size
-                        .unwrap_or(crate::forge::limits::BYTES_DEFAULT_MAX);
-                    format!("::sce_rust_runtime::SceBytes<{cap}>")
-                }
-                crate::forge::model::SceType::String => "::sce_rust_runtime::SceString".to_string(),
-                _ => l.type_name(&f.sce_type).into_owned(),
-            };
+            let ty = rust_record_field_type(&l, f);
             field_lines.push_str(&format!("    pub {}: {ty},\n", f.id));
             // What the lift reads back out of `data`, and what the inject seam
             // writes into it beside the typed payload: the same fields, named
@@ -2449,27 +2424,8 @@ pub fn build_rust_event_payload(
                 ),
             };
             lift_fields.push_str(&format!("                    {}: {reader},\n", f.id));
-            // ⚠ JSON has no byte string, so a `bytes` field rides as its
-            // byte-exact Latin-1 text (`PayloadFields::bytes` reads it back the
-            // same way), and a text is quoted and escaped.
-            let wire = match &f.sce_type {
-                SceType::Bytes => format!(
-                    "::sce_rust_runtime::event_payload::quote(\
-&::sce_rust_runtime::event_payload::bytes_as_payload_text(&payload.{}))",
-                    f.id
-                ),
-                SceType::String => format!(
-                    "::sce_rust_runtime::event_payload::quote(&payload.{})",
-                    f.id
-                ),
-                _ => format!("payload.{}", f.id),
-            };
-            if !data_items.is_empty() {
-                data_items.push_str(", ");
-            }
-            data_items.push_str(&format!("\\\"{}\\\":{{}}", f.id));
-            data_args.push_str(&format!(", {wire}"));
         }
+        let data = rust_record_wire(&schema.fields, "payload", "        ");
         // The inject seam fills both carriers under std: the typed payload a
         // native guard reads, and the `data` wire the script engine binds
         // `_event.data` from. Filling only the first left an
@@ -2494,8 +2450,7 @@ self.pending_payload = {enum_name}::{variant}({struct_name} {{\n{lift_fields}   
             )
         } else {
             format!(
-                "        let data = ::sce_rust_runtime::payload_wire(format_args!(\n            \
-\"{{{{{data_items}}}}}\"{data_args}\n        ));\n        \
+                "        let data = {data};\n        \
 self.raise_external_typed_with_data(\n            {machine_name}Event::{variant},\n            \
 {enum_name}::{variant}(payload),\n            &data,\n        );\n"
             )
@@ -2565,6 +2520,74 @@ match event {{\n{lift_arms}            _ => {{}}\n        }}\n        Ok(())\n  
         entries,
         lift,
     }
+}
+
+/// The Rust type one field of a typed record is generated as — an event
+/// schema's payload, or a host-run invocation's request or result.
+///
+/// Owned field types resolve through the runtime's profile-resolving aliases
+/// so one emission compiles on both runtime profiles (the runtime owns the
+/// std-vs-heapless choice — single source of truth, like `StateChain`):
+///   - `bytes`  -> `SceBytes<CAP>` (`Vec<u8>` under std, allocator-free
+///     capacity-bounded `heapless::Vec<u8, CAP>` under no_std). CAP is
+///     the field's `sce:max-size` (default `BYTES_DEFAULT_MAX`).
+///   - `string` -> `SceString` (`String` under std, `heapless::String`
+///     under no_std) — never a bare `String`, which a no-alloc no_std
+///     target cannot resolve.
+///
+/// Both deref to `[u8]` / `str`, so `&ev.<field>` coerces to the
+/// `&[u8]` / `&str` an `Actions` trait method takes. Every other
+/// primitive resolves through `LangCtx::type_name`; the callers admit
+/// primitive fields only, so no enum-alias arm is hit.
+fn rust_record_field_type(l: &LangCtx, f: &ForgeField) -> String {
+    match &f.sce_type {
+        SceType::Bytes => {
+            let cap = crate::forge::limits::resolve_bytes_max(f.max_size);
+            format!("::sce_rust_runtime::SceBytes<{cap}>")
+        }
+        SceType::String => "::sce_rust_runtime::SceString".to_string(),
+        _ => l.type_name(&f.sce_type).into_owned(),
+    }
+}
+
+/// [`rust_record_field_type`] for a caller outside this module.
+pub(crate) fn rust_record_type(f: &ForgeField) -> String {
+    rust_record_field_type(&LangCtx::primitive(crate::generator::Language::Rust), f)
+}
+
+/// The expression spelling the record `receiver` (a binding of a generated
+/// record struct over `fields`) as the JSON its completion or event carries,
+/// laid out for a statement indented by `indent`.
+///
+/// ⚠ JSON has no byte string, so a `bytes` field rides as its byte-exact
+/// Latin-1 text (`PayloadFields::bytes` reads it back the same way), and a
+/// text is quoted and escaped.
+pub(crate) fn rust_record_wire(fields: &[ForgeField], receiver: &str, indent: &str) -> String {
+    let mut items = String::new();
+    let mut args = String::new();
+    for f in fields {
+        let wire = match &f.sce_type {
+            SceType::Bytes => format!(
+                "::sce_rust_runtime::event_payload::quote(\
+&::sce_rust_runtime::event_payload::bytes_as_payload_text(&{receiver}.{}))",
+                f.id
+            ),
+            SceType::String => format!(
+                "::sce_rust_runtime::event_payload::quote(&{receiver}.{})",
+                f.id
+            ),
+            _ => format!("{receiver}.{}", f.id),
+        };
+        if !items.is_empty() {
+            items.push_str(", ");
+        }
+        items.push_str(&format!("\\\"{}\\\":{{}}", f.id));
+        args.push_str(&format!(", {wire}"));
+    }
+    format!(
+        "::sce_rust_runtime::payload_wire(format_args!(\n{indent}    \
+\"{{{{{items}}}}}\"{args}\n{indent}))"
+    )
 }
 
 /// EventSchema MCU native lowering — C11 parity for

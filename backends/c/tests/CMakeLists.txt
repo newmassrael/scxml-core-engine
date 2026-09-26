@@ -1685,8 +1685,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml"
         HOST_INVOKER x-sce-host
-        # `perm`'s result record (`sce:result`), imported beside the fixture.
-        STAGE_ALSO host_invoker_perm_result.scxml
+        # `perm`'s request and result records (`sce:request`, `sce:result`),
+        # imported beside the fixture.
+        STAGE_ALSO host_invoker_perm_request.scxml host_invoker_perm_result.scxml
     )
     add_executable(sce_c_integration_host_invoker
         integration/test_host_invoker.c

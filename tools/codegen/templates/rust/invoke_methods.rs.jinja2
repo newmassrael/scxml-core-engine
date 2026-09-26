@@ -1,6 +1,6 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
-{% from 'param_macros.rs.jinja2' import collect_params_into %}
+{% from 'param_macros.rs.jinja2' import collect_params_into, collect_typed_param_into %}
 
 {% macro hybrid_child_tick(invoke_info, slot) %}
         if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
@@ -544,7 +544,26 @@
                     }
                 }
 {% endif %}
+{% if invoke_info.invoke_id in host_invoke_request_checks %}
+{% set request_checks = host_invoke_request_checks[invoke_info.invoke_id] %}
+                // SCE Accepted Subset 2.12: `sce:request` makes the params a
+                // record, so each value is held to its field here, where the
+                // invocation starts; one that does not fit starts nothing.
+                #[allow(unused_mut)]
+                let mut request_refused = false;
+{% for param in invoke_info.params %}
+{% if param.name in request_checks %}
+{{ collect_typed_param_into(param, request_checks[param.name], model, 'host_invoke_params', machine_name) }}
+{% else %}
+{{ collect_params_into([param], model, 'host_invoke_params', machine_name, '<invoke>', 'invoke') }}
+{% endif %}
+{% endfor %}
+                if request_refused {
+                    continue;
+                }
+{% else %}
 {{ collect_params_into(invoke_info.params, model, 'host_invoke_params', machine_name, '<invoke>', 'invoke') }}
+{% endif %}
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "{{ invoke_info.invoke_type | escape_rust }}".to_string(),
                     invoke_id: "{{ invoke_info.invoke_id }}".to_string(),

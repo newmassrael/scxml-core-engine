@@ -75,3 +75,49 @@
 {% endif %}
 {% endfor %}
 {% endmacro %}
+
+{# SCE Accepted Subset 2.12: one `<param>` of a typed host-run `<invoke>`,
+   held to the request-record field it supplies (`field_type`, a
+   `RequestFieldType` variant) and collected into `map`.
+
+   Unlike `collect_params_into`, a value that cannot be evaluated or does not
+   fit its field is not left out: the host was promised the whole record, so
+   W3C SCXML 6.4.1's rule for an argument that cannot be evaluated applies —
+   `error.execution`, and the invocation starts nothing. The caller declares
+   `request_refused` and stops after the first refusal. A string literal was
+   held to its field at build time (`validation/typed-invoke-request`), so it
+   passes as written. #}
+{% macro collect_typed_param_into(param, field_type, model, map, machine_name) %}
+{% if param.is_static_literal %}
+        {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push("{{ param.static_value | escape_rust }}".to_string());
+{% elif (param.expr or param.location) and model.needs_script_engine %}
+        if !request_refused {
+            self.ensure_script_engine();
+            let sid = self.session_id.as_ref().unwrap().clone();
+            let se = self.script_engine.clone();
+            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+{% if param.expr %}
+            let evaluated = se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}");
+{% else %}
+            let evaluated = se.evaluate_expression(&sid, "{{ param.location }}");
+{% endif %}
+            match evaluated.map_err(|e| e.to_string()).and_then(|val| {
+                ::sce_rust_runtime::request_field_wire(
+                    &val,
+                    "{{ param.name | escape_rust }}",
+                    ::sce_rust_runtime::RequestFieldType::{{ field_type }},
+                )
+                .map_err(|refusal| refusal.to_string())
+            }) {
+                Ok(s) => {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(s),
+                Err(why) => {
+                    ::sce_rust_runtime::sce_log_error!("invoke typed param '{{ param.name | escape_rust }}' refused: {}", why);
+{% if 'error.execution' in model.events %}
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, &format!("<invoke> <param name='{{ param.name | escape_rust }}'> cannot be its request field: {why}")));
+{% endif %}
+                    request_refused = true;
+                }
+            }
+        }
+{% endif %}
+{% endmacro %}

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 69bfb8c0141ae57bbe120b0335b073bf7a3b5c3a05449fbf6efca590e789ce63
+// source-hash: fcc36ca5ace7ff619d1d0a3cef283e3a12d9eaf17570ba300dc27c1de6383a2f
 
 
 // SPDX-License-Identifier: MIT
@@ -18,7 +18,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: statechart_host_invoker.scxml:100 :: _machine
+// SCE-MAP: statechart_host_invoker.scxml:106 :: _machine
 
 package statechart_host_invoker
 
@@ -166,6 +166,9 @@ var transitionTargetsOfStatechartHostInvoker = [6][][]StatechartHostInvokerTarge
 	StatechartHostInvokerStateTimed: {
 		2: {sce.StateTarget[StatechartHostInvokerState, sce.HistoryID](StatechartHostInvokerStateDone)},
 	},
+	StatechartHostInvokerStateTyped: {
+		3: {sce.StateTarget[StatechartHostInvokerState, sce.HistoryID](StatechartHostInvokerStateTyped)},
+	},
 }
 
 // ======================================================================
@@ -190,10 +193,11 @@ const (
 	StatechartHostInvokerEventLeave StatechartHostInvokerEvent = 12
 	StatechartHostInvokerEventLocate StatechartHostInvokerEvent = 13
 	StatechartHostInvokerEventPing StatechartHostInvokerEvent = 14
-	StatechartHostInvokerEventTime StatechartHostInvokerEvent = 15
-	StatechartHostInvokerEventType StatechartHostInvokerEvent = 16
+	StatechartHostInvokerEventRetype StatechartHostInvokerEvent = 15
+	StatechartHostInvokerEventTime StatechartHostInvokerEvent = 16
+	StatechartHostInvokerEventType StatechartHostInvokerEvent = 17
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StatechartHostInvokerEventNull StatechartHostInvokerEvent = 17
+	StatechartHostInvokerEventNull StatechartHostInvokerEvent = 18
 )
 
 func (e StatechartHostInvokerEvent) String() string {
@@ -228,6 +232,8 @@ func (e StatechartHostInvokerEvent) String() string {
 		return "locate"
 	case StatechartHostInvokerEventPing:
 		return "ping"
+	case StatechartHostInvokerEventRetype:
+		return "retype"
 	case StatechartHostInvokerEventTime:
 		return "time"
 	case StatechartHostInvokerEventType:
@@ -565,6 +571,30 @@ func (p *StatechartHostInvokerPolicy) Unreadable() (int64, bool) {
 	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "unreadable")
 }
 
+// Scope reports what the `scope` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `scope` was assigned a value of another type, or the engine refused.
+func (p *StatechartHostInvokerPolicy) Scope() (string, bool) {
+	return sce.ReadDatamodelString(p.ScriptEngine, p.SessionID, "scope")
+}
+
+// Level reports what the `level` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `level` was assigned a value of another type, or the engine refused.
+func (p *StatechartHostInvokerPolicy) Level() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "level")
+}
+
 
 
 
@@ -820,6 +850,26 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		} else {
 			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='unreadable'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "unreadable", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize scope from expr="'calendar'"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `"calendar"`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "scope", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='scope'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "scope", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize level from expr="2"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `2`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "level", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='level'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "level", nil)
 		}
 	}
 
@@ -1365,7 +1415,28 @@ if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 			// that cannot is reported and left out (W3C SCXML 5.7.1).
 			hostInvokeSrc := ""
 			hostInvokeContent := ""
+			p.ensureScriptEngine()
 			hostInvokeParams := map[string][]string{}
+			if paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `scope`); paramErr == nil {
+				// W3C SCXML C.2: the value crosses as text, rendered by the
+				// neutral helper — an engine literal would put this machine's
+				// language on the wire.
+				hostInvokeParams["scope"] = append(hostInvokeParams["scope"], sce.ToWireString(paramVal))
+			} else {
+				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
+				// reported.
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='scope'> expr failed to evaluate"))
+			}
+			if paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `level`); paramErr == nil {
+				// W3C SCXML C.2: the value crosses as text, rendered by the
+				// neutral helper — an engine literal would put this machine's
+				// language on the wire.
+				hostInvokeParams["level"] = append(hostInvokeParams["level"], sce.ToWireString(paramVal))
+			} else {
+				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
+				// reported.
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='level'> expr failed to evaluate"))
+			}
 if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "perm",
@@ -1517,6 +1588,8 @@ func (p *StatechartHostInvokerPolicy) GetEventFromName(name string) (StatechartH
 		return StatechartHostInvokerEventLocate, true
 	case "ping":
 		return StatechartHostInvokerEventPing, true
+	case "retype":
+		return StatechartHostInvokerEventRetype, true
 	case "time":
 		return StatechartHostInvokerEventTime, true
 	case "type":
@@ -1685,12 +1758,12 @@ func (p *StatechartHostInvokerPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line statechart_host_invoker.scxml:100
+//line statechart_host_invoker.scxml:106
 func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostInvokerState, engine *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case StatechartHostInvokerStateDone:
-		//line statechart_host_invoker.scxml:177
+		//line statechart_host_invoker.scxml:187
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1715,7 +1788,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateEvaluating:
-		//line statechart_host_invoker.scxml:161
+		//line statechart_host_invoker.scxml:171
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1745,7 +1818,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateInvoking:
-		//line statechart_host_invoker.scxml:133
+		//line statechart_host_invoker.scxml:143
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1778,7 +1851,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateLocating:
-		//line statechart_host_invoker.scxml:188
+		//line statechart_host_invoker.scxml:198
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -1848,7 +1921,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateTimed:
-		//line statechart_host_invoker.scxml:210
+		//line statechart_host_invoker.scxml:220
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1870,7 +1943,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateTyped:
-		//line statechart_host_invoker.scxml:244
+		//line statechart_host_invoker.scxml:254
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1893,7 +1966,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line statechart_host_invoker.scxml:100
+//line statechart_host_invoker.scxml:106
 func (p *StatechartHostInvokerPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1901,7 +1974,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteHistoryDefaultContent(history sce.H
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line statechart_host_invoker.scxml:100
+//line statechart_host_invoker.scxml:106
 func (p *StatechartHostInvokerPolicy) ExecuteExitActions(state StatechartHostInvokerState, engine *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent], configurationBeforeExit []StatechartHostInvokerState) {
 	p.ensureScriptEngine()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
@@ -1990,7 +2063,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteExitActions(state StatechartHostInv
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line statechart_host_invoker.scxml:100
+//line statechart_host_invoker.scxml:106
 func (p *StatechartHostInvokerPolicy) BindCurrentEvent(event StatechartHostInvokerEvent, engine *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent]) {
 	if event != StatechartHostInvokerEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
@@ -2005,7 +2078,7 @@ func (p *StatechartHostInvokerPolicy) BindCurrentEvent(event StatechartHostInvok
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line statechart_host_invoker.scxml:100
+//line statechart_host_invoker.scxml:106
 func (p *StatechartHostInvokerPolicy) FirstEnabledTransition(state StatechartHostInvokerState, event StatechartHostInvokerEvent, engine *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent]) (sce.EnabledTransition[StatechartHostInvokerState, sce.HistoryID], bool) {
 	switch state {
 	case StatechartHostInvokerStateDone:
@@ -2257,20 +2330,31 @@ func (p *StatechartHostInvokerPolicy) FirstEnabledTransition(state StatechartHos
 				}, true
 			}
 		}
+		if event == StatechartHostInvokerEventRetype {
+			{
+				return sce.EnabledTransition[StatechartHostInvokerState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStatechartHostInvoker[state][3],
+					TransitionIndex: 3,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
 	}
 	return sce.EnabledTransition[StatechartHostInvokerState, sce.HistoryID]{}, false
 }
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line statechart_host_invoker.scxml:100
+//line statechart_host_invoker.scxml:106
 func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source StatechartHostInvokerState, transitionIndex int, engine *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent]) {
 	p.ensureScriptEngine()
 	switch source {
 	case StatechartHostInvokerStateDone:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:182
+			//line statechart_host_invoker.scxml:192
 
 	// W3C SCXML 5.3: <assign location="matched" expr="matched + 1">
 	if err := p.assignVariable(`matched`, `_scxml_add(matched, 1)`); err != nil {
@@ -2281,7 +2365,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateEvaluating:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:172
+			//line statechart_host_invoker.scxml:182
 
 	// W3C SCXML 5.3: <assign location="dropped" expr="dropped + 1">
 	if err := p.assignVariable(`dropped`, `_scxml_add(dropped, 1)`); err != nil {
@@ -2292,7 +2376,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateInvoking:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:143
+			//line statechart_host_invoker.scxml:153
 
 	// W3C SCXML 5.3: <assign location="started" expr="started + 1">
 	if err := p.assignVariable(`started`, `_scxml_add(started, 1)`); err != nil {
@@ -2300,7 +2384,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 1:
-			//line statechart_host_invoker.scxml:146
+			//line statechart_host_invoker.scxml:156
 
 	// W3C SCXML 5.3: <assign location="started2" expr="started2 + 1">
 	if err := p.assignVariable(`started2`, `_scxml_add(started2, 1)`); err != nil {
@@ -2308,7 +2392,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 2:
-			//line statechart_host_invoker.scxml:149
+			//line statechart_host_invoker.scxml:159
 
 	// W3C SCXML 5.3: <assign location="refused" expr="refused + 1">
 	if err := p.assignVariable(`refused`, `_scxml_add(refused, 1)`); err != nil {
@@ -2319,7 +2403,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateLocating:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:196
+			//line statechart_host_invoker.scxml:206
 
 	// W3C SCXML 5.3: <assign location="slotted" expr="slotted + 1">
 	if err := p.assignVariable(`slotted`, `_scxml_add(slotted, 1)`); err != nil {
@@ -2327,7 +2411,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 1:
-			//line statechart_host_invoker.scxml:199
+			//line statechart_host_invoker.scxml:209
 
 	// W3C SCXML 5.3: <assign location="pinged" expr="pinged + 1">
 	if err := p.assignVariable(`pinged`, `_scxml_add(pinged, 1)`); err != nil {
@@ -2335,7 +2419,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 2:
-			//line statechart_host_invoker.scxml:202
+			//line statechart_host_invoker.scxml:212
 
 	// W3C SCXML 5.3: <assign location="leaked" expr="leaked + 1">
 	if err := p.assignVariable(`leaked`, `_scxml_add(leaked, 1)`); err != nil {
@@ -2343,7 +2427,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 3:
-			//line statechart_host_invoker.scxml:205
+			//line statechart_host_invoker.scxml:215
 
 	// W3C SCXML 5.3: <assign location="lost" expr="lost + 1">
 	if err := p.assignVariable(`lost`, `_scxml_add(lost, 1)`); err != nil {
@@ -2354,7 +2438,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateTimed:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:217
+			//line statechart_host_invoker.scxml:227
 
 	// W3C SCXML 5.3: <assign location="misdated" expr="misdated + 1">
 	if err := p.assignVariable(`misdated`, `_scxml_add(misdated, 1)`); err != nil {
@@ -2362,7 +2446,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 1:
-			//line statechart_host_invoker.scxml:223
+			//line statechart_host_invoker.scxml:233
 
 	{
 		cancelSendIDVal, cancelErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `""`)
@@ -2372,7 +2456,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 3:
-			//line statechart_host_invoker.scxml:230
+			//line statechart_host_invoker.scxml:240
 
 	// W3C SCXML 5.3: <assign location="expired" expr="expired + 1">
 	if err := p.assignVariable(`expired`, `_scxml_add(expired, 1)`); err != nil {
@@ -2380,7 +2464,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 4:
-			//line statechart_host_invoker.scxml:234
+			//line statechart_host_invoker.scxml:244
 
 	// W3C SCXML 5.3: <assign location="finished" expr="finished + 1">
 	if err := p.assignVariable(`finished`, `_scxml_add(finished, 1)`); err != nil {
@@ -2391,7 +2475,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateTyped:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:246
+			//line statechart_host_invoker.scxml:259
 
 	// W3C SCXML 5.3: <assign location="granted" expr="granted + 1">
 	if err := p.assignVariable(`granted`, `_scxml_add(granted, 1)`); err != nil {
@@ -2399,7 +2483,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 1:
-			//line statechart_host_invoker.scxml:249
+			//line statechart_host_invoker.scxml:262
 
 	// W3C SCXML 5.3: <assign location="denied" expr="denied + 1">
 	if err := p.assignVariable(`denied`, `_scxml_add(denied, 1)`); err != nil {
@@ -2407,11 +2491,19 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	}
 
 		case 2:
-			//line statechart_host_invoker.scxml:252
+			//line statechart_host_invoker.scxml:265
 
 	// W3C SCXML 5.3: <assign location="unreadable" expr="unreadable + 1">
 	if err := p.assignVariable(`unreadable`, `_scxml_add(unreadable, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'unreadable' failed"))
+	}
+
+		case 3:
+			//line statechart_host_invoker.scxml:268
+
+	// W3C SCXML 5.3: <assign location="level" expr="'high'">
+	if err := p.assignVariable(`level`, `"high"`); err != nil {
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'level' failed"))
 	}
 
 		}

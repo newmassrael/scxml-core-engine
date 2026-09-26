@@ -21,7 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
-use crate::forge::model::EventSchemaModel;
+use crate::forge::model::{EventSchemaModel, SceType};
 use crate::host_processor_analyzer::HOST_INVOKE_DEADLINE_PARAM;
 use crate::model::{Invoke, SCXMLModel, UnsupportedInvokeInfo};
 
@@ -45,20 +45,42 @@ pub fn validate(
             ("request", &info.request_schema, &info.request_schema_at),
             ("result", &info.result_schema, &info.result_schema_at),
         ] {
-            if !alias.is_empty() && !imported_records.contains_key(alias) {
-                return Err(located(
+            if alias.is_empty() {
+                continue;
+            }
+            let refuse = |detail: String| {
+                located(
                     at,
                     diag_label,
                     ValidationError::TypedInvokeSchema {
                         invoke_id: info.base.invoke_id.clone(),
                         attr: attr.to_string(),
                         alias: alias.clone(),
-                        detail: format!(
-                            "names no event schema this document imports — declare \
-                             <sce:import kind=\"event-schema\" as=\"{alias}\" src=\"…\"/>"
-                        ),
+                        detail,
                     },
-                ));
+                )
+            };
+            let Some(schema) = imported_records.get(alias) else {
+                return Err(refuse(format!(
+                    "names no event schema this document imports — declare \
+                     <sce:import kind=\"event-schema\" as=\"{alias}\" src=\"…\"/>"
+                )));
+            };
+            // The record crosses to and from the host as text in every
+            // backend, and an enumeration has no spelling there that all six
+            // share: its generated type is per-language, and the payload
+            // lift that reads a completion refuses it for the same reason.
+            if let Some(field) = schema
+                .fields
+                .iter()
+                .find(|f| matches!(f.sce_type, SceType::Enum(_)))
+            {
+                return Err(refuse(format!(
+                    "field '{}' is enum-typed ({}), and a host-run record carries \
+                     scalar fields only — declare it as its underlying integer type",
+                    field.id,
+                    field.sce_type.as_attr()
+                )));
             }
         }
         if let Some(schema) = imported_records.get(&info.request_schema) {
@@ -176,6 +198,24 @@ fn check_request(
                 &param.name,
             ));
         }
+        // A string literal is the one value known here, so it is held to
+        // its field now rather than where the invocation starts — the start
+        // site checks evaluated values and passes a literal through as
+        // written, which is only sound for a field that holds text.
+        if param.is_static_literal {
+            let field = schema
+                .fields
+                .iter()
+                .find(|f| f.id == param.name)
+                .expect("the field set was built from these fields");
+            if let Some(detail) = literal_misfit(&param.static_value, field) {
+                return Err(refuse(
+                    &param.source_location,
+                    format!("<param name=\"{}\"> {detail}", param.name),
+                    &param.static_value,
+                ));
+            }
+        }
     }
     let missing: Vec<&str> = fields.difference(&supplied).copied().collect();
     if !missing.is_empty() {
@@ -190,6 +230,37 @@ fn check_request(
         ));
     }
     Ok(())
+}
+
+/// Why the text literal `value` cannot be `field`'s value, if it cannot —
+/// the judgement the runtimes' start sites make on an evaluated text, made
+/// here on the one text known before run time.
+fn literal_misfit(value: &str, field: &crate::forge::model::ForgeField) -> Option<String> {
+    match &field.sce_type {
+        SceType::String => None,
+        SceType::Bytes => {
+            let cap = crate::forge::limits::resolve_bytes_max(field.max_size) as usize;
+            if value.chars().any(|c| (c as u32) > 0xFF) {
+                Some(format!(
+                    "carries a character above U+00FF, which no single byte of '{}' spells",
+                    field.id
+                ))
+            } else if value.chars().count() > cap {
+                Some(format!(
+                    "is {} bytes, past the {cap} '{}' declares",
+                    value.chars().count(),
+                    field.id
+                ))
+            } else {
+                None
+            }
+        }
+        other => Some(format!(
+            "is a text literal, and '{}' is {}",
+            field.id,
+            other.as_attr()
+        )),
+    }
 }
 
 fn located(

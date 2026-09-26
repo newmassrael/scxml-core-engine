@@ -28,7 +28,9 @@ use std::sync::{Arc, Mutex};
 
 use sce_rust_runtime::{Engine, HostInvokeEvent, HostInvokeResponse, IScriptEngine};
 use sce_rust_tests::integration::host_processor::{
-    StatechartHostInvokerEvent as Event, StatechartHostInvokerPolicy as Policy,
+    StatechartHostInvokerEvent as Event, StatechartHostInvokerHostInvokers,
+    StatechartHostInvokerPermRequest as PermRequest, StatechartHostInvokerPermResult as PermResult,
+    StatechartHostInvokerPolicy as Policy, StatechartHostInvokerXSceHostInvoker as XSceHostInvoker,
 };
 
 /// The type the fixture was compiled for; `scripts/regen_host_processor.sh`
@@ -838,4 +840,176 @@ fn a_typed_completion_is_read_as_its_record() {
         "denied"
     );
     assert_eq!(typed_completion("yes"), (0, 0, 1), "not the record");
+}
+
+/// What the generated typed interface was called with: each `start_perm`'s
+/// request and token, and each `cancel_perm`'s token.
+#[derive(Default)]
+struct PermCalls {
+    starts: Vec<(PermRequest, u64)>,
+    cancels: Vec<u64>,
+}
+
+/// A host implementing the generated interface; its work outlives the call.
+struct PermHost(Arc<Mutex<PermCalls>>);
+
+impl XSceHostInvoker for PermHost {
+    fn start_perm(&mut self, request: PermRequest, token: u64) -> Option<PermResult> {
+        self.0
+            .lock()
+            .expect("perm calls")
+            .starts
+            .push((request, token));
+        None
+    }
+
+    fn cancel_perm(&mut self, token: u64) {
+        self.0.lock().expect("perm calls").cancels.push(token);
+    }
+}
+
+/// A machine driven into `typed` with `PermHost` registered through the
+/// generated adapter, and the untyped invokes of the same type served by
+/// [`running_invoker`].
+fn typed_host() -> (
+    Engine<Policy>,
+    Arc<dyn IScriptEngine>,
+    Arc<Mutex<PermCalls>>,
+    Arc<Mutex<Vec<String>>>,
+) {
+    let calls: Arc<Mutex<PermCalls>> = Arc::default();
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let starts: Starts = Arc::default();
+    let (mut engine, script_engine) = started();
+    engine
+        .register_x_sce_host_invoker(PermHost(Arc::clone(&calls)), running_invoker(&log, &starts));
+    engine.initialize();
+    engine.step();
+    engine.process_event(Event::Type);
+    (engine, script_engine, calls, log)
+}
+
+/// SCE Accepted Subset §2.12: through the generated interface a host is
+/// handed `perm`'s request as its `PermRequest` record — the datamodel's
+/// values at their declared types — and completes it with a `PermResult`,
+/// which the document reads as that record. An invoke of the same type the
+/// document does not type still reaches the host, through the fallback.
+#[test]
+fn a_typed_request_reaches_its_invoker_as_its_record() {
+    let (mut engine, script_engine, calls, log) = typed_host();
+    let (request, token) = {
+        let calls = calls.lock().expect("perm calls");
+        assert_eq!(calls.starts.len(), 1, "perm started once");
+        calls.starts[0].clone()
+    };
+    assert_eq!(
+        request,
+        PermRequest {
+            scope: "calendar".into(),
+            level: 2,
+        }
+    );
+    assert!(
+        log.lock()
+            .expect("invoker log")
+            .iter()
+            .any(|line| line == "START id=probe"),
+        "the untyped `probe` reached the fallback",
+    );
+    assert!(engine.complete_perm(token, PermResult { granted: true }));
+    engine.step();
+    assert_eq!(counter(&engine, &script_engine, "granted"), 1);
+    assert_eq!(counter(&engine, &script_engine, "unreadable"), 0);
+    // A completion is accepted once: the token now names nothing running.
+    assert!(!engine.complete_perm(token, PermResult { granted: true }));
+}
+
+/// SCE Accepted Subset §2.12, W3C SCXML 6.4.1: a request value its record's
+/// field cannot hold is an argument that cannot be evaluated. `retype` sets
+/// `level` to a text and re-enters `typed`: the running start is cancelled,
+/// and the new one raises error.execution and is never handed to the host.
+#[test]
+fn a_request_that_does_not_fit_its_record_starts_nothing() {
+    let (mut engine, script_engine, calls, _log) = typed_host();
+    let first = calls.lock().expect("perm calls").starts[0].1;
+    engine.process_event(Event::Retype);
+    let calls = calls.lock().expect("perm calls");
+    assert_eq!(
+        calls.cancels,
+        vec![first],
+        "the running start was cancelled"
+    );
+    assert_eq!(calls.starts.len(), 1, "the misfit request never started");
+    assert_eq!(counter(&engine, &script_engine, "unreadable"), 1);
+}
+
+/// The start site's check and the adapter's reading are one rule: every
+/// value the check accepts is spelled as text its field's type parses back
+/// to the same value, and a value the field cannot hold is refused rather
+/// than narrowed.
+#[test]
+fn a_request_field_is_checked_and_read_back_by_one_rule() {
+    use sce_rust_runtime::{
+        request_field, request_field_wire, HostInvokeRequest, RequestFieldType, ScriptValue,
+    };
+    let read = |value: ScriptValue, ty: RequestFieldType| request_field_wire(&value, "f", ty);
+    let request_of = |text: String| HostInvokeRequest {
+        invoke_id: "perm".to_string(),
+        params: [("f".to_string(), vec![text])].into_iter().collect(),
+        ..HostInvokeRequest::default()
+    };
+
+    let text = read(ScriptValue::Int(255), RequestFieldType::Uint8).expect("fits");
+    assert_eq!(request_field::<u8>(&request_of(text), "f"), 255);
+    let text = read(ScriptValue::Double(-3.0), RequestFieldType::Int16).expect("whole");
+    assert_eq!(request_field::<i16>(&request_of(text), "f"), -3);
+    let text = read(ScriptValue::Double(0.1), RequestFieldType::Float64).expect("finite");
+    assert_eq!(request_field::<f64>(&request_of(text), "f"), 0.1);
+    let text = read(ScriptValue::Bool(false), RequestFieldType::Bool).expect("truth");
+    assert!(!request_field::<bool>(&request_of(text), "f"));
+    let text = read(ScriptValue::String("a b".into()), RequestFieldType::String).expect("text");
+    assert_eq!(request_field::<String>(&request_of(text), "f"), "a b");
+
+    for (value, ty, why) in [
+        (
+            ScriptValue::Int(256),
+            RequestFieldType::Uint8,
+            "past the width",
+        ),
+        (ScriptValue::Int(-1), RequestFieldType::Uint32, "below zero"),
+        (
+            ScriptValue::Double(1.5),
+            RequestFieldType::Int32,
+            "not whole",
+        ),
+        (
+            ScriptValue::Double(f64::NAN),
+            RequestFieldType::Float64,
+            "not finite",
+        ),
+        (
+            ScriptValue::Double(1e39),
+            RequestFieldType::Float32,
+            "past f32",
+        ),
+        (
+            ScriptValue::String("2".into()),
+            RequestFieldType::Uint8,
+            "a text",
+        ),
+        (ScriptValue::Int(1), RequestFieldType::Bool, "a number"),
+        (ScriptValue::Int(1), RequestFieldType::String, "a number"),
+        (
+            ScriptValue::String("abc".into()),
+            RequestFieldType::Bytes(2),
+            "past cap",
+        ),
+        (
+            ScriptValue::String("\u{100}".into()),
+            RequestFieldType::Bytes(8),
+            "no byte",
+        ),
+    ] {
+        assert!(read(value, ty).is_err(), "{why}");
+    }
 }

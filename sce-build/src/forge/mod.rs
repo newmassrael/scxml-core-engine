@@ -27,6 +27,7 @@ pub mod expression_site;
 pub mod extern_emit;
 pub mod extern_validator;
 pub mod generator;
+pub mod host_invoker_interface;
 pub mod import_source;
 pub mod import_use;
 pub mod int_ranges;

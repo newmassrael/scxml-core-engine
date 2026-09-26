@@ -85,13 +85,19 @@
                6.4.1): error.execution, and the host is never asked to start
                it. So 1, whichever way `slow` ends.
 
-  `typed` holds a typed completion (`sce:result`, SCE Accepted Subset
-  §2.12): `perm` completes with a `PermResult` record, and the guards read
-  its `granted` field natively.
+  `typed` holds a typed invocation (SCE Accepted Subset §2.12): `perm` asks
+  with a `PermRequest` record (`sce:request`) — `scope` and `level`, from
+  the datamodel — and completes with a `PermResult` record (`sce:result`),
+  whose `granted` field the guards read natively.
 
     granted / denied — the host completed `perm` with `granted` true / false.
     unreadable       — the host completed it with data that is not the
                        record: error.execution, and neither guard fires.
+                       Also 1 after `retype`, which sets `level` to a text
+                       and re-enters: a request that does not fit its record
+                       is an argument that cannot be evaluated (W3C SCXML
+                       6.4.1), so error.execution and the host is never
+                       asked to start it.
 
   The generated machine is compiled with the host-invoker declaration
   `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
@@ -100,7 +106,9 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0"
        datamodel="ecmascript" name="statechart_host_invoker" initial="invoking">
 
-  <!-- The record `perm` completes with (`sce:result`). -->
+  <!-- The records `perm` asks with (`sce:request`) and completes with
+       (`sce:result`). -->
+  <sce:import kind="event-schema" src="host_invoker_perm_request.scxml" as="PermRequest"/>
   <sce:import kind="event-schema" src="host_invoker_perm_result.scxml" as="PermResult"/>
 
   <datamodel>
@@ -128,6 +136,8 @@
     <data id="granted" expr="0"/>
     <data id="denied" expr="0"/>
     <data id="unreadable" expr="0"/>
+    <data id="scope" expr="'calendar'"/>
+    <data id="level" expr="2"/>
   </datamodel>
 
   <state id="invoking">
@@ -242,7 +252,10 @@
        record is refused like any typed payload the data does not fit:
        error.execution, and neither guard fires. -->
   <state id="typed">
-    <invoke type="x-sce-host" id="perm" sce:result="PermResult"/>
+    <invoke type="x-sce-host" id="perm" sce:request="PermRequest" sce:result="PermResult">
+      <param name="scope" expr="scope"/>
+      <param name="level" expr="level"/>
+    </invoke>
     <transition event="done.invoke.perm" cond="_event.data.granted === true">
       <assign location="granted" expr="granted + 1"/>
     </transition>
@@ -251,6 +264,9 @@
     </transition>
     <transition event="error.execution">
       <assign location="unreadable" expr="unreadable + 1"/>
+    </transition>
+    <transition event="retype" target="typed">
+      <assign location="level" expr="'high'"/>
     </transition>
   </state>
 </scxml>

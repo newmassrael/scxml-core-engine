@@ -2266,15 +2266,41 @@ the engine accepts a host-run completion only through its completion call,
 which checks that the start is still running. The generic `done.invoke`
 stays untyped — several invokes share it.
 
+A typed request is held to its record where the invocation starts: each
+`<param>`'s value, as the data model evaluated it, must be one its field's
+type holds — a whole number within the declared width for an integer field
+(refused rather than narrowed), a finite number for a fractional one, a
+truth value for `bool`, a text for `string`, and for `bytes` a text of
+characters up to U+00FF no longer than `sce:max-size`. A value that cannot
+be evaluated or does not fit is an argument that cannot be evaluated
+(§scxml-6.4.1): `error.execution`, and the host is never asked to start
+the invocation — unlike an untyped `<param>`, which is reported and left
+out, because the host was promised the whole record. The request still
+crosses as text, each value spelled as its field's type spells it, so the
+generated adapter below reads it back without a way to fail.
+
+For each declared `type` the document types an invoke of, the backends
+generate the host's side: the request and result records, an invoker
+interface with a `start_<id>` taking the request record and a
+`cancel_<id>` per typed invoke, an adapter that registers that interface
+as the type's handler — dispatching by invoke id, and handing an invoke of
+the same type the document does not type to a fallback handler the host
+supplies with it — and a `complete_<id>` taking the result record. The
+engine's own contract is unchanged; the interface is generated above it.
+
 Refused at parse, on the row that shows the problem:
 
 - `validation/typed-invoke-schema` — the attribute sits on an invoke SCE
   runs itself (`scxml`, `sce:mesh-rpc`) or one whose type is `typeexpr`;
   the invoke has no `id` (the generated interface is named after it); the
-  attribute is empty; or the alias names no imported event schema.
+  attribute is empty; the alias names no imported event schema; or the
+  schema has an enum-typed field, which has no text spelling every backend
+  shares — declare it as its underlying integer type.
 - `validation/typed-invoke-request` — a `<param>` the schema lacks, a field
-  no `<param>` supplies, a name given twice, or a `namelist` / `<content>`
-  beside the typed request.
+  no `<param>` supplies, a name given twice, a `namelist` / `<content>`
+  beside the typed request, or a string literal its field cannot hold (a
+  literal is the one value known before run time, so it is held to its
+  field here rather than where the invocation starts).
 
 ### §2.13 Hybrid `<invoke>` — `srcexpr` / `contentexpr` (W3C SCXML 6.4)
 

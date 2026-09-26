@@ -187,3 +187,84 @@ fn a_namelist_beside_a_typed_request_is_refused() {
     let (code, _, _) = parse("namelist", invoke).expect_err("refused");
     assert_eq!(code, "validation/typed-invoke-request");
 }
+
+/// A string literal is the one request value known before run time, so it
+/// is held to its field here. The start site passes a literal through as
+/// written, which is sound only for a field that holds text — a quoted `'2'`
+/// for an `int32` would otherwise reach the host as a number it never was.
+#[test]
+fn a_text_literal_for_a_field_that_is_not_text_is_refused_on_its_row() {
+    let invoke = r#"    <invoke type="x-app-host" id="perm" sce:request="PermRequest">
+      <param name="scope" expr="'calendar'"/>
+      <param name="retries" expr="'2'"/>
+    </invoke>"#;
+    let (code, actual, line) = parse("literal_misfit", invoke).expect_err("refused");
+    assert_eq!(code, "validation/typed-invoke-request");
+    assert_eq!(actual, "2");
+    assert_eq!(
+        line,
+        row_of(invoke, "\"retries\""),
+        "reported on the param's row"
+    );
+}
+
+/// An enumeration has no text spelling all six backends share, so a
+/// host-run record carries scalar fields only.
+#[test]
+fn a_record_with_an_enum_typed_field_is_refused() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join("a_typed_host_invoke_is_held_to_its_schemas")
+        .join("enum_field");
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    std::fs::write(
+        dir.join("outcome.scxml"),
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="enum" name="outcome" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="granted" value="0"/>
+      <sce:variant name="denied" value="1"/>
+    </data>
+  </datamodel>
+</scxml>"#,
+    )
+    .expect("write enum");
+    std::fs::write(
+        dir.join("perm_outcome.scxml"),
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       name="perm_outcome" sce:kind="event-schema" sce:event-name="perm.outcome">
+  <sce:import src="outcome.scxml" kind="enum" as="Outcome"/>
+  <datamodel>
+    <data id="outcome" sce:type="enum:Outcome" sce:direction="in"/>
+  </datamodel>
+</scxml>"#,
+    )
+    .expect("write schema");
+    let path = dir.join("asking.scxml");
+    std::fs::write(
+        &path,
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       name="asking" version="1.0" initial="asking" datamodel="ecmascript">
+  <sce:import kind="event-schema" src="perm_outcome.scxml" as="PermOutcome"/>
+  <state id="asking">
+    <invoke type="x-app-host" id="perm" sce:result="PermOutcome"/>
+  </state>
+</scxml>"#,
+    )
+    .expect("write statechart");
+    let refusal = SCXMLParser::new()
+        .parse_file(path.to_str().expect("utf-8 path"))
+        .map(|_| ())
+        .expect_err("refused");
+    let diagnostic = &refusal.error.to_diagnostics()[0];
+    assert_eq!(
+        serde_json::to_value(diagnostic.code).expect("code serializes"),
+        "validation/typed-invoke-schema"
+    );
+    assert_eq!(diagnostic.actual.as_deref(), Some("PermOutcome"));
+    assert_eq!(
+        refusal.location.line,
+        Some(5),
+        "reported on the attribute's row"
+    );
+}

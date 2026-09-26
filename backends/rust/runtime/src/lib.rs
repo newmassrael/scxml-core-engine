@@ -466,8 +466,9 @@ pub use helpers::event_queue::{EventQueueLike, EventQueueManager};
 pub use helpers::microstep::{EnabledTransition, EntryTarget, NoHistory};
 #[cfg(not(feature = "no_std"))]
 pub use host_processor::{
-    parse_host_invoke_deadline_ms, HostInvokeCancel, HostInvokeEvent, HostInvokeRequest,
-    HostInvokeResponse, HostSendRequest, HostSendResponse, HOST_INVOKE_DEADLINE_PARAM,
+    parse_host_invoke_deadline_ms, request_bytes_field, request_field, request_field_wire,
+    HostInvokeCancel, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse, HostSendRequest,
+    HostSendResponse, RequestFieldType, HOST_INVOKE_DEADLINE_PARAM,
 };
 #[cfg(not(feature = "no_std"))]
 pub use http::{HttpSendRequest, HttpSendResponse};

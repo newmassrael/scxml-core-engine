@@ -2412,6 +2412,19 @@ fn render_rust(
         options.no_std,
     );
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    // SCE Accepted Subset §2.12: a typed host-run invoke's records, its
+    // host's interface and the adapter onto the generic invoker registry,
+    // plus what the start site holds each request field to. Both empty for
+    // a document with no typed invoke.
+    let host_invoker_interface = crate::forge::host_invoker_interface::render_rust(
+        model,
+        &machine_name,
+        &policy_generics_decl,
+        &policy_generics_use,
+        options.no_std,
+    );
+    let host_invoke_request_checks =
+        crate::forge::host_invoker_interface::rust_request_checks(model);
 
     let tmpl = env
         .get_template("state_machine.rs.jinja2")
@@ -2466,6 +2479,8 @@ fn render_rust(
         event_payload_type => &payload.type_name,
         event_payload_entries => &payload.entries,
         event_payload_lift => &payload.lift,
+        host_invoker_interface => &host_invoker_interface,
+        host_invoke_request_checks => &host_invoke_request_checks,
         has_native_actions => native.any,
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,

@@ -405,6 +405,207 @@ impl HostProcessorRegistry {
     }
 }
 
+/// The type one field of a typed host-run request declares (`sce:request`,
+/// SCE Accepted Subset §2.12), as the generated start site names it.
+///
+/// A request crosses to the host as text, like every `<param>`. What makes it
+/// typed is that each value is held to its field's type where the invocation
+/// starts — see [`request_field_wire`] — so the text a host reads back is
+/// always one its field's type parses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestFieldType {
+    /// `uint8`.
+    Uint8,
+    /// `uint16`.
+    Uint16,
+    /// `uint32`.
+    Uint32,
+    /// `uint64`.
+    Uint64,
+    /// `int8`.
+    Int8,
+    /// `int16`.
+    Int16,
+    /// `int32`.
+    Int32,
+    /// `int64`.
+    Int64,
+    /// `float32`.
+    Float32,
+    /// `float64`.
+    Float64,
+    /// `bool`.
+    Bool,
+    /// `string`.
+    String,
+    /// `bytes`, of at most this many bytes (`sce:max-size`).
+    Bytes(usize),
+}
+
+/// Hold one evaluated `<param>` to the field it supplies, and spell it for
+/// the request.
+///
+/// §scxml-6.4.1: an argument that cannot be evaluated starts nothing, and a
+/// value the record's field cannot hold is such an argument — the host was
+/// promised that record. The refusal is the sentence the `error.execution`
+/// event carries, in the words [`crate::event_payload::PayloadFields`] uses
+/// for a completion that does not fit its record, because the two are the
+/// same judgement made on the two halves of one invocation.
+///
+/// The text returned is the value's own `Display` at the field's type, which
+/// is what [`request_field`] parses back — so the adapter reading a checked
+/// request cannot fail. A byte string rides as its byte-exact Latin-1 text,
+/// the spelling a completion's byte field uses.
+pub fn request_field_wire(
+    value: &crate::ScriptValue,
+    name: &str,
+    ty: RequestFieldType,
+) -> Result<String, crate::event_payload::PayloadRefusal> {
+    use crate::event_payload::PayloadRefusal;
+    use crate::ScriptValue;
+    fn whole<T: TryFrom<i128> + ToString>(
+        value: &ScriptValue,
+        name: &str,
+    ) -> Result<String, PayloadRefusal> {
+        let n: i128 = match value {
+            ScriptValue::Int(i) => i128::from(*i),
+            // 2^127: every finite double below it converts exactly.
+            ScriptValue::Double(f) if f.is_finite() && f.fract() == 0.0 && f.abs() < 1.7e38 => {
+                *f as i128
+            }
+            ScriptValue::Double(_) => {
+                return Err(PayloadRefusal::new(format!(
+                    "'{name}' is not a whole number"
+                )))
+            }
+            _ => return Err(PayloadRefusal::new(format!("'{name}' is not a number"))),
+        };
+        T::try_from(n).map(|v| v.to_string()).map_err(|_| {
+            PayloadRefusal::new(format!(
+                "'{name}' does not fit the width its schema declares ({n})"
+            ))
+        })
+    }
+    fn fractional(value: &ScriptValue, name: &str) -> Result<f64, PayloadRefusal> {
+        let f = match value {
+            ScriptValue::Int(i) => *i as f64,
+            ScriptValue::Double(f) => *f,
+            _ => return Err(PayloadRefusal::new(format!("'{name}' is not a number"))),
+        };
+        // JSON, which a completion's record crosses as, has no spelling for
+        // these, so a request may not carry one either.
+        if !f.is_finite() {
+            return Err(PayloadRefusal::new(format!(
+                "'{name}' is not a finite number"
+            )));
+        }
+        Ok(f)
+    }
+    match ty {
+        RequestFieldType::Uint8 => whole::<u8>(value, name),
+        RequestFieldType::Uint16 => whole::<u16>(value, name),
+        RequestFieldType::Uint32 => whole::<u32>(value, name),
+        RequestFieldType::Uint64 => whole::<u64>(value, name),
+        RequestFieldType::Int8 => whole::<i8>(value, name),
+        RequestFieldType::Int16 => whole::<i16>(value, name),
+        RequestFieldType::Int32 => whole::<i32>(value, name),
+        RequestFieldType::Int64 => whole::<i64>(value, name),
+        RequestFieldType::Float32 => {
+            let narrowed = fractional(value, name)? as f32;
+            if !narrowed.is_finite() {
+                return Err(PayloadRefusal::new(format!(
+                    "'{name}' does not fit the width its schema declares"
+                )));
+            }
+            Ok(narrowed.to_string())
+        }
+        RequestFieldType::Float64 => fractional(value, name).map(|f| f.to_string()),
+        RequestFieldType::Bool => match value {
+            ScriptValue::Bool(b) => Ok(b.to_string()),
+            _ => Err(PayloadRefusal::new(format!(
+                "'{name}' is not a truth value"
+            ))),
+        },
+        RequestFieldType::String => match value {
+            ScriptValue::String(s) => Ok(s.clone()),
+            _ => Err(PayloadRefusal::new(format!("'{name}' is not a text"))),
+        },
+        RequestFieldType::Bytes(cap) => {
+            let ScriptValue::String(s) = value else {
+                return Err(PayloadRefusal::new(format!(
+                    "'{name}' is not a byte string"
+                )));
+            };
+            if s.chars().any(|c| (c as u32) > 0xFF) {
+                return Err(PayloadRefusal::new(format!(
+                    "'{name}' carries a character above U+00FF, which no single byte spells"
+                )));
+            }
+            let len = s.chars().count();
+            if len > cap {
+                return Err(PayloadRefusal::new(format!(
+                    "'{name}' is {len} bytes, past the {cap} its schema declares"
+                )));
+            }
+            Ok(s.clone())
+        }
+    }
+}
+
+/// One field of a typed request, read back at its declared type by the
+/// generated adapter.
+///
+/// # Panics
+///
+/// When the request does not carry the field as text its type parses. A
+/// request that reached a typed adapter was checked field by field where it
+/// started ([`request_field_wire`]), so this is a broken promise between two
+/// halves of generated code, not a value a host or document can supply —
+/// and one that would otherwise hand the host a record the document never
+/// sent.
+pub fn request_field<T: core::str::FromStr>(request: &HostInvokeRequest, name: &str) -> T {
+    let text = request_field_text(request, name);
+    text.parse().unwrap_or_else(|_| {
+        panic!(
+            "typed request '{}' carries '{name}' as '{text}', which its type does not \
+             parse, though the start site checked it",
+            request.invoke_id
+        )
+    })
+}
+
+/// A byte-string field of a typed request, read back from the Latin-1 text
+/// [`request_field_wire`] spelled it as.
+///
+/// # Panics
+///
+/// As [`request_field`], for the same reason.
+pub fn request_bytes_field<const CAP: usize>(
+    request: &HostInvokeRequest,
+    name: &str,
+) -> crate::SceBytes<CAP> {
+    let text = request_field_text(request, name);
+    let bytes: Vec<u8> = text.chars().map(|c| c as u32 as u8).collect();
+    crate::SceBytes::<CAP>::from_slice(&bytes).unwrap_or_else(|_| {
+        panic!(
+            "typed request '{}' carries '{name}' past its {CAP} bytes, though the start \
+             site checked it",
+            request.invoke_id
+        )
+    })
+}
+
+fn request_field_text<'a>(request: &'a HostInvokeRequest, name: &str) -> &'a str {
+    match request.params.get(name).map(Vec::as_slice) {
+        Some([text]) => text,
+        _ => panic!(
+            "typed request '{}' does not carry '{name}' exactly once, though its record \
+             declares it",
+            request.invoke_id
+        ),
+    }
+}
+
 /// Whether an event named `event_name` carrying `_event.invokeid` =
 /// `invoke_id` is the completion of a host-run invocation: a
 /// `done.invoke.<id>` whose `<id>` is one of `host_invoke_ids`, or the generic
