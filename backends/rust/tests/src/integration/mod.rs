@@ -30,6 +30,7 @@
 //! the stem would register coverage this repository does not have; it moves
 //! under `integration_resources/` when those engines are repaired.
 
+pub mod a_bad_donedata_pair_is_ignored;
 pub mod ai_loop;
 pub mod an_invoke_left_before_it_starts_raises_nothing;
 pub mod ancestor_entry_is_not_default_entry;

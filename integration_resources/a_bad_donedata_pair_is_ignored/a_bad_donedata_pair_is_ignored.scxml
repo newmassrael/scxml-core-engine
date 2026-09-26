@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 5.7: a <param> whose location is not a valid location, or whose
+  expr fails, puts error.execution on the internal queue and its name and
+  value are IGNORED. Nothing in the clause withholds the done event: the
+  <final> is entered, so done.state.<parent> is raised with the pairs that
+  survive (§5.5), and the <parallel> the region belongs to completes when
+  every region is final (§3.4).
+
+  Region `r1` reaches `r1f`, whose <donedata> carries three pairs: `empty`
+  names no location (location=""), `good` reads `v`, and `bad` names a
+  location the data model does not hold. Region `r2` starts final, so
+  entering `r1f` completes `p`.
+
+    errors  2 — one error.execution for `empty`, one for `bad`.
+    shape   1 — done.state.r1 arrived carrying `good` = 7 and neither
+                ignored pair; 2 if it arrived with any other shape, 0 if it
+                never arrived.
+    and the run ends in `done`, which only done.state.p reaches.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="a_bad_donedata_pair_is_ignored" datamodel="ecmascript"
+       initial="p">
+
+  <datamodel>
+    <data id="errors" expr="0"/>
+    <data id="shape" expr="0"/>
+    <data id="v" expr="7"/>
+  </datamodel>
+
+  <parallel id="p">
+    <state id="r1" initial="r1a">
+      <state id="r1a">
+        <transition target="r1f"/>
+      </state>
+      <final id="r1f">
+        <donedata>
+          <param name="empty" location=""/>
+          <param name="good" location="v"/>
+          <param name="bad" location="nowhere"/>
+        </donedata>
+      </final>
+    </state>
+    <state id="r2" initial="r2f">
+      <final id="r2f"/>
+    </state>
+
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <transition event="done.state.r1"
+                cond="_event.data.good === 7 &amp;&amp; typeof _event.data.empty === 'undefined' &amp;&amp; typeof _event.data.bad === 'undefined'">
+      <assign location="shape" expr="1"/>
+    </transition>
+    <transition event="done.state.r1">
+      <assign location="shape" expr="2"/>
+    </transition>
+    <transition event="done.state.p" target="done"/>
+  </parallel>
+
+  <final id="done"/>
+</scxml>

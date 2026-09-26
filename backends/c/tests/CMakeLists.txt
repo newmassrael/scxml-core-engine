@@ -112,7 +112,7 @@ sce_generate_static_w3c_c_test(294 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SC
 sce_generate_static_w3c_c_test(343 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.7: <param location="foo"/> referencing an undeclared variable triggers ECMAScript ReferenceError semantics — `_scxml_declared` set + `rawget(_G, base)` mirror cpp `LuaEngine::isUndeclaredSimpleVariable` so the param raises error.execution and continues with empty data; s1 then receives `done.state.s0` and routes to pass
 sce_generate_static_w3c_c_test(488 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.7: <param expr="undefined.invalidProperty"/> — base identifier `undefined` is undeclared so the chunk raises ReferenceError, the macro maps it to error.execution, and the runner's continue-with-empty-data path emits `done.state.s0` with no payload (s1 then matches it to pass)
 sce_generate_static_w3c_c_test(528 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.5: <content expr="undefined.invalidProperty"/> raises a runtime lua error — the chunk failure path empties `_pending_donedata` (W3C 5.5 "empty data on evaluation failure"), queues error.execution, and continues with the done.state.s0 raise; the s0 transition to s1 matches error.execution first, then s1 receives done.state.s0 with empty data and routes to pass
-sce_generate_static_w3c_c_test(298 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.7: <param location=""/> is a structural error — the codegen-time pre-check raises error.execution and skips the done.state.s0 emission entirely (cpp DoneDataHelper::evaluateParams structural-error short-circuit); the surrounding `<send event=timeout delay=1s>` schedule is unused because the error.execution macrostep reaches pass before the timer fires
+sce_generate_static_w3c_c_test(298 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.7: <param location=""/> names no location — error.execution, and the pair is ignored; error.execution is queued ahead of done.state.s0, so its transition reaches pass first, and the surrounding `<send event=timeout delay=1s>` schedule is unused because that macrostep reaches pass before the timer fires
 sce_generate_static_w3c_c_test(176 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.10 + 6.2: <send><param expr="Var1"/></send> evaluates Var1 at send time (not delivery time) — the onentry assign Var1=2 lands before the send so _event.data.aParam carries 2 through the lua _pending_donedata stash; the receiving transition assigns Var2=_event.data.aParam and the cond Var2==2 routes to pass
 sce_generate_static_w3c_c_test(186 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.10 + 6.2: delayed <send><param expr="Var1"/></send> snapshots Var1=1 at send time even though the surrounding onentry reassigns Var1=2 before the 1 s timer fires — luaL_ref anchors `_pending_donedata` in the registry across the scheduling gap so a subsequent immediate-send rebinding the global slot cannot clobber the captured payload; the _tick dispatch path restores the table onto _pending_donedata just before raising so set_current_event promotes it onto _event.data and the receiving transition reads aParam=1, routing to pass
 sce_generate_static_w3c_c_test(179 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.10 + 6.2 + B.2: <send><content>123</content></send> with the ECMAScript datamodel collapses the inline text into a numeric expression — the lua chunk `_pending_donedata = (123)` lands as a number on _event.data so cond _event.data == 123 matches pass
@@ -1432,6 +1432,32 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         COMMAND sce_c_integration_an_invoke_left_before_it_starts_raises_nothing
     )
     set_tests_properties(c11_integration_an_invoke_left_before_it_starts_raises_nothing PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # W3C SCXML 5.7: a <donedata> pair that cannot be evaluated is ignored; the done events still arrive.
+    sce_generate_static_integration_c_test(a_bad_donedata_pair_is_ignored "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_a_bad_donedata_pair_is_ignored
+        integration/test_a_bad_donedata_pair_is_ignored.c
+        ${INTEGRATION_C_TEST_a_bad_donedata_pair_is_ignored_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_a_bad_donedata_pair_is_ignored PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_a_bad_donedata_pair_is_ignored PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_bad_donedata_pair_is_ignored PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_bad_donedata_pair_is_ignored
+        COMMAND sce_c_integration_a_bad_donedata_pair_is_ignored
+    )
+    set_tests_properties(c11_integration_a_bad_donedata_pair_is_ignored PROPERTIES
         TIMEOUT 30
         LABELS "integration;c11;aot"
     )

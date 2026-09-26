@@ -1187,6 +1187,25 @@ a host-served invoke pending the same way, which the `passing` state of
 now holds in all six host-invoker drivers. Both now drop every kind of
 pending invoke when its state exits.
 
+`a_bad_donedata_pair_is_ignored` covers §scxml-5.7: a `<param>` whose
+location is not valid, or whose expr fails, raises error.execution and its
+name and value are ignored — the clause withholds nothing else, so the
+`<final>` still raises done.state.<parent> with the pairs that survive
+(`{}` when none do) and still completes a `<parallel>` whose regions are
+now all final. The fixture's `<donedata>` carries an empty `location`, a
+good pair and an unknown location, in a region whose sibling starts final.
+
+Measured 2026-09-27, the channels gave five answers. The Interpreter, Rust,
+Go, Kotlin and C11 treated an empty `location` as a structural error that
+withheld done.state.<parent>; Rust, Go and Kotlin still raised the
+`<parallel>`'s done event, so they disagreed with themselves; C11 raised
+one error for the whole `<donedata>` and evaluated no pair; Python raised
+the event but dropped the pairs that had evaluated; and C++ AOT evaluated
+the empty `location` as the identifier `none`. A `<param>` naming both or
+neither of `expr` and `location` — which §scxml-5.7 forbids — was read four
+ways; both the code generator and the Interpreter now refuse the document
+(`validation/exactly-one-attribute`).
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

@@ -1039,6 +1039,8 @@ add_executable(integration_tests
     integration/CancellingAnInvokeRaisesNothingAotTest.cpp
     integration/AnInvokeLeftBeforeItStartsRaisesNothingTest.cpp
     integration/AnInvokeLeftBeforeItStartsRaisesNothingAotTest.cpp
+    integration/ABadDonedataPairIsIgnoredTest.cpp
+    integration/ABadDonedataPairIsIgnoredAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
     integration/EventDataArrivesAsSentAotTest.cpp
     integration/XmlDataIsADomTreeTest.cpp
@@ -1575,6 +1577,11 @@ sce_generate_static_integration_test(cancelling_an_invoke_raises_nothing ${STATI
 # attempted. The only invoke is one no processor runs, so an attempt would
 # raise §6.4.1 error.execution; the next state counts any that arrives.
 sce_generate_static_integration_test(an_invoke_left_before_it_starts_raises_nothing ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 5.7: a <donedata> pair that cannot be evaluated raises
+# error.execution and is ignored; done.state.<parent> and the <parallel>'s
+# done event are raised all the same, carrying the pairs that survive.
+sce_generate_static_integration_test(a_bad_donedata_pair_is_ignored ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach the
 # datamodel as a value. `raiseExternalEvent(name, data)` and
