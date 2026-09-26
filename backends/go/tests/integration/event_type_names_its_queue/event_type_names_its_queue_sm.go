@@ -273,6 +273,7 @@ func (p *EventTypeNamesItsQueuePolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *EventTypeNamesItsQueuePolicy) InitializeDataModel(eng *sce.Engine[EventTypeNamesItsQueueState, EventTypeNamesItsQueueEvent]) {
 	p.ensureScriptEngine()

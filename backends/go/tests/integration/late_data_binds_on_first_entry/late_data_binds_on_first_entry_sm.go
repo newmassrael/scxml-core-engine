@@ -173,8 +173,6 @@ func (e LateDataBindsOnFirstEntryEvent) String() string {
 // ======================================================================
 
 type LateDataBindsOnFirstEntryPolicy struct {
-	// W3C SCXML 5.10.1: External event flag
-	nextEventIsExternal bool
 	pendingEventName string
 	pendingEventData string
 	pendingEventType string
@@ -608,11 +606,6 @@ func (p *LateDataBindsOnFirstEntryPolicy) NullEvent() LateDataBindsOnFirstEntryE
 }
 
 
-// SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
-func (p *LateDataBindsOnFirstEntryPolicy) SetNextEventIsExternal(value bool) {
-	p.nextEventIsExternal = value
-}
-
 // HasParallelStates returns whether the SM has parallel states.
 func (p *LateDataBindsOnFirstEntryPolicy) HasParallelStates() bool {
 	return false
@@ -650,7 +643,6 @@ func (p *LateDataBindsOnFirstEntryPolicy) GetActiveStates() []LateDataBindsOnFir
 // hand back here. sce.Engine.EnterAt reaches this only through HasActiveStates,
 // which is false above; the method exists because the interface is one contract.
 func (p *LateDataBindsOnFirstEntryPolicy) SetActiveStates(_ []LateDataBindsOnFirstEntryState) {}
-func (p *LateDataBindsOnFirstEntryPolicy) HasExternalEventFlag() bool { return true }
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *LateDataBindsOnFirstEntryPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[LateDataBindsOnFirstEntryEvent], _ *sce.Engine[LateDataBindsOnFirstEntryState, LateDataBindsOnFirstEntryEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).

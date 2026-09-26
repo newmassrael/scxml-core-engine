@@ -98,14 +98,14 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 238
+engine-documents 239
 native-prefix-documents 2
-datamodel-variable-init 291
+datamodel-variable-init 294
 transition-guard 220
-assign-action 238
+assign-action 247
 child-invoke-needs-script-engine 46
 log-expr 45
-send-param-expr 32
+send-param-expr 33
 send-dynamic-attr 32
 foreach-action 15
 static-invoke-namelist 9
@@ -113,7 +113,8 @@ donedata-param 9
 donedata-content 9
 inline-script-action 2
 send-namelist 5
-if-condition 3
+if-condition 6
+elseif-condition 3
 global-script 3
 mesh-rpc-srcexpr 2
 hybrid-invoke 4
@@ -133,10 +134,11 @@ never spelled correctly.
   transition guards, and `<assign>`. These are the ECMAScript expression
   core, and they are the programme's first three sections. Nothing about
   that ordering was decided by preference.
-- **`elseif-condition` and `unresolved-external-script` have no
-  population here.** They are real kinds with zero instances in this
-  corpus, so this table says nothing about them; a programme section for
-  either would be written against no evidence.
+- **`unresolved-external-script` has no population here**, and
+  `elseif-condition` has only the three `<elseif>`s of one integration
+  fixture (`event_type_names_its_queue`, 2026-09-26) — no W3C document
+  uses one. A programme section for either would be written against
+  almost no evidence.
 - **The escape hatch is essentially unused in SCE's own corpus: 1
   document.** That is the baseline the ADR's escape-hatch column
   ratchets against. ⚠ **2 since 2026-09-22, deliberately:**
@@ -174,7 +176,13 @@ never spelled correctly.
   `late_data_binds_on_first_entry.scxml` (one engine document: three
   handler records and the late-bound state's two `<data>`, four assigns)
   raised `engine-documents`, `datamodel-variable-init` by five and
-  `assign-action` by four. A consumer pairing `cond="cpp:…"` with
+  `assign-action` by four. Then `event_type_names_its_queue.scxml` (one
+  engine document: three records, nine assigns across three
+  `<if>`/`<elseif>`/`<else>` chains that read `_event.type`, and a
+  `<send>` `<param>`) raised `engine-documents`, `datamodel-variable-init`
+  by three, `assign-action` by nine, `if-condition` by three,
+  `send-param-expr` by one, and gave `elseif-condition` its first three.
+  A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
 - **49% of judged documents need an engine** (233 of 475). The remaining
