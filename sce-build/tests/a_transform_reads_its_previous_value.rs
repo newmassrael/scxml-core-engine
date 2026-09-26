@@ -533,26 +533,59 @@ fn a_transform_that_keeps_state_is_not_imported_as_a_pure_function() {
     }
 }
 
-/// Fields spelled like every name a holder introduces for itself: Go's
-/// receiver and C11's holder parameter (`holder`), C11's record local
-/// (`out`), Python's instance (`self`), and the C++ member that keeps
+/// Fields spelled like every name a holder introduces for itself that a
+/// document can still write: Go's receiver and C11's holder parameter
+/// (`holder`), C11's record local (`out`), and the C++ member that keeps
 /// `previous(total)` (`previous_total_`).
+///
+/// Python's instance, `self`, was a fourth, and is no longer one a
+/// document can reach: Rust cannot declare a field `self` (not even as
+/// `r#self`), so the name is refused for every backend at parse
+/// (`validation/reserved-code-identifier`) —
+/// [`a_field_named_like_pythons_instance_is_refused_before_any_holder`]
+/// holds that.
 fn crowded() -> String {
     transform(
         "crowded",
         r#"    <data id="holder" sce:type="int32" sce:direction="in"/>
     <data id="out" sce:type="int32" sce:direction="in"/>
-    <data id="self" sce:type="int32" sce:direction="in"/>
     <data id="previous_total_" sce:type="int32" sce:direction="in"/>
     <data id="total" sce:type="int32" sce:direction="out" sce:initial="0"
-          expr="previous(total) + holder + out + self + previous_total_"/>"#,
+          expr="previous(total) + holder + out + previous_total_"/>"#,
     )
 }
 
-/// Two activations: 0 + (1+2+3+4), then 10 + (1+1+1+1). ⚠ A C++ member
-/// shadowed by a parameter compiles cleanly and answers 4 second — its
+/// Two activations: 0 + (1+2+3), then 6 + (1+1+1). ⚠ A C++ member
+/// shadowed by a parameter compiles cleanly and answers 3 second — its
 /// commit lands on the parameter — so only running the holder tells.
-const CROWDED_TOTALS: &str = "10 14\n";
+const CROWDED_TOTALS: &str = "6 9\n";
+
+/// The name `crowded` no longer carries. Refused rather than escaped: the
+/// one backend that cannot spell it has no escape for it, so a document
+/// using it could not be generated for every target it claims.
+#[test]
+fn a_field_named_like_pythons_instance_is_refused_before_any_holder() {
+    let t = Tmp::new("crowded_self");
+    let doc = t.write(
+        "crowded.scxml",
+        &transform(
+            "crowded",
+            r#"    <data id="self" sce:type="int32" sce:direction="in"/>
+    <data id="total" sce:type="int32" sce:direction="out" sce:initial="0"
+          expr="previous(total) + self"/>"#,
+        ),
+    );
+    for lang in LANGUAGES {
+        let run = generate(&doc, &t.dir(lang), lang);
+        assert_ne!(run.exit, Some(0), "{lang} generated a field named `self`");
+        assert!(
+            run.stderr
+                .contains("\"code\":\"validation/reserved-code-identifier\""),
+            "{lang}: not refused as a reserved code identifier:\n{}",
+            run.stderr
+        );
+    }
+}
 
 #[test]
 fn a_field_spelled_like_a_holders_own_name_does_not_take_it_c() {
@@ -571,8 +604,8 @@ fn a_field_spelled_like_a_holders_own_name_does_not_take_it_c() {
              int main(void) {{\n\
              \tcrowded_state_t h;\n\
              \tcrowded_init(&h);\n\
-             \tint a = crowded_update(&h, 1, 2, 3, 4).total;\n\
-             \tint b = crowded_update(&h, 1, 1, 1, 1).total;\n\
+             \tint a = crowded_update(&h, 1, 2, 3).total;\n\
+             \tint b = crowded_update(&h, 1, 1, 1).total;\n\
              \tprintf(\"%d %d\\n\", a, b);\n\
              \treturn 0;\n\
              }}\n",
@@ -603,8 +636,8 @@ fn a_field_spelled_like_a_holders_own_name_does_not_take_it_cpp() {
             "#include <cstdio>\n#include \"{}\"\n\
              int main() {{\n\
              \tSCE::Generated::Crowded::Crowded h;\n\
-             \tint a = h.update(1, 2, 3, 4).total;\n\
-             \tint b = h.update(1, 1, 1, 1).total;\n\
+             \tint a = h.update(1, 2, 3).total;\n\
+             \tint b = h.update(1, 1, 1).total;\n\
              \tstd::printf(\"%d %d\\n\", a, b);\n\
              \treturn 0;\n\
              }}\n",
@@ -636,8 +669,8 @@ fn a_field_spelled_like_a_holders_own_name_does_not_take_it_python() {
             &format!(
                 "import {stem}\n\
                  h = {stem}.Crowded()\n\
-                 a = h.update(1, 2, 3, 4).total\n\
-                 b = h.update(1, 1, 1, 1).total\n\
+                 a = h.update(1, 2, 3).total\n\
+                 b = h.update(1, 1, 1).total\n\
                  print(a, b)"
             ),
         ],
@@ -664,8 +697,8 @@ fn a_field_spelled_like_a_holders_own_name_does_not_take_it_go() {
          import (\n\t\"fmt\"\n\n\t\"probe/crowded\"\n)\n\n\
          func main() {\n\
          \th := crowded.NewCrowded()\n\
-         \ta := h.Update(1, 2, 3, 4).Total\n\
-         \tb := h.Update(1, 1, 1, 1).Total\n\
+         \ta := h.Update(1, 2, 3).Total\n\
+         \tb := h.Update(1, 1, 1).Total\n\
          \tfmt.Printf(\"%d %d\\n\", a, b)\n\
          }\n",
     )

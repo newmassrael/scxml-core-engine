@@ -809,25 +809,26 @@ pub enum ValidationError {
     },
 
     /// A code identifier that is a word some target language reserves, as
-    /// that language would spell it — `override` is a Rust keyword, `pass` a
-    /// Python one, `auto` a C++ one.
+    /// that language spells it — `override` is a Rust keyword, `pass` a
+    /// Python one, `auto` a C++ one, and a variant `self` is Rust's `Self`.
     ///
     /// The same narrowing as [`ValidationError::MalformedCodeIdentifier`], one
-    /// step further: the name reaches generated source verbatim in all six
-    /// languages, so a name one of them cannot declare is refused for every
+    /// step further: a name one backend cannot declare is refused for every
     /// backend at once, on the attribute's own line, rather than surfacing as
     /// a compiler error in generated code for one of them. A statechart's
     /// `<data id>` is not held to this — it names a W3C data-model location,
     /// and its reader is escaped instead (`reader_names`).
     #[error(
-        "<{element} {attr}=\"{value}\">: '{value}' is a reserved word in \
-         {language}, so the generated {language} code cannot declare it — \
-         rename it"
+        "{}",
+        reserved_code_identifier_message(element, attr, value, spelled, language)
     )]
     ReservedCodeIdentifier {
         element: String,
         attr: String,
         value: String,
+        /// How `language` spells `value` — the word it reserves. The same as
+        /// `value` when the backend emits the name as written.
+        spelled: String,
         language: &'static str,
     },
 
@@ -4184,6 +4185,28 @@ pub enum ValidationError {
         /// on one row. The record's `actual`.
         observed: Option<String>,
     },
+}
+
+/// [`ValidationError::ReservedCodeIdentifier`]'s message. Names the spelling
+/// when the backend folds the name, because the author wrote `self` and the
+/// word Rust refuses is `Self` — a message quoting only the first would send
+/// them looking for a keyword they never typed.
+fn reserved_code_identifier_message(
+    element: &str,
+    attr: &str,
+    value: &str,
+    spelled: &str,
+    language: &str,
+) -> String {
+    let word = if spelled == value {
+        format!("'{value}' is a reserved word in {language}")
+    } else {
+        format!("{language} spells '{value}' as '{spelled}', a word it reserves")
+    };
+    format!(
+        "<{element} {attr}=\"{value}\">: {word}, so the generated {language} code \
+         cannot declare it — rename it"
+    )
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-E callback-path failure

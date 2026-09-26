@@ -255,17 +255,79 @@ fn a_forge_data_id_a_language_reserves_is_refused_naming_the_language() {
 }
 
 /// The spelling a backend actually uses is what is asked: `Override` is not
-/// a keyword as written, but Rust, Python and C11 fold a forge name to
-/// snake_case, and Rust reserves `override`.
+/// a keyword as written, but Rust folds a forge `<data id>` to snake_case,
+/// and Rust reserves `override`. The message names both, because the word
+/// refused is not the one the author typed.
 #[test]
 fn a_reserved_word_is_found_in_the_spelling_the_backend_uses() {
     let refusal = forge_refusal(&transform_with_input("Override"));
     assert_eq!(code_of(&refusal), "\"validation/reserved-code-identifier\"");
     assert!(
-        refusal.error.to_string().contains("reserved word in rust"),
+        refusal
+            .error
+            .to_string()
+            .contains("rust spells 'Override' as 'override', a word it reserves"),
         "{}",
         refusal.error
     );
+}
+
+fn enum_with_variant(name: &str) -> String {
+    format!(
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="enum" name="named_input" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="{name}" value="1"/>
+    </data>
+  </datamodel>
+</scxml>"#
+    )
+}
+
+/// A variant is spelled `Pascal` in Rust and C++ and `UPPER_SNAKE` in
+/// Kotlin and Python, and prefixed with its type in Go and C11 — so `self`
+/// is Rust's `Self`, which no backend can escape, and is refused naming
+/// that spelling.
+#[test]
+fn a_variant_is_asked_in_the_spelling_a_variant_gets() {
+    let refusal = forge_refusal(&enum_with_variant("self"));
+    assert_eq!(code_of(&refusal), "\"validation/reserved-code-identifier\"");
+    assert!(
+        refusal
+            .error
+            .to_string()
+            .contains("rust spells 'self' as 'Self', a word it reserves"),
+        "{}",
+        refusal.error
+    );
+}
+
+/// The other direction, which folding every name to snake_case got wrong: a
+/// variant `match` reaches Rust as `Match` and Kotlin as `MATCH`, neither a
+/// keyword, so it is accepted — and so is a const `DEFAULT`, which every
+/// backend spells `DEFAULT` while C++ reserves only `default`.
+#[test]
+fn a_name_a_backend_folds_away_from_its_keyword_is_accepted() {
+    let label = sce_build::DocumentLabel {
+        identifier: "named_input",
+        diagnostic_label: "named_input.scxml",
+    };
+    sce_build::forge::parser::parse_forge_with_imports(&enum_with_variant("match"), label)
+        .expect("a variant `match` is spelled `Match` / `MATCH`, which nothing reserves");
+    let constant = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" version="1.0" name="named_input">
+  <sce:const name="default" type="uint8" init="0"/>
+  <sce:signature>
+    <sce:param name="x" type="uint8"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="x"/>
+  </sce:body>
+</scxml>"#;
+    sce_build::forge::parser::parse_forge_with_imports(constant, label)
+        .expect("a const `default` is spelled `DEFAULT` everywhere, which nothing reserves");
 }
 
 /// The discriminator: the same document with a name no language reserves

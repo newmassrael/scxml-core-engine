@@ -2304,13 +2304,18 @@ record (`header.S`, `telemetry.reset`) is code identifiers joined by
 `validation/malformed-code-identifier`.
 
 A code identifier of that shape is also refused when it is a word one of
-the six languages reserves, as that language would spell it — as written,
-or folded to snake_case the way Rust, Python and C11 spell a forge name:
-`override` (Rust), `pass` (Python), `object` (Kotlin), `auto` (C++). It
-is refused for every backend at once, as
-`validation/reserved-code-identifier` naming the language, rather than
-escaped per backend: these names are spelled at many sites per kind, and
-an escape at some of them is a mismatch at the rest. A statechart's
+the six languages reserves, as that language spells that kind of name:
+`override` (Rust), `pass` (Python), `object` (Kotlin), `auto` (C++) for a
+`<data id>`, and `self` for a variant, which Rust spells `Self`. The
+spelling differs by kind and by backend — a const is `UPPER_SNAKE`
+everywhere, so a const `default` is `DEFAULT` and is accepted; a variant
+is `Pascal` in Rust and C++, so a variant `match` is `Match` and is
+accepted — and a name that never becomes an identifier (a reference, a
+`cycle` id, a `fold` binding) is not asked at all. It is refused for
+every backend at once, as `validation/reserved-code-identifier` naming the
+language and the spelling, rather than escaped per backend: these names
+are spelled at many sites per kind, and an escape at some of them is a
+mismatch at the rest. A statechart's
 `<data id>` is not held to this; where it becomes a typed reader, the
 reader is escaped or withheld instead (`unreadable_variables`,
 `SCE_ERROR_CONTRACT.md` §10.1).

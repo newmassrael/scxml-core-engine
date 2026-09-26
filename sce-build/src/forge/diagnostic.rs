@@ -5824,11 +5824,15 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         // The language rides `expected`: what the name has to be is "a
         // name <language> can declare", and there is no closed set of
         // replacements to offer as a fix.
+        // The spelling rides the message, not a field: it is derived from
+        // `value` and `language`, and a wire key for it would be a second
+        // copy of what those two already determine.
         ValidationError::ReservedCodeIdentifier {
             element,
             attr,
             value,
             language,
+            spelled: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::ValidationReservedCodeIdentifier,
             stage: Stage::Validation,
@@ -10227,6 +10231,7 @@ mod tests {
                     element: "data".into(),
                     attr: "id".into(),
                     value: "override".into(),
+                    spelled: "override".into(),
                     language: "rust",
                 }
                 .into(),

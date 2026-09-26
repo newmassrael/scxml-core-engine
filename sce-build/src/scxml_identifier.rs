@@ -122,12 +122,19 @@
 //! shape can still be a word one target language reserves — `override` in
 //! Rust, `pass` in Python, `auto` in C++ — and then that backend cannot
 //! declare it. Such a name is refused for every backend at once
-//! (`validation/reserved-code-identifier`, naming the language), from the
-//! one keyword list `crate::reader_names::reserved_in` keeps. Refusing
-//! rather than escaping, because the forge generator spells these names at
-//! many sites per kind, and an escape applied at some of them is a mismatch
-//! at the rest. A statechart's `<data id>` is W3C's name, not SCE's, and is
-//! escaped where it becomes a reader instead.
+//! (`validation/reserved-code-identifier`, naming the language and the
+//! spelling), from the one keyword list `crate::reader_names::reserved_in`
+//! keeps. Refusing rather than escaping, because the forge generator spells
+//! these names at many sites per kind, and an escape applied at some of them
+//! is a mismatch at the rest. A statechart's `<data id>` is W3C's name, not
+//! SCE's, and is escaped where it becomes a reader instead.
+//!
+//! ⚠ "Reserved" is asked of the name AS EACH BACKEND SPELLS IT, which
+//! [`spellings_of`] records per attribute: a const is `UPPER_SNAKE`
+//! everywhere, a variant is `Pascal` in Rust and C++, a codec field is
+//! `Pascal` in Go and `camelCase` in Kotlin. The first version folded every
+//! name to snake_case and refused a const `DEFAULT` as C++'s `default` —
+//! measured by CI, 2026-09-26.
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
 
@@ -388,6 +395,114 @@ fn grammar_of(dialect: Dialect, node: &roxmltree::Node, attr: &str) -> Option<Gr
         .map(|&(_, _, grammar)| grammar)
 }
 
+/// How each backend spells the name `node`'s attribute `attr` declares, for
+/// the reserved-word check — the folds a keyword could equal, in
+/// [`crate::generator::Language::ALL`] order (Rust, C++, Kotlin, Go,
+/// Python, C11).
+///
+/// Measured from the forge generator and its templates, 2026-09-26, one row
+/// per declaration; a form that adds to the name (`alias_`, `set_<name>`,
+/// `TYPE_<NAME>`, `<struct>_<name>`) is left out because no keyword has that
+/// shape. A reference names something declared elsewhere, and is refused
+/// there; a name that never reaches source (`peek-byte`'s id is a fixed
+/// local, a `cycle` is expanded away, a `fold` binding is build-time only)
+/// declares nothing.
+fn spellings_of(
+    dialect: Dialect,
+    node: &roxmltree::Node,
+    attr: &str,
+) -> &'static crate::reader_names::Spellings {
+    use crate::reader_names::{Case::*, Spellings, NOT_DECLARED};
+    // A forge `<data id>` is a parameter, a local, an output field, a payload
+    // field and a Lookup's Pascal type name across its kinds.
+    const FORGE_DATA: Spellings = [
+        &[Verbatim, Snake, Pascal],
+        &[Verbatim, Pascal],
+        &[Verbatim, Camel, Pascal],
+        &[Verbatim, Pascal],
+        &[Verbatim, Snake, Pascal],
+        &[Verbatim, Snake, Pascal],
+    ];
+    // Only Kotlin lowers an `sce-static` statechart; the rest refuse it.
+    const STATIC_DATA: Spellings = [&[], &[], &[Camel], &[], &[], &[]];
+    const IMPORT_AS: Spellings = [&[Verbatim], &[], &[Verbatim], &[Pascal], &[Verbatim], &[]];
+    const CONTEXT_ID: Spellings = [&[], &[Verbatim], &[Camel], &[], &[], &[]];
+    const CODEC_FIELD: Spellings = [
+        &[Snake],
+        &[Verbatim],
+        &[Verbatim, Camel],
+        &[Pascal],
+        &[Snake],
+        &[Snake],
+    ];
+    const FLAG: Spellings = [&[Snake], &[Snake], &[Camel], &[Pascal], &[Snake], &[]];
+    const FLAG_INPUT: Spellings = [&[Snake], &[Snake], &[Camel], &[Camel], &[Snake], &[Snake]];
+    const VARIANT: Spellings = [&[Pascal], &[Pascal], &[UpperSnake], &[], &[UpperSnake], &[]];
+    const VAR: Spellings = [
+        &[Snake],
+        &[Verbatim],
+        &[Verbatim],
+        &[Verbatim],
+        &[Snake],
+        &[Snake],
+    ];
+    const CONST: Spellings = [
+        &[UpperSnake],
+        &[UpperSnake],
+        &[UpperSnake],
+        &[UpperSnake],
+        &[UpperSnake],
+        &[UpperSnake],
+    ];
+    const HELPER: Spellings = [
+        &[Snake],
+        &[Verbatim],
+        &[Verbatim],
+        &[Verbatim],
+        &[],
+        &[Snake],
+    ];
+    // Go, Kotlin and Python refuse `<sce:extern>`.
+    const EXTERN: Spellings = [&[Verbatim], &[Verbatim], &[], &[], &[], &[Verbatim]];
+    const ACTION: Spellings = [&[Snake], &[Camel], &[Camel], &[Pascal], &[Snake], &[Snake]];
+    const ARG: Spellings = [&[Snake], &[Camel], &[Camel], &[Camel], &[Snake], &[Snake]];
+
+    let element = node.tag_name().name();
+    match node.tag_name().namespace() {
+        Some(crate::model::SCXML_NAMESPACE) if element == "data" && attr == "id" => {
+            if dialect == Dialect::Forge {
+                &FORGE_DATA
+            } else {
+                &STATIC_DATA
+            }
+        }
+        Some(crate::forge::model::SCE_NAMESPACE) => match (element, attr) {
+            ("import", "as") => &IMPORT_AS,
+            ("context", "id") => &CONTEXT_ID,
+            ("field" | "flags" | "repeat" | "tlv-chain" | "embed", "id") => &CODEC_FIELD,
+            // Inside `<sce:peek-byte>` a flag is only a mask lookup.
+            ("flag", "name")
+                if node
+                    .parent_element()
+                    .is_some_and(|p| p.tag_name().name() == "peek-byte") =>
+            {
+                &NOT_DECLARED
+            }
+            ("flag", "name") => &FLAG,
+            ("flag-input", "name") => &FLAG_INPUT,
+            ("variant", "name") => &VARIANT,
+            ("var", "name") => &VAR,
+            ("const", "name") => &CONST,
+            ("helper", "name") => &HELPER,
+            ("extern", "name") => &EXTERN,
+            ("action", "name") => &ACTION,
+            ("arg", "name") => &ARG,
+            _ => &NOT_DECLARED,
+        },
+        _ => &NOT_DECLARED,
+    }
+}
+
 /// Whether the `<scxml>` that owns `node` declares `datamodel="sce-static"`.
 fn declares_static_datamodel(node: &roxmltree::Node) -> bool {
     node.ancestors()
@@ -456,12 +571,16 @@ pub fn reject_malformed(
                 // declare it. A path only references names declared
                 // elsewhere, and those are refused where they are declared.
                 if grammar == Grammar::CodeIdentifier {
-                    if let Some(language) = crate::reader_names::reserved_in(attribute.value()) {
+                    if let Some((language, spelled)) = crate::reader_names::reserved_in(
+                        attribute.value(),
+                        spellings_of(dialect, &node, attribute.name()),
+                    ) {
                         return Err(Located::new(
                             ValidationError::ReservedCodeIdentifier {
                                 element,
                                 attr,
                                 value,
+                                spelled,
                                 language: language.canonical_name(),
                             }
                             .into(),

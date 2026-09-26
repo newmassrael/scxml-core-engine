@@ -304,20 +304,72 @@ pub(crate) fn is_reserved_word(language: Language, spelled: &str) -> bool {
     }
 }
 
-/// The first backend, in [`Language::ALL`] order, that reserves the code
-/// identifier `name` as it would spell it — as written, or folded to
-/// snake_case, which is how Rust, Python and C11 spell a forge name.
+/// One way a backend folds a declared name into an identifier — the folds a
+/// keyword could come out equal to.
 ///
-/// A forge `<data id>` and an `sce:` element's name reach generated source
-/// verbatim, so a name one backend cannot declare is refused at parse for
-/// all of them (`validation/reserved-code-identifier`), the same narrowing
-/// that refuses `raw-value`.
-pub fn reserved_in(name: &str) -> Option<Language> {
-    let snake = filters::to_snake_case(name.to_string());
+/// A form that adds to the name (`alias_`, `set_<name>`, `TYPE_<NAME>`,
+/// `<struct>_<name>`) has no case here: no backend reserves a word shaped
+/// like that, so it cannot collide and is left out rather than listed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Case {
+    /// As written.
+    Verbatim,
+    /// [`filters::to_snake_case`].
+    Snake,
+    /// [`filters::to_pascal_case`].
+    Pascal,
+    /// [`filters::to_camel_case`].
+    Camel,
+    /// [`filters::to_upper_snake_case`].
+    UpperSnake,
+}
+
+impl Case {
+    /// `name` folded this way.
+    pub fn spell(self, name: &str) -> String {
+        match self {
+            Case::Verbatim => name.to_string(),
+            Case::Snake => filters::to_snake_case(name.to_string()),
+            Case::Pascal => filters::to_pascal_case(name.to_string()),
+            Case::Camel => filters::to_camel_case(name.to_string()),
+            Case::UpperSnake => filters::to_upper_snake_case(name.to_string()),
+        }
+    }
+}
+
+/// How each backend spells one kind of declared name, as the folds of
+/// [`Case`] it applies, in [`Language::ALL`] order. An empty entry is a
+/// backend that emits no identifier from the name at all — it never
+/// reaches source, or reaches it only with something added.
+pub type Spellings = [&'static [Case]; 6];
+
+/// A name no backend declares: a reference to a name declared elsewhere,
+/// which is refused where it is declared, or one used only at build time.
+pub const NOT_DECLARED: Spellings = [&[], &[], &[], &[], &[], &[]];
+
+/// The first backend, in [`Language::ALL`] order, that reserves the code
+/// identifier `name` as `spellings` says it spells it, with that spelling.
+///
+/// A name one backend cannot declare is refused at parse for all of them
+/// (`validation/reserved-code-identifier`), the same narrowing that refuses
+/// `raw-value` — so the question has to be asked of what each backend
+/// actually emits. Asking one fold of every name got both directions wrong:
+/// a const `DEFAULT` (every backend spells it `DEFAULT`) was refused as
+/// C++'s `default`, and a variant `match` (Rust spells it `Match`) as
+/// Rust's `match`, while a variant `self` was refused only because the
+/// wrong fold happened to agree with Rust's `Self`.
+pub fn reserved_in(name: &str, spellings: &Spellings) -> Option<(Language, String)> {
     Language::ALL
         .iter()
         .copied()
-        .find(|&language| is_reserved_word(language, name) || is_reserved_word(language, &snake))
+        .zip(spellings.iter())
+        .find_map(|(language, cases)| {
+            cases
+                .iter()
+                .map(|case| case.spell(name))
+                .find(|spelled| is_reserved_word(language, spelled))
+                .map(|spelled| (language, spelled))
+        })
 }
 
 /// What a type already defines: exact names, and the prefixes of names it
