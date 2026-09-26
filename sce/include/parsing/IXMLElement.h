@@ -47,6 +47,17 @@ public:
     virtual std::unordered_map<std::string, std::string> getAttributes() const = 0;
 
     /**
+     * @brief Get the attribute names in document order
+     *
+     * `getAttributes()` is a hash map and forgets the order an author wrote;
+     * a refusal that names "the attribute written beyond the first" needs it
+     * (`validation/exactly-one-attribute`, as the code generator's frontend
+     * reads roxmltree's ordered attributes).
+     * @return Attribute names, first written first
+     */
+    virtual std::vector<std::string> getAttributeNames() const = 0;
+
+    /**
      * @brief Get namespace URI
      * @return Namespace URI, empty string if no namespace
      */

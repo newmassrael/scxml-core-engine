@@ -3040,7 +3040,8 @@ impl SCXMLParser {
 
             // Parse donedata
             if let Some(dd_elem) = scxml_child(&child, "donedata") {
-                state.donedata = Some(self.parse_donedata(&dd_elem, model.datamodel, source_name));
+                state.donedata =
+                    Some(self.parse_donedata(&dd_elem, model.datamodel, source_name)?);
             }
 
             model.states.insert(final_id, state);
@@ -3369,6 +3370,7 @@ impl SCXMLParser {
 
         // Parse <param> children
         for param_elem in scxml_children(elem, "param") {
+            check_param_attributes(&param_elem, source_name)?;
             let param_expr = param_elem.attribute("expr").unwrap_or("").to_string();
             let is_static_literal = is_static_string_literal(&param_expr);
             let static_value = if is_static_literal {
@@ -3943,6 +3945,7 @@ impl SCXMLParser {
         let mut static_params: Vec<Param> = Vec::new();
         let mut hybrid_params: Vec<Param> = Vec::new();
         for param in scxml_children(elem, "param") {
+            check_param_attributes(&param, source_name)?;
             let name = param.attribute("name").unwrap_or("").to_string();
             let expr = param.attribute("expr").unwrap_or("").to_string();
             let location = param.attribute("location").unwrap_or("").to_string();
@@ -4373,6 +4376,7 @@ impl SCXMLParser {
         let mut payload_params: Vec<Param> = Vec::new();
 
         for param in scxml_children(elem, "param") {
+            check_param_attributes(&param, source_name)?;
             let name = param.attribute("name").unwrap_or("").to_string();
             let expr = param.attribute("expr").unwrap_or("").to_string();
             let location = param.attribute("location").unwrap_or("").to_string();
@@ -4484,13 +4488,14 @@ impl SCXMLParser {
         elem: &roxmltree::Node,
         datamodel: Datamodel,
         source_name: &str,
-    ) -> DoneData {
+    ) -> Result<DoneData, crate::forge::error::Located<crate::forge::error::ForgeError>> {
         let mut dd = DoneData::default();
 
         // §scxml-5.7: Parse <param> elements.
         // [`NeedsScriptEngineCause::DonedataParam`] is derived post-parse
         // by [`crate::script_engine_analyzer`] from `DoneData.params`.
         for child in scxml_children(elem, "param") {
+            check_param_attributes(&child, source_name)?;
             dd.params.push(DoneDataParam {
                 name: child.attribute("name").unwrap_or("").to_string(),
                 expr: child.attribute("expr").map(|s| s.to_string()),
@@ -4543,7 +4548,7 @@ impl SCXMLParser {
             }
         }
 
-        dd
+        Ok(dd)
     }
 
     // ── Feature detection ────────────────────────────────
@@ -6214,6 +6219,54 @@ fn check_assign_attributes(
         }));
     }
     Ok(())
+}
+
+/// §scxml-5.7: "A conformant SCXML document MUST specify either the 'expr'
+/// attribute of <param> or the 'location' attribute, but MUST NOT specify
+/// both." Refused where the document is read, for every element that owns
+/// a `<param>` (`<send>`, `<invoke>`, `<donedata>`), so no backend has to
+/// pick a winner — as `validation/exactly-one-attribute`, the code for an
+/// element that takes exactly one of several attributes, with `expr` and
+/// `location` as its `expected` and the second one written as its `actual`.
+///
+/// Presence is what is judged, as in [`check_assign_attributes`]: a
+/// `location=""` names no location, which §scxml-5.7 answers at run time
+/// with error.execution and an ignored pair — the W3C suite relies on that
+/// (test298) — so it is not refused here.
+///
+/// Until 2026-09-27 neither case was checked, and the backends had split
+/// four ways on a `<param>` carrying both: the Interpreter dropped it
+/// silently, C++ AOT and C11 let `location` win, Rust, Go and Python let
+/// `expr` win when it was not empty, and Kotlin let `expr` win whenever it
+/// was present.
+fn check_param_attributes(
+    node: &roxmltree::Node,
+    source_name: &str,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::error::{Located, ValidationError};
+
+    // Document order: the attribute written beyond the first is the record's
+    // `actual`, as `ExactlyOneAttribute` states for every element it names.
+    let written: Vec<&str> = node
+        .attributes()
+        .map(|a| a.name())
+        .filter(|name| *name == "expr" || *name == "location")
+        .collect();
+    if written.len() == 1 {
+        return Ok(());
+    }
+    let pos = node.document().text_pos_at(node.range().start);
+    Err(Located::new(
+        ValidationError::ExactlyOneAttribute {
+            element: "<param>".to_string(),
+            alternatives: vec!["expr".to_string(), "location".to_string()],
+            extra: written.get(1).map(|name| name.to_string()),
+        }
+        .into(),
+        source_name,
+        Some(pos.row),
+        Some(pos.col),
+    ))
 }
 
 /// The in-line data value an element's children specify.

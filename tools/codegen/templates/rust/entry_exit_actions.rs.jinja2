@@ -202,7 +202,6 @@
 {% if state.is_final and state.donedata %}
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 let mut done_event_data = String::new();
-                let mut done_data_ok = true;
 {% if state.donedata.params %}
                 {
                     self.ensure_script_engine();
@@ -211,14 +210,16 @@
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                     let mut json_parts: Vec<String> = Vec::new();
 {% for param in state.donedata.params %}
-{% set param_expr = param.expr if param.expr else param.location %}
+{# §scxml-5.7: the parser admits exactly one of the two attributes, so the
+   one that is PRESENT is the value — tested for presence, not truth. #}
+{% set param_expr = param.expr if param.expr is not none else param.location %}
 {% if not param_expr %}
-                    // W3C SCXML 5.7: Empty location raises error.execution (structural error)
-                    ::sce_rust_runtime::sce_log_error!("Donedata param '{{ param.name | escape_rust }}': empty location (structural error)");
+                    // §scxml-5.7: an empty location names no location —
+                    // error.execution, and this pair is ignored.
+                    ::sce_rust_runtime::sce_log_error!("Donedata param '{{ param.name | escape_rust }}': empty location");
 {% if 'error.execution' in model.events %}
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<donedata> <param name='{{ param.name | escape_rust }}'> has an empty location"));
 {% endif %}
-                    done_data_ok = false;
 {% else %}
                     match se.evaluate_expression(&sid, "{{ param_expr | to_lua_expr | escape_rust }}") {
                         Ok(val) => {
@@ -238,11 +239,10 @@
                     }
 {% endif %}
 {% endfor %}
-                    if done_data_ok {
-                        done_event_data = String::from("{");
-                        done_event_data.push_str(&json_parts.join(","));
-                        done_event_data.push('}');
-                    }
+                    // §scxml-5.5: the pairs that survived, `{}` when none did.
+                    done_event_data = String::from("{");
+                    done_event_data.push_str(&json_parts.join(","));
+                    done_event_data.push('}');
                 }
 {% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
                 {
@@ -289,20 +289,16 @@
                 // done.invoke.<id>._event.data. Mirrors the C++ AOT
                 // stashDonedataAtFinal contract and Kotlin
                 // StateMachineEngine.stashDonedataAtFinal.
-                if done_data_ok {
-                    engine.stash_donedata_at_final(done_event_data);
-                }
+                engine.stash_donedata_at_final(done_event_data);
 {% endif %}
 {% if state.is_final and state.parent %}
                 // W3C SCXML 3.7: Generate done.state.{{ state.parent }} event
 {% if 'done.state.' ~ state.parent in model.events %}
 {% if state.donedata %}
                 // W3C SCXML 5.5: Carry evaluated donedata in done.state event
-                if done_data_ok {
-                    let mut done_meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ ('done.state.' ~ state.parent) | to_event_variant }});
-                    done_meta.set_event_data(&done_event_data);
-                    engine.raise(done_meta);
-                }
+                let mut done_meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ ('done.state.' ~ state.parent) | to_event_variant }});
+                done_meta.set_event_data(&done_event_data);
+                engine.raise(done_meta);
 {% else %}
                 engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ ('done.state.' ~ state.parent) | to_event_variant }}));
 {% endif %}

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: a <param> carrying both `expr` and `location`
+  (W3C SCXML 5.7: "MUST specify either the 'expr' attribute of <param> or
+  the 'location' attribute, but MUST NOT specify both"). key_fragments are
+  ("<param>", "expr,location", "location") — the attribute written beyond
+  the first, in document order, is the record's `actual`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="s">
+  <datamodel>
+    <data id="v" expr="0"/>
+  </datamodel>
+  <state id="s" initial="f">
+    <final id="f">
+      <donedata>
+        <param name="p" expr="1" location="v"/>
+      </donedata>
+    </final>
+  </state>
+</scxml>

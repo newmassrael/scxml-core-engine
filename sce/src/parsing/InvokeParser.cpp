@@ -199,6 +199,7 @@ void SCE::InvokeParser::parseParamElements(const std::shared_ptr<IXMLElement> &i
 
     auto paramElements = SCE::ParsingCommon::findChildElements(invokeElement, "param");
     for (const auto &paramElement : paramElements) {
+        SCE::ParsingCommon::checkParamAttributes(paramElement);
         std::string name, expr, location;
 
         if (paramElement->hasAttribute("name")) {

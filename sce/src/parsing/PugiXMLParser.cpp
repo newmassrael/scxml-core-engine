@@ -56,6 +56,18 @@ bool PugiXMLElement::hasAttribute(const std::string &name) const {
     return node_.attribute(name.c_str()) != nullptr;
 }
 
+std::vector<std::string> PugiXMLElement::getAttributeNames() const {
+    std::vector<std::string> result;
+    if (!node_) {
+        return result;
+    }
+    // pugixml keeps attributes in the order the document wrote them.
+    for (const auto &attr : node_.attributes()) {
+        result.emplace_back(attr.name());
+    }
+    return result;
+}
+
 std::unordered_map<std::string, std::string> PugiXMLElement::getAttributes() const {
     std::unordered_map<std::string, std::string> result;
 

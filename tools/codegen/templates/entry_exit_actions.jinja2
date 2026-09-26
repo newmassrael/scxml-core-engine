@@ -465,14 +465,18 @@
                     // which under `--script-engine lua` would have emitted
                     // ECMAScript here while everything around it emitted Lua.
                     std::vector<std::pair<std::string, ::SCE::ScriptSource>> params = {
+{# §scxml-5.7: the parser admits exactly one of the two attributes, so the
+   one that is PRESENT is the value — tested for presence, not truth, or a
+   `location=""` would fall through to an absent `expr`. #}
 {% for param in state.donedata.params %}
-                        {"{{ param.name | escape_cpp }}", {{ (param.location if param.location else param.expr) | to_script_source_expr }}}{{ "," if not loop.last }}
+                        {"{{ param.name | escape_cpp }}", {{ (param.location if param.location is not none else param.expr) | to_script_source_expr }}}{{ "," if not loop.last }}
 {% endfor %}
                     };
 
-                    // W3C SCXML 5.7: "If the location expression does not denote a valid location in the data model..."
-                    // Empty param location raises error.execution and prevents done.state event generation
-                    bool success = ::SCE::DoneDataHelper::evaluateParams(
+                    // §scxml-5.7: a pair whose location is not valid (an empty
+                    // one included) or whose expr fails raises error.execution
+                    // and is ignored; the done event is raised all the same.
+                    ::SCE::DoneDataHelper::evaluateParams(
                         scriptEngine,
                         sessionId_.value(),
                         params,
@@ -483,12 +487,6 @@
                         },
                         &typedData
                     );
-
-                    // W3C SCXML 5.7: If structural error (empty location), skip done.state event
-                    if (!success) {
-                        AOT_DEBUG("Skipping done.state event due to structural donedata error");
-                        break;
-                    }
 {% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 {% if state.donedata.content.kind == "expression" %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/> against the datamodel.

@@ -534,6 +534,7 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
         // gives <content> the same expr-or-child-content split, handled above.
         auto paramElements = ParsingCommon::findChildElements(actionElement, "param");
         for (const auto &paramElement : paramElements) {
+            ParsingCommon::checkParamAttributes(paramElement);
             if (!paramElement->hasAttribute("name")) {
                 SCE_LOG_WARN("ActionParser: send param element missing required name attribute");
                 continue;
@@ -544,12 +545,10 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
                 std::string paramExpr = paramElement->getAttribute("expr");
                 sendAction->addParamWithExpr(paramName, paramExpr);
                 SCE_LOG_DEBUG("ActionParser: Added send param '{}' with expr '{}'", paramName, paramExpr);
-            } else if (paramElement->hasAttribute("location")) {
+            } else {
                 std::string paramLocation = paramElement->getAttribute("location");
                 sendAction->addParamWithLocation(paramName, paramLocation);
                 SCE_LOG_DEBUG("ActionParser: Added send param '{}' with location '{}'", paramName, paramLocation);
-            } else {
-                SCE_LOG_WARN("ActionParser: send param '{}' has neither expr nor location", paramName);
             }
         }
 

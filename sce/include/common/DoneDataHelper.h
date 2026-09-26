@@ -52,16 +52,17 @@ public:
      * @param contentExpr Content expression to evaluate
      * @param outEventData Output value (may be string, number, object)
      * @param onError Callback for error.execution events (optional)
-     * @return true if evaluation succeeded or no content, false on critical error
+     *
+     * A failed evaluation queues error.execution through `onError` and leaves
+     * the data empty; the done event is raised either way, so nothing is
+     * returned.
      *
      * Usage:
      * ```cpp
      * // Interpreter engine (StateMachine.cpp)
      * std::string eventData;
-     * if (!DoneDataHelper::evaluateContent(jsEngine, sessionId, content, eventData,
-     *         [this](const std::string& msg) { eventRaiser_->raiseEvent("error.execution", msg); })) {
-     *     return false;
-     * }
+     * DoneDataHelper::evaluateContent(jsEngine, sessionId, content, eventData,
+     *     [this](const std::string& msg) { eventRaiser_->raiseEvent("error.execution", msg); });
      *
      * // Static Code Generator (generated code)
      * std::string eventData;
@@ -100,12 +101,12 @@ public:
         }
     }
 
-    static bool evaluateContent(IScriptEngine &jsEngine, const std::string &sessionId, const ScriptSource &contentExpr,
+    static void evaluateContent(IScriptEngine &jsEngine, const std::string &sessionId, const ScriptSource &contentExpr,
                                 std::string &outEventData, std::function<void(const std::string &)> onError = nullptr,
                                 std::optional<ScriptValue> *outTypedData = nullptr) {
         if (contentExpr.text().empty()) {
             outEventData = "";
-            return true;
+            return;
         }
 
         // §scxml-5.5: Evaluate content as expression
@@ -130,7 +131,7 @@ public:
             if (outTypedData) {
                 *outTypedData = value;
             }
-            return true;
+            return;
         }
 
         // §scxml-5.10: Raise error.execution event for expression evaluation failure
@@ -140,35 +141,33 @@ public:
 
         // §scxml-5.5: Return empty data (not literal content) when evaluation fails
         outEventData = "";
-        return true;
     }
 
     /**
      * @brief Evaluate donedata params to JSON object
      *
      * §scxml-5.5: <param> elements create object with name:value pairs
-     * §scxml-5.7: Empty param location raises error.execution
      *
      * @param jsEngine JSEngine instance for expression evaluation
      * @param sessionId Session ID for JSEngine context
      * @param params Vector of (name, expr) pairs
-     * @param outEventData Output JSON string (e.g., {"Var1":1})
+     * @param outEventData Output JSON string (e.g., {"Var1":1}; `{}` when no
+     *                     pair survives)
      * @param onError Callback for error.execution events (optional)
-     * @return false if structural error prevents done.state, true otherwise
      *
-     * Error Handling:
-     * - Structural error (empty location): returns false to prevent done.state event
-     * - Runtime error (invalid expr): ignores failed param, continues with others
+     * §scxml-5.7: a pair whose location is not a valid location — an empty
+     * one included — or whose expr fails queues error.execution through
+     * `onError` and is ignored; every other pair is still evaluated, and the
+     * done event is raised with the pairs that survive. Nothing is returned,
+     * because no failure stops the done event.
      *
      * Usage:
      * ```cpp
      * // Interpreter engine
      * std::vector<std::pair<std::string, std::string>> params = {{"x", "1"}, {"y", "Var1"}};
      * std::string eventData;
-     * if (!DoneDataHelper::evaluateParams(jsEngine, sessionId, params, eventData,
-     *         [this](const std::string& msg) { eventRaiser_->raiseEvent("error.execution", msg); })) {
-     *     return false;  // Structural error, skip done.state
-     * }
+     * DoneDataHelper::evaluateParams(jsEngine, sessionId, params, eventData,
+     *     [this](const std::string& msg) { eventRaiser_->raiseEvent("error.execution", msg); });
      *
      * // Static Code Generator
      * std::vector<std::pair<std::string, std::string>> params = {{"Var1", "1"}};
@@ -180,13 +179,13 @@ public:
     /// The pair is (param name, param expression). Only the second half crosses
     /// the boundary as text to evaluate; the name is a JSON key this helper
     /// writes itself and never hands to an engine.
-    static bool evaluateParams(IScriptEngine &jsEngine, const std::string &sessionId,
+    static void evaluateParams(IScriptEngine &jsEngine, const std::string &sessionId,
                                const std::vector<std::pair<std::string, ScriptSource>> &params,
                                std::string &outEventData, std::function<void(const std::string &)> onError = nullptr,
                                std::optional<ScriptValue> *outTypedData = nullptr) {
         if (params.empty()) {
             outEventData = "";
-            return true;
+            return;
         }
 
         // §scxml-5.5: <param> elements create an object with name:value pairs
@@ -204,14 +203,14 @@ public:
             const std::string &paramName = param.first;
             const ScriptSource &paramExpr = param.second;
 
-            // §scxml-5.7: Empty location is invalid (structural error)
-            // Must raise error.execution and prevent done.state event generation
+            // §scxml-5.7: an empty location refers to no location in the data
+            // model — error.execution, and this pair is ignored like any other
+            // that cannot be read.
             if (paramExpr.text().empty()) {
                 if (onError) {
                     onError("Empty param location or expression: " + paramName);
                 }
-                // §scxml-5.7: Return false to skip done.state event generation
-                return false;
+                continue;
             }
 
             // Evaluate param expression
@@ -253,8 +252,6 @@ public:
         if (outTypedData && typedObj) {
             *outTypedData = typedObj;
         }
-
-        return true;
     }
 
     /**

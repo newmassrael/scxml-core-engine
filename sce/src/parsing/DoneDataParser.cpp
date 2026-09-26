@@ -129,31 +129,19 @@ bool SCE::DoneDataParser::parseParam(const std::shared_ptr<IXMLElement> &paramEl
 
     std::string nameValue = paramElement->getAttribute("name");
 
-    // Check expr and location attributes (only one can be used)
-    bool hasExpr = paramElement->hasAttribute("expr");
-    bool hasLocation = paramElement->hasAttribute("location");
+    // §scxml-5.7: exactly one of expr and location — refused, not dropped, so
+    // the Interpreter accepts the documents the code generator accepts.
+    ParsingCommon::checkParamAttributes(paramElement);
 
-    if (hasExpr && hasLocation) {
-        SCE_LOG_ERROR("<param> cannot have both 'expr' and 'location' attributes");
-        return false;
-    }
-
-    // Process location attribute
-    if (hasLocation) {
+    if (paramElement->hasAttribute("location")) {
         std::string locationValue = paramElement->getAttribute("location");
         stateNode->addDoneDataParam(nameValue, locationValue);
         SCE_LOG_DEBUG("Added param: {} with location: {}", nameValue, locationValue);
         return true;
     }
 
-    // Process expr attribute
-    if (hasExpr) {
-        std::string exprValue = paramElement->getAttribute("expr");
-        stateNode->addDoneDataParam(nameValue, exprValue);
-        SCE_LOG_DEBUG("Added param: {} with expr: {}", nameValue, exprValue);
-        return true;
-    }
-
-    SCE_LOG_ERROR("<param> must have either 'expr' or 'location' attribute");
-    return false;
+    std::string exprValue = paramElement->getAttribute("expr");
+    stateNode->addDoneDataParam(nameValue, exprValue);
+    SCE_LOG_DEBUG("Added param: {} with expr: {}", nameValue, exprValue);
+    return true;
 }

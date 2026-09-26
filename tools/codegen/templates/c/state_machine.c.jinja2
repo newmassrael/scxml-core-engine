@@ -2624,43 +2624,26 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
            evaluateParams / emitContentLiteral) to inline lua chunks per
            jinja2-inline contract. */
         {% if state.donedata.params %}
-        {# Codegen-time structural-error pre-check: W3C 5.7 says an empty
-           param `location` (no usable expr fallback either) is a structural
-           error — raise error.execution and skip the done.state event. The
-           parser stores both attributes verbatim (Option<String>), so jinja2
-           sees `param.location == ""` as falsy; cpp picks `param.expr`
-           when location is falsy via the `if … else` ternary. If both end
-           up empty / None we hit the cpp `paramExpr.empty()` early-return
-           false branch (DoneDataHelper.h:203-209). #}
-        {% set _structural = namespace(ok=true) %}
-        {% for param in state.donedata.params %}
-        {% set chosen = param.location if param.location else param.expr %}
-        {% if not chosen %}
-        {% set _structural.ok = false %}
-        {% endif %}
-        {% endfor %}
-        {% if not _structural.ok %}
-        /* W3C SCXML 5.7: structural error — empty `location` (and no
-           usable `expr`) on at least one <param>. Raise error.execution
-           and skip the done.state.{{ state.parent }} event entirely
-           (cpp DoneDataHelper::evaluateParams returns false → the
-           caller's `if (!success) break;` short-circuit). */
-        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "<donedata> has a <param> with an empty location");
-        (void)luaL_dostring(sm->L, "_pending_donedata = nil");
-        break;
-        {% else %}
         /* W3C SCXML 5.5: build _pending_donedata as a table of
-           name:value pairs. Failed param eval raises error.execution
-           and continues with the remaining params (cpp 5.7
-           "Continue to next param without adding this one"). */
+           name:value pairs. §scxml-5.7: a pair whose location is not
+           valid (an empty one included) or whose expr fails raises
+           error.execution and is ignored, and every other pair is still
+           evaluated (cpp DoneDataHelper::evaluateParams); the done event
+           is raised with what survives. */
         (void)luaL_dostring(sm->L, "_pending_donedata = {}");
         {% for param in state.donedata.params %}
-        {% set chosen = param.location if param.location else param.expr %}
+        {# §scxml-5.7: the parser admits exactly one of the two attributes,
+           so the one that is PRESENT is the value — tested for presence,
+           not truth. #}
+        {% set chosen = param.location if param.location is not none else param.expr %}
+        {% if chosen %}
         {{ se.lua_eval_donedata_param_expr(param.name, chosen) }}
-        {% endfor %}
+        {% else %}
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "<donedata> <param name='{{ param.name | escape_c }}'> has an empty location");
         {% endif %}
+        {% endfor %}
         {% elif state.donedata.content.kind == "expression" %}
         /* W3C SCXML 5.5: <content expr="{{ state.donedata.content.text }}"/>
            — evaluate against the active datamodel. */

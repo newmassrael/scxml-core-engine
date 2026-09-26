@@ -1090,18 +1090,26 @@ mod tests {
                 "validation/incompatible-attributes",
                 "SemanticIncompatibleAttributes",
             ),
+            // The `<param>` attribute-table leaf: both or neither of
+            // `expr` and `location`. Mirrors the forge
+            // `ValidationError::ExactlyOneAttribute` the frontend's
+            // `check_param_attributes` raises, so it reuses that code.
+            (
+                "validation/exactly-one-attribute",
+                "SemanticExactlyOneAttribute",
+            ),
         ];
         assert_eq!(
             rust_to_cpp.len(),
-            9,
-            "Expected 9 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 8 REUSED)"
+            10,
+            "Expected 10 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 9 REUSED)"
         );
 
         let expected_cpp: BTreeSet<&str> = rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
         assert_eq!(
             expected_cpp.len(),
-            9,
-            "Expected 9 distinct SemanticError subtypes"
+            10,
+            "Expected 10 distinct SemanticError subtypes"
         );
 
         let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
@@ -1181,8 +1189,12 @@ mod tests {
                 "SemanticIncompatibleAttributes",
                 "validation/incompatible-attributes",
             ),
+            (
+                "SemanticExactlyOneAttribute",
+                "validation/exactly-one-attribute",
+            ),
         ];
-        assert_eq!(class_to_code.len(), 8);
+        assert_eq!(class_to_code.len(), 9);
 
         let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
 

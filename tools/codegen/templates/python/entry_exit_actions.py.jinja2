@@ -78,20 +78,20 @@
             # reconstructed by a `return <text>` eval at the far end, which
             # is what made a payload executable there. Mirrors the Rust
             # template's `script_value_to_json(&val)`.
-            _done_data_ok = True
             _done_data: str = ""
 {% if state.donedata.params %}
             _done_parts: List[str] = []
 {% for param in state.donedata.params %}
-{% set _pexpr = param.expr or param.location %}
+{# §scxml-5.7: the parser admits exactly one of the two attributes, so the
+   one that is PRESENT is the value — tested for presence, not truth. #}
+{% set _pexpr = param.expr if param.expr is not none else param.location %}
 {% if not _pexpr %}
-            # W3C SCXML 5.7: `<param>` with empty expr/location is a
-            # structural error — raise error.execution and skip stash.
+            # §scxml-5.7: an empty location names no location —
+            # error.execution, and this pair is ignored.
             self._raise_error_execution(
                 engine,
                 "<donedata> <param name='{{ param.name }}'> has an empty location",
             )
-            _done_data_ok = False
 {% else %}
             try:
                 _done_parts.append(
@@ -108,8 +108,8 @@
                 )
 {% endif %}
 {% endfor %}
-            if _done_data_ok:
-                _done_data = "{" + ",".join(_done_parts) + "}"
+            # §scxml-5.5: the pairs that survived, `{}` when none did.
+            _done_data = "{" + ",".join(_done_parts) + "}"
 {% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 {% if state.donedata.content.kind == "expression" %}
 {% set donedata_content_lua = state.donedata.content.text | to_lua_expr %}
@@ -125,7 +125,7 @@
                     {{ donedata_content_lua | py_string_literal }},
                 ).to_json_literal()
             except _ScriptError:
-                _done_data_ok = False
+                # §scxml-5.6.2: the data stays empty.
                 self._raise_error_execution(
                     engine, "<donedata> <content expr> failed to evaluate"
                 )
@@ -144,13 +144,12 @@
 {% if state.parent and ('done.state.' ~ state.parent) in model.events %}
             # W3C SCXML 5.5 + 3.7: a donedata eval failure raises
             # `error.execution` AND still fires `done.state.<parent>`
-            # with empty `_event.data` (test528). The error.execution
-            # has already been raised inline; here we always raise the
-            # done event, supplying empty data on the failure path so
-            # the surrounding transition can still match.
+            # (test343, test528). The error.execution has already been
+            # raised inline; here the done event carries whatever
+            # survived.
             engine.raise_internal(
                 {{ machine_name }}Event.{{ ('done.state.' ~ state.parent) | to_python_const }},
-                EventMetadata(data=_done_data if _done_data_ok else "", event_type="internal"),
+                EventMetadata(data=_done_data, event_type="internal"),
             )
 {% endif %}
 {% endif %}
@@ -178,8 +177,7 @@
             # donedata onto the engine; the invoking parent's
             # `ScxmlInvoke.done_data()` lifts it into
             # `done.invoke.<id>._event.data`.
-            if _done_data_ok:
-                engine.done_data = _done_data
+            engine.done_data = _done_data
 {% endif %}
             return
 {% endif %}

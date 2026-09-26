@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: a <param> carrying neither `expr` nor `location`
+  (W3C SCXML 5.7: "MUST specify either the 'expr' attribute of <param> or
+  the 'location' attribute"). key_fragments are ("<param>",
+  "expr,location", "") — nothing is written, so nothing rides `actual`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="s">
+  <state id="s">
+    <onentry>
+      <send event="e">
+        <param name="p"/>
+      </send>
+    </onentry>
+  </state>
+</scxml>

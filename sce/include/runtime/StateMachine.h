@@ -967,7 +967,7 @@ private:
     bool isStateInFinalState(const std::string &stateId) const;
 
     // §scxml-5.5: donedata, through DoneDataHelper (Zero Duplication)
-    bool evaluateDoneData(const std::string &finalStateId, std::string &outEventData,
+    void evaluateDoneData(const std::string &finalStateId, std::string &outEventData,
                           std::optional<ScriptValue> &outTypedData);
 };
 

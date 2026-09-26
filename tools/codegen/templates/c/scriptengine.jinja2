@@ -699,8 +699,8 @@
    "Return empty data when evaluation fails"), and an `error.execution`
    event is queued (W3C 5.10). Mirrors cpp `DoneDataHelper::evaluateContent`
    — the cpp path returns `outEventData = ""` on failure but still emits
-   the done.state event; the C11 emit follows that same flow because the
-   structural-error short-circuit only applies to params, not content. #}
+   the done.state event, and the C11 emit follows that same flow; no
+   donedata failure withholds the done event (§scxml-5.7). #}
 {# `lua` arrives already lowered, because which filter lowers it is what
    distinguishes the two readings §scxml-B-2 gives `<content>`: `expr`
    promises an expression (`to_lua_expr`), while inline text is an
@@ -1171,7 +1171,8 @@
 
    No `_scxml_declared` ReferenceError check: cpp send does not invoke
    `LuaEngine::isUndeclaredSimpleVariable` (`LuaEngine.cpp:99`) on send
-   params (only donedata params per W3C 5.7's structural-error semantics);
+   params (only on donedata params, whose invalid location §scxml-5.7
+   answers with error.execution);
    the macro stays free of that lookup so fixtures without `<donedata>` do
    not need to declare `_scxml_declared`. #}
 {% macro lua_eval_send_param_expr(param_name, expr) %}

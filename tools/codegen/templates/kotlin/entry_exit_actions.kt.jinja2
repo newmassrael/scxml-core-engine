@@ -424,36 +424,36 @@
 {% elif state.donedata.params %}
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
-                    var doneParamStructuralError = false
 {% for param in state.donedata.params %}
-{% if param.expr is not none %}
+{# §scxml-5.7: the parser admits exactly one of the two attributes, so the
+   one that is PRESENT is the value — tested for presence, not truth. Each
+   attribute goes through the pair filter where it is emitted, never bound
+   to a name first: this backend refuses author text that reaches the
+   engine by any other route. #}
+{% if param.expr is not none and param.expr %}
                     try {
                         doneParams["{{ param.name | escape_kotlin }}"] = engineDD.evaluateExpr(sidDD, {{ param.expr | to_script_source_expr }})
                     } catch (_: Exception) {
-                        // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
+                        // §scxml-5.7: error.execution, and this pair is ignored.
                         raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <param name='{{ param.name | escape_kotlin }}'> failed to evaluate")
                     }
-{% elif param.location is not none %}
-{% if param.location %}
+{% elif param.expr is none and param.location %}
                     try {
-                        val locVal = engineDD.evaluateExpr(sidDD, {{ param.location | to_script_source_expr }})
-                        doneParams["{{ param.name | escape_kotlin }}"] = locVal
+                        doneParams["{{ param.name | escape_kotlin }}"] = engineDD.evaluateExpr(sidDD, {{ param.location | to_script_source_expr }})
                     } catch (_: Exception) {
-                        // W3C SCXML 5.7: Runtime location error — raise error.execution but continue
-                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <param name='{{ param.name | escape_kotlin }}'> location could not be read")
+                        // §scxml-5.7: error.execution, and this pair is ignored.
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <param name='{{ param.name | escape_kotlin }}'> failed to evaluate")
                     }
 {% else %}
-                    // W3C SCXML 5.7: Empty location — structural error (C++ DoneDataHelper returns false)
+                    // §scxml-5.7: an empty location names no location —
+                    // error.execution, and this pair is ignored.
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <param name='{{ param.name | escape_kotlin }}'> has an empty location")
-                    doneParamStructuralError = true
-{% endif %}
 {% endif %}
 {% endfor %}
-                    // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
-                    if (doneParamStructuralError) return@run
-                    if (doneParams.isNotEmpty()) {
-                        doneEventData = buildJsonFromParams(doneParams)
-                    }
+                    // §scxml-5.5: the pairs that survived, `{}` when none did
+                    // (C++ DoneDataHelper::evaluateParams). Not left to
+                    // buildJsonFromParams, whose empty answer is a <send>'s.
+                    doneEventData = if (doneParams.isEmpty()) "{}" else buildJsonFromParams(doneParams)
 {% endif %}
 {% if has_done_event %}
                     // W3C SCXML 3.7: Final child state reached, raise done.state with data

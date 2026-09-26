@@ -1026,7 +1026,7 @@ void StateMachine::enterFinalState(const std::string &finalState) {
         // completion callback that runs once the microstep is over.
         pendingDonedataAtFinal_.clear();
         pendingTypedDonedataAtFinal_.reset();
-        (void)evaluateDoneData(finalState, pendingDonedataAtFinal_, pendingTypedDonedataAtFinal_);
+        evaluateDoneData(finalState, pendingDonedataAtFinal_, pendingTypedDonedataAtFinal_);
         topLevelFinalReached_ = true;
         terminalState_ = finalState;
         isRunning_ = false;
@@ -1036,15 +1036,13 @@ void StateMachine::enterFinalState(const std::string &finalState) {
 
     // §scxml-D-enterStates: done.state.<parent>, carrying the `<final>`'s
     // donedata; and when the grandparent is a `<parallel>` every region of
-    // which is now in a final state, done.state.<grandparent>. A structural
-    // error in the donedata raises error.execution and neither event, the
-    // same answer the generated engines give.
+    // which is now in a final state, done.state.<grandparent>. A donedata
+    // pair that cannot be evaluated raises error.execution and is ignored
+    // (§scxml-5.7); the `<final>` is entered all the same, so both events
+    // are raised.
     std::string eventData;
     std::optional<ScriptValue> typedData;
-    if (!evaluateDoneData(finalState, eventData, typedData)) {
-        SCE_LOG_DEBUG("W3C SCXML 5.7: Donedata evaluation failed, skipping done.state event generation");
-        return;
-    }
+    evaluateDoneData(finalState, eventData, typedData);
     raiseInternal("done.state." + *parent, eventData, std::move(typedData));
 
     const auto grandparent = document_->parentOf(*parent);
@@ -2120,43 +2118,29 @@ void StateMachine::executePendingInvokes() {
 // (canonical JSON pipeline; see DoneDataHelper::evaluateContent/evaluateParams).
 
 /**
- * §scxml-5.5 & 5.7: Evaluate donedata and return JSON event data
+ * §scxml-5.5 & 5.7: Evaluate donedata into the done event's JSON data.
  *
- * Handles two types of param errors with different behaviors:
- *
- * 1. Structural Error (empty location=""):
- *    - Indicates malformed SCXML document
- *    - Raises error.execution event
- *    - Returns false to prevent done.state event generation
- *    - Used when param has no location/expr attribute
- *
- * 2. Runtime Error (invalid expression like "foo"):
- *    - Indicates runtime evaluation failure
- *    - Raises error.execution event
- *    - Ignores the failed param and continues with others
- *    - Returns true to generate done.state event with partial/empty data
- *    - Used when param expression evaluation fails
- *
- * This distinction ensures:
- * - Structural errors fail fast (no done.state)
- * - Runtime errors are recoverable (done.state with available data)
+ * A `<param>` whose location is not valid (an empty one included) or whose
+ * expr fails raises error.execution and is ignored; a `<content expr>` that
+ * fails raises error.execution and leaves the data empty. Neither stops the
+ * done event — §scxml-5.7 says to ignore the name and value, not to withhold
+ * the event — so there is nothing to return.
  *
  * @param finalStateId The ID of the final state
  * @param outEventData Output parameter for JSON event data
- * @return false if structural error (prevents done.state), true otherwise
  */
-bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string &outEventData,
+void StateMachine::evaluateDoneData(const std::string &finalStateId, std::string &outEventData,
                                     std::optional<ScriptValue> &outTypedData) {
     // §scxml-5.5: Initialize output
     outEventData = "";
 
     if (!model_) {
-        return true;  // No donedata to evaluate
+        return;  // No donedata to evaluate
     }
 
     auto finalState = model_->findStateById(finalStateId);
     if (!finalState) {
-        return true;  // No donedata to evaluate
+        return;  // No donedata to evaluate
     }
 
     const auto &doneData = finalState->getDoneData();
@@ -2167,7 +2151,7 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
     switch (doneData.getContentKind()) {
     case DoneData::ContentKind::Expression:
         SCE_LOG_DEBUG("W3C SCXML 5.5: Evaluating donedata <content expr>: '{}'", doneData.getContent());
-        return DoneDataHelper::evaluateContent(
+        DoneDataHelper::evaluateContent(
             scriptEngine_, sessionId_, doneData.getContent(), outEventData,
             [this](const std::string &msg) {
                 SCE_LOG_ERROR("W3C SCXML 5.5: Failed to evaluate donedata content: {}", msg);
@@ -2176,10 +2160,11 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
                 }
             },
             &outTypedData);
+        return;
     case DoneData::ContentKind::Literal:
         SCE_LOG_DEBUG("W3C SCXML 5.5: Emitting donedata literal content: '{}'", doneData.getContent());
         DoneDataHelper::emitContentLiteral(doneData.getContent(), outEventData, &outTypedData);
-        return true;
+        return;
     case DoneData::ContentKind::None:
         break;
     }
@@ -2197,7 +2182,7 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
         for (const auto &param : params) {
             taggedParams.emplace_back(param.first, ScriptSource::ecmascript(param.second));
         }
-        return DoneDataHelper::evaluateParams(
+        DoneDataHelper::evaluateParams(
             scriptEngine_, sessionId_, taggedParams, outEventData,
             [this](const std::string &msg) {
                 SCE_LOG_ERROR("W3C SCXML 5.7: {}", msg);
@@ -2207,9 +2192,6 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
             },
             &outTypedData);
     }
-
-    // No donedata
-    return true;
 }
 
 }  // namespace SCE

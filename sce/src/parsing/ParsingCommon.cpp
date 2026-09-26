@@ -3,6 +3,7 @@
 
 #include "parsing/ParsingCommon.h"
 #include "core/LogMacros.h"
+#include "parsing/SemanticError.h"
 #include <algorithm>
 #include <cctype>
 
@@ -288,6 +289,22 @@ std::string ParsingCommon::trimString(const std::string &str) {
     }
 
     return str.substr(start, end - start);
+}
+
+void ParsingCommon::checkParamAttributes(const std::shared_ptr<IXMLElement> &paramElement) {
+    // Document order, as the Rust producer reads it: the attribute written
+    // beyond the first is the record's `actual`.
+    std::vector<std::string> written;
+    for (const auto &name : paramElement->getAttributeNames()) {
+        if (name == "expr" || name == "location") {
+            written.push_back(name);
+        }
+    }
+    if (written.size() == 1) {
+        return;
+    }
+    throw parsing::SemanticExactlyOneAttribute(
+        "<param>", {"expr", "location"}, written.size() > 1 ? std::optional<std::string>(written[1]) : std::nullopt);
 }
 
 }  // namespace SCE

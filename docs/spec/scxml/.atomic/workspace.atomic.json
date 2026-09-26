@@ -6704,6 +6704,31 @@
           "file": "tests/w3c/aot_tests/Test488.h",
           "symbol": "Test488",
           "kind": "verifies"
+        },
+        {
+          "file": "sce/include/parsing/ParsingCommon.h",
+          "symbol": "checkParamAttributes",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/parsing/SemanticError.h",
+          "symbol": "SemanticExactlyOneAttribute",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/DoneDataParser.cpp",
+          "symbol": "SCE::DoneDataParser::parseParam",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::enterFinalState",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::evaluateDoneData",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {

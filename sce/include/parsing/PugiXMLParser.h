@@ -25,6 +25,7 @@ public:
     std::string getAttribute(const std::string &name) const override;
     bool hasAttribute(const std::string &name) const override;
     std::unordered_map<std::string, std::string> getAttributes() const override;
+    std::vector<std::string> getAttributeNames() const override;
     std::string getNamespace() const override;
     std::vector<std::shared_ptr<IXMLElement>> getChildren() const override;
     std::vector<std::shared_ptr<IXMLElement>> getChildrenByTagName(const std::string &tagName) const override;

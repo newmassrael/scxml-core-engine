@@ -204,4 +204,16 @@ nlohmann::ordered_json SemanticIncompatibleAttributes::to_json() const {
     return baseEnvelope();
 }
 
+nlohmann::ordered_json SemanticExactlyOneAttribute::to_json() const {
+    // The Rust arm: the alternatives ride `expected`, the attribute written
+    // beyond the first rides `actual` (absent when none is written), and no
+    // fix, because which one the author meant is not the producer's to say.
+    auto out = baseEnvelope();
+    out["expected"] = alternatives_;
+    if (extra_) {
+        out["actual"] = *extra_;
+    }
+    return out;
+}
+
 }  // namespace SCE::parsing

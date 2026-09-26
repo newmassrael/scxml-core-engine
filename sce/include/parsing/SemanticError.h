@@ -529,4 +529,68 @@ private:
     std::string detail_;
 };
 
+// An element that takes exactly one of several attributes carries none of
+// them, or more than one. Mirrors Rust `ValidationError::ExactlyOneAttribute
+// { element, alternatives, extra }` — `validation/exactly-one-attribute`,
+// the same message, key fragments (element, the alternatives joined by
+// ",", the extra attribute or ""), `expected` = the alternatives, `actual`
+// = the attribute written beyond the first, and no fix. First raised by
+// `ParsingCommon::checkParamAttributes` for a `<param>` naming both or
+// neither of `expr` and `location` (§scxml-5.7).
+class SemanticExactlyOneAttribute : public SemanticError {
+public:
+    SemanticExactlyOneAttribute(std::string element, std::vector<std::string> alternatives,
+                                std::optional<std::string> extra)
+        : SemanticError(message(element, alternatives, extra), {element, join(alternatives, ","), extra.value_or("")}),
+          element_(std::move(element)), alternatives_(std::move(alternatives)), extra_(std::move(extra)) {}
+
+    std::string_view code() const noexcept override {
+        return "validation/exactly-one-attribute";
+    }
+
+    nlohmann::ordered_json to_json() const override;
+
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<SemanticExactlyOneAttribute>(*this);
+    }
+
+    const std::string &element() const noexcept {
+        return element_;
+    }
+
+    const std::vector<std::string> &alternatives() const noexcept {
+        return alternatives_;
+    }
+
+    const std::optional<std::string> &extra() const noexcept {
+        return extra_;
+    }
+
+private:
+    static std::string join(const std::vector<std::string> &parts, const std::string &separator) {
+        std::string out;
+        for (size_t i = 0; i < parts.size(); ++i) {
+            if (i != 0) {
+                out += separator;
+            }
+            out += parts[i];
+        }
+        return out;
+    }
+
+    // The Rust `exactly_one_attribute_message`, word for word.
+    static std::string message(const std::string &element, const std::vector<std::string> &alternatives,
+                               const std::optional<std::string> &extra) {
+        const std::string oneOf = join(alternatives, ", ");
+        if (!extra) {
+            return element + ": takes exactly one of " + oneOf + ", and carries none";
+        }
+        return element + ": takes exactly one of " + oneOf + ", and '" + *extra + "' is one too many";
+    }
+
+    std::string element_;
+    std::vector<std::string> alternatives_;
+    std::optional<std::string> extra_;
+};
+
 }  // namespace SCE::parsing

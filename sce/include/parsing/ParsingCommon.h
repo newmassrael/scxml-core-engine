@@ -156,6 +156,21 @@ public:
 
     static std::string trimString(const std::string &str);
 
+    /**
+     * @brief Refuse a `<param>` that names both or neither of `expr` and
+     *        `location` (§scxml-5.7)
+     *
+     * One rule for every element that owns a `<param>` — `<send>`,
+     * `<invoke>`, `<donedata>` — and the same refusal the code generator's
+     * frontend makes (`check_param_attributes` in sce-build/src/parser.rs).
+     * Presence is judged, not value: `location=""` is §scxml-5.7's run-time
+     * error.execution (W3C test298), not a document error.
+     *
+     * @throws SCE::parsing::SemanticExactlyOneAttribute when both or neither
+     *         occur (`validation/exactly-one-attribute`)
+     */
+    static void checkParamAttributes(const std::shared_ptr<IXMLElement> &paramElement);
+
 private:
     // Prevent instance creation
     ParsingCommon() = delete;

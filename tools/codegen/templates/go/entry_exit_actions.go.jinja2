@@ -120,7 +120,6 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% if state.is_final and state.donedata %}
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
-		doneDataOk := true
 {% if state.donedata.params %}
 		{
 			p.ensureScriptEngine()
@@ -128,13 +127,15 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 			if se != nil {
 				var jsonParts []string
 {% for param in state.donedata.params %}
-{% set param_expr = param.expr if param.expr else param.location %}
+{# §scxml-5.7: the parser admits exactly one of the two attributes, so the
+   one that is PRESENT is the value — tested for presence, not truth. #}
+{% set param_expr = param.expr if param.expr is not none else param.location %}
 {% if not param_expr %}
-				// W3C SCXML 5.7: Empty location raises error.execution (structural error)
+				// §scxml-5.7: an empty location names no location —
+				// error.execution, and this pair is ignored.
 {% if 'error.execution' in model.events %}
 				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<donedata> <param name='{{ param.name | escape_go }}'> has an empty location"))
 {% endif %}
-				doneDataOk = false
 {% else %}
 {# A Go raw string cannot escape its own terminator, so author text in
    one is unfixable by any filter. Interpreted strings take the same
@@ -152,9 +153,8 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 				}
 {% endif %}
 {% endfor %}
-				if doneDataOk {
-					doneEventData = "{" + strings.Join(jsonParts, ",") + "}"
-				}
+				// §scxml-5.5: the pairs that survived, `{}` when none did.
+				doneEventData = "{" + strings.Join(jsonParts, ",") + "}"
 			}
 		}
 {% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
@@ -196,7 +196,6 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 		}
 {% endif %}
 		_ = doneEventData
-		_ = doneDataOk
 {% endif %}
 {% if state.is_final and state.donedata and not state.parent %}
 		// W3C SCXML 5.5 + 6.3.1: Top-level <final> — stash donedata so the
@@ -204,19 +203,15 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 		// done.invoke.<id>._event.data. Mirrors the C++ AOT
 		// stashDonedataAtFinal contract and Rust
 		// Engine::stash_donedata_at_final.
-		if doneDataOk {
-			engine.StashDonedataAtFinal(doneEventData)
-		}
+		engine.StashDonedataAtFinal(doneEventData)
 {% endif %}
 {% if state.is_final and state.parent %}
 {% set done_event = ("done.state." ~ state.parent) | to_event_variant %}
 {% if state.donedata %}
 		// W3C SCXML 5.5: Carry evaluated donedata in done.state.{{ state.parent }} event
-		if doneDataOk {
-			doneMeta := sce.NewEventWithMetadata({{ machine_name }}Event{{ done_event }})
-			doneMeta.Metadata.Data = doneEventData
-			engine.Raise(doneMeta)
-		}
+		doneMeta := sce.NewEventWithMetadata({{ machine_name }}Event{{ done_event }})
+		doneMeta.Metadata.Data = doneEventData
+		engine.Raise(doneMeta)
 {% else %}
 		// W3C SCXML 3.7: Final state reached — raise done.state.{{ state.parent }}
 		engine.Raise(sce.NewEventWithMetadata({{ machine_name }}Event{{ done_event }}))
