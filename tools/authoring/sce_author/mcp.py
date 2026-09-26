@@ -37,7 +37,15 @@ import pathlib
 import sys
 import traceback
 
+from . import brief as brief_sections
 from .brief import assemble
+
+# The most the brief returns in one result. ⚠ Chosen for the smallest client:
+# a result near this size is about 15k tokens, which a 32k-context model can
+# still hold beside its work. Over it, the caller gets the section index and
+# asks for sections. Measured 2026-09-26: a 227,761-character brief was
+# refused by the client that asked for it.
+BRIEF_LIMIT = 60_000
 from .check import check
 from .coverage import coverage as run_coverage
 from .errors import AuthoringError
@@ -83,7 +91,18 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "required": ["pack", "prose"],
-            "properties": {"pack": _PACK_ARG, "prose": _PROSE_ARG},
+            "properties": {
+                "pack": _PACK_ARG,
+                "prose": _PROSE_ARG,
+                "sections": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 1},
+                    "description": (
+                        "Only these numbered sections. Without it the whole "
+                        "brief is returned when it fits, and otherwise its "
+                        "section index with each section's size."),
+                },
+            },
         },
     },
     {
@@ -443,7 +462,19 @@ def call_tool(name: str, args: dict) -> dict:
         if name == "brief":
             pack = load_pack(_pack_arg(args))
             prose = load_prose(_prose_arg(args))
-            return _text(assemble(prose, pack))
+            wanted = args.get("sections")
+            if wanted is not None:
+                if (not isinstance(wanted, list) or not wanted
+                        or not all(isinstance(n, int) and not isinstance(n, bool) for n in wanted)):
+                    raise ToolArgumentError("'sections' has to be a non-empty list of section numbers")
+                try:
+                    return _text(brief_sections.pick(prose, pack, wanted))
+                except ValueError as exc:
+                    raise ToolArgumentError(str(exc)) from None
+            whole = assemble(prose, pack)
+            if len(whole) > BRIEF_LIMIT:
+                return _text(brief_sections.index(prose, pack, BRIEF_LIMIT))
+            return _text(whole)
 
         if name == "questions":
             pack = load_pack(_pack_arg(args))

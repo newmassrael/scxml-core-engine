@@ -27,7 +27,90 @@ def _value_line(fld) -> str:
     return f"({fld.type or 'no declared value space'})"
 
 
+HEADER = [
+    "# Conversion brief",
+    "",
+    "Assembled by a machine. The decision logic is in section 1 and nowhere",
+    "else; the rest is what section 1 needs in order to reach a platform.",
+    "",
+]
+
+
+# The brief's own section headings, as `_parts` writes them. Sections are
+# found by these ELEMENTS, never by searching the joined text: a specification
+# carries headings of its own (`## Road signal`), and splitting the text on
+# "## " cut section 1 into pieces.
+HEADINGS = (
+    "## 1. Specification",
+    "## 2. Addresses this specification touches",
+    "## 3. Outputs this specification is expected to decide",
+    "## 4. Preconditions",
+    "## 5. What this specification does not answer",
+    "## 6. When you have to decide anyway",
+    "## 7. When the answer depends on what happened before",
+)
+
+
+def sections(prose: Prose, pack: Pack) -> list[tuple[str, list[str]]]:
+    """The brief as (heading, lines) pairs, in order. `assemble` joins them.
+
+    ⚠ Split so a caller can take them one at a time. For the largest
+    specification in one corpus the whole brief was 227,761 characters --
+    72% of it section 1, the specification itself -- and a tool result that
+    size is refused by the client that asked for it and spilled into a file
+    (measured 2026-09-26; a writer read it back in pieces, a smaller model
+    could not). `index` is what a caller gets instead.
+    """
+    out: list[tuple[str, list[str]]] = []
+    for element in _parts(prose, pack)[len(HEADER):]:
+        if element in HEADINGS:
+            out.append((element[len("## "):], []))
+        else:
+            out[-1][1].append(element)
+    return out
+
+
+def _join(chosen: list[tuple[str, list[str]]]) -> str:
+    lines = list(HEADER)
+    for heading, body in chosen:
+        lines += [f"## {heading}", *body]
+    return "\n".join(lines) + "\n"
+
+
+def index(prose: Prose, pack: Pack, limit: int) -> str:
+    """What a caller is told when the whole brief exceeds `limit` characters."""
+    lines = HEADER[:1] + [
+        "",
+        f"The whole brief is too large to return at once (over {limit:,} "
+        f"characters). Ask for its sections by number with `sections`, one or "
+        f"a few at a time:",
+        "",
+    ]
+    for heading, body in sections(prose, pack):
+        number = heading.split(".", 1)[0]
+        note = ""
+        if number == "1":
+            note = (" -- the specification itself, exactly the prose file(s) you "
+                    "passed; read those files directly, in parts, instead")
+        lines.append(f"- {heading} ({len(chr(10).join(body)):,} characters){note}")
+    return "\n".join(lines) + "\n"
+
+
+def pick(prose: Prose, pack: Pack, wanted: list[int]) -> str:
+    """Only the numbered sections asked for, in the order asked."""
+    found = {h.split(".", 1)[0]: (h, b) for h, b in sections(prose, pack)}
+    missing = [n for n in wanted if str(n) not in found]
+    if missing:
+        raise ValueError(f"the brief has no section {missing[0]}; it has "
+                         f"{', '.join(sorted(found, key=int))}")
+    return _join([found[str(n)] for n in wanted])
+
+
 def assemble(prose: Prose, pack: Pack) -> str:
+    return _join(sections(prose, pack))
+
+
+def _parts(prose: Prose, pack: Pack) -> list[str]:
     model, conv = pack.model, pack.conventions
     names = prose.names_of(conv)
     questions = ask(prose, model, conv, pack.examples)
@@ -42,12 +125,7 @@ def assemble(prose: Prose, pack: Pack) -> str:
     body = prose.text
     touched = [e for e in model.entries if any(n in body for n in e.names)]
 
-    parts: list[str] = [
-        "# Conversion brief",
-        "",
-        "Assembled by a machine. The decision logic is in section 1 and nowhere",
-        "else; the rest is what section 1 needs in order to reach a platform.",
-        "",
+    parts: list[str] = HEADER + [
         "## 1. Specification",
         "",
     ]
@@ -132,7 +210,7 @@ def assemble(prose: Prose, pack: Pack) -> str:
     parts += ["", "## 6. When you have to decide anyway", "", _DECIDING]
     parts += ["", "## 7. When the answer depends on what happened before",
               "", _REMEMBERING]
-    return "\n".join(parts) + "\n"
+    return parts
 
 
 # ⚠ A specification very often answers from history -- "when A becomes B",

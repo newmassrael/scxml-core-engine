@@ -54,7 +54,14 @@ questions already known. It accepts any number of prose files and resolves
 names across all of them, because one feature is frequently written across
 several documents and a name introduced in one is used in another. `--out` is
 where the page is written, and it is required: a brief is a file somebody
-keeps open while writing, not something to watch scroll past once.
+keeps open while writing, not something to watch scroll past once. Over MCP
+the brief comes back whole only when it fits one tool result (60,000
+characters); a larger one comes back as its section index with each
+section's size, and `sections: [2, 4]` returns those sections. Section 1 is
+the prose itself, which the caller already holds as files. Measured
+2026-09-26: the largest specification in one corpus made a 227,761-character
+brief, 72% of it section 1, and the client that asked refused a result that
+size.
 
 **questions** is the deliverable that matters for an author: what the prose does
 not say. All domain-free; the ones an author acts on most are:
