@@ -3326,16 +3326,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "executeOnExit",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "initialize",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/model/IStateNode.h",
           "symbol": "addExitActionBlock",
           "kind": "implements"
@@ -19430,6 +19420,18 @@
       "target_kind": "section",
       "target_id": "scxml-D-exitInterpreter",
       "reason": "The cite on this field resolves to the enclosing struct Engine; the field-level binding was wrong and is replaced by one on Engine."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.9",
+      "reason": "executeOnExit was removed in 7a95a50546: a run's remaining states are now exited by exitInterpreter through the same exit procedure every microstep uses, so no symbol of that name is left to implement 3.9."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.9",
+      "reason": "initialize no longer runs a final state's onexit itself (7a95a50546); the main event loop's exitInterpreter does, so initialize cites no onexit clause."
     }
   ],
   "frames": {},

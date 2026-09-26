@@ -560,8 +560,8 @@ pub fn exit_states<R: Run>(run: &mut R, transitions: &[EnabledTransition<R::Stat
     }
 }
 
-/// Appendix D's exitInterpreter: every state still in the configuration, exited
-/// in exitOrder, each the way exitStates exits one.
+/// Appendix D's exitInterpreter (§scxml-D-exitInterpreter): every state still
+/// in the configuration, exited in exitOrder, each the way exitStates exits one.
 ///
 /// ```text
 /// statesToExit = configuration.toList().sort(exitOrder)
