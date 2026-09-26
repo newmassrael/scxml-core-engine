@@ -870,13 +870,15 @@ impl XSceHostInvoker for PermHost {
 
 /// A machine driven into `typed` with `PermHost` registered through the
 /// generated adapter, and the untyped invokes of the same type served by
-/// [`running_invoker`].
-fn typed_host() -> (
-    Engine<Policy>,
-    Arc<dyn IScriptEngine>,
-    Arc<Mutex<PermCalls>>,
-    Arc<Mutex<Vec<String>>>,
-) {
+/// [`running_invoker`] — with what each of them saw.
+struct TypedHost {
+    engine: Engine<Policy>,
+    script_engine: Arc<dyn IScriptEngine>,
+    calls: Arc<Mutex<PermCalls>>,
+    log: Arc<Mutex<Vec<String>>>,
+}
+
+fn typed_host() -> TypedHost {
     let calls: Arc<Mutex<PermCalls>> = Arc::default();
     let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let starts: Starts = Arc::default();
@@ -886,7 +888,12 @@ fn typed_host() -> (
     engine.initialize();
     engine.step();
     engine.process_event(Event::Type);
-    (engine, script_engine, calls, log)
+    TypedHost {
+        engine,
+        script_engine,
+        calls,
+        log,
+    }
 }
 
 /// SCE Accepted Subset §2.12: through the generated interface a host is
@@ -896,7 +903,12 @@ fn typed_host() -> (
 /// document does not type still reaches the host, through the fallback.
 #[test]
 fn a_typed_request_reaches_its_invoker_as_its_record() {
-    let (mut engine, script_engine, calls, log) = typed_host();
+    let TypedHost {
+        mut engine,
+        script_engine,
+        calls,
+        log,
+    } = typed_host();
     let (request, token) = {
         let calls = calls.lock().expect("perm calls");
         assert_eq!(calls.starts.len(), 1, "perm started once");
@@ -930,7 +942,12 @@ fn a_typed_request_reaches_its_invoker_as_its_record() {
 /// and the new one raises error.execution and is never handed to the host.
 #[test]
 fn a_request_that_does_not_fit_its_record_starts_nothing() {
-    let (mut engine, script_engine, calls, _log) = typed_host();
+    let TypedHost {
+        mut engine,
+        script_engine,
+        calls,
+        ..
+    } = typed_host();
     let first = calls.lock().expect("perm calls").starts[0].1;
     engine.process_event(Event::Retype);
     let calls = calls.lock().expect("perm calls");

@@ -68,6 +68,8 @@ def request_field_wire(value: ScriptValue, name: str, field_type: RequestFieldTy
     cannot fail. A byte string rides as its byte-exact Latin-1 text, the
     spelling a completion's byte field uses.
     """
+    # §scxml-6.4.1: a value the record's field cannot hold is an argument that
+    # cannot be evaluated, so the invocation it belongs to starts nothing.
     kind = field_type.kind
     if kind in _WHOLE_BOUNDS:
         if value.kind is ScriptValueKind.INT:
