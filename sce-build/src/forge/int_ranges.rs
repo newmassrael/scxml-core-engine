@@ -528,12 +528,39 @@ impl Analysis<'_, '_> {
                         Some(if *op == BinOp::Mod {
                             modulo_range(l, r).clamp(own)
                         } else {
-                            own
+                            quotient_range(l, r).map_or(own, |q| q.clamp(own))
                         })
                     }
                     // Bitwise operations and shifts keep the declared width's
                     // meaning and never fail; their value is the whole type.
                     _ => Some(own),
+                }
+            }
+            // The value is one branch's, and each branch is reached only
+            // where the test says so: `y >= 0 ? y : y - 399` subtracts from a
+            // negative `y` alone. A branch no value reaches contributes
+            // nothing — neither a range nor a hazard.
+            ExprKind::Conditional {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                self.eval(condition, expr, spelling, env);
+                let mut value: Option<Interval> = None;
+                let mut every_branch_integer = true;
+                for (branch, truth) in [(consequent, true), (alternate, false)] {
+                    let branch_env = self.narrowed(Some(condition), env, truth);
+                    if branch_env.unreachable {
+                        continue;
+                    }
+                    match self.eval(branch, expr, spelling, &branch_env) {
+                        Some(v) => value = Some(value.map_or(v, |acc| acc.join(v))),
+                        None => every_branch_integer = false,
+                    }
+                }
+                match (value, own) {
+                    (Some(v), Some(own)) if every_branch_integer => Some(v.clamp(own)),
+                    _ => own,
                 }
             }
             ExprKind::Call { callee, args, .. } if matches!(&callee.kind, ExprKind::Ident(n) | ExprKind::Raw(n) if n == "len") =>
@@ -634,6 +661,24 @@ fn arith(op: BinOp, l: Interval, r: Interval) -> Interval {
             }
         }
     }
+}
+
+/// The exact range of the truncated quotient `l / r`, or `None` when the
+/// divisor's range holds zero.
+///
+/// With the divisor's sign fixed, the quotient moves monotonically with
+/// each operand, so its extremes are at the corners. A divisor range that
+/// holds zero (a guarded one, which may still hold both signs) has no such
+/// corners, and the caller keeps the whole type.
+fn quotient_range(l: Interval, r: Interval) -> Option<Interval> {
+    if r.contains(0) {
+        return None;
+    }
+    let quotients = [l.lo / r.lo, l.lo / r.hi, l.hi / r.lo, l.hi / r.hi];
+    Some(Interval {
+        lo: *quotients.iter().min()?,
+        hi: *quotients.iter().max()?,
+    })
 }
 
 /// A range the remainder `l % r` lies in: less than the largest divisor in
@@ -907,6 +952,50 @@ mod tests {
             ret("i"),
         ];
         assert!(analyse(&[], &[("i", SceType::Uint8)], &body).is_empty());
+    }
+
+    #[test]
+    fn a_conditional_is_as_wide_as_the_branches_its_test_lets_through() {
+        // `y` holds an int32 widened to int64. `y - 399` is taken only when
+        // `y` is negative, and the value is one branch's, so what follows
+        // is judged against the union of the two — not the whole of int64.
+        let i64t = AlgorithmValueType::Scalar(SceType::Int64);
+        let body = [
+            var("y", i64t.clone(), "year"),
+            var("era", i64t.clone(), "(y >= 0 ? y : y - 399) / 400"),
+            ret("era * 146097"),
+        ];
+        assert!(analyse(
+            &[("year", SceType::Int32)],
+            &[("y", SceType::Int64), ("era", SceType::Int64)],
+            &body
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn a_hazard_in_a_branch_its_test_excludes_is_not_reported() {
+        // `x - 1` is taken only when `x` is above 0, where it cannot pass
+        // below uint8's range.
+        let body = [ret("x > 0 ? x - 1 : x")];
+        assert!(analyse(&[("x", SceType::Uint8)], &[], &body).is_empty());
+        // Unguarded, it can.
+        let body = [ret("x >= 0 ? x - 1 : x")];
+        assert_eq!(
+            analyse(&[("x", SceType::Uint8)], &[], &body),
+            vec![("x >= 0 ? x - 1 : x".to_string(), HazardKind::Overflow)]
+        );
+    }
+
+    #[test]
+    fn a_quotient_by_a_divisor_of_one_sign_keeps_its_bound() {
+        // `x / 400` of an int32 stays within an int32 over 400, so a
+        // product of it that the whole of int64 would overflow does not.
+        let body = [ret("x / 400 * 146097")];
+        assert!(analyse(&[("x", SceType::Int64)], &[], &body).len() == 1);
+        let i64t = AlgorithmValueType::Scalar(SceType::Int64);
+        let body = [var("w", i64t, "x"), ret("w / 400 * 146097")];
+        assert!(analyse(&[("x", SceType::Int32)], &[("w", SceType::Int64)], &body).is_empty());
     }
 
     #[test]
