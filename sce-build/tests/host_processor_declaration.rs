@@ -299,6 +299,9 @@ fn the_invoke_half_is_reported_and_then_claimed() {
             ("invoke-type", "done._invoke_0"),
             ("invoke-type", "locating._invoke_1"),
             ("invoke-type", "locating._invoke_2"),
+            // `timed`: a deadline that passes, and one that cannot be read.
+            ("invoke-type", "slow"),
+            ("invoke-type", "undated"),
         ],
         "{causes:?}"
     );
@@ -393,13 +396,13 @@ const INVOKER_EMISSION: [(&str, &str, &str); 6] = [
         "statechart_host_invoker_sm.inl",
         "performHostInvoke(",
     ),
-    // C11's registry lookup IS the dispatch — there is no wrapper call to
-    // name. `_host_inv_entry` is the start site's own local; the exit site
-    // uses `_host_cancel_entry`, so the two cannot be confused.
+    // C11's start is the machine's own `_perform_host_invoke`, emitted —
+    // declaration, definition and call — only when a type is declared, and
+    // named by nothing else in the translation unit.
     (
         "c11",
         "statechart_host_invoker_sm.c",
-        "_host_inv_entry->handler(",
+        "_perform_host_invoke(",
     ),
     ("go", "statechart_host_invoker_sm.go", "PerformHostInvoke("),
     (
