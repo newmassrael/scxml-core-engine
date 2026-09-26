@@ -1530,6 +1530,22 @@
         { "args": [-1, 12, 31], "expected": -719529, "note": "a negative year: the era division floors" }
       ]
     },
+    "days_from_epoch_seconds": {
+      "fixture": "days_from_epoch_seconds",
+      "signature": "(seconds: i64) -> i64",
+      "formula": "floor(seconds / 86400): the day since 1970-01-01 that a count of seconds since 1970-01-01T00:00:00 falls in (the standard document sce:std/calendar/days_from_epoch_seconds.scxml)",
+      "cases": [
+        { "args": [0], "expected": 0 },
+        { "args": [86399], "expected": 0, "note": "the last second of day 0" },
+        { "args": [86400], "expected": 1 },
+        { "args": [1790208000], "expected": 20720, "note": "2026-09-24T00:00:00" },
+        { "args": [-1], "expected": -1, "note": "the floor, not the truncated quotient 0" },
+        { "args": [-86400], "expected": -1, "note": "a negative count that starts a day" },
+        { "args": [-86401], "expected": -2 },
+        { "args": [-9223372036854775808], "expected": -106751991167301, "note": "int64 MIN: nothing is subtracted from the input" },
+        { "args": [9223372036854775807], "expected": 106751991167300 }
+      ]
+    },
     "days_in_month": {
       "fixture": "days_in_month",
       "signature": "(year: i32, month: u8) -> u8",
@@ -1555,6 +1571,21 @@
         { "args": [0], "expected": true },
         { "args": [-1], "expected": false, "note": "a negative year: the remainder keeps the dividend's sign" },
         { "args": [-4], "expected": true }
+      ]
+    },
+    "second_of_day": {
+      "fixture": "second_of_day",
+      "signature": "(seconds: i64) -> i32",
+      "formula": "seconds mod 86400 in 0..86399: the seconds since the start of its day of a count of seconds since 1970-01-01T00:00:00 (the standard document sce:std/calendar/second_of_day.scxml)",
+      "cases": [
+        { "args": [0], "expected": 0 },
+        { "args": [3661], "expected": 3661, "note": "01:01:01" },
+        { "args": [86400], "expected": 0 },
+        { "args": [1790253045], "expected": 45045, "note": "2026-09-24T12:30:45" },
+        { "args": [-1], "expected": 86399, "note": "23:59:59 the day before the epoch" },
+        { "args": [-86400], "expected": 0 },
+        { "args": [-9223372036854775808], "expected": 30592, "note": "int64 MIN" },
+        { "args": [9223372036854775807], "expected": 55807, "note": "int64 MAX" }
       ]
     },
     "weekday_from_days": {

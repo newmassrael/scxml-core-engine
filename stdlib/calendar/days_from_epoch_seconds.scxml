@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/calendar/days_from_epoch_seconds.scxml — the day count since
+  1970-01-01 of the day a count of seconds since 1970-01-01T00:00:00 falls
+  in: the floor of seconds / 86400.
+
+  Integer division truncates toward zero (SCE_FORGE.md §3.4.1), so
+  `seconds / 86400` puts the last second before the epoch on day 0 rather
+  than day -1 — the trap this document exists so that no caller steps in.
+  The quotient is stepped down by one when the remainder is negative,
+  which neither widens nor subtracts from the input, so the function
+  cannot fail for any int64 second.
+
+  0 → 0 · 86399 → 0 · 86400 → 1 · -1 → -1 · -86400 → -1 · -86401 → -2.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="days_from_epoch_seconds" version="1.0">
+  <sce:signature>
+    <sce:param name="seconds" type="int64"/>
+    <sce:return type="int64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="q" type="int64" init="seconds / 86400"/>
+    <sce:var name="r" type="int64" init="seconds % 86400"/>
+    <sce:return expr="r &lt; 0 ? q - 1 : q"/>
+  </sce:body>
+</scxml>

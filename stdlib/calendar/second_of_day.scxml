@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/calendar/second_of_day.scxml — the seconds elapsed since the
+  start of its day of a count of seconds since 1970-01-01T00:00:00, from 0
+  through 86399; the day itself is days_from_epoch_seconds.scxml's answer.
+
+  The remainder takes the dividend's sign (SCE_FORGE.md §3.4.1), so
+  `seconds % 86400` answers a negative number for every instant before the
+  epoch that does not start a day; a negative remainder is moved up by one
+  day. The remainder is taken first, so every step stays within a day and
+  the function cannot fail for any int64 second. A caller splits the
+  answer into hours, minutes and seconds by / 3600, / 60 % 60 and % 60.
+
+  0 → 0 · 3661 → 3661 · 86400 → 0 · -1 → 86399 · -86400 → 0.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="second_of_day" version="1.0">
+  <sce:signature>
+    <sce:param name="seconds" type="int64"/>
+    <sce:return type="int32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="r" type="int64" init="seconds % 86400"/>
+    <sce:var name="s" type="int64" init="r &lt; 0 ? r + 86400 : r"/>
+    <sce:return expr="s"/>
+  </sce:body>
+</scxml>

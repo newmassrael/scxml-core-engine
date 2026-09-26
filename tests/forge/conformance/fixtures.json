@@ -1160,6 +1160,20 @@
       }
     },
     {
+      "name": "days_from_epoch_seconds",
+      "document": "sce:std/calendar/days_from_epoch_seconds.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "days_from_epoch_seconds",
+      "args": [
+        "i64"
+      ],
+      "output": {
+        "type": "i64",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "days_in_month",
       "document": "sce:std/calendar/days_in_month.scxml",
       "kind": "algorithm",
@@ -1185,6 +1199,20 @@
       ],
       "output": {
         "type": "bool",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "second_of_day",
+      "document": "sce:std/calendar/second_of_day.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "second_of_day",
+      "args": [
+        "i64"
+      ],
+      "output": {
+        "type": "i32",
         "compare": "equality"
       }
     },
