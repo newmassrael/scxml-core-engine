@@ -1158,6 +1158,19 @@
       }
     },
     {
+      "name": "civil_from_days",
+      "document": "sce:std/time/civil_from_days.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "civil_from_days",
+      "args": [
+        "i64"
+      ],
+      "output": {
+        "record": "civil_date"
+      }
+    },
+    {
       "name": "days_from_civil",
       "document": "sce:std/time/days_from_civil.scxml",
       "kind": "algorithm",
@@ -1785,6 +1798,18 @@
         { "name": "wallTime", "value": 1727000000400, "sce_type": "int64" },
         { "name": "counter", "value": 3, "sce_type": "uint32" },
         { "name": "nodeId", "value": 7, "sce_type": "uint64" }
+      ]
+    },
+    {
+      "name": "civil_date",
+      "document": "sce:std/time/civil_date.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "time.civil_date",
+      "fields": [
+        { "name": "year", "value": 2026, "sce_type": "int32" },
+        { "name": "month", "value": 9, "sce_type": "uint8" },
+        { "name": "day", "value": 23, "sce_type": "uint8" }
       ]
     },
     {

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/time/civil_date.scxml — a proleptic Gregorian date: the record
+  type civil_from_days.scxml returns (`record:CivilDate`, SCE_FORGE.md
+  §4.12). The year is an int32, as days_from_civil takes it, so a date one
+  function returns is a date the other accepts.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="civil_date"
+       sce:event-name="time.civil_date">
+  <datamodel>
+    <data id="year" sce:type="int32" sce:direction="in"/>
+    <data id="month" sce:type="uint8" sce:direction="in"/>
+    <data id="day" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

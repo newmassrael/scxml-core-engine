@@ -1954,13 +1954,23 @@ fn read_transform_holder(
 /// spells them — read from the document with the parse the generator reads,
 /// so a record argument or output is built against the struct that is
 /// actually emitted (SCE_FORGE.md §4.12).
+///
+/// The document is the event-schema fixture's own — `<record>.scxml`, or the
+/// standard document its `document` names — so a record type the standard
+/// library declares is read where every other reader of it reads it.
 fn read_record_fields(
+    manifest: &Manifest,
     resource_dir: &Path,
     record: &str,
     language: Language,
 ) -> Result<Vec<RecordFieldSpec>, String> {
     use crate::forge::model::{ForgeDocument, SceType};
-    let path = resource_dir.join(format!("{record}.scxml"));
+    let path = manifest
+        .fixtures
+        .iter()
+        .find(|g| g.name == record && matches!(g.spec, FixtureSpec::EventSchema { .. }))
+        .ok_or_else(|| format!("record `{record}` names no event-schema fixture in this manifest"))?
+        .document_path(resource_dir);
     let text = crate::load_forge_source(&path, &[])
         .map_err(|e| format!("cannot read {}: {e}", path.display()))?
         .positions
@@ -2463,11 +2473,11 @@ pub fn render_harness(
                 // this language spells them.
                 for arg in args.iter_mut() {
                     if let AlgorithmArg::Record(r) = arg {
-                        r.fields = read_record_fields(resource_dir, &r.record, language)?;
+                        r.fields = read_record_fields(manifest, resource_dir, &r.record, language)?;
                     }
                 }
                 if let AlgorithmOutput::Record(r) = output {
-                    r.fields = read_record_fields(resource_dir, &r.record, language)?;
+                    r.fields = read_record_fields(manifest, resource_dir, &r.record, language)?;
                 }
                 // Symbol-name SSOT: lower the manifest's `function` to the
                 // exact per-language symbol the algorithm template defines,

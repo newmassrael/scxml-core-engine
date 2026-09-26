@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/time/civil_from_days.scxml — the proleptic Gregorian date of a
+  day count since 1970-01-01: the inverse of days_from_civil.scxml.
+
+  Howard Hinnant's civil_from_days. The count is shifted to 0000-03-01,
+  split into 400-year eras of 146097 days, and the day of the era is
+  unfolded into a year of the era, a day of that year and a month counted
+  from March. Integer division truncates toward zero (SCE_FORGE.md
+  §3.4.1), so a negative count is brought into its era by subtracting
+  146096 before dividing — the floor the formula needs.
+
+  The count is an int64 because days_from_civil returns one, and every
+  date days_from_civil accepts comes back whole. A count whose year does
+  not fit the date's int32 year fails `overflow` — the store into the
+  narrower field is checked (§3.4.1) — rather than returning a year that
+  wrapped into some other one.
+
+  0 → 1970-01-01 · 20719 → 2026-09-23 · -1 → 1969-12-31 ·
+  -719529 → -0001-12-31 · 19782 → 2024-02-29.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="civil_from_days" version="1.0">
+  <sce:import kind="event-schema" src="civil_date.scxml" as="CivilDate"/>
+  <sce:signature>
+    <sce:param name="days" type="int64"/>
+    <sce:return type="record:CivilDate" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="z" type="int64" init="days + 719468"/>
+    <sce:var name="era" type="int64" init="(z &gt;= 0 ? z : z - 146096) / 146097"/>
+    <sce:var name="doe" type="int64" init="z - era * 146097"/>
+    <sce:var name="yoe" type="int64" init="(doe - doe / 1460 + doe / 36524 - doe / 146096) / 365"/>
+    <sce:var name="doy" type="int64" init="doe - (365 * yoe + yoe / 4 - yoe / 100)"/>
+    <sce:var name="mp" type="int64" init="(5 * doy + 2) / 153"/>
+    <sce:var name="m" type="int64" init="mp &lt; 10 ? mp + 3 : mp - 9"/>
+    <sce:var name="y" type="int64" init="yoe + era * 400"/>
+    <sce:var name="date" type="record:CivilDate">
+      <sce:set name="year" expr="m &lt;= 2 ? y + 1 : y"/>
+      <sce:set name="month" expr="m"/>
+      <sce:set name="day" expr="doy - (153 * mp + 2) / 5 + 1"/>
+    </sce:var>
+    <sce:return expr="date"/>
+  </sce:body>
+</scxml>

@@ -1532,6 +1532,24 @@
         }
       ]
     },
+    "civil_from_days": {
+      "fixture": "civil_from_days",
+      "signature": "(days: i64) -> record:CivilDate may-fail",
+      "formula": "the proleptic Gregorian date that many days from 1970-01-01, the inverse of days_from_civil; a count whose year does not fit int32 fails 'overflow' (the standard document sce:std/time/civil_from_days.scxml)",
+      "cases": [
+        { "args": [0], "expected": { "year": 1970, "month": 1, "day": 1 }, "note": "the epoch" },
+        { "args": [20719], "expected": { "year": 2026, "month": 9, "day": 23 } },
+        { "args": [19782], "expected": { "year": 2024, "month": 2, "day": 29 }, "note": "a leap day" },
+        { "args": [-1], "expected": { "year": 1969, "month": 12, "day": 31 }, "note": "the era division floors" },
+        { "args": [-719528], "expected": { "year": 0, "month": 1, "day": 1 } },
+        { "args": [-719529], "expected": { "year": -1, "month": 12, "day": 31 }, "note": "a negative year" },
+        { "args": [784351576776], "expected": { "year": 2147483647, "month": 12, "day": 31 }, "note": "the last day of the largest int32 year" },
+        { "args": [784351576777], "fails": "overflow", "note": "its year does not fit the date's int32" },
+        { "args": [-784353015833], "expected": { "year": -2147483648, "month": 1, "day": 1 }, "note": "the first day of the smallest int32 year" },
+        { "args": [-784353015834], "fails": "overflow" },
+        { "args": [9223372036854775807], "fails": "overflow", "note": "int64 MAX: the shift to 0000-03-01 overflows first" }
+      ]
+    },
     "days_from_civil": {
       "fixture": "days_from_civil",
       "signature": "(year: i32, month: u8, day: u8) -> i64 may-fail",
@@ -4026,6 +4044,17 @@
         { "name": "wallTime", "value": 1727000000400, "sce_type": "int64" },
         { "name": "counter", "value": 3, "sce_type": "uint32" },
         { "name": "nodeId", "value": 7, "sce_type": "uint64" }
+      ]
+    },
+    "civil_date": {
+      "fixture": "CivilDate",
+      "signature": "struct CivilDatePayload { int32 year; uint8 month; uint8 day; }",
+      "description": "A proleptic Gregorian date, the record type the standard document sce:std/time/civil_from_days.scxml returns (SCE_FORGE.md §4.12). A SHAPE claim like every event-schema fixture: names, order, and that a value reads back.",
+      "event_name": "time.civil_date",
+      "fields": [
+        { "name": "year", "value": 2026, "sce_type": "int32" },
+        { "name": "month", "value": 9, "sce_type": "uint8" },
+        { "name": "day", "value": 23, "sce_type": "uint8" }
       ]
     }
   }
