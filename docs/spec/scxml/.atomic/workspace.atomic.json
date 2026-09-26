@@ -5251,11 +5251,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "StatePolicy",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/event.rs",
           "kind": "references"
         },
@@ -5306,11 +5301,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/go/runtime/policy.go",
-          "symbol": "StatePolicy",
-          "kind": "implements"
-        },
-        {
           "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
           "symbol": "set_current_event",
           "kind": "implements"
@@ -5322,11 +5312,6 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "ScheduledAct",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "set_next_event_is_external",
           "kind": "references"
         },
         {
@@ -19522,6 +19507,24 @@
       "target_kind": "section",
       "target_id": "scxml-3.9",
       "reason": "initialize no longer runs a final state's onexit itself (7a95a50546); the main event loop's exitInterpreter does, so initialize cites no onexit clause."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "D28 (84daa34fef) typed _event.type at dequeue and removed the enqueue-time external flag; this symbol no longer carries any 5.10.1 behaviour, and the dequeue-time code that does is bound instead"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "D28 (84daa34fef) typed _event.type at dequeue and removed the enqueue-time external flag; this symbol no longer carries any 5.10.1 behaviour, and the dequeue-time code that does is bound instead"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "D28 (84daa34fef) typed _event.type at dequeue and removed the enqueue-time external flag; this symbol no longer carries any 5.10.1 behaviour, and the dequeue-time code that does is bound instead"
     }
   ],
   "frames": {},

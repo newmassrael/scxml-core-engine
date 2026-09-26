@@ -690,6 +690,8 @@ func (e *Engine[S, E]) Raise(event EventWithMetadata[E]) {
 //
 // Matches Rust Engine::raise_external.
 func (e *Engine[S, E]) RaiseExternal(event E, eventData, origin string) {
+	// §scxml-5.10.1: what the host hands the external queue is typed
+	// "external" here, where it enters that queue.
 	meta := NewEventWithFields(
 		event,
 		eventData,
