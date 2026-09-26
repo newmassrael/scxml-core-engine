@@ -87,7 +87,7 @@ abstract class GenerateForgeFixtures : DefaultTask() {
         out.deleteRecursively()
         out.mkdirs()
 
-        // Pull the fixture name list from sce-codegen itself so this script
+        // Pull the fixture list from sce-codegen itself so this script
         // never has to parse JSON natively. The Rust binary owns the
         // manifest schema (see sce-build/src/conformance.rs).
         //
@@ -96,6 +96,12 @@ abstract class GenerateForgeFixtures : DefaultTask() {
         // align` lower to Rust + C11 only and would surface as a
         // `MCU-class kind` error here without pre-filtering — same gate
         // the cmake/python harnesses use).
+        //
+        // `--documents` answers each fixture's document rather than its
+        // name: a path under the resource directory, or the `sce:std/...`
+        // name of a standard document, which `generate` reads from the
+        // library it embeds. Asked rather than spelled here, so this build
+        // does not know where a fixture's document lives.
         val listOut = ByteArrayOutputStream()
         execOperations.exec {
             commandLine(
@@ -105,22 +111,23 @@ abstract class GenerateForgeFixtures : DefaultTask() {
                 "--language", "kotlin",
                 "--resource-dir", res.absolutePath,
                 "--format", "plain",
+                "--documents",
             )
             standardOutput = listOut
         }
-        val fixtureNames = listOut.toString(Charsets.UTF_8)
+        val documents = listOut.toString(Charsets.UTF_8)
             .lineSequence()
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .toList()
 
         // Step 1: per-fixture product code generation.
-        for (fixture in fixtureNames) {
+        for (document in documents) {
             execOperations.exec {
                 commandLine(
                     bin.absolutePath,
                     "generate",
-                    res.resolve("$fixture.scxml").absolutePath,
+                    document,
                     "--language", "kotlin",
                     "--output-dir", out.absolutePath,
                 )

@@ -615,6 +615,13 @@
         "ref_section"
       ],
       "properties": {
+        "document": {
+          "description": "The document this fixture exercises, when it is not `<name>.scxml` in the resources directory — `sce:std/...` names a document of SCE's standard library, which a consumer imports by that name and the harness generates by it too, so the library is held to the same oracle as every fixture.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "name": {
           "type": "string"
         },

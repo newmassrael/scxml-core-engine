@@ -1144,6 +1144,65 @@
       }
     },
     {
+      "name": "days_from_civil",
+      "document": "sce:std/calendar/days_from_civil.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "days_from_civil",
+      "args": [
+        "i32",
+        "u8",
+        "u8"
+      ],
+      "output": {
+        "type": "i64",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "days_in_month",
+      "document": "sce:std/calendar/days_in_month.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "days_in_month",
+      "args": [
+        "i32",
+        "u8"
+      ],
+      "output": {
+        "type": "u8",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "is_leap_year",
+      "document": "sce:std/calendar/is_leap_year.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "is_leap_year",
+      "args": [
+        "i32"
+      ],
+      "output": {
+        "type": "bool",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "weekday_from_days",
+      "document": "sce:std/calendar/weekday_from_days.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "weekday_from_days",
+      "args": [
+        "i64"
+      ],
+      "output": {
+        "type": "u8",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "codec_dma_aligned_basic",
       "kind": "codec",
       "ref_section": "codecs",

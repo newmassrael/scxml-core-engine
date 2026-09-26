@@ -1516,6 +1516,59 @@
         }
       ]
     },
+    "days_from_civil": {
+      "fixture": "days_from_civil",
+      "signature": "(year: i32, month: u8, day: u8) -> i64",
+      "formula": "days from 1970-01-01 to year-month-day in the proleptic Gregorian calendar, negative before it (the standard document sce:std/calendar/days_from_civil.scxml)",
+      "cases": [
+        { "args": [1970, 1, 1], "expected": 0, "note": "the epoch" },
+        { "args": [2024, 1, 1], "expected": 19723 },
+        { "args": [2024, 2, 29], "expected": 19782, "note": "a leap day" },
+        { "args": [2026, 9, 23], "expected": 20719 },
+        { "args": [1969, 12, 31], "expected": -1, "note": "the day before the epoch" },
+        { "args": [0, 1, 1], "expected": -719528, "note": "year 0, a leap year" },
+        { "args": [-1, 12, 31], "expected": -719529, "note": "a negative year: the era division floors" }
+      ]
+    },
+    "days_in_month": {
+      "fixture": "days_in_month",
+      "signature": "(year: i32, month: u8) -> u8",
+      "formula": "the length of month 1..12 of year in the proleptic Gregorian calendar; a month outside 1..12 answers 31 (the standard document sce:std/calendar/days_in_month.scxml)",
+      "cases": [
+        { "args": [2024, 2], "expected": 29, "note": "divisible by 4" },
+        { "args": [2023, 2], "expected": 28 },
+        { "args": [1900, 2], "expected": 28, "note": "a century not divisible by 400" },
+        { "args": [2000, 2], "expected": 29, "note": "a century divisible by 400" },
+        { "args": [2026, 4], "expected": 30 },
+        { "args": [2026, 12], "expected": 31 }
+      ]
+    },
+    "is_leap_year": {
+      "fixture": "is_leap_year",
+      "signature": "(year: i32) -> bool",
+      "formula": "year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) (the standard document sce:std/calendar/is_leap_year.scxml)",
+      "cases": [
+        { "args": [2024], "expected": true },
+        { "args": [2023], "expected": false },
+        { "args": [1900], "expected": false },
+        { "args": [2000], "expected": true },
+        { "args": [0], "expected": true },
+        { "args": [-1], "expected": false, "note": "a negative year: the remainder keeps the dividend's sign" },
+        { "args": [-4], "expected": true }
+      ]
+    },
+    "weekday_from_days": {
+      "fixture": "weekday_from_days",
+      "signature": "(days: i64) -> u8",
+      "formula": "the weekday of the day that many days from 1970-01-01, 0 = Sunday through 6 = Saturday (the standard document sce:std/calendar/weekday_from_days.scxml)",
+      "cases": [
+        { "args": [0], "expected": 4, "note": "1970-01-01, a Thursday" },
+        { "args": [19723], "expected": 1, "note": "2024-01-01, a Monday" },
+        { "args": [20719], "expected": 3, "note": "2026-09-23, a Wednesday" },
+        { "args": [-1], "expected": 3, "note": "1969-12-31: the remainder of a negative count is folded" },
+        { "args": [-719529], "expected": 5 }
+      ]
+    },
     "algorithm_weekly_expand": {
       "fixture": "algorithm_weekly_expand",
       "signature": "(dtstart: i64, mask: u8, interval: i64, window_start: i64, window_end: i64) -> list<i64>",

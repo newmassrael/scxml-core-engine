@@ -66,20 +66,35 @@ SCE_CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 # per-fixture MCU-only codecs like `sce:dma-burst-align` lower to Rust +
 # C11 only and would surface as a `MCU-class kind` error here without
 # pre-filtering — same gate the cmake/python/kotlin harnesses use).
-FIXTURES=$("$SCE_CODEGEN" list-fixtures \
+mapfile -t FIXTURES < <("$SCE_CODEGEN" list-fixtures \
     --manifest "$MANIFEST" \
     --language go \
     --resource-dir "$RESOURCE_DIR" \
-    --format space)
+    --format plain)
+# Each fixture's document, in the same order: a path under RESOURCE_DIR, or
+# the `sce:std/...` name of a standard document, which `generate` reads from
+# the library it embeds. Asked rather than spelled here, so this script does
+# not know where a fixture's document lives.
+mapfile -t DOCUMENTS < <("$SCE_CODEGEN" list-fixtures \
+    --manifest "$MANIFEST" \
+    --language go \
+    --resource-dir "$RESOURCE_DIR" \
+    --format plain \
+    --documents)
+if [[ ${#FIXTURES[@]} -ne ${#DOCUMENTS[@]} ]]; then
+    echo "list-fixtures named ${#FIXTURES[@]} fixtures and ${#DOCUMENTS[@]} documents" >&2
+    exit 1
+fi
 
 # Clean everything except the gitignore so stale fixtures cannot mask drift.
 find "$OUT_DIR" -mindepth 1 -not -name .gitignore -exec rm -rf {} +
 
-for fixture in $FIXTURES; do
+for i in "${!FIXTURES[@]}"; do
+    fixture="${FIXTURES[$i]}"
     pkg_dir="$OUT_DIR/$fixture"
     mkdir -p "$pkg_dir"
     "$SCE_CODEGEN" generate \
-        "$RESOURCE_DIR/$fixture.scxml" \
+        "${DOCUMENTS[$i]}" \
         --language go \
         --output-dir "$pkg_dir/" \
         --go-module-prefix "$GO_MODULE_PREFIX" >/dev/null
@@ -91,7 +106,7 @@ done
     --manifest "$MANIFEST" \
     --output-dir "$SCRIPT_DIR" >/dev/null
 
-echo "Generated $(echo $FIXTURES | wc -w) Go fixtures and harness under $OUT_DIR"
+echo "Generated ${#FIXTURES[@]} Go fixtures and harness under $OUT_DIR"
 
 # Smoke check: every generated package must compile. Byte-goldens
 # cannot catch semantic bugs that only surface at `go build` time — see

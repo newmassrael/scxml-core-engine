@@ -120,6 +120,7 @@ execute_process(
             --manifest "${FIXTURE_MANIFEST}"
             --format cmake
             --language cpp
+            --resource-dir "${RESOURCE_DIR}"
     OUTPUT_VARIABLE FIXTURES
     OUTPUT_STRIP_TRAILING_WHITESPACE
     RESULT_VARIABLE _manifest_rc
@@ -127,6 +128,26 @@ execute_process(
 if(NOT _manifest_rc EQUAL 0)
     message(FATAL_ERROR
         "sce-codegen list-fixtures --language cpp failed for ${FIXTURE_MANIFEST}")
+endif()
+
+# Each fixture's document, in the same order: a path under RESOURCE_DIR, or
+# the `sce:std/...` name of a standard document, which `generate` reads from
+# the library it embeds. Asked rather than spelled here, so this build does
+# not know where a fixture's document lives.
+execute_process(
+    COMMAND "${SCE_CODEGEN}" list-fixtures
+            --manifest "${FIXTURE_MANIFEST}"
+            --format cmake
+            --language cpp
+            --resource-dir "${RESOURCE_DIR}"
+            --documents
+    OUTPUT_VARIABLE FIXTURE_DOCUMENTS
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE _documents_rc
+)
+if(NOT _documents_rc EQUAL 0)
+    message(FATAL_ERROR
+        "sce-codegen list-fixtures --documents --language cpp failed for ${FIXTURE_MANIFEST}")
 endif()
 
 # RFC §synth-5-B B2-test-vector: ask sce-codegen for the subset of C++
@@ -161,9 +182,20 @@ file(MAKE_DIRECTORY "${GENERATED_DIR}")
 # sidecar; the OUTPUT list is widened so cmake's dependency tracker
 # rebuilds the harness when either file moves.
 set(GENERATED_HEADERS "")
-foreach(fixture IN LISTS FIXTURES)
+list(LENGTH FIXTURES _fixture_count)
+foreach(_fixture_index RANGE ${_fixture_count})
+    if(_fixture_index EQUAL _fixture_count)
+        break()
+    endif()
+    list(GET FIXTURES ${_fixture_index} fixture)
+    list(GET FIXTURE_DOCUMENTS ${_fixture_index} scxml)
     set(out_header "${GENERATED_DIR}/${fixture}.h")
-    set(scxml "${RESOURCE_DIR}/${fixture}.scxml")
+    # A standard document is in the generator, which is already a
+    # prerequisite; naming it here would name a file that never exists.
+    set(_document_deps "${scxml}")
+    if(scxml MATCHES "^sce:std/")
+        set(_document_deps "")
+    endif()
     set(_outputs "${out_header}")
     list(FIND CPP_FIXTURES_WITH_TV "${fixture}" _tv_idx)
     if(NOT _tv_idx EQUAL -1)
@@ -176,7 +208,7 @@ foreach(fixture IN LISTS FIXTURES)
                 --language cpp
                 --output-dir "${GENERATED_DIR}"
                 --write-deps "${GENERATED_DIR}/${fixture}.h.d"
-        DEPENDS "${scxml}" "${SCE_CODEGEN}"
+        DEPENDS ${_document_deps} "${SCE_CODEGEN}"
         DEPFILE "${GENERATED_DIR}/${fixture}.h.d"
         COMMENT "Generating C++ fixture ${fixture}.h"
         VERBATIM

@@ -2320,6 +2320,13 @@ enum Commands {
         /// without parsing JSON. Unset lists every registered fixture.
         #[arg(long)]
         harness: Option<String>,
+        /// List each fixture's document instead of its name, in the same
+        /// order and format: a path under `--resource-dir`, or the
+        /// `sce:std/...` name of a standard document. A build hands this to
+        /// `generate` as it is, so no build spells where a fixture's
+        /// document lives. Forge catalog only.
+        #[arg(long)]
+        documents: bool,
     },
 
     /// Refuse a W3C AOT test header whose brief states the spec section
@@ -2788,6 +2795,7 @@ fn main() {
             resource_dir,
             catalog,
             harness,
+            documents,
         } => cmd_list_fixtures(
             &manifest,
             &format,
@@ -2796,6 +2804,7 @@ fn main() {
             resource_dir.as_deref(),
             &catalog,
             harness.as_deref(),
+            documents,
         ),
         Commands::CheckAotBriefs {
             manifest,
@@ -9034,9 +9043,16 @@ fn cmd_list_fixtures(
     resource_dir: Option<&str>,
     catalog: &str,
     harness: Option<&str>,
+    documents: bool,
 ) {
     match catalog {
         "forge" => {}
+        "w3c" if documents => cli_exit(CliError::ScxmlGenerate {
+            stage: "list-fixtures",
+            detail: "--documents applies to --catalog forge only; a W3C fixture's \
+                     document is its registered id's."
+                .to_string(),
+        }),
         "w3c" => {
             return list_w3c_fixtures(
                 manifest_path,
@@ -9100,6 +9116,7 @@ fn cmd_list_fixtures(
         let lang_for_enrich: Option<sce_build::generator::Language> =
             language.and_then(|s| s.parse::<sce_build::generator::Language>().ok());
         for f in manifest.fixtures.iter_mut() {
+            let scxml_path = f.document_path(&resource_root);
             let (has_tv_slot, kind_supports_sidecar) = match &mut f.spec {
                 sce_build::conformance::FixtureSpec::Algorithm {
                     has_test_vectors, ..
@@ -9131,8 +9148,7 @@ fn cmd_list_fixtures(
                     *slot = false;
                     continue;
                 }
-                let scxml_path = resource_root.join(format!("{}.scxml", f.name));
-                if scxml_path.exists() {
+                if sce_build::conformance::document_exists(&scxml_path) {
                     *slot = sce_build::conformance::has_test_vectors(&scxml_path).unwrap_or(false);
                 }
             }
@@ -9168,7 +9184,7 @@ fn cmd_list_fixtures(
         Some(rd) => std::path::PathBuf::from(rd),
         None => sibling_of_containing_dir(Path::new(manifest_path), "resources"),
     };
-    let names: Vec<&str> = manifest
+    let listed: Vec<&sce_build::conformance::Fixture> = manifest
         .fixtures
         .iter()
         .filter(|f| match lang_filter {
@@ -9202,9 +9218,22 @@ fn cmd_list_fixtures(
                 }
             )
         })
-        .map(|f| f.name.as_str())
         .collect();
-    emit_fixture_names(&names, format);
+    if documents {
+        let paths: Vec<String> = listed
+            .iter()
+            .map(|f| {
+                f.document_path(&resource_root_for_filter)
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
+        emit_fixture_names(&paths, format);
+    } else {
+        let names: Vec<&str> = listed.iter().map(|f| f.name.as_str()).collect();
+        emit_fixture_names(&names, format);
+    }
 }
 
 // ── Utility functions ───────────────────────────────────────────

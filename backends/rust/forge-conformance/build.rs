@@ -69,7 +69,13 @@ fn main() {
     // Step 2: generate each fixture's Rust code into OUT_DIR.
     let options = ForgeCompileOptions::default();
     for fixture in &manifest.fixtures {
-        let scxml_path = resource_dir.join(format!("{}.scxml", fixture.name));
+        // Where the manifest says — `<name>.scxml` here, or a standard
+        // document it names by `sce:std/...` — asked of the one answer
+        // every language's build uses.
+        let scxml_path = fixture.document_path(&resource_dir);
+        let base_dir = scxml_path
+            .parent()
+            .map_or_else(|| resource_dir.clone(), std::path::Path::to_path_buf);
 
         // Read + expand. Handing raw bytes to the compiler generates a
         // fixture with its templated nodes missing, and says nothing.
@@ -93,7 +99,7 @@ fn main() {
             loaded.text(),
             DocumentLabel::symmetric(&fixture.name),
             Language::Rust,
-            &resource_dir,
+            &base_dir,
             &options,
         )
         .unwrap_or_else(|e| panic!("sce-build codegen failed for {}: {e}", fixture.name));

@@ -60,10 +60,12 @@ def _ensure_codegen() -> None:
     SCE_CODEGEN = _sce_codegen.require()
 
 
-def _load_fixture_names() -> list[str]:
-    """Pull the fixture list from sce-codegen itself so this script never
-    has to know the manifest schema. The Rust binary owns the schema (see
-    sce-build/src/conformance.rs).
+def _load_fixture_documents() -> list[str]:
+    """Pull each fixture's document from sce-codegen itself so this script
+    never has to know the manifest schema or where a fixture's document
+    lives. The Rust binary owns both (see sce-build/src/conformance.rs):
+    an entry is a path under RESOURCE_DIR, or the `sce:std/...` name of a
+    standard document, which `generate` reads from the library it embeds.
 
     `--language python` applies the matrix-aware filter (kind ships per
     backend; MCU-only codecs like `sce:dma-burst-align` lower to Rust +
@@ -81,6 +83,7 @@ def _load_fixture_names() -> list[str]:
             str(RESOURCE_DIR),
             "--format",
             "plain",
+            "--documents",
         ],
         check=True,
         capture_output=True,
@@ -91,13 +94,12 @@ def _load_fixture_names() -> list[str]:
 
 def _generate_fixtures(out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    for fixture in _load_fixture_names():
-        scxml = RESOURCE_DIR / f"{fixture}.scxml"
+    for document in _load_fixture_documents():
         subprocess.run(
             [
                 str(SCE_CODEGEN),
                 "generate",
-                str(scxml),
+                document,
                 "--language",
                 "python",
                 "--output-dir",

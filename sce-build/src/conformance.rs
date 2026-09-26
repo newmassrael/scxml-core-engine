@@ -322,12 +322,62 @@ pub struct Fixture {
     /// oracle-driven behaviour without churn.
     #[serde(default = "default_oracle_eligible")]
     pub oracle_eligible: bool,
+    /// The document this fixture exercises, when it is not
+    /// `<name>.scxml` in the resources directory — `sce:std/...` names a
+    /// document of SCE's standard library, which a consumer imports by that
+    /// name and the harness generates by it too, so the library is held to
+    /// the same oracle as every fixture.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document: Option<String>,
     #[serde(flatten)]
     pub spec: FixtureSpec,
 }
 
 fn default_oracle_eligible() -> bool {
     true
+}
+
+impl Fixture {
+    /// Where this fixture's document is: its `document`, resolved as an
+    /// import is, or `<name>.scxml` in `resource_dir`.
+    ///
+    /// Every reader of a fixture's document asks here — the harness render,
+    /// the per-language filter, and `sce-codegen list-fixtures`, which hands
+    /// the answer to each language's build — so no build names the path
+    /// itself.
+    pub fn document_path(&self, resource_dir: &Path) -> PathBuf {
+        match &self.document {
+            Some(document) => crate::forge::stdlib::resolve(resource_dir, document),
+            None => resource_dir.join(format!("{}.scxml", self.name)),
+        }
+    }
+}
+
+/// Whether the document at `path` — a file, or an `sce:std/...` name — is
+/// there to read.
+pub fn document_exists(path: &Path) -> bool {
+    if crate::forge::stdlib::names_standard(path) {
+        crate::forge::stdlib::lookup(path).is_some()
+    } else {
+        path.exists()
+    }
+}
+
+/// The text of the document at `path`: a file, or a standard document read
+/// from the library the generator embeds.
+pub fn read_document(path: &Path) -> std::io::Result<String> {
+    if crate::forge::stdlib::names_standard(path) {
+        crate::forge::stdlib::lookup(path)
+            .map(str::to_string)
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "no such document in the SCE standard library built into this sce-codegen",
+                )
+            })
+    } else {
+        std::fs::read_to_string(path)
+    }
 }
 
 /// Kind-specific fixture data. The `#[serde(tag = "kind")]` attribute makes
@@ -1474,8 +1524,8 @@ pub fn lang_supports_fixture(
             | crate::generator::Language::Python
     );
     if is_non_mcu && matches!(fixture.spec, FixtureSpec::Codec { .. }) {
-        let scxml_path = resource_dir.join(format!("{}.scxml", fixture.name));
-        if scxml_path.exists() && codec_has_mcu_only_features(&scxml_path)? {
+        let scxml_path = fixture.document_path(resource_dir);
+        if document_exists(&scxml_path) && codec_has_mcu_only_features(&scxml_path)? {
             return Ok(false);
         }
     }
@@ -1486,8 +1536,8 @@ pub fn lang_supports_fixture(
     if matches!(fixture.spec, FixtureSpec::Algorithm { .. })
         && !crate::forge::generator::lowers_may_fail(language)
     {
-        let scxml_path = resource_dir.join(format!("{}.scxml", fixture.name));
-        if scxml_path.exists() && read_algorithm_may_fail(&scxml_path, &fixture.name)? {
+        let scxml_path = fixture.document_path(resource_dir);
+        if document_exists(&scxml_path) && read_algorithm_may_fail(&scxml_path, &fixture.name)? {
             return Ok(false);
         }
     }
@@ -1576,7 +1626,7 @@ pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
 /// the SCXML (single source of truth) while fixtures.json only supplies the
 /// stub implementation dict, making name-drift structurally impossible.
 pub(crate) fn read_procedure_helper_names(scxml_path: &Path) -> Result<Vec<String>, String> {
-    let text = std::fs::read_to_string(scxml_path)
+    let text = read_document(scxml_path)
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
     let doc = roxmltree::Document::parse(&text)
         .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
@@ -1619,7 +1669,7 @@ pub(crate) fn read_procedure_helper_names(scxml_path: &Path) -> Result<Vec<Strin
 ///   3. `<onentry><send>` (any send action — service/event/etc.)
 ///   4. `<donedata>` on a `<final>` state
 pub(crate) fn read_procedure_is_l2(scxml_path: &Path) -> Result<bool, String> {
-    let text = std::fs::read_to_string(scxml_path)
+    let text = read_document(scxml_path)
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
     let doc = roxmltree::Document::parse(&text)
         .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
@@ -1688,7 +1738,7 @@ pub(crate) fn read_procedure_is_l2(scxml_path: &Path) -> Result<bool, String> {
 /// duplicating it in fixtures.json — the SCXML file is the single source of
 /// truth.
 fn read_lookup_output_id(scxml_path: &Path) -> Result<String, String> {
-    let text = std::fs::read_to_string(scxml_path)
+    let text = read_document(scxml_path)
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
     let doc = roxmltree::Document::parse(&text)
         .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
@@ -1728,7 +1778,7 @@ fn read_lookup_output_id(scxml_path: &Path) -> Result<String, String> {
 /// to generate an enum-to-string conversion helper for string-output lookups
 /// without duplicating the values in fixtures.json.
 fn read_lookup_enum_values(scxml_path: &Path) -> Result<Vec<String>, String> {
-    let text = std::fs::read_to_string(scxml_path)
+    let text = read_document(scxml_path)
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
     let doc = roxmltree::Document::parse(&text)
         .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
@@ -1788,7 +1838,7 @@ pub fn has_test_vectors(scxml_path: &Path) -> Result<bool, String> {
 /// destructured-field binding `has_test_vectors` (a `&mut bool`)
 /// does not shadow the kind-agnostic public scan function.
 fn has_test_vectors_in_file(scxml_path: &Path) -> Result<bool, String> {
-    let text = std::fs::read_to_string(scxml_path)
+    let text = read_document(scxml_path)
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
     let doc = roxmltree::Document::parse(&text)
         .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
@@ -1820,7 +1870,7 @@ fn has_test_vectors_in_file(scxml_path: &Path) -> Result<bool, String> {
 /// don't carry any MCU-only marker; returns the IO/parse error
 /// otherwise.
 pub fn codec_has_mcu_only_features(scxml_path: &Path) -> Result<bool, String> {
-    let text = std::fs::read_to_string(scxml_path)
+    let text = read_document(scxml_path)
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
     let doc = roxmltree::Document::parse(&text)
         .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
@@ -1956,7 +2006,7 @@ fn read_record_fields(
 }
 
 fn read_validator_has_state(scxml_path: &Path) -> Result<bool, String> {
-    let text = std::fs::read_to_string(scxml_path)
+    let text = read_document(scxml_path)
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
     let doc = roxmltree::Document::parse(&text)
         .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
@@ -2271,6 +2321,7 @@ pub fn render_harness(
     let mut fixtures = manifest.fixtures.clone();
     for f in fixtures.iter_mut() {
         let fixture_name = f.name.clone();
+        let scxml_path = f.document_path(resource_dir);
         match &mut f.spec {
             FixtureSpec::Lookup {
                 function,
@@ -2279,7 +2330,6 @@ pub fn render_harness(
                 enum_values,
                 ..
             } => {
-                let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 let raw_output_id = read_lookup_output_id(&scxml_path)?;
                 // Symbol-name SSOT: lower to the exact symbol render_lookup
                 // defines — the bare call-base plus the C11 flat prefix, via
@@ -2298,7 +2348,6 @@ pub fn render_harness(
                 }
             }
             FixtureSpec::Validator { has_state, .. } => {
-                let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 *has_state = read_validator_has_state(&scxml_path)?;
             }
             FixtureSpec::Condition { function, .. } => {
@@ -2319,7 +2368,6 @@ pub fn render_harness(
                 holder,
                 ..
             } => {
-                let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 if let Some(symbols) = read_transform_holder(&scxml_path, &fixture_name, language)?
                 {
                     // A holder is driven by a sequence and compared from the
@@ -2396,7 +2444,6 @@ pub fn render_harness(
                 // must therefore skip the `#include`. Force the flag
                 // false on those 4 backends (mirrors the rotating
                 // gate-rejection tests in `forge_conformance.rs`).
-                let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 *has_test_vectors = if matches!(language, Language::Rust | Language::C11) {
                     has_test_vectors_in_file(&scxml_path)?
                 } else {
@@ -2410,7 +2457,6 @@ pub fn render_harness(
                 has_test_vectors,
                 may_fail,
             } => {
-                let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 *has_test_vectors = has_test_vectors_in_file(&scxml_path)?;
                 *may_fail = read_algorithm_may_fail(&scxml_path, &fixture_name)?;
                 // A record's fields come from its event-schema document, as
@@ -2446,7 +2492,6 @@ pub fn render_harness(
                 // against the fixtures.json helpers dict. Missing in either
                 // direction fails loud here rather than drifting silently into
                 // positional-argument swaps at test compile time.
-                let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 let scxml_helper_names = read_procedure_helper_names(&scxml_path)?;
                 for scxml_name in &scxml_helper_names {
                     if !helpers.contains_key(scxml_name) {
@@ -2997,7 +3042,10 @@ mod tests {
 
         // Gate 1: per-fixture generated Rust code
         for fixture in &manifest.fixtures {
-            let scxml_path = resource_dir.join(format!("{}.scxml", fixture.name));
+            let scxml_path = fixture.document_path(&resource_dir);
+            let base_dir = scxml_path
+                .parent()
+                .map_or_else(|| resource_dir.clone(), Path::to_path_buf);
             // Read + expand: a fixture using `<sce:use>` must be checked
             // as the author wrote it, not as the parser would see it with
             // the expansion pass skipped.
@@ -3013,7 +3061,7 @@ mod tests {
                 &content,
                 crate::DocumentLabel::symmetric(&fixture.name),
                 Language::Rust,
-                &resource_dir,
+                &base_dir,
                 &options,
             ) {
                 Ok(o) => o,
