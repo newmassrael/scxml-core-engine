@@ -216,9 +216,28 @@ impl SourceSet {
             })?;
             entries.insert(PathBuf::from("deploy.yaml"), sha256_bytes(&bytes));
         }
+        // A document that imports from SCE's standard library generates from
+        // documents that are not under the root: they are embedded in the
+        // generator (`forge::stdlib`). Folded in under their `sce:std/...`
+        // names — every one, since a standard document may import another —
+        // so a changed standard document moves the hash of every tree that
+        // imports from the library, and of no other tree.
+        let imports_standard = entries.keys().any(|rel| {
+            fs::read(input_root.join(rel)).is_ok_and(|bytes| {
+                bytes
+                    .windows(crate::forge::stdlib::SCHEME.len())
+                    .any(|w| w == crate::forge::stdlib::SCHEME.as_bytes())
+            })
+        });
+        if imports_standard {
+            for (name, content) in crate::forge::stdlib::documents() {
+                entries.insert(PathBuf::from(name), sha256_bytes(content.as_bytes()));
+            }
+        }
         let members = entries
             .keys()
             .filter(|rel| rel.as_path() != Path::new("deploy.yaml"))
+            .filter(|rel| !crate::forge::stdlib::names_standard(rel))
             .map(|rel| canonical_key(&input_root.join(rel)))
             .chain(deploy_yaml.map(canonical_key))
             .collect();
@@ -241,7 +260,8 @@ impl SourceSet {
         &self.root
     }
 
-    /// Number of contributing files (`.scxml` plus `deploy.yaml`).
+    /// Number of contributing documents (`.scxml`, `deploy.yaml`, and the
+    /// standard library's documents when the root imports from it).
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -299,6 +319,9 @@ impl SourceSet {
             .entries
             .keys()
             .filter(|rel| rel.as_path() != Path::new("deploy.yaml"))
+            // A standard document is in the generator, not on disk: a build
+            // system watches the generator for it.
+            .filter(|rel| !crate::forge::stdlib::names_standard(rel))
             .map(|rel| self.root.join(rel))
             .collect();
         // Appended from the field rather than joined onto `root`: the
@@ -1082,6 +1105,35 @@ mod tests {
         let set = SourceSet::collect(dir.path(), None).unwrap();
         assert!(set.covers(&doc));
         assert_eq!(set.len(), 1);
+    }
+
+    /// A root that imports from the standard library generates from its
+    /// documents too, so they are folded in — under their `sce:std/...`
+    /// names, never as paths a build system could watch, since they live in
+    /// the generator. A root that does not import from it is untouched: a
+    /// standard document's edit must not move a tree that never read it.
+    #[test]
+    fn a_root_that_imports_from_the_standard_library_folds_it_in() {
+        let plain = TempDir::new().unwrap();
+        write_file(plain.path(), "doc.scxml", b"<scxml/>");
+        let plain_set = SourceSet::collect(plain.path(), None).unwrap();
+        assert_eq!(plain_set.len(), 1);
+
+        let importing = TempDir::new().unwrap();
+        let doc = write_file(
+            importing.path(),
+            "doc.scxml",
+            br#"<scxml><sce:import kind="algorithm" src="sce:std/calendar/days_from_civil.scxml" as="c"/></scxml>"#,
+        );
+        let set = SourceSet::collect(importing.path(), None).unwrap();
+        let standard = crate::forge::stdlib::documents().count();
+        assert!(standard > 0, "the library holds a document");
+        assert_eq!(set.len(), 1 + standard);
+        assert!(set.covers(&doc));
+        assert_eq!(
+            set.contributing_paths(),
+            vec![importing.path().join("doc.scxml")]
+        );
     }
 
     /// Coverage is keyed on file identity, so a sandbox link name resolves
