@@ -669,6 +669,52 @@ def _given(case, address: str):
     return case.given.get(address)
 
 
+def received_by(model, address: str) -> bool:
+    """Whether the component this pack describes receives `address`.
+
+    The interface model is the answer: an address it declares, in any role
+    but `output`, is one the component reads. The one place this is asked,
+    for the ladder a latch may read and for what a judged case drove.
+    """
+    entry = model.owning(address)
+    return entry is not None and entry.role != "output"
+
+
+def unreceived_drives(case, model) -> list:
+    """What this case drove that the component does not receive.
+
+    ⚠ A record is a test of the PLATFORM, and it may set a value anywhere --
+    an upstream component's input whose effect only reaches this one through
+    that component, or an address this one simply does not read. Such a drive
+    never arrives here, so whatever the case expects may come from a place
+    this document cannot see, and judging it blames the document for a
+    component it is not. Measured 2026-09-26: cases driving an upstream
+    component's inputs were counted as eleven failures of the component that
+    reads what the upstream one computes from them, and cases driving a
+    namespace the component's own subscriptions do not contain as eight.
+    """
+    if model is None:
+        return []
+    return sorted(a for a in dict.fromkeys(case.drove or ())
+                  if not received_by(model, a))
+
+
+def withhold_unreceived(result, case, model) -> bool:
+    """Mark a judged case unjudged when it drove an address this component
+    does not receive. True when it did. The round was still computed, so
+    what the document keeps moves on exactly as it would have."""
+    outside = unreceived_drives(case, model)
+    if not outside:
+        return False
+    result.undetermined = sorted(case.expect)
+    result.refusal = (
+        f"drove {', '.join(outside)}, which this component does not receive "
+        f"(the interface model does not declare it as read). The drive never "
+        f"reaches this document, so what the case expects may come from "
+        f"somewhere it cannot see")
+    return True
+
+
 class Latches:
     """The protocol state carried from one case to the next.
 
@@ -713,12 +759,7 @@ class Latches:
         """
         if self.model is None:
             return list(rungs)
-        received = []
-        for rung in rungs:
-            entry = self.model.owning(rung)
-            if entry is not None and entry.role != "output":
-                received.append(rung)
-        return received
+        return [rung for rung in rungs if received_by(self.model, rung)]
 
     def _ladder_changes(self, rungs, case) -> list:
         """Which rungs of a shared ladder moved this round.
@@ -1774,7 +1815,10 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             verification.results.append(result)
             failed.add(id(owner))
             continue
-        judge.judge(result, case, produced)
+        # After the round was driven, observed and its sends taken, so the
+        # machine is where the record left it either way.
+        if not withhold_unreceived(result, case, pack.model):
+            judge.judge(result, case, produced)
         verification.results.append(result)
     return verification
 
@@ -2205,8 +2249,11 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
             verification.results.append(result)
             failed.add(id(owner))
             continue
-        judge.judge(result, case, produced, undetermined,
-                    open_values=unknown + sorted(withheld))
+        # Computed either way, so what the document keeps moves on as the
+        # platform's would; only the claim about this case is withheld.
+        if not (judged and withhold_unreceived(result, case, pack.model)):
+            judge.judge(result, case, produced, undetermined,
+                        open_values=unknown + sorted(withheld))
         if history is not None:
             history.inputs = dict(values)
             history.started = True
