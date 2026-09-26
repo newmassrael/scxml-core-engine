@@ -32,6 +32,8 @@ class AlgorithmError(enum.Enum):
     # A `<sce:require>` precondition that does not hold: an input outside the
     # algorithm's domain.
     PRECONDITION = "precondition"
+    # An index below 0 or not below its collection's length.
+    OUT_OF_RANGE = "out-of-range"
 
     @property
     def contract_name(self) -> str:
@@ -99,3 +101,13 @@ U8 = _Width(0, 2**8 - 1)
 U16 = _Width(0, 2**16 - 1)
 U32 = _Width(0, 2**32 - 1)
 U64 = _Width(0, 2**64 - 1)
+
+
+def at(xs, i: int):
+    """The element of ``xs`` at ``i``, or an out-of-range failure when ``i``
+    is below 0 or not below ``len(xs)``. Python reads a negative index from
+    the end, which no other backend does, so it is refused before it reaches
+    the subscript."""
+    if i < 0 or i >= len(xs):
+        raise AlgorithmFailure(AlgorithmError.OUT_OF_RANGE)
+    return xs[i]

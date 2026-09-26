@@ -29,6 +29,8 @@ pub enum AlgorithmError {
     /// A `<sce:require>` precondition that does not hold: an input outside
     /// the algorithm's domain.
     Precondition,
+    /// An index below 0 or not below its collection's length.
+    OutOfRange,
 }
 
 impl AlgorithmError {
@@ -40,6 +42,7 @@ impl AlgorithmError {
             AlgorithmError::DivideByZero => "divide-by-zero",
             AlgorithmError::CapacityExceeded => "capacity-exceeded",
             AlgorithmError::Precondition => "precondition",
+            AlgorithmError::OutOfRange => "out-of-range",
         }
     }
 }
@@ -112,6 +115,16 @@ pub fn neg<T: CheckedInt>(a: T) -> Result<T, AlgorithmError> {
     a.checked_neg_().ok_or(AlgorithmError::Overflow)
 }
 
+/// The element of `xs` at `i`, or an out-of-range failure when `i` is below
+/// 0 or not below `xs`'s length — never a read past the end, and never a
+/// panic.
+pub fn at<T: Copy, I: TryInto<usize>>(xs: &[T], i: I) -> Result<T, AlgorithmError> {
+    i.try_into()
+        .ok()
+        .and_then(|i| xs.get(i).copied())
+        .ok_or(AlgorithmError::OutOfRange)
+}
+
 /// A value of type `S` stored where a `T` is declared: the same value, or an
 /// overflow when `T` cannot hold it — never a wrapped one.
 pub fn narrow<T: CheckedInt + TryFrom<S>, S: CheckedInt>(v: S) -> Result<T, AlgorithmError> {
@@ -145,6 +158,11 @@ mod tests {
         assert_eq!(narrow::<i8, u64>(u64::MAX), Err(AlgorithmError::Overflow));
         assert_eq!(narrow::<u64, i8>(-1), Err(AlgorithmError::Overflow));
         assert_eq!(narrow::<i64, u8>(200), Ok(200));
+        assert_eq!(at(&[1u8, 2, 3], 2u32), Ok(3));
+        assert_eq!(at(&[1u8, 2, 3], 3u32), Err(AlgorithmError::OutOfRange));
+        assert_eq!(at(&[1u8, 2, 3], -1i32), Err(AlgorithmError::OutOfRange));
+        assert_eq!(at::<u8, u8>(&[], 0), Err(AlgorithmError::OutOfRange));
+        assert_eq!(at(&[7u16; 256], 255u16), Ok(7));
     }
 
     #[test]

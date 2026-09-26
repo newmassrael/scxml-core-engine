@@ -1073,6 +1073,21 @@
       }
     },
     {
+      "name": "algorithm_checked_index",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_checked_index",
+      "args": [
+        "bytes",
+        "i32",
+        "u32"
+      ],
+      "output": {
+        "type": "u8",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "algorithm_checked_narrow",
       "kind": "algorithm",
       "ref_section": "pure_functions",

@@ -7,7 +7,8 @@
 // Under that contract an integer `+ - *` or unary `-` whose result leaves its
 // type, a `/ %` by zero, a signed `MIN / -1`, and a value stored where its
 // type cannot hold it — a local, a record field, the returned value or a
-// call's argument of a narrower integer type — are failures of the
+// call's argument of a narrower integer type — and a read `xs[i]` whose
+// index is below 0 or not below the collection's length, are failures of the
 // algorithm, not values: a wrapped result is a wrong answer delivered in
 // silence, which is the one outcome the contract exists to end. Bitwise
 // operations and shifts keep the declared width's two's-complement meaning
@@ -52,6 +53,9 @@ pub enum HazardKind {
     /// A value stored in a place whose integer type cannot hold every value
     /// it can take — the place's type is the hazard's `ty`.
     DoesNotFit,
+    /// An index that can fall outside its collection: below 0, or not below
+    /// the collection's length — the index's type is the hazard's `ty`.
+    IndexOutOfRange,
 }
 
 /// One operation the analysis could not prove safe.
@@ -84,12 +88,24 @@ pub fn hazards(
     ret: Option<&AlgorithmValueType>,
     body: &[AlgorithmStmt],
     ctx: &TypeCtx<'_>,
+    arrays: &BTreeMap<String, i128>,
 ) -> Option<Vec<IntHazard>> {
+    // Every name a length can be taken of: a `bytes` or `list<T>` parameter
+    // or buffer. A build-time array's length is its declared one instead.
+    let mut collections: Vec<String> = ctx
+        .vars
+        .iter()
+        .filter(|(_, ty)| matches!(ty, InferredType::Bytes | InferredType::List(_)))
+        .map(|(name, _)| name.to_string())
+        .collect();
+    collections.sort();
     let mut analysis = Analysis {
         ctx,
         ret: ret
             .and_then(AlgorithmValueType::scalar)
             .map(InferredType::from_sce_type),
+        collections,
+        arrays: arrays.clone(),
         found: Vec::new(),
         recording: true,
         untyped: std::cell::Cell::new(false),
@@ -161,6 +177,18 @@ struct Env {
     /// but 0" of a signed type, and `if (b !== 0) … a / b` is the idiom a
     /// divisor is guarded by, so the fact is kept beside the range.
     nonzero: std::collections::BTreeSet<String>,
+    /// What a name is known to be against a collection's length: keyed by
+    /// `(name, collection)`, `true` for `name < len(collection)` and `false`
+    /// for `name <= len(collection)`. A range cannot hold a relation between
+    /// two values, and an index is safe exactly when it is below its
+    /// collection's length — so the fact is kept beside the range, as
+    /// `nonzero` is.
+    below_len: BTreeMap<(String, String), bool>,
+    /// Names holding exactly a collection's length (`var n = len(data)`).
+    length_of: BTreeMap<String, String>,
+    /// Pairs of collections a guard has shown to be equally long, each pair
+    /// in sorted order.
+    same_len: std::collections::BTreeSet<(String, String)>,
     unreachable: bool,
 }
 
@@ -173,7 +201,9 @@ impl Env {
     }
 
     /// The ranges either of two paths can leave. A name only one path tracks
-    /// is dropped: after the join it is known only by its type.
+    /// is dropped: after the join it is known only by its type. A relation
+    /// holds after the join only where it held on both paths, and at the
+    /// weaker of its two strengths.
     fn join(&self, other: &Self) -> Self {
         if self.unreachable {
             return other.clone();
@@ -186,11 +216,62 @@ impl Env {
             .iter()
             .filter_map(|(k, a)| other.vars.get(k).map(|b| (k.clone(), a.join(*b))))
             .collect();
+        let below_len = self
+            .below_len
+            .iter()
+            .filter_map(|(k, a)| other.below_len.get(k).map(|b| (k.clone(), *a && *b)))
+            .collect();
+        let length_of = self
+            .length_of
+            .iter()
+            .filter(|(k, c)| other.length_of.get(*k) == Some(*c))
+            .map(|(k, c)| (k.clone(), c.clone()))
+            .collect();
         Self {
             vars,
             nonzero: self.nonzero.intersection(&other.nonzero).cloned().collect(),
+            below_len,
+            length_of,
+            same_len: self
+                .same_len
+                .intersection(&other.same_len)
+                .cloned()
+                .collect(),
             unreachable: false,
         }
+    }
+
+    /// Whether `name < len(collection)` is known, directly or through a
+    /// collection of the same length.
+    fn strictly_below_len(&self, name: &str, collection: &str) -> bool {
+        let direct = |c: &str| {
+            self.below_len
+                .get(&(name.to_string(), c.to_string()))
+                .copied()
+                .unwrap_or(false)
+        };
+        direct(collection)
+            || self
+                .same_len
+                .iter()
+                .any(|(a, b)| (a == collection && direct(b)) || (b == collection && direct(a)))
+    }
+
+    /// Record `name op len(collection)` for `op` one of `<` (strict) or
+    /// `<=`, keeping the stronger of what is already known.
+    fn relate(&mut self, name: &str, collection: &str, strict: bool) {
+        let entry = self
+            .below_len
+            .entry((name.to_string(), collection.to_string()))
+            .or_insert(strict);
+        *entry = *entry || strict;
+    }
+
+    /// Everything known about `name` against a length, dropped: it holds a
+    /// new value.
+    fn forget_relations(&mut self, name: &str) {
+        self.below_len.retain(|(n, _), _| n != name);
+        self.length_of.remove(name);
     }
 }
 
@@ -199,6 +280,11 @@ struct Analysis<'c, 'a> {
     /// The declared return type, when it is a scalar — the place a returned
     /// value is stored in.
     ret: Option<InferredType>,
+    /// Every `bytes` or `list<T>` name in scope, sorted — what `0` is at most
+    /// the length of.
+    collections: Vec<String>,
+    /// Each build-time array's declared length.
+    arrays: BTreeMap<String, i128>,
     found: Vec<IntHazard>,
     /// Off while a loop is iterated towards its fixed point, whose early
     /// rounds see narrower ranges than the loop really reaches; on for the
@@ -253,6 +339,10 @@ impl Analysis<'_, '_> {
                     .as_deref()
                     .and_then(|e| self.stored(e, init_spelling.as_ref(), env, place));
                 self.store(env, name, scalar_range(sce_type), value);
+                match init.as_deref() {
+                    Some(e) => self.relate_store(env, name, e),
+                    None => env.forget_relations(name),
+                }
             }
             AlgorithmStmt::RecordVar { name, fields, .. } => {
                 for field in fields {
@@ -261,6 +351,7 @@ impl Analysis<'_, '_> {
                     let value = self.stored(&field.expr, field.expr_spelling.as_ref(), env, place);
                     let slot = self.declared_range(&key);
                     self.store(env, &key, slot, value);
+                    self.relate_store(env, &key, &field.expr);
                 }
             }
             AlgorithmStmt::Assign {
@@ -274,6 +365,7 @@ impl Analysis<'_, '_> {
                 let value = self.stored(expr, expr_spelling.as_ref(), env, place);
                 let slot = self.declared_range(&key);
                 self.store(env, &key, slot, value);
+                self.relate_store(env, &key, expr);
             }
             AlgorithmStmt::Append {
                 target,
@@ -284,11 +376,17 @@ impl Analysis<'_, '_> {
                 // A `list<T>` element lands in `T`; a byte buffer takes a
                 // `uint8` or a `bytes`, and a wider value is refused where
                 // the append is lowered.
-                let place = match self.declared_type(target.trim()) {
+                let target = target.trim();
+                let place = match self.declared_type(target) {
                     Some(InferredType::List(elem)) => Some(elem.element_type()),
                     _ => None,
                 };
                 self.stored(expr, expr_spelling.as_ref(), env, place);
+                // The buffer grew: what was below its length still is, but a
+                // name that held its length now holds less, and an equal
+                // length no longer is one.
+                env.length_of.retain(|_, c| c != target);
+                env.same_len.retain(|(a, b)| a != target && b != target);
             }
             AlgorithmStmt::Return {
                 expr,
@@ -594,6 +692,21 @@ impl Analysis<'_, '_> {
                     UnaryOp::Not | UnaryOp::BitNot => own,
                 }
             }
+            // `a && b` evaluates `b` only where `a` held, and `a || b` only
+            // where it did not: `(q < n) && data[q] !== 0` reads `data[q]`
+            // under `q < n`.
+            ExprKind::Binary {
+                op: op @ (BinOp::And | BinOp::Or),
+                left,
+                right,
+            } => {
+                self.eval(left, expr, spelling, env);
+                let right_env = self.narrowed(Some(left), env, *op == BinOp::And);
+                if !right_env.unreachable {
+                    self.eval(right, expr, spelling, &right_env);
+                }
+                own
+            }
             ExprKind::Binary { op, left, right } => {
                 let l = self.eval(left, expr, spelling, env);
                 let r = self.eval(right, expr, spelling, env);
@@ -621,6 +734,16 @@ impl Analysis<'_, '_> {
                         } else {
                             quotient_range(l, r).map_or(own, |q| q.clamp(own))
                         })
+                    }
+                    // `x & m` with either side non-negative lies between 0 and
+                    // that side: a masked value (`… & 0xFF`) stays in the mask.
+                    BinOp::BitAnd if l.lo >= 0 || r.lo >= 0 => {
+                        let hi = match (l.lo >= 0, r.lo >= 0) {
+                            (true, true) => l.hi.min(r.hi),
+                            (true, false) => l.hi,
+                            _ => r.hi,
+                        };
+                        Some(Interval { lo: 0, hi }.clamp(own))
                     }
                     // Bitwise operations and shifts keep the declared width's
                     // meaning and never fail; their value is the whole type.
@@ -670,6 +793,29 @@ impl Analysis<'_, '_> {
             }
             // Each argument lands in its parameter's type, as a value lands
             // in a local's.
+            // An index reads inside its collection only where it is at least
+            // 0 and below the length: a build-time array's declared one, or
+            // a length a guard related it to (`i < len(a)`, `q < n` with
+            // `n = len(data)`).
+            ExprKind::Index { object, index } => {
+                self.eval(object, expr, spelling, env);
+                let i = self.eval(index, expr, spelling, env);
+                let non_negative = i.is_some_and(|i| i.lo >= 0);
+                let in_range = match name_of(object) {
+                    Some(c) => match self.arrays.get(&c) {
+                        Some(len) => i.is_some_and(|i| i.lo >= 0 && i.hi < *len),
+                        None => {
+                            non_negative
+                                && name_of(index).is_some_and(|k| env.strictly_below_len(&k, &c))
+                        }
+                    },
+                    None => false,
+                };
+                if !in_range {
+                    self.hazard_in(node, expr, spelling, HazardKind::IndexOutOfRange, index.ty);
+                }
+                own
+            }
             ExprKind::Call { args, params, .. } if !params.is_empty() => {
                 for (arg, param) in args.iter().zip(params) {
                     let value = self.eval(arg, expr, spelling, env);
@@ -734,11 +880,151 @@ impl Analysis<'_, '_> {
                     {
                         restrict(env, &key, flip(op), bound);
                     }
+                    if !env.unreachable {
+                        relate_guard(env, left, op, right);
+                        relate_guard(env, right, flip(op), left);
+                        if op == BinOp::StrictEq {
+                            if let (Some(a), Some(b)) = (length_call(left), length_call(right)) {
+                                let pair = if a <= b { (a, b) } else { (b, a) };
+                                env.same_len.insert(pair);
+                            }
+                        }
+                    }
                 }
                 _ => {}
             },
             _ => {}
         }
+    }
+
+    /// Record what storing `expr` in `name` makes `name` against a length —
+    /// computed from the facts that held before the store, which then stop
+    /// holding of `name`.
+    fn relate_store(&mut self, env: &mut Env, name: &str, expr: &str) {
+        let facts = self
+            .typed(expr)
+            .map(|tree| self.length_relations(&tree, env))
+            .unwrap_or_default();
+        env.forget_relations(name);
+        for (collection, relation) in facts {
+            match relation {
+                LengthRelation::Is => {
+                    env.length_of.insert(name.to_string(), collection.clone());
+                    env.relate(name, &collection, false);
+                }
+                LengthRelation::Below(strict) => env.relate(name, &collection, strict),
+            }
+        }
+    }
+
+    /// What the value of `node` is against each collection's length: `len(c)`
+    /// is it, `0` is at most every one, a name carries its own facts, and
+    /// `y + 1` is at most a length `y` was below.
+    fn length_relations(&self, node: &TypedExpr, env: &Env) -> Vec<(String, LengthRelation)> {
+        if let Some(c) = length_call(node) {
+            return vec![(c, LengthRelation::Is)];
+        }
+        match &node.kind {
+            ExprKind::NumberLit(text) if integer_literal(text) == Some(Interval::point(0)) => self
+                .collections
+                .iter()
+                .map(|c| (c.clone(), LengthRelation::Below(false)))
+                .collect(),
+            ExprKind::Ident(_) | ExprKind::Raw(_) | ExprKind::Member { .. } => {
+                let Some(y) = name_of(node) else {
+                    return Vec::new();
+                };
+                let mut out: Vec<(String, LengthRelation)> = env
+                    .below_len
+                    .iter()
+                    .filter(|((n, _), _)| *n == y)
+                    .map(|((_, c), strict)| (c.clone(), LengthRelation::Below(*strict)))
+                    .collect();
+                if let Some(c) = env.length_of.get(&y) {
+                    out.push((c.clone(), LengthRelation::Is));
+                }
+                out
+            }
+            ExprKind::Binary {
+                op: BinOp::Add,
+                left,
+                right,
+            } => {
+                let one = |n: &TypedExpr| matches!(&n.kind, ExprKind::NumberLit(t) if integer_literal(t) == Some(Interval::point(1)));
+                let base = if one(right) {
+                    left
+                } else if one(left) {
+                    right
+                } else {
+                    return Vec::new();
+                };
+                let Some(y) = name_of(base) else {
+                    return Vec::new();
+                };
+                env.below_len
+                    .iter()
+                    .filter(|((n, _), strict)| *n == y && **strict)
+                    .map(|((_, c), _)| (c.clone(), LengthRelation::Below(false)))
+                    .collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+}
+
+/// A value against a collection's length ([`Analysis::length_relations`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LengthRelation {
+    /// Exactly the length.
+    Is,
+    /// Below it (`true`, strictly) or at most it (`false`).
+    Below(bool),
+}
+
+/// The collection `node` takes the length of, when it is `len(<name>)`.
+fn length_call(node: &TypedExpr) -> Option<String> {
+    let ExprKind::Call { callee, args, .. } = &node.kind else {
+        return None;
+    };
+    if !matches!(&callee.kind, ExprKind::Ident(n) | ExprKind::Raw(n) if n == "len") {
+        return None;
+    }
+    match args.as_slice() {
+        [arg] => name_of(arg),
+        _ => None,
+    }
+}
+
+/// Record what the guard `x op r` (held) makes `x` against a length: `r` is
+/// `len(c)`, a name holding it, or a name already below one.
+fn relate_guard(env: &mut Env, x: &TypedExpr, op: BinOp, r: &TypedExpr) {
+    let strict = match op {
+        BinOp::Lt => true,
+        BinOp::LtEq => false,
+        _ => return,
+    };
+    let Some(x) = name_of(x) else {
+        return;
+    };
+    if let Some(c) = length_call(r) {
+        env.relate(&x, &c, strict);
+        return;
+    }
+    let Some(n) = name_of(r) else {
+        return;
+    };
+    if let Some(c) = env.length_of.get(&n).cloned() {
+        env.relate(&x, &c, strict);
+    }
+    // `x < n <= len` and `x <= n < len` are both strict; `x <= n <= len` is not.
+    let through: Vec<(String, bool)> = env
+        .below_len
+        .iter()
+        .filter(|((m, _), _)| *m == n)
+        .map(|((_, c), s)| (c.clone(), strict || *s))
+        .collect();
+    for (c, s) in through {
+        env.relate(&x, &c, s);
     }
 }
 
@@ -904,6 +1190,7 @@ impl HazardKind {
             HazardKind::DivideByZero => "divide by zero",
             HazardKind::MinDividedByMinusOne => "divide the minimum by -1",
             HazardKind::DoesNotFit => "leave the type it is stored in",
+            HazardKind::IndexOutOfRange => "read outside its collection",
         }
     }
 }
@@ -937,9 +1224,24 @@ pub(crate) fn check(
         .collect();
     // A body the typed pipeline refuses somewhere is not judged here: its
     // refusal is raised where that expression is lowered.
-    let Some(first) = hazards(&params, m.signature.return_type.as_ref(), &m.body, &ctx)
-        .and_then(|found| found.into_iter().next())
-    else {
+    let arrays: BTreeMap<String, i128> = m
+        .consts
+        .iter()
+        .filter_map(|c| match c.sce_type {
+            crate::forge::model::AlgorithmConstType::Array { len, .. } => {
+                Some((c.name.clone(), i128::from(len)))
+            }
+            crate::forge::model::AlgorithmConstType::Scalar(_) => None,
+        })
+        .collect();
+    let Some(first) = hazards(
+        &params,
+        m.signature.return_type.as_ref(),
+        &m.body,
+        &ctx,
+        &arrays,
+    )
+    .and_then(|found| found.into_iter().next()) else {
         return Ok(());
     };
     let at = ExpressionSite::new(&first.expr, first.spelling.as_ref()).locate(first.span.clone());
@@ -1047,7 +1349,7 @@ mod tests {
             .map(|(n, t)| (n.to_string(), AlgorithmValueType::Scalar(t.clone())))
             .collect();
         let ret = ret.map(AlgorithmValueType::Scalar);
-        hazards(&params, ret.as_ref(), body, &ctx)
+        hazards(&params, ret.as_ref(), body, &ctx, &BTreeMap::new())
             .expect("every expression of a unit-test body types")
             .into_iter()
             .map(|h| (h.expr, h.kind))
@@ -1094,6 +1396,37 @@ mod tests {
             )
             .is_empty(),
             "a guard that bounds the value proves it fits"
+        );
+    }
+
+    /// A value masked by a non-negative constant stays inside the mask, so
+    /// it fits a place as wide as the mask whatever it came from.
+    #[test]
+    fn a_masked_value_stays_within_its_mask() {
+        let body = [var("low", u8t(), "x & 0xFF"), ret("low")];
+        assert!(analyse(&[("x", SceType::Uint16)], &[("low", SceType::Uint8)], &body).is_empty());
+        let unmasked = [var("low", u8t(), "x | 1"), ret("low")];
+        assert_eq!(
+            analyse(
+                &[("x", SceType::Uint16)],
+                &[("low", SceType::Uint8)],
+                &unmasked
+            ),
+            vec![("x | 1".to_string(), HazardKind::DoesNotFit)],
+            "an `|` is not bounded by its constant"
+        );
+    }
+
+    /// `a && b` evaluates `b` only where `a` held: the increment below
+    /// cannot reach 256, and without the guard it can.
+    #[test]
+    fn the_right_side_of_and_is_judged_where_the_left_side_held() {
+        let guarded = [if_("x < 255 && x + 1 > 3", vec![ret("1")]), ret("0")];
+        assert!(analyse(&[("x", SceType::Uint8)], &[], &guarded).is_empty());
+        let unguarded = [if_("x > 3 && x + 1 > 3", vec![ret("1")]), ret("0")];
+        assert_eq!(
+            analyse(&[("x", SceType::Uint8)], &[], &unguarded),
+            vec![("x > 3 && x + 1 > 3".to_string(), HazardKind::Overflow)]
         );
     }
 
@@ -1187,7 +1520,7 @@ mod tests {
             while_("i < limt", 8, vec![assign("i", "i + 1")]),
             ret("i"),
         ];
-        assert!(hazards(&[], None, &body, &ctx).is_none());
+        assert!(hazards(&[], None, &body, &ctx, &BTreeMap::new()).is_none());
     }
 
     #[test]
@@ -1230,6 +1563,147 @@ mod tests {
         assert_eq!(
             scan(SceType::Uint8),
             vec![("i + 1".to_string(), HazardKind::Overflow)]
+        );
+    }
+
+    /// The hazards of `body` whose build-time arrays have the given lengths.
+    fn analyse_with_arrays(
+        params: &[(&str, SceType)],
+        locals: &[(&str, SceType)],
+        arrays: &[(&str, i128)],
+        body: &[AlgorithmStmt],
+    ) -> Vec<(String, HazardKind)> {
+        let mut ctx = TypeCtx::new();
+        for (n, t) in params.iter().chain(locals) {
+            ctx.insert_var(n, InferredType::from_sce_type(t));
+        }
+        let params: Vec<(String, AlgorithmValueType)> = params
+            .iter()
+            .map(|(n, t)| (n.to_string(), AlgorithmValueType::Scalar(t.clone())))
+            .collect();
+        let arrays: BTreeMap<String, i128> =
+            arrays.iter().map(|(n, l)| (n.to_string(), *l)).collect();
+        hazards(&params, None, body, &ctx, &arrays)
+            .expect("every expression of a unit-test body types")
+            .into_iter()
+            .map(|h| (h.expr, h.kind))
+            .collect()
+    }
+
+    /// An index read inside a loop bounded by the collection's length is
+    /// proven; the same read with nothing relating it to the length is not.
+    #[test]
+    fn an_index_below_its_collections_length_is_proven() {
+        let scan = |cond: &str| {
+            let body = [
+                var("i", AlgorithmValueType::Scalar(SceType::Uint32), "0"),
+                var("s", AlgorithmValueType::Scalar(SceType::Uint32), "0"),
+                while_(
+                    cond,
+                    64,
+                    vec![assign("s", "s ^ a[i]"), assign("i", "i + 1")],
+                ),
+                ret("s"),
+            ];
+            analyse(
+                &[("a", SceType::Bytes)],
+                &[("i", SceType::Uint32), ("s", SceType::Uint32)],
+                &body,
+            )
+        };
+        assert!(scan("i < len(a)").is_empty());
+        assert_eq!(
+            scan("i < 16"),
+            vec![("s ^ a[i]".to_string(), HazardKind::IndexOutOfRange)],
+            "a bound that is not the length proves nothing about it"
+        );
+    }
+
+    /// `n = len(data)` carries the length to a guard on `n`, and a loop below
+    /// a position at most the length reads inside too — the shape
+    /// `algorithm_cobs_encode` scans with.
+    #[test]
+    fn a_length_reaches_an_index_through_a_name_and_a_nested_bound() {
+        let u32t = || AlgorithmValueType::Scalar(SceType::Uint32);
+        let body = [
+            var("n", u32t(), "len(data)"),
+            var("q", u32t(), "0"),
+            var("s", u32t(), "0"),
+            while_("q < n && data[q] !== 0", 64, vec![assign("q", "q + 1")]),
+            var("k", u32t(), "0"),
+            while_(
+                "k < q",
+                64,
+                vec![assign("s", "s ^ data[k]"), assign("k", "k + 1")],
+            ),
+            ret("s"),
+        ];
+        assert!(analyse(
+            &[("data", SceType::Bytes)],
+            &[
+                ("n", SceType::Uint32),
+                ("q", SceType::Uint32),
+                ("s", SceType::Uint32),
+                ("k", SceType::Uint32)
+            ],
+            &body
+        )
+        .is_empty());
+    }
+
+    /// Two collections a guard showed equally long share what is below one.
+    #[test]
+    fn an_index_below_one_length_reads_inside_an_equally_long_collection() {
+        let body = |guard: &str| {
+            vec![
+                if_(guard, vec![ret("0")]),
+                var("i", AlgorithmValueType::Scalar(SceType::Uint32), "0"),
+                var("s", AlgorithmValueType::Scalar(SceType::Uint32), "0"),
+                while_(
+                    "i < len(a)",
+                    64,
+                    vec![assign("s", "s ^ b[i]"), assign("i", "i + 1")],
+                ),
+                ret("s"),
+            ]
+        };
+        let run = |guard: &str| {
+            analyse(
+                &[("a", SceType::Bytes), ("b", SceType::Bytes)],
+                &[("i", SceType::Uint32), ("s", SceType::Uint32)],
+                &body(guard),
+            )
+        };
+        assert!(run("len(a) !== len(b)").is_empty());
+        assert_eq!(
+            run("len(a) === len(b)"),
+            vec![("s ^ b[i]".to_string(), HazardKind::IndexOutOfRange)],
+            "past a guard that returned when they WERE equal, they are not"
+        );
+    }
+
+    /// A build-time array's length is its declared one: a masked index fits
+    /// a 256-entry table, an unmasked uint16 does not.
+    #[test]
+    fn an_index_into_a_build_time_array_is_judged_by_its_length() {
+        let body = |index: &str| {
+            vec![
+                var("idx", AlgorithmValueType::Scalar(SceType::Uint16), index),
+                ret("TABLE[idx]"),
+            ]
+        };
+        let run = |index: &str| {
+            analyse_with_arrays(
+                &[("x", SceType::Uint16)],
+                &[("idx", SceType::Uint16), ("TABLE", SceType::Uint16)],
+                &[("TABLE", 256)],
+                &body(index),
+            )
+        };
+        assert!(run("x & 0xFF").is_empty());
+        assert_eq!(
+            run("x"),
+            vec![("TABLE[idx]".to_string(), HazardKind::IndexOutOfRange)]
         );
     }
 

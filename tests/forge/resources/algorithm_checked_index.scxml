@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  An index read in an algorithm that declares may-fail (SCE_FORGE.md
+  §3.4.1): `data[i]` with a signed index and `data[u]` with an unsigned one.
+  An index below 0 or not below len(data) fails `out-of-range` on every
+  backend — where C would read past the buffer, Rust would panic, and
+  Python would read a negative index from the end.
+
+  The oracle's cases hold both edges, the negative index and the empty
+  input.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:param name="i" type="int32"/>
+    <sce:param name="u" type="uint32"/>
+    <sce:return type="uint8" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="data[i] ^ data[u]"/>
+  </sce:body>
+</scxml>

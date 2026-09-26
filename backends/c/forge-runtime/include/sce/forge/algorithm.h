@@ -20,6 +20,7 @@
 #define SCE_FORGE_ALGORITHM_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /* Why a `may-fail` algorithm has no value to return. */
@@ -32,7 +33,9 @@ typedef enum {
     SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED = 2,
     /* A `<sce:require>` precondition that does not hold: an input outside
      * the algorithm's domain. */
-    SCE_FORGE_ALGORITHM_PRECONDITION = 3
+    SCE_FORGE_ALGORITHM_PRECONDITION = 3,
+    /* An index below 0 or not below its collection's length. */
+    SCE_FORGE_ALGORITHM_OUT_OF_RANGE = 4
 } sce_forge_algorithm_error_t;
 
 /* The failure's name in the contract — the spelling every backend shares. */
@@ -46,6 +49,8 @@ static inline const char *sce_forge_algorithm_error_name(sce_forge_algorithm_err
         return "capacity-exceeded";
     case SCE_FORGE_ALGORITHM_PRECONDITION:
         return "precondition";
+    case SCE_FORGE_ALGORITHM_OUT_OF_RANGE:
+        return "out-of-range";
     }
     return "overflow";
 }
@@ -272,6 +277,29 @@ SCE_FORGE_CHECKED_INTO(u16, uint16_t, 0, UINT16_MAX)
 SCE_FORGE_CHECKED_INTO(u32, uint32_t, 0, UINT32_MAX)
 
 #undef SCE_FORGE_CHECKED_INTO
+
+/*
+ * Whether index `i` is inside a collection of `len` elements; an out-of-range
+ * failure recorded when it is not. The read is written after it
+ * (`inside ? xs[i] : 0`), so an index outside is never read — an empty
+ * collection included. The index arrives as `int64_t` (from a signed type)
+ * or `uint64_t` (from an unsigned one), either of which holds it exactly.
+ */
+static inline bool sce_forge_checked_index_from_i(sce_forge_algorithm_failure_t *f, int64_t i, size_t len) {
+    if (i < 0 || (uint64_t)i >= (uint64_t)len) {
+        sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_OUT_OF_RANGE);
+        return false;
+    }
+    return true;
+}
+
+static inline bool sce_forge_checked_index_from_u(sce_forge_algorithm_failure_t *f, uint64_t i, size_t len) {
+    if (i >= (uint64_t)len) {
+        sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_OUT_OF_RANGE);
+        return false;
+    }
+    return true;
+}
 
 static inline int64_t sce_forge_checked_narrow_i64_from_u(sce_forge_algorithm_failure_t *f, uint64_t v) {
     if (v > (uint64_t)INT64_MAX) {

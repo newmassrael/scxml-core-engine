@@ -1344,6 +1344,19 @@
         { "args": [46341, 0, 7], "fails": "overflow", "note": "the condition's failure, before its branch" }
       ]
     },
+    "algorithm_checked_index": {
+      "fixture": "algorithm_checked_index",
+      "signature": "(data: bytes, i: i32, u: u32) -> u8 may-fail",
+      "formula": "data[i] ^ data[u]; an index below 0 or not below len(data) fails 'out-of-range' (SCE_FORGE.md §3.4.1)",
+      "cases": [
+        { "args": [[10, 20, 30], 0, 2], "expected": 20 },
+        { "args": [[10, 20, 30], 2, 2], "expected": 0 },
+        { "args": [[10, 20, 30], 3, 0], "fails": "out-of-range", "note": "the signed index one past the end" },
+        { "args": [[10, 20, 30], -1, 0], "fails": "out-of-range", "note": "a negative index, which Python would read from the end" },
+        { "args": [[10, 20, 30], 0, 3], "fails": "out-of-range", "note": "the unsigned index one past the end" },
+        { "args": [[], 0, 0], "fails": "out-of-range", "note": "an empty input has no element 0" }
+      ]
+    },
     "algorithm_checked_narrow": {
       "fixture": "algorithm_checked_narrow",
       "signature": "(x: i64, y: u32) -> i32 may-fail",

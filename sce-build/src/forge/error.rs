@@ -1225,7 +1225,8 @@ pub enum ValidationError {
         algorithm: String,
         operation: String,
         /// What the operation can do: `overflow`, `divide by zero`,
-        /// `divide the minimum by -1`, or `leave the type it is stored in`.
+        /// `divide the minimum by -1`, `leave the type it is stored in`, or
+        /// `read outside its collection`.
         hazard: String,
         /// The integer type the operation computes in — for a store, the
         /// type of the place.

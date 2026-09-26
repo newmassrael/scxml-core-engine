@@ -286,6 +286,7 @@ fn transpile_at(
     judge_value(&ast, slot, expr)?;
     if ctx.receives_failures {
         check_integer_arithmetic(&mut ast, expected);
+        check_integer_indexing(&mut ast);
         check_integer_narrowing(&mut ast, slot_type(slot));
     }
 
@@ -405,6 +406,7 @@ pub(crate) fn transpile_typed_with_import_lowering(
     judge_value(&ast, expected, expr)?;
     if ctx.receives_failures {
         check_integer_arithmetic(&mut ast, expected.ty());
+        check_integer_indexing(&mut ast);
         check_integer_narrowing(&mut ast, slot_type(expected));
     }
     Ok(emit_c(&ast, expected.ty())?)
@@ -1528,6 +1530,10 @@ pub(crate) enum CheckedOp {
     /// `ty` is that type and `left` the value, at its own type
     /// ([`check_integer_narrowing`]).
     Narrow,
+    /// A read of `left[right]` — `left` the collection, `right` the index,
+    /// the node's `ty` the element's — which fails out of range rather than
+    /// reading past the end ([`check_integer_indexing`]).
+    Index,
 }
 
 impl CheckedOp {
@@ -1553,7 +1559,29 @@ impl CheckedOp {
             Self::Rem => "rem",
             Self::Neg => "neg",
             Self::Narrow => "narrow",
+            Self::Index => "at",
         }
+    }
+}
+
+/// Rewrite every index read of `node` into a [`CheckedOp::Index`] node
+/// (SCE_FORGE.md §3.4.1): in a `may-fail` body an index below 0 or not below
+/// its collection's length is a failure, as an overflow is, and every
+/// backend spells the read so it cannot run past the end.
+pub(crate) fn check_integer_indexing(node: &mut TypedExpr) {
+    for child in node.children_mut() {
+        check_integer_indexing(child);
+    }
+    if !matches!(node.kind, ExprKind::Index { .. }) {
+        return;
+    }
+    let placeholder = ExprKind::NullLit;
+    if let ExprKind::Index { object, index } = std::mem::replace(&mut node.kind, placeholder) {
+        node.kind = ExprKind::Checked {
+            op: CheckedOp::Index,
+            left: object,
+            right: Some(index),
+        };
     }
 }
 
@@ -4298,6 +4326,17 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 "std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>({s}.data()), {s}.size())"
             )
         }
+        // SCE_FORGE.md §3.4.1: an index read that records an out-of-range
+        // failure instead of reading past the end.
+        ExprKind::Checked {
+            op: CheckedOp::Index,
+            left,
+            right: Some(index),
+        } => format!(
+            "SCE::Forge::Checked::at(sce_failure_, {}, {})",
+            emit_cpp(left, InferredType::Unknown)?,
+            emit_cpp(index, InferredType::Unknown)?,
+        ),
         // SCE_FORGE.md §3.4.1: the runtime's helper at the operation's own
         // width, which records a failure in the body's `sce_failure_` and
         // yields 0; the statement around it returns that failure. The width
@@ -4819,6 +4858,26 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // (Kotlin gives a bare literal no unsigned or narrow type). A failure
         // is thrown and turned into `AlgorithmResult.Failed` at the
         // algorithm's boundary.
+        //
+        // An index read goes through the overload for the array's type, the
+        // index widened to `Long`; a `bytes` element is normalized to `UByte`
+        // as the unchecked read's is.
+        ExprKind::Checked {
+            op: CheckedOp::Index,
+            left,
+            right: Some(index),
+        } => {
+            let norm = if matches!(left.ty, InferredType::Bytes) {
+                ".toUByte()"
+            } else {
+                ""
+            };
+            format!(
+                "com.sce.forge.runtime.SceChecked.at({}, ({}).toLong()){norm}",
+                emit_kotlin(left, InferredType::Unknown)?,
+                emit_kotlin(index, InferredType::Unknown)?,
+            )
+        }
         ExprKind::Checked {
             op: CheckedOp::Narrow,
             left,
@@ -5349,6 +5408,18 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             // algorithm `bytes` param type (`&[u8]`) via `.as_bytes()`.
             format!("{}.as_bytes()", emit_rust(source, InferredType::Unknown)?)
         }
+        // SCE_FORGE.md §3.4.1: an index read through the runtime's `at`,
+        // which takes the index at its own type and fails out of range
+        // instead of panicking.
+        ExprKind::Checked {
+            op: CheckedOp::Index,
+            left,
+            right: Some(index),
+        } => format!(
+            "sce_forge_runtime::algorithm::at(&{}, {})?",
+            wrap_postfix(left, emit_rust(left, InferredType::Unknown)?),
+            emit_rust(index, InferredType::Unknown)?,
+        ),
         // SCE_FORGE.md §3.4.1: the runtime's checked helper at the operation's
         // own width, its failure returned through the algorithm's `Result`
         // by `?`. The width rides as a turbofish so a literal operand takes
@@ -5728,6 +5799,24 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             // RFC c7-wildcard W-project: bounded-string field (`string`) →
             // the algorithm `bytes` param type (`[]byte`).
             format!("[]byte({})", emit_go(source, InferredType::Unknown)?)
+        }
+        // SCE_FORGE.md §3.4.1: an index read through `At` (a signed index,
+        // widened to `int64`) or `AtU` (an unsigned one, to `uint64`), over
+        // the collection's slice so a fixed array passes too.
+        ExprKind::Checked {
+            op: CheckedOp::Index,
+            left,
+            right: Some(index),
+        } => {
+            let (helper, wide) = match index.ty {
+                InferredType::Int { signed: false, .. } => ("AtU", "uint64"),
+                _ => ("At", "int64"),
+            };
+            format!(
+                "scealgorithm.{helper}(&sceFailure, {}[:], {wide}({}))",
+                wrap_postfix(left, emit_go(left, InferredType::Unknown)?),
+                emit_go(index, InferredType::Unknown)?,
+            )
         }
         // SCE_FORGE.md §3.4.1: the runtime's helper for the operation's own
         // width, which records a failure in the body's `sceFailure` and
@@ -6172,6 +6261,17 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 emit_python(source, InferredType::Unknown)?
             )
         }
+        // SCE_FORGE.md §3.4.1: an index read through the runtime's `at`, which
+        // refuses a negative index Python would otherwise read from the end.
+        ExprKind::Checked {
+            op: CheckedOp::Index,
+            left,
+            right: Some(index),
+        } => format!(
+            "sce_algorithm.at({}, {})",
+            emit_python(left, InferredType::Unknown)?,
+            emit_python(index, InferredType::Unknown)?,
+        ),
         // SCE_FORGE.md §3.4.1: the runtime's method for the operation's own
         // width, which computes exactly and raises `AlgorithmFailure` for a
         // result the width does not hold. Python's integers never overflow,
@@ -6559,6 +6659,33 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 None => format!("{s}_len"),
             };
             format!("(sce_forge_bytes_view_t){{ (const uint8_t *){s}, {len_expr} }}")
+        }
+        // SCE_FORGE.md §3.4.1: an index read behind a range test, which
+        // records an out-of-range failure and yields 0 instead of reading:
+        // `(inside ? xs[i] : 0)`. The index is written twice — algorithm
+        // expressions have no side effects — so an index outside is never
+        // read, an empty collection's included. A `bytes` view carries its
+        // length; a build-time array's is its `sizeof`.
+        ExprKind::Checked {
+            op: CheckedOp::Index,
+            left,
+            right: Some(index),
+        } => {
+            let object = wrap_postfix(left, emit_c(left, InferredType::Unknown)?);
+            let idx = emit_c(index, InferredType::Unknown)?;
+            let (accessor, len) = if matches!(left.ty, InferredType::Bytes) {
+                (".data", format!("({object}).len"))
+            } else {
+                ("", format!("(sizeof({object}) / sizeof(({object})[0]))"))
+            };
+            let from = match index.ty {
+                InferredType::Int { signed: false, .. } => "u",
+                _ => "i",
+            };
+            format!(
+                "(sce_forge_checked_index_from_{from}(&sce_failure_, {idx}, {len}) \
+                 ? {object}{accessor}[{idx}] : 0)"
+            )
         }
         // SCE_FORGE.md §3.4.1: the runtime's helper for the operation's own
         // width, which records a failure in the body's `sce_failure_` and

@@ -44,6 +44,9 @@ public enum class AlgorithmError(
      * algorithm's domain.
      */
     Precondition("precondition"),
+
+    /** An index below 0 or not below its collection's length. */
+    OutOfRange("out-of-range"),
 }
 
 /** What a `may-fail` algorithm returns: its value, or why it has none. */
@@ -252,4 +255,24 @@ public object SceChecked {
     public fun narrowToUInt(v: ULong): UInt = fitUnsigned(v, U32_MAX).toUInt()
     public fun narrowToULong(v: Long): ULong =
         if (v < 0L) fail(AlgorithmError.Overflow) else v.toULong()
+
+    // The element at `i`, or an out-of-range failure when `i` is below 0 or
+    // not below the array's size — never an `IndexOutOfBoundsException`. The
+    // index arrives as `Long`, which holds every SCE index exactly except an
+    // unsigned 64-bit one past `Long.MAX_VALUE`, and that is out of range
+    // anyway.
+    private fun inside(i: Long, size: Int): Int =
+        if (i < 0L || i >= size.toLong()) fail(AlgorithmError.OutOfRange) else i.toInt()
+
+    public fun at(xs: ByteArray, i: Long): Byte = xs[inside(i, xs.size)]
+    public fun at(xs: UByteArray, i: Long): UByte = xs[inside(i, xs.size)]
+    public fun at(xs: ShortArray, i: Long): Short = xs[inside(i, xs.size)]
+    public fun at(xs: UShortArray, i: Long): UShort = xs[inside(i, xs.size)]
+    public fun at(xs: IntArray, i: Long): Int = xs[inside(i, xs.size)]
+    public fun at(xs: UIntArray, i: Long): UInt = xs[inside(i, xs.size)]
+    public fun at(xs: LongArray, i: Long): Long = xs[inside(i, xs.size)]
+    public fun at(xs: ULongArray, i: Long): ULong = xs[inside(i, xs.size)]
+    public fun at(xs: FloatArray, i: Long): Float = xs[inside(i, xs.size)]
+    public fun at(xs: DoubleArray, i: Long): Double = xs[inside(i, xs.size)]
+    public fun at(xs: BooleanArray, i: Long): Boolean = xs[inside(i, xs.size)]
 }

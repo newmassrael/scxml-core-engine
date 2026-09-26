@@ -16,7 +16,9 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <type_traits>
 
@@ -35,6 +37,8 @@ enum class AlgorithmError : std::uint8_t {
     /// A `<sce:require>` precondition that does not hold: an input outside
     /// the algorithm's domain.
     Precondition,
+    /// An index below 0 or not below its collection's length.
+    OutOfRange,
 };
 
 /// The failure's name in the contract — the spelling every backend shares.
@@ -48,6 +52,8 @@ constexpr const char *contractName(AlgorithmError error) noexcept {
         return "capacity-exceeded";
     case AlgorithmError::Precondition:
         return "precondition";
+    case AlgorithmError::OutOfRange:
+        return "out-of-range";
     }
     return "overflow";
 }
@@ -258,6 +264,29 @@ template <typename T> constexpr T neg(AlgorithmFailure &f, T a) noexcept {
         }
         return a;
     }
+}
+
+/// The element of `c` at `i`, or a value-initialized element and an
+/// out-of-range failure when `i` is below 0 or not below `c`'s length —
+/// never a read past the end. `c` is anything `std::size` measures: a span,
+/// a `std::array`, a vector, a built-in array.
+template <typename C, typename I>
+constexpr auto at(AlgorithmFailure &f, const C &c, I i) noexcept
+    -> std::remove_cv_t<std::remove_reference_t<decltype(c[0])>> {
+    static_assert(std::is_integral_v<I>, "an index is an integer");
+    using T = std::remove_cv_t<std::remove_reference_t<decltype(c[0])>>;
+    const auto n = static_cast<std::uint64_t>(std::size(c));
+    bool inside = false;
+    if constexpr (Detail::kSigned<I>) {
+        inside = i >= 0 && static_cast<std::uint64_t>(i) < n;
+    } else {
+        inside = static_cast<std::uint64_t>(i) < n;
+    }
+    if (!inside) {
+        f.fail(AlgorithmError::OutOfRange);
+        return T{};
+    }
+    return c[static_cast<std::size_t>(i)];
 }
 
 /// A value of type `S` stored where a `T` is declared: the same value, or 0

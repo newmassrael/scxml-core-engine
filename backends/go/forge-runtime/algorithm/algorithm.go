@@ -32,6 +32,8 @@ const (
 	// Precondition is a `<sce:require>` precondition that does not hold: an
 	// input outside the algorithm's domain.
 	Precondition
+	// OutOfRange is an index below 0 or not below its collection's length.
+	OutOfRange
 )
 
 // ContractName is the failure's name in the contract — the spelling every
@@ -46,6 +48,8 @@ func (e Error) ContractName() string {
 		return "capacity-exceeded"
 	case Precondition:
 		return "precondition"
+	case OutOfRange:
+		return "out-of-range"
 	}
 	return "overflow"
 }
@@ -363,6 +367,29 @@ func NarrowUint32FromInt(f *Failure, v int64) uint32 {
 }
 func NarrowUint32FromUint(f *Failure, v uint64) uint32 {
 	return narrowFromUint[uint32](f, v, math.MaxUint32)
+}
+
+// At is the element of xs at i, or the zero value and an out-of-range
+// failure when i is below 0 or not below len(xs) — never a panic. The index
+// arrives as int64 (from a signed type) or, through AtU, uint64 (from an
+// unsigned one); a fixed array is passed as its slice, xs[:].
+func At[T any](f *Failure, xs []T, i int64) T {
+	if i < 0 || uint64(i) >= uint64(len(xs)) {
+		f.Fail(OutOfRange)
+		var zero T
+		return zero
+	}
+	return xs[i]
+}
+
+// AtU is At for an index of an unsigned type.
+func AtU[T any](f *Failure, xs []T, i uint64) T {
+	if i >= uint64(len(xs)) {
+		f.Fail(OutOfRange)
+		var zero T
+		return zero
+	}
+	return xs[i]
 }
 
 func NarrowInt64FromUint(f *Failure, v uint64) int64 {
