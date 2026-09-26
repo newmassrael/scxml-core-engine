@@ -264,8 +264,8 @@ sce_generate_static_w3c_c_test(192 "${SCE_C_GENERATED_DIR}" NEEDS_INVOKE)  # W3C
 # W3C SCXML 6.2 invoke — child SCXML carries `<send delay="...">` in its own session. Parser's `parse_child_metadata` walks the child for any delayed send and stamps `child_needs_event_scheduler` on the invoke; `_drive_active_children` calls the child's `_tick` (which promotes elapsed scheduled entries) instead of just `_step` when the flag is on.
 sce_generate_static_w3c_c_test(207 "${SCE_C_GENERATED_DIR}" NEEDS_INVOKE)  # W3C SCXML 6.2 (test207): child schedules `event1` (1 s, sendid=foo) and `event2` (1.5 s) then immediately notifies parent via `childToParent`. Parent's `<cancel sendid="foo">` runs in parent's session and MUST NOT touch the child's scheduler — child's `event1` fires at 1 s, drives sub0→subFinal with `<send target="#_parent" event="pass">`, parent reaches pass. Pins per-session scheduler isolation + child `_tick` driven from `_drive_active_children`.
 
-# W3C SCXML 3.4 / 6.4 invoke completion ordering — natural-final children run a `_finalize_session` exit walk so a final state's `<onexit><send target="#_parent">` fires BEFORE `done.invoke`; cancel-path children (parent state-exit destroys the invoke) get `parent_dispatch = NULL` BEFORE `_destroy`, dropping any onexit-emitted sends per W3C cancellation-drop semantics. Both helpers are gated on `child_has_send_to_parent` so test247-shape pure-final children skip both paths.
-sce_generate_static_w3c_c_test(236 "${SCE_C_GENERATED_DIR}" NEEDS_INVOKE)  # W3C SCXML 3.4 / 6.4 (test236): child = pure top-level `<final>` with `<onexit><send target="#_parent" event="childToParent">`. `_finalize_session` runs subFinal's onexit BEFORE `done.invoke` so parent transitions s0→s1 on childToParent and then s1→s2 on done.invoke (with `done.invoke → fail` at s0 level only matching if it arrives first). Parent's 2 s timeout drives s2→pass.
+# W3C SCXML 3.4 / 6.4 invoke completion ordering — a child that reaches its top-level final runs exitInterpreter in its own main event loop, so a final state's `<onexit><send target="#_parent">` fires BEFORE the parent raises `done.invoke`; a cancelled child (parent state-exit) gets `parent_dispatch = NULL` where it sends to its parent, then `_stop` (the same exit) and `_destroy`, so onexit-emitted sends drop per W3C cancellation-drop semantics.
+sce_generate_static_w3c_c_test(236 "${SCE_C_GENERATED_DIR}" NEEDS_INVOKE)  # W3C SCXML 3.4 / 6.4 (test236): child = pure top-level `<final>` with `<onexit><send target="#_parent" event="childToParent">`. The child's exitInterpreter runs subFinal's onexit BEFORE `done.invoke` so parent transitions s0→s1 on childToParent and then s1→s2 on done.invoke (with `done.invoke → fail` at s0 level only matching if it arrives first). Parent's 2 s timeout drives s2→pass.
 sce_generate_static_w3c_c_test(252 "${SCE_C_GENERATED_DIR}" NEEDS_INVOKE)  # W3C SCXML 6.4 (test252): parent's s01 onentry raises `foo`, the same macrostep transitions s01→s02 canceling the invoke. The cancel path NULLs the child's `parent_dispatch` before `_destroy`; child's `sub0 <onexit><send target="#_parent">` drops at the NULL guard. Parent's 1 s timeout fires unopposed → pass.
 sce_generate_static_w3c_c_test(347 "${SCE_C_GENERATED_DIR}" NEEDS_INVOKE)  # W3C SCXML C.1 (test347): both directions of `<send>` carry an explicit `type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor"` — child→parent (#_parent) and parent→child (#_<invokeid>). The existing send-action `send_type` predicate already accepts this URI alongside the default-no-type form, so both lowers route normally. Verifies the explicit-type compatibility against the same paths test192/338 exercise without the type attribute.
 sce_generate_static_w3c_c_test(253 "${SCE_C_GENERATED_DIR}" NEEDS_INVOKE NEEDS_LUA)  # W3C SCXML 5.10.1 (test253): bidirectional `_event.origintype` round-trip. Child sends `childRunning` to `#_parent` → parent's s01 captures `_event.origintype` into Var1 (must equal the SCXMLEventProcessor URI). s02 cond `Var1 == URI` dispatches `parentToChild` via `#_foo` → child's sub1 captures `_event.origintype` into Var2, then the URI cond fires `<send target="#_parent" event="success">`. Parent reaches pass. Verifies that both the cross-machine routing paths (`#_parent` and `#_<id>`) go through external-queue raises so the URI-seeded origintype is the same on both sides.
@@ -1297,6 +1297,34 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         COMMAND sce_c_integration_onexit_runs_before_the_state_leaves
     )
     set_tests_properties(c11_integration_onexit_runs_before_the_state_leaves PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # W3C SCXML Appendix D exitInterpreter: a run ends by exiting every state
+    # it is still in — at a top-level <final> after a step, and on `_stop` —
+    # innermost first, leaving the configuration empty.
+    sce_generate_static_integration_c_test(the_run_ends_by_exiting_every_state "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_the_run_ends_by_exiting_every_state
+        integration/test_the_run_ends_by_exiting_every_state.c
+        ${INTEGRATION_C_TEST_the_run_ends_by_exiting_every_state_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_the_run_ends_by_exiting_every_state PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_the_run_ends_by_exiting_every_state PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_the_run_ends_by_exiting_every_state PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_the_run_ends_by_exiting_every_state
+        COMMAND sce_c_integration_the_run_ends_by_exiting_every_state
+    )
+    set_tests_properties(c11_integration_the_run_ends_by_exiting_every_state PROPERTIES
         TIMEOUT 30
         LABELS "integration;c11;aot"
     )

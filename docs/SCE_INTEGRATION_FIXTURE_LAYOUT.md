@@ -1106,6 +1106,25 @@ after the handler in every channel too, but its order relative to the
 handler needs a live invocation to observe and is not what this document
 measures.
 
+`the_run_ends_by_exiting_every_state` covers §scxml-D-exitInterpreter: a
+run ends by exiting every state it is still in, innermost first, each the
+way exitStates exits one, and the configuration ends empty. The procedure is
+reached two ways and the drivers take both — the run enters a top-level
+`<final>` after a step, and the host stops a run that has not ended. The
+handlers record what ran (`order`, `finalExits`, `selfInFinal`); where the
+run ended is read from the terminal-state accessor, since the configuration
+cannot say.
+
+Measured 2026-09-26: only Kotlin exited the final on the step path, and C++
+AOT, Rust and Go ran the final's `<onexit>` only when the run ended inside
+`initialize()`. Python ran it in the middle of the microstep that entered
+the final. Every channel but the Interpreter ran no `<onexit>` on stop, C11
+had no stop at all, and the Interpreter, Python and Kotlin
+destroyed the script session in stop, so a stopped run's datamodel could
+not be read back. A stopped run now leaves it readable in all seven, as
+one that ended in a final does; the session is released at teardown or
+when the next run starts.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

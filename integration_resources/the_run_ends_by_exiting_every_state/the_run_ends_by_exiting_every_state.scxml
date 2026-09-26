@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML Appendix D exitInterpreter: a run ends by exiting every state it
+  is still in, the same way exitStates exits one.
+
+      procedure exitInterpreter():
+          statesToExit = configuration.toList().sort(exitOrder)
+          for s in statesToExit:
+              for content in s.onexit.sort(documentOrder): executeContent(content)
+              for inv in s.invoke: cancelInvoke(inv)
+              configuration.delete(s)
+              if isFinalState(s) and isScxmlElement(s.parent):
+                  returnDoneEvent(s.donedata)
+
+  It is reached two ways, and the drivers run this document through both:
+
+    finish  -> the run enters the top-level <final id="done"> after a step.
+               The loop ends, and `done` is exited: its <onexit> runs once,
+               while `done` is still in the configuration (so In('done') is
+               true inside it), and the configuration ends empty.
+
+    stop()  -> the host stops the run while it rests in `outer.inner`. Both
+               states are exited innermost first, so `inner`'s handler runs
+               before `outer`'s: order == 12, not 21 and not 0.
+
+  An ended run's configuration is empty however it ended, so the drivers read
+  what the handlers recorded instead, and where the run ended from the
+  terminal-state accessor:
+
+    order       12 after either run: inner's onexit (x10 + 1) then outer's
+                (x10 + 2). The `finish` transition exits both as exitStates
+                does; stop() must do the same through exitInterpreter.
+    finalExits  1 after `finish`, 0 after stop(): the final's own onexit runs
+                exactly once when the run ends there, and never otherwise.
+    selfInFinal 1 after `finish`: `done` was still active during its onexit.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="the_run_ends_by_exiting_every_state" datamodel="ecmascript"
+       initial="outer">
+
+  <datamodel>
+    <data id="order" expr="0"/>
+    <data id="finalExits" expr="0"/>
+    <data id="selfInFinal" expr="0"/>
+  </datamodel>
+
+  <state id="outer" initial="inner">
+    <onexit>
+      <assign location="order" expr="order * 10 + 2"/>
+    </onexit>
+
+    <state id="inner">
+      <onexit>
+        <assign location="order" expr="order * 10 + 1"/>
+      </onexit>
+      <transition event="finish" target="done"/>
+    </state>
+  </state>
+
+  <final id="done">
+    <onexit>
+      <assign location="finalExits" expr="finalExits + 1"/>
+      <if cond="In('done')">
+        <assign location="selfInFinal" expr="1"/>
+      </if>
+    </onexit>
+  </final>
+</scxml>
