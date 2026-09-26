@@ -13,7 +13,7 @@ use sce_build::compile_scxml_with_imports;
 use sce_build::generator::Language;
 use sce_build::ForgeCompileOptions;
 
-const DAYS_FROM_CIVIL: &str = "sce:std/calendar/days_from_civil.scxml";
+const DAYS_FROM_CIVIL: &str = "sce:std/time/days_from_civil.scxml";
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -58,7 +58,7 @@ fn the_embedded_library_is_the_tree_on_disk() {
 fn options_for(language: Language) -> ForgeCompileOptions {
     let mut options = ForgeCompileOptions::default();
     if matches!(language, Language::Go) {
-        options.go_module_prefix = Some("example.com/calendar/generated".to_string());
+        options.go_module_prefix = Some("example.com/consumer/generated".to_string());
     }
     options
 }
@@ -139,7 +139,7 @@ fn every_standard_document_generates_on_every_backend() {
         .collect();
     assert!(
         names.len() >= 4,
-        "the calendar documents are in the library: {names:?}"
+        "the time documents are in the library: {names:?}"
     );
     let paths: Vec<&Path> = names.iter().map(Path::new).collect();
     for &language in Language::ALL {
@@ -177,7 +177,7 @@ fn the_cli_generates_a_standard_document_by_its_name() {
     let run = std::process::Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
         .args([
             "generate",
-            "sce:std/calendar/days_in_month.scxml",
+            "sce:std/time/days_in_month.scxml",
             "-l",
             "rust",
             "-o",
@@ -211,7 +211,7 @@ fn the_cli_generates_a_standard_document_by_its_name() {
     let missing = std::process::Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
         .args([
             "generate",
-            "sce:std/calendar/no_such_day.scxml",
+            "sce:std/time/no_such_day.scxml",
             "-l",
             "rust",
             "-o",
@@ -238,7 +238,7 @@ fn the_cli_generates_a_standard_document_by_its_name() {
 #[test]
 fn a_standard_name_the_library_lacks_is_refused_where_it_looked() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let caller = caller(dir.path(), "sce:std/calendar/days_from_civl.scxml");
+    let caller = caller(dir.path(), "sce:std/time/days_from_civl.scxml");
     let result = compile_scxml_with_imports(
         &[],
         &[caller.as_path()],

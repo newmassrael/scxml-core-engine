@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
 <!--
-  sce:std/calendar/days_in_month.scxml — the number of days in a month of a
+  sce:std/time/days_in_month.scxml — the number of days in a month of a
   proleptic Gregorian year.
 
   February follows the leap-year rule of is_leap_year, imported beside it

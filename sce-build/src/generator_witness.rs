@@ -230,8 +230,8 @@ mod tests {
         fs::write(dir.join("sce-build/build.rs"), b"fn main() {}\n").unwrap();
         fs::write(dir.join("sce-build/src/lib.rs"), b"pub mod forge;\n").unwrap();
         fs::write(dir.join("sce-build/src/forge/mod.rs"), b"// forge\n").unwrap();
-        fs::create_dir_all(dir.join("stdlib/calendar")).unwrap();
-        fs::write(dir.join("stdlib/calendar/a.scxml"), b"<scxml/>\n").unwrap();
+        fs::create_dir_all(dir.join("stdlib/time")).unwrap();
+        fs::write(dir.join("stdlib/time/a.scxml"), b"<scxml/>\n").unwrap();
     }
 
     #[test]
@@ -345,7 +345,7 @@ mod tests {
             "sce-build/build.rs",
             "sce-build/src/lib.rs",
             "sce-build/src/forge/mod.rs",
-            "stdlib/calendar/a.scxml",
+            "stdlib/time/a.scxml",
         ]
         .iter()
         .map(|p| tmp.path().join(p))
@@ -381,7 +381,7 @@ mod tests {
         fake_workspace(tmp.path());
         let before = digest_hex(tmp.path()).unwrap();
 
-        fs::write(tmp.path().join("stdlib/calendar/a.scxml"), b"<scxml />\n").unwrap();
+        fs::write(tmp.path().join("stdlib/time/a.scxml"), b"<scxml />\n").unwrap();
 
         assert_ne!(
             before,

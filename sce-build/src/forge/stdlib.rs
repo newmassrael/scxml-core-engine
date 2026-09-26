@@ -4,13 +4,13 @@
 //! SCE's standard algorithm library — the documents an `sce:std/...`
 //! import names.
 //!
-//! General-purpose algorithms (calendar arithmetic, merge primitives) are
+//! General-purpose algorithms (date and time arithmetic, merge primitives) are
 //! written once, as SCXML algorithm documents under the repository's
 //! `stdlib/`, and every consumer imports the same document rather than
 //! writing its own copy in each language:
 //!
 //! ```xml
-//! <sce:import kind="algorithm" src="sce:std/calendar/days_from_civil.scxml" as="DaysFromCivil"/>
+//! <sce:import kind="algorithm" src="sce:std/time/days_from_civil.scxml" as="DaysFromCivil"/>
 //! ```
 //!
 //! The documents are embedded in this binary by `build.rs` and are never
@@ -90,17 +90,11 @@ mod tests {
 
     #[test]
     fn a_relative_import_inside_the_library_stays_in_it() {
-        let base = resolve(
-            Path::new("/anywhere"),
-            "sce:std/calendar/days_from_civil.scxml",
-        );
-        let sibling = resolve(
-            base.parent().unwrap(),
-            "../calendar/./days_from_civil.scxml",
-        );
+        let base = resolve(Path::new("/anywhere"), "sce:std/time/days_from_civil.scxml");
+        let sibling = resolve(base.parent().unwrap(), "../time/./days_from_civil.scxml");
         assert_eq!(
             sibling,
-            PathBuf::from("sce:std/calendar/../calendar/./days_from_civil.scxml")
+            PathBuf::from("sce:std/time/../time/./days_from_civil.scxml")
         );
         assert!(
             lookup(&sibling).is_some(),
@@ -110,12 +104,9 @@ mod tests {
 
     #[test]
     fn nothing_outside_the_library_is_a_standard_document() {
-        assert!(lookup(Path::new(
-            "sce:std/../stdlib/calendar/days_from_civil.scxml"
-        ))
-        .is_none());
-        assert!(lookup(Path::new("sce:std/calendar/no_such_document.scxml")).is_none());
-        assert!(lookup(Path::new("calendar/days_from_civil.scxml")).is_none());
+        assert!(lookup(Path::new("sce:std/../stdlib/time/days_from_civil.scxml")).is_none());
+        assert!(lookup(Path::new("sce:std/time/no_such_document.scxml")).is_none());
+        assert!(lookup(Path::new("time/days_from_civil.scxml")).is_none());
     }
 
     #[test]

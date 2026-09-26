@@ -1143,7 +1143,7 @@ mod tests {
         let doc = write_file(
             importing.path(),
             "doc.scxml",
-            br#"<scxml><sce:import kind="algorithm" src="sce:std/calendar/days_from_civil.scxml" as="c"/></scxml>"#,
+            br#"<scxml><sce:import kind="algorithm" src="sce:std/time/days_from_civil.scxml" as="c"/></scxml>"#,
         );
         let set = SourceSet::collect(importing.path(), None).unwrap();
         let standard = crate::forge::stdlib::documents().count();

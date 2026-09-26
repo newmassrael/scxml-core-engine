@@ -1145,7 +1145,7 @@
     },
     {
       "name": "days_from_civil",
-      "document": "sce:std/calendar/days_from_civil.scxml",
+      "document": "sce:std/time/days_from_civil.scxml",
       "kind": "algorithm",
       "ref_section": "pure_functions",
       "function": "days_from_civil",
@@ -1161,7 +1161,7 @@
     },
     {
       "name": "days_from_epoch_seconds",
-      "document": "sce:std/calendar/days_from_epoch_seconds.scxml",
+      "document": "sce:std/time/days_from_epoch_seconds.scxml",
       "kind": "algorithm",
       "ref_section": "pure_functions",
       "function": "days_from_epoch_seconds",
@@ -1175,7 +1175,7 @@
     },
     {
       "name": "days_in_month",
-      "document": "sce:std/calendar/days_in_month.scxml",
+      "document": "sce:std/time/days_in_month.scxml",
       "kind": "algorithm",
       "ref_section": "pure_functions",
       "function": "days_in_month",
@@ -1190,7 +1190,7 @@
     },
     {
       "name": "is_leap_year",
-      "document": "sce:std/calendar/is_leap_year.scxml",
+      "document": "sce:std/time/is_leap_year.scxml",
       "kind": "algorithm",
       "ref_section": "pure_functions",
       "function": "is_leap_year",
@@ -1204,7 +1204,7 @@
     },
     {
       "name": "second_of_day",
-      "document": "sce:std/calendar/second_of_day.scxml",
+      "document": "sce:std/time/second_of_day.scxml",
       "kind": "algorithm",
       "ref_section": "pure_functions",
       "function": "second_of_day",
@@ -1218,7 +1218,7 @@
     },
     {
       "name": "weekday_from_days",
-      "document": "sce:std/calendar/weekday_from_days.scxml",
+      "document": "sce:std/time/weekday_from_days.scxml",
       "kind": "algorithm",
       "ref_section": "pure_functions",
       "function": "weekday_from_days",

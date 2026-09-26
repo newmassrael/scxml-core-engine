@@ -1519,7 +1519,7 @@
     "days_from_civil": {
       "fixture": "days_from_civil",
       "signature": "(year: i32, month: u8, day: u8) -> i64",
-      "formula": "days from 1970-01-01 to year-month-day in the proleptic Gregorian calendar, negative before it (the standard document sce:std/calendar/days_from_civil.scxml)",
+      "formula": "days from 1970-01-01 to year-month-day in the proleptic Gregorian calendar, negative before it (the standard document sce:std/time/days_from_civil.scxml)",
       "cases": [
         { "args": [1970, 1, 1], "expected": 0, "note": "the epoch" },
         { "args": [2024, 1, 1], "expected": 19723 },
@@ -1533,7 +1533,7 @@
     "days_from_epoch_seconds": {
       "fixture": "days_from_epoch_seconds",
       "signature": "(seconds: i64) -> i64",
-      "formula": "floor(seconds / 86400): the day since 1970-01-01 that a count of seconds since 1970-01-01T00:00:00 falls in (the standard document sce:std/calendar/days_from_epoch_seconds.scxml)",
+      "formula": "floor(seconds / 86400): the day since 1970-01-01 that a count of seconds since 1970-01-01T00:00:00 falls in (the standard document sce:std/time/days_from_epoch_seconds.scxml)",
       "cases": [
         { "args": [0], "expected": 0 },
         { "args": [86399], "expected": 0, "note": "the last second of day 0" },
@@ -1549,7 +1549,7 @@
     "days_in_month": {
       "fixture": "days_in_month",
       "signature": "(year: i32, month: u8) -> u8",
-      "formula": "the length of month 1..12 of year in the proleptic Gregorian calendar; a month outside 1..12 answers 31 (the standard document sce:std/calendar/days_in_month.scxml)",
+      "formula": "the length of month 1..12 of year in the proleptic Gregorian calendar; a month outside 1..12 answers 31 (the standard document sce:std/time/days_in_month.scxml)",
       "cases": [
         { "args": [2024, 2], "expected": 29, "note": "divisible by 4" },
         { "args": [2023, 2], "expected": 28 },
@@ -1562,7 +1562,7 @@
     "is_leap_year": {
       "fixture": "is_leap_year",
       "signature": "(year: i32) -> bool",
-      "formula": "year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) (the standard document sce:std/calendar/is_leap_year.scxml)",
+      "formula": "year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) (the standard document sce:std/time/is_leap_year.scxml)",
       "cases": [
         { "args": [2024], "expected": true },
         { "args": [2023], "expected": false },
@@ -1576,7 +1576,7 @@
     "second_of_day": {
       "fixture": "second_of_day",
       "signature": "(seconds: i64) -> i32",
-      "formula": "seconds mod 86400 in 0..86399: the seconds since the start of its day of a count of seconds since 1970-01-01T00:00:00 (the standard document sce:std/calendar/second_of_day.scxml)",
+      "formula": "seconds mod 86400 in 0..86399: the seconds since the start of its day of a count of seconds since 1970-01-01T00:00:00 (the standard document sce:std/time/second_of_day.scxml)",
       "cases": [
         { "args": [0], "expected": 0 },
         { "args": [3661], "expected": 3661, "note": "01:01:01" },
@@ -1591,7 +1591,7 @@
     "weekday_from_days": {
       "fixture": "weekday_from_days",
       "signature": "(days: i64) -> u8",
-      "formula": "the weekday of the day that many days from 1970-01-01, 0 = Sunday through 6 = Saturday (the standard document sce:std/calendar/weekday_from_days.scxml)",
+      "formula": "the weekday of the day that many days from 1970-01-01, 0 = Sunday through 6 = Saturday (the standard document sce:std/time/weekday_from_days.scxml)",
       "cases": [
         { "args": [0], "expected": 4, "note": "1970-01-01, a Thursday" },
         { "args": [19723], "expected": 1, "note": "2024-01-01, a Monday" },

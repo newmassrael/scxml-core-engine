@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
 <!--
-  sce:std/calendar/weekday_from_days.scxml — the day of the week of a day
+  sce:std/time/weekday_from_days.scxml — the day of the week of a day
   count since 1970-01-01, 0 for Sunday through 6 for Saturday.
 
   1970-01-01 was a Thursday, so the weekday is (days + 4) mod 7 — but
