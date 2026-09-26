@@ -127,6 +127,45 @@ fn a_document_imports_a_standard_one_by_name_on_every_backend() {
     }
 }
 
+/// Every standard document generates on every backend, named as a consumer
+/// names it — the library is a promise to all six, so a document one
+/// backend cannot generate is not one it may hold. Imports between standard
+/// documents (`days_in_month` reads `is_leap_year` by a relative name)
+/// resolve inside the library.
+#[test]
+fn every_standard_document_generates_on_every_backend() {
+    let names: Vec<String> = sce_build::forge::stdlib::documents()
+        .map(|(name, _)| name)
+        .collect();
+    assert!(
+        names.len() >= 4,
+        "the calendar documents are in the library: {names:?}"
+    );
+    let paths: Vec<&Path> = names.iter().map(Path::new).collect();
+    for &language in Language::ALL {
+        let outputs = compile_scxml_with_imports(
+            &[],
+            &paths,
+            &sce_build::find_template_dir_for(language),
+            language,
+            &options_for(language),
+            None,
+        )
+        .unwrap_or_else(|e| {
+            panic!(
+                "{}: the library did not generate: {e}",
+                language.canonical_name()
+            )
+        });
+        assert_eq!(
+            outputs.len(),
+            names.len(),
+            "{}: one output per standard document",
+            language.canonical_name()
+        );
+    }
+}
+
 /// A standard name the library does not hold is refused as a missing
 /// import, and the refusal says where it looked — so an author reading it
 /// does not go looking for a file on disk.

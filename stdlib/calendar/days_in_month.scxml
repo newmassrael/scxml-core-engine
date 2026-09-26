@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/calendar/days_in_month.scxml — the number of days in a month of a
+  proleptic Gregorian year.
+
+  February follows the leap-year rule of is_leap_year, imported beside it
+  in the library by a relative name. A month outside 1..12 is not refused:
+  it is answered as a 31-day month, the caller's to validate, the way
+  days_from_civil extends past its range.
+
+  (2024, 2) → 29 · (2023, 2) → 28 · (2026, 4) → 30 · (2026, 12) → 31.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="days_in_month" version="1.0">
+  <sce:import kind="algorithm" src="is_leap_year.scxml" as="leap"/>
+  <sce:signature>
+    <sce:param name="year" type="int32"/>
+    <sce:param name="month" type="uint8"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:if cond="month === 2">
+      <sce:if cond="leap(year)">
+        <sce:return expr="29"/>
+      </sce:if>
+      <sce:return expr="28"/>
+    </sce:if>
+    <sce:if cond="month === 4 || month === 6 || month === 9 || month === 11">
+      <sce:return expr="30"/>
+    </sce:if>
+    <sce:return expr="31"/>
+  </sce:body>
+</scxml>

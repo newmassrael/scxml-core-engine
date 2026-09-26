@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/calendar/is_leap_year.scxml — whether a proleptic Gregorian year
+  has a February 29th.
+
+  Every fourth year, except centuries, except every fourth century. The
+  remainder takes the dividend's sign (SCE_FORGE.md §3.4.1), and a
+  remainder of zero is zero whatever the sign, so a negative year is judged
+  by the same three tests — year 0 is a leap year, as is -4.
+
+  2024 → true · 1900 → false · 2000 → true · -1 → false.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="is_leap_year" version="1.0">
+  <sce:signature>
+    <sce:param name="year" type="int32"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="year % 4 === 0 &amp;&amp; (year % 100 !== 0 || year % 400 === 0)"/>
+  </sce:body>
+</scxml>
