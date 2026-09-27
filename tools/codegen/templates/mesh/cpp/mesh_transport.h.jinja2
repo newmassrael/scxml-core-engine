@@ -2715,7 +2715,7 @@ struct TransportRouter {
         for (std::size_t i = 0; i < N_SESSIONS; ++i) {
             sessions_[i]->setMeshSendCallback(
                 [this, i](const std::string& target, const std::string& eventName,
-                          const std::string& data, const std::string& /*sendId*/,
+                          const std::string& data, const std::string& sendId,
                           const std::string& invokeId) -> bool {
                 SCE::Mesh::MeshEnvelope env;
                 env.id = SCE::uuid::v7();
@@ -2727,6 +2727,13 @@ struct TransportRouter {
                     ? SCE::Mesh::PayloadCodec::None
                     : SCE::Mesh::PayloadCodec::Json;
                 env.data.assign(data.begin(), data.end());
+                // SCE_MESH.md §mesh-10.7: the receiver's `_event.sendid` is the
+                // envelope's `subject`, so the `<send>`'s id travels there —
+                // as ChildSessionAdapter already carries a child's, and as the
+                // Rust core carries this same send's.
+                if (!sendId.empty()) {
+                    env.subject = sendId;
+                }
                 // W3C SCXML 6.4.1 auto-propagation extended to mesh-rpc:
                 // stamp env.invoke_id when the outbound pattern is a paired
                 // reply (RpcReply / FieldNotify) so the server response

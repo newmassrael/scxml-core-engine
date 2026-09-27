@@ -10,7 +10,9 @@
     </state>
     <state id="braking">
         <onentry>
-            <send target="#motor_payload" event="brake.activate">
+            <!-- The id crosses as the envelope's subject and is the
+                 receiver's _event.sendid (SCE_MESH.md §mesh-10.7). -->
+            <send target="#motor_payload" event="brake.activate" id="brake_send_1">
                 <param name="force" expr="brakeForce"/>
             </send>
         </onentry>

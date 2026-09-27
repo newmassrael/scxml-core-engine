@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Mesh end-to-end payload test: receiver checks _event.data -->
+<!-- SCE Mesh end-to-end payload test: receiver checks _event.data, and the
+     sender's <send> id as _event.sendid (SCE_MESH.md §mesh-10.7) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        datamodel="ecmascript" name="motor_payload" initial="running">
     <state id="running">
-        <transition event="brake.activate" cond="_event.data.force == 42" target="verified"/>
+        <transition event="brake.activate" cond="_event.data.force == 42 &amp;&amp; _event.sendid == 'brake_send_1'" target="verified"/>
         <transition event="brake.activate" target="wrong_payload"/>
     </state>
     <state id="verified"/>

@@ -592,6 +592,10 @@
         {
           "file": "backends/rust/mesh/src/router.rs",
           "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+          "kind": "references"
         }
       ]
     },
