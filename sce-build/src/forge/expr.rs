@@ -6534,17 +6534,22 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             consequent,
             alternate,
         } => {
-            let cons = emit_python(consequent, expr.ty)?;
-            let cons = if matches!(&consequent.kind, ExprKind::Conditional { .. }) {
-                format!("({cons})")
-            } else {
-                cons
+            // Python's conditional expression is `A if C else B`, and only
+            // the ELSE branch may hold another one unparenthesised -- it
+            // associates to the right. A conditional in the consequent or in
+            // the CONDITION must be wrapped: `x if a if g else b else 0` is a
+            // SyntaxError, which a document reading `(g ? a : b) ? x : 0`
+            // produced (2026-09-28) while every other target compiled.
+            let wrap = |e: &TypedExpr, s: String| {
+                if matches!(&e.kind, ExprKind::Conditional { .. }) {
+                    format!("({s})")
+                } else {
+                    s
+                }
             };
-            format!(
-                "{cons} if {} else {}",
-                emit_python(condition, InferredType::Bool)?,
-                emit_python(alternate, expr.ty)?,
-            )
+            let cons = wrap(consequent, emit_python(consequent, expr.ty)?);
+            let cond = wrap(condition, emit_python(condition, InferredType::Bool)?);
+            format!("{cons} if {cond} else {}", emit_python(alternate, expr.ty)?,)
         }
         ExprKind::Member { object, property } => {
             format!(
@@ -7260,6 +7265,20 @@ mod tests {
         assert_eq!(
             tp("status === 'OK' ? 1 : 0", ExprTarget::Rust),
             "if status == \"OK\" { 1 } else { 0 }"
+        );
+    }
+
+    #[test]
+    fn python_wraps_a_conditional_used_as_a_condition() {
+        // `x if a if g else b else 0` does not parse: only the else branch
+        // may nest unparenthesised.
+        assert_eq!(
+            tp("(g ? a : b) ? 1 : 0", ExprTarget::Python),
+            "1 if (a if g else b) else 0"
+        );
+        assert_eq!(
+            tp("c ? (g ? 1 : 2) : (h ? 3 : 4)", ExprTarget::Python),
+            "(1 if g else 2) if c else 3 if h else 4"
         );
     }
 
