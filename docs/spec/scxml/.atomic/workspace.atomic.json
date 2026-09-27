@@ -6752,11 +6752,6 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::evaluateDoneData",
           "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::executeSendAction",
-          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -19592,6 +19587,12 @@
       "target_kind": "section",
       "target_id": "scxml-C-2",
       "reason": "The C11 BasicHTTP reply no longer passes through a Lua value: its data rides on the raised event's data[] as JSON, which set_current_event decodes, so the JSON-to-Lua push this file defined has no caller and is removed"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.7",
+      "reason": "executeSendAction cites §scxml-5.7.1 (a <param> that cannot be read) and §scxml-4.9, not §scxml-5.7: the binding was added for a comment the discarded-send reading had, which the §5.7.1 reading replaced before it landed, so it names nothing in the file"
     }
   ],
   "frames": {},
