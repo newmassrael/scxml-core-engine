@@ -4184,3 +4184,43 @@ A well-designed SCXML document supports radically heterogeneous deployments from
 
 Each deployment is a different `deploy.yaml` against the **same SCXML source** and the same AOT-generated binaries (per target). This is the payoff of distributed-conformance discipline: one logical design, many physical realizations, no runtime interpretation.
 
+---
+
+## 18. WebSocket Binding
+
+The binding a host-level Mesh core — the Rust `sce-rust-mesh` crate and the Kotlin `sce-kotlin-mesh` module — uses to join a machine on a phone or in a browser to a machine on a server: one WebSocket (RFC 6455) connection per pair of machines, carrying envelopes both ways. It exists because every platform has a native WebSocket client, and a connection that starts as HTTPS on 443 passes the proxies and firewalls a phone meets.
+
+It is not a generated C++ transport: `mesh_transport.h.jinja2` has no arm for it, and the §10.4.2 registry does not list it until a build reads it from `deploy.yaml` (§6.4 step 1). What this section fixes is the wire, so that any two implementations of it interoperate.
+
+### 18.1 Connection and Peer Identity
+
+- One connection per (client machine, server machine) pair. The client dials and the server accepts; the server never dials, because a phone has no address to dial.
+- The client opens `wss://<host>[:<port>]<base>/sce-mesh/1/<client>`, where `<client>` is the connecting machine's name — the `source` its envelopes carry — and `1` is the version of this binding. A machine name is a path segment as it is; a name a path segment cannot carry cannot use this binding.
+- The server learns the client's name from that path; the client knows the server's from its own binding (the `#peer` it sends to). Neither side sends a name in-band.
+- A server answers the upgrade with HTTP 404 for a version it does not speak or a name it has no binding for, rather than accepting a socket it cannot route.
+- Who may claim a name is authentication, which this binding leaves to the deployment — a bearer token in the upgrade request, or a TLS client certificate. An implementation passes through whatever headers its host adds.
+- `ws://` without TLS is for a loopback test only.
+
+### 18.2 Framing
+
+- Each WebSocket binary message carries exactly one envelope: its CBOR bytes (§7.5), with nothing before or after them. Fragmentation is RFC 6455's; a receiver hands the core the reassembled message.
+- A text message is a protocol error, and the receiver closes the connection with status 1003.
+- An envelope that does not decode is the core's to report (§16.7 row 4, `codec: "cbor"`); the connection stays open.
+
+### 18.3 Readiness and Faults
+
+- A binding becomes ready (§10.10) when the upgrade completes, on both ends, and what the core held while it was not ready is released then.
+- A close, an I/O error, or a ping left unanswered for one keepalive interval ends readiness: §16.7 row 1 `TRANSPORT_UNAVAILABLE`, once per ready-to-not-ready edge.
+- A message the socket refused is §16.7 row 2 `SEND_FAILED`, or under the binding's retry policy is sent again and at worst becomes row 3 `DELIVERY_EXHAUSTED` (§10.10).
+- After a close the client reconnects on its own backoff; each reconnect that completes is a new ready edge.
+- Each side pings once per keepalive interval, 30 s unless the deployment sets another.
+
+### 18.4 Implementations
+
+| Core | Server | Client |
+|------|--------|--------|
+| Rust `sce-rust-mesh`, feature `wss` | tokio + tokio-tungstenite | tokio + tokio-tungstenite |
+| Kotlin `sce-kotlin-mesh` | — | OkHttp |
+
+The adapter is the only code per language that this binding adds: it moves bytes and readiness between a socket and the core (`receive`, `peer_ready`, `peer_not_ready`), and every decision — ordering, duplicates, buffering, retry, which §16.7 row — stays in the core, which is the same generated rules on every language.
+
