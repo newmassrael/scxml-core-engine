@@ -23,7 +23,7 @@ use alloc::vec::Vec;
 
 use sce_forge_runtime::algorithm::AlgorithmError;
 use sce_forge_runtime::codec::CodecError;
-use sce_rust_runtime::{HostSendRequest, HostSendResponse};
+use sce_rust_runtime::HostSendRequest;
 
 use crate::generated::envelope::Envelope;
 use crate::generated::pattern_kind::PatternKind;
@@ -58,11 +58,13 @@ pub enum Effect {
     /// Hand `bytes` to the transport bound to `peer`.
     Transmit { peer: String, bytes: Vec<u8> },
     /// Raise `event` on the engine's external queue with `data` as
-    /// `_event.data`; `source` is the machine that sent it.
+    /// `_event.data`; `source` is the machine that sent it and `send_id` the
+    /// id its `<send>` carried (§mesh-10.7: the envelope's `subject`).
     Deliver {
         event: String,
         data: String,
         source: String,
+        send_id: Option<String>,
     },
     /// Raise `error.communication` with this §16.7 row. `peer` names the
     /// binding the row is about, when there is one.
@@ -144,6 +146,9 @@ impl Router {
                 PayloadCodec::Json
             },
             data: request.event_data.as_bytes(),
+            // §mesh-10.7: the receiver's `_event.sendid` is the envelope's
+            // `subject`, so a `<send>`'s id travels there.
+            subject: (!request.send_id.is_empty()).then_some(request.send_id.as_str()),
             sequence_no: peer.config.stamp_sequence.then_some(peer.next_sequence),
             ..Envelope::new()
         }
@@ -216,23 +221,20 @@ impl Router {
         self.peers.get(peer).and_then(|bound| bound.config.retry)
     }
 
-    /// The `error.communication` a raised row is, as the engine receives it:
-    /// the row rendered with the binding it was observed on, so its
-    /// `target` and `transport` columns are the deployment's.
-    ///
-    /// A [`HostSendResponse`] because that is the engine's own shape for an
-    /// event a host produces — and the one a send handler answers with, so
-    /// a row [`Router::send`] observed reaches the document the way any
-    /// other host-served send reports back.
-    pub fn error_event(&self, peer: Option<&str>, signal: &Signal) -> HostSendResponse {
-        let binding = peer.map(|peer| Binding {
+    /// The machine this router speaks for — the `source` of what it sends.
+    pub fn machine(&self) -> &str {
+        &self.machine
+    }
+
+    /// The binding a raised row names: the peer an [`Effect::Raise`]
+    /// carries, with the transport the deployment bound it to, so the
+    /// row's `target` and `transport` columns are the deployment's. A peer
+    /// the deployment never bound is named with no transport.
+    pub fn binding<'a>(&'a self, peer: Option<&'a str>) -> Option<Binding<'a>> {
+        peer.map(|peer| Binding {
             peer,
             transport: self.peers.get(peer).map(|bound| bound.config.transport),
-        });
-        HostSendResponse {
-            event_name: "error.communication".to_string(),
-            event_data: signal.event_data(binding),
-        }
+        })
     }
 
     /// Envelope `bytes` a transport received from `peer`, at `now_ms`.
@@ -363,6 +365,7 @@ fn deliver(envelope: &Envelope<'_>, peer: Option<&str>) -> Effect {
             event: envelope.event_type.to_string(),
             data,
             source: envelope.source.to_string(),
+            send_id: envelope.subject.map(str::to_string),
         },
         Err(codec) => Effect::Raise {
             peer: peer.map(str::to_string),
@@ -453,6 +456,7 @@ mod tests {
                 event: "speed.changed".to_string(),
                 data: r#"{"kph":42}"#.to_string(),
                 source: "ecu".to_string(),
+                send_id: Some("send.1".to_string()),
             }]
         );
     }
@@ -470,6 +474,7 @@ mod tests {
                 event: "ping".to_string(),
                 data: String::new(),
                 source: "ecu".to_string(),
+                send_id: Some("send.1".to_string()),
             }]
         );
     }
@@ -646,10 +651,8 @@ mod tests {
         };
         // An unbound target has no transport to name: its row says which
         // peer it was, and nothing a deployment did not declare.
-        let event = ecu.error_event(peer.as_deref(), signal);
-        assert_eq!(event.event_name, "error.communication");
         assert_eq!(
-            event.event_data,
+            signal.event_data(ecu.binding(peer.as_deref())),
             r#"{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"nowhere"}"#
         );
 
@@ -659,7 +662,7 @@ mod tests {
             panic!("expected one raised row, got {lost:?}");
         };
         assert_eq!(
-            ecu.error_event(peer.as_deref(), signal).event_data,
+            signal.event_data(ecu.binding(peer.as_deref())),
             r#"{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"hmi","transport":"wss"}"#
         );
     }

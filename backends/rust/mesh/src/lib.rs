@@ -17,7 +17,9 @@
 //!
 //! Transport-free by design (SCE_MESH.md §mesh-6.4): bytes come in from
 //! whichever transport the host wires, and the clock is an argument, so the
-//! core runs the same under a test as under a socket.
+//! core runs the same under a test as under a socket. [`endpoint`] is where
+//! a host supplies them — a transport, a clock, randomness — and where the
+//! core meets an engine.
 
 #![forbid(unsafe_code)]
 
@@ -29,6 +31,7 @@ compile_error!(
 
 extern crate alloc;
 
+pub mod endpoint;
 pub mod generated;
 pub mod inbound;
 pub mod outbound;
