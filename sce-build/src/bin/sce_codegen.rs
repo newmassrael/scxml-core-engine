@@ -1552,11 +1552,12 @@ fn check_language_flag_help() -> String {
 fn list_fixtures_language_flag_help() -> String {
     format!(
         "{}\n\n\
-         When set to `c11`, applies the same `c11_supported_kind` filter \
-         that `generate-conformance` uses, so the c11 cmake harness can \
-         derive its fixture set from the single manifest source of truth. \
-         Every other backend (and the unset default) emits every fixture \
-         in the manifest unchanged.",
+         When set, applies the per-backend schedule `generate-conformance` \
+         uses, so a backend's build derives its fixture set from the single \
+         manifest source of truth: a fixture that backend does not generate \
+         is left out — a kind outside c11's set, a codec using an MCU-only \
+         feature, a CBOR codec the backend refuses, a `may-fail` algorithm \
+         it does not lower. Unset, every fixture in the manifest is emitted.",
         LanguageRoute::ListFixtures.flag_summary("Optional language gate")
     )
 }

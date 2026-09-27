@@ -497,15 +497,14 @@ fn naming_a_manifest_does_not_change_the_resolved_resources() {
         // out of the resolved directory to decide whether it is
         // MCU-only, and excludes those from backends that cannot carry
         // them; a directory that resolves to nothing makes every file
-        // unreadable, the check unanswerable, and nothing excluded.
-        // `rust` and `c11` are the two backends that exclude nothing
-        // even when the directory is right, so listing under either of
-        // them is identical whether or not the resolution worked —
-        // which is exactly the probe that cannot reach the defect. The
-        // control below pins that this one can.
+        // unreadable, the check unanswerable, and nothing excluded. A
+        // backend that happens to exclude nothing lists the same either
+        // way — the probe that cannot reach the defect — so the one
+        // listed is one that excludes, and the control below pins that
+        // it still does.
         listings.push((
             label.to_string(),
-            list_fixtures(&manifest_dir, &spelling, "cpp"),
+            list_fixtures(&manifest_dir, &spelling, Some("cpp")),
         ));
     }
 
@@ -525,8 +524,13 @@ fn naming_a_manifest_does_not_change_the_resolved_resources() {
 
     // Control: the filter must actually exclude something under the
     // correct resolution, or all three listings agree for a reason
-    // that has nothing to do with the path.
-    let unfiltered = list_fixtures(&manifest_dir, "fixtures.json", "c11");
+    // that has nothing to do with the path. Measured against the
+    // manifest's every fixture, not against another backend's listing:
+    // that one was c11's, on the belief that c11 excludes nothing,
+    // which stopped being true the day a codec kind reached C++ before
+    // C11 (the CBOR map) — the comparison then turned on which of two
+    // filters happened to be wider.
+    let unfiltered = list_fixtures(&manifest_dir, "fixtures.json", None);
     let filtered = &listings[0].1;
     assert!(
         !filtered.is_empty() && filtered.len() < unfiltered.len(),
@@ -549,17 +553,21 @@ fn naming_a_manifest_does_not_change_the_resolved_resources() {
 }
 
 /// `list-fixtures` output for one manifest spelling and backend.
-fn list_fixtures(cwd: &Path, manifest: &str, language: &str) -> Vec<u8> {
+/// `list-fixtures` over `manifest`, gated by `language` — or, with `None`,
+/// the manifest's every fixture, which no backend's filter has touched.
+fn list_fixtures(cwd: &Path, manifest: &str, language: Option<&str>) -> Vec<u8> {
+    let mut args = vec![
+        "list-fixtures",
+        "--manifest",
+        manifest,
+        "--catalog",
+        "forge",
+    ];
+    if let Some(language) = language {
+        args.extend(["--language", language]);
+    }
     let out = Command::new(sce_codegen_bin())
-        .args([
-            "list-fixtures",
-            "--manifest",
-            manifest,
-            "--catalog",
-            "forge",
-            "--language",
-            language,
-        ])
+        .args(&args)
         .current_dir(cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -567,7 +575,7 @@ fn list_fixtures(cwd: &Path, manifest: &str, language: &str) -> Vec<u8> {
         .expect("spawn sce-codegen");
     assert!(
         out.status.success(),
-        "list-fixtures failed for {manifest:?} [{language}]: {}",
+        "list-fixtures failed for {manifest:?} [{language:?}]: {}",
         String::from_utf8_lossy(&out.stderr),
     );
     out.stdout
