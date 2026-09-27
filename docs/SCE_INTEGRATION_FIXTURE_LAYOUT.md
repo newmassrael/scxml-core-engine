@@ -68,7 +68,12 @@ send paths that had no runtime witness — one `<send target="#_parent">` from a
 were fixed at the template layer while no committed fixture had a machine of
 either shape, so every suite could show was that nothing regressed. The two
 land in distinct final states (`failChildPayload` / `failInternalPayload`) so a
-failure names the path rather than reporting "payload lost". Adding it closed
+failure names the path rather than reporting "payload lost". Its last phase
+asks that the payload is JSON at all (RFC 8259 §7): a value holding a newline
+and an object whose member names hold `"` and `\`, which Kotlin wrote raw until
+2026-09-27, so the receiver read no `_event.data`. The names are an object's
+members, not `<param name>`s, because W3C types the latter NMTOKEN and a
+document could not spell them there (`kotlin_event_data_is_json.cases`). Adding it closed
 two C11 parity gaps that the missing fixture had hidden: a literal param was
 formatted through the runtime Lua formatter, which does not compile in a
 machine with no `lua_State`; and `<send target="#_internal">` with `<param>`

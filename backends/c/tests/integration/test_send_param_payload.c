@@ -49,6 +49,8 @@ int main(void) {
     const int fail_no_error = send_param_payload_ended_in(&sm, SEND_PARAM_PAYLOAD_STATE_FAILNOPARAMERROR);
     const int fail_broken_sent = send_param_payload_ended_in(&sm, SEND_PARAM_PAYLOAD_STATE_FAILBROKENPARAMDELIVERED);
     const int fail_sibling = send_param_payload_ended_in(&sm, SEND_PARAM_PAYLOAD_STATE_FAILSIBLINGPARAMLOST);
+    const int fail_text = send_param_payload_ended_in(&sm, SEND_PARAM_PAYLOAD_STATE_FAILESCAPEDTEXT);
+    const int fail_member = send_param_payload_ended_in(&sm, SEND_PARAM_PAYLOAD_STATE_FAILESCAPEDMEMBERNAME);
 
     if (!pass) {
         if (fail_child) {
@@ -90,6 +92,15 @@ int main(void) {
             fprintf(stderr, "send_param_payload: FAIL — `_event.data.kept` did not survive "
                             "alongside the failed param. One `<param>` that will not evaluate "
                             "costs its own pair and nothing else.\n");
+        } else if (fail_text) {
+            fprintf(stderr, "send_param_payload: FAIL — `escaped` did not carry "
+                            "`_event.data.text` as 'x\\ny'. The payload is JSON, so a control "
+                            "character in a value is escaped (RFC 8259 §7); written raw, the "
+                            "payload is not JSON and the receiver reads nothing.\n");
+        } else if (fail_member) {
+            fprintf(stderr, "send_param_payload: FAIL — `escaped` carried its text but not the "
+                            "members `q\"k` and `b\\k` of `_event.data.obj`. A member name inside "
+                            "a value is a JSON text too, and is escaped as a value is.\n");
         } else {
             fprintf(stderr,
                     "send_param_payload: FAIL — settled in no verdict state, so no send was "

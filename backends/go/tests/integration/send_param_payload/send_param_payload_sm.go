@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 15abee63eca48c0d096ade54003293e94f23f9dffeaf437e4cf29a0ed73c4eb2
+// source-hash: 226fda00e41ba56f394c3663b4d11f262f4b5c1805c4daae2daf63854be69165
 
 
 // SPDX-License-Identifier: MIT
@@ -47,30 +47,39 @@ type SendParamPayloadState int
 
 const (
 	SendParamPayloadStateAwaitChild SendParamPayloadState = 0
-	SendParamPayloadStateFailBrokenParamDelivered SendParamPayloadState = 1
-	SendParamPayloadStateFailChildPayload SendParamPayloadState = 2
-	SendParamPayloadStateFailDuplicateParams SendParamPayloadState = 3
-	SendParamPayloadStateFailInternalPayload SendParamPayloadState = 4
-	SendParamPayloadStateFailNoParamError SendParamPayloadState = 5
-	SendParamPayloadStateFailNumberType SendParamPayloadState = 6
-	SendParamPayloadStateFailSiblingParamLost SendParamPayloadState = 7
-	SendParamPayloadStateFailStringType SendParamPayloadState = 8
-	SendParamPayloadStateInternalPhase SendParamPayloadState = 9
-	SendParamPayloadStateParamErrorPhase SendParamPayloadState = 10
-	SendParamPayloadStatePass SendParamPayloadState = 11
-	SendParamPayloadStateTypedPhase SendParamPayloadState = 12
+	SendParamPayloadStateEscapePhase SendParamPayloadState = 1
+	SendParamPayloadStateFailBrokenParamDelivered SendParamPayloadState = 2
+	SendParamPayloadStateFailChildPayload SendParamPayloadState = 3
+	SendParamPayloadStateFailDuplicateParams SendParamPayloadState = 4
+	SendParamPayloadStateFailEscapedMemberName SendParamPayloadState = 5
+	SendParamPayloadStateFailEscapedText SendParamPayloadState = 6
+	SendParamPayloadStateFailInternalPayload SendParamPayloadState = 7
+	SendParamPayloadStateFailNoParamError SendParamPayloadState = 8
+	SendParamPayloadStateFailNumberType SendParamPayloadState = 9
+	SendParamPayloadStateFailSiblingParamLost SendParamPayloadState = 10
+	SendParamPayloadStateFailStringType SendParamPayloadState = 11
+	SendParamPayloadStateInternalPhase SendParamPayloadState = 12
+	SendParamPayloadStateParamErrorPhase SendParamPayloadState = 13
+	SendParamPayloadStatePass SendParamPayloadState = 14
+	SendParamPayloadStateTypedPhase SendParamPayloadState = 15
 )
 
 func (s SendParamPayloadState) String() string {
 	switch s {
 	case SendParamPayloadStateAwaitChild:
 		return "awaitChild"
+	case SendParamPayloadStateEscapePhase:
+		return "escapePhase"
 	case SendParamPayloadStateFailBrokenParamDelivered:
 		return "failBrokenParamDelivered"
 	case SendParamPayloadStateFailChildPayload:
 		return "failChildPayload"
 	case SendParamPayloadStateFailDuplicateParams:
 		return "failDuplicateParams"
+	case SendParamPayloadStateFailEscapedMemberName:
+		return "failEscapedMemberName"
+	case SendParamPayloadStateFailEscapedText:
+		return "failEscapedText"
 	case SendParamPayloadStateFailInternalPayload:
 		return "failInternalPayload"
 	case SendParamPayloadStateFailNoParamError:
@@ -113,12 +122,18 @@ func SendParamPayloadStateFromName(name string) (SendParamPayloadState, bool) {
 	switch name {
 	case "awaitChild":
 		return SendParamPayloadStateAwaitChild, true
+	case "escapePhase":
+		return SendParamPayloadStateEscapePhase, true
 	case "failBrokenParamDelivered":
 		return SendParamPayloadStateFailBrokenParamDelivered, true
 	case "failChildPayload":
 		return SendParamPayloadStateFailChildPayload, true
 	case "failDuplicateParams":
 		return SendParamPayloadStateFailDuplicateParams, true
+	case "failEscapedMemberName":
+		return SendParamPayloadStateFailEscapedMemberName, true
+	case "failEscapedText":
+		return SendParamPayloadStateFailEscapedText, true
 	case "failInternalPayload":
 		return SendParamPayloadStateFailInternalPayload, true
 	case "failNoParamError":
@@ -150,9 +165,12 @@ func SendParamPayloadStateFromName(name string) (SendParamPayloadState, bool) {
 // its own list goes on passing when the document grows a state.
 var SendParamPayloadAllStates = []SendParamPayloadState{
 	SendParamPayloadStateAwaitChild,
+	SendParamPayloadStateEscapePhase,
 	SendParamPayloadStateFailBrokenParamDelivered,
 	SendParamPayloadStateFailChildPayload,
 	SendParamPayloadStateFailDuplicateParams,
+	SendParamPayloadStateFailEscapedMemberName,
+	SendParamPayloadStateFailEscapedText,
 	SendParamPayloadStateFailInternalPayload,
 	SendParamPayloadStateFailNoParamError,
 	SendParamPayloadStateFailNumberType,
@@ -179,12 +197,12 @@ type SendParamPayloadTarget = sce.EntryTarget[SendParamPayloadState, sce.History
 
 // childStatesOfSendParamPayload is §scxml-D-getChildStates per state: its
 // <state>, <parallel> and <final> children, in document order.
-var childStatesOfSendParamPayload = [13][]SendParamPayloadState{
+var childStatesOfSendParamPayload = [16][]SendParamPayloadState{
 }
 
 // initialTargetsOfSendParamPayload is each compound state's initial transition
 // target, as written (§scxml-3.3).
-var initialTargetsOfSendParamPayload = [13][]SendParamPayloadTarget{
+var initialTargetsOfSendParamPayload = [16][]SendParamPayloadTarget{
 }
 
 // documentInitialTargetsOfSendParamPayload is the target of the document's own
@@ -194,10 +212,15 @@ var documentInitialTargetsOfSendParamPayload = []SendParamPayloadTarget{sce.Stat
 // transitionTargetsOfSendParamPayload is each transition's target list, as
 // written (§scxml-3.13), by source state and the transition's index among its
 // source's own transitions. A targetless transition's entry is empty.
-var transitionTargetsOfSendParamPayload = [13][][]SendParamPayloadTarget{
+var transitionTargetsOfSendParamPayload = [16][][]SendParamPayloadTarget{
 	SendParamPayloadStateAwaitChild: {
 		0: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateInternalPhase)},
 		1: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateFailChildPayload)},
+	},
+	SendParamPayloadStateEscapePhase: {
+		0: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStatePass)},
+		1: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateFailEscapedMemberName)},
+		2: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateFailEscapedText)},
 	},
 	SendParamPayloadStateInternalPhase: {
 		0: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateTypedPhase)},
@@ -206,7 +229,7 @@ var transitionTargetsOfSendParamPayload = [13][][]SendParamPayloadTarget{
 	SendParamPayloadStateParamErrorPhase: {
 		1: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateFailNoParamError)},
 		2: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateFailBrokenParamDelivered)},
-		3: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStatePass)},
+		3: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateEscapePhase)},
 		4: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateFailSiblingParamLost)},
 	},
 	SendParamPayloadStateTypedPhase: {
@@ -226,12 +249,13 @@ type SendParamPayloadEvent int
 const (
 	SendParamPayloadEventDoneInvoke SendParamPayloadEvent = 0
 	SendParamPayloadEventErrorExecution SendParamPayloadEvent = 1
-	SendParamPayloadEventFromChild SendParamPayloadEvent = 2
-	SendParamPayloadEventLoopback SendParamPayloadEvent = 3
-	SendParamPayloadEventTyped SendParamPayloadEvent = 4
-	SendParamPayloadEventWithBadParam SendParamPayloadEvent = 5
+	SendParamPayloadEventEscaped SendParamPayloadEvent = 2
+	SendParamPayloadEventFromChild SendParamPayloadEvent = 3
+	SendParamPayloadEventLoopback SendParamPayloadEvent = 4
+	SendParamPayloadEventTyped SendParamPayloadEvent = 5
+	SendParamPayloadEventWithBadParam SendParamPayloadEvent = 6
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	SendParamPayloadEventNull SendParamPayloadEvent = 6
+	SendParamPayloadEventNull SendParamPayloadEvent = 7
 )
 
 func (e SendParamPayloadEvent) String() string {
@@ -240,6 +264,8 @@ func (e SendParamPayloadEvent) String() string {
 		return "done.invoke"
 	case SendParamPayloadEventErrorExecution:
 		return "error.execution"
+	case SendParamPayloadEventEscaped:
+		return "escaped"
 	case SendParamPayloadEventFromChild:
 		return "fromChild"
 	case SendParamPayloadEventLoopback:
@@ -308,6 +334,33 @@ func NewSendParamPayloadPolicy() SendParamPayloadPolicy {
 // `sawParamError` was assigned a value of another type, or the engine refused.
 func (p *SendParamPayloadPolicy) SawParamError() (int64, bool) {
 	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "sawParamError")
+}
+
+// Lines reports what the `lines` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `lines` was assigned a value of another type, or the engine refused.
+func (p *SendParamPayloadPolicy) Lines() (string, bool) {
+	return sce.ReadDatamodelString(p.ScriptEngine, p.SessionID, "lines")
+}
+
+// Keyed reports what the `keyed` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `keyed` was assigned a value of another type, or the engine refused.
+//
+// The value as JSON text, serialised by the engine's own JSON.stringify
+// (§scxml-B-2) so the key order is the document's.
+func (p *SendParamPayloadPolicy) Keyed() (string, bool) {
+	return sce.ReadDatamodelJSON(p.ScriptEngine, p.SessionID, "keyed")
 }
 
 // Tag reports what the `tag` datamodel variable is holding now
@@ -388,6 +441,27 @@ func (p *SendParamPayloadPolicy) InitializeDataModel(eng *sce.Engine[SendParamPa
 		} else {
 			eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<data id='sawParamError'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "sawParamError", nil)
+		}
+	}
+
+	// W3C SCXML 5.3: Early binding - Initialize state escapePhase datamodel
+	{
+		result, err := engine.EvaluateExpression(sessionID, `"x\ny"`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "lines", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<data id='lines'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "lines", nil)
+		}
+	}
+
+	{
+		result, err := engine.EvaluateExpression(sessionID, `{["q\"k"] = 1, ["b\\k"] = 2}`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "keyed", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<data id='keyed'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "keyed", nil)
 		}
 	}
 
@@ -676,6 +750,10 @@ func (p *SendParamPayloadPolicy) IsFinalState(state SendParamPayloadState) bool 
 		return true
 	case SendParamPayloadStateFailDuplicateParams:
 		return true
+	case SendParamPayloadStateFailEscapedMemberName:
+		return true
+	case SendParamPayloadStateFailEscapedText:
+		return true
 	case SendParamPayloadStateFailInternalPayload:
 		return true
 	case SendParamPayloadStateFailNoParamError:
@@ -745,28 +823,34 @@ func (p *SendParamPayloadPolicy) GetDocumentOrder(state SendParamPayloadState) i
 	switch state {
 	case SendParamPayloadStateAwaitChild:
 		return 0
+	case SendParamPayloadStateEscapePhase:
+		return 4
 	case SendParamPayloadStateFailBrokenParamDelivered:
-		return 11
-	case SendParamPayloadStateFailChildPayload:
-		return 5
-	case SendParamPayloadStateFailDuplicateParams:
-		return 9
-	case SendParamPayloadStateFailInternalPayload:
-		return 6
-	case SendParamPayloadStateFailNoParamError:
-		return 10
-	case SendParamPayloadStateFailNumberType:
-		return 7
-	case SendParamPayloadStateFailSiblingParamLost:
 		return 12
-	case SendParamPayloadStateFailStringType:
+	case SendParamPayloadStateFailChildPayload:
+		return 6
+	case SendParamPayloadStateFailDuplicateParams:
+		return 10
+	case SendParamPayloadStateFailEscapedMemberName:
+		return 15
+	case SendParamPayloadStateFailEscapedText:
+		return 14
+	case SendParamPayloadStateFailInternalPayload:
+		return 7
+	case SendParamPayloadStateFailNoParamError:
+		return 11
+	case SendParamPayloadStateFailNumberType:
 		return 8
+	case SendParamPayloadStateFailSiblingParamLost:
+		return 13
+	case SendParamPayloadStateFailStringType:
+		return 9
 	case SendParamPayloadStateInternalPhase:
 		return 1
 	case SendParamPayloadStateParamErrorPhase:
 		return 3
 	case SendParamPayloadStatePass:
-		return 4
+		return 5
 	case SendParamPayloadStateTypedPhase:
 		return 2
 	}
@@ -785,6 +869,8 @@ func (p *SendParamPayloadPolicy) GetEventFromName(name string) (SendParamPayload
 		return SendParamPayloadEventDoneInvoke, true
 	case "error.execution":
 		return SendParamPayloadEventErrorExecution, true
+	case "escaped":
+		return SendParamPayloadEventEscaped, true
 	case "fromChild":
 		return SendParamPayloadEventFromChild, true
 	case "loopback":
@@ -914,6 +1000,53 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 				State:      SendParamPayloadStateAwaitChild,
 				DocumentID: "inv_emitter",
 			})
+		}
+	case SendParamPayloadStateEscapePhase:
+		//line send_param_payload.scxml:236
+		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
+		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
+			_ = actionBlock0
+
+	// W3C SCXML 6.2: send id="__send_3"
+	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		p.ensureScriptEngine()
+		se := p.ScriptEngine
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `lines`); paramErr == nil {
+			parts = append(parts, sce.EventDataParam{Name: "text", Value: paramVal})
+		} else {
+			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<send> <param name='text'> expr failed to evaluate"))
+			paramFailed = true
+		}
+		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `keyed`); paramErr == nil {
+			parts = append(parts, sce.EventDataParam{Name: "obj", Value: paramVal})
+		} else {
+			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<send> <param name='obj'> expr failed to evaluate"))
+			paramFailed = true
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal")
+	{
+		meta := sce.NewEventWithMetadata(SendParamPayloadEventEscaped)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+		// W3C SCXML 4.9: the <param> error ends the block.
+		if paramFailed {
+			break
+		}
+	}
+
 		}
 	case SendParamPayloadStateInternalPhase:
 		//line send_param_payload.scxml:125
@@ -1131,6 +1264,40 @@ func (p *SendParamPayloadPolicy) FirstEnabledTransition(state SendParamPayloadSt
 					Source:          state,
 					Targets:         transitionTargetsOfSendParamPayload[state][1],
 					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
+		}
+	case SendParamPayloadStateEscapePhase:
+		if event == SendParamPayloadEventEscaped {
+			if p.evaluateGuard(`(((_event.data.text == "x\ny") and (_event.data.obj["q\"k"] == 1)) and (_event.data.obj["b\\k"] == 2))`, engine) {
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == SendParamPayloadEventEscaped {
+			if p.evaluateGuard(`(_event.data.text == "x\ny")`, engine) {
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == SendParamPayloadEventEscaped {
+			{
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][2],
+					TransitionIndex: 2,
 					HasActions:      false,
 					IsInternal:      false,
 				}, true

@@ -87,6 +87,14 @@ func TestSendParamsReachEventDataFromChildAndInternalQueue(t *testing.T) {
 	case SendParamPayloadStateFailSiblingParamLost:
 		t.Fatalf("`_event.data.kept` did not survive alongside the failed param: one " +
 			"`<param>` that will not evaluate costs its own pair and nothing else.")
+	case SendParamPayloadStateFailEscapedText:
+		t.Fatalf("`escaped` did not carry `_event.data.text` as 'x\\ny': the payload is " +
+			"JSON, so a control character in a value is escaped (RFC 8259 §7); written " +
+			"raw, the payload is not JSON and the receiver reads nothing.")
+	case SendParamPayloadStateFailEscapedMemberName:
+		t.Fatalf("`escaped` carried its text but not the members `q\"k` and `b\\k` of " +
+			"`_event.data.obj`: a member name inside a value is a JSON text too, and is " +
+			"escaped as a value is.")
 	default:
 		t.Fatalf("send_param_payload ended in %v, which is not a verdict state", got)
 	}

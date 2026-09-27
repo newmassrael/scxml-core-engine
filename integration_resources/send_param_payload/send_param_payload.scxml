@@ -212,8 +212,43 @@
              `<param>`: the half-written pair breaks `_scxml_params(...)`, the
              serializer blanks the buffer, and all seven channels still said
              `pass`. -->
-        <transition event="withBadParam" cond="_event.data.kept === 'here'" target="pass"/>
+        <transition event="withBadParam" cond="_event.data.kept === 'here'" target="escapePhase"/>
         <transition event="withBadParam" target="failSiblingParamLost"/>
+    </state>
+
+    <!-- RFC 8259 §7: the payload is JSON, so every text in it — a value, and a
+         member name inside a value — is written with `"`, `\` and the control
+         characters escaped. Kotlin quoted names raw and escaped only `"` and
+         `\` in values (measured 2026-09-27), so a newline in a value or a `"`
+         in a member name made the payload not JSON at all, and the receiver
+         read nothing where the document had sent something.
+
+         The names under test are MEMBER names inside an object value, not
+         `<param name>`s: W3C types `<param name>` NMTOKEN, which admits neither
+         character, so a document that put one there would be a document W3C
+         refuses. An object's member names are the reachable path.
+
+         Both values are read from `<data>` rather than written as literals,
+         for the reason `tag` above gives: only an evaluated value reaches the
+         runtime serialiser. The text is asked first and on its own, because a
+         broken text empties the whole payload and every later guard then
+         raises; asked this way round, that failure names the text. -->
+    <state id="escapePhase">
+        <datamodel>
+            <data id="lines" expr="'x\ny'"/>
+            <data id="keyed" expr="({'q&quot;k': 1, 'b\\k': 2})"/>
+        </datamodel>
+        <onentry>
+            <send target="#_internal" event="escaped">
+                <param name="text" expr="lines"/>
+                <param name="obj" expr="keyed"/>
+            </send>
+        </onentry>
+        <transition event="escaped"
+                    cond="_event.data.text === 'x\ny' &amp;&amp; _event.data.obj['q&quot;k'] === 1 &amp;&amp; _event.data.obj['b\\k'] === 2"
+                    target="pass"/>
+        <transition event="escaped" cond="_event.data.text === 'x\ny'" target="failEscapedMemberName"/>
+        <transition event="escaped" target="failEscapedText"/>
     </state>
 
     <final id="pass"/>
@@ -225,4 +260,6 @@
     <final id="failNoParamError"/>
     <final id="failBrokenParamDelivered"/>
     <final id="failSiblingParamLost"/>
+    <final id="failEscapedText"/>
+    <final id="failEscapedMemberName"/>
 </scxml>

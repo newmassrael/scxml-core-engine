@@ -1,0 +1,36 @@
+# Mutation cases for "the payload Kotlin builds for `_event.data` is JSON" —
+# every text in it written by `Json.quote`, the runtime's one JSON string
+# writer (RFC 8259 §7).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/kotlin_event_data_is_json.cases`.
+#
+# The oracle is `send_param_payload`'s `escapePhase`: a string value holding a
+# newline, and an object value whose member names hold `"` and `\`, both
+# evaluated so they reach the runtime serialiser. Before 2026-09-27 Kotlin
+# wrote member names raw and escaped only `"` and `\` in values, so either
+# input made the payload not JSON and the receiver read nothing. Each case
+# below puts one of those two spellings back.
+#
+# ⚠ There is deliberately no case for `buildJsonFromParams`' own key — the
+# `<param name>`. W3C types that attribute NMTOKEN, which admits neither `"`
+# nor `\`, so no valid document can observe the difference and the case could
+# only ever survive. The fix is still made there, because the writer is one
+# function and a raw name would be a second spelling of it, but its witness
+# is the member-name case: the same `Json.quote` answers both.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.SendParamPayloadTest'
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/SendParamPayloadTest.kt
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt
+
+mutation_case "a member name inside an object value is written raw" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     r'''"${Json.quote(k.toString())}:${valueToJson(v)}"''',
+     r'''"\"${k}\":${valueToJson(v)}"''')
+PY
+
+mutation_case "a string value escapes only the quote and the backslash" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     r'''is String -> Json.quote(value)''',
+     r'''is String -> "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""''')
+PY

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 15abee63eca48c0d096ade54003293e94f23f9dffeaf437e4cf29a0ed73c4eb2
+// source-hash: 226fda00e41ba56f394c3663b4d11f262f4b5c1805c4daae2daf63854be69165
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/send_param_payload/send_param_payload.scxml
@@ -15,9 +15,12 @@ import com.sce.runtime.*
 
 sealed interface SendParamPayloadState : State {
     data object AwaitChild : SendParamPayloadState
+    data object EscapePhase : SendParamPayloadState
     data object FailBrokenParamDelivered : SendParamPayloadState
     data object FailChildPayload : SendParamPayloadState
     data object FailDuplicateParams : SendParamPayloadState
+    data object FailEscapedMemberName : SendParamPayloadState
+    data object FailEscapedText : SendParamPayloadState
     data object FailInternalPayload : SendParamPayloadState
     data object FailNoParamError : SendParamPayloadState
     data object FailNumberType : SendParamPayloadState
@@ -38,6 +41,7 @@ sealed interface SendParamPayloadEvent : Event {
     sealed interface Error : SendParamPayloadEvent {
         data object Execution : Error
     }
+    data object Escaped : SendParamPayloadEvent
     data object FromChild : SendParamPayloadEvent
     data object Loopback : SendParamPayloadEvent
     data object Typed : SendParamPayloadEvent
@@ -62,6 +66,33 @@ class SendParamPayloadStateMachine(
      */
     fun sawParamError(): Long? =
         com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "sawParamError")
+
+    /**
+     * §scxml-5.3: what the `lines` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `lines` was assigned a value of another type, or the engine refused.
+     */
+    fun lines(): String? =
+        com.sce.runtime.DatamodelRead.readString(scriptEngine, scriptSessionId, "lines")
+
+    /**
+     * §scxml-5.3: what the `keyed` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `keyed` was assigned a value of another type, or the engine refused.
+     *
+     * The value as JSON text, serialised by the engine's own `JSON.stringify`
+     * (§scxml-B-2) so the key order is the document's.
+     */
+    fun keyed(): String? =
+        com.sce.runtime.DatamodelRead.readJson(scriptEngine, scriptSessionId, "keyed")
 
     /**
      * §scxml-5.3: what the `tag` datamodel variable is holding now.
@@ -97,7 +128,7 @@ class SendParamPayloadStateMachine(
 
     // W3C SCXML 3.7: Check if state is a <final> element
     override fun isFinalState(state: SendParamPayloadState): Boolean = when (state) {
-        is SendParamPayloadState.FailBrokenParamDelivered, is SendParamPayloadState.FailChildPayload, is SendParamPayloadState.FailDuplicateParams, is SendParamPayloadState.FailInternalPayload, is SendParamPayloadState.FailNoParamError, is SendParamPayloadState.FailNumberType, is SendParamPayloadState.FailSiblingParamLost, is SendParamPayloadState.FailStringType, is SendParamPayloadState.Pass -> true
+        is SendParamPayloadState.FailBrokenParamDelivered, is SendParamPayloadState.FailChildPayload, is SendParamPayloadState.FailDuplicateParams, is SendParamPayloadState.FailEscapedMemberName, is SendParamPayloadState.FailEscapedText, is SendParamPayloadState.FailInternalPayload, is SendParamPayloadState.FailNoParamError, is SendParamPayloadState.FailNumberType, is SendParamPayloadState.FailSiblingParamLost, is SendParamPayloadState.FailStringType, is SendParamPayloadState.Pass -> true
         else -> false
     }
 
@@ -124,6 +155,33 @@ class SendParamPayloadStateMachine(
             SendParamPayloadState.AwaitChild,
             listOf(StateTarget(SendParamPayloadState.FailChildPayload)),
             1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: escapePhase's transition 0, as the microstep reads it.
+        val transitionEscapePhaseAt0 = EnabledTransition<SendParamPayloadState, HistoryId>(
+            SendParamPayloadState.EscapePhase,
+            listOf(StateTarget(SendParamPayloadState.Pass)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: escapePhase's transition 1, as the microstep reads it.
+        val transitionEscapePhaseAt1 = EnabledTransition<SendParamPayloadState, HistoryId>(
+            SendParamPayloadState.EscapePhase,
+            listOf(StateTarget(SendParamPayloadState.FailEscapedMemberName)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: escapePhase's transition 2, as the microstep reads it.
+        val transitionEscapePhaseAt2 = EnabledTransition<SendParamPayloadState, HistoryId>(
+            SendParamPayloadState.EscapePhase,
+            listOf(StateTarget(SendParamPayloadState.FailEscapedText)),
+            2,
             hasActions = false,
             isInternal = false,
         )
@@ -176,7 +234,7 @@ class SendParamPayloadStateMachine(
         // W3C SCXML 3.13: paramErrorPhase's transition 3, as the microstep reads it.
         val transitionParamErrorPhaseAt3 = EnabledTransition<SendParamPayloadState, HistoryId>(
             SendParamPayloadState.ParamErrorPhase,
-            listOf(StateTarget(SendParamPayloadState.Pass)),
+            listOf(StateTarget(SendParamPayloadState.EscapePhase)),
             3,
             hasActions = false,
             isInternal = false,
@@ -231,9 +289,12 @@ class SendParamPayloadStateMachine(
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): SendParamPayloadState? = when (stateId) {
         "awaitChild" -> SendParamPayloadState.AwaitChild
+        "escapePhase" -> SendParamPayloadState.EscapePhase
         "failBrokenParamDelivered" -> SendParamPayloadState.FailBrokenParamDelivered
         "failChildPayload" -> SendParamPayloadState.FailChildPayload
         "failDuplicateParams" -> SendParamPayloadState.FailDuplicateParams
+        "failEscapedMemberName" -> SendParamPayloadState.FailEscapedMemberName
+        "failEscapedText" -> SendParamPayloadState.FailEscapedText
         "failInternalPayload" -> SendParamPayloadState.FailInternalPayload
         "failNoParamError" -> SendParamPayloadState.FailNoParamError
         "failNumberType" -> SendParamPayloadState.FailNumberType
@@ -249,9 +310,12 @@ class SendParamPayloadStateMachine(
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: SendParamPayloadState): String = when (state) {
         is SendParamPayloadState.AwaitChild -> "awaitChild"
+        is SendParamPayloadState.EscapePhase -> "escapePhase"
         is SendParamPayloadState.FailBrokenParamDelivered -> "failBrokenParamDelivered"
         is SendParamPayloadState.FailChildPayload -> "failChildPayload"
         is SendParamPayloadState.FailDuplicateParams -> "failDuplicateParams"
+        is SendParamPayloadState.FailEscapedMemberName -> "failEscapedMemberName"
+        is SendParamPayloadState.FailEscapedText -> "failEscapedText"
         is SendParamPayloadState.FailInternalPayload -> "failInternalPayload"
         is SendParamPayloadState.FailNoParamError -> "failNoParamError"
         is SendParamPayloadState.FailNumberType -> "failNumberType"
@@ -266,17 +330,20 @@ class SendParamPayloadStateMachine(
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: SendParamPayloadState): Int = when (state) {
         is SendParamPayloadState.AwaitChild -> 0
-        is SendParamPayloadState.FailBrokenParamDelivered -> 11
-        is SendParamPayloadState.FailChildPayload -> 5
-        is SendParamPayloadState.FailDuplicateParams -> 9
-        is SendParamPayloadState.FailInternalPayload -> 6
-        is SendParamPayloadState.FailNoParamError -> 10
-        is SendParamPayloadState.FailNumberType -> 7
-        is SendParamPayloadState.FailSiblingParamLost -> 12
-        is SendParamPayloadState.FailStringType -> 8
+        is SendParamPayloadState.EscapePhase -> 4
+        is SendParamPayloadState.FailBrokenParamDelivered -> 12
+        is SendParamPayloadState.FailChildPayload -> 6
+        is SendParamPayloadState.FailDuplicateParams -> 10
+        is SendParamPayloadState.FailEscapedMemberName -> 15
+        is SendParamPayloadState.FailEscapedText -> 14
+        is SendParamPayloadState.FailInternalPayload -> 7
+        is SendParamPayloadState.FailNoParamError -> 11
+        is SendParamPayloadState.FailNumberType -> 8
+        is SendParamPayloadState.FailSiblingParamLost -> 13
+        is SendParamPayloadState.FailStringType -> 9
         is SendParamPayloadState.InternalPhase -> 1
         is SendParamPayloadState.ParamErrorPhase -> 3
-        is SendParamPayloadState.Pass -> 4
+        is SendParamPayloadState.Pass -> 5
         is SendParamPayloadState.TypedPhase -> 2
     }
 
@@ -284,6 +351,7 @@ class SendParamPayloadStateMachine(
     override fun resolveEventByName(name: String): SendParamPayloadEvent? = when (name) {
         "done.invoke" -> SendParamPayloadEvent.Done.Invoke
         "error.execution" -> SendParamPayloadEvent.Error.Execution
+        "escaped" -> SendParamPayloadEvent.Escaped
         "fromChild" -> SendParamPayloadEvent.FromChild
         "loopback" -> SendParamPayloadEvent.Loopback
         "typed" -> SendParamPayloadEvent.Typed
@@ -295,6 +363,7 @@ class SendParamPayloadStateMachine(
     override fun eventNameOf(event: SendParamPayloadEvent): String? = when (event) {
         is SendParamPayloadEvent.Done.Invoke -> "done.invoke"
         is SendParamPayloadEvent.Error.Execution -> "error.execution"
+        is SendParamPayloadEvent.Escaped -> "escaped"
         is SendParamPayloadEvent.FromChild -> "fromChild"
         is SendParamPayloadEvent.Loopback -> "loopback"
         is SendParamPayloadEvent.Typed -> "typed"
@@ -345,6 +414,20 @@ class SendParamPayloadStateMachine(
         }
 
         // W3C SCXML 5.3: Early binding — initialize state-level datamodel variables at startup
+        // State 'escapePhase' variable 'lines'
+        try {
+            val initResult_lines = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"x\\ny\"", "'x\\ny'"))
+            engine.setVariable(sid, "lines", initResult_lines)
+        } catch (e: Exception) {
+            raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='lines'> expr failed to evaluate")
+        }
+        // State 'escapePhase' variable 'keyed'
+        try {
+            val initResult_keyed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{[\"q\\\"k\"] = 1, [\"b\\\\k\"] = 2}", "({'q\"k': 1, 'b\\\\k': 2})"))
+            engine.setVariable(sid, "keyed", initResult_keyed)
+        } catch (e: Exception) {
+            raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='keyed'> expr failed to evaluate")
+        }
         // State 'typedPhase' variable 'tag'
         try {
             val initResult_tag = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"kept\"", "'kept'"))
@@ -538,6 +621,12 @@ class SendParamPayloadStateMachine(
             event is SendParamPayloadEvent.FromChild -> transitionAwaitChildAt1
             else -> null
         }
+        is SendParamPayloadState.EscapePhase -> when {
+            event is SendParamPayloadEvent.Escaped && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((_event.data.text == \"x\\ny\") and (_event.data.obj[\"q\\\"k\"] == 1)) and (_event.data.obj[\"b\\\\k\"] == 2))", "_event.data.text === 'x\\ny' && _event.data.obj['q\"k'] === 1 && _event.data.obj['b\\\\k'] === 2")) -> transitionEscapePhaseAt0
+            event is SendParamPayloadEvent.Escaped && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data.text == \"x\\ny\")", "_event.data.text === 'x\\ny'")) -> transitionEscapePhaseAt1
+            event is SendParamPayloadEvent.Escaped -> transitionEscapePhaseAt2
+            else -> null
+        }
         is SendParamPayloadState.InternalPhase -> when {
             event is SendParamPayloadEvent.Loopback && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data.carried == \"kept\"))", "_event.data && _event.data.carried === 'kept'")) -> transitionInternalPhaseAt0
             event is SendParamPayloadEvent.Loopback -> transitionInternalPhaseAt1
@@ -579,43 +668,90 @@ class SendParamPayloadStateMachine(
                     }
                 }
             }
+            is SendParamPayloadState.EscapePhase -> {
+                // SCE-MAP: send_param_payload.scxml:236 :: escapePhase :: _state_body
+
+
+            if (run send@{
+            var paramFailed = false
+            // W3C SCXML 5.10: An internal send carries `_event.data` just as
+            // an external one does. Before this the payload was dropped
+            // silently — the event was queued with no data at all.
+            run {
+                ensureScriptEngine()
+                val engineI = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sidI = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                val paramsI = mutableMapOf<String, Any?>()
+                try {
+                    putParam(paramsI, "text", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("lines", "lines")))
+                } catch (_: Exception) {
+                    raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='text'> could not be read")
+                    paramFailed = true
+                }
+
+                try {
+                    putParam(paramsI, "obj", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("keyed", "keyed")))
+                } catch (_: Exception) {
+                    raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='obj'> could not be read")
+                    paramFailed = true
+                }
+
+                raiseInternal(SendParamPayloadEvent.Escaped, EventMetadata.internal(buildJsonFromParams(paramsI)))
+            }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
             is SendParamPayloadState.FailBrokenParamDelivered -> {
-                // SCE-MAP: send_param_payload.scxml:226 :: failBrokenParamDelivered :: _state_body
+                // SCE-MAP: send_param_payload.scxml:261 :: failBrokenParamDelivered :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailChildPayload -> {
-                // SCE-MAP: send_param_payload.scxml:220 :: failChildPayload :: _state_body
+                // SCE-MAP: send_param_payload.scxml:255 :: failChildPayload :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailDuplicateParams -> {
-                // SCE-MAP: send_param_payload.scxml:224 :: failDuplicateParams :: _state_body
+                // SCE-MAP: send_param_payload.scxml:259 :: failDuplicateParams :: _state_body
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is SendParamPayloadState.FailEscapedMemberName -> {
+                // SCE-MAP: send_param_payload.scxml:264 :: failEscapedMemberName :: _state_body
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is SendParamPayloadState.FailEscapedText -> {
+                // SCE-MAP: send_param_payload.scxml:263 :: failEscapedText :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailInternalPayload -> {
-                // SCE-MAP: send_param_payload.scxml:221 :: failInternalPayload :: _state_body
+                // SCE-MAP: send_param_payload.scxml:256 :: failInternalPayload :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailNoParamError -> {
-                // SCE-MAP: send_param_payload.scxml:225 :: failNoParamError :: _state_body
+                // SCE-MAP: send_param_payload.scxml:260 :: failNoParamError :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailNumberType -> {
-                // SCE-MAP: send_param_payload.scxml:222 :: failNumberType :: _state_body
+                // SCE-MAP: send_param_payload.scxml:257 :: failNumberType :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailSiblingParamLost -> {
-                // SCE-MAP: send_param_payload.scxml:227 :: failSiblingParamLost :: _state_body
+                // SCE-MAP: send_param_payload.scxml:262 :: failSiblingParamLost :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailStringType -> {
-                // SCE-MAP: send_param_payload.scxml:223 :: failStringType :: _state_body
+                // SCE-MAP: send_param_payload.scxml:258 :: failStringType :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -671,7 +807,7 @@ class SendParamPayloadStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is SendParamPayloadState.Pass -> {
-                // SCE-MAP: send_param_payload.scxml:219 :: pass :: _state_body
+                // SCE-MAP: send_param_payload.scxml:254 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -740,29 +876,38 @@ class SendParamPayloadStateMachine(
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("inv_emitter")
             }
+            is SendParamPayloadState.EscapePhase -> {
+                // SCE-MAP: send_param_payload.scxml:236 :: escapePhase :: _state_body
+            }
             is SendParamPayloadState.FailBrokenParamDelivered -> {
-                // SCE-MAP: send_param_payload.scxml:226 :: failBrokenParamDelivered :: _state_body
+                // SCE-MAP: send_param_payload.scxml:261 :: failBrokenParamDelivered :: _state_body
             }
             is SendParamPayloadState.FailChildPayload -> {
-                // SCE-MAP: send_param_payload.scxml:220 :: failChildPayload :: _state_body
+                // SCE-MAP: send_param_payload.scxml:255 :: failChildPayload :: _state_body
             }
             is SendParamPayloadState.FailDuplicateParams -> {
-                // SCE-MAP: send_param_payload.scxml:224 :: failDuplicateParams :: _state_body
+                // SCE-MAP: send_param_payload.scxml:259 :: failDuplicateParams :: _state_body
+            }
+            is SendParamPayloadState.FailEscapedMemberName -> {
+                // SCE-MAP: send_param_payload.scxml:264 :: failEscapedMemberName :: _state_body
+            }
+            is SendParamPayloadState.FailEscapedText -> {
+                // SCE-MAP: send_param_payload.scxml:263 :: failEscapedText :: _state_body
             }
             is SendParamPayloadState.FailInternalPayload -> {
-                // SCE-MAP: send_param_payload.scxml:221 :: failInternalPayload :: _state_body
+                // SCE-MAP: send_param_payload.scxml:256 :: failInternalPayload :: _state_body
             }
             is SendParamPayloadState.FailNoParamError -> {
-                // SCE-MAP: send_param_payload.scxml:225 :: failNoParamError :: _state_body
+                // SCE-MAP: send_param_payload.scxml:260 :: failNoParamError :: _state_body
             }
             is SendParamPayloadState.FailNumberType -> {
-                // SCE-MAP: send_param_payload.scxml:222 :: failNumberType :: _state_body
+                // SCE-MAP: send_param_payload.scxml:257 :: failNumberType :: _state_body
             }
             is SendParamPayloadState.FailSiblingParamLost -> {
-                // SCE-MAP: send_param_payload.scxml:227 :: failSiblingParamLost :: _state_body
+                // SCE-MAP: send_param_payload.scxml:262 :: failSiblingParamLost :: _state_body
             }
             is SendParamPayloadState.FailStringType -> {
-                // SCE-MAP: send_param_payload.scxml:223 :: failStringType :: _state_body
+                // SCE-MAP: send_param_payload.scxml:258 :: failStringType :: _state_body
             }
             is SendParamPayloadState.InternalPhase -> {
                 // SCE-MAP: send_param_payload.scxml:125 :: internalPhase :: _state_body
@@ -771,7 +916,7 @@ class SendParamPayloadStateMachine(
                 // SCE-MAP: send_param_payload.scxml:192 :: paramErrorPhase :: _state_body
             }
             is SendParamPayloadState.Pass -> {
-                // SCE-MAP: send_param_payload.scxml:219 :: pass :: _state_body
+                // SCE-MAP: send_param_payload.scxml:254 :: pass :: _state_body
             }
             is SendParamPayloadState.TypedPhase -> {
                 // SCE-MAP: send_param_payload.scxml:141 :: typedPhase :: _state_body

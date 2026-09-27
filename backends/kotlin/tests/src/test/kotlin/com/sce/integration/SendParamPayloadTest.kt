@@ -84,6 +84,14 @@ class SendParamPayloadTest {
             SendParamPayloadState.FailSiblingParamLost ->
                 "`_event.data.kept` did not survive alongside the failed param: one " +
                     "`<param>` that will not evaluate costs its own pair and nothing else."
+            SendParamPayloadState.FailEscapedText ->
+                "`escaped` did not carry `_event.data.text` as 'x\\ny': the payload is " +
+                    "JSON, so a control character in a value is escaped (RFC 8259 §7); " +
+                    "written raw, the payload is not JSON and the receiver reads nothing."
+            SendParamPayloadState.FailEscapedMemberName ->
+                "`escaped` carried its text but not the members `q\"k` and `b\\k` of " +
+                    "`_event.data.obj`: a member name inside a value is a JSON text too, " +
+                    "and is escaped as a value is."
             SendParamPayloadState.Pass -> ""
             else ->
                 "settled in ${sm.currentState.value}, which is not a verdict state — the machine never " +

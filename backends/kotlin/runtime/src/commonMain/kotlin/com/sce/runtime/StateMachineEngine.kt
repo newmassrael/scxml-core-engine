@@ -3069,6 +3069,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *
      * Matches C++ EventDataHelper::buildJsonFromParams behavior.
      * Used by generated send/donedata code to construct _event.data payload.
+     *
+     * Every name and every text is spelled by [Json.quote], the runtime's one
+     * JSON string writer. A param name is the author's, so it may hold a `"`
+     * or a `\`; written raw, it made the payload not JSON at all, and a
+     * receiver on any backend read no `_event.data` rather than a wrong one.
      */
     protected fun buildJsonFromParams(params: Map<String, Any?>): String {
         if (params.isEmpty()) return ""
@@ -3077,7 +3082,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         for ((key, value) in params) {
             if (!first) sb.append(",")
             first = false
-            sb.append("\"").append(key).append("\":")
+            sb.append(Json.quote(key)).append(":")
             sb.append(valueToJson(value))
         }
         sb.append("}")
@@ -3115,10 +3120,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
             if (d == d.toLong().toDouble() && !d.isInfinite()) d.toLong().toString()
             else d.toString()
         }
-        is String -> "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        is String -> Json.quote(value)
         is Map<*, *> -> {
             val entries = value.entries.joinToString(",") { (k, v) ->
-                "\"${k}\":${valueToJson(v)}"
+                "${Json.quote(k.toString())}:${valueToJson(v)}"
             }
             "{$entries}"
         }
@@ -3134,7 +3139,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             val items = value.joinToString(",") { valueToJson(it) }
             "[$items]"
         }
-        else -> "\"${value.toString().replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        else -> Json.quote(value.toString())
     }
 
     /**
