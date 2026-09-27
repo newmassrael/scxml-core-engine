@@ -55,7 +55,7 @@ class HostSendRequest:
     params: Dict[str, List[str]] = field(default_factory=dict)
     send_id: str = ""
     #: The event's data exactly as a local delivery of this send would carry
-    #: it in `_event.data` (W3C SCXML 5.10): the namelist and `<param>` pairs
+    #: it in `_event.data` (§scxml-5.10): the namelist and `<param>` pairs
     #: as JSON, or the `<content>`, or empty. Computed once by the generated
     #: send site, so a host that forwards the event — the Mesh router puts it
     #: in an envelope — forwards the engine's serialisation rather than a

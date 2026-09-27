@@ -5103,6 +5103,21 @@
           "file": "sce/include/core/HostProcessor.h",
           "symbol": "eventData",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/host_processor.py",
+          "symbol": "HostSendRequest",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/host_processor_analyzer.rs",
+          "symbol": "record_delayed_host_sends",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "symbol": "event_data",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -19644,6 +19659,12 @@
       "target_kind": "section",
       "target_id": "scxml-5.10",
       "reason": "The citation sits on the eventData member; the C++ resolver names the member, not the struct"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "the citation sits on the event_data field, which the symbol resolver names"
     }
   ],
   "frames": {},
