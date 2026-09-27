@@ -394,6 +394,9 @@ class Test525StateMachine(
 
             engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var2, 1)", "Var2 + 1"))
                     }
+                } catch (e: com.sce.runtime.ActionBlockAbort) {
+                    // W3C SCXML 4.9: a body element raised its error and ended the
+                    // block; nothing more is raised here.
                 } catch (e: Exception) {
                     raisePlatformError(Test525Event.Error.Execution, "<foreach array='Var1'> failed to iterate")
                 }

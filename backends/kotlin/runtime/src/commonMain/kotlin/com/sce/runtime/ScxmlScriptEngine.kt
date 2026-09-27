@@ -516,3 +516,14 @@ enum class PayloadReading {
  */
 class ScriptEngineException(message: String, cause: Throwable? = null) :
     RuntimeException(message, cause)
+
+/**
+ * Thrown by an executable-content element that has already raised its own
+ * error.execution, to end the block it sits in (§scxml-4.9) from inside an
+ * [ScxmlScriptEngine.executeForeach] body — a lambda a `return` cannot leave.
+ *
+ * Distinct from [ScriptEngineException] because the `<foreach>` that catches
+ * it must raise nothing more: the error is already on the queue, and a second
+ * one would be an event the document never caused.
+ */
+class ActionBlockAbort : RuntimeException("executable content block ended by an error already raised")

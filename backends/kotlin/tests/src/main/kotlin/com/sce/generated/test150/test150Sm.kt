@@ -443,6 +443,9 @@ class Test150StateMachine(
                 try {
                     engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var3", "Var3"), "Var1", "Var2") {
                     }
+                } catch (e: com.sce.runtime.ActionBlockAbort) {
+                    // W3C SCXML 4.9: a body element raised its error and ended the
+                    // block; nothing more is raised here.
                 } catch (e: Exception) {
                     raisePlatformError(Test150Event.Error.Execution, "<foreach array='Var3'> failed to iterate")
                 }
@@ -461,6 +464,9 @@ class Test150StateMachine(
                 try {
                     engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var3", "Var3"), "Var4", "Var5") {
                     }
+                } catch (e: com.sce.runtime.ActionBlockAbort) {
+                    // W3C SCXML 4.9: a body element raised its error and ended the
+                    // block; nothing more is raised here.
                 } catch (e: Exception) {
                     raisePlatformError(Test150Event.Error.Execution, "<foreach array='Var3'> failed to iterate")
                 }

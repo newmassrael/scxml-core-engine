@@ -402,6 +402,9 @@ class Test156StateMachine(
 
             engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var5", "Var5"), com.sce.runtime.ScriptSource.lua("nil.invalidProperty", "undefined.invalidProperty"))
                     }
+                } catch (e: com.sce.runtime.ActionBlockAbort) {
+                    // W3C SCXML 4.9: a body element raised its error and ended the
+                    // block; nothing more is raised here.
                 } catch (e: Exception) {
                     raisePlatformError(Test156Event.Error.Execution, "<foreach array='Var3'> failed to iterate")
                 }

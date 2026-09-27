@@ -19,6 +19,12 @@
 {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
                     }
+                } catch (e: com.sce.runtime.ActionBlockAbort) {
+                    // W3C SCXML 4.9: a body element raised its error and ended the
+                    // block; nothing more is raised here.
+{% if _in_foreach_body is defined and _in_foreach_body %}
+                    throw e
+{% endif %}
                 } catch (e: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<foreach array='{{ action.array }}'> failed to iterate")
                 }

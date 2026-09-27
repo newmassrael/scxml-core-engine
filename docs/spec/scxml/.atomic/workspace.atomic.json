@@ -4263,6 +4263,11 @@
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "symbol": "ActionExecutorImpl::executeSendAction",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "ActionBlockAbort",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {

@@ -543,7 +543,10 @@
    as every partial `_render` includes does: a render drops its one trailing
    newline, and a partial ending on text glues the includer's next line onto
    its last. #}
-{% if in_run_block is defined and in_run_block %}
+{% if _in_foreach_body is defined and _in_foreach_body %}
+                throw com.sce.runtime.ActionBlockAbort()
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+{% elif in_run_block is defined and in_run_block %}
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 {% else %}

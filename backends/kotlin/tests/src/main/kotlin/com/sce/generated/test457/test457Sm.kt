@@ -540,6 +540,9 @@ class Test457StateMachine(
 
             engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
                     }
+                } catch (e: com.sce.runtime.ActionBlockAbort) {
+                    // W3C SCXML 4.9: a body element raised its error and ended the
+                    // block; nothing more is raised here.
                 } catch (e: Exception) {
                     raisePlatformError(Test457Event.Error.Execution, "<foreach array='Var4'> failed to iterate")
                 }
@@ -561,6 +564,9 @@ class Test457StateMachine(
 
             engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
                     }
+                } catch (e: com.sce.runtime.ActionBlockAbort) {
+                    // W3C SCXML 4.9: a body element raised its error and ended the
+                    // block; nothing more is raised here.
                 } catch (e: Exception) {
                     raisePlatformError(Test457Event.Error.Execution, "<foreach array='Var5'> failed to iterate")
                 }
@@ -588,6 +594,9 @@ class Test457StateMachine(
 
             engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var6", "Var6"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var6, Var2)", "Var6 + Var2"))
                     }
+                } catch (e: com.sce.runtime.ActionBlockAbort) {
+                    // W3C SCXML 4.9: a body element raised its error and ended the
+                    // block; nothing more is raised here.
                 } catch (e: Exception) {
                     raisePlatformError(Test457Event.Error.Execution, "<foreach array='Var5'> failed to iterate")
                 }
