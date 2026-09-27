@@ -218,7 +218,8 @@ alternative), and what it did not try is listed.
 
 A document's guess a failure rests on that lists no candidates carries a
 question for its AUTHOR (`ask`, and `--ask-out` writes the questions alone,
-one per line): list the values you weighed, the chosen one included. ⚠ The
+one per line): add the candidates — the values the decision could plausibly
+take under the specification, the current one included. ⚠ The
 question names the guess and nothing a case holds — not which case failed,
 not what it expected. Measured 2026-09-28, an instruction to list candidates
 while writing reached one author in five, and that one listed them on guesses

@@ -109,25 +109,26 @@ def ask_of_author(assumption, kind: str) -> str:
     """The question for a guess's author, or '' when there is none to ask.
 
     A failure rests on a document's guess and nobody wrote down what else it
-    could have been, so nothing can be tried in its place. Its author is the
-    one who knows what they weighed.
+    could have been, so nothing can be tried in its place. The request is an
+    EDIT to the document: add the attribute listing the decision's plausible
+    values.
 
     ⚠ The question names the GUESS and nothing the cases hold: not which case
     failed, not what it expected. An author told the expected value would
     write it down as a candidate, and the run would then confirm the author's
-    copy of the test rather than anything the author considered. So the
+    copy of the test rather than a reading of the specification. So the
     request is the one a specification owner could send without the tests in
-    hand: what else did you weigh here.
+    hand: which other values could this decision take.
     """
     if assumption.source != "document" or assumption.candidates:
         return ""
     if kind not in ("refuted", "implicated"):
         return ""
     handle = assumption.marker or assumption.subject
-    return (f"for `{handle}` on `{assumption.subject}`: list the values you "
-            f"weighed as `sce:assumed-candidates`, the one you chose "
-            f"included and appearing once in its expression -- change nothing "
-            f"else")
+    return (f"for `{handle}` on `{assumption.subject}`: add "
+            f"`sce:assumed-candidates` listing the values this decision could "
+            f"plausibly take under the specification, the current one included "
+            f"and appearing once in its expression -- change nothing else")
 
 
 def _where(positions, model, prose) -> list:
