@@ -68,23 +68,18 @@
          D4. init() / shutdown()      — keyed by `transport_types` (shared resources)
          D5. route_send() dispatch    — keyed by `target.state.kind`
 
-   Adding a new transport (authoritative registry lives in transport.rs):
-     (1) Add one entry to `transport::lookup()` with shape + capabilities
-         + `implemented: true`.
-     (2) If device-shared session config is needed, add a typed field to
-         `deploy::TransportConfigs` (parse-time validated by serde), then
-         thread it through `generate_mesh` as a new parameter.
-     (3) Add {% elif %} blocks in this template at "NEW TRANSPORT" markers.
+   Adding a new transport: this template's share is the {% elif %} arms at
+   the "NEW TRANSPORT" markers below, but the procedure also spans the
+   transport registry, typed topology state, the codegen inputs, the
+   runtime and the registry-derived tests. It is SCE_MESH.md §mesh-6.4,
+   kept in that one place rather than restated here. The transports this
+   template serves are the registry's (`transport::lookup()`), not a list
+   written in this comment.
 
-   Per-target vs shared: per-target transports (local, shm, someip) emit
-   one field per target and one init-list entry per target. Shared-session
-   transports (zenoh) emit a single device-wide field initialized in init().
-
-   Transport types handled:
-     local  — same-process direct call (inlined by compiler)
-     shm    — shared memory cross-process via ShmChannel
-     someip — SOME/IP over Ethernet via vsomeip (per-target application)
-     zenoh  — Zenoh pub/sub via zenoh-cpp (device-shared session) #}
+   Per-target vs shared: a per-target transport (SOME/IP, for example)
+   emits one field and one init-list entry per target; a shared-session
+   transport (Zenoh, for example) emits a single device-wide field
+   initialized in init(). #}
 
 {# ── Jinja2 macros: SOME/IP boilerplate extraction ─────────
    Eliminates three near-identical request-build sequences (RPC / FieldRead /

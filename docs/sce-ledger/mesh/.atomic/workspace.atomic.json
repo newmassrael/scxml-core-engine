@@ -2777,6 +2777,10 @@
           "file": "sce-build/src/mesh/codegen.rs",
           "symbol": "generate_cpp_mesh",
           "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction"
