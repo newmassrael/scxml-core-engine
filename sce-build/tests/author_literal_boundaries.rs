@@ -652,7 +652,7 @@ fn author_param_literals_survive_every_boundary() {
 // only author text that crosses the boundary, and it crosses two.
 //
 // C11 additionally puts that name in Lua *index* position
-// (`_pending_donedata["k"]`). It used to sit in field position
+// (`_sce_donedata["k"]`). It used to sit in field position
 // (`_pending_donedata.k`), where no escaping can help because an
 // arbitrary string is not an identifier — the fix was index syntax, and
 // this gate is what holds it there.
@@ -663,17 +663,18 @@ fn author_param_literals_survive_every_boundary() {
 // handed to a compiler. Only parsing that Lua catches it.
 //
 // Coverage, measured per site by mutating each one individually — all
-// five Lua-assembling sites go red: rust donedata, go donedata, and all
-// three C11 macros (donedata static-expr, send dynamic-param, and that
-// one's empty-string error fallback). The C11 rows also go red when
-// reverted to field syntax, which is the regression guard for the defect
-// that motivated the index-syntax rewrite.
+// the Lua-assembling sites go red: rust donedata, go donedata, and the
+// C11 donedata static-expr and send-pair sites. The C11 rows also go red
+// when reverted to field syntax, which is the regression guard for the
+// defect that motivated the index-syntax rewrite.
 //
 // Two things had to be true before that held, and neither was obvious:
 //
-//   count occurrences, not distinct names — C11 writes the same key from
-//     two lines (`= _v;` and its `= '';` fallback). Deduplicating let an
-//     intact line vouch for a mutated sibling.
+//   count occurrences, not distinct names — C11 once wrote the same key
+//     from two lines (`= _v;` and its `= '';` fallback), and deduplicating
+//     let an intact line vouch for a mutated sibling. Each floor below is
+//     the count one emission gives, so a second writer would show as an
+//     excess as surely as a lost one shows as a shortfall.
 //
 //   check both directions — asserting only that every authored name
 //     appears misses the case that matters, because a truncated name is
@@ -689,15 +690,14 @@ const DONEDATA_FIXTURE: &str = "donedata_adversarial_literals";
 /// `(language, label, fixture, line marker, param-name prefix, floor)`.
 ///
 /// The C11 backend appears several times because separate emission
-/// paths each assemble Lua source. Two macros write to the same
-/// `_pending_donedata` table — one lowers `<donedata>` params, the other
-/// a `<send>` param evaluated at runtime — and they share a marker but
-/// not a call path, so covering one proves nothing about the other. The
-/// `<send target="#_parent">` path builds its own table constructor in a
-/// C buffer instead and needs its own marker; it was writing names in
-/// Lua *field* position (`name = v`, where no escaping can help) long
-/// after the donedata path had moved to index syntax, and no row here
-/// looked at it.
+/// paths each assemble Lua source: `<donedata>` params index the
+/// `_sce_donedata` table, and a `<send>` param evaluated at runtime is a
+/// `{"name", v}` pair appended to `_sce_send_pairs` — separate call paths,
+/// so covering one proves nothing about the other. All-literal send params
+/// are a codegen-time JSON literal (`_lit[] = `) and need their own row;
+/// the `<send target="#_parent">` path once wrote names in Lua *field*
+/// position (`name = v`, where no escaping can help) long after the
+/// donedata path had moved to index syntax, and no row here looked at it.
 const LUA_KEY_SITES: &[(Language, &str, &str, &str, &str, usize)] = &[
     (
         Language::Rust,
@@ -719,17 +719,29 @@ const LUA_KEY_SITES: &[(Language, &str, &str, &str, &str, usize)] = &[
         Language::C11,
         "c11/donedata",
         DONEDATA_FIXTURE,
-        "_pending_donedata[",
+        "_sce_donedata[",
         "dd_",
         7,
     ),
+    // The runtime pair site: a send whose literal params sit beside a
+    // dynamic one is gathered pair by pair in Lua, literals included.
     (
         Language::C11,
         "c11/send-dynamic-param",
         "send_param_adversarial_literals_scripted",
-        "_pending_donedata[",
+        "_sce_send_pairs, {",
+        "mix_",
+        7,
+    ),
+    // A delayed send whose params all fold: its payload is the codegen-time
+    // JSON literal the scheduled entry stores, a paste site of its own.
+    (
+        Language::C11,
+        "c11/delay-send-param",
+        "send_param_adversarial_literals_scripted",
+        "_lit[] = ",
         "delay_",
-        14,
+        7,
     ),
     // `<send target="#_parent">` with params. Both fixtures reach it:
     // the payload is assembled from a C buffer either way, so unlike the
@@ -738,7 +750,7 @@ const LUA_KEY_SITES: &[(Language, &str, &str, &str, &str, usize)] = &[
     // claim — if either fixture stops reaching the site, only the row
     // for that fixture goes red and says which.
     //
-    // The marker is the codegen-time JSON literal (`*_lit = `) rather than
+    // The marker is the codegen-time JSON literal (`_lit[] = `) rather than
     // the per-name buffer append it used to be: params that all fold are
     // serialised whole at build time now, which is what lets a machine with
     // no script engine still produce a readable payload. Both fixtures take
@@ -748,7 +760,7 @@ const LUA_KEY_SITES: &[(Language, &str, &str, &str, &str, usize)] = &[
         Language::C11,
         "c11/parent-send-param",
         "send_param_adversarial_literals",
-        "*_lit = ",
+        "_lit[] = ",
         "parent_",
         7,
     ),
@@ -756,7 +768,7 @@ const LUA_KEY_SITES: &[(Language, &str, &str, &str, &str, usize)] = &[
         Language::C11,
         "c11/parent-send-param-scripted",
         "send_param_adversarial_literals_scripted",
-        "*_lit = ",
+        "_lit[] = ",
         "parent_",
         7,
     ),
@@ -785,8 +797,8 @@ fn extract_lua_keys(source: &str, marker: &str) -> (Vec<String>, Vec<String>) {
             let mut rest = lua_source.as_str();
             // Three spellings, because a `<param>` name reaches the layer
             // below in three shapes: the Lua index `["name"] = v` where the
-            // emitter still writes into a table (C11's `_pending_donedata`),
-            // the pair `{"name", v}` where it writes `_scxml_params(...)`,
+            // emitter still writes into a table (C11's `_sce_donedata`),
+            // the pair `{"name", v}` it hands `_scxml_params(...)`,
             // and the JSON member `"name":v` on the §scxml-B-2-9 wire that
             // `<send>` and `<donedata>` now write. All three put the name in
             // a quoted literal, which is all this scan depends on; each

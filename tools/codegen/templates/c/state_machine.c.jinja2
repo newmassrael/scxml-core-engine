@@ -15,179 +15,168 @@
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
-{# W3C SCXML 6.2 — build `{["k1"] = v1, ["k2"] = v2}` in `_ed` from a
-   `<send>`'s `<param>` children, as Lua source the receiving side
-   assigns to `_event.data`.
+{# W3C SCXML 5.10 + 6.2 — build a `<send>`'s payload as JSON in `_ed`, the
+   text the event's `data[]` carries to `set_current_event`.
 
-   Shared by the `#_parent` and `#_internal` send paths. They differ only
-   in where `_ed` goes afterwards — the dispatch shim or the raised
-   event's `data` field — so keeping one definition is what stops the two
-   from escaping differently, which is exactly how the `#_parent` site
-   came to be the last one writing names in Lua field position.
+   Every same-machine and child→parent send takes this one path — `<param>`
+   children and a `namelist` here, `<content>` in `send_content_json` below —
+   so the payload rides ON the event it belongs to. It used to be staged in
+   the Lua global `_pending_donedata`, which the next dequeue promoted onto
+   `_event.data`: whichever event was dequeued next took it, so an unrelated
+   data-less event raised before the send's own arrival carried the send's
+   payload and the send arrived with none. The event record is the only
+   carrier that cannot be taken by another event, and the only one an
+   embedder, a child session and a saved state can all read.
 
-   Names go in index position, never field position: a `<param name>` is
-   an arbitrary string (the parser admits `odd"name`), and no escaping
-   turns an arbitrary string into a Lua identifier, so field position is
-   unrepresentable rather than merely unescaped. `escape_lua | escape_c`
-   composes once per boundary — the Lua literal first, then the C literal
-   carrying it. Same contract as the `_pending_donedata["..."]` sites in
-   scriptengine.jinja2.
+   The pairs are gathered in the sending machine's engine and serialised
+   there: `_scxml_params` owns the repeated-name rule (W3C test178), and
+   `JSON.stringify` gives every value its own type — the string-valued
+   `_sce_event_data_json` this replaced delivered `aParam=1` as `"1"`.
+   Names cross as Lua string literals (`escape_lua | escape_c`, once per
+   boundary), never in field position, because a `<param name>` is an
+   arbitrary string.
 
-   A literal value is formatted at codegen time rather than through the
-   runtime formatter, because that formatter needs `sm->L` and a machine
-   whose every expression folds has no Lua state to offer — emitting the
-   call anyway does not degrade, it fails to compile. Whether an engine
-   is needed is a property of the param, not of the machine. `escape_lua`
-   yields the same quoted Lua string `string.format('%q', ...)` would.
+   All-literal params finish at codegen time, because a machine whose every
+   expression folds may carry no script engine at all (`sm->L` does not
+   exist on the `send_param_payload` synth-invoke emitter).
 
-   The runtime formatter quotes strings (`%q`-style), serialises
-   numbers/booleans verbatim, and emits `nil` otherwise. Tables and
-   functions are rejected: no W3C corpus fixture forces a nested send
-   param payload, and the first one lifts this to the recursive
-   cpp-`Json::Value::toStyledString` shape.
+   A payload that does not fit `data[]` is not truncated: truncated JSON
+   does not parse, so it would arrive as some other value. It raises
+   error.execution and the message is not delivered — an argument this
+   platform cannot marshal is one it cannot send (W3C SCXML 6.2) — and the
+   block stops (W3C SCXML 4.9), which is the `return`.
 
-   Buffer overflow drops the rest of the payload per W3C 6.2 ("if the
-   value of any param cannot be marshalled..."). cpp cancels the message
-   wholesale on serialisation error; C11 stops appending after capacity
-   and still ships the truncated prefix — a stricter cancel-and-raise
-   lands when a fixture forces it.                                        #}
-{# `csym_prefix` and `machine` are parameters rather than globals because a
-   macro body does not see the render context, and W3C SCXML 5.7.1 needs
-   the machine's own `_raise_platform_error` symbol here. A pair that fails
-   sets the `_param_failed` its `<send>` declared (W3C SCXML 4.9). #}
-{% macro lua_table_from_params(params, csym_prefix, machine) %}
-{% if params | rejectattr("is_static_literal") | list | length == 0 %}
-                /* W3C SCXML 6.2 + B-2-9: every value is a literal, so the
-                   payload is finished at codegen time — and it has to be,
-                   because a machine whose params all fold may carry no
-                   script engine at all (`sm->L` does not exist on the
-                   `send_param_payload` synth-invoke emitter). The Lua-source
-                   wire could not do this: reading it back needed an
-                   interpreter at the far end even when the sender had none. */
-                char _ed[SCE_MAX_DATA_LEN];
+   A `<param>` that cannot be read is reported and its pair left out, and the
+   message still goes (W3C SCXML 5.7.1); it sets the `_param_failed` its
+   `<send>` declared, which ends the block once the message has gone (W3C
+   SCXML 4.9). A namelist entry that cannot be read is an argument of the
+   `<send>` itself, so the message is discarded (W3C SCXML 6.2) and the
+   block stops.
+
+   `csym_prefix` and `machine` are parameters rather than globals because a
+   macro body does not see the render context. #}
+{# Copy the Lua string on top of `sm->L`'s stack into `_ed`, or refuse. Pops
+   it either way. #}
+{% macro send_payload_take(csym_prefix, machine, what) %}
                 {
-                    static const char *_lit = "{{ params | static_params_json | escape_c }}";
-                    size_t _ln = strlen(_lit);
-                    if (_ln >= sizeof(_ed)) { _ln = sizeof(_ed) - 1; }
-                    memcpy(_ed, _lit, _ln);
-                    _ed[_ln] = '\0';
-                }
-{% else %}
-                char _ed[SCE_MAX_DATA_LEN];
-                int _ed_len = 0;
-                /* W3C SCXML 5.7.1: a pair whose expression will not evaluate is
-                   left out entirely, so whether a separator is due is a runtime
-                   question — the position in the document no longer answers it.
-                   `_ed_any` is that answer: it turns 1 only once a pair has
-                   actually been written, so a first param that fails does not
-                   leave `_scxml_params(,{...})` behind. */
-                int _ed_any = 0;
-                /* W3C SCXML 6.2: the params go through `_scxml_params`, which
-                   is what lets a repeated name become an Array of its values —
-                   a table constructor has already collapsed the duplicate by
-                   the time anything could look at it, and the last one silently
-                   won. Same shared rule every other backend now applies. */
-                {
-                    static const char *_pf = "_scxml_params(";
-                    int _pfl = (int)strlen(_pf);
-                    if (_ed_len + _pfl < (int)SCE_MAX_DATA_LEN - 1) {
-                        memcpy(_ed + _ed_len, _pf, (size_t)_pfl);
-                        _ed_len += _pfl;
-                    }
-                }
-                {% for param in params %}
-                {
-                    /* Rewind point: everything this pair writes is undone when
-                       its value cannot be produced. */
-                    int _pstart = _ed_len;
-                    if (_ed_any && _ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }
-                    {
-                        static const char *_pn = "{\"{{ param.name | escape_lua | escape_c }}\", ";
-                        int _pnl = (int)strlen(_pn);
-                        if (_ed_len + _pnl < (int)SCE_MAX_DATA_LEN - 1) {
-                            memcpy(_ed + _ed_len, _pn, (size_t)_pnl);
-                            _ed_len += _pnl;
-                        }
-                    }
-{% if param.is_static_literal %}
-                    {
-                        static const char *_pv = "\"{{ param.static_value | escape_lua | escape_c }}\"";
-                        int _pvl = (int)strlen(_pv);
-                        if (_ed_len + _pvl < (int)SCE_MAX_DATA_LEN - 1) {
-                            memcpy(_ed + _ed_len, _pv, (size_t)_pvl);
-                            _ed_len += _pvl;
-                        }
-                    }
-                    if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = '}'; }
-                    _ed_any = 1;
-                    (void)_pstart;
-{% elif not (param.expr or param.location) %}
-                    /* W3C SCXML 5.7.1: an empty location names no location in
-                       the data model — reported, and the pair left out. */
-                    _ed_len = _pstart;
-                    {{ csym_prefix }}{{ machine }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                        "<send> <param name='{{ param.name | escape_c }}'> names no location");
-                    _param_failed = true;
-{% else %}
-                    if (luaL_dostring(sm->L,
-                        "local _v = ({{ (param.expr if param.expr else param.location) | to_lua_expr | escape_c }}); "
-                        "if type(_v) == 'string' then return string.format('%q', _v) "
-                        "elseif type(_v) == 'number' or type(_v) == 'boolean' then return tostring(_v) "
-                        "else return 'nil' end") == 0) {
-                        const char *_v = lua_tostring(sm->L, -1);
-                        if (_v != NULL) {
-                            int _vl = (int)strlen(_v);
-                            if (_ed_len + _vl < (int)SCE_MAX_DATA_LEN - 1) {
-                                memcpy(_ed + _ed_len, _v, (size_t)_vl);
-                                _ed_len += _vl;
-                            }
-                        }
+                    size_t _jl = 0;
+                    const char *_j = lua_tolstring(sm->L, -1, &_jl);
+                    if (_j == NULL || _jl >= sizeof(_ed)) {
                         lua_pop(sm->L, 1);
-                        if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = '}'; }
-                        _ed_any = 1;
-                    } else {
-                        lua_pop(sm->L, 1);
-                        /* W3C SCXML 5.7.1: report the failure and ignore the
-                           name and value. The `nil` placeholder this used to
-                           write was the opposite of ignoring them — a receiver
-                           asking whether the field is there was told yes. */
-                        _ed_len = _pstart;
                         {{ csym_prefix }}{{ machine }}_raise_platform_error(
                             sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                            "<send> <param name='{{ param.name | escape_c }}'> expr failed to evaluate");
-                        _param_failed = true;
+                            "<send> {{ what }} does not fit the event's data, so the message was not sent");
+                        return;
                     }
-{% endif %}
+                    memcpy(_ed, _j, _jl + 1u);
+                    lua_pop(sm->L, 1);
                 }
-                {% endfor %}
-                if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ')'; }
-                _ed[_ed_len] = '\0';
-                /* §scxml-B-2-9: the call above is assembled from this
-                   document's own escaped literals and evaluated HERE, in the
-                   sending machine's engine; what crosses is its JSON. The
-                   call text itself used to be the wire, so the receiving
-                   machine had to run Lua source that arrived on an event —
-                   and every embedder that hands in a payload writes to that
-                   same field. `_scxml_params` stays because it owns the
-                   repeated-name rule (W3C test178); only its output is
-                   serialized rather than shipped as source. */
+{% endmacro %}
+{% macro send_payload_json(params, namelist, csym_prefix, machine) %}
+                char _ed[SCE_MAX_DATA_LEN];
+{% if not namelist and params | rejectattr("is_static_literal") | list | length == 0 %}
+                /* W3C SCXML 6.2 + B-2-9: every value is a literal, so the
+                   payload is finished at codegen time. */
                 {
-                    char _edj[SCE_MAX_DATA_LEN + 32];
-                    (void)snprintf(_edj, sizeof(_edj), "return JSON.stringify(%s)", _ed);
-                    if (luaL_dostring(sm->L, _edj) == 0) {
-                        const char *_j = lua_tostring(sm->L, -1);
-                        if (_j != NULL) {
-                            int _jl = (int)strlen(_j);
-                            if (_jl >= (int)SCE_MAX_DATA_LEN) { _jl = (int)SCE_MAX_DATA_LEN - 1; }
-                            memcpy(_ed, _j, (size_t)_jl);
-                            _ed[_jl] = '\0';
-                        }
-                        lua_pop(sm->L, 1);
-                    } else {
-                        lua_pop(sm->L, 1);
-                        _ed[0] = '\0';
-                    }
+                    static const char _lit[] = "{{ params | static_params_json | escape_c }}";
+                    _Static_assert(sizeof(_lit) <= SCE_MAX_DATA_LEN,
+                                   "<send>'s literal payload does not fit SCE_MAX_DATA_LEN");
+                    memcpy(_ed, _lit, sizeof(_lit));
+                }
+{% else %}
+                (void)luaL_dostring(sm->L, "_sce_send_pairs = {}");
+{% for var_name in (namelist or '').split() %}
+                /* W3C SCXML 6.2 + C.1 (test553): an undeclared name is an
+                   argument of the <send> that cannot be evaluated — the
+                   message is discarded and the block stops. */
+                if (luaL_dostring(sm->L,
+                    "if not _scxml_declared['{{ var_name | escape_lua | escape_c }}'] and "
+                      "rawget(_G, '{{ var_name | escape_lua | escape_c }}') == nil then "
+                      "error('namelist variable not declared') end; "
+                    "table.insert(_sce_send_pairs, {'{{ var_name | escape_lua | escape_c }}', ({{ var_name }})})") != 0) {
+                    lua_pop(sm->L, 1);
+                    {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                        "<send> namelist names '{{ var_name | escape_c }}', which cannot be read");
+                    return;
+                }
+{% endfor %}
+{% for param in params %}
+{% if param.is_static_literal %}
+                (void)luaL_dostring(sm->L,
+                    "table.insert(_sce_send_pairs, {\"{{ param.name | escape_lua | escape_c }}\", \"{{ param.static_value | escape_lua | escape_c }}\"})");
+{% elif not (param.expr or param.location) %}
+                /* W3C SCXML 5.7.1: an empty location names no location in the
+                   data model — reported, and the pair left out. */
+                {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                    "<send> <param name='{{ param.name | escape_c }}'> names no location");
+                _param_failed = true;
+{% else %}
+                if (luaL_dostring(sm->L,
+                    "table.insert(_sce_send_pairs, {\"{{ param.name | escape_lua | escape_c }}\", ({{ (param.expr if param.expr else param.location) | to_lua_expr | escape_c }})})") != 0) {
+                    lua_pop(sm->L, 1);
+                    /* W3C SCXML 5.7.1: report the failure and ignore the name
+                       and value. */
+                    {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                        "<send> <param name='{{ param.name | escape_c }}'> expr failed to evaluate");
+                    _param_failed = true;
+                }
+{% endif %}
+{% endfor %}
+                if (luaL_dostring(sm->L,
+                    "local _p = _sce_send_pairs; _sce_send_pairs = nil; "
+                    "return JSON.stringify(_scxml_params(table.unpack(_p)))") != 0) {
+                    lua_pop(sm->L, 1);
+                    {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                        "<send>'s payload could not be serialised, so the message was not sent");
+                    return;
+                }
+{{ send_payload_take(csym_prefix, machine, "payload") }}
+{% endif %}
+{% endmacro %}
+{# W3C SCXML 5.10 + B.2 — a `<send>`'s `<content>` as JSON in `_ed`, by the
+   same rules as `send_payload_json` above. Inline text takes its reading at
+   build time (`to_lua_data_content`: an expression when it is one, otherwise
+   the string); text whose first character is `<` crosses as the XML it is,
+   because `set_current_event` builds the DOM from exactly that (W3C test561).
+   `<content expr>` is evaluated here; one that fails raises error.execution
+   and the message still goes, with no data — the reading this backend gave
+   it before its payload moved onto the event, kept so that this change moves
+   only WHERE the payload rides. (W3C SCXML 5.6 asks for the empty string as
+   the content's value; whether every channel gives it is its own question.) #}
+{% macro send_content_json(action, csym_prefix, machine) %}
+                char _ed[SCE_MAX_DATA_LEN];
+{% if action.contentexpr %}
+                if (luaL_dostring(sm->L,
+                    "return JSON.stringify(({{ action.contentexpr | to_lua_expr | escape_c }}))") != 0) {
+                    lua_pop(sm->L, 1);
+                    {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                        "<send> <content expr> failed to evaluate");
+                    _ed[0] = '\0';
+                } else {
+{{ send_payload_take(csym_prefix, machine, "<content>") }}
+                }
+{% elif (action.content | trim) is startingwith('<') %}
+                {
+                    static const char _lit[] = "{{ action.content | escape_c }}";
+                    _Static_assert(sizeof(_lit) <= SCE_MAX_DATA_LEN,
+                                   "<send>'s literal <content> does not fit SCE_MAX_DATA_LEN");
+                    memcpy(_ed, _lit, sizeof(_lit));
+                }
+{% else %}
+                if (luaL_dostring(sm->L,
+                    "return JSON.stringify(({{ action.content | to_lua_data_content | escape_c }}))") != 0) {
+                    lua_pop(sm->L, 1);
+                    {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                        "<send> <content> failed to evaluate");
+                    _ed[0] = '\0';
+                } else {
+{{ send_payload_take(csym_prefix, machine, "<content>") }}
                 }
 {% endif %}
 {% endmacro %}
@@ -306,14 +295,6 @@
    POSIX impl in `sce_c_runtime_posix`; bare-metal consumers supply their own `sce_c_runtime_<target>` providing
    the same symbols. */
 #include <sce/http_client.h>
-{% if model.needs_script_engine %}
-/* W3C SCXML C.2: JSON-to-Lua push for promoting the standalone
-   server's `data` response field onto the `_pending_donedata` slot.
-   Linked only when the SM has a Lua datamodel — fixtures that never
-   dereference `_event.data` skip this header. Lives in the
-   `sce_c_scripting` tier. */
-#include <sce/http_lua_binding.h>
-{% endif %}
 {% endif %}
 {% if model.needs_event_scheduler %}
 
@@ -388,7 +369,7 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push({{ csym_prefix }}{{ model.name
                            {{ csym_prefix }}{{ model.name }}_event_t event,
                            const char *send_id
 {%- if model.needs_script_engine %},
-                           int payload_lua_ref
+                           const char *payload_json
 {%- endif %});
 SCE_SM_FN static SCE_C_UNUSED void scheduled_cancel({{ csym_prefix }}{{ model.name }}_t *sm, const char *send_id);
 {% if model.has_parent_communication %}
@@ -801,30 +782,18 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                + `<param>` carry. Per-param `expr` is evaluated against the
                active datamodel **at send time**, not delivery time — the
                surrounding onentry's subsequent <assign> may mutate the
-               source variable before the timer fires, but the captured
-               value snapshots into `_pending_donedata`. The lua-side
-               table is then anchored in the registry via luaL_ref so it
-               survives the gap between scheduling and dispatch (immediate
-               sends rebind `_pending_donedata` to a fresh table on every
-               raise; without the registry anchor a subsequent immediate
-               send would clobber the scheduled payload). The `_tick`
-               dispatch path restores the table onto `_pending_donedata`
-               just before raising, mirroring cpp's
-               `EventDataHelper::buildEventDataJson` → `EventWithMetadata::data`
-               → `LuaEngine::setCurrentEvent` round-trip — same per-entry
-               ownership shape, lua-native carry instead of JSON string —
-               Lua 5.4 is the backend's only engine. */
-            (void)luaL_dostring(sm->L, "_pending_donedata = {}");
-{% for param in action.params %}
-{{ se.lua_eval_send_param_expr(param.name, param.expr if param.expr else param.location) }}
-{% endfor %}
-            lua_getglobal(sm->L, "_pending_donedata");
-            int _payload_ref = luaL_ref(sm->L, LUA_REGISTRYINDEX);
-            scheduled_push(sm,
-                           sched_now_ms(sm) + (uint64_t){{ action.delay_ms }}u,
-                           {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
-                           "{{ action.auto_send_id | escape_c }}",
-                           _payload_ref);
+               source variable before the timer fires — and the payload is
+               stored on the scheduled entry as the JSON its event will
+               carry, so `_tick` raises the event with it and nothing else
+               can take it in between. */
+            {
+{{ send_payload_json(action.params, none, csym_prefix, model.name) }}
+                scheduled_push(sm,
+                               sched_now_ms(sm) + (uint64_t){{ action.delay_ms }}u,
+                               {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
+                               "{{ action.auto_send_id | escape_c }}",
+                               _ed);
+            }
 {% elif action.event and action.delay and not action.delayexpr and not action.target and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2: static-event + literal delay (no target / no
                payload). `action.delay_ms` is the parser-side conversion
@@ -843,7 +812,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                            sched_now_ms(sm) + (uint64_t){{ action.delay_ms }}u,
                            {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
                            "{{ action.auto_send_id | escape_c }}"
-{%- if model.needs_script_engine %}, LUA_NOREF
+{%- if model.needs_script_engine %}, NULL
 {%- endif %});
 {% elif (not in_foreach) and action.event and action.target and action.target.startswith('!') and action.idlocation and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr %}
             /* W3C SCXML 6.2.4 + 5.10.1 (test332): static-event + invalid
@@ -962,38 +931,14 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             }
 {% elif action.event and action.target == '#_parent' and action.params and not action.eventexpr and not action.delay and not action.delayexpr and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.4 (test233): static-event + target="#_parent" +
-               <param> children. Each param expr is evaluated in this
-               (child) SM's lua_State, then formatted into a Lua-source
-               table literal `{["name1"] = v1, ["name2"] = v2, ...}`. The
-               name goes in index position, never field position: a
-               `<param name>` is an arbitrary string (the parser admits
-               `odd"name`) and no escaping turns an arbitrary string into
-               a Lua identifier, so field position is unrepresentable
-               rather than merely unescaped. `escape_lua | escape_c` then
-               composes once per boundary — the Lua literal first, the C
-               literal that carries it second. Same contract as the
-               `_pending_donedata["..."]` sites in scriptengine.jinja2.
-               The string travels via the parent_dispatch shim's `event_data` arg,
-               lands on `event_with_meta_t.data` in the parent, and the
-               parent's external dequeue runs `_event.data = <table>`
-               before transition matching + finalize.
-
-               The per-value formatter quotes strings (`%q`-style),
-               serialises numbers/booleans verbatim, and emits `nil`
-               otherwise. Tables/functions are rejected (no W3C corpus
-               fixture forces nested send-to-parent param payloads;
-               first such fixture lifts the formatter to the recursive
-               cpp-`Json::Value::toStyledString` shape).
-
-               Buffer overflow drops the rest of the payload and emits
-               error.execution per W3C 6.2 ("if the value of any param
-               cannot be marshalled..."). cpp's send dispatch cancels
-               the message wholesale on serialisation error; C11 stops
-               appending after capacity but still ships the truncated
-               prefix — a stricter cancel-and-raise lift lands when a
-               fixture forces it. */
+               <param> children. The payload is serialised in this (child)
+               machine's engine by `send_payload_json`; the JSON travels
+               via the parent_dispatch shim's `event_data` arg, lands on
+               `event_with_meta_t.data` in the parent, and the parent's
+               external dequeue reads it onto `_event.data` before
+               transition matching + finalize. */
             if (sm->parent_dispatch != NULL) {
-{{ lua_table_from_params(action.params, csym_prefix, model.name) }}
+{{ send_payload_json(action.params, none, csym_prefix, model.name) }}
                 sm->parent_dispatch(sm->parent_sm, "{{ action.event }}", sm->invoke_id, _ed);
             }
 {% elif action.event and action.target and action.target.startswith('#_') and action.target not in ('#_parent', '#_internal') and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
@@ -1038,27 +983,15 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                this shape to the unenumerated-shape fallback, which raises
                error.execution — a machine whose author wrote an internal
                send with params got a runtime error instead of a payload.
-               The table is assembled by the same macro the `#_parent`
-               path uses, so the two cannot escape author text
-               differently. */
+               The payload is built by the same macro every other send
+               uses, so none of them can escape author text differently. */
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
 {% if action.params %}
             {
-{{ lua_table_from_params(action.params, csym_prefix, model.name) }}
-                /* Truncating here would ship JSON that does not parse, so
-                   the payload is copied only when it fits whole. Measured
-                   from the buffer rather than from an assembly counter: the
-                   macro's two arms produce the string different ways (one
-                   serialises through the engine, the other embeds a codegen
-                   literal) and only the string itself is common to both. */
-                {
-                    size_t _ed_n = strlen(_ed);
-                    if (_ed_n < sizeof(_send_evt.data)) {
-                        memcpy(_send_evt.data, _ed, _ed_n + 1u);
-                    }
-                }
+{{ send_payload_json(action.params, none, csym_prefix, model.name) }}
+                memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
             }
 {% endif %}
             {{ csym_prefix }}{{ model.name }}_raise(sm, &_send_evt);
@@ -1093,81 +1026,36 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
 {% elif action.event and action.params and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 5.10 + 6.2 (test176/205/560): static-event with
-               `<param>(s)`, no `target` (external queue). Each param's
-               `expr` is evaluated against the active datamodel and stored
-               on the shared `_pending_donedata` lua table; the next
-               dequeue's `set_current_event` promotes the table onto
-               `_event.data` so the receiving transition's `_event.data.{name}`
-               reads the captured value. Mirrors cpp `actions/send.jinja2`
-               lines 532-577 collapsed for the no-target / no-delay arm —
-               cpp builds `std::map<string, vector<string>> params` plus a
-               `typedParams` ScriptValue map, fuses them via
-               `EventDataHelper::buildEventDataJson` + `buildScriptValueFromParams`,
-               and attaches the typed result to `EventWithMetadata::typedData`.
-               C11 stashes the typed value directly on the lua table; the
-               JSON-string side of cpp's payload is irrelevant here because
-               the lua datamodel reads `_event.data` as a native lua table.
-
-               Slot collision: `_pending_donedata` is shared with the
-               donedata path (`execute_entry_actions`'s final-state arm).
-               Within one onentry, a `<send>` with params and a `<donedata>`
-               on the same final state would last-write-wins, but the W3C
-               corpus has no fixture forcing both in one block. The first
-               such fixture lifts the slot to a per-send_id keyed table
-               (cpp's `EventWithMetadata::eventData` per-event carry).
-
-               Param eval failure: silent-drop with empty-string fallback
-               per cpp send (W3C 6.2 ≠ 5.7); see
-               `scriptengine.jinja2::lua_eval_send_param_expr` docstring. */
-            (void)luaL_dostring(sm->L,
-                "_pending_donedata = {}; _sce_send_data_pairs = {}");
-            {% for param in action.params %}
-            {{ se.lua_eval_send_param_expr(param.name, param.expr if param.expr else param.location) }}
-            {% endfor %}
+               `<param>(s)`, no `target` (external queue). The payload rides
+               on the event as JSON (`send_payload_json`), so the receiving
+               transition's `_event.data.{name}` reads the value captured at
+               send time with its own type. Mirrors cpp `actions/send.jinja2`
+               lines 532-577 collapsed for the no-target / no-delay arm. */
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-            {{ se.lua_marshal_send_event_data('_send_evt') }}
+            {
+{{ send_payload_json(action.params, none, csym_prefix, model.name) }}
+                memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
+            }
             {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
 {% elif (not in_foreach) and action.event and action.namelist and action.params and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 5.10 + 6.2 + C.1 (test354): static-event with both
-               `<send namelist>` AND `<param>` children sharing the same
-               event data table. cpp `actions/send.jinja2:463-528` evaluates
-               `NamelistHelper::evaluateNamelist` and the per-param
-               `evaluateExpression` against a single `params` map, then
-               packages the combined map through
-               `EventDataHelper::buildEventDataJson` for the receiver. C11
-               mirrors via `_pending_donedata` initialised once before the
-               loops, both evaluators writing into the same lua table:
-               namelist names land as `_pending_donedata.<var>` (W3C C.1
-               two-source declared check + ReferenceError-on-miss raises
-               error.execution + return, cpp `NamelistHelper::evaluateNamelist`
-               errorHandler 1:1 via `lua_eval_namelist_var`); param exprs
-               land as `_pending_donedata.<param>` (eval failure falls back
-               to empty string per cpp `params[name].push_back("")`, no
-               raise — `lua_eval_send_param_expr`). The set_current_event
-               chunk promotes the combined table onto `_event.data` so the
-               receiving transitions can read both `_event.data.<var>` and
-               `_event.data.<param>` from one dispatch. SCXMLEventProcessor
-               URI literal handling (commit 0df747ef) accepts
-               `type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor"`
-               alongside the empty-default; the BasicHTTP URI literal is
-               served by the BasicHTTP arm further below (W3C C.2 send),
-               and any other type literal lands in the test199-mirror
-               arm that raises error.execution. Slot collision: shares
-               `_pending_donedata`
-               with the params/namelist/donedata/content paths; same
-               last-write-wins caveat applies. */
-            (void)luaL_dostring(sm->L, "_pending_donedata = {}");
-            {% for var_name in action.namelist.split() %}
-            {{ se.lua_eval_namelist_var(var_name) }}
-            {% endfor %}
-            {% for param in action.params %}
-            {{ se.lua_eval_send_param_expr(param.name, param.expr if param.expr else param.location) }}
-            {% endfor %}
+               `<send namelist>` AND `<param>` children in one payload. cpp
+               `actions/send.jinja2:463-528` evaluates the namelist, then the
+               params, into a single `params` map; `send_payload_json` does
+               the same, namelist first, and the combined payload rides on
+               the event. The BasicHTTP URI literal is served by the
+               BasicHTTP arm further below (W3C C.2 send), and any other type
+               literal lands in the test199-mirror arm that raises
+               error.execution. */
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {
+{{ send_payload_json(action.params, action.namelist, csym_prefix, model.name) }}
+                memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
+            }
             {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
 {% elif action.event and action.namelist and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 + C.1 (test553): static-event with
@@ -1182,46 +1070,32 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                `NamelistHelper::evaluateNamelist`, which calls
                `hasVariable` per name and returns false on first miss;
                the C11 path inlines the same two-source check
-               (`_scxml_declared` + `rawget(_G, name)`) inside the lua
-               chunk via `lua_eval_namelist_var`. Successful evaluations
-               land on `_pending_donedata` so the next dequeue's
-               `set_current_event` promotes the table onto `_event.data`,
-               same shape as the params arm above.
-
-               Slot collision: shares `_pending_donedata` with the
-               params and donedata paths; same last-write-wins caveat
-               documented on the params arm applies. */
-            (void)luaL_dostring(sm->L, "_pending_donedata = {}");
-            {% for var_name in action.namelist.split() %}
-            {{ se.lua_eval_namelist_var(var_name) }}
-            {% endfor %}
+               (`_scxml_declared` + `rawget(_G, name)`) inside
+               `send_payload_json`, and the values ride on the event, same
+               shape as the params arm above. */
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {
+{{ send_payload_json([], action.namelist, csym_prefix, model.name) }}
+                memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
+            }
             {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
 {% elif action.event and action.content and not action.contentexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 5.10 + 6.2 + B.2 (test179, test562, test578):
                static-event with inline `<content>` (no `expr`), no `target`
-               (external queue). cpp `actions/send.jinja2` lines 643-647
-               route the body through `EventDataHelper::jsonStringToScriptValue`
-               — best-effort JSON parse with raw-string fallback. C11
-               mirrors via `lua_send_content_literal`: the body lands in a
-               Lua [[long-string]], a JSON-key-syntax shim turns
-               `"key":` into `["key"]=`, then `pcall(load(...))` attempts
-               evaluation. On success the result lands on
-               `_pending_donedata` (test179 numeric `123`, test578 JSON
-               object); on failure the body is space-normalized per W3C
-               B.2 and used as the string payload (test562 multi-line
-               text). No `error.execution` is raised — literal `<content>`
-               is best-effort by spec; only `<content expr="...">`
-               (handled by the contentexpr arm below) raises on eval
-               failure.
-
-               Slot collision with donedata: same as the params arm above. */
-            {{ se.lua_send_content_literal(action.content) }}
+               (external queue). The body takes its §scxml-B-2 reading at
+               build time and rides on the event as JSON — or as the XML it
+               is, which `set_current_event` builds the DOM from (test561) —
+               via `send_content_json` (test179 numeric `123`, test578 JSON
+               object, test562 multi-line text). */
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {
+{{ send_content_json(action, csym_prefix, model.name) }}
+                memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
+            }
             {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
 {% elif action.event and action.targetexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test173): runtime `targetexpr` evaluation —
@@ -1503,28 +1377,21 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                            sched_now_ms(sm) + _send_delay_ms,
                            {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
                            "{{ action.auto_send_id | escape_c }}"
-{%- if model.needs_script_engine %}, LUA_NOREF
+{%- if model.needs_script_engine %}, NULL
 {%- endif %});
 {% elif action.event and action.contentexpr and not action.content and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 5.10 + 6.2 (contentexpr force fixture): static-event
-               with `<content expr="...">`, no `target`. The expression is
-               evaluated against the active datamodel and the result lands
-               on the shared `_pending_donedata` slot, ready for the next
-               dequeue's `set_current_event` promotion onto `_event.data`.
-               Mirrors cpp `actions/send.jinja2` lines 710-769 collapsed
-               for the no-target / no-delay arm — cpp's contentexpr path
-               raises `error.execution` on eval failure (line 721) and
-               sets eventData to empty; the donedata content_expr macro
-               applies the same shape (`scriptengine.jinja2` lines 397-416).
-               No fixture in the C11 batch forces this arm yet; lifted now
-               for spec-mirror parity since the cpp branch is the contract
-               (`feedback_spec_mirror_parity.md` carve-out: reference
-               backend's branch ≡ contract). First force fixture exercises
-               the path. */
-            {{ se.lua_eval_donedata_content(action.contentexpr | to_lua_expr) }}
+            /* W3C SCXML 5.10 + 6.2: static-event with `<content expr="...">`,
+               no `target`. The expression is evaluated against the active
+               datamodel and its value rides on the event as JSON
+               (`send_content_json`). Mirrors cpp `actions/send.jinja2`
+               lines 710-769 collapsed for the no-target / no-delay arm. */
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {
+{{ send_content_json(action, csym_prefix, model.name) }}
+                memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
+            }
             {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
 {% elif (not in_foreach) and action.event and action.send_type_unsupported and not action.eventexpr and not action.target and not action.targetexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.typeexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test199): unsupported send_type literal raises
@@ -1576,8 +1443,8 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             /* W3C SCXML C.2: BasicHTTP send to HTTP target (literal `target`
                or runtime `targetexpr`). Synchronous POST against the
                standalone server, followed by
-               event-name dispatch and optional `_event.data` promotion
-               onto the `_pending_donedata` Lua slot. Mirrors cpp
+               event-name dispatch; the reply's data rides on the event it
+               arrives with. Mirrors cpp
                `actions/send.jinja2:347-428` `engine.performHttpSend()`,
                rust `rust/actions/send.rs.jinja2:252-315`, and
                `backends/go/tests/harness/harness.go::SetupHTTPTest`.
@@ -1855,24 +1722,45 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                                event set. */
                             _http_evt.event = {{ csym_prefix }}{{ model.name }}_event_from_name(_http_json.event_name, _http_json.event_name_len);
                             if (_http_evt.event != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
+                                bool _http_data_fits = true;
 {% if model.needs_script_engine %}
-                                /* W3C SCXML C.2: promote `data` field onto
-                                   `_pending_donedata` so the next dequeue's
-                                   `set_current_event` lifts it onto
-                                   `_event.data` (the JSON-table form for
-                                   server-echoed objects, the literal-
-                                   string form for content-only fixtures
-                                   like test520). */
+                                /* W3C SCXML C.2: the reply's `data` rides on
+                                   the event it arrived with, as the JSON
+                                   `set_current_event` decodes — the server's
+                                   own JSON for an echoed object, a JSON
+                                   string for content-only replies like
+                                   test520. A reply larger than the event's
+                                   `data[]` is reported rather than cut to a
+                                   prefix that would decode as some other
+                                   value. */
                                 if (_http_json.event_data != NULL) {
+                                    const char *_hd = _http_json.event_data;
+                                    size_t _hd_n = _http_json.event_data_len;
                                     if (_http_json.data_is_string) {
                                         lua_pushlstring(sm->L, _http_json.event_data, _http_json.event_data_len);
-                                        lua_setglobal(sm->L, "_pending_donedata");
-                                    } else if (sce_test_lua_push_json(sm->L, _http_json.event_data, _http_json.event_data_len)) {
-                                        lua_setglobal(sm->L, "_pending_donedata");
+                                        lua_setglobal(sm->L, "_sce_http_reply");
+                                        (void)luaL_dostring(sm->L,
+                                            "local _s = _sce_http_reply; _sce_http_reply = nil; "
+                                            "return JSON.stringify(_s)");
+                                        _hd = lua_tolstring(sm->L, -1, &_hd_n);
+                                    }
+                                    if (_hd == NULL || _hd_n >= sizeof(_http_evt.data)) {
+                                        _http_data_fits = false;
+                                        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                                            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                                            "a BasicHTTP reply's data does not fit the event's data, so the reply was not delivered");
+                                    } else {
+                                        memcpy(_http_evt.data, _hd, _hd_n);
+                                        _http_evt.data[_hd_n] = '\0';
+                                    }
+                                    if (_http_json.data_is_string) {
+                                        lua_pop(sm->L, 1);
                                     }
                                 }
 {% endif %}
-                                {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_http_evt);
+                                if (_http_data_fits) {
+                                    {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_http_evt);
+                                }
                             }
                         }
                     }
@@ -2655,8 +2543,8 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {% endif %}
         {% if has_donedata %}
         /* W3C SCXML 5.5: evaluate <donedata> for final state '{{ state_id }}'
-           and stash on `_pending_donedata` so the next dequeue's
-           `set_current_event` promotes it onto `_event.data`. Mirrors cpp
+           into `_sce_donedata`, which the done event below is built from (a
+           compound final) or the parent reads (a top-level one). Mirrors cpp
            `entry_exit_actions.jinja2:389-460` 4-shape dispatch on
            `donedata.params` / `content.kind == "expression"` /
            `content.kind == "literal"`. The C11 emit collapses the cpp
@@ -2664,13 +2552,13 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
            evaluateParams / emitContentLiteral) to inline lua chunks per
            jinja2-inline contract. */
         {% if state.donedata.params %}
-        /* W3C SCXML 5.5: build _pending_donedata as a table of
+        /* W3C SCXML 5.5: build _sce_donedata as a table of
            name:value pairs. §scxml-5.7: a pair whose location is not
            valid (an empty one included) or whose expr fails raises
            error.execution and is ignored, and every other pair is still
            evaluated (cpp DoneDataHelper::evaluateParams); the done event
            is raised with what survives. */
-        (void)luaL_dostring(sm->L, "_pending_donedata = {}");
+        (void)luaL_dostring(sm->L, "_sce_donedata = {}");
         {% for param in state.donedata.params %}
         {# §scxml-5.7: the parser admits exactly one of the two attributes,
            so the one that is PRESENT is the value — tested for presence,
@@ -2709,25 +2597,24 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
            script engine. C11 splits the carrier across two slots: when
            a script engine is present (rare for null datamodel — only
            when other actions in the model force `needs_script_engine`),
-           also stash a lua-string copy on `_pending_donedata` so the
-           ECMAScript-side `_event.data` reads the value via the existing
-           dequeue promotion; the JSON-quoted byte form lands on
-           `_done_evt.data` at the raise site below regardless, matching
+           also stash a lua-string copy on `_sce_donedata` so a parent
+           reading a top-level final's data finds it; the JSON-quoted byte
+           form lands on `_done_evt.data` at the raise site below, matching
            cpp's `EventWithMetadata.data` invariant for non-lua observers
            (parent_dispatch shim, mesh §9.6.2 wire-18). The lua chunk
            uses Lua's long-bracket string `[[...]]` which has no escape
            interpretation, so the inline text is carried verbatim. */
         {% if model.needs_script_engine %}
         (void)luaL_dostring(sm->L,
-            "_pending_donedata = [[{{ state.donedata.content.text | escape_c }}]]");
+            "_sce_donedata = [[{{ state.donedata.content.text | escape_c }}]]");
         {% endif %}
         {% endif %}
         {% endif %}
         {% if is_compound_final %}
         /* W3C SCXML 3.7: raise done.state.{{ state.parent }} for compound
-           state completion. The donedata payload (if any) was stashed on
-           `_pending_donedata` above; the next dequeue's set_current_event
-           promotes it onto `_event.data`. Mirrors cpp
+           state completion. The donedata payload (if any) was evaluated
+           into `_sce_donedata` above and rides on this event's `data[]`.
+           Mirrors cpp
            `entry_exit_actions.jinja2:461-475` raise + `EventWithMetadata
            (Event::Done_state_<parent>, eventData)`. */
         {
@@ -2760,7 +2647,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                that error took the data. The stash is cleared so nothing dequeued
                before this event can read it. */
             {{ se.lua_marshal_child_donedata('sm->L', '_done_evt') }}
-            (void)luaL_dostring(sm->L, "_pending_donedata = nil");
+            (void)luaL_dostring(sm->L, "_sce_donedata = nil");
             {% endif %}
             {{ csym_prefix }}{{ model.name }}_raise(sm, &_done_evt);
         }
@@ -3285,22 +3172,9 @@ SCE_SM_FN static void scheduled_push({{ csym_prefix }}{{ model.name }}_t *sm,
                            {{ csym_prefix }}{{ model.name }}_event_t event,
                            const char *send_id
 {%- if model.needs_script_engine %},
-                           int payload_lua_ref
+                           const char *payload_json
 {%- endif %}) {
     if (sm->scheduled_queue.count >= (uint8_t)SCE_MAX_SCHEDULED) {
-{% if model.needs_script_engine %}
-        /* W3C SCXML 6.2: capacity overflow drops the new entry; the caller
-           already stashed any payload table into the lua registry so we
-           must release it here to avoid a leak that would survive until
-           lua_close (and the ref counter would still consume registry
-           slots). cpp's bounded-resource path raises the same
-           error.execution event but cleans up its EventWithMetadata
-           automatically via std::map's erase semantics; C11 mirrors the
-           cleanup explicitly here. */
-        if (payload_lua_ref != LUA_NOREF) {
-            luaL_unref(sm->L, LUA_REGISTRYINDEX, payload_lua_ref);
-        }
-{% endif %}
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
             "the scheduled-send queue is full, so this <send delay> was dropped");
@@ -3326,7 +3200,14 @@ SCE_SM_FN static void scheduled_push({{ csym_prefix }}{{ model.name }}_t *sm,
     slot->event = event;
     sce_copy_bounded_id(slot->send_id, send_id);
 {% if model.needs_script_engine %}
-    slot->payload_lua_ref = payload_lua_ref;
+    /* W3C SCXML 5.10: the payload the event will carry, as the JSON its
+       `data[]` takes — `send_payload_json` already refused one that does
+       not fit, so the copy is whole. */
+    if (payload_json != NULL) {
+        sce_copy_bounded_data(slot->data, payload_json);
+    } else {
+        slot->data[0] = '\0';
+    }
 {% endif %}
 {% if model.has_parent_communication %}
     slot->to_parent = false;
@@ -3389,7 +3270,7 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model
     slot->event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
     sce_copy_bounded_id(slot->send_id, send_id);
 {% if model.needs_script_engine %}
-    slot->payload_lua_ref = LUA_NOREF;
+    slot->data[0] = '\0';
 {% endif %}
     slot->host_send = true;
     sce_copy_bounded_id(slot->host_processor_type, request->processor_type);
@@ -3446,7 +3327,7 @@ SCE_SM_FN static void scheduled_push_parent({{ csym_prefix }}{{ model.name }}_t 
     slot->event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
     sce_copy_bounded_id(slot->send_id, send_id);
 {% if model.needs_script_engine %}
-    slot->payload_lua_ref = LUA_NOREF;
+    slot->data[0] = '\0';
 {% endif %}
     slot->to_parent = true;
     /* The slot may be one a shifted entry of another kind left behind, so
@@ -3519,19 +3400,6 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_cancel({{ csym_prefix }}{{ model.na
             }
             pos++;
         }
-{% if model.needs_script_engine %}
-        else if (sm->scheduled_queue.buf[i].payload_lua_ref != LUA_NOREF) {
-            /* W3C SCXML 6.3: matching entries are dropped via compaction;
-               release the lua registry slot here so the cancelled send's
-               payload table is reclaimable before lua_close. cpp routes
-               cancellation through `PullScheduler::cancelEvent` which
-               erases the std::map entry and lets the contained
-               EventWithMetadata's destructor handle teardown — C11 mirrors
-               that lifecycle ownership explicitly. */
-            luaL_unref(sm->L, LUA_REGISTRYINDEX,
-                       sm->scheduled_queue.buf[i].payload_lua_ref);
-        }
-{% endif %}
     }
     sm->scheduled_queue.count = pos;
 }
@@ -3547,18 +3415,11 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_cancel({{ csym_prefix }}{{ model.na
    dispatch is a switch on the enum — no runtime enum→string lookup
    table is carried.
 
-   `.data` is sourced from `_pending_donedata`, the lua-side stash slot
-   that the final-state entry emit populates right before raising
-   `done.state.<parent>` (or stashing for top-level finals). The promotion
-   chunk reads-and-clears in one luaL_dostring so the slot is consumed
-   exactly once per dequeue — non-donedata events still see `_event.data
-   = nil` because `_pending_donedata` defaults to nil after every promotion
-   and after lua_init_engine. The cpp engine carries `eventData` /
-   `typedData` on each `EventWithMetadata`; C11 swaps that for a lua
-   global to avoid widening every event_with_meta_t entry with a typed
-   union, but the observable W3C 5.10 contract (`_event.data` is the
-   donedata payload for done.state.<parent> events, nil otherwise) is the
-   same.
+   `.data` is decoded from the event's own `data[]` below, as cpp reads
+   `EventWithMetadata::data` — nil when the event carried none. It used
+   to come from a Lua global every payload-carrying emit staged and the
+   next dequeue promoted, which let an event dequeued first take another
+   event's payload.
 
    The other W3C 5.10.1 metadata fields (.type/.sendid/.origin/
    .origintype/.invokeid) land with the first fixture that reads them
@@ -3687,10 +3548,8 @@ SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ 
               "origin = _pending_event_origin, "
               "origintype = _pending_event_origintype, "
               "invokeid = _pending_event_invokeid, "
-              "data = _pending_donedata, "
               "raw = _pending_event_raw, "
               "sendid = _pending_send_id}; "
-            "_pending_donedata = nil; "
             "_pending_send_id = nil; "
             "_pending_event_type = nil; "
             "_pending_event_origin = nil; "
@@ -3703,14 +3562,12 @@ SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ 
         break;
     }
     /* W3C SCXML 6.2 / 6.4 (test233): hydrate `_event.data` from the
-       payload the event itself carried. The per-enum chunk above binds
-       `_event.data = _pending_donedata`, which is the right shape when
-       the payload was staged in that slot by a same-SM `<send>` /
-       `<raise>` / HTTP response (test176/179/519). It is not the right
-       shape when the payload rode on the event's own `data` field: a
-       cross-SM `parent_dispatch`, or an internal `<send>` with `<param>`
-       children. Those carry a Lua table literal, so load it as a return
-       expression and override.
+       payload the event itself carried — the only place a payload rides.
+       Every `<send>`, HTTP reply, done event and host-injected event puts
+       it on the event's own `data` field; none is staged anywhere an
+       event dequeued earlier could take it. The per-enum chunk above
+       used to bind `_event.data = _pending_donedata`, a slot the next
+       dequeue promoted whichever event that was.
 
        This sits inside `set_current_event` rather than beside one call
        site because every dequeue must apply the same rule. It lived in
@@ -4572,17 +4429,11 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
            strncpy would since src is a same-size buffer). */
         memcpy(evt.send_id, ready.send_id, (size_t)SCE_MAX_ID_LEN);
 {% if model.needs_script_engine %}
-        /* W3C SCXML 5.10 (test186): restore the per-entry payload table
-           onto `_pending_donedata` so the next dequeue's set_current_event
-           promotes it onto `_event.data` (mirrors cpp's
-           EventWithMetadata::data → LuaEngine::setCurrentEvent delivery).
-           luaL_unref releases the registry slot synchronously; LUA_NOREF
-           entries (delay-only sends, no <param>) bypass the restore. */
-        if (ready.payload_lua_ref != LUA_NOREF) {
-            lua_rawgeti(sm->L, LUA_REGISTRYINDEX, ready.payload_lua_ref);
-            lua_setglobal(sm->L, "_pending_donedata");
-            luaL_unref(sm->L, LUA_REGISTRYINDEX, ready.payload_lua_ref);
-        }
+        /* W3C SCXML 5.10 (test186): the payload captured at send time rides
+           on the event it belongs to (mirrors cpp's EventWithMetadata::data
+           → LuaEngine::setCurrentEvent delivery). Same-sized arrays, NUL
+           written by `scheduled_push`. */
+        memcpy(evt.data, ready.data, sizeof(evt.data));
 {% endif %}
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
 
@@ -5124,7 +4975,7 @@ SCE_SM_FN static void schedule_host_invoke_deadline({{ csym_prefix }}{{ model.na
     slot->fire_time_ms = fire_time_ms;
     slot->event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
 {% if model.needs_script_engine %}
-    slot->payload_lua_ref = LUA_NOREF;
+    slot->data[0] = '\0';
 {% endif %}
     slot->host_invoke_deadline = true;
     sce_copy_bounded_id(slot->deadline_processor_type, processor_type);
@@ -5668,20 +5519,6 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_destroy({{ csym_prefix }}{{ mod
        — its pending entry lives in the bounded queue the parent owns
        outright. */
     {{ csym_prefix }}{{ model.name }}_destroy_active_children(sm);
-    {% endif %}
-    {% if model.needs_event_scheduler and model.needs_script_engine %}
-    /* W3C SCXML 6.2: release lua registry slots held by pending scheduled
-       entries before lua_close reclaims the registry as a whole. lua_close
-       would GC the slots automatically, but explicit unref keeps the
-       send_id ↔ payload pairing observable across destroy phases and
-       mirrors cpp's PullScheduler::~PullScheduler implicit cleanup via
-       std::map's destructor running before LuaEngine teardown. */
-    for (uint8_t i = 0u; i < sm->scheduled_queue.count; ++i) {
-        if (sm->scheduled_queue.buf[i].payload_lua_ref != LUA_NOREF) {
-            luaL_unref(sm->L, LUA_REGISTRYINDEX,
-                       sm->scheduled_queue.buf[i].payload_lua_ref);
-        }
-    }
     {% endif %}
     {% if model.needs_script_engine %}
 {{ se.lua_destroy_engine() }}

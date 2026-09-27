@@ -168,7 +168,7 @@ The C11 backend mirrors the 4-tier shape with a small adaptation. Generated C11 
 
 | C11 Tier | Library | Kind | Contents |
 |----------|---------|------|----------|
-| Tier 1 (Core) | `sce_c_runtime` | INTERFACE | Public headers (`sce/clock.h`, `sce/dom.h`, `sce/http_client.h`, `sce/lua_dom_binding.h`, `sce/http_lua_binding.h`); no .c sources, no external link |
+| Tier 1 (Core) | `sce_c_runtime` | INTERFACE | Public headers (`sce/clock.h`, `sce/dom.h`, `sce/http_client.h`, `sce/lua_dom_binding.h`); no .c sources, no external link |
 | Tier 2 (Base) | `sce_c_base` | STATIC | Freestanding-C helpers — DOM parser (`base/dom.c`); links only against `libc` |
 | Tier 3 (Scripting) | `sce_c_scripting` | STATIC, optional | Lua-bound bridges over `sce_c_base` + platform impl; gated by `SCE_ENABLE_LUA` |
 | Tier 4 (Platform) | `sce_c_runtime_posix` | STATIC, optional | POSIX reference impl (`posix/clock.c`, `posix/http_client.c`); gated by `SCE_C_RUNTIME_POSIX` (default ON for host) |

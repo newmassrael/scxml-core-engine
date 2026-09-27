@@ -8,8 +8,8 @@
 // reassigns Var1 = 2 in onentry before the send, so `<param expr="Var1"/>`
 // must capture 2. The receiving transition assigns Var2 = _event.data.aParam
 // (= 2), and the next state's cond `Var2 == 2` matches the pass transition.
-// The send is bare-external (no target), so `_pending_donedata` is
-// promoted onto `_event.data` by the next dequeue's `set_current_event`.
+// The send is bare-external (no target); its payload rides on the event's
+// `data[]`, which the event's own dequeue decodes onto `_event.data`.
 
 #include <stdio.h>
 

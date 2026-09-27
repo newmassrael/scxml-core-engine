@@ -351,9 +351,9 @@ fn send_side_search(language: &str) -> &'static [&'static str] {
     match language {
         // The JSON-only sniff that decided the value beside the string.
         "cpp" => &["jsonStringToScriptValue"],
-        // The generated chunk that rewrote `"k":` into `["k"]=` and then
-        // tried `load`, assigning whichever won to `_pending_donedata`.
-        "c11" => &["_pending_donedata = _val"],
+        // The generated chunk that tried `load` on the text and fell back
+        // to the text itself when that failed.
+        "c11" => &["if not _ok then _val = _c end"],
         _ => &[],
     }
 }

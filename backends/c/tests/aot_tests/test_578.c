@@ -5,11 +5,10 @@
 //
 // W3C 5.10 + B.2: `<send><content>{ "productName": "bar", "size": 27 }</content></send>`
 // with the ECMAScript datamodel parses the JSON object body and binds the
-// result as a structured value on `_event.data`. The new
-// `lua_send_content_literal` macro applies a JSON-key-syntax shim
-// (`"key":` → `["key"]=`) so the body becomes a valid Lua table literal,
-// then `pcall(load(...))` evaluates it and `_pending_donedata` carries
-// the table across to the receiving transition; the cond
+// result as a structured value on `_event.data`. The body's reading is
+// decided at build time (`to_lua_data_content`), evaluated at send time,
+// and carried as JSON on the event's `data[]` to the receiving
+// transition; the cond
 // `_event.data.productName == 'bar'` reads the table field via the
 // ECMAScript-via-Lua datamodel and matches pass.
 //

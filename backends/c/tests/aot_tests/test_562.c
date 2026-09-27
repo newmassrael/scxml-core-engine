@@ -6,9 +6,9 @@
 // W3C 5.10 + B.2: `<send><content>this is  a  \nstring</content></send>`
 // with the ECMAScript datamodel space-normalizes the multi-whitespace body
 // into the single-space string `"this is a string"` before binding to
-// `_event.data`. The new `lua_send_content_literal` macro tries the body
-// as a Lua expression first (load+pcall) — for plain text this fails, the
-// fallback gsub `%s+ → ' '` collapse + match-trim runs, and the receiving
+// `_event.data`. The body's reading — the normalised string — is decided
+// at build time (`to_lua_data_content`) and carried as JSON on the event's
+// `data[]`, and the receiving
 // `cond=_event.data == 'this is a string'` matches pass. Plain `_run` is
 // sufficient (no scheduler involved).
 //

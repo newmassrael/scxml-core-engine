@@ -16,7 +16,7 @@
 //     has no counterpart for a namelist anywhere in the specification.
 //
 // This backend answered the second claim twice, differently. The
-// SCXMLEventProcessor arm reads a namelist item with `lua_eval_namelist_var`'s
+// SCXMLEventProcessor arm reads a namelist item with `send_payload_json`'s
 // declared-guard and raises `error.execution` at run time — correct, and W3C
 // test553 witnesses it. The BasicHTTP arm lowered the same item through the
 // ECMAScript frontend, which REFUSED the document instead, so a `<send

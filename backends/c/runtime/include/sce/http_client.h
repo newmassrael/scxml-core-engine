@@ -156,8 +156,8 @@ bool sce_test_http_form_append(char *body, size_t cap, size_t *body_len, const c
  *
  * When `data` is an object/array, `data_is_string` is false and the
  * pointer/length spans the raw JSON-bytes (depth-balanced); the
- * fixture-side codegen lifts that span into a Lua table via
- * `_pending_donedata`.
+ * generated machine carries that span on the reply event's `data[]`,
+ * where its dequeue decodes it.
  */
 typedef struct {
     bool ok;

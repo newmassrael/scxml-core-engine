@@ -65,7 +65,6 @@ set_target_properties(sce_c_base PROPERTIES
 if(SCE_ENABLE_LUA)
     add_library(sce_c_scripting STATIC
         scripting/lua_dom_binding.c
-        scripting/http_lua_binding.c
     )
     target_link_libraries(sce_c_scripting PUBLIC sce_c_runtime sce_c_base lua54)
     set_target_properties(sce_c_scripting PROPERTIES

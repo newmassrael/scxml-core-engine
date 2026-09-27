@@ -206,21 +206,16 @@
             }
             lua_pop(sm->L, 1);
         }
-        /* W3C SCXML 5.5 + 3.7: donedata stash slot. The final-state entry
-           emit in `state_machine.c.jinja2::execute_entry_actions` populates
-           `_pending_donedata` (string / number / table) right before
-           raising `done.state.<parent>`; the next dequeue's
-           `set_current_event` promotes it onto `_event.data` and resets it
-           to nil. The slot is initialised here so the lua-side promotion
-           chunk can read `_pending_donedata` even when no `<donedata>` ever
-           fires (lua undefined globals already evaluate as nil, but an
-           explicit init keeps the contract grep-able). Mirrors the cpp
-           `EventWithMetadata::data`/`typedData` carry-on-event shape; C11
-           swaps the per-event payload for a lua-side stash to avoid widening
-           every event_with_meta_t entry with a typed-value union. */
-        (void)luaL_dostring(sm->L, "_pending_donedata = nil");
+        /* W3C SCXML 5.5 + 3.7: the final-state entry emit evaluates
+           `<donedata>` into `_sce_donedata` (string / number / table). A
+           compound final serialises it onto its own done.state event's
+           `data[]` and clears it; a top-level final leaves it for the
+           parent, which reads it through `lua_marshal_child_donedata` onto
+           done.invoke. No dequeue reads it: an event's data rides on the
+           event (`set_current_event`). */
+        (void)luaL_dostring(sm->L, "_sce_donedata = nil");
         /* W3C SCXML 5.5 + 6.3.1 + B-2-9 cross-SM donedata carry: serialise
-           the `_pending_donedata` stash (populated by the child's
+           the `_sce_donedata` stash (populated by the child's
            `<final><donedata>` entry emit) into the wire string the parent's
            `process_event_queues` external dequeue reads back.
 
@@ -249,51 +244,6 @@
             "function _sce_donedata_to_wire(v)\n"
             "  if v == nil then return '' end\n"
             "  return JSON.stringify(v)\n"
-            "end");
-        /* W3C SCXML 6.2 + 5.10.1 (.raw): ordered (name, value) capture for
-           `<send>`'s `<param>` / `namelist` evaluation. cpp builds
-           `std::map<string, vector<string>>` to preserve duplicate keys
-           (W3C 6.2 mandate) and serialises via
-           `EventDataHelper::buildEventDataJson` for `_event.raw`.
-           `_pending_donedata` (the Lua table) cannot hold dup keys, so a
-           parallel ordered list captures the eval sequence; the
-           `_sce_event_data_json()` builder groups by name and emits the
-           same shape cpp surfaces on `Event::dataStr`. The bounded
-           string then lands on `event_with_meta_t::data[]` and
-           `set_current_event` lifts it onto `_event.raw` for the
-           receiving transition / log.
-           Pairs reset per <send> arm so successive sends in one onentry
-           do not bleed into each other's raw payload. */
-        (void)luaL_dostring(sm->L,
-            "_sce_send_data_pairs = {}\n"
-            "function _sce_event_data_json()\n"
-            "  if not _sce_send_data_pairs or #_sce_send_data_pairs == 0 then\n"
-            "    return ''\n"
-            "  end\n"
-            "  local order, groups = {}, {}\n"
-            "  for _, p in ipairs(_sce_send_data_pairs) do\n"
-            "    local k, v = p[1], p[2]\n"
-            "    if groups[k] == nil then groups[k] = {}; table.insert(order, k) end\n"
-            "    table.insert(groups[k], tostring(v))\n"
-            "  end\n"
-            "  local function _q(s)\n"
-            "    s = s:gsub('\\\\', '\\\\\\\\'):gsub('\"', '\\\\\"')\n"
-            "    return '\"' .. s .. '\"'\n"
-            "  end\n"
-            "  local parts = {}\n"
-            "  for _, k in ipairs(order) do\n"
-            "    local vs = groups[k]\n"
-            "    local val\n"
-            "    if #vs == 1 then\n"
-            "      val = _q(vs[1])\n"
-            "    else\n"
-            "      local arr = {}\n"
-            "      for _, v in ipairs(vs) do table.insert(arr, _q(v)) end\n"
-            "      val = '[' .. table.concat(arr, ',') .. ']'\n"
-            "    end\n"
-            "    table.insert(parts, _q(k) .. ':' .. val)\n"
-            "  end\n"
-            "  return '{' .. table.concat(parts, ',') .. '}'\n"
             "end");
         {% if model.needs_donedata_helper or model.needs_namelist_helper %}
         /* W3C SCXML 5.7 + C.1 (test343, test553): donedata `<param>` and
@@ -692,10 +642,9 @@
     (void)luaL_dostring(sm->L, "_sce_foreach_arr = nil");
 {% endmacro %}
 
-{# W3C SCXML 5.5: evaluate `<donedata><content expr="X"/></donedata>` and
-   stash the value on `_pending_donedata` so the next dequeue's
-   `set_current_event` can promote it onto `_event.data`. On chunk failure
-   the lua error is popped, `_pending_donedata` is reset to nil (W3C 5.5:
+{# W3C SCXML 5.5: evaluate `<donedata><content expr="X"/></donedata>` into
+   the `_sce_donedata` stash its done event is built from. On chunk failure
+   the lua error is popped, `_sce_donedata` is reset to nil (W3C 5.5:
    "Return empty data when evaluation fails"), and an `error.execution`
    event is queued (W3C 5.10). Mirrors cpp `DoneDataHelper::evaluateContent`
    — the cpp path returns `outEventData = ""` on failure but still emits
@@ -709,70 +658,17 @@
    what lets both readings share this body rather than fork it. #}
 {% macro lua_eval_donedata_content(lua) %}
     if (luaL_dostring(sm->L,
-        "_pending_donedata = ({{ lua | escape_c }})") != 0) {
+        "_sce_donedata = ({{ lua | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
-        (void)luaL_dostring(sm->L, "_pending_donedata = nil");
+        (void)luaL_dostring(sm->L, "_sce_donedata = nil");
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
             "<donedata> failed to evaluate");
     }
 {% endmacro %}
 
-{# W3C SCXML 5.10 + 6.2 (test179, test562, test578): best-effort literal
-   `<send><content>BODY</content></send>` evaluator. Mirrors cpp
-   `EventDataHelper::jsonStringToScriptValue` (`sce/src/common/EventDataHelper.cpp:122-139`)
-   — cpp tries JSON parse on bodies that begin with a JSON-eligible
-   character (`{ [ " t f n digit -`) and falls back to the raw string
-   otherwise. The C11 emit follows the same shape inline:
-     1. capture the body as a Lua [[long-string]] (preserves embedded
-        whitespace/newlines, no escape gymnastics)
-     2. apply a JSON→Lua key-syntax shim (`"key":` → `["key"]=`) so
-        a JSON object/array becomes a valid Lua table literal
-     3. attempt `load("return (" .. _try .. ")")` + `pcall` — succeeds
-        for numeric/boolean/JSON-shape bodies (test179 numeric, test578
-        JSON object); the table/value lands on `_pending_donedata`
-     4. on parse failure, W3C 5.10 ECMAScript datamodel space-normalize
-        the body (collapse `%s+` to single space, trim) and use it as
-        the string payload (test562 plain text, JSON-with-syntax-error
-        also routes here). No `error.execution` raise — W3C distinguishes
-        literal `<content>` (best-effort parse, never fails) from
-        `<content expr="...">` (expression eval, raises on failure).
-   The body is required not to contain `]]` (would close the long
-   string prematurely); the W3C corpus has no such fixture, and the
-   first force fixture lifts the level via `[==[...]==]`. #}
-{% macro lua_send_content_literal(content) %}
-    {% if (content | trim) is startingwith('<') %}
-    /* W3C SCXML B.2 (test561): the literal `<content>` body's first
-       non-whitespace character is `<` — deliver it as an XML DOM
-       object on `_pending_donedata`, which the next dequeue's
-       `set_current_event` call promotes onto `_event.data`. Mirrors
-       cpp `LuaEngine::setCurrentEvent` first-char check
-       (sce/src/scripting/LuaEngine.cpp:1145-1149) — cpp parses event
-       data the same way at delivery time; C11 parses at send time and
-       carries the userdata through the registry-anchored
-       `_pending_donedata` slot, which still produces the correct
-       `_event.data` shape because Lua's `_event = {... data=...}`
-       construction stores any value type, including DOM userdata. */
-    sce_lua_dom_push_object_or_nil(sm->L, "{{ content | escape_c }}");
-    lua_setglobal(sm->L, "_pending_donedata");
-    {% else %}
-    /* W3C SCXML B.2: the reading is decided at build time by the same
-       filter inline `<data>` and `<donedata>` text goes through — an
-       expression when it is one, otherwise the string — so this emits the
-       value rather than a search for it.
-       What stood here searched at run time, in three steps of generated
-       Lua: rewrite `"k":` into `["k"]=`, `load('return (' .. text .. ')')`,
-       and fall back to the trimmed string when that failed. Five backends
-       carried five such searches and answered the same document five
-       different ways; the JSON rewrite alone made this one accept text no
-       other did. Deciding here is what makes the six agree. */
-    (void)luaL_dostring(sm->L,
-        "_pending_donedata = ({{ content | to_lua_data_content | escape_c }})");
-    {% endif %}
-{% endmacro %}
-
 {# W3C SCXML 5.7: evaluate one `<param name=N expr=X/>` (or location=X) and
-   set `_pending_donedata.N = (X)`. The caller emits `_pending_donedata = {}`
+   set `_sce_donedata.N = (X)`. The caller emits `_sce_donedata = {}`
    once before iterating so the table exists. On chunk failure W3C 5.7
    says "ignore the failed param, continue with others"; the macro pops
    the lua error and queues `error.execution` without aborting the loop.
@@ -804,45 +700,12 @@
           "if _base and not _scxml_declared[_base] and rawget(_G, _base) == nil then "
             "error('ReferenceError: ' .. _base .. ' is not defined') "
           "end; "
-          "_pending_donedata[\"{{ param_name | escape_lua | escape_c }}\"] = ({{ chosen_expr | to_lua_expr | escape_c }}) "
+          "_sce_donedata[\"{{ param_name | escape_lua | escape_c }}\"] = ({{ chosen_expr | to_lua_expr | escape_c }}) "
         "end") != 0) {
         lua_pop(sm->L, 1);
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
             "<donedata> <param> failed to evaluate");
-    }
-{% endmacro %}
-
-{# W3C SCXML 6.2 + C.1 (test553): evaluate one whitespace-tokenised
-   namelist variable name, store its value on `_pending_donedata.<name>`,
-   and raise `error.execution` if the name is not declared in the
-   datamodel. Mirrors cpp `NamelistHelper::evaluateNamelist`
-   (`sce/include/common/NamelistHelper.h:88-131`) — cpp gates evaluation
-   on `hasVariable` (= `LuaSessionContext::declaredVars.contains(name)`)
-   and stops dispatch on the first miss. Lua's silent-nil-for-undeclared
-   semantic is bridged by the same two-source check the donedata param
-   evaluator uses: `_scxml_declared` (set up in `lua_init_engine` for
-   donedata + namelist consumers) + `rawget(_G, name)`. The macro
-   raises error.execution and `return;` so the surrounding entry/exit/
-   transition function aborts subsequent content per W3C 5.10. The
-   caller emits `_pending_donedata = {}` once before iterating and
-   dispatches the event after the loop completes — falling through
-   means every name resolved cleanly. #}
-{% macro lua_eval_namelist_var(var_name) %}
-    if (luaL_dostring(sm->L,
-        "do "
-          "if not _scxml_declared['{{ var_name | escape_c }}'] and "
-            "rawget(_G, '{{ var_name | escape_c }}') == nil then "
-            "error('namelist variable not declared: {{ var_name | escape_c }}') "
-          "end; "
-          "_pending_donedata.{{ var_name }} = ({{ var_name }}) "
-        "end") != 0) {
-        lua_pop(sm->L, 1);
-        (void)luaL_dostring(sm->L, "_pending_donedata = nil");
-        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "<donedata> failed to evaluate");
-        return;
     }
 {% endmacro %}
 
@@ -1147,89 +1010,12 @@
         }
 {% endmacro %}
 
-{# W3C SCXML 5.10 + 6.2: evaluate one `<send><param name=N .../></send>` —
-   `value` is its `expr` or, failing that, its `location` — and store the
-   value as `_pending_donedata.{name} = (X)`. The caller emits
-   `_pending_donedata = {}` once before iterating so the table exists, and
-   the next dequeue's `set_current_event` promotes the table onto
-   `_event.data`.
-
-   Error semantics (W3C SCXML 5.7.1): a param that cannot be read raises
-   error.execution and its name and value are ignored — nothing is stored
-   under the name, and the message still goes. The error was raised while
-   the `<send>` was processed, so the block stops once it has (W3C SCXML
-   4.9): this sets the `_param_failed` the `<send>` declared. An empty value
-   is a `location=""`, which names no location. This macro used to store ''
-   under the name and raise nothing, justified by what cpp send did at the
-   time — cpp raises now, and so does every other backend.
-
-   Slot reuse: `_pending_donedata` is shared with the donedata path. Within
-   the same microstep, a state's `<send>` with params and that state's
-   `<donedata>` would last-write-wins on this slot, but the W3C corpus has
-   no fixture forcing both in one onentry (`done.state.<parent>` is raised
-   from a final state, not from a state that also issues `<send>`). The
-   first such fixture lifts the slot to a per-event table keyed on
-   `evt.send_id` (cpp's `EventWithMetadata::eventData` per-event carry
-   equivalent). Documented at the call site as well so the seam is grep-able.
-
-   No `_scxml_declared` ReferenceError check: cpp send does not invoke
-   `LuaEngine::isUndeclaredSimpleVariable` (`LuaEngine.cpp:99`) on send
-   params (only on donedata params, whose invalid location §scxml-5.7
-   answers with error.execution);
-   the macro stays free of that lookup so fixtures without `<donedata>` do
-   not need to declare `_scxml_declared`. #}
-{% macro lua_eval_send_param_expr(param_name, value) %}
-{% if value %}
-    if (luaL_dostring(sm->L,
-        "do local _v = ({{ value | to_lua_expr | escape_c }}); "
-        "_pending_donedata[\"{{ param_name | escape_lua | escape_c }}\"] = _v; "
-        "table.insert(_sce_send_data_pairs, {\"{{ param_name | escape_lua | escape_c }}\", _v}) end") != 0) {
-        lua_pop(sm->L, 1);
-        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "<send> <param name='{{ param_name | escape_c }}'> could not be read");
-        _param_failed = true;
-    }
-{% else %}
-    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-        "<send> <param name='{{ param_name | escape_c }}'> names no location");
-    _param_failed = true;
-{% endif %}
-{% endmacro %}
-
-{# W3C SCXML 6.2 + 5.10.1 (.raw): marshal the param/namelist eval pairs
-   captured in `_sce_send_data_pairs` (see `lua_eval_send_param_expr` /
-   `lua_eval_namelist_var`) into the JSON shape cpp surfaces on
-   `Event::dataStr`, then copy the bounded string onto the event's
-   `data[]` buffer. The carry survives `event_queue_push` (struct-copy)
-   and `set_current_event` lifts it onto `_event.raw` on dequeue. The
-   buffer-overflow guard truncates to `SCE_MAX_DATA_LEN - 1`; the W3C
-   manual-test corpus (test178) fits well under that bound. #}
-{% macro lua_marshal_send_event_data(send_evt_var) %}
-    (void)luaL_dostring(sm->L, "_pending_event_data_json = _sce_event_data_json()");
-    {
-        size_t _raw_n = 0;
-        lua_getglobal(sm->L, "_pending_event_data_json");
-        if (lua_isstring(sm->L, -1)) {
-            const char *_raw = lua_tostring(sm->L, -1);
-            _raw_n = strlen(_raw);
-            if (_raw_n >= sizeof(({{ send_evt_var }}).data)) {
-                _raw_n = sizeof(({{ send_evt_var }}).data) - 1;
-            }
-            memcpy(({{ send_evt_var }}).data, _raw, _raw_n);
-        }
-        ({{ send_evt_var }}).data[_raw_n] = '\0';
-        lua_pop(sm->L, 1);
-    }
-{% endmacro %}
-
 {# W3C SCXML 5.5 + 6.3.1 cross-SM donedata carry (parent ← child).
 
    Called from `invoke_methods.jinja2` immediately before
    `_raise_external(sm, &_done_evt)` at every site that synthesises a
    `done.invoke.<id>` event for a finished invoked child. The macro
-   reads the child SM's `_pending_donedata` lua global (the stash
+   reads the child SM's `_sce_donedata` lua global (the stash
    populated by the child's `<final><donedata>` entry emit in
    `state_machine.c.jinja2::execute_entry_actions`), serialises it to
    JSON via `_sce_donedata_to_wire`, and copies the resulting bounded
@@ -1239,7 +1025,7 @@
    `evt.data` and PARSES it on its own `sm->L`, producing a typed lua
    value the parent's `done.invoke.<id>` transition cond can dereference
    (`_event.data.result === 42`, `_event.data ===
-   'hello_content'`, etc.). Empty `_pending_donedata` (child final
+   'hello_content'`, etc.). Empty `_sce_donedata` (child final
    without `<donedata>`) serialises to '' → `_done_evt.data` zero-init
    stays → receiver skips the override (`_event.data` remains nil),
    matching W3C 5.10 "no donedata → undefined" contract for non-
@@ -1258,7 +1044,7 @@
 {% macro lua_marshal_child_donedata(child_L_var, evt_var) %}
     {
         (void)luaL_dostring({{ child_L_var }},
-            "_sce_donedata_literal = _sce_donedata_to_wire(_pending_donedata)");
+            "_sce_donedata_literal = _sce_donedata_to_wire(_sce_donedata)");
         lua_getglobal({{ child_L_var }}, "_sce_donedata_literal");
         if (lua_isstring({{ child_L_var }}, -1)) {
             const char *_lit = lua_tostring({{ child_L_var }}, -1);

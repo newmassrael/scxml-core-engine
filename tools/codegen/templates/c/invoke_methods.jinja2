@@ -455,7 +455,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 sce_copy_bounded_id(_done_evt.invoke_id, p->invoke_id);
                 {% if invoke_info.child_needs_script_engine %}
                 /* W3C SCXML 5.5 + 6.3.1: lift the child's `<final><donedata>`
-                   payload (stashed on the child's `_pending_donedata` lua
+                   payload (stashed on the child's `_sce_donedata` lua
                    global by `execute_entry_actions`) onto `_done_evt.data[]`
                    so the parent's `process_event_queues` dequeue rebinds
                    `_event.data` to the typed value. Without this carry, a
@@ -696,7 +696,7 @@ static void {{ csym_prefix }}{{ model.name }}_drive_active_children({{ csym_pref
                the child reached `<final>` during a post-init macrostep
                (parent→child `<send target="#_<invokeid>">` drove it).
                Same lift contract as the sync-final site in
-               `execute_pending_invokes`; the lua-side `_pending_donedata`
+               `execute_pending_invokes`; the lua-side `_sce_donedata`
                slot is whatever the child's terminal `<donedata>` emit
                stashed before this `_step` returned. */
             {{ se.lua_marshal_child_donedata("sm->child_" ~ invoke_info.field_suffix ~ ".L", "_done_evt") }}

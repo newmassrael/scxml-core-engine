@@ -7,8 +7,8 @@
 // `<content>123</content>` carries the body as `_event.data`. With the
 // ECMAScript datamodel, the parser collapses the literal text "123" into
 // an expression value (numeric 123), so the receiving transition's cond
-// `_event.data == 123` compares the lua number stashed on
-// `_pending_donedata` to the JS number 123 and matches the pass branch.
+// `_event.data == 123` compares the number carried on the event's
+// `data[]` to the JS number 123 and matches the pass branch.
 
 #include <stdio.h>
 

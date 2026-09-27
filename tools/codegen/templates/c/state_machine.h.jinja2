@@ -296,19 +296,16 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
     {{ csym_prefix }}{{ model.name }}_event_t event;
     char send_id[SCE_MAX_ID_LEN];
 {% if model.needs_script_engine %}
-    /* W3C SCXML 5.10: per-entry payload reference into the lua registry.
-       LUA_NOREF (-2) when the <send> carries no <param>/<content>
-       (delay-only fixtures schedule with no payload); a positive int when
-       scheduled_push stashed a _pending_donedata table via
-       luaL_ref(L, LUA_REGISTRYINDEX). The dispatch path in `_tick` reads
-       the table back with lua_rawgeti, restores it onto the lua-side
-       _pending_donedata slot so set_current_event can promote it to
-       _event.data, and releases the registry slot via luaL_unref. Mirrors
-       cpp `EventWithMetadata::data` per-entry carry — cpp ships a JSON
-       string because its EventWithMetadata must cross engine-agnostic
-       boundaries; C11's Lua 5.4-only engine makes the lua-native
-       ref the round-trip-free equivalent of the same per-entry carry. */
-    int payload_lua_ref;
+    /* W3C SCXML 5.10: the payload this entry's event carries, as the JSON
+       its `data[]` takes; empty when the <send> carries none. It used to be
+       a reference into the Lua registry, restored into a global the next
+       dequeue promoted — which any event dequeued first could take, and
+       which no saved state can hold, because a registry reference means
+       nothing outside the engine that issued it. Mirrors cpp
+       `EventWithMetadata::data`. Costs SCE_MAX_DATA_LEN per scheduled slot,
+       on machines with a script engine only — the only ones whose sends
+       evaluate a payload. */
+    char data[SCE_MAX_DATA_LEN];
 {% endif %}
 {% if model.has_parent_communication %}
     /* W3C SCXML 6.2 + 6.4 (test187): delayed `<send target="#_parent">` —

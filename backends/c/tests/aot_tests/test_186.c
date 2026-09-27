@@ -10,9 +10,9 @@
 // per spec the captured value must be the send-time snapshot (1), not
 // the delivery-time evaluation (2). The cond `Var2 == 1` in s1 then
 // routes to pass; a delivery-time evaluation would yield Var2=2 and
-// trip the s1 catch-all to fail. The lua registry ref carry installed
-// by Commit 1 keeps `_pending_donedata` snapshot independent of any
-// subsequent immediate sends that may rebind the lua-side slot.
+// trip the s1 catch-all to fail. The snapshot is stored on the scheduled
+// entry as its event's JSON `data[]`, so nothing sent in between can
+// replace it.
 //
 // Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
 // alongside the sce_generate_static_w3c_c_test(186) invocation.

@@ -6,10 +6,10 @@
 // W3C SCXML 5.10 + 6.2: a bare-external `<send event="event1"><param/></send>`
 // followed by a bare-external `<send event="timeout"/>` (no params) puts
 // two events on the external queue in doc order. mainEventLoop dequeues
-// event1 first, set_current_event promotes `_pending_donedata = {aParam=1}`
-// onto `_event.data`, the matching transition assigns Var1 = _event.data.aParam
-// (= 1), then the slot is reset to nil so the subsequent timeout dequeue
-// sees `_event.data = nil`. s1's cond `Var1 == 1` matches pass.
+// event1 first, set_current_event decodes its own `data[]` `{aParam=1}` onto
+// `_event.data`, the matching transition assigns Var1 = _event.data.aParam
+// (= 1), and the subsequent timeout, which carries no data, sees
+// `_event.data = nil`. s1's cond `Var1 == 1` matches pass.
 
 #include <stdio.h>
 

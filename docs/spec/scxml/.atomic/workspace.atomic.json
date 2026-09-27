@@ -13369,15 +13369,7 @@
           "kind": "references"
         },
         {
-          "file": "backends/c/runtime/include/sce/http_lua_binding.h",
-          "kind": "references"
-        },
-        {
           "file": "backends/c/runtime/posix/http_client.c",
-          "kind": "references"
-        },
-        {
-          "file": "backends/c/runtime/scripting/http_lua_binding.c",
           "kind": "references"
         },
         {
@@ -19588,6 +19580,18 @@
       "target_kind": "section",
       "target_id": "scxml-4.7",
       "reason": "section 4.7 is coverage-exempt (informational <log>); the static lowering cites it, it does not satisfy a normative requirement"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2",
+      "reason": "The C11 BasicHTTP reply no longer passes through a Lua value: its data rides on the raised event's data[] as JSON, which set_current_event decodes, so the JSON-to-Lua push this header declared has no caller and is removed"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2",
+      "reason": "The C11 BasicHTTP reply no longer passes through a Lua value: its data rides on the raised event's data[] as JSON, which set_current_event decodes, so the JSON-to-Lua push this file defined has no caller and is removed"
     }
   ],
   "frames": {},

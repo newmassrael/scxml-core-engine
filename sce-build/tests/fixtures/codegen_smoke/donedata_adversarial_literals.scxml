@@ -5,7 +5,7 @@
 
   Distinct from the `<send>` fixtures because the C11 backend lowers
   donedata through a *different* mechanism: it builds Lua source
-  (`_pending_donedata[...] = (...)`) and embeds it in a C string
+  (`_sce_donedata[...] = (...)`) and embeds it in a C string
   literal. That puts the param name in Lua index position inside a C
   literal — two boundaries, and until this fixture existed neither was
   exercised with a name that needs escaping.
