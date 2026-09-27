@@ -1219,7 +1219,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
-		delayDur := sce.ParseDelay("3s")
+		// The build read the static delay once, by the grammar every engine
+		// shares (ARCHITECTURE.md, "Durations").
+		delayDur := time.Duration(3000) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("timeoutAbsent"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr)
 		}
@@ -1249,7 +1251,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
-		delayDur := sce.ParseDelay("3s")
+		// The build read the static delay once, by the grammar every engine
+		// shares (ARCHITECTURE.md, "Durations").
+		delayDur := time.Duration(3000) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("timeoutEmpty"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr)
 		}
@@ -1279,7 +1283,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
-		delayDur := sce.ParseDelay("3s")
+		// The build read the static delay once, by the grammar every engine
+		// shares (ARCHITECTURE.md, "Durations").
+		delayDur := time.Duration(3000) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("timeoutUnmatched"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr)
 		}

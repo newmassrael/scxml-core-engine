@@ -873,13 +873,15 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	sendArgError := ""
 	sendDelayMs := uint64(0)
 	if sendArgError == "" {
-		// The expression failing is the argument error; the message is not
-		// scheduled under some default wait. A value that does not read as a
-		// duration is sent at once, as the Interpreter reads it.
+		// The expression failing is the argument error, and so is a value that
+		// is not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"):
+		// the message is not scheduled under some default wait.
 		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `obj.missing.deep`); err != nil {
 			sendArgError = "<send> delayexpr could not be evaluated"
 		} else if ms, ok := sce.ParseDelayToMs(sce.ToWireString(v)); ok {
 			sendDelayMs = ms
+		} else {
+			sendArgError = "<send> delayexpr is not a CSS2 time"
 		}
 	}
 	_ = sendDelayMs

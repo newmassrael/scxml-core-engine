@@ -514,7 +514,9 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
-		delayDur := sce.ParseDelay("100ms")
+		// The build read the static delay once, by the grammar every engine
+		// shares (ARCHITECTURE.md, "Durations").
+		delayDur := time.Duration(100) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("settle"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr)
 		}
@@ -538,7 +540,9 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
-		delayDur := sce.ParseDelay("200ms")
+		// The build read the static delay once, by the grammar every engine
+		// shares (ARCHITECTURE.md, "Durations").
+		delayDur := time.Duration(200) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("finish"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_3", eventDataStr)
 		}
@@ -593,7 +597,9 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
-		delayDur := sce.ParseDelay("100ms")
+		// The build read the static delay once, by the grammar every engine
+		// shares (ARCHITECTURE.md, "Durations").
+		delayDur := time.Duration(100) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("probe"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr)
 		}

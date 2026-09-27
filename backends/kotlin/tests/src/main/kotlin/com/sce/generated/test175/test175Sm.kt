@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
+// source-hash: c004aa6d76072d31e9273eed0dc88dc847e351ce7e35f90cc9d56908f01328bd
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/175/test175.scxml
@@ -429,13 +429,17 @@ class Test175StateMachine(
             ensureScriptEngine()
             val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
             val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-            // The expression failing is the argument error; the message is not
-            // scheduled under some default wait. A value that does not read as
-            // a duration is sent at once, as the Interpreter reads it.
-            val sendDelayMs = try {
-                parseDelay(valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))))
+            // The expression failing is the argument error, and so is a value
+            // that is not the CSS2 time the clause names (ARCHITECTURE.md,
+            // "Durations"): the message is not scheduled under some default wait.
+            val sendDelayText = try {
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("Var1", "Var1")))
             } catch (_: Exception) {
                 raisePlatformError(Test175Event.Error.Execution, "<send> delayexpr could not be evaluated", "__send_0")
+                return@send true
+            }
+            val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
+                raisePlatformError(Test175Event.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_0")
                 return@send true
             }
             val sendData = ""

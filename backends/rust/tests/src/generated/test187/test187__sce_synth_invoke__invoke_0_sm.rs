@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
+// source-hash: c004aa6d76072d31e9273eed0dc88dc847e351ce7e35f90cc9d56908f01328bd
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -360,7 +360,7 @@ impl StatePolicy for Test187SceSynthInvokeInvoke0Policy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (.5)
+                        // W3C SCXML 6.2: Delayed send (.5s)
                         {
                             let delay_ms = 500_u64;
                             let __sce_delayed_event =

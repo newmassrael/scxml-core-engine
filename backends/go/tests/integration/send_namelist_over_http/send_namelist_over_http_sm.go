@@ -737,7 +737,9 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
-		delayDur := sce.ParseDelay("2s")
+		// The build read the static delay once, by the grammar every engine
+		// shares (ARCHITECTURE.md, "Durations").
+		delayDur := time.Duration(2000) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("timeoutDiscard"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr)
 		}
@@ -844,7 +846,9 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
-		delayDur := sce.ParseDelay("3s")
+		// The build read the static delay once, by the grammar every engine
+		// shares (ARCHITECTURE.md, "Durations").
+		delayDur := time.Duration(3000) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("timeoutMap"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr)
 		}

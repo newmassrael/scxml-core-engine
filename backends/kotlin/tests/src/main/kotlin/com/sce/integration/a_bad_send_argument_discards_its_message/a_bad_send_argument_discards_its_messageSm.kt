@@ -625,13 +625,17 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             ensureScriptEngine()
             val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
             val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-            // The expression failing is the argument error; the message is not
-            // scheduled under some default wait. A value that does not read as
-            // a duration is sent at once, as the Interpreter reads it.
-            val sendDelayMs = try {
-                parseDelay(valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))))
+            // The expression failing is the argument error, and so is a value
+            // that is not the CSS2 time the clause names (ARCHITECTURE.md,
+            // "Durations"): the message is not scheduled under some default wait.
+            val sendDelayText = try {
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
                 raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_3")
+                return@send true
+            }
+            val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_3")
                 return@send true
             }
             val sendData = ""

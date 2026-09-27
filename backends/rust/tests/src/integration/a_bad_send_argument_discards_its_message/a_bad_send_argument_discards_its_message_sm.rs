@@ -1083,9 +1083,9 @@ impl StatePolicy for ABadSendArgumentDiscardsItsMessagePolicy {
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
                         let mut _send_arg_error: Option<&'static str> = None;
-                        // The expression failing is the argument error; the message is not
-                        // scheduled under some default wait. A value that does not read as a
-                        // duration is sent at once, as the Interpreter reads it.
+                        // The expression failing is the argument error, and so is a value that is
+                        // not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"): the
+                        // message is not scheduled under some default wait.
                         let _send_delay_ms: u64 = if _send_arg_error.is_none() {
                             match __sce_arg_se
                                 .evaluate_expression(&__sce_arg_sid, "obj.missing.deep")
@@ -1093,7 +1093,11 @@ impl StatePolicy for ABadSendArgumentDiscardsItsMessagePolicy {
                                 Ok(val) => {
                                     let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
                                     sce_rust_runtime::helpers::send::parse_delay_to_ms(&s)
-                                        .unwrap_or(0)
+                                        .unwrap_or_else(|| {
+                                            _send_arg_error =
+                                                Some("<send> delayexpr is not a CSS2 time");
+                                            0
+                                        })
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
