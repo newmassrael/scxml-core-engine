@@ -110,6 +110,13 @@ def cmd_gaps(args) -> int:
             lambda variant: run_verify(pack, variant, codegen, args.backend),
             args.max_runs)
     gaps = gap_report(result, pack, prose, questions, counterfactuals)
+    if args.ask_out:
+        # Only the questions, one per line: nothing a case holds, so the file
+        # can go to the author as it is (`gaps.ask_of_author` says why).
+        with open(args.ask_out, "w", encoding="utf-8") as fh:
+            for gap in gaps:
+                if gap.ask:
+                    fh.write(gap.ask + "\n")
     if args.out:
         with open(args.out, "w", encoding="utf-8") as fh:
             for gap in gaps:
@@ -136,6 +143,8 @@ def cmd_gaps(args) -> int:
         for line in counterfactual_lines(gap):
             print(f"             {line}")
         print(f"             -> {gap.fix}")
+        if gap.ask:
+            print(f"             -> ask its author {gap.ask}")
     # The prose's own questions are counted, not listed: there can be hundreds,
     # and `questions` is the command that lists them.
     counts = collections.Counter(g.kind for g in gaps)
@@ -410,6 +419,10 @@ def main(argv=None) -> int:
                    help="the specification: say where each gap sits in it, and "
                         "add what it leaves open before anything is run")
     g.add_argument("--out", help="write every gap as NDJSON as well")
+    g.add_argument("--ask-out",
+                   help="write only what to ask the authors -- one question per "
+                        "guess a failure rests on that lists no candidates -- "
+                        "with nothing a case holds, so it can be handed over")
     g.add_argument("--counterfactual", action="store_true",
                    help="change each binding guess a failure implicates to every "
                         "alternative it has and run the cases again, to find "

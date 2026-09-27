@@ -608,6 +608,9 @@ class Assumption:
     # a report that tells its reader to rewrite a dozen places in the text
     # when the cases pin down at most a few.
     implicated_by: list = field(default_factory=list)
+    # The values its author weighed (`sce:assumed-candidates`), for a
+    # document's guess -- empty where none were written down.
+    candidates: tuple = ()
 
     @property
     def status(self) -> str:
@@ -625,7 +628,8 @@ def recorded_assumptions(declared, binding: dict) -> dict:
     for ident, reason in sorted((declared.assumed if declared else {}).items()):
         found[f"document:{ident}"] = Assumption(
             key=f"document:{ident}", source="document", subject=ident,
-            marker=declared.assumed_marker.get(ident, ""), reason=reason)
+            marker=declared.assumed_marker.get(ident, ""), reason=reason,
+            candidates=(declared.assumed_candidates.get(ident) or ((), ""))[0])
     for kind in ("input", "output"):
         for name, rule in sorted((binding.get(f"{kind}s") or {}).items()):
             if (rule or {}).get("assumed"):
@@ -2663,11 +2667,25 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
             if (case.drove and not reached
                     and not unreceived_drives(case, pack.model)):
                 if judged:
-                    result.failures.append((
-                        "(announcement)", "a write after the drive",
-                        f"none: the case drove {sorted(set(case.drove))}, and "
-                        f"no input the binding reads changed, so the host ran "
-                        f"nothing"))
+                    silent = (f"nothing announced: the case drove "
+                              f"{sorted(set(case.drove))}, and no input the "
+                              f"binding reads changed, so the host ran nothing")
+                    # ⚠ Failed AT the positions the case waited on, not at a
+                    # pseudo-position: what a position the document decides
+                    # fails on is the guesses behind it, and a failure nobody
+                    # can blame reads in the gap report as a guess nothing
+                    # compared. Measured 2026-09-28: a document writing an
+                    # undecided output as a constant failed both cases that
+                    # changed only the input the platform decides it by, and
+                    # the author's guess about that output came back
+                    # "untested".
+                    ours = [a for a in sorted(case.expect) if a in judge.bound]
+                    for address in ours:
+                        result.failures.append((address, case.expect[address], silent))
+                        result.compared.append(address)
+                    if not ours:
+                        result.failures.append(("(announcement)",
+                                                "a write after the drive", silent))
                     verification.results.append(result)
                 # No round: nothing the document keeps moves either.
                 continue

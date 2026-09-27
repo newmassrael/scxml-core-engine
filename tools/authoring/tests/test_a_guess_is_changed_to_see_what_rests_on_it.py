@@ -21,7 +21,9 @@ Asserted here, over one lamp a document decides and a binding lands:
     a document's guess is run with each of its `sce:assumed-candidates`
                                                         (the discriminator)
     candidates whose place in the expression is not known are refused
-    a guess without candidates is not changed
+    a guess without candidates is not changed -- and its author is asked
+    for them, told the guess's handle and nothing a case holds
+                                                        (the discriminator)
     a run budget that runs out says what it did not try
 """
 
@@ -204,6 +206,30 @@ class AGuessIsChangedToSeeWhatRestsOnIt(Fixture):
              "inputs": {"on": {"address": SWITCH, "when_absent": False}},
              "outputs": {"lamp": {**LAMP, "map": {1: "OFF"}}}})]
         self.assertTrue(any("1 ×2" in f and "assumed-candidates" in f for f in found), found)
+
+    def test_its_author_is_asked_for_candidates_and_told_nothing_else(self):
+        """⚠ The discriminator for the question. A failure rests on a guess
+        nobody listed alternatives for, so its author is asked -- and the
+        question carries the guess's handle and nothing a case holds: an
+        author handed the expected value would list it, and the run would
+        confirm the author's copy of the test."""
+        base, found, gaps = self.run_with(
+            {"on": {"address": SWITCH, "when_absent": False}},
+            LAMP, [case("counted", "ON")])
+        ask = gaps["lamp"].ask
+        self.assertIn("`lamp-rule`", ask)
+        self.assertIn("sce:assumed-candidates", ask)
+        self.assertNotIn("counted", ask)
+        self.assertNotIn("ON", ask)
+
+    def test_a_guess_with_candidates_is_not_asked_about(self):
+        text = document("bool", "on").replace(
+            'expr="on ? 1 : 2"', 'sce:assumed-candidates="1 2" expr="on ? 1 : 3"')
+        base, found, gaps = self.run_with(
+            {"on": {"address": SWITCH, "when_absent": False}},
+            {**LAMP, "map": {1: "OFF", 2: "ON", 3: "MAX"}},
+            [case("counted", "ON")], text=text)
+        self.assertEqual("", gaps["lamp"].ask)
 
     def test_a_guess_without_candidates_is_not_changed(self):
         base, found, _ = self.run_with(

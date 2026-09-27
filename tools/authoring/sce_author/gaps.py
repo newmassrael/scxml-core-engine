@@ -83,6 +83,9 @@ class Gap:
     # (case, address) failures at which every other recorded guess beside
     # this one was cleared: it is the only recorded guess left standing there.
     sole: list = field(default_factory=list)
+    # What to ask the guess's AUTHOR, when a failure rests on it and they
+    # have not said what else it could have been (`ask_of_author`).
+    ask: str = ""
 
     @property
     def fix(self) -> str:
@@ -98,7 +101,33 @@ class Gap:
                 "agreed": self.agreed,
                 "counterfactual": self.counterfactual,
                 "sole": [list(s) for s in self.sole],
+                "ask": self.ask,
                 "fix": self.fix}
+
+
+def ask_of_author(assumption, kind: str) -> str:
+    """The question for a guess's author, or '' when there is none to ask.
+
+    A failure rests on a document's guess and nobody wrote down what else it
+    could have been, so nothing can be tried in its place. Its author is the
+    one who knows what they weighed.
+
+    ⚠ The question names the GUESS and nothing the cases hold: not which case
+    failed, not what it expected. An author told the expected value would
+    write it down as a candidate, and the run would then confirm the author's
+    copy of the test rather than anything the author considered. So the
+    request is the one a specification owner could send without the tests in
+    hand: what else did you weigh here.
+    """
+    if assumption.source != "document" or assumption.candidates:
+        return ""
+    if kind not in ("refuted", "implicated"):
+        return ""
+    handle = assumption.marker or assumption.subject
+    return (f"for `{handle}` on `{assumption.subject}`: list the values you "
+            f"weighed as `sce:assumed-candidates`, the one you chose "
+            f"included and appearing once in its expression -- change nothing "
+            f"else")
 
 
 def _where(positions, model, prose) -> list:
@@ -148,7 +177,8 @@ def report(verification, pack, prose=None, questions=(), counterfactuals=None) -
                       "cleared": a.implicated_by}.get(kind, a.held_in)[:],
             agreed=len(a.held_in),
             counterfactual=cf.as_dict() if cf is not None else None,
-            sole=sole.get(key, [])))
+            sole=sole.get(key, []),
+            ask=ask_of_author(a, kind)))
     for name, why in sorted(verification.unresolved.items()):
         gaps.append(Gap(kind="open", subject=f"input {name}", reason=why))
     for name, why in sorted(verification.unresolved_outputs.items()):

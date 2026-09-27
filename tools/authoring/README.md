@@ -216,6 +216,17 @@ candidates the guess is not changed, and "the only one left" is elimination
 among RECORDED guesses, not proof. `--max-runs` bounds the runs (one per
 alternative), and what it did not try is listed.
 
+A document's guess a failure rests on that lists no candidates carries a
+question for its AUTHOR (`ask`, and `--ask-out` writes the questions alone,
+one per line): list the values you weighed, the chosen one included. ⚠ The
+question names the guess and nothing a case holds — not which case failed,
+not what it expected. Measured 2026-09-28, an instruction to list candidates
+while writing reached one author in five, and that one listed them on guesses
+nothing had failed; asking after the run reaches the guesses that matter. But
+an author told the expected value would list it, and the run would then
+confirm the author's copy of the test — so the request is only what a
+specification owner could send without the tests in hand.
+
 With `--prose` each gap is located in the text by file and line (never
 quoted, so the report can travel further than the specification may) and the
 text's own open questions are counted; `--out` writes every gap as NDJSON. A

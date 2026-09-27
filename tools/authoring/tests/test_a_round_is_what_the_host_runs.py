@@ -6,6 +6,8 @@ setting `verify`'s verdicts beside the platform's own, case by case:
     a case whose drives reach no input the binding reads runs nothing on an
     `on-change` host, so a host that states its writes announces nothing and
     the case fails -- where it passed, computed anyway     (the discriminator)
+    such a failure is at the positions the case waited on, so the guess
+    behind them is blamed                               (the discriminator)
     without the host stated, the run is as it was
     a drive that does reach a bound input is a round as before
     a restatement the record says the platform DELIVERED is a round
@@ -58,12 +60,12 @@ def case(name, drove, value):
 @unittest.skipUnless(_default_codegen().exists(),
                      "the product's code generator is not built")
 class ARoundIsWhatTheHostRuns(Fixture):
-    def run_cases(self, cases, host):
+    def run_cases(self, cases, host, document=CONSTANT):
         conventions = {**CONVENTIONS, "host": host} if host else CONVENTIONS
         self.write_pack(MODEL, conventions, {
             "version": 1, "origin": "written for this test", "ordered": True,
             "independent_cases": False, "cases": cases})
-        (self.root / "constant.scxml").write_text(CONSTANT, encoding="utf-8")
+        (self.root / "constant.scxml").write_text(document, encoding="utf-8")
         path = self.root / "constant.binding.yaml"
         path.write_text(yaml.safe_dump(CONSTANT_BINDING), encoding="utf-8")
         result = verify(self.pack(), path)
@@ -82,8 +84,24 @@ class ARoundIsWhatTheHostRuns(Fixture):
         self.assertTrue(verdicts["counted"].passed)
         failed = verdicts["supply changed"]
         self.assertFalse(failed.passed)
-        self.assertEqual("(announcement)", failed.failures[0][0])
+        self.assertEqual("Plant.Out.Lamp.Stat", failed.failures[0][0])
         self.assertIn("no input the binding reads changed", failed.failures[0][2])
+
+    def test_a_round_that_never_ran_is_blamed_on_the_guess_behind_the_position(self):
+        """⚠ The discriminator for attribution. The author wrote the lamp as
+        a constant because the text never decides it; a case changing only
+        the input the platform decides it by is failed by that choice. It
+        used to fail at a pseudo-position no guess stands behind, and the
+        guess came back as one nothing compared."""
+        guessed = CONSTANT.replace(
+            'expr="2"', 'expr="2" sce:assumed="lamp-constant" '
+                        'sce:assumed-reason="the text never decides the lamp"')
+        result = self.run_cases([
+            case("counted", "Plant.Input.Count", 3),
+            case("supply changed", "Plant.Input.SupplyMode", "HIGH")], HOST, guessed)
+        guess = result.assumptions["document:lamp"]
+        self.assertEqual("refuted", guess.status)
+        self.assertEqual("supply changed", guess.refuted_by[0][0])
 
     def test_a_restated_bound_input_is_no_round_either(self):
         result = self.run_cases([
