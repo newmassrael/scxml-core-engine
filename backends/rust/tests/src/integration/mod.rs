@@ -32,6 +32,7 @@
 
 pub mod a_bad_donedata_pair_is_ignored;
 pub mod a_bad_send_param_ends_its_block;
+pub mod a_payload_rides_on_its_own_event;
 pub mod ai_loop;
 pub mod an_invoke_left_before_it_starts_raises_nothing;
 pub mod ancestor_entry_is_not_default_entry;
