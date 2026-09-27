@@ -265,6 +265,11 @@ public object SceChecked {
     private fun inside(i: Long, size: Int): Int =
         if (i < 0L || i >= size.toLong()) fail(AlgorithmError.OutOfRange) else i.toInt()
 
+    // `i` as an index into a collection of `size` elements, or the same
+    // out-of-range failure. For a `SceListBuf`, whose element type picks its
+    // reader (`getUInt`, …) rather than an overload of `at`.
+    public fun index(i: Long, size: Int): Int = inside(i, size)
+
     public fun at(xs: ByteArray, i: Long): Byte = xs[inside(i, xs.size)]
     @OptIn(ExperimentalUnsignedTypes::class)
     public fun at(xs: UByteArray, i: Long): UByte = xs[inside(i, xs.size)]

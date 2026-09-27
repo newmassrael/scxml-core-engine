@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/sync_failure.scxml — what a collection sync client does
+  about the failure that stopped a sync run (DAVx⁵ SyncExceptionHandler
+  classifySyncException, with Syncer's handling of what it re-throws):
+
+  0 log it and carry on — nothing the user must hear about;
+  1 retry later — a transient failure (sync_retry_at says how much later);
+  2 stop with an error the user must see;
+  3 stop and ask the user to sign in again;
+  4 stop quietly — the run was cancelled, nothing failed.
+
+  `kind` says what failed, `status` the HTTP status when it was a response:
+  1 transport I/O · 2 TLS handshake · 3 a server certificate the user or
+  the trust store rejected · 4 an HTTP error response (`status` 300..599) ·
+  5 a DAV protocol error without a status (a multistatus missing its sync
+  token) · 6 local storage · 7 cancelled · 8 the local storage process died
+  under the client · 9 anything else. `status` is 0 except for kind 4.
+
+  In the reference's order: a dead storage process retries (the provider
+  is killed while the app is frozen, and a later run reconnects); a
+  certificate rejection is the user's own decision and is not reported
+  again; 401 asks for credentials; 503 and 502 retry; every other response
+  and every DAV, storage or unknown failure is an error.
+
+  kind 4 status 401 → 3 · status 503 → 1 · status 404 → 2 · kind 3 → 0.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="sync_failure" version="1.0">
+  <sce:signature>
+    <sce:param name="kind" type="uint8"/>
+    <sce:param name="status" type="int32"/>
+    <sce:return type="uint8" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="kind &gt;= 1 &amp;&amp; kind &lt;= 9"/>
+    <sce:require cond="kind === 4 ? (status &gt;= 300 &amp;&amp; status &lt;= 599) : status === 0"/>
+    <sce:var name="action" type="uint8" init="2"/>
+    <sce:if cond="kind === 8 || kind === 1 || kind === 2">
+      <sce:assign target="action" expr="1"/>
+    </sce:if>
+    <sce:if cond="kind === 7">
+      <sce:assign target="action" expr="4"/>
+    </sce:if>
+    <sce:if cond="kind === 3">
+      <sce:assign target="action" expr="0"/>
+    </sce:if>
+    <sce:if cond="kind === 4 &amp;&amp; status === 401">
+      <sce:assign target="action" expr="3"/>
+    </sce:if>
+    <sce:if cond="kind === 4 &amp;&amp; (status === 503 || status === 502)">
+      <sce:assign target="action" expr="1"/>
+    </sce:if>
+    <sce:return expr="action"/>
+  </sce:body>
+</scxml>

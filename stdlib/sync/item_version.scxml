@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/item_version.scxml — one item a replica holds and the sync
+  token of the change that last wrote it: the element of the state
+  sce:std/sync/changes_apply.scxml keeps.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="item_version"
+       sce:event-name="sync.item_version">
+  <datamodel>
+    <data id="item" sce:type="uint64" sce:direction="in"/>
+    <data id="token" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/sync_retry_at.scxml — the time, in seconds of the host's
+  clock, before which an account's next sync run must not start, after one
+  of its collections failed with (`kind`, `status`) (sync_failure) at `now`,
+  given `previous`, the time an earlier collection of the same run already
+  asked for; 0 is no such time.
+
+  A 503 asks for its Retry-After (`retryAfter` seconds, 0 when the response
+  gave none — then no time is asked for and the host's own backoff
+  applies); a 502 asks for 15 minutes (DAVx⁵ SyncExceptionHandler); every
+  other failure asks for nothing.
+
+  One difference from the reference, a fix: the answer is the LATER of
+  `previous` and this failure's time. DAVx⁵ (SyncManager.performSync)
+  keeps one time for a whole run and overwrites it with each collection's,
+  so a 502's 15 minutes after a 503's hour of Retry-After starts the next
+  run 45 minutes before the server asked.
+
+  `kind` and `status` are sync_failure's, `now` and `retryAfter` not
+  negative; otherwise, or when the time would not fit, it fails.
+
+  previous 0, 503 with 3600 at 1000 → 4600 · previous 4600, 502 at 1000 →
+  4600 · previous 0, 502 at 1000 → 1900 · previous 50, 404 → 50.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="sync_retry_at" version="1.0">
+  <sce:signature>
+    <sce:param name="previous" type="int64"/>
+    <sce:param name="kind" type="uint8"/>
+    <sce:param name="status" type="int32"/>
+    <sce:param name="now" type="int64"/>
+    <sce:param name="retryAfter" type="int64"/>
+    <sce:return type="int64" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="kind &gt;= 1 &amp;&amp; kind &lt;= 9"/>
+    <sce:require cond="kind === 4 ? (status &gt;= 300 &amp;&amp; status &lt;= 599) : status === 0"/>
+    <sce:require cond="previous &gt;= 0 &amp;&amp; now &gt;= 0 &amp;&amp; retryAfter &gt;= 0"/>
+    <sce:var name="asked" type="int64" init="0"/>
+    <sce:if cond="kind === 4 &amp;&amp; status === 503 &amp;&amp; retryAfter &gt; 0">
+      <sce:assign target="asked" expr="now + retryAfter"/>
+    </sce:if>
+    <sce:if cond="kind === 4 &amp;&amp; status === 502">
+      <sce:assign target="asked" expr="now + 900"/>
+    </sce:if>
+    <sce:return expr="asked &gt; previous ? asked : previous"/>
+  </sce:body>
+</scxml>

@@ -108,6 +108,30 @@ public class SceListBuf(initialCapacity: Int = 0) {
     public fun add(v: Float): Unit = push(v.toDouble().toRawBits())
     public fun add(v: Boolean): Unit = push(if (v) 1L else 0L)
 
+    // The element at `i`, read back as the type it was appended as — one
+    // reader per element type, since every element shares a 64-bit slot. A
+    // body that reads its own buffer (a breadth-first walk's queue) calls
+    // these; an index outside the elements appended so far is an error even
+    // where it falls inside the allocated slots, which hold nothing yet. A
+    // `may-fail` body checks the index first (`SceChecked.index`), so there
+    // it never throws.
+    public fun getLong(i: Int): Long = slots[element(i)]
+    public fun getInt(i: Int): Int = slots[element(i)].toInt()
+    public fun getShort(i: Int): Short = slots[element(i)].toShort()
+    public fun getByte(i: Int): Byte = slots[element(i)].toByte()
+    public fun getULong(i: Int): ULong = slots[element(i)].toULong()
+    public fun getUInt(i: Int): UInt = slots[element(i)].toUInt()
+    public fun getUShort(i: Int): UShort = slots[element(i)].toUShort()
+    public fun getUByte(i: Int): UByte = slots[element(i)].toUByte()
+    public fun getDouble(i: Int): Double = Double.fromBits(slots[element(i)])
+    public fun getFloat(i: Int): Float = Double.fromBits(slots[element(i)]).toFloat()
+    public fun getBoolean(i: Int): Boolean = slots[element(i)] != 0L
+
+    private fun element(i: Int): Int {
+        if (i < 0 || i >= len) throw IndexOutOfBoundsException("index $i, size $len")
+        return i
+    }
+
     public fun toLongArray(): LongArray = slots.copyOf(len)
     public fun toIntArray(): IntArray = IntArray(len) { slots[it].toInt() }
     public fun toShortArray(): ShortArray = ShortArray(len) { slots[it].toShort() }

@@ -1202,6 +1202,54 @@
       }
     },
     {
+      "name": "acl_granted",
+      "document": "sce:std/acl/acl_granted.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "acl_granted",
+      "args": [
+        { "list_of": { "record": "acl_privilege" } },
+        { "list_of": { "record": "acl_ace" } },
+        "u32",
+        { "list_of": "u32" },
+        "u32"
+      ],
+      "output": {
+        "list_of": "u32",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "acl_membership",
+      "document": "sce:std/acl/acl_membership.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "acl_membership",
+      "args": [
+        { "list_of": { "record": "acl_edge" } },
+        "u32"
+      ],
+      "output": {
+        "list_of": "u32",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "changes_apply",
+      "document": "sce:std/sync/changes_apply.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "changes_apply",
+      "args": [
+        { "list_of": { "record": "item_version" } },
+        { "list_of": { "record": "change_entry" } }
+      ],
+      "output": {
+        "list_of": { "record": "item_version" },
+        "compare": "equality"
+      }
+    },
+    {
       "name": "changes_since",
       "document": "sce:std/sync/changes_since.scxml",
       "kind": "algorithm",
@@ -1427,6 +1475,71 @@
       ],
       "output": {
         "type": "u8",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "mailbox_ack",
+      "document": "sce:std/sync/mailbox_ack.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "mailbox_ack",
+      "args": [
+        { "list_of": { "record": "mailbox_slot" } },
+        { "list_of": { "record": "envelope_id" } }
+      ],
+      "output": {
+        "list_of": { "record": "mailbox_slot" },
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "mailbox_assign",
+      "document": "sce:std/sync/mailbox_assign.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "mailbox_assign",
+      "args": [
+        { "list_of": { "record": "mailbox_slot" } },
+        "i64",
+        "u64",
+        "u64"
+      ],
+      "output": {
+        "type": "i64",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "mailbox_insert",
+      "document": "sce:std/sync/mailbox_insert.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "mailbox_insert",
+      "args": [
+        { "list_of": { "record": "mailbox_slot" } },
+        "i64",
+        "u64",
+        "u64"
+      ],
+      "output": {
+        "list_of": { "record": "mailbox_slot" },
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "mailbox_page",
+      "document": "sce:std/sync/mailbox_page.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "mailbox_page",
+      "args": [
+        { "list_of": { "record": "mailbox_slot" } },
+        "i64",
+        "u32"
+      ],
+      "output": {
+        "list_of": { "record": "mailbox_slot" },
         "compare": "equality"
       }
     },
@@ -1675,6 +1788,70 @@
       ],
       "output": {
         "type": "u16",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "sync_failure",
+      "document": "sce:std/sync/sync_failure.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "sync_failure",
+      "args": [
+        "u8",
+        "i32"
+      ],
+      "output": {
+        "type": "u8",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "sync_retry_at",
+      "document": "sce:std/sync/sync_retry_at.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "sync_retry_at",
+      "args": [
+        "i64",
+        "u8",
+        "i32",
+        "i64",
+        "i64"
+      ],
+      "output": {
+        "type": "i64",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "sync_delete_outcome",
+      "document": "sce:std/sync/sync_delete_outcome.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "sync_delete_outcome",
+      "args": [
+        "u8",
+        "i32"
+      ],
+      "output": {
+        "type": "u8",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "sync_upload_outcome",
+      "document": "sce:std/sync/sync_upload_outcome.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "sync_upload_outcome",
+      "args": [
+        "bool",
+        "i32",
+        "bool"
+      ],
+      "output": {
+        "type": "u8",
         "compare": "equality"
       }
     },
@@ -2508,6 +2685,62 @@
         { "name": "admitted", "value": false, "sce_type": "bool" },
         { "name": "tat", "value": 1703936, "sce_type": "int64" },
         { "name": "retryAfter", "value": 131072, "sce_type": "int64" }
+      ]
+    },
+    {
+      "name": "mailbox_slot",
+      "document": "sce:std/sync/mailbox_slot.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "sync.mailbox_slot",
+      "fields": [
+        { "name": "id", "value": 7, "sce_type": "int64" },
+        { "name": "hi", "value": 81985529216486895, "sce_type": "uint64" },
+        { "name": "lo", "value": 1, "sce_type": "uint64" }
+      ]
+    },
+    {
+      "name": "acl_privilege",
+      "document": "sce:std/acl/acl_privilege.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "acl.privilege",
+      "fields": [
+        { "name": "id", "value": 3, "sce_type": "uint32" },
+        { "name": "parent", "value": 1, "sce_type": "uint32" }
+      ]
+    },
+    {
+      "name": "acl_ace",
+      "document": "sce:std/acl/acl_ace.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "acl.ace",
+      "fields": [
+        { "name": "principal", "value": 4294967294, "sce_type": "uint32" },
+        { "name": "privilege", "value": 2, "sce_type": "uint32" }
+      ]
+    },
+    {
+      "name": "acl_edge",
+      "document": "sce:std/acl/acl_edge.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "acl.edge",
+      "fields": [
+        { "name": "member", "value": 7, "sce_type": "uint32" },
+        { "name": "group", "value": 10, "sce_type": "uint32" }
+      ]
+    },
+    {
+      "name": "item_version",
+      "document": "sce:std/sync/item_version.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "sync.item_version",
+      "fields": [
+        { "name": "item", "value": 42, "sce_type": "uint64" },
+        { "name": "token", "value": 17, "sce_type": "uint64" }
       ]
     },
     {

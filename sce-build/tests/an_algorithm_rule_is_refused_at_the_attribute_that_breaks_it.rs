@@ -569,6 +569,28 @@ const RECORD_CALL_OTHER_SCHEMA: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+/// A foreach over the list buffer the body is building — refused at its
+/// source: the buffer is read back by `len` and an index, never iterated,
+/// since an append inside the loop would move the end it walks to
+/// (SCE_FORGE.md §4.12).
+const BUFFER_FOREACH: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_buffer_foreach" version="1.0">
+  <sce:signature>
+    <sce:param name="n" type="int64"/>
+    <sce:return type="list&lt;int64&gt;" returns-max-size="4"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;int64&gt;" capacity="4"/>
+    <sce:append target="out" expr="n"/>
+    <sce:foreach item="x"
+                 in="out">
+      <sce:append target="out" expr="x"/>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
+"#;
+
 /// The record callee called from a validator — refused at the call: only an
 /// algorithm's body calls a record algorithm besides a host.
 const RECORD_CALL_FROM_VALIDATOR: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -848,6 +870,14 @@ const CASES: &[Case] = &[
         line: 7,
         col: 29,
         actual: Some("wall"),
+    },
+    Case {
+        file: "probe_buffer_foreach.scxml",
+        document: BUFFER_FOREACH,
+        code: "algorithm/foreach-source-not-iterable",
+        line: 11,
+        col: 22,
+        actual: Some("out"),
     },
     Case {
         file: "probe_record_as_operand.scxml",

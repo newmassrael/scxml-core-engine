@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/acl/acl_membership.scxml — every group `user` belongs to, directly
+  or through other groups, in the order a breadth-first walk of `edges`
+  meets them (sabre/dav DAVACL/Plugin.php getPrincipalMembership: a FIFO of
+  principals to look up, each group appended once).
+
+  Two differences from the reference, both fixes:
+  - `user` is never its own group. The reference does not seed the user
+    into the set it grows, so a cycle back to the user (A in G, G in A)
+    lists A among A's groups, and A's principals as {A, G, A}.
+  - A group no principal defines simply has no memberships. The reference
+    looks each group up as a node and throws NotFound for one that is gone,
+    which aborts the whole privilege check.
+
+  The walk ends: each group is appended at most once and there are at most
+  as many as `edges`. `user` 0 (no one) has no groups.
+
+  edges {1∈10, 10∈20, 20∈1, 1∈30}, user 1 → {10, 30, 20}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="acl_membership" version="1.0">
+  <sce:import kind="event-schema" src="acl_edge.scxml" as="Edge"/>
+  <sce:signature>
+    <sce:param name="edges" type="list&lt;record:Edge&gt;"/>
+    <sce:param name="user" type="uint32"/>
+    <sce:return type="list&lt;uint32&gt;" returns-max-size="256" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="found" type="list&lt;uint32&gt;" capacity="256"/>
+    <sce:var name="next" type="uint32" init="0"/>
+    <sce:var name="current" type="uint32" init="user"/>
+    <sce:var name="more" type="bool" init="user !== 0"/>
+    <sce:while cond="more">
+      <sce:foreach item="e" in="edges">
+        <sce:if cond="e.member === current &amp;&amp; e.group !== user &amp;&amp; e.group !== 0">
+          <sce:var name="seen" type="bool" init="false"/>
+          <sce:var name="k" type="uint32" init="0"/>
+          <sce:while cond="k &lt; len(found)">
+            <sce:if cond="found[k] === e.group">
+              <sce:assign target="seen" expr="true"/>
+            </sce:if>
+            <sce:assign target="k" expr="k + 1"/>
+          </sce:while>
+          <sce:if cond="!seen">
+            <sce:append target="found" expr="e.group"/>
+          </sce:if>
+        </sce:if>
+      </sce:foreach>
+      <sce:assign target="more" expr="next &lt; len(found)"/>
+      <sce:if cond="more">
+        <sce:assign target="current" expr="found[next]"/>
+        <sce:assign target="next" expr="next + 1"/>
+      </sce:if>
+    </sce:while>
+    <sce:return expr="found"/>
+  </sce:body>
+</scxml>

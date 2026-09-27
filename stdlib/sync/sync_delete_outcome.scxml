@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/sync_delete_outcome.scxml — what a collection sync client
+  does with a locally deleted item after asking the server to delete it
+  (`kind` and `status` as sync_failure's, kind 4 with a 2xx status for a
+  DELETE that succeeded):
+
+  0 forget the item — the server no longer has it (2xx, 404, 410);
+  1 forget the local deletion and resynchronise the collection from
+    scratch — the server refused it (any other 4xx), so its copy stands and
+    must come back;
+  2 keep the local deletion and stop — the request did not complete (a 5xx
+    or a failure that was not a response), so it is sent again next run.
+
+  Two differences from the reference, both fixes. DAVx⁵ (SyncManager
+  uploadDeleted) swallows every HTTP failure of a DELETE and forgets the
+  item anyway, sync state untouched:
+  - after a refusal (403, 409, 412) the server still has the item, and a
+    client syncing by token is never told of it again, because it did not
+    change — the item is gone from the device and nothing brings it back;
+  - after a 5xx the deletion itself is lost.
+  A failure that is not a response keeps the deletion there too.
+
+  kind 4 status 204 → 0 · 404 → 0 · 412 → 1 · 503 → 2 · kind 1 → 2.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="sync_delete_outcome" version="1.0">
+  <sce:signature>
+    <sce:param name="kind" type="uint8"/>
+    <sce:param name="status" type="int32"/>
+    <sce:return type="uint8" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="kind &gt;= 1 &amp;&amp; kind &lt;= 9"/>
+    <sce:require cond="kind === 4 ? (status &gt;= 200 &amp;&amp; status &lt;= 599) : status === 0"/>
+    <sce:var name="outcome" type="uint8" init="2"/>
+    <sce:if cond="kind === 4 &amp;&amp; status &lt; 500">
+      <sce:assign target="outcome" expr="(status &lt; 300 || status === 404 || status === 410) ? 0 : 1"/>
+    </sce:if>
+    <sce:return expr="outcome"/>
+  </sce:body>
+</scxml>

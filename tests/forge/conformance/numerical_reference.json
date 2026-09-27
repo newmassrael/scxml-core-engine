@@ -1816,6 +1816,77 @@
         { "args": [[], []], "expected": [], "note": "two empty replicas" }
       ]
     },
+    "acl_granted": {
+      "fixture": "acl_granted",
+      "signature": "(tree: list<record:Privilege>, acl: list<record:Ace>, user: u32, groups: list<u32>, owner: u32) -> list<u32> may-fail",
+      "formula": "the privileges of tree, in tree order, that an entry of acl applying to user (itself, one of groups, DAV:all, DAV:authenticated / DAV:unauthenticated by whether there is a user, DAV:owner when the owner is the user or one of groups) grants itself or through an aggregate containing it (the standard document sce:std/acl/acl_granted.scxml; expected values from the reference run by tools/reference-oracles/sabre_acl.php against sabre/dav DAVACL Plugin getCurrentUserPrivilegeSet, compared as sets)",
+      "cases": [
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 2, "parent": 1 }, { "id": 3, "parent": 1 }, { "id": 4, "parent": 0 }, { "id": 5, "parent": 4 }, { "id": 6, "parent": 4 }, { "id": 7, "parent": 4 }, { "id": 8, "parent": 4 }], [{ "principal": 4294967294, "privilege": 1 }], 7, [], 0], "expected": [1, 2, 3], "note": "an authenticated user and the default grant of read" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 2, "parent": 1 }, { "id": 3, "parent": 1 }, { "id": 4, "parent": 0 }, { "id": 5, "parent": 4 }, { "id": 6, "parent": 4 }, { "id": 7, "parent": 4 }, { "id": 8, "parent": 4 }], [{ "principal": 4294967294, "privilege": 1 }], 0, [], 0], "expected": [], "note": "the same grant to no user" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 2, "parent": 1 }, { "id": 3, "parent": 1 }, { "id": 4, "parent": 0 }, { "id": 5, "parent": 4 }, { "id": 6, "parent": 4 }, { "id": 7, "parent": 4 }, { "id": 8, "parent": 4 }], [{ "principal": 4294967295, "privilege": 0 }], 0, [], 0], "expected": [0, 1, 2, 3, 4, 5, 6, 7, 8], "note": "a grant to everyone of all" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 2, "parent": 1 }, { "id": 3, "parent": 1 }, { "id": 4, "parent": 0 }, { "id": 5, "parent": 4 }, { "id": 6, "parent": 4 }, { "id": 7, "parent": 4 }, { "id": 8, "parent": 4 }], [{ "principal": 4294967293, "privilege": 2 }], 0, [], 0], "expected": [2], "note": "a grant to the unauthenticated" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 2, "parent": 1 }, { "id": 3, "parent": 1 }, { "id": 4, "parent": 0 }, { "id": 5, "parent": 4 }, { "id": 6, "parent": 4 }, { "id": 7, "parent": 4 }, { "id": 8, "parent": 4 }], [{ "principal": 4294967293, "privilege": 2 }], 7, [], 0], "expected": [], "note": "the unauthenticated grant to a user" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 2, "parent": 1 }, { "id": 3, "parent": 1 }, { "id": 4, "parent": 0 }, { "id": 5, "parent": 4 }, { "id": 6, "parent": 4 }, { "id": 7, "parent": 4 }, { "id": 8, "parent": 4 }], [{ "principal": 7, "privilege": 4 }, { "principal": 8, "privilege": 1 }], 7, [], 0], "expected": [4, 5, 6, 7, 8], "note": "a grant to the user by number" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 2, "parent": 1 }, { "id": 3, "parent": 1 }, { "id": 4, "parent": 0 }, { "id": 5, "parent": 4 }, { "id": 6, "parent": 4 }, { "id": 7, "parent": 4 }, { "id": 8, "parent": 4 }], [{ "principal": 20, "privilege": 6 }], 7, [10, 20], 0], "expected": [6], "note": "a grant to a group of the user's group" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 2, "parent": 1 }, { "id": 3, "parent": 1 }, { "id": 4, "parent": 0 }, { "id": 5, "parent": 4 }, { "id": 6, "parent": 4 }, { "id": 7, "parent": 4 }, { "id": 8, "parent": 4 }], [{ "principal": 4294967292, "privilege": 1 }], 7, [], 7], "expected": [1, 2, 3], "note": "a grant to the owner, who is the user" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 2, "parent": 1 }, { "id": 3, "parent": 1 }, { "id": 4, "parent": 0 }, { "id": 5, "parent": 4 }, { "id": 6, "parent": 4 }, { "id": 7, "parent": 4 }, { "id": 8, "parent": 4 }], [{ "principal": 4294967292, "privilege": 4 }], 7, [10], 10], "expected": [4, 5, 6, 7, 8], "note": "a grant to the owner, who is the user's group" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 2, "parent": 1 }, { "id": 3, "parent": 1 }, { "id": 4, "parent": 0 }, { "id": 5, "parent": 4 }, { "id": 6, "parent": 4 }, { "id": 7, "parent": 4 }, { "id": 8, "parent": 4 }], [{ "principal": 4294967292, "privilege": 1 }], 7, [], 8], "expected": [], "note": "a grant to the owner, who is someone else" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 2, "parent": 1 }, { "id": 3, "parent": 1 }, { "id": 4, "parent": 0 }, { "id": 5, "parent": 4 }, { "id": 6, "parent": 4 }, { "id": 7, "parent": 4 }, { "id": 8, "parent": 4 }], [{ "principal": 7, "privilege": 4294967295 }, { "principal": 7, "privilege": 7 }], 7, [], 0], "expected": [7], "note": "a grant of a privilege the tree does not hold" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 2, "parent": 1 }, { "id": 3, "parent": 1 }, { "id": 4, "parent": 3 }, { "id": 5, "parent": 3 }, { "id": 6, "parent": 0 }, { "id": 7, "parent": 6 }, { "id": 8, "parent": 6 }, { "id": 9, "parent": 0 }], [{ "principal": 7, "privilege": 3 }], 7, [], 0], "expected": [3, 4, 5], "note": "a deeper tree, a nested aggregate granted" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 2, "parent": 1 }, { "id": 3, "parent": 1 }, { "id": 4, "parent": 3 }, { "id": 5, "parent": 3 }, { "id": 6, "parent": 0 }, { "id": 7, "parent": 6 }, { "id": 8, "parent": 6 }, { "id": 9, "parent": 0 }], [{ "principal": 7, "privilege": 6 }, { "principal": 7, "privilege": 9 }], 7, [], 0], "expected": [6, 7, 8, 9], "note": "a deeper tree, an abstract aggregate granted" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 2, "parent": 1 }, { "id": 3, "parent": 1 }, { "id": 4, "parent": 3 }, { "id": 5, "parent": 3 }, { "id": 6, "parent": 0 }, { "id": 7, "parent": 6 }, { "id": 8, "parent": 6 }, { "id": 9, "parent": 0 }], [{ "principal": 7, "privilege": 1 }, { "principal": 4294967295, "privilege": 5 }, { "principal": 7, "privilege": 0 }], 7, [], 0], "expected": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], "note": "a deeper tree, overlapping grants" },
+        { "args": [[{ "id": 1, "parent": 0 }, { "id": 0, "parent": 0 }], [], 7, [], 0], "fails": "precondition", "note": "a tree whose root is not first" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 2 }, { "id": 2, "parent": 0 }], [], 7, [], 0], "fails": "precondition", "note": "a privilege listed before its parent" },
+        { "args": [[{ "id": 0, "parent": 0 }, { "id": 1, "parent": 0 }, { "id": 1, "parent": 0 }], [], 7, [], 0], "fails": "precondition", "note": "a privilege listed twice — the reference's flat set lets the last one win" }
+      ]
+    },
+    "acl_membership": {
+      "fixture": "acl_membership",
+      "signature": "(edges: list<record:Edge>, user: u32) -> list<u32> may-fail",
+      "formula": "every group user belongs to, directly or through other groups, in breadth-first order of edges, the user never among them (the standard document sce:std/acl/acl_membership.scxml; expected values from the reference run by tools/reference-oracles/sabre_acl.php against sabre/dav DAVACL Plugin getPrincipalMembership)",
+      "cases": [
+        { "args": [[], 1], "expected": [], "note": "no memberships" },
+        { "args": [[{ "member": 1, "group": 10 }], 1], "expected": [10], "note": "one group" },
+        { "args": [[{ "member": 1, "group": 10 }, { "member": 10, "group": 20 }], 1], "expected": [10, 20], "note": "a group of a group" },
+        { "args": [[{ "member": 1, "group": 10 }, { "member": 1, "group": 30 }, { "member": 10, "group": 20 }, { "member": 30, "group": 40 }], 1], "expected": [10, 30, 20, 40], "note": "breadth before depth" },
+        { "args": [[{ "member": 1, "group": 10 }, { "member": 1, "group": 30 }, { "member": 10, "group": 20 }, { "member": 30, "group": 20 }], 1], "expected": [10, 30, 20], "note": "two paths to one group" },
+        { "args": [[{ "member": 1, "group": 10 }, { "member": 10, "group": 20 }, { "member": 20, "group": 10 }], 1], "expected": [10, 20], "note": "a cycle among groups" },
+        { "args": [[{ "member": 1, "group": 10 }, { "member": 10, "group": 20 }, { "member": 20, "group": 1 }, { "member": 1, "group": 30 }], 1], "expected": [10, 30, 20], "note": "deviation: a cycle back to the user — the reference answered [10, 30, 20, 1], the user among its own groups" },
+        { "args": [[{ "member": 1, "group": 10 }, { "member": 10, "group": 99 }], 1], "expected": [10, 99], "note": "deviation: a membership naming an undefined group — the reference threw NotFound and answered nothing" },
+        { "args": [[{ "member": 1, "group": 10 }, { "member": 2, "group": 20 }], 1], "expected": [10], "note": "another principal's groups are not the user's" },
+        { "args": [[{ "member": 0, "group": 10 }], 0], "expected": [], "note": "no user has no groups" }
+      ]
+    },
+    "changes_apply": {
+      "fixture": "changes_apply",
+      "signature": "(state: list<record:Held>, log: list<record:Change>) -> list<record:Held> may-fail",
+      "formula": "the items of state with every row of log applied in log order — each item's last row decides, an add or modify writing it at its token and a delete removing it — in ascending item order; the same wherever the log is cut (the standard document sce:std/sync/changes_apply.scxml; expected values are the document's definition, printed by tools/reference-oracles/batch_order.py, which refuses a case that any cut would answer differently — no reference measured applies a batch correctly)",
+      "cases": [
+        { "args": [[], []], "expected": [], "note": "nothing held, nothing to apply" },
+        { "args": [[{ "item": 1, "token": 5 }, { "item": 2, "token": 5 }], []], "expected": [{ "item": 1, "token": 5 }, { "item": 2, "token": 5 }], "note": "an empty batch leaves the state" },
+        { "args": [[{ "item": 1, "token": 5 }, { "item": 2, "token": 5 }], [{ "item": 3, "op": 1, "token": 6 }, { "item": 1, "op": 3, "token": 7 }, { "item": 3, "op": 2, "token": 8 }]], "expected": [{ "item": 2, "token": 5 }, { "item": 3, "token": 8 }], "note": "an add, a delete and a modify of an added item" },
+        { "args": [[], [{ "item": 9, "op": 1, "token": 1 }, { "item": 4, "op": 1, "token": 2 }, { "item": 7, "op": 1, "token": 3 }]], "expected": [{ "item": 4, "token": 2 }, { "item": 7, "token": 3 }, { "item": 9, "token": 1 }], "note": "the answer is in item order, not log order" },
+        { "args": [[{ "item": 1, "token": 5 }, { "item": 2, "token": 5 }], [{ "item": 4, "op": 1, "token": 6 }, { "item": 4, "op": 3, "token": 7 }]], "expected": [{ "item": 1, "token": 5 }, { "item": 2, "token": 5 }], "note": "counterexample: a create then a delete in one batch — Tutanota's deletes-first order (read from source, not run) would leave {1, 2, 4}" },
+        { "args": [[{ "item": 1, "token": 5 }, { "item": 2, "token": 5 }], [{ "item": 2, "op": 2, "token": 6 }, { "item": 2, "op": 3, "token": 7 }]], "expected": [{ "item": 1, "token": 5 }], "note": "counterexample: a modify then a delete in one batch — Tutanota's deletes-first order (read from source, not run) would leave {1, 2}" },
+        { "args": [[{ "item": 1, "token": 5 }, { "item": 2, "token": 5 }], [{ "item": 4, "op": 3, "token": 6 }, { "item": 4, "op": 1, "token": 7 }]], "expected": [{ "item": 1, "token": 5 }, { "item": 2, "token": 5 }, { "item": 4, "token": 7 }], "note": "counterexample: a delete then a create in one batch — Proton Calendar iOS's deletes-last order (read from source, not run) would leave {1, 2}" },
+        { "args": [[{ "item": 1, "token": 5 }, { "item": 2, "token": 5 }], [{ "item": 2, "op": 3, "token": 6 }, { "item": 2, "op": 2, "token": 7 }]], "expected": [{ "item": 1, "token": 5 }, { "item": 2, "token": 7 }], "note": "counterexample: a delete then a modify in one batch — Proton Calendar iOS's deletes-last order (read from source, not run) would leave {1}" },
+        { "args": [[], [{ "item": 3, "op": 2, "token": 6 }, { "item": 11, "op": 1, "token": 7 }, { "item": 8, "op": 1, "token": 8 }]], "expected": [{ "item": 3, "token": 6 }, { "item": 8, "token": 8 }, { "item": 11, "token": 7 }], "note": "a pseudo-random batch of 3 rows on 0 held items" },
+        { "args": [[{ "item": 3, "token": 6 }], [{ "item": 11, "op": 1, "token": 7 }, { "item": 8, "op": 1, "token": 8 }]], "expected": [{ "item": 3, "token": 6 }, { "item": 8, "token": 8 }, { "item": 11, "token": 7 }], "note": "the batch before cut after row 1: its second part applied to the first part's answer" },
+        { "args": [[{ "item": 1, "token": 3 }, { "item": 5, "token": 2 }, { "item": 6, "token": 3 }, { "item": 9, "token": 1 }], [{ "item": 9, "op": 2, "token": 5 }, { "item": 11, "op": 3, "token": 6 }, { "item": 10, "op": 3, "token": 6 }, { "item": 2, "op": 3, "token": 6 }, { "item": 11, "op": 2, "token": 6 }, { "item": 1, "op": 3, "token": 7 }, { "item": 3, "op": 3, "token": 7 }]], "expected": [{ "item": 5, "token": 2 }, { "item": 6, "token": 3 }, { "item": 9, "token": 5 }, { "item": 11, "token": 6 }], "note": "a pseudo-random batch of 7 rows on 4 held items" },
+        { "args": [[{ "item": 1, "token": 3 }, { "item": 5, "token": 2 }, { "item": 6, "token": 3 }, { "item": 9, "token": 5 }], [{ "item": 2, "op": 3, "token": 6 }, { "item": 11, "op": 2, "token": 6 }, { "item": 1, "op": 3, "token": 7 }, { "item": 3, "op": 3, "token": 7 }]], "expected": [{ "item": 5, "token": 2 }, { "item": 6, "token": 3 }, { "item": 9, "token": 5 }, { "item": 11, "token": 6 }], "note": "the batch before cut after row 3: its second part applied to the first part's answer" },
+        { "args": [[{ "item": 10, "token": 3 }], [{ "item": 4, "op": 1, "token": 6 }, { "item": 7, "op": 3, "token": 7 }, { "item": 8, "op": 2, "token": 7 }, { "item": 10, "op": 3, "token": 7 }, { "item": 3, "op": 2, "token": 7 }]], "expected": [{ "item": 3, "token": 7 }, { "item": 4, "token": 6 }, { "item": 8, "token": 7 }], "note": "a pseudo-random batch of 5 rows on 1 held item" },
+        { "args": [[{ "item": 4, "token": 6 }, { "item": 10, "token": 3 }], [{ "item": 8, "op": 2, "token": 7 }, { "item": 10, "op": 3, "token": 7 }, { "item": 3, "op": 2, "token": 7 }]], "expected": [{ "item": 3, "token": 7 }, { "item": 4, "token": 6 }, { "item": 8, "token": 7 }], "note": "the batch before cut after row 2: its second part applied to the first part's answer" },
+        { "args": [[{ "item": 3, "token": 1 }], [{ "item": 9, "op": 3, "token": 5 }, { "item": 2, "op": 1, "token": 6 }, { "item": 10, "op": 1, "token": 7 }]], "expected": [{ "item": 2, "token": 6 }, { "item": 3, "token": 1 }, { "item": 10, "token": 7 }], "note": "a pseudo-random batch of 3 rows on 1 held item" },
+        { "args": [[{ "item": 3, "token": 1 }], [{ "item": 2, "op": 1, "token": 6 }, { "item": 10, "op": 1, "token": 7 }]], "expected": [{ "item": 2, "token": 6 }, { "item": 3, "token": 1 }, { "item": 10, "token": 7 }], "note": "the batch before cut after row 1: its second part applied to the first part's answer" },
+        { "args": [[{ "item": 1, "token": 2 }, { "item": 7, "token": 4 }, { "item": 9, "token": 4 }], [{ "item": 10, "op": 3, "token": 5 }, { "item": 11, "op": 1, "token": 5 }, { "item": 8, "op": 1, "token": 5 }, { "item": 9, "op": 2, "token": 5 }, { "item": 8, "op": 1, "token": 6 }, { "item": 2, "op": 1, "token": 7 }]], "expected": [{ "item": 1, "token": 2 }, { "item": 2, "token": 7 }, { "item": 7, "token": 4 }, { "item": 8, "token": 6 }, { "item": 9, "token": 5 }, { "item": 11, "token": 5 }], "note": "a pseudo-random batch of 6 rows on 3 held items" },
+        { "args": [[{ "item": 1, "token": 2 }, { "item": 7, "token": 4 }, { "item": 8, "token": 5 }, { "item": 9, "token": 4 }, { "item": 11, "token": 5 }], [{ "item": 9, "op": 2, "token": 5 }, { "item": 8, "op": 1, "token": 6 }, { "item": 2, "op": 1, "token": 7 }]], "expected": [{ "item": 1, "token": 2 }, { "item": 2, "token": 7 }, { "item": 7, "token": 4 }, { "item": 8, "token": 6 }, { "item": 9, "token": 5 }, { "item": 11, "token": 5 }], "note": "the batch before cut after row 3: its second part applied to the first part's answer" },
+        { "args": [[], [{ "item": 3, "op": 2, "token": 5 }, { "item": 6, "op": 1, "token": 6 }, { "item": 2, "op": 3, "token": 7 }]], "expected": [{ "item": 3, "token": 5 }, { "item": 6, "token": 6 }], "note": "a pseudo-random batch of 3 rows on 0 held items" },
+        { "args": [[{ "item": 3, "token": 5 }], [{ "item": 6, "op": 1, "token": 6 }, { "item": 2, "op": 3, "token": 7 }]], "expected": [{ "item": 3, "token": 5 }, { "item": 6, "token": 6 }], "note": "the batch before cut after row 1: its second part applied to the first part's answer" },
+        { "args": [[{ "item": 2, "token": 1 }, { "item": 1, "token": 1 }], []], "fails": "precondition", "note": "a state out of item order" },
+        { "args": [[], [{ "item": 1, "op": 1, "token": 5 }, { "item": 2, "op": 1, "token": 4 }]], "fails": "precondition", "note": "a log out of token order" },
+        { "args": [[], [{ "item": 1, "op": 4, "token": 5 }]], "fails": "precondition", "note": "an op that is none of add, modify, delete" }
+      ]
+    },
     "changes_since": {
       "fixture": "changes_since",
       "signature": "(log: list<record:Change>, since: u64, current: u64, lowWater: u64, limit: u32) -> list<record:Change> may-fail",
@@ -1907,6 +1978,74 @@
         { "args": [[{ "wallTime": 1790503200000, "counter": 0, "nodeId": 1 }], { "wallTime": 1790503200002, "counter": 2, "nodeId": 1 }], "expected": 0, "note": "1 pseudo-random stamp" },
         { "args": [[{ "wallTime": 1790503200000, "counter": 2, "nodeId": 3 }, { "wallTime": 1790503200001, "counter": 1, "nodeId": 2 }], { "wallTime": 1790503200003, "counter": 0, "nodeId": 1 }], "expected": 0, "note": "2 pseudo-random stamps" },
         { "args": [[{ "wallTime": 1790503200002, "counter": 1, "nodeId": 2 }], { "wallTime": 1790503200000, "counter": 0, "nodeId": 3 }], "expected": 1, "note": "1 pseudo-random stamp" }
+      ]
+    },
+    "mailbox_ack": {
+      "fixture": "mailbox_ack",
+      "signature": "(queue: list<record:Slot>, acked: list<record:Id>) -> list<record:Slot>",
+      "formula": "the queue without the messages acked names, in order; an ack for a message not held changes nothing (the standard document sce:std/sync/mailbox_ack.scxml; expected values from the reference run by tools/reference-oracles/signal_mailbox.py against Signal-Server remove_item_by_guid.lua)",
+      "cases": [
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 2, "hi": 16561950312246822011, "lo": 12398065254781538642 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }], [{ "hi": 16561950312246822011, "lo": 12398065254781538642 }]], "expected": [{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }], "note": "the middle message acknowledged" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }], [{ "hi": 16561950312246822011, "lo": 12398065254781538642 }, { "hi": 15258296672632391394, "lo": 9627439530044221856 }]], "expected": [{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }], "note": "an acknowledgement repeated, and one for a message never queued" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }, { "id": 6, "hi": 15258296672632391394, "lo": 9627439530044221856 }, { "id": 7, "hi": 834326884873290924, "lo": 10238242012487737949 }, { "id": 8, "hi": 8716304456942373386, "lo": 13622527628739054436 }, { "id": 9, "hi": 1236911704168680777, "lo": 10759277369449671607 }], [{ "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "hi": 9977064022335966051, "lo": 10722766068355644069 }, { "hi": 15258296672632391394, "lo": 9627439530044221856 }, { "hi": 834326884873290924, "lo": 10238242012487737949 }, { "hi": 8716304456942373386, "lo": 13622527628739054436 }, { "hi": 1236911704168680777, "lo": 10759277369449671607 }]], "expected": [], "note": "every message acknowledged: the queue drains" },
+        { "args": [[{ "id": 10, "hi": 15383525842643798565, "lo": 13581761523775022675 }, { "id": 11, "hi": 4438640843337253830, "lo": 10835702143491299406 }], []], "expected": [{ "id": 10, "hi": 15383525842643798565, "lo": 13581761523775022675 }, { "id": 11, "hi": 4438640843337253830, "lo": 10835702143491299406 }], "note": "an empty acknowledgement" }
+      ]
+    },
+    "mailbox_assign": {
+      "fixture": "mailbox_assign",
+      "signature": "(queue: list<record:Slot>, counter: i64, hi: u64, lo: u64) -> i64 may-fail",
+      "formula": "the id the queue holds for the message (hi, lo), else counter + 1 (the standard document sce:std/sync/mailbox_assign.scxml; expected values from the reference run by tools/reference-oracles/signal_mailbox.py against Signal-Server insert_item.lua, whose reply is not the id — see the deviations)",
+      "cases": [
+        { "args": [[], 0, 4048927024229273247, 12939917875525128455], "expected": 1, "note": "deviation: a first message — the script answered nil (SPUBLISH found no subscriber), not the id 1" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }], 1, 16561950312246822011, 12398065254781538642], "expected": 2, "note": "deviation: a second message — the script answered nil (SPUBLISH found no subscriber), not the id 2" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 2, "hi": 16561950312246822011, "lo": 12398065254781538642 }], 2, 4048927024229273247, 12939917875525128455], "expected": 1, "note": "the first message offered again" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 2, "hi": 16561950312246822011, "lo": 12398065254781538642 }], 2, 8816713059928981724, 13198514320805337855], "expected": 3, "note": "deviation: a third message — the script answered nil (SPUBLISH found no subscriber), not the id 3" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }], 3, 1360252115230216021, 13055102660315340901], "expected": 4, "note": "deviation: message 4 — the script answered nil (SPUBLISH found no subscriber), not the id 4" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }], 4, 9977064022335966051, 10722766068355644069], "expected": 5, "note": "deviation: message 5 — the script answered nil (SPUBLISH found no subscriber), not the id 5" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }], 5, 15258296672632391394, 9627439530044221856], "expected": 6, "note": "deviation: message 6 — the script answered nil (SPUBLISH found no subscriber), not the id 6" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }, { "id": 6, "hi": 15258296672632391394, "lo": 9627439530044221856 }], 6, 834326884873290924, 10238242012487737949], "expected": 7, "note": "deviation: message 7 — the script answered nil (SPUBLISH found no subscriber), not the id 7" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }, { "id": 6, "hi": 15258296672632391394, "lo": 9627439530044221856 }, { "id": 7, "hi": 834326884873290924, "lo": 10238242012487737949 }], 7, 8716304456942373386, 13622527628739054436], "expected": 8, "note": "deviation: message 8 — the script answered nil (SPUBLISH found no subscriber), not the id 8" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }, { "id": 6, "hi": 15258296672632391394, "lo": 9627439530044221856 }, { "id": 7, "hi": 834326884873290924, "lo": 10238242012487737949 }, { "id": 8, "hi": 8716304456942373386, "lo": 13622527628739054436 }], 8, 1236911704168680777, 10759277369449671607], "expected": 9, "note": "deviation: message 9 — the script answered nil (SPUBLISH found no subscriber), not the id 9" },
+        { "args": [[], 9, 15383525842643798565, 13581761523775022675], "expected": 10, "note": "deviation: a message after the queue drained — the queue drained earlier and the script's counter restarted at 0; it gave id 1" },
+        { "args": [[{ "id": 10, "hi": 15383525842643798565, "lo": 13581761523775022675 }], 10, 4438640843337253830, 10835702143491299406], "expected": 11, "note": "deviation: the message after it — the script answered nil (SPUBLISH found no subscriber), not the id 11" },
+        { "args": [[{ "id": 10, "hi": 15383525842643798565, "lo": 13581761523775022675 }, { "id": 11, "hi": 4438640843337253830, "lo": 10835702143491299406 }], 11, 15383525842643798565, 13581761523775022675], "expected": 10, "note": "a message offered again after the drain" },
+        { "args": [[{ "id": 5, "hi": 1, "lo": 2 }], 4, 3, 4], "fails": "precondition", "note": "a queue holding an id the counter never issued" },
+        { "args": [[], 9223372036854775807, 1, 2], "fails": "precondition", "note": "a counter with no id left after it" }
+      ]
+    },
+    "mailbox_insert": {
+      "fixture": "mailbox_insert",
+      "signature": "(queue: list<record:Slot>, counter: i64, hi: u64, lo: u64) -> list<record:Slot> may-fail",
+      "formula": "the queue unchanged when it holds the message (hi, lo), else with it appended under id counter + 1 (the standard document sce:std/sync/mailbox_insert.scxml; expected values from the reference run by tools/reference-oracles/signal_mailbox.py against Signal-Server insert_item.lua)",
+      "cases": [
+        { "args": [[], 0, 4048927024229273247, 12939917875525128455], "expected": [{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }], "note": "a first message" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }], 1, 16561950312246822011, 12398065254781538642], "expected": [{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 2, "hi": 16561950312246822011, "lo": 12398065254781538642 }], "note": "a second message" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 2, "hi": 16561950312246822011, "lo": 12398065254781538642 }], 2, 4048927024229273247, 12939917875525128455], "expected": [{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 2, "hi": 16561950312246822011, "lo": 12398065254781538642 }], "note": "the first message offered again" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 2, "hi": 16561950312246822011, "lo": 12398065254781538642 }], 2, 8816713059928981724, 13198514320805337855], "expected": [{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 2, "hi": 16561950312246822011, "lo": 12398065254781538642 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }], "note": "a third message" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }], 3, 1360252115230216021, 13055102660315340901], "expected": [{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }], "note": "message 4" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }], 4, 9977064022335966051, 10722766068355644069], "expected": [{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }], "note": "message 5" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }], 5, 15258296672632391394, 9627439530044221856], "expected": [{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }, { "id": 6, "hi": 15258296672632391394, "lo": 9627439530044221856 }], "note": "message 6" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }, { "id": 6, "hi": 15258296672632391394, "lo": 9627439530044221856 }], 6, 834326884873290924, 10238242012487737949], "expected": [{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }, { "id": 6, "hi": 15258296672632391394, "lo": 9627439530044221856 }, { "id": 7, "hi": 834326884873290924, "lo": 10238242012487737949 }], "note": "message 7" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }, { "id": 6, "hi": 15258296672632391394, "lo": 9627439530044221856 }, { "id": 7, "hi": 834326884873290924, "lo": 10238242012487737949 }], 7, 8716304456942373386, 13622527628739054436], "expected": [{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }, { "id": 6, "hi": 15258296672632391394, "lo": 9627439530044221856 }, { "id": 7, "hi": 834326884873290924, "lo": 10238242012487737949 }, { "id": 8, "hi": 8716304456942373386, "lo": 13622527628739054436 }], "note": "message 8" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }, { "id": 6, "hi": 15258296672632391394, "lo": 9627439530044221856 }, { "id": 7, "hi": 834326884873290924, "lo": 10238242012487737949 }, { "id": 8, "hi": 8716304456942373386, "lo": 13622527628739054436 }], 8, 1236911704168680777, 10759277369449671607], "expected": [{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }, { "id": 6, "hi": 15258296672632391394, "lo": 9627439530044221856 }, { "id": 7, "hi": 834326884873290924, "lo": 10238242012487737949 }, { "id": 8, "hi": 8716304456942373386, "lo": 13622527628739054436 }, { "id": 9, "hi": 1236911704168680777, "lo": 10759277369449671607 }], "note": "message 9" },
+        { "args": [[], 9, 15383525842643798565, 13581761523775022675], "expected": [{ "id": 10, "hi": 15383525842643798565, "lo": 13581761523775022675 }], "note": "deviation: a message after the queue drained — the script stored it under id 1 of its restarted counter" },
+        { "args": [[{ "id": 10, "hi": 15383525842643798565, "lo": 13581761523775022675 }], 10, 4438640843337253830, 10835702143491299406], "expected": [{ "id": 10, "hi": 15383525842643798565, "lo": 13581761523775022675 }, { "id": 11, "hi": 4438640843337253830, "lo": 10835702143491299406 }], "note": "the message after it" },
+        { "args": [[{ "id": 10, "hi": 15383525842643798565, "lo": 13581761523775022675 }, { "id": 11, "hi": 4438640843337253830, "lo": 10835702143491299406 }], 11, 15383525842643798565, 13581761523775022675], "expected": [{ "id": 10, "hi": 15383525842643798565, "lo": 13581761523775022675 }, { "id": 11, "hi": 4438640843337253830, "lo": 10835702143491299406 }], "note": "a message offered again after the drain" },
+        { "args": [[{ "id": 2, "hi": 1, "lo": 2 }, { "id": 1, "hi": 3, "lo": 4 }], 2, 5, 6], "fails": "precondition", "note": "a queue out of id order" }
+      ]
+    },
+    "mailbox_page": {
+      "fixture": "mailbox_page",
+      "signature": "(queue: list<record:Slot>, after: i64, limit: u32) -> list<record:Slot> may-fail",
+      "formula": "the messages with an id above after, in id order, at most limit (the standard document sce:std/sync/mailbox_page.scxml; expected values from the reference run by tools/reference-oracles/signal_mailbox.py against Signal-Server get_items.lua)",
+      "cases": [
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 2, "hi": 16561950312246822011, "lo": 12398065254781538642 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }], -1, 2], "expected": [{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 2, "hi": 16561950312246822011, "lo": 12398065254781538642 }], "note": "the first page" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 2, "hi": 16561950312246822011, "lo": 12398065254781538642 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }], 2, 2], "expected": [{ "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }], "note": "the page after id 2" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 2, "hi": 16561950312246822011, "lo": 12398065254781538642 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }], 3, 2], "expected": [], "note": "past the last id" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }], -1, 5], "expected": [{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }], "note": "a page with a gap in its ids" },
+        { "args": [[{ "id": 1, "hi": 4048927024229273247, "lo": 12939917875525128455 }, { "id": 3, "hi": 8816713059928981724, "lo": 13198514320805337855 }, { "id": 4, "hi": 1360252115230216021, "lo": 13055102660315340901 }, { "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }, { "id": 6, "hi": 15258296672632391394, "lo": 9627439530044221856 }, { "id": 7, "hi": 834326884873290924, "lo": 10238242012487737949 }, { "id": 8, "hi": 8716304456942373386, "lo": 13622527628739054436 }, { "id": 9, "hi": 1236911704168680777, "lo": 10759277369449671607 }], 4, 3], "expected": [{ "id": 5, "hi": 9977064022335966051, "lo": 10722766068355644069 }, { "id": 6, "hi": 15258296672632391394, "lo": 9627439530044221856 }, { "id": 7, "hi": 834326884873290924, "lo": 10238242012487737949 }], "note": "a page from the middle" },
+        { "args": [[{ "id": 10, "hi": 15383525842643798565, "lo": 13581761523775022675 }, { "id": 11, "hi": 4438640843337253830, "lo": 10835702143491299406 }], -1, 10], "expected": [{ "id": 10, "hi": 15383525842643798565, "lo": 13581761523775022675 }, { "id": 11, "hi": 4438640843337253830, "lo": 10835702143491299406 }], "note": "a page of the messages after the drain" },
+        { "args": [[{ "id": 1, "hi": 1, "lo": 2 }], -1, 0], "fails": "precondition", "note": "a page of no messages asked for" }
       ]
     },
     "merkle_diff": {
@@ -2057,6 +2196,99 @@
         { "args": [false, false, 0, 0, 3, 0], "expected": 0, "note": "PUT missing {\"If-None-Match\":\"\\\"x\\\"\"} — reference 0" },
         { "args": [false, false, 0, 0, 1, 0], "expected": 0, "note": "PUT missing {\"If-None-Match\":\"*\"} — reference 0" },
         { "args": [false, false, 0, 0, 3, 0], "expected": 0, "note": "PUT missing {\"If-None-Match\":\"W\\/\\\"abc\\\"\"} — reference 0" }
+      ]
+    },
+    "sync_failure": {
+      "fixture": "sync_failure",
+      "signature": "(kind: u8, status: i32) -> u8 may-fail",
+      "formula": "0 log, 1 retry later, 2 error, 3 re-authenticate, 4 stop quietly, by what failed and the HTTP status (the standard document sce:std/sync/sync_failure.scxml; expected values from the reference run by tools/reference-oracles/davx5_sync.py, which compiles DAVx5's classifySyncException from the checkout against stubs)",
+      "cases": [
+        { "args": [1, 0], "expected": 1, "note": "transport I/O — the classifier answered soft -1" },
+        { "args": [2, 0], "expected": 1, "note": "a TLS handshake — the classifier answered soft -1" },
+        { "args": [3, 0], "expected": 0, "note": "a rejected certificate — the classifier answered log" },
+        { "args": [5, 0], "expected": 2, "note": "a DAV protocol error — the classifier answered hard HTTP/DAV exception" },
+        { "args": [6, 0], "expected": 2, "note": "local storage — the classifier answered hard Couldn't access local storage" },
+        { "args": [7, 0], "expected": 4, "note": "a cancellation — the classifier answered rethrow CancellationException" },
+        { "args": [8, 0], "expected": 1, "note": "a dead storage process — the classifier answered rethrow DeadObjectException" },
+        { "args": [9, 0], "expected": 2, "note": "an unclassified failure — the classifier answered hard Unclassified sync error" },
+        { "args": [4, 400], "expected": 2, "note": "HTTP 400 — the classifier answered hard HTTP/DAV exception" },
+        { "args": [4, 401], "expected": 3, "note": "HTTP 401 — the classifier answered hard Not authorized anymore" },
+        { "args": [4, 403], "expected": 2, "note": "HTTP 403 — the classifier answered hard HTTP/DAV exception" },
+        { "args": [4, 404], "expected": 2, "note": "HTTP 404 — the classifier answered hard HTTP/DAV exception" },
+        { "args": [4, 405], "expected": 2, "note": "HTTP 405 — the classifier answered hard HTTP/DAV exception" },
+        { "args": [4, 409], "expected": 2, "note": "HTTP 409 — the classifier answered hard HTTP/DAV exception" },
+        { "args": [4, 410], "expected": 2, "note": "HTTP 410 — the classifier answered hard HTTP/DAV exception" },
+        { "args": [4, 412], "expected": 2, "note": "HTTP 412 — the classifier answered hard HTTP/DAV exception" },
+        { "args": [4, 415], "expected": 2, "note": "HTTP 415 — the classifier answered hard HTTP/DAV exception" },
+        { "args": [4, 423], "expected": 2, "note": "HTTP 423 — the classifier answered hard HTTP/DAV exception" },
+        { "args": [4, 500], "expected": 2, "note": "HTTP 500 — the classifier answered hard HTTP/DAV exception" },
+        { "args": [4, 501], "expected": 2, "note": "HTTP 501 — the classifier answered hard HTTP/DAV exception" },
+        { "args": [4, 502], "expected": 1, "note": "HTTP 502 — the classifier answered soft 900" },
+        { "args": [4, 503], "expected": 1, "note": "HTTP 503 — the classifier answered soft -1" },
+        { "args": [4, 504], "expected": 2, "note": "HTTP 504 — the classifier answered hard HTTP/DAV exception" },
+        { "args": [4, 507], "expected": 2, "note": "HTTP 507 — the classifier answered hard HTTP/DAV exception" },
+        { "args": [0, 0], "fails": "precondition", "note": "no kind of failure" },
+        { "args": [4, 200], "fails": "precondition", "note": "a success is not a failure" },
+        { "args": [1, 500], "fails": "precondition", "note": "a status on a failure that was not a response" }
+      ]
+    },
+    "sync_retry_at": {
+      "fixture": "sync_retry_at",
+      "signature": "(previous: i64, kind: u8, status: i32, now: i64, retryAfter: i64) -> i64 may-fail",
+      "formula": "the later of previous and this failure's time: now + Retry-After for a 503 that gave one, now + 900 for a 502, else none (the standard document sce:std/sync/sync_retry_at.scxml; the 502 delay from the reference run by tools/reference-oracles/davx5_sync.py, the merge the document's fix of DAVx5's overwrite)",
+      "cases": [
+        { "args": [0, 4, 503, 1790000000, 3600], "expected": 1790003600, "note": "a 503 with an hour of Retry-After" },
+        { "args": [0, 4, 503, 1790000000, 0], "expected": 0, "note": "a 503 with no Retry-After asks for no time" },
+        { "args": [0, 4, 502, 1790000000, 0], "expected": 1790000900, "note": "a 502" },
+        { "args": [0, 4, 404, 1790000000, 0], "expected": 0, "note": "a 404 asks for no time" },
+        { "args": [0, 1, 0, 1790000000, 0], "expected": 0, "note": "a transport failure asks for no time" },
+        { "args": [1790003600, 4, 502, 1790000000, 0], "expected": 1790003600, "note": "deviation: a 502 after an earlier collection's hour — DAVx5 overwrites the run's time with 1790000900" },
+        { "args": [1790000060, 4, 503, 1790000000, 3600], "expected": 1790003600, "note": "a 503's hour after an earlier minute" },
+        { "args": [1790003600, 4, 404, 1790000000, 0], "expected": 1790003600, "note": "a 404 after an earlier collection's hour" },
+        { "args": [-1, 1, 0, 1790000000, 0], "fails": "precondition", "note": "a negative earlier time" },
+        { "args": [0, 4, 503, 9223372036854775000, 3600], "fails": "overflow", "note": "a time past the clock's range" }
+      ]
+    },
+    "sync_delete_outcome": {
+      "fixture": "sync_delete_outcome",
+      "signature": "(kind: u8, status: i32) -> u8 may-fail",
+      "formula": "0 forget the deleted item (2xx, 404, 410), 1 forget the deletion and resynchronise (any other 4xx), 2 keep the deletion and stop (5xx, or a failure that was not a response) (the standard document sce:std/sync/sync_delete_outcome.scxml; cases written from DAVx5 SyncManager.kt uploadDeleted as read, which does not run outside Android)",
+      "cases": [
+        { "args": [4, 204], "expected": 0, "note": "a DELETE that succeeded" },
+        { "args": [4, 200], "expected": 0, "note": "a DELETE that succeeded with a body" },
+        { "args": [4, 404], "expected": 0, "note": "the server no longer had it" },
+        { "args": [4, 410], "expected": 0, "note": "the server no longer had it, and says so for good" },
+        { "args": [4, 412], "expected": 1, "note": "deviation: the item changed on the server — DAVx5 forgets the item and leaves the sync state, so under sync-collection the server's copy is never fetched again (SyncManager.kt, read from source)" },
+        { "args": [4, 403], "expected": 1, "note": "deviation: the server refused the delete — DAVx5 forgets the item as above" },
+        { "args": [4, 409], "expected": 1, "note": "deviation: the server refused the delete — DAVx5 forgets the item as above" },
+        { "args": [4, 503], "expected": 2, "note": "deviation: the server was unavailable — DAVx5 forgets the item, so the deletion is never sent again" },
+        { "args": [4, 500], "expected": 2, "note": "deviation: the server failed — DAVx5 forgets the item as above" },
+        { "args": [1, 0], "expected": 2, "note": "the request did not complete — DAVx5 keeps the deletion too (an I/O exception is not caught there)" },
+        { "args": [4, 100], "fails": "precondition", "note": "not a final status" },
+        { "args": [4, 0], "fails": "precondition", "note": "a response with no status" }
+      ]
+    },
+    "sync_upload_outcome": {
+      "fixture": "sync_upload_outcome",
+      "signature": "(create: bool, status: i32, davError: bool) -> u8 may-fail",
+      "formula": "0 stored, 1 discard the local change, 2 stop the run, by the PUT's status (the standard document sce:std/sync/sync_upload_outcome.scxml; cases written from DAVx5 SyncManager.kt uploadDirty as read, which does not run outside Android)",
+      "cases": [
+        { "args": [true, 201, false], "expected": 0, "note": "a create stored" },
+        { "args": [false, 204, false], "expected": 0, "note": "a change stored" },
+        { "args": [true, 403, false], "expected": 1, "note": "a create refused — the server wins (SyncManager.kt, read from source)" },
+        { "args": [false, 403, true], "expected": 1, "note": "a change refused with a DAV:error" },
+        { "args": [true, 404, false], "expected": 2, "note": "a create into a collection that is gone" },
+        { "args": [false, 404, false], "expected": 1, "note": "a change to an item that is gone, handled as 412" },
+        { "args": [true, 410, false], "expected": 2, "note": "a create into a collection that is gone for good" },
+        { "args": [false, 410, false], "expected": 1, "note": "a change to an item gone for good" },
+        { "args": [true, 412, false], "expected": 1, "note": "a create where the server already has the name" },
+        { "args": [false, 412, false], "expected": 1, "note": "a change to an item changed on the server" },
+        { "args": [true, 409, true], "expected": 1, "note": "a create rejected with a DAV:error" },
+        { "args": [true, 409, false], "expected": 2, "note": "a create answered a bare 409 — the collection is probably gone" },
+        { "args": [false, 409, false], "expected": 1, "note": "a change answered a bare 409, handled as 412" },
+        { "args": [false, 500, false], "expected": 2, "note": "a server failure stops the run" },
+        { "args": [true, 507, false], "expected": 2, "note": "a full server stops the run" },
+        { "args": [true, 199, false], "fails": "precondition", "note": "not a final status" }
       ]
     },
     "outbound_overflows": {
@@ -4814,6 +5046,57 @@
         { "name": "admitted", "value": false, "sce_type": "bool" },
         { "name": "tat", "value": 1703936, "sce_type": "int64" },
         { "name": "retryAfter", "value": 131072, "sce_type": "int64" }
+      ]
+    },
+    "mailbox_slot": {
+      "fixture": "MailboxSlot",
+      "signature": "struct MailboxSlotPayload { int64 id; uint64 hi; uint64 lo; }",
+      "description": "One message waiting in a device's mailbox — the id the mailbox gave it and the sender's 16-byte message id as two big-endian halves — the element type of the queue the standard documents sce:std/sync/mailbox_*.scxml take and return (SCE_FORGE.md §4.12). A SHAPE claim like every event-schema fixture: names, order, and that a value reads back.",
+      "event_name": "sync.mailbox_slot",
+      "fields": [
+        { "name": "id", "value": 7, "sce_type": "int64" },
+        { "name": "hi", "value": 81985529216486895, "sce_type": "uint64" },
+        { "name": "lo", "value": 1, "sce_type": "uint64" }
+      ]
+    },
+    "acl_privilege": {
+      "fixture": "AclPrivilege",
+      "signature": "struct AclPrivilegePayload { uint32 id; uint32 parent; }",
+      "description": "One privilege of a supported-privilege tree and the aggregate that contains it — the element type of the tree the standard document sce:std/acl/acl_granted.scxml takes (SCE_FORGE.md §4.12). A SHAPE claim like every event-schema fixture: names, order, and that a value reads back.",
+      "event_name": "acl.privilege",
+      "fields": [
+        { "name": "id", "value": 3, "sce_type": "uint32" },
+        { "name": "parent", "value": 1, "sce_type": "uint32" }
+      ]
+    },
+    "acl_ace": {
+      "fixture": "AclAce",
+      "signature": "struct AclAcePayload { uint32 principal; uint32 privilege; }",
+      "description": "One grant of an access control list — a principal, or a pseudo-principal at the top of the range, and the privilege it is granted — the element type of the list the standard document sce:std/acl/acl_granted.scxml takes (SCE_FORGE.md §4.12). A SHAPE claim like every event-schema fixture: names, order, and that a value reads back.",
+      "event_name": "acl.ace",
+      "fields": [
+        { "name": "principal", "value": 4294967294, "sce_type": "uint32" },
+        { "name": "privilege", "value": 2, "sce_type": "uint32" }
+      ]
+    },
+    "acl_edge": {
+      "fixture": "AclEdge",
+      "signature": "struct AclEdgePayload { uint32 member; uint32 group; }",
+      "description": "One membership — a principal and a group it belongs to — the element type of the graph the standard document sce:std/acl/acl_membership.scxml walks (SCE_FORGE.md §4.12). A SHAPE claim like every event-schema fixture: names, order, and that a value reads back.",
+      "event_name": "acl.edge",
+      "fields": [
+        { "name": "member", "value": 7, "sce_type": "uint32" },
+        { "name": "group", "value": 10, "sce_type": "uint32" }
+      ]
+    },
+    "item_version": {
+      "fixture": "ItemVersion",
+      "signature": "struct ItemVersionPayload { uint64 item; uint64 token; }",
+      "description": "One item a replica holds and the sync token of the change that last wrote it — the element of the state the standard document sce:std/sync/changes_apply.scxml takes and returns (SCE_FORGE.md §4.12). A SHAPE claim like every event-schema fixture: names, order, and that a value reads back.",
+      "event_name": "sync.item_version",
+      "fields": [
+        { "name": "item", "value": 42, "sce_type": "uint64" },
+        { "name": "token", "value": 17, "sce_type": "uint64" }
       ]
     }
   }

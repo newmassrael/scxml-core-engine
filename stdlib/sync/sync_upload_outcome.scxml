@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/sync_upload_outcome.scxml — what a collection sync client
+  does with a locally created (`create`) or changed item after the server
+  answered its PUT with `status`, `davError` saying whether a 409 carried a
+  DAV:error body (DAVx⁵ SyncManager uploadDirty):
+
+  0 stored — keep the item, now in sync (2xx);
+  1 discard the local change — the server's copy wins and is fetched again
+    (403; 412; a 409 with a DAV:error; for a change, also 404, 410 and a bare
+    409, because the item it changed is gone or conflicts);
+  2 stop the run — the failure is the collection's, not the item's (a
+    create answered 404 or 410: the collection is gone; a create answered a
+    bare 409; any other status), and sync_failure classifies it.
+
+  Read from the reference's source (SyncManager.kt, the per-item catch
+  clauses); the reference cannot run outside Android.
+
+  create 201 → 0 · create 412 → 1 · update 404 → 1 · create 404 → 2 ·
+  update 500 → 2.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="sync_upload_outcome" version="1.0">
+  <sce:signature>
+    <sce:param name="create" type="bool"/>
+    <sce:param name="status" type="int32"/>
+    <sce:param name="davError" type="bool"/>
+    <sce:return type="uint8" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="status &gt;= 200 &amp;&amp; status &lt;= 599"/>
+    <sce:var name="outcome" type="uint8" init="2"/>
+    <sce:if cond="status &lt; 300">
+      <sce:assign target="outcome" expr="0"/>
+    </sce:if>
+    <sce:if cond="status === 403 || status === 412 || (status === 409 &amp;&amp; davError)">
+      <sce:assign target="outcome" expr="1"/>
+    </sce:if>
+    <sce:if cond="!create &amp;&amp; (status === 404 || status === 410 || status === 409)">
+      <sce:assign target="outcome" expr="1"/>
+    </sce:if>
+    <sce:return expr="outcome"/>
+  </sce:body>
+</scxml>

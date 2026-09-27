@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/mailbox_assign.scxml — the id a device's mailbox gives the
+  message with sender id (hi, lo): the id it already holds for that message,
+  or one more than `counter`, the last id the mailbox issued.
+
+  Delivery is at least once, so the same message may be offered again; it
+  keeps its id and is not queued twice (mailbox_insert). A new id is always
+  greater than every id issued before it, which is what lets a reader page
+  with "after the last id I saw" (mailbox_page).
+
+  Two differences from the reference (Signal-Server insert_item.lua), both
+  fixes:
+  - The answer is always the id. The script answers a new message with
+    whether a subscriber was listening, and a repeated one with its id —
+    two meanings under one reply, which its caller reads as the first.
+  - `counter` is the host's and never goes back. The script keeps it in the
+    queue's metadata and deletes it when the queue drains, so the next
+    message is 1 again: a reader still holding "after 7" then misses ids 1
+    to 7 of the new messages.
+
+  The queue's ids must not exceed `counter`, and `counter` must leave room
+  for one more; otherwise it fails `precondition`.
+
+  queue {1: A, 2: B}, counter 2: A → 1 · C → 3 · queue {}, counter 7: A → 8.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="mailbox_assign" version="1.0">
+  <sce:import kind="event-schema" src="mailbox_slot.scxml" as="Slot"/>
+  <sce:signature>
+    <sce:param name="queue" type="list&lt;record:Slot&gt;"/>
+    <sce:param name="counter" type="int64"/>
+    <sce:param name="hi" type="uint64"/>
+    <sce:param name="lo" type="uint64"/>
+    <sce:return type="int64" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="counter &gt;= 0 &amp;&amp; counter &lt; 9223372036854775807"/>
+    <sce:var name="id" type="int64" init="counter + 1"/>
+    <sce:foreach item="s" in="queue">
+      <sce:require cond="s.id &gt;= 1 &amp;&amp; s.id &lt;= counter"/>
+      <sce:if cond="s.hi === hi &amp;&amp; s.lo === lo">
+        <sce:assign target="id" expr="s.id"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="id"/>
+  </sce:body>
+</scxml>

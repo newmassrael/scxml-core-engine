@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/acl/acl_granted.scxml — the privileges `user` holds on a resource
+  (RFC 3744 §5.4 DAV:current-user-privilege-set): of the privileges in
+  `tree`, those an entry of `acl` that applies to the user grants — itself
+  or an aggregate that contains it — in `tree` order.
+
+  An entry applies when its principal is the user or one of `groups`
+  (acl_membership), DAV:all, DAV:authenticated for a user, or
+  DAV:unauthenticated for none (`user` 0); DAV:owner applies when the
+  resource has an owner (`owner` not 0) that is the user or one of their
+  groups. An entry for a privilege the tree does not hold grants nothing.
+  (sabre/dav DAVACL/Plugin.php getCurrentUserPrivilegeSet and getAcl.)
+
+  One difference from the reference, a fix: each privilege is decided once,
+  by walking up from it. The reference expands every granted aggregate into
+  its children on a stack, pushing a shared subtree again for every path to
+  it and removing the repeats only at the end — work that grows with the
+  number of paths, not of privileges. The set is the same; its order here
+  is the tree's, where the reference's follows the stack.
+
+  `tree` holds each privilege once, DAV:all (0) first as its own parent,
+  every other parent earlier in the list; otherwise it fails
+  `precondition`.
+
+  tree {all, read⊂all, read-acl⊂read, write⊂all}, acl {authenticated:
+  read}, user 7 → {read, read-acl} · user 0 → {}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="acl_granted" version="1.0">
+  <sce:import kind="event-schema" src="acl_privilege.scxml" as="Privilege"/>
+  <sce:import kind="event-schema" src="acl_ace.scxml" as="Ace"/>
+  <sce:signature>
+    <sce:param name="tree" type="list&lt;record:Privilege&gt;"/>
+    <sce:param name="acl" type="list&lt;record:Ace&gt;"/>
+    <sce:param name="user" type="uint32"/>
+    <sce:param name="groups" type="list&lt;uint32&gt;"/>
+    <sce:param name="owner" type="uint32"/>
+    <sce:return type="list&lt;uint32&gt;" returns-max-size="256" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;uint32&gt;" capacity="256"/>
+    <sce:var name="n" type="uint32" init="0"/>
+    <sce:foreach item="p" in="tree">
+      <!-- The tree's shape: the root first, each parent before its child. -->
+      <sce:require cond="n === 0 ? (p.id === 0 &amp;&amp; p.parent === 0) : p.id !== 0"/>
+      <sce:var name="parentEarlier" type="bool" init="n === 0"/>
+      <sce:var name="k" type="uint32" init="0"/>
+      <sce:foreach item="q" in="tree">
+        <sce:if cond="k &lt; n &amp;&amp; q.id === p.parent">
+          <sce:assign target="parentEarlier" expr="true"/>
+        </sce:if>
+        <sce:if cond="k &lt; n">
+          <sce:require cond="q.id !== p.id"/>
+        </sce:if>
+        <sce:assign target="k" expr="k + 1"/>
+      </sce:foreach>
+      <sce:require cond="parentEarlier"/>
+      <!-- Walk up from p: granted when any privilege on the way is. -->
+      <sce:var name="at" type="uint32" init="p.id"/>
+      <sce:var name="up" type="uint32" init="p.parent"/>
+      <sce:var name="granted" type="bool" init="false"/>
+      <sce:var name="climbing" type="bool" init="true"/>
+      <sce:var name="steps" type="uint32" init="0"/>
+      <sce:while cond="climbing">
+        <sce:foreach item="a" in="acl">
+          <sce:if cond="a.privilege === at">
+            <sce:var name="applies" type="bool"
+                     init="a.principal === 4294967295 || (a.principal === 4294967294 ? user !== 0 : (a.principal === 4294967293 ? user === 0 : false))"/>
+            <sce:var name="who" type="uint32" init="a.principal === 4294967292 ? owner : a.principal"/>
+            <sce:if cond="who !== 0 &amp;&amp; user !== 0 &amp;&amp; who &lt; 4294967292">
+              <sce:if cond="who === user">
+                <sce:assign target="applies" expr="true"/>
+              </sce:if>
+              <sce:foreach item="g" in="groups">
+                <sce:if cond="g === who">
+                  <sce:assign target="applies" expr="true"/>
+                </sce:if>
+              </sce:foreach>
+            </sce:if>
+            <sce:if cond="applies">
+              <sce:assign target="granted" expr="true"/>
+            </sce:if>
+          </sce:if>
+        </sce:foreach>
+        <sce:assign target="climbing" expr="!granted &amp;&amp; at !== 0 &amp;&amp; steps &lt; n"/>
+        <sce:if cond="climbing">
+          <sce:assign target="at" expr="up"/>
+          <sce:foreach item="r" in="tree">
+            <sce:if cond="r.id === at">
+              <sce:assign target="up" expr="r.parent"/>
+            </sce:if>
+          </sce:foreach>
+          <sce:assign target="steps" expr="steps + 1"/>
+        </sce:if>
+      </sce:while>
+      <sce:if cond="granted">
+        <sce:append target="out" expr="p.id"/>
+      </sce:if>
+      <sce:assign target="n" expr="n + 1"/>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

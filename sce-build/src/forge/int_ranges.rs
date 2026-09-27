@@ -95,7 +95,12 @@ pub fn hazards(
     let mut collections: Vec<String> = ctx
         .vars
         .iter()
-        .filter(|(_, ty)| matches!(ty, InferredType::Bytes | InferredType::List(_)))
+        .filter(|(_, ty)| {
+            matches!(
+                ty,
+                InferredType::Bytes | InferredType::List(_) | InferredType::ListBuffer(_)
+            )
+        })
         .map(|(name, _)| name.to_string())
         .collect();
     collections.sort();
@@ -415,7 +420,9 @@ impl Analysis<'_, '_> {
                 // the append is lowered.
                 let target = target.trim();
                 let place = match self.declared_type(target) {
-                    Some(InferredType::List(elem)) => Some(elem.element_type()),
+                    Some(InferredType::List(elem) | InferredType::ListBuffer(elem)) => {
+                        Some(elem.element_type())
+                    }
                     _ => None,
                 };
                 self.stored(expr, expr_spelling.as_ref(), env, place);

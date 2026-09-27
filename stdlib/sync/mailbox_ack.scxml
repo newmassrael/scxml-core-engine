@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/mailbox_ack.scxml — a device's mailbox after its reader
+  acknowledges the messages `acked` (sender ids): every message not
+  acknowledged, in the order it was (Signal-Server remove_item_by_guid.lua:
+  each guid's entry removed, a guid the queue does not hold skipped).
+
+  Acknowledging a message twice, or one never delivered, changes nothing —
+  an acknowledgement may be repeated after a lost reply.
+
+  The reference also deletes the queue's metadata once it is empty, which
+  resets its id counter (see mailbox_assign); here the counter is the
+  host's and an empty queue is just an empty list.
+
+  queue {1: A, 2: B, 3: C}, acked {B, D} → {1: A, 3: C}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="mailbox_ack" version="1.0">
+  <sce:import kind="event-schema" src="mailbox_slot.scxml" as="Slot"/>
+  <sce:import kind="event-schema" src="sce:std/mesh/envelope_id.scxml" as="Id"/>
+  <sce:signature>
+    <sce:param name="queue" type="list&lt;record:Slot&gt;"/>
+    <sce:param name="acked" type="list&lt;record:Id&gt;"/>
+    <sce:return type="list&lt;record:Slot&gt;" returns-max-size="256"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Slot&gt;" capacity="256"/>
+    <sce:foreach item="s" in="queue">
+      <sce:var name="gone" type="bool" init="false"/>
+      <sce:foreach item="a" in="acked">
+        <sce:if cond="a.hi === s.hi &amp;&amp; a.lo === s.lo">
+          <sce:assign target="gone" expr="true"/>
+        </sce:if>
+      </sce:foreach>
+      <sce:if cond="!gone">
+        <sce:append target="out" expr="s"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

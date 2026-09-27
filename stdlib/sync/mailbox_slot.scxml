@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/mailbox_slot.scxml — one message waiting in a device's
+  mailbox: the id the mailbox gave it, and the sender's 16-byte message id
+  as two big-endian halves (the layout of sce:std/mesh/envelope_id).
+
+  The message's bytes are the host's; the mailbox's rules need only which
+  message it is and in what order it came (Signal-Server's per-device queue,
+  MessagesCache: a sorted set scored by the id, and a map from the guid to
+  it).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="mailbox_slot"
+       sce:event-name="sync.mailbox_slot">
+  <datamodel>
+    <data id="id" sce:type="int64" sce:direction="in"/>
+    <data id="hi" sce:type="uint64" sce:direction="in"/>
+    <data id="lo" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

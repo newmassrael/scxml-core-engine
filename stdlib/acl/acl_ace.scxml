@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/acl/acl_ace.scxml — one grant of a resource's access control list
+  (RFC 3744 §5.5.1 DAV:ace with DAV:grant): `principal` is granted
+  `privilege` (an acl_privilege number).
+
+  The principal is the host's number, or one of the four RFC 3744 §5.5.1
+  pseudo-principals, which take the top of the range:
+  4294967295 DAV:all · 4294967294 DAV:authenticated ·
+  4294967293 DAV:unauthenticated · 4294967292 DAV:owner.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="acl_ace"
+       sce:event-name="acl.ace">
+  <datamodel>
+    <data id="principal" sce:type="uint32" sce:direction="in"/>
+    <data id="privilege" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

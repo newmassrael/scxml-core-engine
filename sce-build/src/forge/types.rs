@@ -82,7 +82,15 @@ pub enum InferredType {
     /// typed `<foreach>`; no emitter lowers it as an operand.
     List(ListElem),
 
-    /// A record — a value of the event-schema document `RecordId` names
+    /// A `list<T>` local an algorithm is building — its own result buffer
+    /// (SCE_FORGE.md §4.12). Read like a list, by `len(…)` and `xs[i]`, but
+    /// held in the algorithm's own storage rather than a caller's view: C11
+    /// reads it through the result struct's `items`, Kotlin through the
+    /// buffer's typed readers. A record-element buffer is not one — its
+    /// elements are read by name only, so it is not registered as a value.
+    ListBuffer(ListElem),
+
+    /// A record —a value of the event-schema document `RecordId` names
     /// (SCE_FORGE.md §4.12). It is passed whole by name, as an argument to
     /// an algorithm whose parameter is that record or as the value a record
     /// local is initialised from; it is never an operand, and its fields
@@ -298,7 +306,9 @@ impl InferredType {
             Self::Null => "null".into(),
             Self::Unknown => "unknown".into(),
             Self::Quantity { .. } => "quantity".into(),
-            Self::List(elem) => format!("list<{}>", elem.element_type().describe()),
+            Self::List(elem) | Self::ListBuffer(elem) => {
+                format!("list<{}>", elem.element_type().describe())
+            }
             // By the schema document itself: two records of one `name` in
             // different places are different types, and the diagnostic
             // that refuses one for the other must say which is which.
@@ -415,7 +425,7 @@ impl InferredType {
             | Self::Quantity { .. } => return None,
             // Spelled from its element or its schema, so not one of the
             // fixed spellings this returns — [`Self::describe`] names it.
-            Self::List(_) | Self::Record(_) => return None,
+            Self::List(_) | Self::ListBuffer(_) | Self::Record(_) => return None,
         })
     }
 
@@ -460,7 +470,9 @@ impl InferredType {
             },
             // A list or a record is not a scalar a host method or a field
             // declares.
-            Self::Null | Self::Unknown | Self::List(_) | Self::Record(_) => None,
+            Self::Null | Self::Unknown | Self::List(_) | Self::ListBuffer(_) | Self::Record(_) => {
+                None
+            }
         }
     }
 

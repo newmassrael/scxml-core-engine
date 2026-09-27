@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/acl/acl_edge.scxml — one membership: principal `member` belongs
+  to group `group` (RFC 3744 §4.4 DAV:group-membership, one entry of it).
+  Principals are the host's numbers; 0 is no principal.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="acl_edge"
+       sce:event-name="acl.edge">
+  <datamodel>
+    <data id="member" sce:type="uint32" sce:direction="in"/>
+    <data id="group" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

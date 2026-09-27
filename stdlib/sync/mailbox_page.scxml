@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/mailbox_page.scxml — the next page a reader of a device's
+  mailbox receives: the messages with an id greater than `after`, in id
+  order, at most `limit` of them (Signal-Server get_items.lua: ZRANGE by
+  score from the exclusive `after` upward, LIMIT 0 `limit`).
+
+  A reader starts from `after` -1 and continues from the last id it
+  received until a page comes back empty. Removing messages it has
+  acknowledged (mailbox_ack) between pages does not disturb that, because
+  ids are never reused (mailbox_assign).
+
+  The reference's persistence lock (a locked queue reads as empty) is the
+  host's to apply before asking; it is not a property of the page.
+
+  The ids must be ascending and `limit` 1 to 256; otherwise it fails
+  `precondition`.
+
+  queue {1, 2, 5}: after -1, limit 2 → {1, 2} · after 2 → {5} · after 5 → {}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="mailbox_page" version="1.0">
+  <sce:import kind="event-schema" src="mailbox_slot.scxml" as="Slot"/>
+  <sce:signature>
+    <sce:param name="queue" type="list&lt;record:Slot&gt;"/>
+    <sce:param name="after" type="int64"/>
+    <sce:param name="limit" type="uint32"/>
+    <sce:return type="list&lt;record:Slot&gt;" returns-max-size="256" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="limit &gt;= 1 &amp;&amp; limit &lt;= 256"/>
+    <sce:var name="out" type="list&lt;record:Slot&gt;" capacity="256"/>
+    <sce:var name="taken" type="uint32" init="0"/>
+    <sce:var name="prev" type="int64" init="0"/>
+    <sce:foreach item="s" in="queue">
+      <sce:require cond="s.id &gt; prev"/>
+      <sce:assign target="prev" expr="s.id"/>
+      <sce:if cond="s.id &gt; after &amp;&amp; taken &lt; limit">
+        <sce:append target="out" expr="s"/>
+        <sce:assign target="taken" expr="taken + 1"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

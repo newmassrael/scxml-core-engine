@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/mailbox_insert.scxml — a device's mailbox after the message
+  with sender id (hi, lo) is offered to it: unchanged when it already holds
+  that message, else with the message appended under id `counter + 1`
+  (mailbox_assign, whose answer the host keeps as its new `counter`).
+
+  The queue stays in ascending id order, because a new id is greater than
+  every id before it — the order mailbox_page reads it in (Signal-Server
+  insert_item.lua: ZADD scored by the id, HSET guid to id, the duplicate
+  path returning before either).
+
+  The ids must be ascending and within `counter`, and `counter` must leave
+  room for one more (mailbox_assign); a full queue fails `capacity`.
+
+  queue {1: A}, counter 1: B → {1: A, 2: B} · A → {1: A}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="mailbox_insert" version="1.0">
+  <sce:import kind="event-schema" src="mailbox_slot.scxml" as="Slot"/>
+  <sce:signature>
+    <sce:param name="queue" type="list&lt;record:Slot&gt;"/>
+    <sce:param name="counter" type="int64"/>
+    <sce:param name="hi" type="uint64"/>
+    <sce:param name="lo" type="uint64"/>
+    <sce:return type="list&lt;record:Slot&gt;" returns-max-size="256" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="counter &gt;= 0 &amp;&amp; counter &lt; 9223372036854775807"/>
+    <sce:var name="out" type="list&lt;record:Slot&gt;" capacity="256"/>
+    <sce:var name="held" type="bool" init="false"/>
+    <sce:var name="prev" type="int64" init="0"/>
+    <sce:foreach item="s" in="queue">
+      <sce:require cond="s.id &gt; prev &amp;&amp; s.id &lt;= counter"/>
+      <sce:assign target="prev" expr="s.id"/>
+      <sce:if cond="s.hi === hi &amp;&amp; s.lo === lo">
+        <sce:assign target="held" expr="true"/>
+      </sce:if>
+      <sce:append target="out" expr="s"/>
+    </sce:foreach>
+    <sce:if cond="!held">
+      <sce:var name="fresh" type="record:Slot">
+        <sce:set name="id" expr="counter + 1"/>
+        <sce:set name="hi" expr="hi"/>
+        <sce:set name="lo" expr="lo"/>
+      </sce:var>
+      <sce:append target="out" expr="fresh"/>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

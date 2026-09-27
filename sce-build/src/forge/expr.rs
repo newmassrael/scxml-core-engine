@@ -3844,7 +3844,10 @@ fn is_len_builtin(callee: &TypedExpr, args: &[TypedExpr]) -> bool {
     args.len() == 1
         && matches!(
             args[0].ty,
-            InferredType::Bytes | InferredType::Str | InferredType::List(_)
+            InferredType::Bytes
+                | InferredType::Str
+                | InferredType::List(_)
+                | InferredType::ListBuffer(_)
         )
         && matches!(&callee.kind, ExprKind::Ident(n) | ExprKind::Raw(n) if n == "len")
 }
@@ -4679,6 +4682,37 @@ fn cpp_unary(op: UnaryOp) -> &'static str {
 //   in signed domain to satisfy Kotlin arithmetic) is wrapped with
 //   `.toUByte()` / `.toUShort()` / `.toUInt()` / `.toULong()`.
 
+/// The `SceListBuf` reader that returns a list buffer's element as the type
+/// it was appended as. The buffer keeps every element in one 64-bit slot,
+/// so the reader is chosen by the element, not by an overload on the
+/// buffer.
+fn kotlin_buffer_reader(elem: crate::forge::types::ListElem) -> Result<&'static str, ExprError> {
+    use crate::forge::quantity::NumericBaseType;
+    use crate::forge::types::ListElem;
+    Ok(match elem {
+        ListElem::Number(NumericBaseType::Int { signed, bits }) => match (signed, bits) {
+            (true, 8) => "getByte",
+            (true, 16) => "getShort",
+            (true, 32) => "getInt",
+            (true, _) => "getLong",
+            (false, 8) => "getUByte",
+            (false, 16) => "getUShort",
+            (false, 32) => "getUInt",
+            (false, _) => "getULong",
+        },
+        ListElem::Number(NumericBaseType::Float { bits: 32 }) => "getFloat",
+        ListElem::Number(NumericBaseType::Float { .. }) => "getDouble",
+        ListElem::Bool => "getBoolean",
+        // Never registered as a value (AlgorithmTypes::collect).
+        ListElem::Record => {
+            return Err(ExprError::UnsupportedConstruct {
+                construct: "an index into a list of records".to_string(),
+                observed: None,
+            })
+        }
+    })
+}
+
 fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
     // Width-aware `round`/`floor`: same rule as Rust and Go — the declared
     // output type decides the integer, not a constant. See
@@ -4972,6 +5006,15 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 InferredType::Int { .. } => format!("({idx_raw}).toInt()"),
                 _ => idx_raw,
             };
+            // A list buffer is a `SceListBuf`, read by the element's own
+            // typed reader.
+            if let InferredType::ListBuffer(elem) = object.ty {
+                return Ok(format!(
+                    "{}.{}({idx_emit})",
+                    wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)?),
+                    kotlin_buffer_reader(elem)?,
+                ));
+            }
             // A `bytes` operand is a `ByteArray`; `[i]` yields a signed
             // `Byte`, so normalize to `UByte` exactly as the foreach arm
             // does. Item C7 wildcard-keyexpr lowering.
@@ -5054,6 +5097,16 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             left,
             right: Some(index),
         } => {
+            // A list buffer checks the index against its size, then reads
+            // with the element's reader.
+            if let InferredType::ListBuffer(elem) = left.ty {
+                let buffer = wrap_postfix(left, emit_kotlin(left, InferredType::Unknown)?);
+                return Ok(format!(
+                    "{buffer}.{}(com.sce.forge.runtime.SceChecked.index(({}).toLong(), {buffer}.size))",
+                    kotlin_buffer_reader(elem)?,
+                    emit_kotlin(index, InferredType::Unknown)?,
+                ));
+            }
             let norm = if matches!(left.ty, InferredType::Bytes) {
                 ".toUByte()"
             } else {
@@ -6662,6 +6715,19 @@ fn python_binop(op: BinOp) -> &'static str {
 //   set; broader operator and type coverage waits until a consumer
 //   needs it.
 
+/// The member a C11 index reads a collection's elements through: a `bytes`
+/// value or a `list<T>` parameter is a view (`{const T *data; size_t len}`),
+/// a list buffer the algorithm is building is its own result struct
+/// (`{T items[N]; size_t len; …}`), and a build-time array is indexed as
+/// it is. Both named members carry the length as `len`.
+fn c_element_accessor(collection: InferredType) -> &'static str {
+    match collection {
+        InferredType::Bytes | InferredType::List(_) => ".data",
+        InferredType::ListBuffer(_) => ".items",
+        _ => "",
+    }
+}
+
 fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
     // Push-down: arithmetic + Float expectation propagates into operands so
     // decimal-integer literals pick up `.0` and avoid integer division.
@@ -6833,14 +6899,10 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             // shape, so a random read projects through `.data` — mirroring
             // the foreach arm's `src.data[__i]`. Item C7 wildcard-keyexpr
             // lowering.
-            let accessor = if matches!(object.ty, InferredType::Bytes | InferredType::List(_)) {
-                ".data"
-            } else {
-                ""
-            };
             format!(
-                "{}{accessor}[{}]",
+                "{}{}[{}]",
                 wrap_postfix(object, emit_c(object, InferredType::Unknown)?),
+                c_element_accessor(object.ty),
                 emit_c(index, InferredType::Unknown)?,
             )
         }
@@ -6909,11 +6971,11 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         } => {
             let object = wrap_postfix(left, emit_c(left, InferredType::Unknown)?);
             let idx = emit_c(index, InferredType::Unknown)?;
-            let (accessor, len) = if matches!(left.ty, InferredType::Bytes | InferredType::List(_))
-            {
-                (".data", format!("({object}).len"))
+            let accessor = c_element_accessor(left.ty);
+            let len = if accessor.is_empty() {
+                format!("(sizeof({object}) / sizeof(({object})[0]))")
             } else {
-                ("", format!("(sizeof({object}) / sizeof(({object})[0]))"))
+                format!("({object}).len")
             };
             let from = match index.ty {
                 InferredType::Int { signed: false, .. } => "u",

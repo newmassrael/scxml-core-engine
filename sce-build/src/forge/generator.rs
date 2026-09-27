@@ -24079,6 +24079,10 @@ pub(crate) struct AlgorithmTypes<'a> {
     /// Every `list<T>` parameter and its element type: read by `xs[i]`,
     /// `len(xs)` and `<sce:foreach in="xs">`, never written.
     list_params: Vec<(String, ListElemType)>,
+    /// Every `list<T>` local of a scalar element — a buffer the body builds
+    /// by `<sce:append>` and may read back by `len(xs)` and `xs[i]`, e.g. a
+    /// breadth-first walk's queue (SCE_FORGE.md §4.12) — with its element.
+    list_buffers: Vec<(String, SceType)>,
     /// Foreach items over a bounded collection, and whether their element
     /// schema was threaded (closed) or not (open).
     record_items: Vec<(&'a str, crate::forge::types::RecordShape)>,
@@ -24135,18 +24139,25 @@ impl<'a> AlgorithmTypes<'a> {
         // were checked: `entry.pattern` then read as a member of a `uint8`
         // wherever the element schema is not threaded (measured 2026-09-21).
         let mut record_items: Vec<(&str, RecordShape)> = Vec::new();
+        let mut list_buffers: Vec<(String, SceType)> = Vec::new();
         for binding in m.body_bindings() {
             let ty = match binding {
-                // A `list<T>` local is a buffer read by name — the
-                // `<sce:append>` target and the returned value — and never as
-                // an expression operand, so it is left out of the expression
-                // type context. Registering it as `Unknown` would let
-                // `out + 1` through unjudged; left out, such a use is refused
+                // A `list<T>` local of a scalar element is a buffer: it is
+                // appended to and returned by name, and read back by
+                // `len(xs)` and `xs[i]` — typed below as a list buffer, never
+                // an operand as a whole. A list of records is read by name
+                // only (an item of a foreach over it), so it is left out of
+                // the expression type context and any other use is refused
                 // as an unknown name.
-                crate::forge::model::AlgorithmBinding::Local { sce_type, .. } => {
+                crate::forge::model::AlgorithmBinding::Local { name, sce_type } => {
                     match sce_type.scalar() {
                         Some(t) => t.clone(),
-                        None => continue,
+                        None => {
+                            if let Some(ListElemType::Scalar(elem)) = sce_type.list_elem() {
+                                list_buffers.push((name.to_string(), elem.clone()));
+                            }
+                            continue;
+                        }
                     }
                 }
                 crate::forge::model::AlgorithmBinding::ForeachItem { name, source } => {
@@ -24255,6 +24266,7 @@ impl<'a> AlgorithmTypes<'a> {
         Ok(Self {
             env,
             list_params,
+            list_buffers,
             record_items,
             records,
             members,
@@ -24282,6 +24294,13 @@ impl<'a> AlgorithmTypes<'a> {
                 type_ctx.insert_var(name.as_str(), InferredType::List(list_elem));
             }
             if let Some(elem) = elem.scalar() {
+                type_ctx.insert_array_elem(name.as_str(), InferredType::from_sce_type(elem));
+            }
+        }
+        // A list buffer reads the same way, from the algorithm's own storage.
+        for (name, elem) in &self.list_buffers {
+            if let Some(list_elem) = crate::forge::types::ListElem::of(elem) {
+                type_ctx.insert_var(name.as_str(), InferredType::ListBuffer(list_elem));
                 type_ctx.insert_array_elem(name.as_str(), InferredType::from_sce_type(elem));
             }
         }

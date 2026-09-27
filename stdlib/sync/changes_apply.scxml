@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/changes_apply.scxml — a replica's items after it applies the
+  change rows `log` (sce:std/sync/change_entry) to `state`: each row in log
+  order, an add or a modify writing its item at its token, a delete removing
+  it. So an item's fate is its LAST row, and an item no row names keeps
+  what `state` held. The answer is in ascending item order.
+
+  Because each item is decided by its last row alone, the answer does not
+  depend on how the log reached the replica: applying one part and then the
+  rest gives what applying all of it at once gives, wherever the log is cut
+  (changes_apply(changes_apply(s, a), b) = changes_apply(s, a ++ b)). A
+  replica that pages through a change feed, or is sent missed changes in
+  batches, ends where one that read it whole does.
+
+  Two clients this was measured against do not, and each loses a write:
+  - Tutanota (DefaultEntityRestCache.updateCacheWithMissedEntityUpdates)
+    applies a batch of missed changes type by type, every delete first and
+    then every create and update: a create then a delete of one entity in
+    one batch leaves it present — the same two rows in two batches leave it
+    absent.
+  - Proton Calendar for iOS (CalendarModelEventProcessor.process) applies
+    the creates and updates of a response first and its deletes last: a
+    delete then a create of one event in one response leaves it absent.
+
+  `state` must be in ascending item order with no item twice (as this
+  answers), `log` in non-decreasing token order, and `op` 1 add, 2 modify or
+  3 delete; otherwise it fails `precondition`. The answer is chosen item by
+  item, O((n + m)^3) — a page of changes on a replica's page of state.
+
+  state {1@5, 2@5}, log {3 add@6, 1 delete@7, 3 modify@8} → {2@5, 3@8} ·
+  log {4 add@6, 4 delete@7} → {1@5, 2@5} · log {4 delete@6, 4 add@7} →
+  {1@5, 2@5, 4@7}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="changes_apply" version="1.0">
+  <sce:import kind="event-schema" src="item_version.scxml" as="Held"/>
+  <sce:import kind="event-schema" src="change_entry.scxml" as="Change"/>
+  <sce:signature>
+    <sce:param name="state" type="list&lt;record:Held&gt;"/>
+    <sce:param name="log" type="list&lt;record:Change&gt;"/>
+    <sce:return type="list&lt;record:Held&gt;" returns-max-size="256" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="prevItem" type="uint64" init="0"/>
+    <sce:var name="first" type="bool" init="true"/>
+    <sce:foreach item="held0" in="state">
+      <sce:require cond="first || held0.item &gt; prevItem"/>
+      <sce:assign target="prevItem" expr="held0.item"/>
+      <sce:assign target="first" expr="false"/>
+    </sce:foreach>
+    <sce:var name="prevToken" type="uint64" init="0"/>
+    <sce:foreach item="row0" in="log">
+      <sce:require cond="row0.token &gt;= prevToken &amp;&amp; row0.op &gt;= 1 &amp;&amp; row0.op &lt;= 3"/>
+      <sce:assign target="prevToken" expr="row0.token"/>
+    </sce:foreach>
+    <sce:var name="out" type="list&lt;record:Held&gt;" capacity="256"/>
+    <!-- The next item to answer: the least item above the last one answered
+         that its last row, or failing one `state`, leaves present. -->
+    <sce:var name="last" type="uint64" init="0"/>
+    <sce:var name="started" type="bool" init="false"/>
+    <sce:var name="more" type="bool" init="true"/>
+    <sce:while cond="more">
+      <sce:var name="found" type="bool" init="false"/>
+      <sce:var name="best" type="uint64" init="0"/>
+      <sce:var name="bestToken" type="uint64" init="0"/>
+      <sce:foreach item="s" in="state">
+        <sce:if cond="(!started || s.item &gt; last) &amp;&amp; (!found || s.item &lt; best)">
+          <!-- Held unless a row names it; then its last row decides. -->
+          <sce:var name="present" type="bool" init="true"/>
+          <sce:var name="token" type="uint64" init="s.token"/>
+          <sce:foreach item="r" in="log">
+            <sce:if cond="r.item === s.item">
+              <sce:assign target="present" expr="r.op !== 3"/>
+              <sce:assign target="token" expr="r.token"/>
+            </sce:if>
+          </sce:foreach>
+          <sce:if cond="present">
+            <sce:assign target="found" expr="true"/>
+            <sce:assign target="best" expr="s.item"/>
+            <sce:assign target="bestToken" expr="token"/>
+          </sce:if>
+        </sce:if>
+      </sce:foreach>
+      <sce:foreach item="c" in="log">
+        <sce:if cond="(!started || c.item &gt; last) &amp;&amp; (!found || c.item &lt; best)">
+          <!-- An item the log names: its last row decides. -->
+          <sce:var name="present2" type="bool" init="false"/>
+          <sce:var name="token2" type="uint64" init="0"/>
+          <sce:foreach item="d" in="log">
+            <sce:if cond="d.item === c.item">
+              <sce:assign target="present2" expr="d.op !== 3"/>
+              <sce:assign target="token2" expr="d.token"/>
+            </sce:if>
+          </sce:foreach>
+          <sce:if cond="present2">
+            <sce:assign target="found" expr="true"/>
+            <sce:assign target="best" expr="c.item"/>
+            <sce:assign target="bestToken" expr="token2"/>
+          </sce:if>
+        </sce:if>
+      </sce:foreach>
+      <sce:if cond="found">
+        <sce:var name="held" type="record:Held">
+          <sce:set name="item" expr="best"/>
+          <sce:set name="token" expr="bestToken"/>
+        </sce:var>
+        <sce:append target="out" expr="held"/>
+        <sce:assign target="last" expr="best"/>
+        <sce:assign target="started" expr="true"/>
+      </sce:if>
+      <sce:assign target="more" expr="found"/>
+    </sce:while>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
