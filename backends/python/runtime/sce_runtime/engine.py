@@ -1551,6 +1551,16 @@ class Engine(Generic[S, E]):
                 return
             # §scxml-6.4: invokes for states entered during this macrostep.
             self._start_pending_invokes()
+            # §scxml-6.4: what an invoked child sent this session is an
+            # external event of this session the moment it is sent. A child
+            # runs synchronously — when it starts, and when a `<send
+            # target="#_<id>">` hands it an event — so its replies are waiting
+            # in its parent-bound queue now. They used to be collected only by
+            # `advance_time`, so a host driving the machine with `send_event`
+            # alone never saw a child answer: the parent sat waiting on a reply
+            # already sent. Collected here, without moving any clock, before
+            # the external queue is read.
+            self._drive_active_children(0)
             # §scxml-D-mainEventLoop: invoking may have raised internal error
             # events (and a child that completed during its own initialise may
             # already have raised `done.invoke`); handle them before touching
