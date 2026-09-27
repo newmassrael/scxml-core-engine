@@ -98,14 +98,14 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 242
+engine-documents 243
 native-prefix-documents 2
-datamodel-variable-init 300
-transition-guard 221
-assign-action 253
+datamodel-variable-init 307
+transition-guard 223
+assign-action 260
 child-invoke-needs-script-engine 46
 log-expr 45
-send-param-expr 33
+send-param-expr 38
 send-dynamic-attr 32
 foreach-action 15
 static-invoke-namelist 9
@@ -192,11 +192,20 @@ never spelled correctly.
   data items, three assigns, one guard that reads the done event's shape,
   and a `<donedata>` of `<param>`s) raised `engine-documents` by one,
   `datamodel-variable-init` by four, `assign-action` by three, and
-  `transition-guard` and `donedata-param` by one.
+  `transition-guard` and `donedata-param` by one. Then
+  `a_bad_send_param_ends_its_block.scxml` (one engine document: seven
+  data items, seven assigns, two guards that read the sent values, and
+  five `<send>` `<param>`s that read the datamodel — a failing `expr`, two
+  `expr="1"`, which is not a string literal, a failing `location` and a
+  valid one) raised `engine-documents` by one, `transition-guard` by two,
+  `datamodel-variable-init` and `assign-action` by seven, and
+  `send-param-expr` by five. The same commit made the analyzer count a
+  `<send>` `<param>` given only a `location` under `send-param-expr`; no
+  other tracked document has one, so it moved no other count.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
-- **49% of judged documents need an engine** (233 of 475). The remaining
+- **49% of judged documents need an engine** (243 of 496). The remaining
   51% already compile without one, which is what makes "the engine is a
   fallback" a description of the tree rather than an aspiration.
   ⚠ This figure was previously stated as 32%, taken over the 736 walked

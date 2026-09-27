@@ -1462,6 +1462,32 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 5.7.1 + 4.9: a <send> whose <param> cannot be read still goes, and the error ends its block.
+    sce_generate_static_integration_c_test(a_bad_send_param_ends_its_block "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_a_bad_send_param_ends_its_block
+        integration/test_a_bad_send_param_ends_its_block.c
+        ${INTEGRATION_C_TEST_a_bad_send_param_ends_its_block_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_a_bad_send_param_ends_its_block PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_a_bad_send_param_ends_its_block PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_bad_send_param_ends_its_block PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_bad_send_param_ends_its_block
+        COMMAND sce_c_integration_a_bad_send_param_ends_its_block
+    )
+    set_tests_properties(c11_integration_a_bad_send_param_ends_its_block PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach
     # the datamodel as a value. Every other fixture here leaves the carrier's
     # `data` field zeroed, so this edge — the one a downstream MCU consumer

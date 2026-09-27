@@ -1041,6 +1041,8 @@ add_executable(integration_tests
     integration/AnInvokeLeftBeforeItStartsRaisesNothingAotTest.cpp
     integration/ABadDonedataPairIsIgnoredTest.cpp
     integration/ABadDonedataPairIsIgnoredAotTest.cpp
+    integration/ABadSendParamEndsItsBlockTest.cpp
+    integration/ABadSendParamEndsItsBlockAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
     integration/EventDataArrivesAsSentAotTest.cpp
     integration/XmlDataIsADomTreeTest.cpp
@@ -1582,6 +1584,10 @@ sce_generate_static_integration_test(an_invoke_left_before_it_starts_raises_noth
 # error.execution and is ignored; done.state.<parent> and the <parallel>'s
 # done event are raised all the same, carrying the pairs that survive.
 sce_generate_static_integration_test(a_bad_donedata_pair_is_ignored ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 5.7.1 + 4.9: a <send> whose <param> cannot be read raises
+# error.execution and goes without that pair, and the error ends its block.
+sce_generate_static_integration_test(a_bad_send_param_ends_its_block ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach the
 # datamodel as a value. `raiseExternalEvent(name, data)` and

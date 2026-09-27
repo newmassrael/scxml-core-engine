@@ -1206,6 +1206,27 @@ neither of `expr` and `location` — which §scxml-5.7 forbids — was read four
 ways; both the code generator and the Interpreter now refuse the document
 (`validation/exactly-one-attribute`).
 
+`a_bad_send_param_ends_its_block` covers §scxml-5.7.1 with §scxml-4.9:
+when a `<send>`'s `<param>` cannot be read, the Processor raises
+error.execution and ignores that name and value, and the message still
+goes; but an error was raised while the element was processed, so none of
+the block's remaining elements run. §scxml-6.2's "discard the message"
+governs `<send>`'s own arguments, not its `<param>` children —
+`send_param_payload` records the reading. The fixture's four `onentry`
+blocks send with a failing `expr` before a good pair, a failing `location`
+after one, an empty `location` on an external send, and a valid
+`location`; every event arrives, the first two with the good pair and the
+fourth with its value, and nothing after a failed `<param>` in its block
+runs.
+
+Measured 2026-09-27, every channel let the block run on after the error.
+C11's external and delayed arms also stored `''` under the failed name and
+raised nothing; Python, Kotlin and C11 never read a `location` (a valid one
+arrived as null, vanished, or was read as `()`); Rust and Go read it
+without lowering it and silently omitted a `location=""` pair; and C++ AOT
+evaluated the absent `expr` in its place. An `<invoke>`'s `<param>` is
+untouched here; §scxml-6.4's rule for it is a separate change.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

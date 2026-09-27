@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 5.7.1 + 4.9: a <send> whose <param> cannot be read still sends
+  its message, and the error ends the block it sits in.
+
+  §5.7.1 has the processor place error.execution on the internal queue "and
+  MUST ignore the name and value", so the message goes without that pair.
+  §6.2's "discard the message" governs <send>'s own arguments — a namelist
+  entry, an idlocation — and not its <param> children; `send_param_payload`
+  records why, and W3C test343 reads the same clause the same way under
+  <donedata>. But the error WAS raised while the <send> was processed, so
+  §4.9 applies: the processor "MUST NOT process the remaining elements of the
+  block", while "the execution of other blocks of executable content is not
+  affected".
+
+  `s0` has four <onentry> blocks, each its own block:
+
+    1  an internal <send> whose first <param> has an `expr` that reads
+       `obj.missing.deep` — its base is declared, so the failure comes at
+       run time — before a good one, followed by an <assign> that must not
+       run;
+    2  an internal <send> whose SECOND <param> names that location as a
+       `location`, after a good one, followed by an <assign> that must not
+       run;
+    3  an external <send> whose only <param> names no location
+       (location=""), followed by an <assign> that must not run;
+    4  an internal <send> whose <param> reads a valid location, `v`.
+
+    errors    3 — one error.execution for each of the first three sends.
+    partials  2 — both internal sends arrive, carrying the good pair.
+    bares     1 — the external send arrives, with the empty pair left out.
+    after     0 — no <assign> behind a failed <param> runs.
+    carried   1 — the fourth send arrives, carrying `p` = 7.
+    and the host's `finish` ends the run in `done`.
+
+  A channel that discards the whole message leaves `partials` and `bares` at
+  0; one that lets the block run on moves `after`; one that reads no
+  `location` leaves `carried` at 0. Whether the ignored pair is absent rather
+  than present with a placeholder is `send_param_payload`'s claim, not this
+  one's.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="a_bad_send_param_ends_its_block" datamodel="ecmascript"
+       initial="s0">
+
+  <datamodel>
+    <data id="errors" expr="0"/>
+    <data id="partials" expr="0"/>
+    <data id="bares" expr="0"/>
+    <data id="after" expr="0"/>
+    <data id="carried" expr="0"/>
+    <data id="v" expr="7"/>
+    <data id="obj" expr="({})"/>
+  </datamodel>
+
+  <state id="s0">
+    <onentry>
+      <send event="partial" target="#_internal">
+        <param name="bad" expr="obj.missing.deep"/>
+        <param name="good" expr="1"/>
+      </send>
+      <assign location="after" expr="after + 1"/>
+    </onentry>
+    <onentry>
+      <send event="partial" target="#_internal">
+        <param name="good" expr="1"/>
+        <param name="bad" location="obj.missing.deep"/>
+      </send>
+      <assign location="after" expr="after + 100"/>
+    </onentry>
+    <onentry>
+      <send event="bare">
+        <param name="p" location=""/>
+      </send>
+      <assign location="after" expr="after + 10"/>
+    </onentry>
+    <onentry>
+      <send event="carried" target="#_internal">
+        <param name="p" location="v"/>
+      </send>
+    </onentry>
+
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <transition event="partial" cond="_event.data.good === 1">
+      <assign location="partials" expr="partials + 1"/>
+    </transition>
+    <transition event="bare">
+      <assign location="bares" expr="bares + 1"/>
+    </transition>
+    <transition event="carried" cond="_event.data.p === 7">
+      <assign location="carried" expr="1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>
