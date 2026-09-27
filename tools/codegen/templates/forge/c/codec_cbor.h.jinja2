@@ -1,0 +1,233 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- The read of one entry's value into `v-><name>`; a refusal returns its
+    status, this backend's decode convention. Every CBOR item is the
+    runtime's (`sce_forge_cbor_*`). #}
+{% macro decode_value(e) %}
+{% if e.kind == "bool" %}
+            s = sce_forge_cbor_read_bool(&c, &v->{{ e.name }});
+{% elif e.kind == "text" %}
+            s = sce_forge_cbor_read_text(&c, {{ e.capacity }}, v->{{ e.name }}, &v->{{ e.name }}_len);
+{% elif e.kind == "bytes" %}
+            s = sce_forge_cbor_read_bytes(&c, {{ e.capacity }}, v->{{ e.name }}, &v->{{ e.name }}_len);
+{% elif e.kind == "bytes_exact" %}
+            s = sce_forge_cbor_read_bytes_exact(&c, {{ e.capacity }}, v->{{ e.name }});
+            v->{{ e.name }}_len = {{ e.capacity }};
+{% elif e.kind == "enum" %}
+            s = sce_forge_cbor_read_uint_upto(&c, {{ e.max }}U, &raw);
+            if (s != SCE_FORGE_CODEC_OK) {
+                return s;
+            }
+{% if e.enum_is_open %}
+            v->{{ e.name }} = {{ e.enum_from_underlying }}(({{ e.carrier_type }})raw);
+{% else %}
+            if (!{{ e.enum_from_underlying }}(({{ e.carrier_type }})raw, &v->{{ e.name }})) {
+                return SCE_FORGE_CODEC_UNDECLARED_ENUM_VALUE;
+            }
+{% endif %}
+{% elif e.value_type == "uint64_t" %}
+            s = sce_forge_cbor_read_uint(&c, &v->{{ e.name }});
+{% else %}
+            s = sce_forge_cbor_read_uint_upto(&c, {{ e.max }}U, &raw);
+            v->{{ e.name }} = ({{ e.value_type }})raw;
+{% endif %}
+{% if e.kind != "enum" %}
+            if (s != SCE_FORGE_CODEC_OK) {
+                return s;
+            }
+{% endif %}
+{% endmacro %}
+{#- The write of one entry — its key, then its value — at indent `i`. #}
+{% macro encode_entry(e, i) %}
+{{ i }}s = sce_forge_cbor_write_uint(w, {{ e.key }}U);
+{{ i }}if (s != SCE_FORGE_CODEC_OK) {
+{{ i }}    return s;
+{{ i }}}
+{% if e.kind == "bool" %}
+{{ i }}s = sce_forge_cbor_write_bool(w, self->{{ e.name }});
+{% elif e.kind == "text" %}
+{{ i }}if (self->{{ e.name }}_len > {{ e.capacity }}U) {
+{{ i }}    return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
+{{ i }}}
+{{ i }}s = sce_forge_cbor_write_text(w, self->{{ e.name }}, self->{{ e.name }}_len);
+{% elif e.kind == "bytes" %}
+{{ i }}if (self->{{ e.name }}_len > {{ e.capacity }}U) {
+{{ i }}    return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
+{{ i }}}
+{{ i }}s = sce_forge_cbor_write_bytes(w, self->{{ e.name }}, self->{{ e.name }}_len);
+{% elif e.kind == "bytes_exact" %}
+{{ i }}if (self->{{ e.name }}_len != {{ e.capacity }}U) {
+{{ i }}    return SCE_FORGE_CODEC_CBOR_WRONG_LENGTH;
+{{ i }}}
+{{ i }}s = sce_forge_cbor_write_bytes(w, self->{{ e.name }}, {{ e.capacity }});
+{% elif e.kind == "enum" %}
+{% if e.carrier_signed %}
+{#- A signed carrier's negative number is no CBOR unsigned integer; refused
+    as the Rust backend refuses it. #}
+{{ i }}if ({{ e.enum_to_underlying }} < 0) {
+{{ i }}    return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
+{{ i }}}
+{% endif %}
+{{ i }}s = sce_forge_cbor_write_uint(w, (uint64_t){{ e.enum_to_underlying }});
+{% else %}
+{{ i }}s = sce_forge_cbor_write_uint(w, (uint64_t)self->{{ e.name }});
+{% endif %}
+{{ i }}if (s != SCE_FORGE_CODEC_OK) {
+{{ i }}    return s;
+{{ i }}}
+{% endmacro %}
+{{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
+ * Runtime: {{ runtime_dep }}
+ * Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "sce/forge/cbor.h"
+#include "sce/forge/codec.h"
+{% for imp in all_imports %}
+{% if imp.include_stmt %}
+{{ imp.include_stmt }}
+{% endif %}
+{% endfor %}
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The most bytes this map encodes to: a buffer of this size never makes
+ * `{{ c_encode_to_buf_func }}` report SCE_FORGE_CODEC_BUFFER_OVERFLOW. */
+#define {{ c_max_bytes_macro }} {{ max_encoded_bytes }}U
+
+/* One CBOR map (SCE_FORGE.md §4.6.1). Decode takes the keys in any order and
+ * skips one this codec does not declare; encode writes the entries present in
+ * ascending key order, every head in its shortest form. A text or byte
+ * string is held in a fixed array the size of its bound, with its length
+ * beside it; an optional entry is present when `<name>_present` is true. A
+ * zero-initialised value is the infallible starting value: every entry at
+ * its zero, every optional one absent. */
+typedef struct {
+{% for e in entries %}
+    /* Map key {{ e.key }}{% if e.required %}, required{% endif %}. */
+{% if e.kind == "text" %}
+    char {{ e.name }}[{{ e.capacity }}];
+    size_t {{ e.name }}_len;
+{% elif e.kind == "bytes" %}
+    uint8_t {{ e.name }}[{{ e.capacity }}];
+    size_t {{ e.name }}_len;
+{% elif e.kind == "bytes_exact" %}
+    {# The length is held too, as every other backend's value carries its
+       own: encode refuses one that is not the declared length. #}
+    uint8_t {{ e.name }}[{{ e.capacity }}];
+    size_t {{ e.name }}_len;
+{% else %}
+    {{ e.value_type }} {{ e.name }};
+{% endif %}
+{% if not e.required %}
+    bool {{ e.name }}_present;
+{% endif %}
+{% endfor %}
+} {{ c_struct_typedef }};
+
+/* Decode one map from `cursor` into `*out`. On SCE_FORGE_CODEC_OK the cursor
+ * has advanced past it; on any other status the cursor is where it was and
+ * `*out` holds no value to read — the positional C decode's contract.
+ * Written through `out` rather than into a local copy: a struct whose
+ * strings are declared large is too large for a stack. */
+static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *cursor, {{ c_struct_typedef }} *out) {
+    sce_forge_cursor_t c = *cursor;
+    {{ c_struct_typedef }} *v = out;
+    uint64_t count = 0;
+    uint64_t i;
+    uint64_t raw = 0;
+{% for e in entries %}
+    bool seen_{{ e.name }} = false;
+{% endfor %}
+    sce_forge_codec_status_t s = sce_forge_cbor_read_map_len(&c, &count);
+    (void)raw;
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    memset(v, 0, sizeof *v);
+    for (i = 0; i < count; ++i) {
+        uint64_t key = 0;
+        s = sce_forge_cbor_read_uint(&c, &key);
+        if (s != SCE_FORGE_CODEC_OK) {
+            return s;
+        }
+        switch (key) {
+{% for e in entries_by_key %}
+        case {{ e.key }}U:
+            /* A key given twice is not one map entry. */
+            if (seen_{{ e.name }}) {
+                return SCE_FORGE_CODEC_CBOR_MALFORMED;
+            }
+            seen_{{ e.name }} = true;
+{{ decode_value(e) }}{% if not e.required %}
+            v->{{ e.name }}_present = true;
+{% endif %}
+            break;
+{% endfor %}
+        default:
+            s = sce_forge_cbor_skip(&c);
+            if (s != SCE_FORGE_CODEC_OK) {
+                return s;
+            }
+            break;
+        }
+    }
+{% for e in entries if e.required %}
+    if (!seen_{{ e.name }}) {
+        return SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING;
+    }
+{% endfor %}
+    *cursor = c;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Encode `*self` into `w`. An entry whose length is past its declared bound
+ * is refused with SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE rather than written. */
+static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typedef }} *self, sce_forge_writer_t *w) {
+    uint64_t count = {{ required_count }}U;
+    sce_forge_codec_status_t s;
+{% for e in entries if not e.required %}
+    if (self->{{ e.name }}_present) {
+        count++;
+    }
+{% endfor %}
+    s = sce_forge_cbor_write_map_head(w, count);
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+{% for e in entries_by_key %}
+{% if e.required %}
+{{ encode_entry(e, "    ") }}{% else %}
+    if (self->{{ e.name }}_present) {
+{{ encode_entry(e, "        ") }}    }
+{% endif %}
+{% endfor %}
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* `{{ c_encode_func }}` into the caller's `buf` of `cap` bytes, the count
+ * written into `*out_len`. */
+static inline sce_forge_codec_status_t {{ c_encode_to_buf_func }}(const {{ c_struct_typedef }} *self, uint8_t *buf, size_t cap, size_t *out_len) {
+    sce_forge_writer_t w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t s = {{ c_encode_func }}(self, &w);
+    *out_len = sce_forge_writer_position(&w);
+    return s;
+}
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* {{ guard }} */

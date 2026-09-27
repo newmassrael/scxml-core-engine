@@ -1606,14 +1606,18 @@ pub fn lang_supports_fixture(
         }
     }
     // Per-fixture CBOR gate (SCE_FORGE.md §4.6.1): a backend generates a
-    // `sce:encoding="cbor"` codec from the commit that lands its generation,
-    // and refuses one until then — the same answer the generator reads.
-    if matches!(fixture.spec, FixtureSpec::Codec { .. })
-        && !crate::forge::cbor_codec::lowers(language)
-    {
+    // `sce:encoding="cbor"` codec where `cbor_codec::refusal` has no reason
+    // not to — the language lowers it and, on C11, every string entry is
+    // bounded — which is the same answer the generator reads.
+    if matches!(fixture.spec, FixtureSpec::Codec { .. }) {
         let scxml_path = fixture.document_path(resource_dir);
-        if document_exists(&scxml_path) && read_codec_is_cbor(&scxml_path, &fixture.name)? {
-            return Ok(false);
+        if document_exists(&scxml_path) {
+            let model = read_codec_model(&scxml_path, &fixture.name)?;
+            if model.encoding == crate::forge::model::CodecEncoding::Cbor
+                && crate::forge::cbor_codec::refusal(language, &model).is_some()
+            {
+                return Ok(false);
+            }
         }
     }
     // Per-fixture `may-fail` gate (SCE_FORGE.md §3.4.1): a backend lowers a
@@ -2005,13 +2009,6 @@ fn read_algorithm_may_fail(scxml_path: &Path, fixture_name: &str) -> Result<bool
             scxml_path.display()
         )),
     }
-}
-
-/// Whether the codec fixture's document is `sce:encoding="cbor"`, asked of
-/// the same parse the generator reads.
-fn read_codec_is_cbor(scxml_path: &Path, fixture_name: &str) -> Result<bool, String> {
-    Ok(read_codec_model(scxml_path, fixture_name)?.encoding
-        == crate::forge::model::CodecEncoding::Cbor)
 }
 
 /// The codec fixture's document, as the generator parses it.

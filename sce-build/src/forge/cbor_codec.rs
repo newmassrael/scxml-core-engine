@@ -31,27 +31,59 @@ use crate::generator::Language;
 pub fn lowers(lang: Language) -> bool {
     matches!(
         lang,
-        Language::Rust | Language::Kotlin | Language::Cpp | Language::Go | Language::Python
+        Language::Rust
+            | Language::Kotlin
+            | Language::Cpp
+            | Language::Go
+            | Language::Python
+            | Language::C11
     )
+}
+
+/// Why `lang` does not generate the CBOR codec `m`, or `None` when it does —
+/// the one answer the generator's refusal and the conformance harness's
+/// schedule both read, so a fixture is run exactly where it generates.
+///
+/// Beyond the language: C11 holds a text or byte string in a fixed array
+/// the size of its bound, so an entry with neither `sce:max-size` nor
+/// `sce:length` has no C11 storage — every other backend's string grows.
+pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
+    if !lowers(lang) {
+        return Some(format!(
+            "codec '{}' is sce:encoding=\"cbor\", which has no {lang:?} generation yet",
+            m.name
+        ));
+    }
+    if lang == Language::C11 {
+        if let Some(e) = m.cbor_entries.iter().find(|e| {
+            matches!(e.sce_type, SceType::String | SceType::Bytes)
+                && e.max_size.is_none()
+                && e.length.is_none()
+        }) {
+            return Some(format!(
+                "codec '{}': CBOR entry '{}' declares neither sce:max-size nor sce:length, \
+                 and C11 holds a string in a fixed array the size of its bound",
+                m.name, e.id
+            ));
+        }
+    }
+    None
 }
 
 /// Render a CBOR codec for `lang`.
 ///
-/// A backend whose generation has not landed refuses the document by name
-/// rather than emitting a type with no fields: a codec that compiled and
-/// wrote an empty map would be a wrong output, and this is a missing one.
+/// A backend that cannot generate the document refuses it by name rather
+/// than emitting a type with no fields: a codec that compiled and wrote an
+/// empty map would be a wrong output, and this is a missing one.
 pub fn render(
     env: &minijinja::Environment,
     m: &CodecModel,
     imports: &[ImportContext],
     lang: Language,
 ) -> Result<String, ForgeError> {
-    if !lowers(lang) {
+    if let Some(why) = refusal(lang, m) {
         return Err(ForgeError::from(GenerateError::unsupported_at(
-            format!(
-                "codec '{}' is sce:encoding=\"cbor\", which has no {lang:?} generation yet",
-                m.name
-            ),
+            why,
             m.source_location.clone(),
         )));
     }
@@ -61,7 +93,7 @@ pub fn render(
         Language::Cpp => render_cpp(env, m, imports),
         Language::Go => render_go(env, m, imports),
         Language::Python => render_python(env, m, imports),
-        _ => unreachable!("`lowers` admits every backend but C11"),
+        Language::C11 => render_c(env, m, imports),
     }
 }
 
@@ -153,11 +185,6 @@ fn common_context(
         }
         entries.push(entry);
     }
-    // Written in ascending key order (RFC 8949 §4.2.1); declared in the
-    // author's order.
-    let mut by_key = entries.clone();
-    by_key.sort_by_key(|e| e["key"].as_u64());
-
     let required = m.cbor_entries.iter().filter(|e| e.required).count();
     ctx.insert("required_count".into(), required.into());
     ctx.insert(
@@ -165,8 +192,26 @@ fn common_context(
         (m.cbor_entries.len() - required).into(),
     );
     ctx.insert("entries".into(), entries.into());
-    ctx.insert("entries_by_key".into(), by_key.into());
     Ok(ctx)
+}
+
+/// Render `ctx` with `entries_by_key` beside `entries`: the same entries in
+/// ascending key order, which is the order encode writes them (RFC 8949
+/// §4.2.1) — `entries` keeps the author's declaration order. Taken here,
+/// after a backend has added its own fields to each entry, so the two lists
+/// never disagree about what an entry carries.
+fn render_in_key_order(
+    l: &LangCtx,
+    env: &minijinja::Environment,
+    mut ctx: serde_json::Map<String, serde_json::Value>,
+) -> Result<String, ForgeError> {
+    let mut by_key = match ctx.get("entries") {
+        Some(serde_json::Value::Array(entries)) => entries.clone(),
+        _ => Vec::new(),
+    };
+    by_key.sort_by_key(|e| e["key"].as_u64());
+    ctx.insert("entries_by_key".into(), by_key.into());
+    l.render(env, "codec_cbor", ctx)
 }
 
 fn render_kotlin(
@@ -189,7 +234,7 @@ fn render_kotlin(
             .into();
         }
     }
-    l.render(env, "codec_cbor", ctx)
+    render_in_key_order(&l, env, ctx)
 }
 
 fn render_cpp(
@@ -222,7 +267,7 @@ fn render_cpp(
             .into();
         }
     }
-    l.render(env, "codec_cbor", ctx)
+    render_in_key_order(&l, env, ctx)
 }
 
 fn render_go(
@@ -254,7 +299,67 @@ fn render_go(
             .into();
         }
     }
-    l.render(env, "codec_cbor", ctx)
+    render_in_key_order(&l, env, ctx)
+}
+
+fn render_c(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let l = LangCtx::new(Language::C11, imports);
+    let mut ctx = common_context(&l, m, imports, |e| l.type_name(&e.sce_type).into_owned())?;
+    crate::forge::generator::insert_c_codec_symbols(&mut ctx, &m.name);
+    // A text or byte string is a fixed array the size of its bound beside
+    // its length (the bound is present: `refusal` saw to it), an exact-length
+    // one an array of that length alone; an optional entry carries a
+    // `<name>_present` flag beside its value.
+    if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
+        for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
+            entry["capacity"] = e.length.or(e.max_size).into();
+            // C11's encode reads the value in place rather than binding it,
+            // so the conversion is spelled over the struct member.
+            if matches!(e.sce_type, SceType::Enum(_)) {
+                let member = format!("self->{}", entry["name"].as_str().unwrap_or_default());
+                entry["enum_to_underlying"] = l.codec_carrier_expr(&e.sce_type, &member).into();
+            }
+        }
+    }
+    ctx.insert("max_encoded_bytes".into(), max_encoded_bytes(m).into());
+    render_in_key_order(&l, env, ctx)
+}
+
+/// The most bytes `m` encodes to: its map head and, for every entry, its key
+/// and the longest value its declaration admits — a bound C11 callers size
+/// an `encode_to_buf` buffer by.
+fn max_encoded_bytes(m: &CodecModel) -> u64 {
+    // The length of a head carrying `value`, in its shortest form.
+    fn head(value: u64) -> u64 {
+        match value {
+            0..=23 => 1,
+            24..=0xFF => 2,
+            0x100..=0xFFFF => 3,
+            0x1_0000..=0xFFFF_FFFF => 5,
+            _ => 9,
+        }
+    }
+    let entries = head(m.cbor_entries.len() as u64);
+    entries
+        + m.cbor_entries
+            .iter()
+            .map(|e| {
+                let key = head(u64::from(e.key));
+                let value = match e.sce_type {
+                    SceType::Bool => 1,
+                    SceType::String | SceType::Bytes => {
+                        let n = u64::from(e.length.or(e.max_size).unwrap_or(0));
+                        head(n) + n
+                    }
+                    _ => 9,
+                };
+                key + value
+            })
+            .sum::<u64>()
 }
 
 fn render_python(
@@ -290,7 +395,7 @@ fn render_python(
             .any(|e| matches!(&e.sce_type, SceType::Enum(r) if !l.enum_is_open(&r.alias)))
             .into(),
     );
-    l.render(env, "codec_cbor", ctx)
+    render_in_key_order(&l, env, ctx)
 }
 
 fn render_rust(
@@ -336,5 +441,5 @@ fn render_rust(
         )
         .into(),
     );
-    l.render(env, "codec_cbor", ctx)
+    render_in_key_order(&l, env, ctx)
 }

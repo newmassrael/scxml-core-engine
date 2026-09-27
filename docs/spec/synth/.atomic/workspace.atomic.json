@@ -1690,6 +1690,11 @@
           "file": "sce-build/src/bin/sce_codegen.rs",
           "symbol": "ListFixturesArgs",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "insert_c_codec_symbols",
+          "kind": "implements"
         }
       ]
     },

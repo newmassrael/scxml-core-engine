@@ -4569,6 +4569,52 @@ fn rust_as_borrowed_field_keys(
     Ok(expr)
 }
 
+/// The C11 codec's flat-scope identifiers, one spelling for every C11 codec
+/// template — the positional one and `forge::cbor_codec`'s — derived from the
+/// codec's name: `<snake>_t`, `<snake>_decode`, `<snake>_encode`,
+/// `<snake>_encode_to_buf`, `<UPPER>_MIN_BYTES` / `<UPPER>_MAX_BYTES` and
+/// `<UPPER>_DEFAULT_INIT`.
+pub(crate) fn insert_c_codec_symbols(
+    ctx: &mut serde_json::Map<String, serde_json::Value>,
+    name: &str,
+) {
+    let snake = filters::to_snake_case(name.to_string());
+    let upper = to_upper_snake(name);
+    ctx.insert("c_struct_typedef".into(), format!("{snake}_t").into());
+    ctx.insert(
+        "c_encoded_typedef".into(),
+        format!("{snake}_encoded_t").into(),
+    );
+    ctx.insert("c_decode_func".into(), format!("{snake}_decode").into());
+    ctx.insert("c_encode_func".into(), format!("{snake}_encode").into());
+    // RFC §synth-5-B item B1: heap-free convenience facade name —
+    // `{snake}_encode_to_buf(self, buf, cap, *out_len)` initialises a
+    // writer over the caller-owned buffer and forwards into the
+    // writer-based primary `{snake}_encode`.
+    ctx.insert(
+        "c_encode_to_buf_func".into(),
+        format!("{snake}_encode_to_buf").into(),
+    );
+    ctx.insert(
+        "c_max_bytes_macro".into(),
+        format!("{upper}_MAX_BYTES").into(),
+    );
+    ctx.insert(
+        "c_min_bytes_macro".into(),
+        format!("{upper}_MIN_BYTES").into(),
+    );
+    // RFC variant-default-uniformity on C11: macro name for
+    // the codec's `_DEFAULT_INIT` designated-initializer
+    // (`<UPPER>_DEFAULT_INIT`). Emission is gated on
+    // `has_flag_default` or a declared default arm so codecs that
+    // don't opt in stay byte-identical with pre-uniformity goldens.
+    ctx.insert(
+        "c_default_init_macro".into(),
+        format!("{upper}_DEFAULT_INIT").into(),
+    );
+    ctx.insert("c_struct_snake".into(), snake.into());
+}
+
 fn render_codec(
     env: &minijinja::Environment,
     m: &CodecModel,
@@ -5785,10 +5831,7 @@ fn render_codec(
         (m.fields.is_empty() && m.variant.is_none()).into(),
     );
     if matches!(lang, crate::generator::Language::C11) {
-        ctx.insert(
-            "c_struct_snake".into(),
-            filters::to_snake_case(m.name.clone()).into(),
-        );
+        insert_c_codec_symbols(&mut ctx, &m.name);
     }
     ctx.insert("min_bytes".into(), m.min_frame_bytes().into());
     // RFC §synth-5-B variant primitive (item B1): the parent codec's worst-case
@@ -6690,47 +6733,12 @@ fn render_codec(
         ctx.insert("has_variant".into(), false.into());
     }
 
-    // C11: full-qual flat-scope identifiers.
-    // Decode = out-param shape (`bool fn(raw, len, *out)`); encode = return-by-value shape (
-    // `<name>_encoded_t { bytes[MAX]; len }`). MAX = MIN + Σ(max_size of
+    // C11: full-qual flat-scope identifiers are inserted above
+    // (`insert_c_codec_symbols`). Decode = out-param shape
+    // (`bool fn(raw, len, *out)`); encode = return-by-value shape
+    // (`<name>_encoded_t { bytes[MAX]; len }`). MAX = MIN + Σ(max_size of
     // variable-length fields), resolved through `BYTES_DEFAULT_MAX` when
     // `sce:max-size` is absent (RFC §bytesguard-3 B2).
-    if matches!(lang, crate::generator::Language::C11) {
-        let snake = filters::to_snake_case(m.name.clone());
-        let upper = to_upper_snake(&m.name);
-        ctx.insert("c_struct_typedef".into(), format!("{snake}_t").into());
-        ctx.insert(
-            "c_encoded_typedef".into(),
-            format!("{snake}_encoded_t").into(),
-        );
-        ctx.insert("c_decode_func".into(), format!("{snake}_decode").into());
-        ctx.insert("c_encode_func".into(), format!("{snake}_encode").into());
-        // RFC §synth-5-B item B1: heap-free convenience facade name —
-        // `{snake}_encode_to_buf(self, buf, cap, *out_len)` initialises a
-        // writer over the caller-owned buffer and forwards into the
-        // writer-based primary `{snake}_encode`.
-        ctx.insert(
-            "c_encode_to_buf_func".into(),
-            format!("{snake}_encode_to_buf").into(),
-        );
-        ctx.insert(
-            "c_max_bytes_macro".into(),
-            format!("{upper}_MAX_BYTES").into(),
-        );
-        ctx.insert(
-            "c_min_bytes_macro".into(),
-            format!("{upper}_MIN_BYTES").into(),
-        );
-        // RFC variant-default-uniformity on C11: macro name for
-        // the codec's `_DEFAULT_INIT` designated-initializer
-        // (`<UPPER>_DEFAULT_INIT`). Emission is gated on
-        // `has_flag_default` or a declared default arm so codecs that
-        // don't opt in stay byte-identical with pre-uniformity goldens.
-        ctx.insert(
-            "c_default_init_macro".into(),
-            format!("{upper}_DEFAULT_INIT").into(),
-        );
-    }
 
     l.insert_imports(&mut ctx, imports);
 

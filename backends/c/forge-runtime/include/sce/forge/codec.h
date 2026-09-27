@@ -75,6 +75,19 @@ typedef enum {
      * `CodecError::UndeclaredEnumValue` (Rust / Go / Python); cpp /
      * kotlin collapse to their `std::optional<T>` / `T?` sentinel. */
     SCE_FORGE_CODEC_UNDECLARED_ENUM_VALUE = 6,
+    /* An `sce:encoding="cbor"` map is not one the codec reads
+     * (SCE_FORGE.md §4.6.1): not a definite-length map, a key given twice,
+     * or an entry of the wrong major type. The five CBOR statuses mirror
+     * the typed `CodecError::Cbor*` of Rust and `codec.ErrCbor*` of Go. */
+    SCE_FORGE_CODEC_CBOR_MALFORMED = 7,
+    /* A CBOR map lacks an entry declared `sce:required="true"`. */
+    SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING = 8,
+    /* A CBOR byte string is not its entry's exact `sce:length`. */
+    SCE_FORGE_CODEC_CBOR_WRONG_LENGTH = 9,
+    /* An unknown CBOR entry's value nests deeper than the skip admits. */
+    SCE_FORGE_CODEC_CBOR_TOO_DEEP = 10,
+    /* A CBOR value does not fit its entry's type or `sce:max-size`. */
+    SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE = 11,
 } sce_forge_codec_status_t;
 
 /* Read-only cursor over a borrowed input buffer. Decode bodies bind a

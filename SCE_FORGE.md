@@ -1034,10 +1034,27 @@ the conformance harness's `codec_cbor_map` round-trip cases, whose absent
 optional entries are JSON `null`, and its reject vectors. Rust and Kotlin are
 also held to the hand-written C++ Mesh codec's golden envelope
 (`forge_cbor_codec`, `CborCodecTest`); the generated C++ codec's own hold to
-it arrives with the commit that replaces the hand-written one. Every other backend refuses the document by name
-(`generate/unsupported-feature`) until its generation lands, rather than
-emitting a type with no fields; the conformance harness schedules a CBOR
-fixture exactly where the generator admits it (`cbor_codec::lowers`).
+it arrives with the commit that replaces the hand-written one.
+
+C11 generates a struct with no allocation: a text or byte string is a fixed
+array the size of its `sce:max-size` (or `sce:length`) beside a `<name>_len`,
+and an optional entry a `<name>_present` flag beside its value;
+`<name>_decode(cursor, out)` returns the status and moves the cursor only when
+the whole map decoded, writing through `out` — never into a local copy, since
+a struct whose strings are declared large does not fit a stack — so `*out`
+holds no value to read after any status but `SCE_FORGE_CODEC_OK`, as a
+positional C11 decode; `<name>_encode` and `<name>_encode_to_buf` beside
+`<NAME>_MAX_BYTES`, the most the map encodes to. Its refusals are the statuses
+`SCE_FORGE_CODEC_CBOR_MALFORMED`, `_REQUIRED_KEY_MISSING`, `_WRONG_LENGTH`,
+`_TOO_DEEP` and `_OUT_OF_RANGE`, and `sce/forge/cbor.h` holds its items, the
+skip walking a fixed stack rather than recursing.
+
+Every backend generates a CBOR codec. What still refuses one, by name
+(`generate/unsupported-feature`), is a document C11 cannot hold: a text or
+byte string entry with neither `sce:max-size` nor `sce:length`, which has no
+fixed array to live in — every other backend's string grows. The generator's
+refusal and the conformance harness's schedule read one answer
+(`cbor_codec::refusal`), so a fixture runs exactly where it generates.
 
 ### 4.7 validator
 

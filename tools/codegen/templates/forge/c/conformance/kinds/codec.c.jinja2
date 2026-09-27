@@ -29,7 +29,10 @@ static void test_{{ f.name }}(void) {
      * static-inline definitions through the C compiler so a silently-
      * broken-codegen regression of commit 91ae355a's class surfaces
      * here before reaching consumers. */
-    {{ f.name }}_t _codec_val;
+    {# Static rather than a stack local: a codec whose strings are declared
+       large (the Mesh envelope's run to megabytes) is too large for a
+       stack, and static storage starts zeroed. #}
+    static {{ f.name }}_t _codec_val;
     memset(&_codec_val, 0, sizeof(_codec_val));
     (void)_codec_val;
 {% else %}
@@ -49,6 +52,11 @@ static void test_{{ f.name }}(void) {
 {% else %}
         {{ field.type | c_type }} input_{{ field.name | to_snake_case }};
 {% endif %}
+{% if field.optional %}
+        {# An absent entry is JSON `null`: absent here as in the codec
+           struct, its value left at zero. #}
+        bool    input_{{ field.name | to_snake_case }}_present;
+{% endif %}
 {% endfor %}
         size_t expected_len;
         uint8_t expected_bytes[256];
@@ -58,7 +66,14 @@ static void test_{{ f.name }}(void) {
         {
 {% for field in f.fields %}
 {% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
-{% if field.type == "bytes" %}
+{% if field.optional and c.decoded[field.name] is none %}
+            .input_{{ field.name | to_snake_case }}_present = false,
+{% elif field.optional %}
+            .input_{{ field.name | to_snake_case }}_present = true,
+{% endif %}
+{% if field.optional and c.decoded[field.name] is none %}
+{# Absent: the value member stays zero-initialised. #}
+{% elif field.type == "bytes" %}
             .input_{{ field.name | to_snake_case }} = {{ c.decoded[field.name] | c_literal(field.type) }},
 {% if not sibling_owns_len %}
             .input_{{ field.name | to_snake_case }}_len = {{ c.decoded[field.name] | length }},
@@ -79,7 +94,8 @@ static void test_{{ f.name }}(void) {
     };
     const size_t n = sizeof(cases) / sizeof(cases[0]);
     for (size_t i = 0; i < n; ++i) {
-        {{ f.name }}_t val;
+        {# Static for the reason the compile-only probe above is. #}
+        static {{ f.name }}_t val;
 {% for field in f.fields %}
 {% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
 {% if field.type in ("bytes", "string") %}
@@ -91,6 +107,9 @@ static void test_{{ f.name }}(void) {
         val.{{ field.name | to_snake_case }}_len = {{ len_src }};
 {% else %}
         val.{{ field.name | to_snake_case }} = cases[i].input_{{ field.name | to_snake_case }};
+{% endif %}
+{% if field.optional %}
+        val.{{ field.name | to_snake_case }}_present = cases[i].input_{{ field.name | to_snake_case }}_present;
 {% endif %}
 {% endfor %}
 {% set max_macro = (f.name | to_upper_snake_case) ~ "_MAX_BYTES" %}
@@ -110,7 +129,7 @@ static void test_{{ f.name }}(void) {
             ++g_failures;
             continue;
         }
-        {{ f.name }}_t round_tripped;
+        static {{ f.name }}_t round_tripped;
         sce_forge_cursor_t cursor = sce_forge_cursor_init(cases[i].expected_bytes, cases[i].expected_len);
         if ({{ f.name }}_decode(&cursor, &round_tripped) != SCE_FORGE_CODEC_OK) {
             fprintf(stderr, "FAIL: {{ f.name }} case %zu decode: returned non-ok\n", i);
@@ -119,6 +138,19 @@ static void test_{{ f.name }}(void) {
         }
 {% for field in f.fields %}
 {% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
+{% if field.optional %}
+        {# Present on both sides, or absent on both; the value is compared
+           only where it is present. #}
+        if (round_tripped.{{ field.name | to_snake_case }}_present != cases[i].input_{{ field.name | to_snake_case }}_present) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: present actual=%d expected=%d\n",
+                i, (int)round_tripped.{{ field.name | to_snake_case }}_present,
+                (int)cases[i].input_{{ field.name | to_snake_case }}_present);
+            ++g_failures;
+            continue;
+        }
+        if (cases[i].input_{{ field.name | to_snake_case }}_present) {
+{% endif %}
 {% if field.type in ("bytes", "string") %}
 {% set len_src = "cases[i].input_" + (field.name | to_snake_case) + "_len" %}
 {% if sibling_owns_len %}
@@ -139,6 +171,9 @@ static void test_{{ f.name }}(void) {
             ++g_failures;
         }
 {% endif %}
+{% if field.optional %}
+        }
+{% endif %}
 {% endfor %}
     }
 {% endif %}
@@ -149,7 +184,7 @@ static void test_{{ f.name }}(void) {
 {% for r in f.rejects %}
     {
         static const uint8_t reject_bytes[] = { {{ r.encoded | join(", ") }} };
-        {{ f.name }}_t reject_out;
+        static {{ f.name }}_t reject_out;
         sce_forge_cursor_t reject_cursor =
             sce_forge_cursor_init(reject_bytes, sizeof(reject_bytes));
         sce_forge_codec_status_t reject_st = {{ f.name }}_decode(&reject_cursor, &reject_out);

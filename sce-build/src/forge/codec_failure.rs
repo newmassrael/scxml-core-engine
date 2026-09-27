@@ -134,10 +134,8 @@ impl CodecFailure {
             }
             (Language::Go, CodecFailure::NeedMoreBytes) => Some("codec.ErrNeedMoreBytes"),
             (Language::Go, CodecFailure::TlvChainOverflow) => Some("codec.ErrTlvChainOverflow"),
-            // The CBOR reader's refusals are named on Rust and Go, whose
-            // decodes return the runtime's typed error. C11 does not lower a
-            // CBOR codec yet (`forge::cbor_codec::lowers`), so nothing there
-            // can be observed; the arm names that instead of a symbol.
+            // The CBOR reader's refusals are named on Rust, Go and C11, whose
+            // decodes return the runtime's typed error or status.
             (Language::Rust, CodecFailure::CborMalformed) => Some("CodecError::CborMalformed"),
             (Language::Rust, CodecFailure::CborRequiredKeyMissing) => {
                 Some("CodecError::CborRequiredKeyMissing")
@@ -150,13 +148,16 @@ impl CodecFailure {
             }
             (Language::Go, CodecFailure::CborWrongLength) => Some("codec.ErrCborWrongLength"),
             (Language::Go, CodecFailure::CborOutOfRange) => Some("codec.ErrCborOutOfRange"),
-            (
-                Language::C11,
-                CodecFailure::CborMalformed
-                | CodecFailure::CborRequiredKeyMissing
-                | CodecFailure::CborWrongLength
-                | CodecFailure::CborOutOfRange,
-            ) => None,
+            (Language::C11, CodecFailure::CborMalformed) => Some("SCE_FORGE_CODEC_CBOR_MALFORMED"),
+            (Language::C11, CodecFailure::CborRequiredKeyMissing) => {
+                Some("SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING")
+            }
+            (Language::C11, CodecFailure::CborWrongLength) => {
+                Some("SCE_FORGE_CODEC_CBOR_WRONG_LENGTH")
+            }
+            (Language::C11, CodecFailure::CborOutOfRange) => {
+                Some("SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE")
+            }
             // Cpp / Kotlin / Python: refusal is observable, its name is not.
             (Language::Cpp | Language::Kotlin | Language::Python, _) => None,
         }

@@ -241,3 +241,11 @@ target_link_libraries(numerical_conformance_test_c PRIVATE m)
 
 enable_testing()
 add_test(NAME numerical_conformance_c COMMAND numerical_conformance_test_c)
+
+# The runtime's CBOR items on their own (sce/forge/cbor.h), under the same
+# -Werror bar; what a generated CBOR codec does with them is judged by the
+# harness above (codec_cbor_map).
+add_executable(cbor_runtime_test_c "${CMAKE_CURRENT_SOURCE_DIR}/cbor_runtime_test.c")
+target_include_directories(cbor_runtime_test_c PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_compile_options(cbor_runtime_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME cbor_runtime_c COMMAND cbor_runtime_test_c)
