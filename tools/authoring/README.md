@@ -262,12 +262,18 @@ Those are different moments, and a delayed act can fall between them.
 ⚠ **A time known only as bounds is written as bounds.** `elapsed_ms:
 {min, max}` is for a record whose harness waits "up to" a timeout, or whose
 steps last as long as the platform takes: it knows a window, not an instant.
-The engine moves to the window's earliest end and carries the rest as
-*slack* — how far real time may be ahead of it — through every later step
-until nothing is pending. A case is judged when no deadline falls inside that
-slack: the answer is then the same anywhere in the window. When one does,
-whether it fired is not known, so the run is given up from there exactly as
-for an event that might have been sent — never judged on one of two machines.
+A SETUP step moves the engine to its window's earliest end and carries the
+rest as *slack* — how far real time may be ahead of it — through every later
+step until nothing is pending. A JUDGED step is read the way a harness that
+waits "up to" a timeout reads: at the first moment in the window that meets
+the case — the engine visits the window's start and then each deadline
+inside it — and, failing every one, at the window's end. A case asserting
+that an answer ARRIVES 2 s after the drive is therefore judged, not
+withheld: the deadline it asserts is inside its window by design. Where a
+deadline may or may not lie inside a window because of slack carried from
+earlier steps, whether it fired is not known, so the run is given up from
+there exactly as for an event that might have been sent — never judged on
+one of two machines.
 A setup step that moves nothing still passes its time. A `clock` input is
 refused under a window rather than handed one end of it, and `when_absent`
 does not apply: a window is a statement, not a silence. Measured on one
@@ -940,6 +946,39 @@ plainly writes, so a correct binding was refused for being correct. And an
 `event` no transition listens for is refused, because the case would send it,
 the machine would ignore it, and every later reading would be of a machine
 that was never driven.
+
+### What a host owes a bound document
+
+A binding says where values go; the HOST — whatever code connects the
+generated machine to a platform — decides how. `verify` models the host a
+binding describes, so a host that does something else fails cases `verify`
+passed. Every item below was such a disagreement, found by running the same
+documents through a real platform's own acceptance tests; the document was
+right each time and the host was not.
+
+- **A lapsed input is an absence, however the platform says it.** A platform
+  may flag a timed-out signal beside its value rather than change the value.
+  A host that compares values only sees nothing happen, runs no round, and a
+  document reading `absent` is never told. Deliver the flag as the absence
+  the binding reads.
+- **A delayed act is due when the machine says, not on a polling interval.**
+  A document whose generated code reports `needs_event_scheduler` is driven
+  with `tick()`: after every round, arm a one-shot timer for
+  `timeUntilNextScheduled()` and treat its expiry as a round of its own.
+  A host that never ticks has a machine whose delays never fire.
+- **`hold_last` means the slot is not written.** Re-writing the last value
+  instead overwrites whatever else wrote the slot since — including a
+  value the platform's own test planted there.
+- **A group of fields is announced once, after every field is written.** A
+  host that announces when the first field of a group changes publishes
+  the group without the fields later rules write in the same round.
+- ⚠ **When to write an unchanged value is not yet a binding decision.** An
+  original component writes an output whenever the logic computing it runs,
+  changed or not, and acceptance tests wait for that write; the same tests
+  also fail a write that arrives before the one they wait for. Writing every
+  output every round and writing only changes were both measured wrong on
+  one platform. Which outputs are which is per output, and nothing in the
+  document or binding says it yet.
 
 ### Writing the document before the addresses exist
 
