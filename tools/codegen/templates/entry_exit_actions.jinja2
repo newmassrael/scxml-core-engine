@@ -266,23 +266,44 @@
                     // have already been stripped by parse_mesh_rpc_invoke.
                     std::map<std::string, std::vector<std::string>> _mesh_params_{{ invoke_info.invoke_id }};
                     std::map<std::string, std::vector<ScriptValue>> _mesh_typed_params_{{ invoke_info.invoke_id }};
-{% set mesh_needs_scripts = invoke_info.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0 %}
-{% if mesh_needs_scripts %}
+{% set mesh_eval_ns = namespace(needed=false) %}
+{% for param in invoke_info.params %}
+{% if not param.is_static_literal and (param.expr or param.location) %}
+{% set mesh_eval_ns.needed = true %}
+{% endif %}
+{% endfor %}
+{% if mesh_eval_ns.needed %}
                     this->ensureScriptEngine();
                     auto& scriptEngine_mesh_{{ invoke_info.invoke_id }} = getScriptEngine();
 {% endif %}
 {% for param in invoke_info.params %}
 {% if param.is_static_literal %}
-                    _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value }}");
+                    _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
+{% elif not (param.expr or param.location) %}
+                    // §scxml-5.7.1: an empty location names no location in the
+                    // data model — reported, and the pair left out.
+                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                        "<invoke type='sce:mesh-rpc'> <param name='{{ param.name | escape_cpp }}'> names no location"));
 {% else %}
                     {
-                        auto paramResult = scriptEngine_mesh_{{ invoke_info.invoke_id }}.evaluateExpression(sessionId_.value(), {{ param.expr | to_script_source_expr }}).get();
+                        auto paramResult = scriptEngine_mesh_{{ invoke_info.invoke_id }}.evaluateExpression(sessionId_.value(), {{ (param.expr if param.expr else param.location) | to_script_source_expr }}).get();
                         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
                             _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
                             _mesh_typed_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
                         } else {
-                            SCE_LOG_ERROR("mesh-rpc invoke {{ invoke_info.invoke_id }} param '{{ param.name | escape_cpp }}' expr evaluation failed: {}", "{{ param.expr | escape_cpp }}");
-                            _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back("");
+                            // §scxml-5.7.1: BOTH halves — `error.execution` on
+                            // the internal queue AND the name and value left
+                            // out. The request still goes, one pair short: the
+                            // clause delegates only the SUCCESSFUL pair to the
+                            // context, so §scxml-6.4.2's "terminate the element"
+                            // is not what a failing `<param>` costs — the same
+                            // reading the local invoke path takes
+                            // (invoke_methods.jinja2). This pushed an empty
+                            // string under the name and raised nothing, so the
+                            // server received a field the document never
+                            // computed and the document had no event to act on.
+                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                                "<invoke type='sce:mesh-rpc'> <param name='{{ param.name | escape_cpp }}'> could not be read"));
                         }
                     }
 {% endif %}
