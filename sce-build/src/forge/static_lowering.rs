@@ -49,7 +49,7 @@ pub struct StaticField {
     pub view: Option<String>,
     /// The bound of a list or a byte string: the machine never holds more,
     /// so neither may a restored value.
-    pub capacity: Option<u32>,
+    pub bound: Option<u32>,
     /// How a saved state holds the value: `scalar`, `list` or `record`.
     pub saved_kind: &'static str,
     /// What [`Self::saved_kind`] is of: a scalar's or a list element's
@@ -216,9 +216,47 @@ impl StaticTarget for KotlinTarget {
                 )
             })
             .collect();
+        // Its saved form (`com.sce.runtime.SavedValues`) lives on the type: an
+        // object of the schema's fields keyed by their ids. Fixed member names
+        // rather than per-type functions on the machine, whose name pattern
+        // would reserve every variable name it could match
+        // (`crate::reader_names`).
+        let writes: Vec<String> = schema
+            .fields
+            .iter()
+            .map(|field| {
+                format!(
+                    "\"{}\" to SavedValues.of({})",
+                    field.id,
+                    self.record_field(&field.id)
+                )
+            })
+            .collect();
+        let reads: Vec<String> = schema
+            .fields
+            .iter()
+            .map(|field| {
+                format!(
+                    "{name} = SavedValues.{ty}(SavedValues.field(value, what, \"{id}\"), \"$what.{id}\")",
+                    name = self.record_field(&field.id),
+                    ty = field.sce_type.as_attr(),
+                    id = field.id
+                )
+            })
+            .collect();
         format!(
-            "/** SCE Accepted Subset §2.15: a `record:{alias}` datamodel value. */\ndata class {ty}({})",
-            params.join(", ")
+            "/** SCE Accepted Subset §2.15: a `record:{alias}` datamodel value. */\n\
+             data class {ty}({params}) {{\n\
+             \x20   /** This value as a saved state writes it. */\n\
+             \x20   fun toSaved(): Any = linkedMapOf({writes})\n\n\
+             \x20   companion object {{\n\
+             \x20       /** The value a saved state holds, refused unless it is one. */\n\
+             \x20       fun fromSaved(value: Any?, what: String): {ty} = {ty}({reads})\n\
+             \x20   }}\n\
+             }}",
+            params = params.join(", "),
+            writes = writes.join(", "),
+            reads = reads.join(", ")
         )
     }
     fn record_field(&self, id: &str) -> String {
@@ -644,7 +682,7 @@ pub fn lower(
                     ty,
                     published,
                     view: None,
-                    capacity: None,
+                    bound: None,
                     saved_kind: "record",
                 });
                 continue;
@@ -663,7 +701,7 @@ pub fn lower(
                     init: target.list_empty(),
                     published,
                     view: target.list_view(elem),
-                    capacity: var.capacity,
+                    bound: var.capacity,
                     saved_kind: "list",
                     saved_type: elem.as_attr(),
                 });
@@ -697,7 +735,7 @@ pub fn lower(
                 init,
                 published,
                 view: target.scalar_view(ty),
-                capacity: matches!(ty, SceType::Bytes)
+                bound: matches!(ty, SceType::Bytes)
                     .then_some(var.capacity)
                     .flatten(),
                 saved_kind: "scalar",

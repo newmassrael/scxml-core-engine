@@ -225,6 +225,22 @@ pub struct Transition {
     pub unresolved: Vec<UnresolvedMarker>,
 }
 
+impl Transition {
+    /// Whether this transition's guard is emitted as backend code rather than
+    /// folded to a constant or read by a script engine: written with a
+    /// `cpp:`/`kt:` prefix, or lowered at generate time into
+    /// [`native_guard`](Self::native_guard) (a `sce-static` guard, a typed
+    /// payload guard). Every guard macro reads that slot before its other arms,
+    /// so a guard it holds never reaches the constant fold.
+    ///
+    /// ⭐ The one definition. Asking the prefix flags alone missed the lowered
+    /// slot, and a check built on them read every `sce-static` guard as one
+    /// that would be folded to `false` (2026-09-27).
+    pub fn guard_is_native(&self) -> bool {
+        self.is_cpp_condition || self.is_kt_condition || !self.native_guard.is_empty()
+    }
+}
+
 /// W3C SCXML executable content action
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -581,6 +597,13 @@ impl<'a> NestedBlock<'a> {
 }
 
 impl Action {
+    /// Whether this `<if>`'s condition is emitted as backend code — the
+    /// [`Transition::guard_is_native`] question for the `<if>` door, where the
+    /// lowered slot is [`native_cond`](Self::native_cond).
+    pub fn cond_is_native(&self) -> bool {
+        self.is_cpp_condition || self.is_kt_condition || !self.native_cond.is_empty()
+    }
+
     /// Which of this struct's fields each `action_type` actually uses.
     ///
     /// ⭐ Why this table exists. [`Action`] carries nine kinds of
@@ -740,7 +763,9 @@ impl Action {
                 role: BlockRole::ElseIf,
                 cond: Some(branch.cond.as_str()),
                 cond_constant: branch.cond_constant,
-                cond_is_native: branch.is_cpp_condition || branch.is_kt_condition,
+                cond_is_native: branch.is_cpp_condition
+                    || branch.is_kt_condition
+                    || !branch.native_cond.is_empty(),
                 cond_is_pure_in: branch.is_pure_in_predicate,
                 cond_spelling: branch.cond_spelling.as_ref(),
                 actions: branch.actions.as_slice(),

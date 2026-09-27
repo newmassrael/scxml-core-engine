@@ -556,12 +556,22 @@ fn every_guard_the_backends_emit_natively_has_a_value() {
         } else {
             model
         };
+        let is_lowered = lowered.last() == Some(document);
         for state in model.states.values() {
             for transition in &state.transitions {
+                // The lowering claims every guard of the document, a pure
+                // `In()` included — so a lowered guard the slot does not hold
+                // is one the lowering skipped, and the fold would take it.
+                if is_lowered && !transition.cond.trim().is_empty() {
+                    assert!(
+                        !transition.native_guard.is_empty(),
+                        "{document}: cond=\"{}\" was not lowered into the native slot",
+                        transition.cond
+                    );
+                }
                 if transition.cond.is_empty()
                     || transition.is_pure_in_predicate
-                    || transition.is_cpp_condition
-                    || transition.is_kt_condition
+                    || transition.guard_is_native()
                 {
                     continue;
                 }
@@ -631,18 +641,14 @@ fn check_action_guards(
     }
 
     for action in actions {
-        if !action.cond.is_empty()
-            && !action.is_pure_in_predicate
-            && !action.is_cpp_condition
-            && !action.is_kt_condition
-        {
+        if !action.cond.is_empty() && !action.is_pure_in_predicate && !action.cond_is_native() {
             guards.push((document.to_string(), action.cond.clone()));
             assert!(
                 !undecided(
                     &action.cond,
                     action.cond_constant,
                     action.is_pure_in_predicate,
-                    action.is_cpp_condition || action.is_kt_condition,
+                    action.cond_is_native(),
                 ),
                 "{document}: <if> cond=\"{}\" reaches the constant-fold arm with no \
                  decided value",

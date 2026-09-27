@@ -320,8 +320,8 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         ::sce_rust_runtime::saved_state::check_shape(saved, Self::SHAPE)?;
 {% for field in static_fields %}
-{% if field.capacity is not none %}
-        policy.{{ field.name }} = ::sce_rust_runtime::saved_state::bounded(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.capacity }})?;
+{% if field.bound is not none %}
+        policy.{{ field.name }} = ::sce_rust_runtime::saved_state::bounded(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?;
 {% else %}
         policy.{{ field.name }} = ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}")?;
 {% endif %}

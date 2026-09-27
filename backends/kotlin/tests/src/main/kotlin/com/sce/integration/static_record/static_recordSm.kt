@@ -44,7 +44,15 @@ data class StaticRecordDayPickedPayload(val year: UShort, val month: UByte, val 
 
 // ── SCE Accepted Subset §2.15: sce-static record variable classes ─────
 /** SCE Accepted Subset §2.15: a `record:Day` datamodel value. */
-data class StaticRecordDayRecord(val year: UShort, val month: UByte, val dayOfMonth: UByte)
+data class StaticRecordDayRecord(val year: UShort, val month: UByte, val dayOfMonth: UByte) {
+    /** This value as a saved state writes it. */
+    fun toSaved(): Any = linkedMapOf("year" to SavedValues.of(year), "month" to SavedValues.of(month), "dayOfMonth" to SavedValues.of(dayOfMonth))
+
+    companion object {
+        /** The value a saved state holds, refused unless it is one. */
+        fun fromSaved(value: Any?, what: String): StaticRecordDayRecord = StaticRecordDayRecord(year = SavedValues.uint16(SavedValues.field(value, what, "year"), "$what.year"), month = SavedValues.uint8(SavedValues.field(value, what, "month"), "$what.month"), dayOfMonth = SavedValues.uint8(SavedValues.field(value, what, "dayOfMonth"), "$what.dayOfMonth"))
+    }
+}
 // --- State Machine (W3C SCXML) ---
 
 class StaticRecordStateMachine(
@@ -101,18 +109,6 @@ class StaticRecordStateMachine(
 
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
-    private fun StaticRecordDayRecord.toSaved(): Any = linkedMapOf(
-        "year" to SavedValues.of(year),
-        "month" to SavedValues.of(month),
-        "dayOfMonth" to SavedValues.of(dayOfMonth),
-    )
-
-    private fun readStaticRecordDayRecord(value: Any?, what: String): StaticRecordDayRecord = StaticRecordDayRecord(
-        year = SavedValues.uint16(SavedValues.field(value, what, "year"), "$what.year"),
-        month = SavedValues.uint8(SavedValues.field(value, what, "month"), "$what.month"),
-        dayOfMonth = SavedValues.uint8(SavedValues.field(value, what, "dayOfMonth"), "$what.dayOfMonth"),
-    )
-
     /**
      * The shape a saved state of this document is bound to: a state saved
      * from a document that renamed, re-typed or moved a state or a variable is
@@ -148,7 +144,7 @@ class StaticRecordStateMachine(
      */
     fun restore(saved: SavedState) {
         beginRestore(saved, savedShape)
-        val saved1 = readStaticRecordDayRecord(saved.variable("shown"), "shown")
+        val saved1 = StaticRecordDayRecord.fromSaved(saved.variable("shown"), "shown")
         val saved2 = SavedValues.uint32(saved.variable("refusals"), "refusals")
         shown = saved1
         refusals = saved2

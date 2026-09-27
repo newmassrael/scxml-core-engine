@@ -260,6 +260,12 @@ const PROBE_MATCH: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 /// narrower integer is declared, or a real; a real made whole by `round`;
 /// literals at the very edges of their types; a string literal read as
 /// bytes; and a call whose arguments are the kinds its parameters declare.
+///
+/// The narrower store is masked into range (`reading & 0xFF`): since
+/// SCE_FORGE.md §3.4.1 holds a narrowing store to the integer contract, a
+/// bare `uint16` into a `uint8` is a store that can fail, refused in a body
+/// that does not declare `may-fail`. What this control keeps accepting is a
+/// narrowing the kind rule admits and the contract can prove.
 const CONTROL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_control" version="1.0">
   <sce:import kind="algorithm" src="probe_match.scxml" as="matched"/>
@@ -270,7 +276,7 @@ const CONTROL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   </sce:signature>
   <sce:body>
     <sce:var name="wide" type="uint32" init="reading"/>
-    <sce:var name="low" type="uint8" init="reading"/>
+    <sce:var name="low" type="uint8" init="reading &amp; 0xFF"/>
     <sce:var name="ratio" type="float64" init="reading"/>
     <sce:var name="scaled" type="uint16" init="round(ratio * 1.5)"/>
     <sce:var name="edge" type="int8" init="-128"/>

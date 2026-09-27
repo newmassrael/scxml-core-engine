@@ -4098,7 +4098,7 @@
       "bindings": [
         {
           "file": "sce-build/src/forge/static_lowering.rs",
-          "kind": "implements"
+          "kind": "references"
         }
       ],
       "coverage_expectation": "informational",
@@ -19572,6 +19572,12 @@
       "target_kind": "section",
       "target_id": "scxml-5.10.1",
       "reason": "D28 (84daa34fef) typed _event.type at dequeue and removed the enqueue-time external flag; this symbol no longer carries any 5.10.1 behaviour, and the dequeue-time code that does is bound instead"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "scxml-4.7",
+      "reason": "section 4.7 is coverage-exempt (informational <log>); the static lowering cites it, it does not satisfy a normative requirement"
     }
   ],
   "frames": {},

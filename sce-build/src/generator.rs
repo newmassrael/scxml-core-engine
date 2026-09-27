@@ -1863,7 +1863,7 @@ fn first_silently_folded_cond(model: &SCXMLModel) -> Option<UnlowerableCond> {
                 &action.cond,
                 action.cond_constant,
                 action.is_pure_in_predicate,
-                action.is_cpp_condition || action.is_kt_condition,
+                action.cond_is_native(),
                 model,
             ) {
                 return Some((

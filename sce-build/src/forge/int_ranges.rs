@@ -158,6 +158,19 @@ impl Interval {
     }
 }
 
+/// Whether `node` is an integer literal as written — a number, negated or
+/// not. Its range is the literal check's to judge, not the store's.
+fn is_integer_literal(node: &TypedExpr) -> bool {
+    match &node.kind {
+        ExprKind::NumberLit(_) => true,
+        ExprKind::Unary {
+            op: UnaryOp::Neg | UnaryOp::Pos,
+            operand,
+        } => matches!(operand.kind, ExprKind::NumberLit(_)),
+        _ => false,
+    }
+}
+
 /// The values an integer type holds; `None` for any other type.
 fn type_range(ty: InferredType) -> Option<Interval> {
     ty.int_bounds().map(|(lo, hi)| Interval { lo, hi })
@@ -595,6 +608,15 @@ impl Analysis<'_, '_> {
         let Some(slot) = type_range(place) else {
             return;
         };
+        // A literal the place cannot hold is not a store that MAY fail but
+        // one that always would: it is refused where it is lowered, as
+        // `expression/literal-out-of-range` naming the literal ([`typed`]'s
+        // rule for a literal inside an expression, here for one that is the
+        // whole value). Reported as a hazard it would tell the author to
+        // declare `may-fail`, after which the store fails on every call.
+        if is_integer_literal(node) {
+            return;
+        }
         if !value.within(slot) {
             self.hazard_in(node, expr, spelling, HazardKind::DoesNotFit, place);
         }

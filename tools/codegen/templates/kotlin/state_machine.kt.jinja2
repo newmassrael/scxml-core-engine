@@ -163,31 +163,22 @@ SavedValues.list({{ name }}) { SavedValues.of(it) }
 SavedValues.of({{ name }})
 {%- endif -%}
 {%- endmacro %}
-{% macro saved_read(kind, type, value, what, capacity) -%}
+{% macro saved_read(kind, type, value, what, bound) -%}
 {%- if kind == "record" -%}
-read{{ type }}({{ value }}, {{ what }})
+{{ type }}.fromSaved({{ value }}, {{ what }})
 {%- elif kind == "list" -%}
-SavedValues.list({{ value }}, {{ what }}, {{ capacity }}) { e, w -> SavedValues.{{ type }}(e, w) }
+SavedValues.list({{ value }}, {{ what }}, {{ bound }}) { e, w -> SavedValues.{{ type }}(e, w) }
 {%- elif type == "bytes" -%}
-SavedValues.bytes({{ value }}, {{ what }}, {{ capacity if capacity is not none else "Int.MAX_VALUE" }})
+SavedValues.bytes({{ value }}, {{ what }}, {{ bound if bound is not none else "Int.MAX_VALUE" }})
 {%- else -%}
 SavedValues.{{ type }}({{ value }}, {{ what }})
 {%- endif -%}
 {%- endmacro %}
-{% for record in static_records %}
-
-    private fun {{ record.ty }}.toSaved(): Any = linkedMapOf(
-{% for field in record.fields %}
-        "{{ field.id }}" to {{ saved_write("scalar", field.saved_type, field.name) }},
-{% endfor %}
-    )
-
-    private fun read{{ record.ty }}(value: Any?, what: String): {{ record.ty }} = {{ record.ty }}(
-{% for field in record.fields %}
-        {{ field.name }} = {{ saved_read("scalar", field.saved_type, 'SavedValues.field(value, what, "' ~ field.id ~ '")', '"$what.' ~ field.id ~ '"', none) }},
-{% endfor %}
-    )
-{% endfor %}
+{# A record's saved form is its own type's (`toSaved` / `fromSaved`, emitted
+   with the type by the static lowering). A per-type function here, named by
+   prefixing the record's type, would reserve every variable name that prefix
+   could match (`crate::reader_names` reads a template name as a pattern), and
+   did: `readBackProbe` lost its reader in every backend (2026-09-27). #}
 
     /**
      * The shape a saved state of this document is bound to: a state saved
@@ -226,7 +217,7 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
     fun restore(saved: SavedState) {
         beginRestore(saved, savedShape)
 {% for field in static_fields %}
-        val saved{{ loop.index }} = {{ saved_read(field.saved_kind, field.saved_type, 'saved.variable("' ~ field.id ~ '")', '"' ~ field.id ~ '"', field.capacity) }}
+        val saved{{ loop.index }} = {{ saved_read(field.saved_kind, field.saved_type, 'saved.variable("' ~ field.id ~ '")', '"' ~ field.id ~ '"', field.bound) }}
 {% endfor %}
 {% for field in static_fields %}
         {{ field.name }} = saved{{ loop.index }}
