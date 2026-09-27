@@ -1540,7 +1540,7 @@ pub(crate) fn render_error(e: minijinja::Error) -> GenerateError {
 // answers per `--lang`, and it also reads THIS comment — so a pointer
 // that rots is a red rather than something only a reader would
 // notice.
-fn mesh_templates_exist_for(language: Language) -> bool {
+pub(crate) fn mesh_templates_exist_for(language: Language) -> bool {
     let prefix = format!("mesh/{}/", language.feature_tree_subdir());
     crate::template_registry::EMBEDDED_TEMPLATES
         .iter()

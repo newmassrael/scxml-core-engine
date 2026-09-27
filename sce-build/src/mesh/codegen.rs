@@ -1184,9 +1184,26 @@ pub fn generate_mesh(
         return Ok(GeneratedOutput::default());
     }
 
+    match mesh_backend(language) {
+        Some(emit) => emit(inputs),
+        None => Err(CodegenError::UnsupportedLanguage(format!("{:?}", language))),
+    }
+}
+
+type MeshBackend = fn(MeshCodegenInputs<'_>) -> Result<GeneratedOutput, CodegenError>;
+
+/// The mesh emitter each backend carries, or `None` for a backend with no
+/// mesh arm. This is the implementation half of the backend roster; the
+/// refusal half is `generator::mesh_templates_exist_for`, which reads
+/// `templates/mesh/<lang>/` from the embedded tree. The two are held to
+/// one answer per language by `mesh_backend_matches_the_template_tree`,
+/// so a template directory landing without an emitter here (or the
+/// reverse) is a red rather than a document the refusal accepts and this
+/// function then rejects.
+fn mesh_backend(language: Language) -> Option<MeshBackend> {
     match language {
-        Language::Cpp => generate_cpp_mesh(inputs),
-        _ => Err(CodegenError::UnsupportedLanguage(format!("{:?}", language))),
+        Language::Cpp => Some(generate_cpp_mesh),
+        _ => None,
     }
 }
 
@@ -2045,6 +2062,24 @@ fn sce_app_vsomeip_name(machine_name: &str, partition_self_name: Option<&str>) -
 mod tests {
     use super::*;
     use crate::mesh::deploy::ZenohMode;
+
+    #[test]
+    fn mesh_backend_matches_the_template_tree() {
+        // A language whose `templates/mesh/<lang>/` exists passes the
+        // mesh-rpc refusal, so it must reach an emitter; one without must
+        // not have an emitter the refusal would never let a document reach.
+        for &language in Language::ALL {
+            assert_eq!(
+                mesh_backend(language).is_some(),
+                crate::generator::mesh_templates_exist_for(language),
+                "{language:?}: mesh emitter and templates/mesh/ disagree"
+            );
+        }
+        assert!(
+            Language::ALL.iter().any(|l| mesh_backend(*l).is_some()),
+            "no backend carries a mesh emitter: the comparison above is vacuous"
+        );
+    }
 
     // ── RFC F.X-2 sce_app_vsomeip_name ──────────────────────
 
