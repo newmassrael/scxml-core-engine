@@ -1051,6 +1051,12 @@ add_executable(integration_tests
     integration/AChildMaySendManyEventsInOneTickAotTest.cpp
     integration/AnErrorInsideAForeachEndsItsBlockTest.cpp
     integration/AnErrorInsideAForeachEndsItsBlockAotTest.cpp
+    integration/AnErrorEndsTheBlockItWasRaisedInTest.cpp
+    integration/AnErrorEndsTheBlockItWasRaisedInAotTest.cpp
+    integration/ABadInvokeArgumentIsReportedOnceTest.cpp
+    integration/ABadInvokeArgumentIsReportedOnceAotTest.cpp
+    integration/ABadSendArgumentDiscardsItsMessageTest.cpp
+    integration/ABadSendArgumentDiscardsItsMessageAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
     integration/EventDataArrivesAsSentAotTest.cpp
     integration/XmlDataIsADomTreeTest.cpp
@@ -1613,6 +1619,20 @@ sce_generate_static_integration_test(a_child_may_send_many_events_in_one_tick ${
 # that contains the <foreach> — in <onentry> and in transition content — and
 # it is the only error that element's failure raises.
 sce_generate_static_integration_test(an_error_inside_a_foreach_ends_its_block ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 4.9: an error ends the block it was raised in — whichever element
+# raised it — and no other block; a nested <foreach> keeps its own collection.
+sce_generate_static_integration_test(an_error_ends_the_block_it_was_raised_in ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 5.7.1 + 6.4: a <param> of an <invoke> that cannot be read costs
+# error.execution and its pair, and the child still starts; a namelist that
+# cannot be read ends the element with one error and no child.
+sce_generate_static_integration_test(a_bad_invoke_argument_is_reported_once ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 6.2 + 4.9: a <send> whose own argument (namelist, eventexpr,
+# targetexpr, delayexpr, idlocation, typeexpr) cannot be evaluated raises
+# error.execution, discards the message, and ends its block.
+sce_generate_static_integration_test(a_bad_send_argument_discards_its_message ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach the
 # datamodel as a value. `raiseExternalEvent(name, data)` and

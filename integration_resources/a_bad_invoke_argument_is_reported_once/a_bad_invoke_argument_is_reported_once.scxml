@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 5.7.1 + 6.4: what each argument of an <invoke> costs when it
+  cannot be read, and what a readable one delivers.
+
+  A <param> is §5.7.1's: one that cannot be read raises error.execution and
+  its name and value are left out, and the child still starts
+  (`invoke_param_error_starts_the_child` records why 5.7.1 governs over
+  6.4's termination here). A <param> reads its `location` as a location
+  expression, and one naming no location (`location=""`) is the same failure
+  as an unreadable `expr`. A <param> is an argument of the <invoke> whether or
+  not the child declares a matching <data>, so it is evaluated — and its
+  failure raised — either way (§scxml-6.4.3 decides only what the child keeps).
+
+  A namelist names locations the invoke passes; one that is not a readable
+  location is an argument error of the element, which §6.4 answers with
+  "terminate the processing of the element without further action": one
+  error.execution for the <invoke>, however many names are bad, no child, and
+  its <param>s are not evaluated.
+
+  `s0` invokes one child with four params:
+    fromLoc    location="v"             — the child's `fromLoc` becomes 7
+    emptyLoc   location=""              — error, left out
+    broken     expr="obj.missing.deep"  — error, left out
+    notInChild expr="obj.missing.deep"  — error, although the child does not
+                                          declare it
+  The child's <data> default to 'unset', so a pair left out reads 'unset'
+  and a placeholder seeded in its place does not. The child reports from an
+  eventless <transition> rather than <onentry>, for the reason the fixture
+  above gives (C11 seeds params after the child's onentry has run).
+
+  After the host's `go`, `s1` invokes two children that must not start:
+    inv2  namelist="undeclaredA undeclaredB"                 — one error
+    inv3  namelist="obj.missing.deep" + a failing <param>    — one error: the
+          namelist ends the element before the param is read
+
+    errors      5 (3 in s0, 1 per terminated invoke in s1)
+    started     1 (only s0's child reports)
+    fromLoc     7, emptyLoc 'unset', broken 'unset' — as the child saw them
+    and the host's `finish` ends the run in `done`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="a_bad_invoke_argument_is_reported_once" datamodel="ecmascript"
+       initial="s0">
+
+  <datamodel>
+    <data id="v" expr="7"/>
+    <data id="obj" expr="({})"/>
+    <data id="errors" expr="0"/>
+    <data id="started" expr="0"/>
+    <data id="fromLocOk" expr="0"/>
+    <data id="emptyLocLeftOut" expr="0"/>
+    <data id="brokenLeftOut" expr="0"/>
+  </datamodel>
+
+  <state id="run">
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <transition event="childUp">
+      <assign location="started" expr="started + 1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+
+    <state id="s0">
+      <invoke type="scxml" id="inv1">
+        <param name="fromLoc" location="v"/>
+        <param name="emptyLoc" location=""/>
+        <param name="broken" expr="obj.missing.deep"/>
+        <param name="notInChild" expr="obj.missing.deep"/>
+        <content>
+          <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                 datamodel="ecmascript" initial="report">
+            <datamodel>
+              <data id="fromLoc" expr="'unset'"/>
+              <data id="emptyLoc" expr="'unset'"/>
+              <data id="broken" expr="'unset'"/>
+            </datamodel>
+            <state id="report">
+              <transition target="reported">
+                <send target="#_parent" event="childUp">
+                  <param name="fromLoc" expr="fromLoc"/>
+                  <param name="emptyLoc" expr="emptyLoc"/>
+                  <param name="broken" expr="broken"/>
+                </send>
+              </transition>
+            </state>
+            <final id="reported"/>
+          </scxml>
+        </content>
+      </invoke>
+      <transition event="childUp" cond="_event.data.fromLoc === 7">
+        <assign location="fromLocOk" expr="1"/>
+        <assign location="started" expr="started + 1"/>
+        <if cond="_event.data.emptyLoc === 'unset'">
+          <assign location="emptyLocLeftOut" expr="1"/>
+        </if>
+        <if cond="_event.data.broken === 'unset'">
+          <assign location="brokenLeftOut" expr="1"/>
+        </if>
+      </transition>
+      <transition event="go" target="s1"/>
+    </state>
+
+    <state id="s1">
+      <invoke type="scxml" id="inv2" namelist="undeclaredA undeclaredB">
+        <content>
+          <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                 datamodel="ecmascript" initial="up">
+            <state id="up">
+              <transition target="gone">
+                <send target="#_parent" event="childUp"/>
+              </transition>
+            </state>
+            <final id="gone"/>
+          </scxml>
+        </content>
+      </invoke>
+      <invoke type="scxml" id="inv3" namelist="obj.missing.deep">
+        <param name="alsoBroken" expr="obj.missing.deep"/>
+        <content>
+          <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                 datamodel="ecmascript" initial="up">
+            <datamodel>
+              <data id="alsoBroken" expr="'unset'"/>
+            </datamodel>
+            <state id="up">
+              <transition target="gone">
+                <send target="#_parent" event="childUp"/>
+              </transition>
+            </state>
+            <final id="gone"/>
+          </scxml>
+        </content>
+      </invoke>
+    </state>
+  </state>
+
+  <final id="done"/>
+</scxml>

@@ -1605,6 +1605,90 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 4.9: an error ends the block it was raised in — whichever element
+    # raised it — and no other block; a nested <foreach> keeps its own collection.
+    sce_generate_static_integration_c_test(an_error_ends_the_block_it_was_raised_in "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_an_error_ends_the_block_it_was_raised_in
+        integration/test_an_error_ends_the_block_it_was_raised_in.c
+        ${INTEGRATION_C_TEST_an_error_ends_the_block_it_was_raised_in_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_an_error_ends_the_block_it_was_raised_in PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_an_error_ends_the_block_it_was_raised_in PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_an_error_ends_the_block_it_was_raised_in PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_an_error_ends_the_block_it_was_raised_in
+        COMMAND sce_c_integration_an_error_ends_the_block_it_was_raised_in
+    )
+    set_tests_properties(c11_integration_an_error_ends_the_block_it_was_raised_in PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # W3C SCXML 5.7.1 + 6.4: a <param> of an <invoke> that cannot be read costs
+    # error.execution and its pair, and the child still starts; a namelist that
+    # cannot be read ends the element with one error and no child.
+    sce_generate_static_integration_c_test(a_bad_invoke_argument_is_reported_once "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv1 inv2 inv3
+    )
+
+    add_executable(sce_c_integration_a_bad_invoke_argument_is_reported_once
+        integration/test_a_bad_invoke_argument_is_reported_once.c
+        ${INTEGRATION_C_TEST_a_bad_invoke_argument_is_reported_once_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_a_bad_invoke_argument_is_reported_once PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_a_bad_invoke_argument_is_reported_once PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_bad_invoke_argument_is_reported_once PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_bad_invoke_argument_is_reported_once
+        COMMAND sce_c_integration_a_bad_invoke_argument_is_reported_once
+    )
+    set_tests_properties(c11_integration_a_bad_invoke_argument_is_reported_once PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # W3C SCXML 6.2 + 4.9: a <send> whose own argument cannot be evaluated raises
+    # error.execution, discards the message, and ends its block.
+    sce_generate_static_integration_c_test(a_bad_send_argument_discards_its_message "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_a_bad_send_argument_discards_its_message
+        integration/test_a_bad_send_argument_discards_its_message.c
+        ${INTEGRATION_C_TEST_a_bad_send_argument_discards_its_message_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_a_bad_send_argument_discards_its_message PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_a_bad_send_argument_discards_its_message PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_bad_send_argument_discards_its_message PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_bad_send_argument_discards_its_message
+        COMMAND sce_c_integration_a_bad_send_argument_discards_its_message
+    )
+    set_tests_properties(c11_integration_a_bad_send_argument_discards_its_message PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach
     # the datamodel as a value. Every other fixture here leaves the carrier's
     # `data` field zeroed, so this edge — the one a downstream MCU consumer

@@ -98,27 +98,27 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 247
+engine-documents 250
 native-prefix-documents 2
-datamodel-variable-init 329
-transition-guard 231
-assign-action 278
-child-invoke-needs-script-engine 47
-log-expr 45
+datamodel-variable-init 357
+transition-guard 232
+assign-action 308
+child-invoke-needs-script-engine 49
+log-expr 46
 send-param-expr 45
-send-dynamic-attr 32
-foreach-action 18
-static-invoke-namelist 9
+send-dynamic-attr 37
+foreach-action 20
+static-invoke-namelist 11
 donedata-param 10
 donedata-content 9
-inline-script-action 2
-send-namelist 7
-if-condition 6
+inline-script-action 3
+send-namelist 8
+if-condition 8
 elseif-condition 3
 global-script 3
 mesh-rpc-srcexpr 2
 hybrid-invoke 4
-cancel-expr 2
+cancel-expr 3
 ```
 
 Each line is a ceiling: the count may fall freely, and a rise fails the
@@ -233,10 +233,29 @@ never spelled correctly.
   `assign-action`, `transition-guard`, `send-param-expr` and `send-namelist`
   by one each — re-derived from this test's output after a rebase, not
   merged, since two rounds raising one counter merge to the wrong number.
+  Then `an_error_ends_the_block_it_was_raised_in.scxml` (one engine
+  document failing five different elements, with a `<script>`, a `<log
+  expr>`, a `<cancel sendidexpr>`, an `<if>` and a nested pair of
+  `<foreach>`) and `a_bad_invoke_argument_is_reported_once.scxml` (one
+  engine document whose three inline children need an engine and two of
+  whose invokes carry a namelist; the children are split out and not
+  tracked) together raised, as the census measured them,
+  `engine-documents` by two, `datamodel-variable-init` by twenty-four,
+  `assign-action` by twenty-two, `foreach-action`,
+  `child-invoke-needs-script-engine`, `static-invoke-namelist` and
+  `if-condition` by two, and `transition-guard`, `inline-script-action`,
+  `log-expr` and `cancel-expr` by one.
+  Then `a_bad_send_argument_discards_its_message.scxml` (one engine
+  document: four data items, eight assigns, and six `<send>`s whose own
+  arguments fail — a namelist, an `eventexpr`, a `targetexpr`, a
+  `delayexpr`, an `idlocation` and a `typeexpr`) raised `engine-documents`
+  and `send-namelist` by one, `datamodel-variable-init` by four,
+  `assign-action` by eight and `send-dynamic-attr` by five. The whole
+  table was re-derived from this test's output after a rebase, not merged.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
-- **49% of judged documents need an engine** (247 of 500). The remaining
+- **49% of judged documents need an engine** (250 of 503). The remaining
   51% already compile without one, which is what makes "the engine is a
   fallback" a description of the tree rather than an aspiration.
   ⚠ This figure was previously stated as 32%, taken over the 736 walked

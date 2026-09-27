@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 6.2 + 4.9: a <send> whose own argument cannot be evaluated
+  raises error.execution and discards the message — "If the evaluation of
+  <send>'s arguments produces an error, the Processor MUST discard the
+  message without attempting to deliver it" — and, the error having been
+  raised while the element was processed, the rest of its block does not run.
+
+  A <param> is not one of these arguments: §5.7.1 leaves it out and the
+  message still goes (`a_bad_send_param_ends_its_block`). The arguments here
+  are the element's own attributes, one per onentry block of `s0`:
+
+    1  namelist="undeclaredA undeclaredB" — one error, however many names
+       are bad;
+    2  eventexpr that fails;
+    3  targetexpr that fails;
+    4  delayexpr that fails — the message is not scheduled with some
+       default delay in its place;
+    5  idlocation that cannot take the id;
+    6  typeexpr that fails.
+
+  Every send names `sent` (directly or as the expression's intended value)
+  and would reach this machine, so a message that goes anyway moves `sent`.
+  Each block ends with an <assign> that must not run.
+
+    errors  6 — one error.execution per failed <send>.
+    sent    0 — no message is delivered.
+    after   0 — no assign behind a failed <send> runs.
+    and the host's `finish` ends the run in `done`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="a_bad_send_argument_discards_its_message" datamodel="ecmascript"
+       initial="s0">
+
+  <datamodel>
+    <data id="errors" expr="0"/>
+    <data id="sent" expr="0"/>
+    <data id="after" expr="0"/>
+    <data id="obj" expr="({})"/>
+  </datamodel>
+
+  <state id="s0">
+    <onentry>
+      <send event="sent" namelist="undeclaredA undeclaredB"/>
+      <assign location="after" expr="after + 1"/>
+    </onentry>
+    <onentry>
+      <send eventexpr="obj.missing.deep"/>
+      <assign location="after" expr="after + 1"/>
+    </onentry>
+    <onentry>
+      <send event="sent" targetexpr="obj.missing.deep"/>
+      <assign location="after" expr="after + 1"/>
+    </onentry>
+    <onentry>
+      <send event="sent" delayexpr="obj.missing.deep"/>
+      <assign location="after" expr="after + 1"/>
+    </onentry>
+    <onentry>
+      <send event="sent" idlocation="obj.missing.deep"/>
+      <assign location="after" expr="after + 1"/>
+    </onentry>
+    <onentry>
+      <send event="sent" typeexpr="obj.missing.deep"/>
+      <assign location="after" expr="after + 1"/>
+    </onentry>
+
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <transition event="sent">
+      <assign location="sent" expr="sent + 1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>

@@ -1314,6 +1314,59 @@ C11 by returning from the block's function — and the shared C++
 `ForeachHelper` reports whether the collection or the body stopped the
 loop, so the `<foreach>` raises only for the former.
 
+`an_error_ends_the_block_it_was_raised_in` carries §scxml-4.9 past
+`<send>` and `<foreach>` to every element that can raise: a failing
+`<assign>`, `<script>`, `<log expr>` (§5.9: an expression that fails raises
+error.execution), `<cancel sendidexpr>`, and an `<assign>` inside an `<if>`
+branch each end their own onentry block, the transition content on the
+host's `t` ends its own, and none of them reaches another block — a single
+failing onentry block of `p` still leaves `p`'s `<initial>` content to run.
+A nested `<foreach>`, 2 x 2, walks all four pairs. Measured 2026-09-27 by
+reading every channel: C++ AOT, Kotlin and C11 ran on after a failed
+`<assign>`; the six generated channels logged a failed `<log expr>` or
+`<cancel sendidexpr>` and raised nothing; the Interpreter raised nothing
+for a failed `<script>`, `<cancel>` or send argument and ran the rest of an
+`<if>` branch after a failure in it; Kotlin's single-block onentry left the
+whole `onEntry` with a bare `return`, skipping the state's invoke deferral,
+done event and `<initial>` content; and C11 and the QuickJS engine cached a
+`<foreach>` collection in one global, so an inner loop overwrote the outer
+one's.
+
+`a_bad_invoke_argument_is_reported_once` covers the arguments of an
+`<invoke>`. A `<param>` follows §5.7.1 as `invoke_param_error_starts_the_child`
+reads it — error.execution, the pair left out, the child started — and reads
+its `location`, and one naming no location is the same failure; it is
+evaluated whether or not the child declares its name. A namelist that names a
+location that cannot be read is §6.4's argument error: one error.execution
+for the element however many names are bad, no child, and its `<param>`s not
+evaluated. Measured the same day, no channel read a valid
+`<param location>` on an inline or file child (C11 raised a spurious error
+for one), the Interpreter raised nothing for a bad namelist, Rust, Go and
+Python raised once per bad name, Kotlin evaluated the params when the state
+was entered rather than when the invoke started, and three channels skipped
+a param whose name the child did not declare without evaluating it. A
+hybrid (`srcexpr`) invoke's arguments are not covered here: the generated
+channels do not evaluate them at all yet, which is its own round.
+
+`a_bad_send_argument_discards_its_message` covers the arguments of a
+`<send>` itself: a namelist naming undeclared locations, and an `eventexpr`,
+`targetexpr`, `delayexpr`, `idlocation` and `typeexpr` that cannot be
+evaluated, one per onentry block. Each is §6.2's argument error — one
+error.execution carrying the send id, the message discarded (not sent under
+a default delay, type or name), and, raised while the element was processed,
+the end of its block (§4.9). A `<param>` is not one of these arguments
+(`a_bad_send_param_ends_its_block`). The driver advances a manual clock a
+full minute, so a message scheduled anyway would arrive and move `sent`.
+Measured 2026-09-27 before the fix, Go and Python raised three errors where
+six are due and delivered two messages; C++ AOT read `eventexpr` and
+`delayexpr` as variable names, fell back to the default processor for a
+failed `typeexpr` and kept going after a failed `targetexpr`, and C11 did
+the same for `typeexpr`. The C++ AOT, Rust, Go, Kotlin and Python send
+templates now evaluate the element's arguments once, in one prologue, and
+their delivery arms read what the prologue left; C11's enumerated send arms
+were corrected shape by shape, and composing them the same way is its own
+round.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 4.9: "If the processing of an element causes an error to be
+  raised, the processor MUST NOT process the remaining elements of the block.
+  (The execution of other blocks of executable content is not affected.)"
+  — for every element that can raise, not only <send> and <foreach>.
+
+  Five onentry blocks of `q`, each failing on a different element and each
+  followed by an <assign> that must not run:
+
+    1  <assign> to `obj.missing.deep`, a location that cannot be written;
+    2  <script> that writes the same location;
+    3  <log> whose `expr` reads it (W3C SCXML 5.9: an expression that fails
+       raises error.execution);
+    4  <cancel> whose `sendidexpr` reads it;
+    5  an <assign> to it inside an <if> branch — the branch stops, and so
+       does the block that contains the <if>.
+
+  `p` has a single onentry block that fails the same way, and an <initial>
+  whose transition content sets `initRan`: that content is another block,
+  so it still runs. The targetless transition on the host's `t` fails in its
+  own content. A sixth onentry block of `q` nests one <foreach> in another,
+  2 x 2, and must walk all four pairs: an inner loop keeps its own
+  collection and leaves the outer one's intact.
+
+    errors     7 — one error.execution per failed element (five in `q`, one
+                   in `p`, one in `t`'s content).
+    after*     0 — nothing after a failed element in its block runs.
+    initRan    1 — a failure in `p`'s onentry does not stop its <initial>.
+    pairs      4, sum 90 — (1*10 + 1*20 + 2*10 + 2*20).
+    and the host's `finish` ends the run in `done`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="an_error_ends_the_block_it_was_raised_in" datamodel="ecmascript"
+       initial="p">
+
+  <datamodel>
+    <data id="errors" expr="0"/>
+    <data id="afterAssign" expr="0"/>
+    <data id="afterScript" expr="0"/>
+    <data id="afterLog" expr="0"/>
+    <data id="afterCancel" expr="0"/>
+    <data id="afterIfInner" expr="0"/>
+    <data id="afterIf" expr="0"/>
+    <data id="afterSingle" expr="0"/>
+    <data id="afterTrans" expr="0"/>
+    <data id="initRan" expr="0"/>
+    <data id="pairs" expr="0"/>
+    <data id="sum" expr="0"/>
+    <data id="outer" expr="[1, 2]"/>
+    <data id="inner" expr="[10, 20]"/>
+    <data id="o" expr="0"/>
+    <data id="i" expr="0"/>
+    <data id="obj" expr="({})"/>
+  </datamodel>
+
+  <state id="p">
+    <onentry>
+      <assign location="obj.missing.deep" expr="1"/>
+      <assign location="afterSingle" expr="1"/>
+    </onentry>
+    <initial>
+      <transition target="q">
+        <assign location="initRan" expr="1"/>
+      </transition>
+    </initial>
+
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <transition event="t">
+      <assign location="obj.missing.deep" expr="1"/>
+      <assign location="afterTrans" expr="1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+
+    <state id="q">
+      <onentry>
+        <assign location="obj.missing.deep" expr="1"/>
+        <assign location="afterAssign" expr="1"/>
+      </onentry>
+      <onentry>
+        <script>obj.missing.deep = 1;</script>
+        <assign location="afterScript" expr="1"/>
+      </onentry>
+      <onentry>
+        <log label="unreadable" expr="obj.missing.deep"/>
+        <assign location="afterLog" expr="1"/>
+      </onentry>
+      <onentry>
+        <cancel sendidexpr="obj.missing.deep"/>
+        <assign location="afterCancel" expr="1"/>
+      </onentry>
+      <onentry>
+        <if cond="true">
+          <assign location="obj.missing.deep" expr="1"/>
+          <assign location="afterIfInner" expr="1"/>
+        </if>
+        <assign location="afterIf" expr="1"/>
+      </onentry>
+      <onentry>
+        <foreach array="outer" item="o">
+          <foreach array="inner" item="i">
+            <assign location="pairs" expr="pairs + 1"/>
+            <assign location="sum" expr="sum + o * i"/>
+          </foreach>
+        </foreach>
+      </onentry>
+    </state>
+  </state>
+
+  <final id="done"/>
+</scxml>
