@@ -349,6 +349,14 @@ Write the reason for whoever has to answer it, not for yourself: what the
 source does and does not say, what you tried, and what would settle it. A
 marker with no reason is a guess with a label.
 
+When you chose a VALUE among a few you considered, list them all, the chosen
+one included, on the same `<data>`: `sce:assumed-candidates="OFF ON"` beside
+`expr="ign ? 1 : OFF"`. The chosen one must appear in the expression exactly
+once (or be the whole expression); `check` refuses a list whose place it
+cannot find. A failing case can then be run with each other candidate in its
+place (`gaps --counterfactual`), and the one that repairs it is the answer
+to send back.
+
 ⚠ THE SAME APPLIES TO ADDRESSES, AND YOU MAY NOT HAVE THEM YET.
 
 The document is already independent of the platform: it uses its own

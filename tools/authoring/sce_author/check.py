@@ -108,6 +108,10 @@ class Document:
     # Identifier -> the marker itself (`sce:assumed="..."`), the handle an
     # author and a gap report name the guess by; `assumed` holds the reason.
     assumed_marker: dict = dataclasses.field(default_factory=dict)
+    # Identifier -> (the values its author weighed, its `expr`):
+    # `sce:assumed-candidates`, space-separated, the one chosen among them --
+    # what `gaps --counterfactual` puts in the chosen one's place.
+    assumed_candidates: dict = dataclasses.field(default_factory=dict)
     # Output identifier -> the reason its author gave for leaving it
     # `sce:unresolved`: a value nobody has decided, written as a question
     # rather than a guess. The product refuses to BUILD such a document for
@@ -358,7 +362,7 @@ def read_document(path: pathlib.Path) -> Document:
         ) from exc
     inputs, outputs, uncomputed, expressions = [], [], [], {}
     assumed, reads, unresolved, types = {}, {}, {}, {}
-    assumed_marker = {}
+    assumed_marker, assumed_candidates = {}, {}
     kept: set = set()
     for data in root.iter(f"{SCXML_NS}data"):
         ident = data.get("id")
@@ -385,6 +389,10 @@ def read_document(path: pathlib.Path) -> Document:
             assumed[ident] = (data.get(f"{SCE_NS}assumed-reason")
                               or data.get(f"{SCE_NS}assumed"))
             assumed_marker[ident] = data.get(f"{SCE_NS}assumed")
+            if data.get(f"{SCE_NS}assumed-candidates"):
+                assumed_candidates[ident] = (
+                    tuple(data.get(f"{SCE_NS}assumed-candidates").split()),
+                    data.get("expr") or "")
         if direction == "out" and data.get(f"{SCE_NS}unresolved"):
             # Both halves: the marker is the question's handle, the reason is
             # what to go and ask. The product's refusal named both.
@@ -433,6 +441,7 @@ def read_document(path: pathlib.Path) -> Document:
         keeps=frozenset(kept) if kind == "transform" else frozenset(),
         assumed=assumed,
         assumed_marker=assumed_marker,
+        assumed_candidates=assumed_candidates,
         unresolved=unresolved,
         reads=reads,
         sends=tuple(sends),
@@ -1244,6 +1253,14 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
 
     if prose is not None:
         out.extend(unread_preconditions(pack, prose, declared_inputs, set(document.inputs)))
+
+    # The values an author weighed for a guess must say where they go: the
+    # chosen one appears in its expression, once (`counterfactual`).
+    from .counterfactual import candidate_site
+    for ident, (candidates, expr) in sorted(document.assumed_candidates.items()):
+        _, why = candidate_site(expr, candidates)
+        if why:
+            out.append(Finding(f"document {ident}", f"`sce:assumed-candidates`: {why}"))
 
     # When the host runs the document: the platform's, the binding's, or a
     # refusal where the two disagree.

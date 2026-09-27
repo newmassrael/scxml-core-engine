@@ -14,7 +14,14 @@ Asserted here, over one lamp a document decides and a binding lands:
     answer, and the guess is reported refuted with it
     two failures repaired by two DIFFERENT values are not a witness: no
     single value is right
-    a number's alternatives are a sample and never clear a guess
+    a number the document only compares is tried once per interval its
+    thresholds cut, and cleared                         (the discriminator)
+    the model's range drops an interval no reading can land in
+    a number it computes with is only sampled, and never cleared
+    a document's guess is run with each of its `sce:assumed-candidates`
+                                                        (the discriminator)
+    candidates whose place in the expression is not known are refused
+    a guess without candidates is not changed
     a run budget that runs out says what it did not try
 """
 
@@ -62,8 +69,8 @@ def case(name, expect, at=SWITCH, value="true"):
 @unittest.skipUnless(_default_codegen().exists(),
                      "the product's code generator is not built")
 class AGuessIsChangedToSeeWhatRestsOnIt(Fixture):
-    def run_with(self, inputs, lamp, cases, max_runs=64, text=None):
-        self.write_pack(SWITCHED, CONVENTIONS)
+    def run_with(self, inputs, lamp, cases, max_runs=64, text=None, model=SWITCHED):
+        self.write_pack(model, CONVENTIONS)
         (self.root / "changed.scxml").write_text(text or document("bool", "on"),
                                                  encoding="utf-8")
         path = self.root / "changed.binding.yaml"
@@ -127,16 +134,84 @@ class AGuessIsChangedToSeeWhatRestsOnIt(Fixture):
         self.assertEqual("moves", cf.verdict)
         self.assertEqual("implicated", gaps["output lamp"].kind)
 
-    def test_a_number_is_sampled_and_never_cleared(self):
+    def test_a_number_only_compared_is_tried_per_interval_and_cleared(self):
+        """⚠ The discriminator for numbers. The document only asks whether
+        the count is above 0, so it cannot tell apart two counts on the same
+        side of 0: the threshold and one value either side are every
+        behaviour it has. All ran, none moved the failure -- cleared, where a
+        sample could only have said "unmoved"."""
         base, found, gaps = self.run_with(
             {"on": {"address": "Plant.Input.Count", "when_absent": 0,
                     "assumed": "an absent count reads as zero"}},
             LAMP, [case("counted", "ON", "Plant.Input.Count", 1)],
             text=document("int32", "on &gt; 0"))
         cf = found["binding:input:on"]
+        self.assertEqual(("cleared", True), (cf.verdict, cf.exhaustive))
+        self.assertEqual([-1, 1], sorted(f.value for f in cf.flips))
+        self.assertEqual("cleared", gaps["input on"].kind)
+        self.assertEqual([("counted", "Plant.Out.Lamp.Stat")], gaps["lamp"].sole)
+
+    def test_the_models_range_bounds_the_intervals(self):
+        """A count cannot go below 0 on this platform: the interval below the
+        threshold is not tried."""
+        model = {**SWITCHED, "entries": [
+            {**e, "range": {"minimum": 0}} if e["address"] == "Plant.Input.Count" else e
+            for e in SWITCHED["entries"]]}
+        base, found, _ = self.run_with(
+            {"on": {"address": "Plant.Input.Count", "when_absent": 0,
+                    "assumed": "an absent count reads as zero"}},
+            LAMP, [case("counted", "ON", "Plant.Input.Count", 1)],
+            text=document("int32", "on &gt; 0"), model=model)
+        self.assertEqual([1], [f.value for f in found["binding:input:on"].flips])
+
+    def test_a_number_the_document_computes_with_is_only_sampled(self):
+        base, found, gaps = self.run_with(
+            {"on": {"address": "Plant.Input.Count", "when_absent": 0,
+                    "assumed": "an absent count reads as zero"}},
+            LAMP, [case("counted", "ON", "Plant.Input.Count", 1)],
+            text=document("int32", "(on + 1) &gt; 1"))
+        cf = found["binding:input:on"]
         self.assertEqual(("unmoved", False), (cf.verdict, cf.exhaustive))
+        self.assertTrue(any("beyond comparing" in u for u in cf.untried))
         self.assertEqual("implicated", gaps["input on"].kind)
         self.assertEqual([], gaps["lamp"].sole)
+
+    def test_a_documents_guess_is_changed_to_its_candidates(self):
+        """⚠ The discriminator for a document's own guess. The author chose 1
+        for a switched-on lamp and wrote down 2 as the other reading: with 2
+        in its place the case passes, and that is the answer."""
+        text = document("bool", "on").replace(
+            'expr="on ? 1 : 2"', 'sce:assumed-candidates="1 2" expr="on ? 1 : 3"')
+        base, found, gaps = self.run_with(
+            {"on": {"address": SWITCH, "when_absent": False}},
+            {**LAMP, "map": {1: "OFF", 2: "ON", 3: "MAX"}},
+            [case("counted", "ON")], text=text)
+        cf = found["document:lamp"]
+        self.assertEqual(("witness", True), (cf.verdict, cf.exhaustive))
+        self.assertEqual([("candidate", "2")],
+                         [(f.decision, f.value) for f in cf.flips if f.fixed])
+        self.assertEqual("refuted", gaps["lamp"].kind)
+
+    def test_candidates_whose_place_is_not_known_are_refused_by_check(self):
+        """1 appears twice: which of them the author chose is not written
+        down, and choosing for them would change a different document."""
+        self.write_pack(SWITCHED, CONVENTIONS)
+        (self.root / "changed.scxml").write_text(document("bool", "on").replace(
+            'expr="on ? 1 : 2"', 'sce:assumed-candidates="1 2" expr="on ? 1 : 1"'),
+            encoding="utf-8")
+        found = [str(f) for f in self.bind(
+            {"version": 1, "document": "changed.scxml",
+             "inputs": {"on": {"address": SWITCH, "when_absent": False}},
+             "outputs": {"lamp": {**LAMP, "map": {1: "OFF"}}}})]
+        self.assertTrue(any("1 ×2" in f and "assumed-candidates" in f for f in found), found)
+
+    def test_a_guess_without_candidates_is_not_changed(self):
+        base, found, _ = self.run_with(
+            {"on": {"address": SWITCH, "when_absent": False}},
+            LAMP, [case("counted", "ON")])
+        cf = found["document:lamp"]
+        self.assertEqual("untried", cf.verdict)
+        self.assertTrue(any("nobody wrote down" in u for u in cf.untried))
 
     def test_a_spent_budget_says_what_it_did_not_try(self):
         base, found, gaps = self.run_with(

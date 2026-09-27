@@ -193,11 +193,28 @@ not a reading of the record: a guess about a missing input looks decidable by
 whether the input was missing, and measured on thirteen components it never was
 in the failing cases — but was in earlier rounds of the same run, in documents
 that keep values between rounds, so only running the alternative says whether
-that still matters. ⚠ A number has no complete list of alternatives: the values
-tried are a sample, reported as such, and never clear a guess. A document's
-`sce:assumed` is not changed — nobody wrote its alternatives down — so "the
-only one left" is elimination among RECORDED guesses, not proof. `--max-runs`
-bounds the runs (one per alternative), and what it did not try is listed.
+that still matters.
+
+A number the absence of which is guessed (`when_absent`) is tried at every
+threshold the document compares that input against and one value on each side
+— one value per interval, inside the `range` the interface model gives the
+address. ⚠ That is EVERY behaviour only when the document does nothing with
+the number but compare it with constants; a number that also feeds arithmetic
+or `previous()` is tried at the same points as a sample, reported as one, and
+never cleared.
+
+A document's own guess is changed to each of its `sce:assumed-candidates` —
+the values its author weighed, the chosen one among them, space-separated
+(`sce:assumed-candidates="OFF ON"` beside `expr="ign ? 1 : OFF"`). ⚠ The
+product accepts that attribute and reads nothing from it; here it means that
+the chosen value appears in the expression exactly once, or is the whole
+expression, and each other candidate goes in its place. `check` refuses a
+list whose place it cannot find, rather than guessing which part of the
+expression it was about. Trying every candidate is exhaustive over what the
+author weighed, and the report says which one repairs the failures. Without
+candidates the guess is not changed, and "the only one left" is elimination
+among RECORDED guesses, not proof. `--max-runs` bounds the runs (one per
+alternative), and what it did not try is listed.
 
 With `--prose` each gap is located in the text by file and line (never
 quoted, so the report can travel further than the specification may) and the

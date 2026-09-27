@@ -476,20 +476,23 @@ def verification_source(document: pathlib.Path, declared,
     markers = re.sub(r"<!--.*?-->", "", copy, flags=re.S).count('sce:unresolved="')
     if placed != len(declared.unresolved) or placed != markers:
         return document
-    # The copy lives elsewhere, so every import it names is made absolute
-    # against the ORIGINAL's directory -- where the generator would have
-    # resolved it.
-    base = document.resolve().parent
+    target = scratch / document.name
+    target.write_text(imports_made_absolute(copy, document), encoding="utf-8")
+    return target
+
+
+def imports_made_absolute(text: str, original: pathlib.Path) -> str:
+    """A document's text with every import it names made absolute against
+    the ORIGINAL's directory -- where the generator would have resolved it --
+    so a copy written anywhere else still finds them."""
+    base = original.resolve().parent
 
     def absolute(match: re.Match) -> str:
         return re.sub(r'\bsrc="([^"]+)"',
                       lambda m: f'src="{(base / m.group(1)).resolve()}"',
                       match.group(0))
 
-    copy = re.sub(r"<sce:import\b[^>]*>", absolute, copy, flags=re.S)
-    target = scratch / document.name
-    target.write_text(copy, encoding="utf-8")
-    return target
+    return re.sub(r"<sce:import\b[^>]*>", absolute, text, flags=re.S)
 
 
 def assumption_behind(writer: str | None, declared, binding: dict) -> str:

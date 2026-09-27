@@ -74,6 +74,8 @@ class Field:
     name: str
     values: dict[str, int] | None
     type: str | None
+    # (minimum, maximum) the platform can carry, either None where unsaid.
+    range: tuple | None = None
 
     def admits(self, symbol: str) -> bool:
         return self.values is None or symbol in self.values
@@ -203,13 +205,24 @@ def _check_symbols(where: str, values) -> None:
         )
 
 
+def _range(spec: dict) -> tuple | None:
+    bounds = spec.get("range")
+    if not bounds:
+        return None
+    low, high = bounds.get("minimum"), bounds.get("maximum")
+    if low is not None and high is not None and low > high:
+        raise PackError(f"range minimum {low} is above its maximum {high}")
+    return (low, high)
+
+
 def _entry(raw: dict) -> Entry:
     fields: list[Field] = []
     if "fields" in raw:
         for fname, fspec in raw["fields"].items():
-            fields.append(Field(fname, fspec.get("values"), fspec.get("type")))
+            fields.append(Field(fname, fspec.get("values"), fspec.get("type"),
+                                _range(fspec)))
     else:
-        fields.append(Field("", raw.get("values"), raw.get("type")))
+        fields.append(Field("", raw.get("values"), raw.get("type"), _range(raw)))
     return Entry(
         address=raw["address"],
         role=raw["role"],

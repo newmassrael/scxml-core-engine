@@ -41,6 +41,10 @@
           "enum": ["number", "integer", "text", "boolean"],
           "description": "For a scalar address with no enumerated values. `integer` when the platform holds only whole numbers there, `number` when it holds fractions or does not say. The difference reaches the platform: a fraction landed where it keeps an integer is a value it cannot hold, and measured 2026-09-26 a skeleton that could only say `number` declared a count as float64 and the component it fed could not be connected."
         },
+        "range": {
+          "$ref": "#/$defs/range",
+          "description": "For a scalar number: what the platform can carry there."
+        },
         "fields": {
           "type": "object",
           "minProperties": 1,
@@ -62,8 +66,19 @@
       "properties": {
         "values": {"$ref": "#/$defs/valueSpace"},
         "type": {"enum": ["number", "integer", "text", "boolean"]},
+        "range": {"$ref": "#/$defs/range"},
         "note": {"type": "string"}
       }
+    },
+    "range": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "minimum": {"type": "number"},
+        "maximum": {"type": "number"}
+      },
+      "description": "The numbers the platform can carry here, either end optional -- an unsigned reading has a floor and no stated ceiling. Read where a number's alternatives are enumerated (`gaps --counterfactual`): an interval of values below the floor is one no reading can land in, so trying a value there would test a platform that does not exist."
     },
     "valueSpace": {
       "type": "object",
