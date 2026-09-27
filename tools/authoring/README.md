@@ -638,6 +638,19 @@ announces only in a round the document sends it a mapped value — a delayed act
 included. A window nothing writes in is a wait the harness saw go unanswered,
 and fails as one.
 
+Where the pack states both — `activation: on-change` and `writes` — a round is
+something `verify` knows happened or did not: a case whose drives reach no
+input the binding READS (none of them bound, or each restating the value it
+held) runs nothing on that host, announces nothing, and fails as a wait that
+went unanswered, and a setup step like it moves nothing the document keeps. ⚠
+A computation used to be computed for every case whatever it drove, so a
+document writing a constant passed a case that changed only an input its
+binding did not read — while the platform ran nothing and the test's wait
+timed out (measured 2026-09-27). A drive this component does not receive at
+all is still withheld rather than failed: its effect may arrive through a
+component the document cannot see. Without the host stated, the run is as it
+was.
+
 ⚠ That is how an output written only at certain moments is stated: in its
 rule, not in the host. On one platform's original components about half the
 outputs were written in the rounds that delivered an input they read, and the
@@ -684,6 +697,16 @@ each of them cost a measurement to separate:
 | `independent_cases` | compare two cases | the memory check declines rather than reading a delta as a whole input |
 | `ordered` | replay something that carries state | a document reading `previous()`, protocols, and `previous_of`/`state_of` decline |
 | `drove` | know what a case ASSERTED | a reading restated at the same value looks like nothing happening |
+| `delivered` | know which drives the platform passed on as changes | the core compares `given` through the value space, which cannot see two raw readings one symbol names |
+
+`delivered` lists which of a step's `drove` the platform delivered as a
+change, where the record knows. Under `activation: on-change` it decides
+whether a round happened at all, and the core otherwise decides it by
+comparing values as the value space names them. ⚠ A platform may decide on
+what it CARRIES: a warning signal went from one raw reading to another that
+its table maps to the same ON, the platform delivered it and the component
+ran, and the core — reading ON then ON — said no round happened (measured
+2026-09-27). An address in `delivered` the step did not drive is refused.
 
 ⚠ `variant` and `elapsed_ms` sit on the case rather than in `given` for the
 same reason: neither is a signal. Nothing drives them, they have no address and
@@ -701,10 +724,10 @@ the expectation held at some moment in `elapsed_ms` — a harness that collects
 everything announced — or `first` when it is what the first announcement
 after the drive said, a harness that returns at its first notification and
 also checks when it came. ⚠ They differ exactly where a document announces
-something before the answer a case waits for. `verify` models a host that
-writes every bound position every round, so under `first` the drive's own
-round is the reading, at 0 ms; a window that opens later fails on arrival as
-well as on value. Measured 2026-09-27 across thirteen documents run through a
+something before the answer a case waits for. Under `first` the reading is
+the first round from the drive on that writes a position the case expects, as
+the pack's `host` says a round writes (see `host`); an announcement before a
+window that opens later fails on arrival as well as on value. Measured 2026-09-27 across thirteen documents run through a
 platform's own acceptance tests: with the reading declared per case, `verify`
 and the product agreed on 460 of 460 cases both judged, where one case had
 disagreed while every case was read as `any`.
@@ -756,6 +779,19 @@ the model's addresses the document's names are.
                 when: {1: {blink: "ON"}}, also: {source: "LOCAL"}}
       reading: {address: plant/out/reading, field: value, passthrough: true}
       held:    {internal: true}
+
+An address with fields is ONE record, and `when` writes some of them per
+value. ⚠ Two values that land the same value in the rule's own field — two
+ways an event shows ON — must write the same fields: a field one writes and
+the other does not keeps, under the second, what the first left there, so the
+same field tells two stories depending on which came before. `check` refuses
+it and names what each value leaves; give every such value every field, the
+platform's neutral value where one does not apply (`assumed` if the
+specification does not give it). Measured 2026-09-27: an event's two variants
+gave a sound's duration for one and not the other, and seven of the
+platform's tests expect it written as 0 there. A value going OFF that writes
+the identifier and not the sound is compared only with other ways of going
+off: that one is the address's structure, as `hold_last` says it.
 
 **`activation` says when the host runs the document** — once each time its
 inputs change (`on-change`), or once per period whatever changed (`periodic`).

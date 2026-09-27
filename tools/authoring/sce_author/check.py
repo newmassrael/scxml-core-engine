@@ -682,6 +682,48 @@ def activation_unsaid(document_name: str) -> str:
             f"where it is a fact about the platform, or in this binding.")
 
 
+def stale_when_fields(rule: dict) -> str:
+    """Why this rule's `when` values leave each other's fields behind, or ''.
+
+    The values a rule gives `when` fields for are the ones that SHOW
+    something -- an event's identifier and its sound, say -- and the address
+    is one record: a field one of them writes and another does not keeps, under
+    the second, whatever the first left there. That is the same field telling
+    two different stories depending on which value came before.
+
+    ⚠ Only between values that land the SAME value in the rule's own field.
+    An event going off that writes its identifier and not its sound -- so the
+    identifier says what is turning off -- is the address's structure, not a
+    story told two ways; it is compared with the other ways of going off, not
+    with the ways of showing. Measured 2026-09-27: one event's two variants,
+    both shown ON, gave a sound's duration for the second and not the first,
+    so the first, shown after the second, carried the second's duration;
+    seven of the platform's tests expect it written as 0 there. A first cut
+    comparing every value flagged, in another binding, the two ways of going
+    off against the two ways of showing.
+    """
+    when = rule.get("when") or {}
+    landed = rule.get("map") or {}
+    groups: dict = {}
+    for value, fields in when.items():
+        if fields:
+            groups.setdefault(str(landed.get(value, value)), {})[value] = set(fields)
+    gaps = {}
+    for written in groups.values():
+        every = set().union(*written.values())
+        gaps.update({value: sorted(every - fields) for value, fields in written.items()
+                     if every - fields})
+    if not gaps:
+        return ""
+    said = "; ".join(f"{value!r} leaves {', '.join(missing)}"
+                     for value, missing in sorted(gaps.items(), key=lambda kv: str(kv[0])))
+    return (f"its `when` values write different fields of one address ({said}), "
+            f"so a value shown after another keeps the other's value in a field "
+            f"it does not write. Give every such value every field any of them "
+            f"writes -- the platform's neutral value where one does not apply, "
+            f"marked `assumed` if the specification does not give it")
+
+
 def activation_in_force(binding: dict, conventions) -> tuple[str | None, str]:
     """When the host runs this document, and why that cannot be answered.
 
@@ -727,8 +769,12 @@ def _reading(rule: dict) -> object:
     return norm({k: v for k, v in rule.items() if k not in RULE_COMMENTARY})
 
 
-def _addresses_of(rule: dict) -> set:
-    """Every address a binding rule reads: its own and its protocol's parameters."""
+def addresses_of(rule: dict) -> set:
+    """Every address a binding rule reads: its own and its protocol's parameters.
+
+    The one answer to "which addresses does this binding read", for `check`
+    and for `verify`'s rounds: a host subscribes to exactly these, so a drive
+    anywhere else runs nothing."""
     found = {str(rule["address"])} if rule.get("address") else set()
     found.update(str(v) for v in (rule.get("parameters") or {}).values())
     return found
@@ -784,7 +830,7 @@ def unread_preconditions(pack: Pack, prose, declared_inputs: dict,
             rule = conv.precondition_rules.get(needed)
             if needed in events and rule is not None:
                 watched = str(events[needed].get("address"))
-                if watched not in _addresses_of(rule):
+                if watched not in addresses_of(rule):
                     reported.add(needed)
                     out.append(Finding(
                         f"input {needed}",
@@ -951,6 +997,9 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
                     out.append(Finding(f"output {name}", f"{address} has no field {fname!r}"))
                 elif isinstance(value, str) and not other.admits(value):
                     out.append(Finding(f"output {name}", f"{address}.{fname} does not admit {value!r}"))
+        stale = stale_when_fields(rule)
+        if stale:
+            out.append(Finding(f"output {name}", stale))
 
     # ⚠ A document can declare itself one thing and be another, and neither
     # the document nor the platform model can tell. The binding can.

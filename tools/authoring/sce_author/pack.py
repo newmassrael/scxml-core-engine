@@ -525,6 +525,9 @@ class Case:
     # How the record read its expectation in that window: "any" moment, or
     # the "first" announcement after the drive (the schema says why).
     observed: str = "any"
+    # Which of `drove` the platform delivered as a change, or None where the
+    # record does not say (the schema says why a record may know better).
+    delivered: tuple | None = None
 
     def __post_init__(self):
         # One source of truth: an exact time IS a window of width zero, so a
@@ -597,6 +600,22 @@ class Examples:
                    for v in list(c.given.values()) + list(c.expect.values()))
 
 
+def _delivered(step: dict, where: str) -> tuple | None:
+    """The step's `delivered`, or None where the record does not say.
+
+    Refused where it names an address the step did not drive: a delivery is
+    of a drive, and one of something nobody drove is a record contradicting
+    itself."""
+    if "delivered" not in step:
+        return None
+    delivered = tuple(step["delivered"])
+    stray = sorted(set(delivered) - set(step.get("drove") or ()))
+    if stray:
+        raise PackError(f"{where}: `delivered` names {stray}, which the step did "
+                        f"not drive -- a delivery is of a drive")
+    return delivered
+
+
 def load_examples(paths: list[pathlib.Path]) -> Examples:
     origin, driven, expected, count = "", set(), set(), 0
     cases: list[Case] = []
@@ -623,12 +642,14 @@ def load_examples(paths: list[pathlib.Path]) -> Examples:
                 exact, window = _elapsed(step.get("elapsed_ms"), f"{path}: {step_name}")
                 before.append(Case(step_name, step_given, {}, exact,
                                    tuple(step.get("drove") or ()), variant,
-                                   elapsed_window=window))
+                                   elapsed_window=window,
+                                   delivered=_delivered(step, f"{path}: {step_name}")))
             exact, window = _elapsed(case.get("elapsed_ms"), f"{path}: {name}")
             cases.append(Case(name, given, expect, exact,
                               tuple(case.get("drove") or ()),
                               variant, tuple(before), elapsed_window=window,
-                              observed=case.get("observed") or "any"))
+                              observed=case.get("observed") or "any",
+                              delivered=_delivered(case, f"{path}: {name}")))
     return Examples(origin, frozenset(driven), frozenset(expected), count,
                     tuple(cases), independent, ordered)
 

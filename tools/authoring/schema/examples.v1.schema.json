@@ -53,6 +53,11 @@
             "description": "Addresses this case actually SET, as opposed to the ones that merely still held their value. ⚠ Not derivable by comparing this case's `given` with the one before it, and assuming otherwise cost a whole component: a counter restated at the SAME value is still a statement that the thing happened again, and a subtraction reads it as nothing happening. On one corpus the ignition ladder stood at identical readings for dozens of consecutive cases while the record went on asserting them, and every reading that asked \"which rung most recently\" answered no. Optional: without it, anything needing the distinction falls back to comparing consecutive cases, and says so.",
             "default": []
           },
+          "delivered": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Which of `drove` the platform DELIVERED to the component as a change, where the record knows. Under `activation: on-change` a drive that is no change reaches nothing, and without this the core decides it by comparing `given` through the value space. ⚠ A platform may decide it on what it CARRIES, before its value space maps it: two raw readings one symbol names are one value to the core and two to the platform. Measured 2026-09-27: a warning signal went from one raw reading to another that the table maps to the same ON, the platform delivered it and the component ran, and the core -- reading ON then ON -- said no round happened. Every address here must be one the step drove."
+          },
           "expect": {
             "type": "object",
             "additionalProperties": {},
@@ -74,6 +79,11 @@
                   "type": "array",
                   "items": {"type": "string"},
                   "description": "Addresses this step actually SET, as on a case."
+                },
+                "delivered": {
+                  "type": "array",
+                  "items": {"type": "string"},
+                  "description": "Which of this step's drives the platform delivered as a change, as on a case."
                 },
                 "elapsed_ms": {
                   "$ref": "#/$defs/elapsed",

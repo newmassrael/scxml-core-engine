@@ -41,7 +41,7 @@ from types import SimpleNamespace
 
 from . import delivery, landing
 from .check import (STATECHART_KINDS, activation_in_force, activation_unsaid,
-                    driving_refusals, imports_of, read_binding)
+                    addresses_of, driving_refusals, imports_of, read_binding)
 from .errors import AuthoringError
 from .pack import Pack
 
@@ -1684,7 +1684,14 @@ def unchanged_drives(step, last: dict, model) -> set:
     document is the host's delivery rule, `activation` -- the binding's or
     the pack's `host` (`activation_in_force`). The first value an address is
     seen at is a change.
+
+    ⚠ Where the record says which drives the platform DELIVERED, that is the
+    answer and nothing is compared: the platform may decide on what it
+    carries before the value space names it, where two readings are one
+    symbol here (the examples schema's `delivered`).
     """
+    if step.delivered is not None:
+        return set(step.drove or ()) - set(step.delivered)
     return {address for address in (step.drove or ())
             if address in last and address in step.given
             and _same(last[address], step.given[address], _field_at(model, address))}
@@ -2594,6 +2601,23 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
                 f"pass it as")
         return spelled
 
+    # ⚠ WHETHER A ROUND HAPPENS AT ALL. Under `on-change` the host runs the
+    # document only when an input the binding READS changed; a case whose
+    # drives reach none of them runs nothing, and a host whose writes the
+    # pack states (`host.writes`) then announces nothing either. This path
+    # computed every case regardless, so a document that wrote a constant
+    # passed a case changing only an input the binding did not read -- while
+    # the platform ran nothing and the test's wait went unanswered (measured
+    # 2026-09-27, one case of one component; the statechart path already
+    # refused such a case). Known only where the pack states its host.
+    activation, disagreement = activation_in_force(binding, pack.conventions)
+    if disagreement:
+        return Verification(refusal=disagreement)
+    rounds_are_known = (activation == "on-change"
+                        and bool(pack.conventions.host.get("writes")))
+    read_addresses = set().union(*(addresses_of(r) for r in inputs.values()))
+    last_given: dict = {}
+
     failed: set = set()
     # One holder per joint value of the unresolved inputs -- one when there
     # are none -- each driven through every round under its own value.
@@ -2618,6 +2642,32 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
         # after them.
         planted.plant(case, owner)
         result = CaseResult(name=owner.name or "(unnamed)")
+        if rounds_are_known:
+            if not examples.ordered and case is (owner.before[0] if owner.before else owner):
+                # ⚠ Cases that do not declare an order do not say what ran
+                # before them, so the first step of each is a change. Its own
+                # setup steps ARE ordered. Comparing with the previous case in
+                # the file failed forty-one cases the platform passed: the
+                # file's order read as a run nobody recorded.
+                last_given.clear()
+            unchanged = unchanged_drives(case, last_given, pack.model)
+            remember_given(case, last_given)
+            reached = [a for a in dict.fromkeys(case.drove or ())
+                       if a in read_addresses and a not in unchanged]
+            # A drive this component does not receive at all is withheld when
+            # the case is judged (`withhold_unreceived`), not failed here: its
+            # effect may arrive through a component this document cannot see.
+            if (case.drove and not reached
+                    and not unreceived_drives(case, pack.model)):
+                if judged:
+                    result.failures.append((
+                        "(announcement)", "a write after the drive",
+                        f"none: the case drove {sorted(set(case.drove))}, and "
+                        f"no input the binding reads changed, so the host ran "
+                        f"nothing"))
+                    verification.results.append(result)
+                # No round: nothing the document keeps moves either.
+                continue
         # Two passes, because a rule about the previous round names ANOTHER
         # input, and on the first round it may have to fall back to what that
         # input reads now. One pass would have to evaluate them in an order
