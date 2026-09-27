@@ -204,9 +204,16 @@ fn forge_enum_emits_full_derive_set() {
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/enum/enum_minimal.scxml"),
     );
     let src = read_emitted_rs(&out);
+    // A closed set (`ForgeDeclaredEnum`): the Copy-trivial set plus `Default`,
+    // marked on the variant the document declares first — derived, since a
+    // written-out impl is what `clippy::derivable_impls` refuses.
     assert!(
-        src.contains("#[derive(Debug, Clone, Copy, PartialEq, Eq)]"),
-        "forge_enum must derive full Copy-trivial set; got:\n{src}"
+        src.contains("#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]"),
+        "forge_enum must derive full Copy-trivial set and Default; got:\n{src}"
+    );
+    assert!(
+        src.contains("#[default]") && !src.contains("impl Default for"),
+        "a closed forge enum's default must be derived; got:\n{src}"
     );
 }
 

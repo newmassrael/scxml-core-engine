@@ -117,14 +117,25 @@ fn without_a_declaration_the_build_names_the_unserved_send() {
         .unwrap_or_else(|| panic!("no host_processor_causes: {m}"));
     let send: Vec<&serde_json::Value> =
         causes.iter().filter(|c| c["kind"] == "send-type").collect();
-    assert_eq!(send.len(), 1, "expected one send cause: {causes:?}");
-    assert_eq!(send[0]["processor_type"], "x-sce-host");
-    // The line is the point: the report exists so a repair can open the
-    // file, not so a consumer knows something somewhere is wrong.
-    assert!(
-        send[0]["location"]["line"].is_number(),
-        "the cause carries no line: {}",
-        send[0]
+    // One per site: the fixture sends to the host from `dispatching` and
+    // again from `pairs`, and a repair has to find both.
+    assert_eq!(
+        send.len(),
+        2,
+        "expected one send cause per site: {causes:?}"
+    );
+    for cause in &send {
+        assert_eq!(cause["processor_type"], "x-sce-host");
+        // The line is the point: the report exists so a repair can open
+        // the file, not so a consumer knows something somewhere is wrong.
+        assert!(
+            cause["location"]["line"].is_number(),
+            "the cause carries no line: {cause}"
+        );
+    }
+    assert_ne!(
+        send[0]["location"]["line"], send[1]["location"]["line"],
+        "two causes name one site: {causes:?}"
     );
     // Not a rejection. The document is valid SCXML with defined meaning.
     assert!(
@@ -222,9 +233,15 @@ fn a_declared_type_emits_a_dispatch_for_cpp() {
     // The request has to carry what the author wrote, or the document can
     // name an act but not parameterise it. The fixture's `<param>` is the
     // one field that proves the crossing rather than the call.
+    // Collected once by the send's own evaluation, the same that builds the
+    // event data, and handed to the request whole.
     assert!(
-        emitted.contains(r#"hostRequest.params["within"]"#),
+        emitted.contains(r#"params["within"].push_back("#),
         "the emitted dispatch dropped the <param> the fixture declares",
+    );
+    assert!(
+        emitted.contains("hostRequest.params = params;"),
+        "the request does not carry the collected params",
     );
 }
 
@@ -852,10 +869,15 @@ fn a_declared_type_emits_a_dispatch_for_kotlin() {
     // The request has to carry what the author wrote, or the document can
     // name an act but not parameterise it. The fixture's `<param>` is the
     // one field that proves the crossing rather than the call. It is
-    // APPENDED, because a repeated `<param>` name keeps every value.
+    // collected with `putParam`, which keeps every value of a repeated
+    // `<param>` name, and the request carries that collection.
     assert!(
-        emitted.contains(r#"(hostParams["within"] ?: emptyList()) + "2500""#),
+        emitted.contains(r#"putParam(hostPayload, "within", "2500")"#),
         "the emitted dispatch dropped the <param> the fixture declares",
+    );
+    assert!(
+        emitted.contains("params = hostParams,"),
+        "the request does not carry the collected params",
     );
 }
 
