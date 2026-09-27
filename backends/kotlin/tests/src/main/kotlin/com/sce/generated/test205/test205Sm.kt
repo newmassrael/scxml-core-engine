@@ -409,6 +409,7 @@ class Test205StateMachine(
                     paramFailed = true
                 }
 
+
                 val eventDataE = buildJsonFromParams(paramsE)
                 send(Test205Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = eventDataE))
             }

@@ -630,7 +630,16 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val target: String = "",
         val content: String = "",
         val params: Map<String, List<String>> = emptyMap(),
-        val sendId: String = ""
+        val sendId: String = "",
+        /**
+         * The event's data exactly as a local delivery of this send would
+         * carry it in `_event.data` (§scxml-5.10): the namelist and `<param>`
+         * pairs as JSON, or the `<content>`, or empty. Computed once by the
+         * generated send site, so a host that forwards the event — the Mesh
+         * router puts it in an envelope — forwards the engine's serialisation
+         * rather than a second one made from [params] that could differ.
+         */
+        val eventData: String = ""
     )
 
     /**

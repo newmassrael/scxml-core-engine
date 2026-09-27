@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f5426e18f41d7133c2afaa65068d1a24836041f63d7307929bf13b9a2bf051bc
+// source-hash: c62ee86a6a3e85b63aad9b9d49c5f4d961f6570652e8bbce347efe8dec5f51b4
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: statechart_host_processor.scxml:27 :: _machine"]
-// SCE-MAP: statechart_host_processor.scxml:27 :: _machine
+#![doc = "SCE-MAP: statechart_host_processor.scxml:37 :: _machine"]
+// SCE-MAP: statechart_host_processor.scxml:37 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -85,6 +85,7 @@ pub enum StatechartHostProcessorState {
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
     Dispatching,
+    Pairs,
 }
 
 // ======================================================================
@@ -93,9 +94,11 @@ pub enum StatechartHostProcessorState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatechartHostProcessorEvent {
+    Advance,
     ErrorExecution,
     PlainArrived,
     TurnDone,
+    WatchPairs,
     WatchTurn,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
@@ -118,6 +121,7 @@ impl StatechartHostProcessorEvent {
     /// several machines glob-re-exported into one module never collide
     /// on the name.
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [StatechartHostProcessorEvent] = &[
+        StatechartHostProcessorEvent::Advance,
         StatechartHostProcessorEvent::PlainArrived,
         StatechartHostProcessorEvent::TurnDone,
     ];
@@ -224,6 +228,36 @@ impl StatechartHostProcessorPolicy {
         )
     }
 
+    /// §scxml-5.3: what the `paramErrors` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `paramErrors` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn param_errors(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "paramErrors",
+        )
+    }
+
+    /// §scxml-5.3: what the `mode` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `mode` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn mode(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_string(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "mode",
+        )
+    }
+
     /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
     /// machine, published as the processor's 'location' in `_ioprocessors`.
     /// Must be called before `initialize()`, since the entries are populated
@@ -305,6 +339,33 @@ impl StatechartHostProcessorPolicy {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
+        // W3C SCXML 5.2/5.3: Initialize 'paramErrors' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "paramErrors",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'mode' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "mode",
+            "\"pairs\"",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'nothing' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "nothing", "nil",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
         self.script_engine_initialized = true;
     }
 
@@ -361,6 +422,45 @@ impl StatechartHostProcessorPolicy {
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 StatechartHostProcessorEvent::ErrorExecution,
                 "<data id='plain'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'paramErrors' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "paramErrors",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                StatechartHostProcessorEvent::ErrorExecution,
+                "<data id='paramErrors'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'mode' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "mode",
+            "\"pairs\"",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                StatechartHostProcessorEvent::ErrorExecution,
+                "<data id='mode'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'nothing' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "nothing", "nil",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                StatechartHostProcessorEvent::ErrorExecution,
+                "<data id='nothing'> expr failed to evaluate",
             ));
         }
 
@@ -588,14 +688,17 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     fn get_document_order(state: Self::State) -> u32 {
         match state {
             StatechartHostProcessorState::Dispatching => 0,
+            StatechartHostProcessorState::Pairs => 1,
         }
     }
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            StatechartHostProcessorEvent::Advance => "advance",
             StatechartHostProcessorEvent::ErrorExecution => "error.execution",
             StatechartHostProcessorEvent::PlainArrived => "plain.arrived",
             StatechartHostProcessorEvent::TurnDone => "turn.done",
+            StatechartHostProcessorEvent::WatchPairs => "watch.pairs",
             StatechartHostProcessorEvent::WatchTurn => "watch.turn",
             StatechartHostProcessorEvent::Null => "",
         }
@@ -603,9 +706,11 @@ impl StatePolicy for StatechartHostProcessorPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "advance" => Some(StatechartHostProcessorEvent::Advance),
             "error.execution" => Some(StatechartHostProcessorEvent::ErrorExecution),
             "plain.arrived" => Some(StatechartHostProcessorEvent::PlainArrived),
             "turn.done" => Some(StatechartHostProcessorEvent::TurnDone),
+            "watch.pairs" => Some(StatechartHostProcessorEvent::WatchPairs),
             "watch.turn" => Some(StatechartHostProcessorEvent::WatchTurn),
             _ => None,
         }
@@ -614,6 +719,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     fn get_state_name(state: Self::State) -> &'static str {
         match state {
             StatechartHostProcessorState::Dispatching => "dispatching",
+            StatechartHostProcessorState::Pairs => "pairs",
         }
     }
 
@@ -623,6 +729,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     fn get_state_from_name(name: &str) -> Option<Self::State> {
         match name {
             "dispatching" => Some(StatechartHostProcessorState::Dispatching),
+            "pairs" => Some(StatechartHostProcessorState::Pairs),
             _ => None,
         }
     }
@@ -670,8 +777,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: statechart_host_processor.scxml:27 :: _machine"]
-    // SCE-MAP: statechart_host_processor.scxml:27 :: _machine
+    #[doc = "SCE-MAP: statechart_host_processor.scxml:37 :: _machine"]
+    // SCE-MAP: statechart_host_processor.scxml:37 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -680,7 +787,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     ) {
         match state {
             StatechartHostProcessorState::Dispatching => {
-                // SCE-MAP: statechart_host_processor.scxml:36 :: dispatching :: _state_body
+                // SCE-MAP: statechart_host_processor.scxml:52 :: dispatching :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -737,6 +844,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                                 content: "".to_string(),
                                 params: host_params,
                                 send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -753,6 +862,176 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                         let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }
+
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+
+                        let event_data: &str = "";
+
+                        // W3C SCXML 6.2: Default send (no target = external event)
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                StatechartHostProcessorEvent::Advance,
+                            );
+                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+                            meta.metadata = sce_rust_runtime::EventMetadata::external(
+                                send_id.clone(),
+                                ::sce_rust_runtime::SceString::new(),
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise_external_with_meta(meta);
+                        }
+
+                        let _ = send_id; // suppress unused warning when no send operation
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                    }
+                }
+            }
+            StatechartHostProcessorState::Pairs => {
+                // SCE-MAP: statechart_host_processor.scxml:81 :: pairs :: _state_body
+                // W3C SCXML 3.8: onentry block 1/1
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+
+                        let mut _send_aborted = false;
+                        let mut _param_failed = false;
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        // While it was block-scoped they had to, and what they re-read was
+                        // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
+                        // posted zero form parameters, against §scxml-C-2.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                        let event_data_string: String = {
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let wire_params = &mut _send_wire_params;
+                            wire_params
+                                .entry("kept".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::String("here".to_string()));
+                            match se.evaluate_expression(&sid, "nothing.deep") {
+                                Ok(val) => {
+                                    wire_params
+                                        .entry("broken".to_string())
+                                        .or_default()
+                                        .push(val);
+                                }
+                                Err(e) => {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "send param 'broken' eval failed: {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            StatechartHostProcessorEvent::ErrorExecution,
+                                            "<send> <param name='broken'> could not be read",
+                                        ),
+                                    );
+                                    // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                                    _param_failed = true;
+                                }
+                            }
+                            // W3C SCXML C.1: namelist variables become top-level keys in the data table
+                            // W3C SCXML B.2 (test 553): Check variable existence before evaluation
+                            if !se.has_variable(&sid, "mode") {
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "send namelist 'mode': variable not declared"
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    StatechartHostProcessorEvent::ErrorExecution,
+                                    "<send> namelist names 'mode', which is not declared",
+                                ));
+                                _send_aborted = true;
+                            } else {
+                                match se.evaluate_expression(&sid, "mode") {
+                                    Ok(val) => {
+                                        wire_params
+                                            .entry("mode".to_string())
+                                            .or_default()
+                                            .push(val);
+                                    }
+                                    Err(e) => {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "send namelist 'mode' eval failed: {}",
+                                            e
+                                        );
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                StatechartHostProcessorEvent::ErrorExecution,
+                                                "<send> namelist entry 'mode' failed to evaluate",
+                                            ),
+                                        );
+                                        _send_aborted = true;
+                                    }
+                                }
+                            }
+                            if _send_aborted {
+                                String::new()
+                            } else {
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            }
+                        };
+                        // W3C SCXML 6.2: event_data defaults to empty if namelist failed
+                        let event_data: &str = if _send_aborted {
+                            ""
+                        } else {
+                            &event_data_string
+                        };
+
+                        if !_send_aborted {
+                            // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
+                            {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "x-sce-host".to_string(),
+                                    event_name: "watch.pairs".to_string(),
+                                    target: "".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none()
+                                    && !engine.has_event_processor("x-sce-host")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostProcessorEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                    err_meta.metadata.send_id = send_id.clone();
+                                    engine.raise(err_meta);
+                                }
+                            }
+                        } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on an argument error)
+                          // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                          // this element was processed, so the rest of the block does not run —
+                          // from however deep a <foreach> it came.
+                        if _param_failed {
+                            break 'action_block;
+                        }
+                        let _ = send_id; // suppress unused warning when no send operation
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                    }
                 }
             }
             _ => {}
@@ -766,8 +1045,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: statechart_host_processor.scxml:27 :: _machine"]
-    // SCE-MAP: statechart_host_processor.scxml:27 :: _machine
+    #[doc = "SCE-MAP: statechart_host_processor.scxml:37 :: _machine"]
+    // SCE-MAP: statechart_host_processor.scxml:37 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -782,8 +1061,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: statechart_host_processor.scxml:27 :: _machine"]
-    // SCE-MAP: statechart_host_processor.scxml:27 :: _machine
+    #[doc = "SCE-MAP: statechart_host_processor.scxml:37 :: _machine"]
+    // SCE-MAP: statechart_host_processor.scxml:37 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -827,8 +1106,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: statechart_host_processor.scxml:27 :: _machine"]
-    // SCE-MAP: statechart_host_processor.scxml:27 :: _machine
+    #[doc = "SCE-MAP: statechart_host_processor.scxml:37 :: _machine"]
+    // SCE-MAP: statechart_host_processor.scxml:37 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -870,6 +1149,33 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                         });
                     }
                 }
+                if event == StatechartHostProcessorEvent::Advance {
+                    if self.safe_evaluate_guard("(served > 0)", engine) {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                StatechartHostProcessorState::Pairs,
+                            )],
+                            transition_index: 3,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                None
+            }
+            StatechartHostProcessorState::Pairs => {
+                if event == StatechartHostProcessorEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 0,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
                 None
             }
             _ => None,
@@ -878,8 +1184,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: statechart_host_processor.scxml:27 :: _machine"]
-    // SCE-MAP: statechart_host_processor.scxml:27 :: _machine
+    #[doc = "SCE-MAP: statechart_host_processor.scxml:37 :: _machine"]
+    // SCE-MAP: statechart_host_processor.scxml:37 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -890,7 +1196,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
             StatechartHostProcessorState::Dispatching => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_processor.scxml:48 :: dispatching :: _transition_0
+                        // SCE-MAP: statechart_host_processor.scxml:66 :: dispatching :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -924,7 +1230,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: statechart_host_processor.scxml:51 :: dispatching :: _transition_1
+                        // SCE-MAP: statechart_host_processor.scxml:69 :: dispatching :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -958,7 +1264,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: statechart_host_processor.scxml:54 :: dispatching :: _transition_2
+                        // SCE-MAP: statechart_host_processor.scxml:72 :: dispatching :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -983,6 +1289,45 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             StatechartHostProcessorEvent::ErrorExecution,
                                             "<assign> to 'refused' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            StatechartHostProcessorState::Pairs => {
+                match transition_index {
+                    0 => {
+                        // SCE-MAP: statechart_host_processor.scxml:88 :: pairs :: _transition_0
+                        // W3C SCXML 3.13: Transition 0 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="paramErrors">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(paramErrors, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "paramErrors", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'paramErrors': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            StatechartHostProcessorEvent::ErrorExecution,
+                                            "<assign> to 'paramErrors' failed",
                                         ),
                                     );
                                     // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

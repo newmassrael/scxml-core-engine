@@ -98,14 +98,49 @@ fn a_registered_handler_receives_the_send_and_its_reply_arrives() {
         "an ordinary <send> in the same block stopped delivering",
     );
 
+    // W3C SCXML 5.7.1: the second send's unreadable <param> raised, and the
+    // message still went — which the second request below confirms.
+    assert_eq!(
+        counter(&engine, &script_engine, "paramErrors"),
+        1,
+        "the <param> that cannot be read was not reported",
+    );
+
     let requests = seen.lock().expect("handler log");
     assert_eq!(
         requests.len(),
-        1,
-        "the handler ran {} times",
+        2,
+        "the handler ran {} times; the served send and the one from `pairs` each run it once",
         requests.len()
     );
     let req = &requests[0];
+    // W3C SCXML 5.10: the event data is what a local delivery of this send
+    // would carry in `_event.data`, computed by the engine, not rebuilt by
+    // the host from `params`. One key, so its spelling is exact.
+    assert_eq!(req.event_data, r#"{"within":"2500"}"#);
+    let pairs = &requests[1];
+    assert_eq!(pairs.event_name, "watch.pairs");
+    // The namelist pair reaches the host as a param, the literal one too,
+    // and the unreadable one is absent rather than carried empty.
+    assert_eq!(
+        pairs.params.get("mode").map(Vec::as_slice),
+        Some(["pairs".to_string()].as_slice())
+    );
+    assert_eq!(
+        pairs.params.get("kept").map(Vec::as_slice),
+        Some(["here".to_string()].as_slice())
+    );
+    assert!(
+        !pairs.params.contains_key("broken"),
+        "a <param> that could not be read reached the host: {:?}",
+        pairs.params
+    );
+    // Parsed rather than compared as text: with more than one key, member
+    // order is each backend's own and a receiver reads the value, not the
+    // spelling.
+    let data: serde_json::Value =
+        serde_json::from_str(&pairs.event_data).expect("the event data is JSON");
+    assert_eq!(data, serde_json::json!({"kept": "here", "mode": "pairs"}));
     assert_eq!(req.processor_type, DECLARED_TYPE);
     assert_eq!(req.event_name, "watch.turn");
     // The payload the author wrote has to survive the crossing, or the

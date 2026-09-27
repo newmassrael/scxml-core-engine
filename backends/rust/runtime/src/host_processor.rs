@@ -59,6 +59,13 @@ pub struct HostSendRequest {
     /// declared none. A handler correlating a reply, or honouring a
     /// `<cancel>`, needs it.
     pub send_id: String,
+    /// The event's data exactly as a local delivery of this send would carry
+    /// it in `_event.data` (§scxml-5.10): the namelist and `<param>` pairs as
+    /// JSON, or the `<content>`, or empty. Computed once by the generated
+    /// send site, so a host that forwards the event — the Mesh router puts it
+    /// in an envelope — forwards the engine's serialisation rather than a
+    /// second one made from `params` that could differ from it.
+    pub event_data: String,
 }
 
 /// One event a host-served act produced.

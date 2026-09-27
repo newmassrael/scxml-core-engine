@@ -33,11 +33,17 @@
    field crosses as the text the author wrote and the handler decides what
    it means. #}
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
-{{ indent }}_host_params = self._build_http_params(engine, [
+{# W3C SCXML 5.10: the payload a local delivery of this send would carry,
+   evaluated once by the helper every local arm calls. The host's text params
+   are that same payload read as the wire reads it, so no `<param>` is
+   evaluated twice, and its event data is the text `_event.data` would hold. #}
+{{ indent }}_host_payload = self._eval_send_payload(engine, [
 {%- for param in action.params -%}
 ({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})
+], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})
+{{ indent }}_host_params = self._wire_params_from_payload(_host_payload)
+{{ indent }}_host_event_data = self._event_data_text(_host_payload, {{ action.content | to_lua_data_content | py_string_literal }}, {{ 'True' if (action.params or action.namelist or action.content or action.contentexpr) else 'False' }})
 {% if action.eventexpr -%}
 {{ indent }}try:
 {{ indent }}    _host_evt_name = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.eventexpr | to_lua_expr | py_string_literal }}).to_python())
@@ -61,6 +67,7 @@
 {{ indent }}    content={{ action.content | py_string_literal }},
 {{ indent }}    params=_host_params,
 {{ indent }}    send_id=_sid,
+{{ indent }}    event_data=_host_event_data,
 {{ indent }})
 {% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
 {% if action.delayexpr or host_delay_ms > 0 %}

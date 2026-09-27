@@ -327,6 +327,7 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
                     paramFailed = true
                 }
 
+
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("fromChild", eventDataP)
             }

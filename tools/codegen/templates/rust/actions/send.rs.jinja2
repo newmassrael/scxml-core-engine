@@ -346,6 +346,8 @@
             content: "{{ action.content | default('', true) | escape_rust }}".to_string(),
             params: host_params,
             send_id: send_id.to_string(),
+            // W3C SCXML 5.10: the payload computed above, once, for every arm.
+            event_data: event_data.to_string(),
         };
 {% if host_is_delayed %}
 {% if action.delayexpr %}

@@ -433,7 +433,10 @@ fn record_delayed_host_sends(model: &mut SCXMLModel) {
     let mut visit = |action: &Action| {
         if is_delayed_host_send(action) {
             found = true;
-            max_params = max_params.max(action.params.len());
+            // W3C SCXML 5.10: the host receives the namelist pairs as well as
+            // the `<param>` ones, so both count toward the slot's width.
+            let pairs = action.params.len() + action.namelist.split_whitespace().count();
+            max_params = max_params.max(pairs);
         }
     };
     for state in model.states.values() {

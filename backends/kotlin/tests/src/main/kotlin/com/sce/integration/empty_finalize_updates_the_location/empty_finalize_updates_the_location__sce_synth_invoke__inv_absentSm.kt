@@ -385,6 +385,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
                     paramFailed = true
                 }
 
+
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("fromAbsentChild", eventDataP)
             }

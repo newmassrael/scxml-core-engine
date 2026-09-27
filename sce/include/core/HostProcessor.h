@@ -55,6 +55,13 @@ struct HostSendRequest {
     /// The send's id (§scxml-6.2.4), auto-generated when the document declared
     /// none. A handler correlating a reply, or honouring a `<cancel>`, needs it.
     std::string sendId;
+    /// The event's data exactly as a local delivery of this send would carry
+    /// it in `_event.data` (§scxml-5.10): the namelist and `<param>` pairs as
+    /// JSON, or the `<content>`, or empty. Computed once by the engine, so a
+    /// host that forwards the event — the Mesh router puts it in an envelope —
+    /// forwards the engine's serialisation rather than making a second one
+    /// from `params` that could differ from it.
+    std::string eventData;
 };
 
 /**

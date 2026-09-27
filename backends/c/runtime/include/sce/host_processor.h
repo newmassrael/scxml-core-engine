@@ -105,6 +105,13 @@ typedef struct sce_host_send_request_s {
     /** `<param>` values in document order, repeats included. */
     const sce_host_send_param_t *params;
     int param_count;
+    /** The event's data exactly as a local delivery of this send would
+        carry it in `_event.data` (W3C SCXML 5.10): the namelist and
+        `<param>` pairs as JSON, or the `<content>`, or empty. Computed once
+        by the generated send site, so a host that forwards the event — the
+        Mesh router puts it in an envelope — forwards the engine's
+        serialisation rather than a second one made from `params`. */
+    const char *event_data;
 } sce_host_send_request_t;
 
 /**

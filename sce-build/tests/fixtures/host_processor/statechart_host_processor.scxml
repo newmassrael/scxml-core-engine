@@ -18,6 +18,16 @@
   branch in one send template, and a change that broke ordinary sends while
   leaving the host branch working would otherwise read as a pass.
 
+  Once served, the machine sends to the host a second time, from `pairs`, to
+  measure what the request CARRIES rather than whether it arrives (W3C SCXML
+  5.10). A host that forwards the event — the Mesh router puts it in an
+  envelope — needs the event data a local delivery would have carried, so the
+  request's event data is asserted against it: the namelist pair is in it, and
+  the `<param>` that cannot be read is not (W3C SCXML 5.7.1 leaves the pair
+  out, raises error.execution, and the message still goes). That error is
+  counted in `paramErrors`, in its own state, so it cannot be mistaken for the
+  `refused` of a processor nobody registered.
+
   The generated machine is compiled with the host-processor declaration
   `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
   comment cannot spell a double hyphen). Driven with a handler registered
@@ -31,6 +41,12 @@
     <data id="served" expr="0"/>
     <data id="refused" expr="0"/>
     <data id="plain" expr="0"/>
+    <data id="paramErrors" expr="0"/>
+    <!-- Named by the second send's namelist. -->
+    <data id="mode" expr="'pairs'"/>
+    <!-- Read by its failing <param>: indexing null raises in every
+         expression language this fixture runs. -->
+    <data id="nothing" expr="null"/>
   </datamodel>
 
   <state id="dispatching">
@@ -43,6 +59,8 @@
       <send type="x-sce-host" event="watch.turn">
         <param name="within" expr="'2500'"/>
       </send>
+      <!-- External, so it queues behind every reply the host made above. -->
+      <send event="advance"/>
     </onentry>
 
     <transition event="plain.arrived">
@@ -53,6 +71,22 @@
     </transition>
     <transition event="error.execution">
       <assign location="refused" expr="refused + 1"/>
+    </transition>
+    <!-- Queued by the onentry after the host's replies, so every reply has
+         been counted when it arrives; the second send is made only by a
+         machine the host actually served. -->
+    <transition event="advance" cond="served &gt; 0" target="pairs"/>
+  </state>
+
+  <state id="pairs">
+    <onentry>
+      <send type="x-sce-host" event="watch.pairs" namelist="mode">
+        <param name="kept" expr="'here'"/>
+        <param name="broken" expr="nothing.deep"/>
+      </send>
+    </onentry>
+    <transition event="error.execution">
+      <assign location="paramErrors" expr="paramErrors + 1"/>
     </transition>
   </state>
 </scxml>

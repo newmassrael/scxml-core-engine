@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f5426e18f41d7133c2afaa65068d1a24836041f63d7307929bf13b9a2bf051bc
+// source-hash: c62ee86a6a3e85b63aad9b9d49c5f4d961f6570652e8bbce347efe8dec5f51b4
 
 
 // SPDX-License-Identifier: MIT
@@ -491,6 +491,8 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 			Content:       "",
 			Params:        hostParams,
 			SendID:        "h2",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
 		}
 		hostDelayMs := int64(200)
 		// W3C SCXML 6.2.4: arm it. The engine performs the act when the
@@ -567,6 +569,8 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 			Content:       "",
 			Params:        hostParams,
 			SendID:        "__send_0",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
 		}
 		hostDelayMs := int64(200)
 		// W3C SCXML 6.2.4: arm it. The engine performs the act when the

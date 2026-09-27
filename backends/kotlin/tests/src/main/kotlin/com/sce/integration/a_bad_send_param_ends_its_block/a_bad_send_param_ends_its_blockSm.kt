@@ -555,6 +555,7 @@ class ABadSendParamEndsItsBlockStateMachine(
                     paramFailed = true
                 }
 
+
                 raiseInternal(ABadSendParamEndsItsBlockEvent.Partial, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }
             paramFailed
@@ -597,6 +598,7 @@ class ABadSendParamEndsItsBlockStateMachine(
                     paramFailed = true
                 }
 
+
                 raiseInternal(ABadSendParamEndsItsBlockEvent.Partial, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }
             paramFailed
@@ -625,6 +627,7 @@ class ABadSendParamEndsItsBlockStateMachine(
                 val paramsE = mutableMapOf<String, Any?>()
                 raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<send> <param name='p'> names no location")
                 paramFailed = true
+
 
                 val eventDataE = buildJsonFromParams(paramsE)
                 send(ABadSendParamEndsItsBlockEvent.Bare, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = eventDataE))
@@ -661,6 +664,7 @@ class ABadSendParamEndsItsBlockStateMachine(
                     raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<send> <param name='p'> could not be read")
                     paramFailed = true
                 }
+
 
                 raiseInternal(ABadSendParamEndsItsBlockEvent.Carried, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }

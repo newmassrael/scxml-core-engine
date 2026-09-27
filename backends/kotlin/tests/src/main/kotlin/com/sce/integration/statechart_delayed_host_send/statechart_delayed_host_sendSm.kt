@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f5426e18f41d7133c2afaa65068d1a24836041f63d7307929bf13b9a2bf051bc
+// source-hash: c62ee86a6a3e85b63aad9b9d49c5f4d961f6570652e8bbce347efe8dec5f51b4
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_delayed_host_send.scxml
@@ -260,7 +260,8 @@ class StatechartDelayedHostSendStateMachine(
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
             run {
-                val hostParams = mutableMapOf<String, List<String>>()
+                val hostParams = emptyMap<String, List<String>>()
+                val hostEventData = ""
                 val hostEventName = "watch.turn"
                 val hostRequest = HostSendRequest(
                     processorType = "x-sce-host",
@@ -268,7 +269,8 @@ class StatechartDelayedHostSendStateMachine(
                     target = "",
                     content = "",
                     params = hostParams,
-                    sendId = "h2"
+                    sendId = "h2",
+                    eventData = hostEventData
                 )
                 val hostDelayMs = 200L
                 scheduleHostSend("h2", hostDelayMs, hostRequest)
@@ -337,7 +339,8 @@ class StatechartDelayedHostSendStateMachine(
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
             run {
-                val hostParams = mutableMapOf<String, List<String>>()
+                val hostParams = emptyMap<String, List<String>>()
+                val hostEventData = ""
                 val hostEventName = "watch.turn"
                 val hostRequest = HostSendRequest(
                     processorType = "x-sce-host",
@@ -345,7 +348,8 @@ class StatechartDelayedHostSendStateMachine(
                     target = "",
                     content = "",
                     params = hostParams,
-                    sendId = "__send_0"
+                    sendId = "__send_0",
+                    eventData = hostEventData
                 )
                 val hostDelayMs = 200L
                 scheduleHostSend("__send_0", hostDelayMs, hostRequest)

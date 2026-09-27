@@ -100,19 +100,19 @@ documents-floor 700
 documents-judged-floor 450
 engine-documents 247
 native-prefix-documents 2
-datamodel-variable-init 326
-transition-guard 230
-assign-action 277
+datamodel-variable-init 329
+transition-guard 231
+assign-action 278
 child-invoke-needs-script-engine 47
 log-expr 45
-send-param-expr 44
+send-param-expr 45
 send-dynamic-attr 32
 foreach-action 18
 static-invoke-namelist 9
 donedata-param 10
 donedata-content 9
 inline-script-action 2
-send-namelist 6
+send-namelist 7
 if-condition 6
 elseif-condition 3
 global-script 3
@@ -226,6 +226,13 @@ never spelled correctly.
   `<send>` `<param>`s that read the datamodel) raised `engine-documents` by
   one, `datamodel-variable-init` by eleven, `assign-action` by nine,
   `foreach-action` by three and `send-param-expr` by two.
+  Then `statechart_host_processor.scxml`'s `pairs` state (what a host-served
+  send carries: a namelist entry, a literal and an unreadable `<param>`, the
+  counter that sees the unreadable one, and the `served > 0` guard that
+  reaches it) raised `datamodel-variable-init` by three and
+  `assign-action`, `transition-guard`, `send-param-expr` and `send-namelist`
+  by one each — re-derived from this test's output after a rebase, not
+  merged, since two rounds raising one counter merge to the wrong number.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.

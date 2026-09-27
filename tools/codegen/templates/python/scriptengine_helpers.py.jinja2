@@ -388,6 +388,22 @@
             ]
         return result
 
+    def _event_data_text(self, marshalled, content: str, has_payload: bool) -> str:
+        """W3C SCXML 5.10 / B-2-9: the `_event.data` a local delivery of this
+        payload carries, as text — what a host that forwards the event (the
+        Mesh router puts it in an envelope) must forward.
+
+        XML `<content>` travels as its source text, because whatever binds
+        `_event.data` builds the DOM (W3C test561); every other payload leaves
+        the data model as JSON, as the other five backends serialise it. A
+        send with no payload at all carries nothing, not the JSON of an empty
+        value."""
+        if not has_payload:
+            return ""
+        if content and content.lstrip()[:1] == "<":
+            return marshalled
+        return _ScriptValue.of(marshalled).to_json_literal()
+
     def _eval_send_payload(
         self,
         engine,

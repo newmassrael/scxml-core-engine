@@ -32,6 +32,41 @@
 {{ indent }}paramFailed = true
 {% endif %}
 {% endmacro %}
+{# W3C SCXML 5.10 / C.1: the namelist and `<param>` pairs of a `<send>`,
+   evaluated ONCE into `map` (declared here), in the shape
+   `buildJsonFromParams` serialises into `_event.data`.
+
+   Every arm that carries a payload fills its map through this macro, and so
+   does the host-served arm: it derives the text params it hands the host from
+   this same map rather than evaluating each `<param>` a second time — an
+   expression with a side effect would otherwise run twice — and hands the host
+   `buildJsonFromParams(map)` as the request's event data, which is what a
+   local delivery would have carried. A namelist entry that cannot be read
+   discards the message (W3C test553), host-served or not; a `<param>` that
+   cannot be read drops its pair (`param_expr_arm`). #}
+{% macro collect_event_params(action, map, eng, sid, machine_name, indent) %}
+{{ indent }}val {{ map }} = mutableMapOf<String, Any?>()
+{% for param in action.params %}
+{% if param.is_static_literal %}
+{{ indent }}putParam({{ map }}, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
+{% else %}
+{{ param_expr_arm(param, map, eng, sid, machine_name, indent) }}
+{% endif %}
+{% endfor %}
+{% if action.namelist %}
+{{ indent }}// W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
+{% for var_name in action.namelist.split() %}
+{{ indent }}if (!{{ eng }}.hasVariable({{ sid }}, "{{ var_name }}")) {
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name }}', which is not declared")
+{{ indent }}    return@send false
+{{ indent }}}
+{{ indent }}try { {{ map }}["{{ var_name }}"] = {{ eng }}.getVariable({{ sid }}, "{{ var_name }}") } catch (_: Exception) {
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
+{{ indent }}    return@send false
+{{ indent }}}
+{% endfor %}
+{% endif %}
+{% endmacro %}
 {# The whole send is one labelled scope whose value says whether the block
    stops after it. A refusal that discards the message (W3C SCXML 6.2: an
    idlocation, a namelist entry, an expression attribute) leaves with
@@ -39,6 +74,20 @@
    always stopped the block leave with `true`. A `<param>` that could not be
    read does not stop the send, but its error still ends the block once the
    message has gone (W3C SCXML 4.9) — `paramFailed` is the scope's value. #}
+{# W3C SCXML B.2 orders three readings, and only two of them are values this
+   side can produce. XML is the first: it becomes a DOM node, which is built by
+   whatever binds `_event.data` — both engines this backend runs on open with
+   that check — so the source text is what has to arrive, unevaluated. Sending
+   it through `JSON.stringify` instead turned W3C 561's `<books>` document into
+   a syntax error. Decided once, here, for the local `<content>` arm and the
+   host-served arm alike, so the two cannot read one `<content>` two ways. #}
+{% if action.content %}
+{% if (action.content | trim) is startingwith('<') %}
+{% set content_data = '"' ~ (action.content | escape_kotlin) ~ '"' %}
+{% else %}
+{% set content_data = 'evaluateSendContent(' ~ (action.content | to_script_source_data_content) ~ ')' %}
+{% endif %}
+{% endif %}
 {% set param_ns = namespace(can_fail=false) %}
 {% for param in action.params %}
 {% if not param.is_static_literal %}
@@ -97,14 +146,36 @@
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
             run {
-{% set host_needs_script = (action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) or action.eventexpr %}
+{% set host_needs_script = (action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) or action.eventexpr or action.namelist or action.contentexpr %}
 {% if host_needs_script and model.needs_script_engine %}
                 ensureScriptEngine()
                 val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
 {% endif %}
-                val hostParams = mutableMapOf<String, List<String>>()
-{{ param_macros.collect_wire_params_into(action.params, model, 'hostParams', 'hostEngine', 'hostSid', machine_name, '<send>', '                ', 'paramFailed') -}}
+{# W3C SCXML 5.10: the payload a local delivery of this send would carry,
+   evaluated once. The text params are that same map read as the wire reads
+   it, so no `<param>` is evaluated twice, and the event data is its JSON. #}
+{% if action.params or action.namelist %}
+{{ collect_event_params(action, 'hostPayload', 'hostEngine', 'hostSid', machine_name, '                ') }}
+                val hostParams = hostPayload.mapValues { (_, v) ->
+                    if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+                }
+                val hostEventData = buildJsonFromParams(hostPayload)
+{% else %}
+                val hostParams = emptyMap<String, List<String>>()
+{% if action.content %}
+                val hostEventData = {{ content_data }}
+{% elif action.contentexpr and model.needs_script_engine %}
+                val hostEventData = try {
+                    hostEngine.evaluateExpr(hostSid, {{ action.contentexpr | to_script_source_expr }})?.let { valueToJson(it) } ?: ""
+                } catch (_: Exception) {
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> contentexpr failed to evaluate")
+                    return@send false
+                }
+{% else %}
+                val hostEventData = ""
+{% endif %}
+{% endif %}
 {% if action.eventexpr and model.needs_script_engine %}
                 val hostEventName = try {
                     hostEngine.evaluateExpr(hostSid, {{ action.eventexpr | to_script_source_expr }})?.toString() ?: ""
@@ -120,7 +191,8 @@
                     target = {% if action.targetexpr and model.needs_script_engine %}_rt{% else %}"{{ action.target | default('', true) | escape_kotlin }}"{% endif %},
                     content = "{{ action.content | default('', true) | escape_kotlin }}",
                     params = hostParams,
-                    sendId = "{% if action.id %}{{ action.id | escape_kotlin }}{% else %}{{ action.auto_send_id }}{% endif %}"
+                    sendId = "{% if action.id %}{{ action.id | escape_kotlin }}{% else %}{{ action.auto_send_id }}{% endif %}",
+                    eventData = hostEventData
                 )
 {% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
 {% if action.delayexpr or host_delay_ms > 0 %}
@@ -203,27 +275,7 @@
                 val engineI = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidI = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
 {% endif %}
-                val paramsI = mutableMapOf<String, Any?>()
-{% for param in action.params %}
-{% if param.is_static_literal %}
-                putParam(paramsI, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
-{% else %}
-{{ param_expr_arm(param, 'paramsI', 'engineI', 'sidI', machine_name, '                ') }}
-{% endif %}
-{% endfor %}
-{% if action.namelist %}
-                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern)
-{% for var_name in action.namelist.split() %}
-                if (!engineI.hasVariable(sidI, "{{ var_name }}")) {
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name }}', which is not declared")
-                    return@send false
-                }
-                try { paramsI["{{ var_name }}"] = engineI.getVariable(sidI, "{{ var_name }}") } catch (_: Exception) {
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
-                    return@send false
-                }
-{% endfor %}
-{% endif %}
+{{ collect_event_params(action, 'paramsI', 'engineI', 'sidI', machine_name, '                ') }}
                 raiseInternal({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }
 {% else %}
@@ -249,27 +301,7 @@
                 val engineP = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidP = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
 {% endif %}
-                val paramsP = mutableMapOf<String, Any?>()
-{% for param in action.params %}
-{% if param.is_static_literal %}
-                putParam(paramsP, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
-{% else %}
-{{ param_expr_arm(param, 'paramsP', 'engineP', 'sidP', machine_name, '                ') }}
-{% endif %}
-{% endfor %}
-{% if action.namelist %}
-                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern)
-{% for var_name in action.namelist.split() %}
-                if (!engineP.hasVariable(sidP, "{{ var_name }}")) {
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name }}', which is not declared")
-                    return@send false
-                }
-                try { paramsP["{{ var_name }}"] = engineP.getVariable(sidP, "{{ var_name }}") } catch (_: Exception) {
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
-                    return@send false
-                }
-{% endfor %}
-{% endif %}
+{{ collect_event_params(action, 'paramsP', 'engineP', 'sidP', machine_name, '                ') }}
                 val eventDataP = buildJsonFromParams(paramsP)
 {% if action.delay or action.delayexpr %}
                 scheduleParentSend("{{ action.auto_send_id }}", {{ action.delay_ms | default(0) }}L, "{{ action.event }}", eventDataP)
@@ -319,27 +351,7 @@
                 ensureScriptEngine()
                 val engineT = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidT = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val paramsT = mutableMapOf<String, Any?>()
-{% for param in action.params %}
-{% if param.is_static_literal %}
-                putParam(paramsT, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
-{% else %}
-{{ param_expr_arm(param, 'paramsT', 'engineT', 'sidT', machine_name, '                ') }}
-{% endif %}
-{% endfor %}
-{% if action.namelist %}
-                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern)
-{% for var_name in action.namelist.split() %}
-                if (!engineT.hasVariable(sidT, "{{ var_name }}")) {
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name }}', which is not declared")
-                    return@send false
-                }
-                try { paramsT["{{ var_name }}"] = engineT.getVariable(sidT, "{{ var_name }}") } catch (_: Exception) {
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
-                    return@send false
-                }
-{% endfor %}
-{% endif %}
+{{ collect_event_params(action, 'paramsT', 'engineT', 'sidT', machine_name, '                ') }}
                 val eventDataT = buildJsonFromParams(paramsT)
 {% if action.delay or action.delayexpr %}
 {% if action.delayexpr %}
@@ -431,27 +443,7 @@
                 val engineE = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidE = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
 {% endif %}
-                val paramsE = mutableMapOf<String, Any?>()
-{% for param in action.params %}
-{% if param.is_static_literal %}
-                putParam(paramsE, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
-{% else %}
-{{ param_expr_arm(param, 'paramsE', 'engineE', 'sidE', machine_name, '                ') }}
-{% endif %}
-{% endfor %}
-{% if action.namelist %}
-                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
-{% for var_name in action.namelist.split() %}
-                if (!engineE.hasVariable(sidE, "{{ var_name }}")) {
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name }}', which is not declared")
-                    return@send false  // W3C SCXML 6.2: Abort send if namelist variable not found
-                }
-                try { paramsE["{{ var_name }}"] = engineE.getVariable(sidE, "{{ var_name }}") } catch (_: Exception) {
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
-                    return@send false
-                }
-{% endfor %}
-{% endif %}
+{{ collect_event_params(action, 'paramsE', 'engineE', 'sidE', machine_name, '                ') }}
                 val eventDataE = buildJsonFromParams(paramsE)
 {% if action.event %}
 {% if action.delay or action.delayexpr %}
@@ -462,18 +454,7 @@
 {% endif %}
             }
 {% elif action.content and action.event %}
-{# W3C SCXML B.2 orders three readings, and only two of them are values
-   this side can produce. XML is the first: it becomes a DOM node, which
-   is built by whatever binds `_event.data` — both engines this backend
-   runs on open with that check — so the source text is what has to
-   arrive, unevaluated. Sending it through `JSON.stringify` instead
-   turned W3C 561's `<books>` document into a syntax error. #}
-{% set content_is_xml = (action.content | trim) is startingwith('<') %}
-{% if content_is_xml %}
-{% set content_data = '"' ~ (action.content | escape_kotlin) ~ '"' %}
-{% else %}
-{% set content_data = 'evaluateSendContent(' ~ (action.content | to_script_source_data_content) ~ ')' %}
-{% endif %}
+{# `content_data` is decided once, at the top of this template. #}
             // W3C SCXML B.2: the reading is decided at build time; a value
             // is evaluated here and serialized, XML is handed on as source.
 {% if action.delay or action.delayexpr %}

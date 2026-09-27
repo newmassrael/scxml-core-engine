@@ -696,6 +696,7 @@ class SendParamPayloadStateMachine(
                     paramFailed = true
                 }
 
+
                 raiseInternal(SendParamPayloadEvent.Escaped, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }
             paramFailed
@@ -766,6 +767,7 @@ class SendParamPayloadStateMachine(
             run {
                 val paramsI = mutableMapOf<String, Any?>()
                 putParam(paramsI, "carried", "kept")
+
                 raiseInternal(SendParamPayloadEvent.Loopback, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }
             false
@@ -796,6 +798,7 @@ class SendParamPayloadStateMachine(
                     raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='broken'> could not be read")
                     paramFailed = true
                 }
+
 
                 raiseInternal(SendParamPayloadEvent.WithBadParam, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }
@@ -852,6 +855,7 @@ class SendParamPayloadStateMachine(
                     raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='d'> could not be read")
                     paramFailed = true
                 }
+
 
                 raiseInternal(SendParamPayloadEvent.Typed, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }

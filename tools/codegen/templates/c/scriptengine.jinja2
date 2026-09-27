@@ -777,22 +777,31 @@
 
    `math.tointeger` rather than `%d`: it answers nil for a float with no exact
    integer value instead of raising, so the numeric arm needs no range guard. #}
+{# The rendering above as a Lua local function `_w`, spliced into a chunk as C
+   string literals. Written once so the two chunks that render a value as wire
+   text — one expression here, and every evaluated `<send>` pair a host
+   receives — cannot render the same value two ways. #}
+{% macro lua_wire_string_fn() %}
+        "local function _w(v)\n"
+        "  if v == nil then return '' end\n"
+        "  local t = type(v)\n"
+        "  if t == 'string' then return v end\n"
+        "  if t == 'boolean' then return tostring(v) end\n"
+        "  if t == 'number' then\n"
+        "    local i = math.tointeger(v)\n"
+        "    if i ~= nil then return tostring(i) end\n"
+        "    return tostring(v)\n"
+        "  end\n"
+        "  if t == 'table' then return JSON.stringify(v) end\n"
+        "  return tostring(v)\n"
+        "end\n"
+{% endmacro %}
 {% macro lua_eval_to_wire_string(expr, out_buf, out_cap, out_ok) %}
     {{ out_ok }} = false;
     {{ out_buf }}[0] = '\0';
     if (luaL_dostring(sm->L,
-        "local v = ({{ expr | to_lua_expr | escape_c }})\n"
-        "if v == nil then return '' end\n"
-        "local t = type(v)\n"
-        "if t == 'string' then return v end\n"
-        "if t == 'boolean' then return tostring(v) end\n"
-        "if t == 'number' then\n"
-        "  local i = math.tointeger(v)\n"
-        "  if i ~= nil then return tostring(i) end\n"
-        "  return tostring(v)\n"
-        "end\n"
-        "if t == 'table' then return JSON.stringify(v) end\n"
-        "return tostring(v)") == 0) {
+{{ lua_wire_string_fn() }}
+        "return _w(({{ expr | to_lua_expr | escape_c }}))") == 0) {
         size_t _wire_len = 0u;
         const char *_wire_str = lua_tolstring(sm->L, -1, &_wire_len);
         if (_wire_str != NULL) {

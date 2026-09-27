@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f5426e18f41d7133c2afaa65068d1a24836041f63d7307929bf13b9a2bf051bc
+// source-hash: c62ee86a6a3e85b63aad9b9d49c5f4d961f6570652e8bbce347efe8dec5f51b4
 
 
 // SPDX-License-Identifier: MIT
@@ -18,7 +18,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: statechart_host_processor.scxml:27 :: _machine
+// SCE-MAP: statechart_host_processor.scxml:37 :: _machine
 
 package statechart_host_processor
 
@@ -47,12 +47,15 @@ type StatechartHostProcessorState int
 
 const (
 	StatechartHostProcessorStateDispatching StatechartHostProcessorState = 0
+	StatechartHostProcessorStatePairs StatechartHostProcessorState = 1
 )
 
 func (s StatechartHostProcessorState) String() string {
 	switch s {
 	case StatechartHostProcessorStateDispatching:
 		return "dispatching"
+	case StatechartHostProcessorStatePairs:
+		return "pairs"
 	}
 	return "unknown"
 }
@@ -77,6 +80,8 @@ func StatechartHostProcessorStateFromName(name string) (StatechartHostProcessorS
 	switch name {
 	case "dispatching":
 		return StatechartHostProcessorStateDispatching, true
+	case "pairs":
+		return StatechartHostProcessorStatePairs, true
 	}
 	var zero StatechartHostProcessorState
 	return zero, false
@@ -90,6 +95,7 @@ func StatechartHostProcessorStateFromName(name string) (StatechartHostProcessorS
 // its own list goes on passing when the document grows a state.
 var StatechartHostProcessorAllStates = []StatechartHostProcessorState{
 	StatechartHostProcessorStateDispatching,
+	StatechartHostProcessorStatePairs,
 }
 
 // StatechartHostProcessorTarget is one token of a target list, as the document wrote
@@ -107,12 +113,12 @@ type StatechartHostProcessorTarget = sce.EntryTarget[StatechartHostProcessorStat
 
 // childStatesOfStatechartHostProcessor is §scxml-D-getChildStates per state: its
 // <state>, <parallel> and <final> children, in document order.
-var childStatesOfStatechartHostProcessor = [1][]StatechartHostProcessorState{
+var childStatesOfStatechartHostProcessor = [2][]StatechartHostProcessorState{
 }
 
 // initialTargetsOfStatechartHostProcessor is each compound state's initial transition
 // target, as written (§scxml-3.3).
-var initialTargetsOfStatechartHostProcessor = [1][]StatechartHostProcessorTarget{
+var initialTargetsOfStatechartHostProcessor = [2][]StatechartHostProcessorTarget{
 }
 
 // documentInitialTargetsOfStatechartHostProcessor is the target of the document's own
@@ -122,7 +128,10 @@ var documentInitialTargetsOfStatechartHostProcessor = []StatechartHostProcessorT
 // transitionTargetsOfStatechartHostProcessor is each transition's target list, as
 // written (§scxml-3.13), by source state and the transition's index among its
 // source's own transitions. A targetless transition's entry is empty.
-var transitionTargetsOfStatechartHostProcessor = [1][][]StatechartHostProcessorTarget{
+var transitionTargetsOfStatechartHostProcessor = [2][][]StatechartHostProcessorTarget{
+	StatechartHostProcessorStateDispatching: {
+		3: {sce.StateTarget[StatechartHostProcessorState, sce.HistoryID](StatechartHostProcessorStatePairs)},
+	},
 }
 
 // ======================================================================
@@ -132,22 +141,28 @@ var transitionTargetsOfStatechartHostProcessor = [1][][]StatechartHostProcessorT
 type StatechartHostProcessorEvent int
 
 const (
-	StatechartHostProcessorEventErrorExecution StatechartHostProcessorEvent = 0
-	StatechartHostProcessorEventPlainArrived StatechartHostProcessorEvent = 1
-	StatechartHostProcessorEventTurnDone StatechartHostProcessorEvent = 2
-	StatechartHostProcessorEventWatchTurn StatechartHostProcessorEvent = 3
+	StatechartHostProcessorEventAdvance StatechartHostProcessorEvent = 0
+	StatechartHostProcessorEventErrorExecution StatechartHostProcessorEvent = 1
+	StatechartHostProcessorEventPlainArrived StatechartHostProcessorEvent = 2
+	StatechartHostProcessorEventTurnDone StatechartHostProcessorEvent = 3
+	StatechartHostProcessorEventWatchPairs StatechartHostProcessorEvent = 4
+	StatechartHostProcessorEventWatchTurn StatechartHostProcessorEvent = 5
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StatechartHostProcessorEventNull StatechartHostProcessorEvent = 4
+	StatechartHostProcessorEventNull StatechartHostProcessorEvent = 6
 )
 
 func (e StatechartHostProcessorEvent) String() string {
 	switch e {
+	case StatechartHostProcessorEventAdvance:
+		return "advance"
 	case StatechartHostProcessorEventErrorExecution:
 		return "error.execution"
 	case StatechartHostProcessorEventPlainArrived:
 		return "plain.arrived"
 	case StatechartHostProcessorEventTurnDone:
 		return "turn.done"
+	case StatechartHostProcessorEventWatchPairs:
+		return "watch.pairs"
 	case StatechartHostProcessorEventWatchTurn:
 		return "watch.turn"
 	case StatechartHostProcessorEventNull:
@@ -230,6 +245,30 @@ func (p *StatechartHostProcessorPolicy) Plain() (int64, bool) {
 	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "plain")
 }
 
+// ParamErrors reports what the `paramErrors` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `paramErrors` was assigned a value of another type, or the engine refused.
+func (p *StatechartHostProcessorPolicy) ParamErrors() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "paramErrors")
+}
+
+// Mode reports what the `mode` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `mode` was assigned a value of another type, or the engine refused.
+func (p *StatechartHostProcessorPolicy) Mode() (string, bool) {
+	return sce.ReadDatamodelString(p.ScriptEngine, p.SessionID, "mode")
+}
+
 
 
 
@@ -306,6 +345,36 @@ func (p *StatechartHostProcessorPolicy) InitializeDataModel(eng *sce.Engine[Stat
 		} else {
 			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<data id='plain'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "plain", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize paramErrors from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "paramErrors", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<data id='paramErrors'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "paramErrors", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize mode from expr="'pairs'"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `"pairs"`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "mode", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<data id='mode'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "mode", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize nothing from expr="null"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `nil`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "nothing", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<data id='nothing'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "nothing", nil)
 		}
 	}
 
@@ -506,6 +575,8 @@ func (p *StatechartHostProcessorPolicy) GetDocumentOrder(state StatechartHostPro
 	switch state {
 	case StatechartHostProcessorStateDispatching:
 		return 0
+	case StatechartHostProcessorStatePairs:
+		return 1
 	}
 	return -1
 }
@@ -518,12 +589,16 @@ func (p *StatechartHostProcessorPolicy) GetEventName(event StatechartHostProcess
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *StatechartHostProcessorPolicy) GetEventFromName(name string) (StatechartHostProcessorEvent, bool) {
 	switch name {
+	case "advance":
+		return StatechartHostProcessorEventAdvance, true
 	case "error.execution":
 		return StatechartHostProcessorEventErrorExecution, true
 	case "plain.arrived":
 		return StatechartHostProcessorEventPlainArrived, true
 	case "turn.done":
 		return StatechartHostProcessorEventTurnDone, true
+	case "watch.pairs":
+		return StatechartHostProcessorEventWatchPairs, true
 	case "watch.turn":
 		return StatechartHostProcessorEventWatchTurn, true
 	}
@@ -631,12 +706,12 @@ func (p *StatechartHostProcessorPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line statechart_host_processor.scxml:27
+//line statechart_host_processor.scxml:37
 func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHostProcessorState, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case StatechartHostProcessorStateDispatching:
-		//line statechart_host_processor.scxml:36
+		//line statechart_host_processor.scxml:52
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -684,6 +759,8 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 			Content:       "",
 			Params:        hostParams,
 			SendID:        "__send_1",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
 		}
 		_, hostServed := engine.PerformHostSend(hostRequest)
 		// W3C SCXML 6.2: a declared type with no handler registered is, from
@@ -698,6 +775,101 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 	}
 	}
 
+
+	// W3C SCXML 6.2: send id="__send_2"
+	{
+		eventDataStr := ""
+		_ = eventDataStr
+	// W3C SCXML 6.2: External send
+	{
+		meta := sce.NewEventWithMetadata(StatechartHostProcessorEventAdvance)
+		meta.Metadata = sce.ExternalMetadata("__send_2", "")
+		meta.Metadata.Data = eventDataStr
+		engine.RaiseExternalWithMeta(meta)
+	}
+	}
+
+		}()
+	case StatechartHostProcessorStatePairs:
+		//line statechart_host_processor.scxml:81
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
+
+	// W3C SCXML 6.2: send id="__send_3"
+	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+		sendAborted := false
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		p.ensureScriptEngine()
+		se := p.ScriptEngine
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		parts = append(parts, sce.EventDataParam{Name: "kept", Value: "here"})
+		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `nothing.deep`); paramErr == nil {
+			parts = append(parts, sce.EventDataParam{Name: "broken", Value: paramVal})
+		} else {
+			engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<send> <param name='broken'> expr failed to evaluate"))
+			paramFailed = true
+		}
+		// W3C SCXML B.2: Check variable existence before evaluation
+		if !se.HasVariable(p.SessionID, "mode") {
+			engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<send> namelist names 'mode', which is not declared"))
+			sendAborted = true
+		} else if nlVal, nlErr := se.EvaluateExpression(p.SessionID, `mode`); nlErr == nil {
+			parts = append(parts, sce.EventDataParam{Name: "mode", Value: nlVal})
+		} else {
+			engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<send> namelist entry 'mode' failed to evaluate"))
+			sendAborted = true
+		}
+		eventDataStr := ""
+		if !sendAborted {
+			eventDataStr = sce.BuildJSONFromTypedParams(parts)
+		}
+		_ = eventDataStr
+		if !sendAborted {
+	// §scxml-6.2.5: "x-sce-host" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := sce.WireParamsFromTypedParams(parts)
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "x-sce-host",
+			EventName:     "watch.pairs",
+			Target:        "",
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_3",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
+			errEvt := sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_3"
+			engine.Raise(errEvt)
+		}
+	}
+		}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+
 		}()
 	default:
 		// No entry actions
@@ -709,7 +881,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line statechart_host_processor.scxml:27
+//line statechart_host_processor.scxml:37
 func (p *StatechartHostProcessorPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -717,7 +889,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteHistoryDefaultContent(history sce
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line statechart_host_processor.scxml:27
+//line statechart_host_processor.scxml:37
 func (p *StatechartHostProcessorPolicy) ExecuteExitActions(state StatechartHostProcessorState, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent], configurationBeforeExit []StatechartHostProcessorState) {
 	p.ensureScriptEngine()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
@@ -735,7 +907,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteExitActions(state StatechartHostP
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line statechart_host_processor.scxml:27
+//line statechart_host_processor.scxml:37
 func (p *StatechartHostProcessorPolicy) BindCurrentEvent(event StatechartHostProcessorEvent, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent]) {
 	if event != StatechartHostProcessorEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
@@ -750,7 +922,7 @@ func (p *StatechartHostProcessorPolicy) BindCurrentEvent(event StatechartHostPro
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line statechart_host_processor.scxml:27
+//line statechart_host_processor.scxml:37
 func (p *StatechartHostProcessorPolicy) FirstEnabledTransition(state StatechartHostProcessorState, event StatechartHostProcessorEvent, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent]) (sce.EnabledTransition[StatechartHostProcessorState, sce.HistoryID], bool) {
 	switch state {
 	case StatechartHostProcessorStateDispatching:
@@ -784,20 +956,42 @@ func (p *StatechartHostProcessorPolicy) FirstEnabledTransition(state StatechartH
 				}, true
 			}
 		}
+		if event == StatechartHostProcessorEventAdvance {
+			if p.evaluateGuard(`(served > 0)`, engine) {
+				return sce.EnabledTransition[StatechartHostProcessorState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStatechartHostProcessor[state][3],
+					TransitionIndex: 3,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
+		}
+	case StatechartHostProcessorStatePairs:
+		if event == StatechartHostProcessorEventErrorExecution {
+			{
+				return sce.EnabledTransition[StatechartHostProcessorState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
 	}
 	return sce.EnabledTransition[StatechartHostProcessorState, sce.HistoryID]{}, false
 }
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line statechart_host_processor.scxml:27
+//line statechart_host_processor.scxml:37
 func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source StatechartHostProcessorState, transitionIndex int, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent]) {
 	p.ensureScriptEngine()
 	switch source {
 	case StatechartHostProcessorStateDispatching:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_processor.scxml:48
+			//line statechart_host_processor.scxml:66
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -809,7 +1003,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source Statecha
 
 			}()
 		case 1:
-			//line statechart_host_processor.scxml:51
+			//line statechart_host_processor.scxml:69
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -821,13 +1015,28 @@ func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source Statecha
 
 			}()
 		case 2:
-			//line statechart_host_processor.scxml:54
+			//line statechart_host_processor.scxml:72
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
 	// W3C SCXML 5.3: <assign location="refused" expr="refused + 1">
 	if err := p.assignVariable(`refused`, `_scxml_add(refused, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<assign> to 'refused' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		}
+	case StatechartHostProcessorStatePairs:
+		switch transitionIndex {
+		case 0:
+			//line statechart_host_processor.scxml:88
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+	// W3C SCXML 5.3: <assign location="paramErrors" expr="paramErrors + 1">
+	if err := p.assignVariable(`paramErrors`, `_scxml_add(paramErrors, 1)`); err != nil {
+		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<assign> to 'paramErrors' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

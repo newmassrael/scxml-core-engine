@@ -63,7 +63,9 @@ class HostProcessorTest {
         val value = when (name) {
             "served" -> sm.served()
             "refused" -> sm.refused()
-            else -> sm.plain()
+            "plain" -> sm.plain()
+            "paramErrors" -> sm.paramErrors()
+            else -> error("the fixture declares no counter `$name`")
         }
         assertNotNull(value, "the fixture declares `$name` and the machine could not read it")
         return value!!
@@ -90,8 +92,29 @@ class HostProcessorTest {
             // while leaving the host branch intact would read as a pass.
             assertEquals(1L, counter(sm, "plain"), "an ordinary <send> in the same block stopped delivering")
 
-            assertEquals(1, seen.size, "the handler ran ${seen.size} times")
+            // W3C SCXML 5.7.1: the second send's unreadable <param> raised, and
+            // the message still went — which the second request confirms.
+            assertEquals(1L, counter(sm, "paramErrors"), "the <param> that cannot be read was not reported")
+            assertEquals(2, seen.size, "the handler ran ${seen.size} times; the served send and the one from `pairs` each run it once")
             val request = seen[0]
+            // W3C SCXML 5.10: the event data is what a local delivery of this
+            // send would carry in `_event.data`, computed by the engine, not
+            // rebuilt by the host from `params`. One key, so its spelling is exact.
+            assertEquals("""{"within":"2500"}""", request.eventData)
+            val pairs = seen[1]
+            assertEquals("watch.pairs", pairs.eventName)
+            // The namelist pair reaches the host as a param, the literal one
+            // too, and the unreadable one is absent rather than carried empty.
+            assertEquals(listOf("pairs"), pairs.params["mode"], "the namelist pair: ${pairs.params}")
+            assertEquals(listOf("here"), pairs.params["kept"], "the literal <param>: ${pairs.params}")
+            assertTrue("broken" !in pairs.params, "a <param> that could not be read reached the host: ${pairs.params}")
+            // Parsed rather than compared as text: with more than one key,
+            // member order is each backend's own.
+            assertEquals(
+                mapOf("kept" to "here", "mode" to "pairs"),
+                com.sce.runtime.Json.parse(pairs.eventData),
+                "the event data: ${pairs.eventData}"
+            )
             assertEquals(declaredType, request.processorType)
             assertEquals("watch.turn", request.eventName)
             // The payload the author wrote has to survive the crossing, or the

@@ -220,6 +220,8 @@
 			Content:       "{{ action.content | default('', true) | escape_go }}",
 			Params:        hostParams,
 			SendID:        "{{ send_id | default('') | escape_go }}",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
 		}
 {% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
 {% if action.delayexpr or host_delay_ms > 0 %}

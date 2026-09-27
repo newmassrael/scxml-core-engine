@@ -525,6 +525,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
                     paramFailed = true
                 }
 
+
                 raiseInternal(APayloadRidesOnItsOwnEventEvent.WithV, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }
             paramFailed
@@ -555,6 +556,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
                     paramFailed = true
                 }
 
+
                 val eventDataE = buildJsonFromParams(paramsE)
                 send(APayloadRidesOnItsOwnEventEvent.ExtV, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = eventDataE))
             }
@@ -583,12 +585,13 @@ class APayloadRidesOnItsOwnEventStateMachine(
                 // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
                 if (!engineE.hasVariable(sidE, "v9")) {
                     raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> namelist names 'v9', which is not declared")
-                    return@send false  // W3C SCXML 6.2: Abort send if namelist variable not found
+                    return@send false
                 }
                 try { paramsE["v9"] = engineE.getVariable(sidE, "v9") } catch (_: Exception) {
                     raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> namelist entry 'v9' failed to evaluate")
                     return@send false
                 }
+
                 val eventDataE = buildJsonFromParams(paramsE)
                 send(APayloadRidesOnItsOwnEventEvent.ExtN, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = eventDataE))
             }

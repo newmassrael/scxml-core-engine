@@ -382,12 +382,13 @@ class Test553StateMachine(
                 // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
                 if (!engineE.hasVariable(sidE, "__undefined_variable_for_error__")) {
                     raisePlatformError(Test553Event.Error.Execution, "<send> namelist names '__undefined_variable_for_error__', which is not declared")
-                    return@send false  // W3C SCXML 6.2: Abort send if namelist variable not found
+                    return@send false
                 }
                 try { paramsE["__undefined_variable_for_error__"] = engineE.getVariable(sidE, "__undefined_variable_for_error__") } catch (_: Exception) {
                     raisePlatformError(Test553Event.Error.Execution, "<send> namelist entry '__undefined_variable_for_error__' failed to evaluate")
                     return@send false
                 }
+
                 val eventDataE = buildJsonFromParams(paramsE)
                 send(Test553Event.Event1, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = eventDataE))
             }

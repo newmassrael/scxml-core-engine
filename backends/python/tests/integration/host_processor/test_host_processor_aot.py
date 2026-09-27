@@ -30,6 +30,7 @@ Regeneration (after fixture or template edit):
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import List
@@ -85,8 +86,29 @@ def test_a_registered_handler_receives_the_send_and_its_reply_arrives() -> None:
     # the host branch intact would read as a pass.
     assert _counter(engine, "plain") == 1, "an ordinary <send> in the same block stopped delivering"
 
-    assert len(seen) == 1, f"the handler ran {len(seen)} times"
+    # W3C SCXML 5.7.1: the second send's unreadable <param> raised, and the
+    # message still went — which the second request below confirms.
+    assert _counter(engine, "param_errors") == 1, "the <param> that cannot be read was not reported"
+    assert len(seen) == 2, (
+        f"the handler ran {len(seen)} times; the served send and the one from `pairs` each run it once"
+    )
     request = seen[0]
+    # W3C SCXML 5.10: the event data is what a local delivery of this send
+    # would carry in `_event.data`, computed by the engine, not rebuilt by the
+    # host from `params`. One key, so its spelling is exact.
+    assert request.event_data == '{"within":"2500"}', f"the event data: {request.event_data!r}"
+    pairs = seen[1]
+    assert pairs.event_name == "watch.pairs"
+    # The namelist pair reaches the host as a param, the literal one too, and
+    # the unreadable one is absent rather than carried empty.
+    assert pairs.params.get("mode") == ["pairs"], f"the namelist pair: {pairs.params}"
+    assert pairs.params.get("kept") == ["here"], f"the literal <param>: {pairs.params}"
+    assert "broken" not in pairs.params, f"a <param> that could not be read reached the host: {pairs.params}"
+    # Parsed rather than compared as text: with more than one key, member order
+    # is each backend's own.
+    assert json.loads(pairs.event_data) == {"kept": "here", "mode": "pairs"}, (
+        f"the event data: {pairs.event_data!r}"
+    )
     assert request.processor_type == DECLARED_TYPE
     assert request.event_name == "watch.turn"
     # The payload the author wrote has to survive the crossing, or the document
@@ -191,5 +213,5 @@ def test_registering_a_type_twice_replaces() -> None:
     engine.initialize()
 
     assert not superseded, "the superseded handler still served the act"
-    assert len(current) == 1, "the current handler never ran"
+    assert current, "the current handler never ran"
     assert _counter(engine, "served") == 1

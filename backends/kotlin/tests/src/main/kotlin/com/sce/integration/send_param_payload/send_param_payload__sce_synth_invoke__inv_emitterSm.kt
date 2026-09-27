@@ -136,6 +136,7 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
             run {
                 val paramsP = mutableMapOf<String, Any?>()
                 putParam(paramsP, "value", "42")
+
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("fromChild", eventDataP)
             }

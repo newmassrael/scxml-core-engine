@@ -397,6 +397,7 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
                     paramFailed = true
                 }
 
+
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("childUp", eventDataP)
             }

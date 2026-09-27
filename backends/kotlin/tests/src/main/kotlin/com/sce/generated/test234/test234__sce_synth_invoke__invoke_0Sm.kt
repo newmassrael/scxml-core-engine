@@ -332,6 +332,7 @@ class Test234SceSynthInvokeInvoke0StateMachine(
                     paramFailed = true
                 }
 
+
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("childToParent", eventDataP)
             }

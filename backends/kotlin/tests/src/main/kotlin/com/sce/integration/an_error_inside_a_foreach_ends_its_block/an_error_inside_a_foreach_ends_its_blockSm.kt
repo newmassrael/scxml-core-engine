@@ -679,6 +679,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                     paramFailed = true
                 }
 
+
                 raiseInternal(AnErrorInsideAForeachEndsItsBlockEvent.Sent, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }
             paramFailed
@@ -810,6 +811,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                     raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<send> <param name='bad'> could not be read")
                     paramFailed = true
                 }
+
 
                 raiseInternal(AnErrorInsideAForeachEndsItsBlockEvent.Sent, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }

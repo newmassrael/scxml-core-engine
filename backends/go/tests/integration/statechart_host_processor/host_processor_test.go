@@ -31,6 +31,8 @@
 package statechart_host_processor
 
 import (
+	"encoding/json"
+	"reflect"
 	"testing"
 
 	sce "github.com/newmassrael/sce-go-runtime"
@@ -94,10 +96,45 @@ func TestARegisteredHandlerReceivesTheSendAndItsReplyArrives(t *testing.T) {
 		t.Fatalf("an ordinary <send> in the same block stopped delivering: plain = %d", got)
 	}
 
-	if len(seen) != 1 {
-		t.Fatalf("the handler ran %d times", len(seen))
+	// W3C SCXML 5.7.1: the second send's unreadable <param> raised, and the
+	// message still went — which the second request below confirms.
+	if got := s.counter(t, "paramErrors"); got != 1 {
+		t.Fatalf("the <param> that cannot be read was not reported: paramErrors = %d", got)
+	}
+	if len(seen) != 2 {
+		t.Fatalf("the handler ran %d times; the served send and the one from `pairs` each run it once", len(seen))
 	}
 	req := seen[0]
+	// W3C SCXML 5.10: the event data is what a local delivery of this send
+	// would carry in `_event.data`, computed by the engine, not rebuilt by the
+	// host from Params. One key, so its spelling is exact.
+	if req.EventData != `{"within":"2500"}` {
+		t.Fatalf("the request's event data is %q", req.EventData)
+	}
+	pairs := seen[1]
+	if pairs.EventName != "watch.pairs" {
+		t.Fatalf("the second request is %q", pairs.EventName)
+	}
+	// The namelist pair reaches the host as a param, the literal one too, and
+	// the unreadable one is absent rather than carried empty.
+	if v := pairs.Params["mode"]; len(v) != 1 || v[0] != "pairs" {
+		t.Fatalf("the namelist pair did not reach the host: %v", pairs.Params)
+	}
+	if v := pairs.Params["kept"]; len(v) != 1 || v[0] != "here" {
+		t.Fatalf("the literal <param> did not reach the host: %v", pairs.Params)
+	}
+	if _, ok := pairs.Params["broken"]; ok {
+		t.Fatalf("a <param> that could not be read reached the host: %v", pairs.Params)
+	}
+	// Parsed rather than compared as text: with more than one key, member order
+	// is each backend's own and a receiver reads the value, not the spelling.
+	var data map[string]any
+	if err := json.Unmarshal([]byte(pairs.EventData), &data); err != nil {
+		t.Fatalf("the event data is not JSON: %q (%v)", pairs.EventData, err)
+	}
+	if !reflect.DeepEqual(data, map[string]any{"kept": "here", "mode": "pairs"}) {
+		t.Fatalf("the event data is %v", data)
+	}
 	if req.ProcessorType != declaredType {
 		t.Fatalf("handler saw type %q, expected %q", req.ProcessorType, declaredType)
 	}

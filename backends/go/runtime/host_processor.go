@@ -57,6 +57,13 @@ type HostSendRequest struct {
 	// SendID is the send's id, auto-generated when the document declared none.
 	// A handler correlating a reply, or honouring a `<cancel>`, needs it.
 	SendID string
+	// EventData is the event's data exactly as a local delivery of this send
+	// would carry it in `_event.data` (§scxml-5.10): the namelist and
+	// `<param>` pairs as JSON, or the `<content>`, or empty. Computed once by
+	// the generated send site, so a host that forwards the event — the Mesh
+	// router puts it in an envelope — forwards the engine's serialisation
+	// rather than a second one made from Params that could differ from it.
+	EventData string
 }
 
 // HostSendResponse is one event a host-served act produced.

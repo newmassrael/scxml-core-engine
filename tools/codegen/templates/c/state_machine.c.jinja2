@@ -72,7 +72,11 @@
                     lua_pop(sm->L, 1);
                 }
 {% endmacro %}
-{% macro send_payload_json(params, namelist, csym_prefix, machine) %}
+{# `keep_pairs`: leave the evaluated pairs in `_sce_send_pairs` after the JSON
+   is taken, for the host-served arm, which reads its text params from the
+   same evaluation rather than evaluating each `<param>` a second time. It
+   clears them itself. #}
+{% macro send_payload_json(params, namelist, csym_prefix, machine, keep_pairs=false) %}
                 char _ed[SCE_MAX_DATA_LEN];
 {% if not namelist and params | rejectattr("is_static_literal") | list | length == 0 %}
                 /* W3C SCXML 6.2 + B-2-9: every value is a literal, so the
@@ -126,8 +130,12 @@
 {% endif %}
 {% endfor %}
                 if (luaL_dostring(sm->L,
+{% if keep_pairs %}
+                    "return JSON.stringify(_scxml_params(table.unpack(_sce_send_pairs)))") != 0) {
+{% else %}
                     "local _p = _sce_send_pairs; _sce_send_pairs = nil; "
                     "return JSON.stringify(_scxml_params(table.unpack(_p)))") != 0) {
+{% endif %}
                     lua_pop(sm->L, 1);
                     {{ csym_prefix }}{{ machine }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
@@ -697,10 +705,46 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {{ se.lua_eval_to_string(action.targetexpr, '_host_target', 'sizeof(_host_target)', '_host_target_ok') }}
                 (void)_host_target_ok;
 {% endif %}
-{% if action.params %}
-                sce_host_send_param_t _host_params[{{ action.params | length }}];
+{# W3C SCXML 5.10: the payload a local delivery of this send would carry,
+   evaluated once. `_ed` is that payload's text, which the host receives as
+   the request's event data; the host's text params are the same evaluation's
+   pairs, read in document order with repeats kept, so no `<param>` is
+   evaluated twice. A literal-only payload is finished at codegen time and its
+   pairs are the literals themselves, so nothing is evaluated at all. #}
+{% set host_pair_cap = (action.params | length) + ((action.namelist or '').split() | length) %}
+{% set host_literal_only = not action.namelist and (action.params | rejectattr("is_static_literal") | list | length == 0) %}
+{% if action.params or action.namelist %}
+{{ send_payload_json(action.params, action.namelist, csym_prefix, model.name, true) }}
+                sce_host_send_param_t _host_params[{{ host_pair_cap }}];
                 int _host_param_count = 0;
+{% if host_literal_only %}
 {{ param_macros.collect_host_params_into(action.params, model, csym_prefix, '_host_params', '_host_param_count', '_host_param', '<send>', '                ', '_param_failed') -}}
+{% else %}
+                char _host_param_names[{{ host_pair_cap }}][SCE_MAX_ID_LEN];
+                char _host_param_values[{{ host_pair_cap }}][SCE_MAX_DATA_LEN];
+                if (luaL_dostring(sm->L,
+{{ se.lua_wire_string_fn() }}
+                    "local o = {} "
+                    "for _, p in ipairs(_sce_send_pairs or {}) do o[#o + 1] = p[1]; o[#o + 1] = _w(p[2]) end "
+                    "_sce_send_pairs = nil "
+                    "return o") == 0) {
+                    const lua_Integer _host_pairs = (lua_Integer)lua_rawlen(sm->L, -1) / 2;
+                    for (lua_Integer _hp = 0; _hp < _host_pairs && _host_param_count < {{ host_pair_cap }}; ++_hp) {
+                        lua_rawgeti(sm->L, -1, 2 * _hp + 1);
+                        sce_copy_bounded_id(_host_param_names[_host_param_count], lua_tostring(sm->L, -1));
+                        lua_pop(sm->L, 1);
+                        lua_rawgeti(sm->L, -1, 2 * _hp + 2);
+                        sce_copy_bounded_data(_host_param_values[_host_param_count], lua_tostring(sm->L, -1));
+                        lua_pop(sm->L, 1);
+                        _host_params[_host_param_count].name = _host_param_names[_host_param_count];
+                        _host_params[_host_param_count].value = _host_param_values[_host_param_count];
+                        _host_param_count++;
+                    }
+                }
+                lua_pop(sm->L, 1);
+{% endif %}
+{% elif action.content or action.contentexpr %}
+{{ send_content_json(action, csym_prefix, model.name) }}
 {% endif %}
                 sce_host_send_request_t _host_req;
                 _host_req.processor_type = "{{ action.send_type | escape_c }}";
@@ -708,12 +752,17 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 _host_req.target = {% if action.targetexpr %}_host_target{% else %}"{{ action.target | default('', true) | escape_c }}"{% endif %};
                 _host_req.content = "{{ action.content | default('', true) | escape_c }}";
                 _host_req.send_id = "{% if action.id %}{{ action.id | escape_c }}{% else %}{{ action.auto_send_id | default('', true) | escape_c }}{% endif %}";
-{% if action.params %}
+{% if action.params or action.namelist %}
                 _host_req.params = _host_params;
                 _host_req.param_count = _host_param_count;
 {% else %}
                 _host_req.params = NULL;
                 _host_req.param_count = 0;
+{% endif %}
+{% if action.params or action.namelist or action.content or action.contentexpr %}
+                _host_req.event_data = _ed;
+{% else %}
+                _host_req.event_data = "";
 {% endif %}
 {% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
 {% if action.delayexpr or host_delay_ms > 0 %}
@@ -3269,6 +3318,7 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model
     sce_copy_bounded_id(slot->host_event_name, request->event_name);
     sce_copy_bounded_n(slot->host_target, request->target, sizeof(slot->host_target));
     sce_copy_bounded_data(slot->host_content, request->content);
+    sce_copy_bounded_data(slot->host_event_data, request->event_data);
 {% if model.delayed_host_send_max_params > 0 %}
     slot->host_param_count = 0;
     for (int _p = 0; _p < request->param_count && _p < {{ model.delayed_host_send_max_params }}; ++_p) {
@@ -4361,6 +4411,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             _ready_req.target = ready.host_target;
             _ready_req.content = ready.host_content;
             _ready_req.send_id = ready.send_id;
+            _ready_req.event_data = ready.host_event_data;
 {% if model.delayed_host_send_max_params > 0 %}
             _ready_req.params = ready.host_param_count > 0u ? _ready_params : NULL;
             _ready_req.param_count = (int)ready.host_param_count;

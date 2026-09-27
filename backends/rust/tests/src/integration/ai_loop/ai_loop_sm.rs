@@ -1652,6 +1652,8 @@ impl StatePolicy for AiLoopPolicy {
                                 content: "".to_string(),
                                 params: host_params,
                                 send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1748,6 +1750,8 @@ impl StatePolicy for AiLoopPolicy {
                                 content: "".to_string(),
                                 params: host_params,
                                 send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1794,6 +1798,8 @@ impl StatePolicy for AiLoopPolicy {
                                 content: "".to_string(),
                                 params: host_params,
                                 send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1881,6 +1887,8 @@ impl StatePolicy for AiLoopPolicy {
                                 content: "".to_string(),
                                 params: host_params,
                                 send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1953,6 +1961,8 @@ impl StatePolicy for AiLoopPolicy {
                                 content: "".to_string(),
                                 params: host_params,
                                 send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -2034,6 +2044,8 @@ impl StatePolicy for AiLoopPolicy {
                                 content: "".to_string(),
                                 params: host_params,
                                 send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -2100,6 +2112,8 @@ impl StatePolicy for AiLoopPolicy {
                                 content: "".to_string(),
                                 params: host_params,
                                 send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -2741,6 +2755,8 @@ impl StatePolicy for AiLoopPolicy {
                                         content: "".to_string(),
                                         params: host_params,
                                         send_id: send_id.to_string(),
+                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                        event_data: event_data.to_string(),
                                     };
                                     let __sce_served = engine.perform_host_send(__sce_request);
                                     // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -2971,6 +2987,8 @@ impl StatePolicy for AiLoopPolicy {
                                         content: "".to_string(),
                                         params: host_params,
                                         send_id: send_id.to_string(),
+                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                        event_data: event_data.to_string(),
                                     };
                                     let __sce_served = engine.perform_host_send(__sce_request);
                                     // W3C SCXML 6.2: a declared type with no handler registered is,

@@ -38,6 +38,7 @@
 
 #include <gtest/gtest.h>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <vector>
@@ -110,7 +111,31 @@ TEST_F(HostProcessorAotTest, ARegisteredHandlerReceivesTheSendAndItsReplyArrives
     EXPECT_EQ(sm.getPolicy().plain(), std::optional<int64_t>(1))
         << "an ordinary <send> in the same block stopped delivering";
 
-    ASSERT_EQ(seen.size(), 1u) << "the handler ran " << seen.size() << " times";
+    // W3C SCXML 5.7.1: the second send's unreadable <param> raised, and the
+    // message still went — which the second request below confirms.
+    EXPECT_EQ(sm.getPolicy().paramErrors(), std::optional<int64_t>(1))
+        << "the <param> that cannot be read was not reported";
+
+    ASSERT_EQ(seen.size(), 2u) << "the handler ran " << seen.size()
+                               << " times; the served send and the one from `pairs` each run it once";
+    // W3C SCXML 5.10: the event data is what a local delivery of this send
+    // would carry in `_event.data`, computed by the engine, not rebuilt by the
+    // host from `params`. One key, so its spelling is exact.
+    EXPECT_EQ(seen[0].eventData, R"({"within":"2500"})");
+    const auto &pairs = seen[1];
+    EXPECT_EQ(pairs.eventName, "watch.pairs");
+    // The namelist pair reaches the host as a param, the literal one too, and
+    // the unreadable one is absent rather than carried empty.
+    ASSERT_EQ(pairs.params.count("mode"), 1u) << "the namelist pair did not reach the host";
+    EXPECT_EQ(pairs.params.at("mode"), std::vector<std::string>{"pairs"});
+    ASSERT_EQ(pairs.params.count("kept"), 1u) << "the literal <param> did not reach the host";
+    EXPECT_EQ(pairs.params.at("kept"), std::vector<std::string>{"here"});
+    EXPECT_EQ(pairs.params.count("broken"), 0u) << "a <param> that could not be read reached the host";
+    // Parsed rather than compared as text: with more than one key, member
+    // order is each backend's own.
+    EXPECT_EQ(nlohmann::json::parse(pairs.eventData), (nlohmann::json{{"kept", "here"}, {"mode", "pairs"}}))
+        << "the event data: " << pairs.eventData;
+
     EXPECT_EQ(seen[0].processorType, DECLARED_TYPE);
     EXPECT_EQ(seen[0].eventName, "watch.turn");
     // The payload the author wrote has to survive the crossing, or the document

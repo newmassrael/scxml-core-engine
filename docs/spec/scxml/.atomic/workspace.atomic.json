@@ -5083,6 +5083,26 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_process_next_external_event",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "symbol": "HostSendRequest",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "HostSendRequest",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "HostSendRequest",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "eventData",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -19618,6 +19638,12 @@
       "target_kind": "section",
       "target_id": "scxml-5.7",
       "reason": "executeSendAction cites §scxml-5.7.1 (a <param> that cannot be read) and §scxml-4.9, not §scxml-5.7: the binding was added for a comment the discarded-send reading had, which the §5.7.1 reading replaced before it landed, so it names nothing in the file"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "The citation sits on the eventData member; the C++ resolver names the member, not the struct"
     }
   ],
   "frames": {},

@@ -366,6 +366,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
                     paramFailed = true
                 }
 
+
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("childToParent", eventDataP)
             }

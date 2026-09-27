@@ -1300,20 +1300,19 @@ class AiLoopStateMachine(
                 ensureScriptEngine()
                 val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val hostParams = mutableMapOf<String, List<String>>()
+                val hostPayload = mutableMapOf<String, Any?>()
                 try {
-                    // The param crosses as text, and `toString()` is the platform's
-                    // spelling of the value; this is the document's.
-                    val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("end_prompt", "end_prompt"))
-                    hostParams["text"] =
-                        (hostParams["text"] ?: emptyList()) + valueToWireString(v)
+                    putParam(hostPayload, "text", hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("end_prompt", "end_prompt")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and the
-                    // value — the act still happens, without a field the document
-                    // could not produce.
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> expr failed to evaluate")
+                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
                     paramFailed = true
                 }
+
+
+                val hostParams = hostPayload.mapValues { (_, v) ->
+                    if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+                }
+                val hostEventData = buildJsonFromParams(hostPayload)
                 val hostEventName = "prompt.end"
                 val hostRequest = HostSendRequest(
                     processorType = "x-sce-host",
@@ -1321,7 +1320,8 @@ class AiLoopStateMachine(
                     target = "",
                     content = "",
                     params = hostParams,
-                    sendId = "__send_7"
+                    sendId = "__send_7",
+                    eventData = hostEventData
                 )
                 val hostServed = performHostSend(hostRequest)
                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1373,20 +1373,19 @@ class AiLoopStateMachine(
                 ensureScriptEngine()
                 val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val hostParams = mutableMapOf<String, List<String>>()
+                val hostPayload = mutableMapOf<String, Any?>()
                 try {
-                    // The param crosses as text, and `toString()` is the platform's
-                    // spelling of the value; this is the document's.
-                    val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("done_marker", "done_marker"))
-                    hostParams["marker"] =
-                        (hostParams["marker"] ?: emptyList()) + valueToWireString(v)
+                    putParam(hostPayload, "marker", hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("done_marker", "done_marker")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and the
-                    // value — the act still happens, without a field the document
-                    // could not produce.
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='marker'> expr failed to evaluate")
+                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='marker'> could not be read")
                     paramFailed = true
                 }
+
+
+                val hostParams = hostPayload.mapValues { (_, v) ->
+                    if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+                }
+                val hostEventData = buildJsonFromParams(hostPayload)
                 val hostEventName = "judge.begin"
                 val hostRequest = HostSendRequest(
                     processorType = "x-sce-host",
@@ -1394,7 +1393,8 @@ class AiLoopStateMachine(
                     target = "",
                     content = "",
                     params = hostParams,
-                    sendId = "__send_3"
+                    sendId = "__send_3",
+                    eventData = hostEventData
                 )
                 val hostServed = performHostSend(hostRequest)
                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1424,7 +1424,8 @@ class AiLoopStateMachine(
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
             run {
-                val hostParams = mutableMapOf<String, List<String>>()
+                val hostParams = emptyMap<String, List<String>>()
+                val hostEventData = ""
                 val hostEventName = "notify.human"
                 val hostRequest = HostSendRequest(
                     processorType = "x-sce-host",
@@ -1432,7 +1433,8 @@ class AiLoopStateMachine(
                     target = "",
                     content = "",
                     params = hostParams,
-                    sendId = "__send_8"
+                    sendId = "__send_8",
+                    eventData = hostEventData
                 )
                 val hostServed = performHostSend(hostRequest)
                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1466,20 +1468,19 @@ class AiLoopStateMachine(
                 ensureScriptEngine()
                 val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val hostParams = mutableMapOf<String, List<String>>()
+                val hostPayload = mutableMapOf<String, Any?>()
                 try {
-                    // The param crosses as text, and `toString()` is the platform's
-                    // spelling of the value; this is the document's.
-                    val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("start_prompt", "start_prompt"))
-                    hostParams["text"] =
-                        (hostParams["text"] ?: emptyList()) + valueToWireString(v)
+                    putParam(hostPayload, "text", hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("start_prompt", "start_prompt")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and the
-                    // value — the act still happens, without a field the document
-                    // could not produce.
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> expr failed to evaluate")
+                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
                     paramFailed = true
                 }
+
+
+                val hostParams = hostPayload.mapValues { (_, v) ->
+                    if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+                }
+                val hostEventData = buildJsonFromParams(hostPayload)
                 val hostEventName = "prompt.start"
                 val hostRequest = HostSendRequest(
                     processorType = "x-sce-host",
@@ -1487,7 +1488,8 @@ class AiLoopStateMachine(
                     target = "",
                     content = "",
                     params = hostParams,
-                    sendId = "__send_0"
+                    sendId = "__send_0",
+                    eventData = hostEventData
                 )
                 val hostServed = performHostSend(hostRequest)
                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1523,7 +1525,8 @@ class AiLoopStateMachine(
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
             run {
-                val hostParams = mutableMapOf<String, List<String>>()
+                val hostParams = emptyMap<String, List<String>>()
+                val hostEventData = ""
                 val hostEventName = "reflect.begin"
                 val hostRequest = HostSendRequest(
                     processorType = "x-sce-host",
@@ -1531,7 +1534,8 @@ class AiLoopStateMachine(
                     target = "",
                     content = "",
                     params = hostParams,
-                    sendId = "__send_5"
+                    sendId = "__send_5",
+                    eventData = hostEventData
                 )
                 val hostServed = performHostSend(hostRequest)
                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1571,7 +1575,8 @@ class AiLoopStateMachine(
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
             run {
-                val hostParams = mutableMapOf<String, List<String>>()
+                val hostParams = emptyMap<String, List<String>>()
+                val hostEventData = ""
                 val hostEventName = "session.replace"
                 val hostRequest = HostSendRequest(
                     processorType = "x-sce-host",
@@ -1579,7 +1584,8 @@ class AiLoopStateMachine(
                     target = "",
                     content = "",
                     params = hostParams,
-                    sendId = "__send_6"
+                    sendId = "__send_6",
+                    eventData = hostEventData
                 )
                 val hostServed = performHostSend(hostRequest)
                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1618,7 +1624,8 @@ class AiLoopStateMachine(
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
             run {
-                val hostParams = mutableMapOf<String, List<String>>()
+                val hostParams = emptyMap<String, List<String>>()
+                val hostEventData = ""
                 val hostEventName = "screen.begin"
                 val hostRequest = HostSendRequest(
                     processorType = "x-sce-host",
@@ -1626,7 +1633,8 @@ class AiLoopStateMachine(
                     target = "",
                     content = "",
                     params = hostParams,
-                    sendId = "__send_1"
+                    sendId = "__send_1",
+                    eventData = hostEventData
                 )
                 val hostServed = performHostSend(hostRequest)
                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1772,20 +1780,19 @@ class AiLoopStateMachine(
                 ensureScriptEngine()
                 val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val hostParams = mutableMapOf<String, List<String>>()
+                val hostPayload = mutableMapOf<String, Any?>()
                 try {
-                    // The param crosses as text, and `toString()` is the platform's
-                    // spelling of the value; this is the document's.
-                    val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt"))
-                    hostParams["text"] =
-                        (hostParams["text"] ?: emptyList()) + valueToWireString(v)
+                    putParam(hostPayload, "text", hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and the
-                    // value — the act still happens, without a field the document
-                    // could not produce.
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> expr failed to evaluate")
+                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
                     paramFailed = true
                 }
+
+
+                val hostParams = hostPayload.mapValues { (_, v) ->
+                    if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+                }
+                val hostEventData = buildJsonFromParams(hostPayload)
                 val hostEventName = "prompt.turn"
                 val hostRequest = HostSendRequest(
                     processorType = "x-sce-host",
@@ -1793,7 +1800,8 @@ class AiLoopStateMachine(
                     target = "",
                     content = "",
                     params = hostParams,
-                    sendId = "__send_2"
+                    sendId = "__send_2",
+                    eventData = hostEventData
                 )
                 val hostServed = performHostSend(hostRequest)
                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1851,20 +1859,19 @@ class AiLoopStateMachine(
                 ensureScriptEngine()
                 val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val hostParams = mutableMapOf<String, List<String>>()
+                val hostPayload = mutableMapOf<String, Any?>()
                 try {
-                    // The param crosses as text, and `toString()` is the platform's
-                    // spelling of the value; this is the document's.
-                    val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt"))
-                    hostParams["text"] =
-                        (hostParams["text"] ?: emptyList()) + valueToWireString(v)
+                    putParam(hostPayload, "text", hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and the
-                    // value — the act still happens, without a field the document
-                    // could not produce.
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> expr failed to evaluate")
+                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
                     paramFailed = true
                 }
+
+
+                val hostParams = hostPayload.mapValues { (_, v) ->
+                    if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+                }
+                val hostEventData = buildJsonFromParams(hostPayload)
                 val hostEventName = "prompt.turn"
                 val hostRequest = HostSendRequest(
                     processorType = "x-sce-host",
@@ -1872,7 +1879,8 @@ class AiLoopStateMachine(
                     target = "",
                     content = "",
                     params = hostParams,
-                    sendId = "__send_4"
+                    sendId = "__send_4",
+                    eventData = hostEventData
                 )
                 val hostServed = performHostSend(hostRequest)
                 // W3C SCXML 6.2: a declared type with no handler registered is,

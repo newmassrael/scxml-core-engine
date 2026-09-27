@@ -61,6 +61,16 @@ typedef struct {
     // every send in this fixture.
     bool absent_name_read_as_absent;
     bool had_send_id;
+    // W3C SCXML 5.10: the first request's event data, and what the second
+    // one — the fixture's `pairs` send — carried. The first call's fields
+    // above are kept from the first call only, so the second cannot
+    // overwrite what was asserted of the first.
+    char seen_event_data[128];
+    char pairs_event[64];
+    char pairs_mode[64];
+    char pairs_kept[64];
+    bool pairs_has_broken;
+    char pairs_event_data[128];
     // How many replies to report, and under what name. A test sets these
     // to shape the answer rather than needing a handler per scenario.
     int replies;
@@ -79,6 +89,20 @@ static void recording_handler(void *user_data, const sce_host_send_request_t *re
                               sce_host_send_response_list_t *out) {
     recorder_t *rec = (recorder_t *)user_data;
     rec->calls++;
+    if (rec->calls == 2) {
+        copy_field(rec->pairs_event, sizeof(rec->pairs_event), request->event_name);
+        copy_field(rec->pairs_mode, sizeof(rec->pairs_mode), sce_host_send_param(request, "mode"));
+        copy_field(rec->pairs_kept, sizeof(rec->pairs_kept), sce_host_send_param(request, "kept"));
+        rec->pairs_has_broken = (sce_host_send_param(request, "broken") != NULL);
+        copy_field(rec->pairs_event_data, sizeof(rec->pairs_event_data), request->event_data);
+    }
+    for (int i = 0; i < rec->replies; i++) {
+        (void)sce_host_response_push(out, rec->reply_name, "");
+    }
+    if (rec->calls != 1) {
+        return;
+    }
+    copy_field(rec->seen_event_data, sizeof(rec->seen_event_data), request->event_data);
     copy_field(rec->seen_type, sizeof(rec->seen_type), request->processor_type);
     copy_field(rec->seen_event, sizeof(rec->seen_event), request->event_name);
     const char *within = sce_host_send_param(request, "within");
@@ -86,10 +110,6 @@ static void recording_handler(void *user_data, const sce_host_send_request_t *re
     copy_field(rec->seen_within, sizeof(rec->seen_within), within);
     rec->absent_name_read_as_absent = (sce_host_send_param(request, "not.a.param.this.send.carries") == NULL);
     rec->had_send_id = (request->send_id != NULL && request->send_id[0] != '\0');
-
-    for (int i = 0; i < rec->replies; i++) {
-        (void)sce_host_response_push(out, rec->reply_name, "");
-    }
 }
 
 // The fixture's `<assign>`s are the only witness: every outcome leaves the
@@ -102,8 +122,10 @@ static int64_t counter(const statechart_host_processor_t *sm, const char *name) 
         ok = statechart_host_processor_served(sm, &value);
     } else if (strcmp(name, "refused") == 0) {
         ok = statechart_host_processor_refused(sm, &value);
-    } else {
+    } else if (strcmp(name, "plain") == 0) {
         ok = statechart_host_processor_plain(sm, &value);
+    } else if (strcmp(name, "paramErrors") == 0) {
+        ok = statechart_host_processor_param_errors(sm, &value);
     }
     if (!ok) {
         (void)fprintf(stderr, "host_processor: FAIL - the fixture declares `%s` and the machine could not read it\n",
@@ -151,7 +173,36 @@ static int a_registered_handler_receives_the_send_and_its_reply_arrives(void) {
     // still deliver. Without it a change that broke every send while leaving
     // the host branch intact would read as a pass.
     bad |= check("served", "plain", counter(&sm, "plain"), 1);
-    bad |= check("served", "handler calls", rec.calls, 1);
+    // W3C SCXML 5.7.1: the `pairs` send's unreadable <param> raised, and the
+    // message still went — which the second call confirms.
+    bad |= check("served", "paramErrors", counter(&sm, "paramErrors"), 1);
+    bad |= check("served", "handler calls", rec.calls, 2);
+    // W3C SCXML 5.10: the event data is what a local delivery of this send
+    // would carry in `_event.data`, computed by the engine, not rebuilt by the
+    // host from `params`. One key, so its spelling is exact.
+    if (strcmp(rec.seen_event_data, "{\"within\":\"2500\"}") != 0) {
+        (void)fprintf(stderr, "host_processor: FAIL [served] - the request's event data is `%s`\n",
+                      rec.seen_event_data);
+        bad = 1;
+    }
+    // The namelist pair reaches the host as a param, the literal one too, and
+    // the unreadable one is absent rather than carried empty.
+    if (strcmp(rec.pairs_event, "watch.pairs") != 0 || strcmp(rec.pairs_mode, "pairs") != 0 ||
+        strcmp(rec.pairs_kept, "here") != 0 || rec.pairs_has_broken) {
+        (void)fprintf(stderr,
+                      "host_processor: FAIL [served] - the `pairs` request was event `%s`, mode `%s`, kept `%s`, "
+                      "broken %s\n",
+                      rec.pairs_event, rec.pairs_mode, rec.pairs_kept, rec.pairs_has_broken ? "present" : "absent");
+        bad = 1;
+    }
+    // Member order is each backend's own, and this suite has no JSON reader:
+    // both members present and nothing else, by exact length.
+    if (strstr(rec.pairs_event_data, "\"kept\":\"here\"") == NULL ||
+        strstr(rec.pairs_event_data, "\"mode\":\"pairs\"") == NULL ||
+        strlen(rec.pairs_event_data) != strlen("{\"kept\":\"here\",\"mode\":\"pairs\"}")) {
+        (void)fprintf(stderr, "host_processor: FAIL [served] - the `pairs` event data is `%s`\n", rec.pairs_event_data);
+        bad = 1;
+    }
 
     if (strcmp(rec.seen_type, DECLARED_TYPE) != 0) {
         (void)fprintf(stderr, "host_processor: FAIL [served] - handler saw type `%s`, expected `%s`\n", rec.seen_type,
