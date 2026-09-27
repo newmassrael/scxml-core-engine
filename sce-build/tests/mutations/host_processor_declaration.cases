@@ -67,10 +67,10 @@ mutation_oracles sce-build/src/host_processor_analyzer.rs \
 mutation_case "the declaration is recorded but never applied" <<'PY'
 edit("sce-build/src/host_processor_analyzer.rs",
      """    if send_types.is_empty() && invoke_types.is_empty() {
-        return;
+        return Ok(());
     }""",
      """    if !(send_types.is_empty() && invoke_types.is_empty()) {
-        return;
+        return Ok(());
     }""")
 PY
 
@@ -115,16 +115,15 @@ PY
 
 mutation_case "the declaration does not reach nested executable content" <<'PY'
 # The anchor is the descent, not the fields. The first spelling quoted a
-# hand-chained field list that `Action::nested_blocks_mut` replaced, so it
-# matched nothing and the case reported SURVIVED without ever editing the
-# tree. `claim_action(nested, types)` occurs once in the file, which is what
-# makes this name one site without quoting a shape a refactor may move.
+# hand-chained field list that `Action::nested_blocks_mut` replaced, and the
+# second quoted `claim_action`'s own recursion, which moved into
+# `visit_actions_mut` when the Mesh lowering came to share the walk — each
+# time the case matched nothing and would have read as SURVIVED. The walk's
+# one mutable descent is what every declared send is reached through.
 edit("sce-build/src/host_processor_analyzer.rs",
-     """    for block in action.nested_blocks_mut() {
-        for nested in block {
-            claim_action(nested, types);
-        }
-    }""",
+     """            for block in action.nested_blocks_mut() {
+                walk(block, visit);
+            }""",
      "")
 PY
 
