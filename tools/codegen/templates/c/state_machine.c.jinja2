@@ -711,7 +711,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
    pairs, read in document order with repeats kept, so no `<param>` is
    evaluated twice. A literal-only payload is finished at codegen time and its
    pairs are the literals themselves, so nothing is evaluated at all. #}
-{% set host_pair_cap = (action.params | length) + ((action.namelist or '').split() | length) %}
+{% set host_pair_cap = (action.params | default([]) | length) + ((action.namelist or '').split() | length) %}
 {% set host_literal_only = not action.namelist and (action.params | rejectattr("is_static_literal") | list | length == 0) %}
 {% if action.params or action.namelist %}
 {{ send_payload_json(action.params, action.namelist, csym_prefix, model.name, true) }}
