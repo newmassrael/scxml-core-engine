@@ -336,7 +336,7 @@ fn statechart_native_lowering_go_emits_engine_free_typed_guard() {
     // an `<assign expr="_event.data.x">` on this same event read nothing from
     // it while only the first was filled (measured 2026-09-22).
     assert!(
-        src.contains("Data: sce.PayloadJSON(map[string]any{\"elapsed_ms\": elapsed_ms, })"),
+        src.contains("Data: sce.PayloadJSON(sce.Pair(\"elapsed_ms\", elapsed_ms)),"),
         "expected the inject seam to fill the `Data` wire too; got:\n{src}"
     );
     // The other direction: an event carrying only that wire — which is every

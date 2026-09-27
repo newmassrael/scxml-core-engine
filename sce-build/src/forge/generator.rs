@@ -3298,7 +3298,12 @@ pub fn build_go_event_payload(
                 f.id,
                 go_payload_reader(f, "fields")
             ));
-            data_items.push_str(&format!("\"{}\": {}, ", f.id, go_payload_data_value(f)));
+            // In schema order, as every other engine writes the same payload.
+            data_items.push_str(&format!(
+                "sce.Pair(\"{}\", {}), ",
+                f.id,
+                go_payload_data_value(f)
+            ));
         }
         lift_cases.push_str(&format!(
             "\tcase {machine}Event{variant}:\n\t\t\
@@ -3331,6 +3336,7 @@ type {struct_name} struct {{\n{field_lines}}}\n\n"
         // equivalent of Rust's orphan rule). The values are packed into the
         // type-erased `TypedPayload` carrier; the populate seam asserts them
         // back into the typed policy field.
+        let data_pairs = data_items.trim_end_matches(", ");
         raise_fns.push_str(&format!(
             "// Raise{variant} is the NL\u{2192}IR Item C1 Path A per-event typed `_event.data`\n\
 // inject seam for `{event}` — binds the event name and the payload field\n\
@@ -3347,7 +3353,7 @@ func Raise{variant}(e *sce.Engine[{machine}State, {machine}Event]{params}) {{\n\
 \t\t\t// and `Data`, which is what the script engine binds `_event.data`\n\
 \t\t\t// from. Filling only the first left an `<assign expr=\"_event.data.x\">`\n\
 \t\t\t// on this event reading nothing, on every backend alike.\n\
-\t\t\tData: sce.PayloadJSON(map[string]any{{{data_items}}}),\n\
+\t\t\tData: sce.PayloadJSON({data_pairs}),\n\
 \t\t}},\n\
 \t}})\n}}\n\n"
         ));

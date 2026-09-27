@@ -39,3 +39,17 @@ func TestAStringIsWrittenInTheOneFormEveryEngineWrites(t *testing.T) {
 		}
 	}
 }
+
+// An inject seam's payload is written in the order its schema declares the
+// fields, as every other engine writes it — not in name order, which is what
+// the map this took until 2026-09-28 produced.
+func TestAPayloadKeepsTheOrderItsSchemaDeclares(t *testing.T) {
+	got := PayloadJSON(Pair("payload", "q\"\u0001"), Pair("offset", 7), Pair("flag", true))
+	want := `{"payload":"q\"\u0001","offset":7,"flag":true}`
+	if got != want {
+		t.Errorf("wrote %s, want %s", got, want)
+	}
+	if got := PayloadJSON(); got != "{}" {
+		t.Errorf("an empty payload wrote %s", got)
+	}
+}

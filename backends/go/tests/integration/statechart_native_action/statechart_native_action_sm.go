@@ -214,7 +214,7 @@ func RaiseFragmentReceived(e *sce.Engine[StatechartNativeActionState, Statechart
 			// and `Data`, which is what the script engine binds `_event.data`
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(map[string]any{"payload": sce.BytesAsPayloadText(payload), "offset": offset, }),
+			Data: sce.PayloadJSON(sce.Pair("payload", sce.BytesAsPayloadText(payload)), sce.Pair("offset", offset)),
 		},
 	})
 }

@@ -412,12 +412,13 @@ type {name} struct {{\n{fields}}}\n\n",
                         } else {
                             value
                         };
-                        format!("\"{}\": {value}, ", f.id)
+                        format!("sce.Pair(\"{}\", {value}), ", f.id)
                     })
                     .collect();
+                // In schema order, as every other engine writes the record.
                 out.push_str(&format!(
                     "// Wire is the JSON `done.invoke.{id}` carries this record as.\n\
-func (r {name}) Wire() string {{\n\treturn sce.PayloadJSON(map[string]any{{{items}}})\n}}\n\n",
+func (r {name}) Wire() string {{\n\treturn sce.PayloadJSON({items})\n}}\n\n",
                     id = invoke.invoke_id,
                     items = items.trim_end_matches(", "),
                 ));

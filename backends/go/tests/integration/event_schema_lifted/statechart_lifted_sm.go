@@ -201,7 +201,7 @@ func RaiseJobCompleted(e *sce.Engine[StatechartLiftedState, StatechartLiftedEven
 			// and `Data`, which is what the script engine binds `_event.data`
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(map[string]any{"elapsed_ms": elapsed_ms, }),
+			Data: sce.PayloadJSON(sce.Pair("elapsed_ms", elapsed_ms)),
 		},
 	})
 }

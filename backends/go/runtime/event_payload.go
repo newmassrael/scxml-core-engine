@@ -6,7 +6,6 @@ package sce
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -184,37 +183,47 @@ func PayloadBytes(obj PayloadFields, name string) ([]byte, error) {
 	return out, nil
 }
 
+// PayloadPair is one field of an inject seam's payload, in schema order.
+type PayloadPair struct {
+	name  string
+	value any
+}
+
+// Pair names one payload field for PayloadJSON.
+func Pair(name string, value any) PayloadPair {
+	return PayloadPair{name: name, value: value}
+}
+
 // PayloadJSON is the wire spelling of the fields an inject seam was given, so
 // that the script engine binds `_event.data` to the same values the typed
 // carrier holds. A byte string is written as its Latin-1 text (see
 // PayloadBytes).
 //
-// Names and texts are written with EscapeJSONString, the form every engine
-// writes a string in; encoding/json would escape `<`, `>`, `&` and U+2028 as
-// well and replace a byte that is not UTF-8, which no other engine does. The
-// fields are written in name order, as encoding/json wrote a map.
-func PayloadJSON(fields map[string]any) string {
-	names := make([]string, 0, len(fields))
-	for name := range fields {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+// The fields are written in the order they are given, which is the order the
+// schema declares them — the order every other engine writes the same
+// payload in. A map would lose it: this took one until 2026-09-28 and wrote
+// the fields in name order, so the same event's `_event.data` differed by
+// engine. Names and texts are written with EscapeJSONString, the form every
+// engine writes a string in; encoding/json would escape `<`, `>`, `&` and
+// U+2028 as well and replace a byte that is not UTF-8, which no other engine
+// does.
+func PayloadJSON(fields ...PayloadPair) string {
 	var b strings.Builder
 	b.WriteByte('{')
-	for i, name := range names {
+	for i, field := range fields {
 		if i > 0 {
 			b.WriteByte(',')
 		}
 		b.WriteByte('"')
-		b.WriteString(EscapeJSONString(name))
+		b.WriteString(EscapeJSONString(field.name))
 		b.WriteString(`":`)
-		if text, ok := fields[name].(string); ok {
+		if text, ok := field.value.(string); ok {
 			b.WriteByte('"')
 			b.WriteString(EscapeJSONString(text))
 			b.WriteByte('"')
 			continue
 		}
-		encoded, err := json.Marshal(fields[name])
+		encoded, err := json.Marshal(field.value)
 		if err != nil {
 			// Every value here comes from a schema's own field types, all of
 			// which marshal; there is no input the caller could give that

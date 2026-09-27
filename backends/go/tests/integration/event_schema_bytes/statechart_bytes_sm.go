@@ -191,7 +191,7 @@ func RaiseSignalReceived(e *sce.Engine[StatechartBytesState, StatechartBytesEven
 			// and `Data`, which is what the script engine binds `_event.data`
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(map[string]any{"raw": sce.BytesAsPayloadText(raw), }),
+			Data: sce.PayloadJSON(sce.Pair("raw", sce.BytesAsPayloadText(raw))),
 		},
 	})
 }

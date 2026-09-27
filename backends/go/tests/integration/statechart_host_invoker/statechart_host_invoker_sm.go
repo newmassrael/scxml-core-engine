@@ -294,7 +294,7 @@ type StatechartHostInvokerPermResult struct {
 
 // Wire is the JSON `done.invoke.perm` carries this record as.
 func (r StatechartHostInvokerPermResult) Wire() string {
-	return sce.PayloadJSON(map[string]any{"granted": r.Granted})
+	return sce.PayloadJSON(sce.Pair("granted", r.Granted))
 }
 
 // StatechartHostInvokerXSceHostInvoker is the host side of this document's typed
