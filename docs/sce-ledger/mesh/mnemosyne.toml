@@ -161,6 +161,9 @@ paths = [
     # own are §synth-5, emitted from forge templates), so scanning the tree
     # judges the hand-written core and nothing else.
     "backends/rust/mesh/src",
+    # The WebSocket binding's Rust peer for the cross-language loopback test,
+    # which cites the section it serves (§18).
+    "backends/rust/mesh/examples",
     # Its Kotlin twin (`sce-kotlin-mesh`), cited section for section. Its
     # generated tree likewise carries only §synth- cites, measured 2026-09-28.
     "backends/kotlin/mesh/src",

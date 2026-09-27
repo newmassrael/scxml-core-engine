@@ -2712,6 +2712,14 @@
         {
           "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/WssClientTest.kt",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/examples/wss_peer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/CrossLanguageLoopbackTest.kt",
+          "kind": "references"
         }
       ]
     },

@@ -15,6 +15,12 @@ publish = false
 [lib]
 path = "src/lib.rs"
 
+# A server machine on the WebSocket binding for another language's client to
+# talk to (backends/kotlin/mesh's cross-language loopback test runs it).
+[[example]]
+name = "wss_peer"
+required-features = ["wss"]
+
 [features]
 # The generated modules gate their heap-backed facades (`encode_to_vec`, the
 # growable sink) on the feature of the crate that holds them, spelled

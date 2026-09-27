@@ -35,13 +35,23 @@ class WssClientTest {
     /** The server machine's side of the link, as a peer writing and reading envelopes. */
     private val serverListener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
+            opened += webSocket
             serverSockets += webSocket
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
             serverReceived += bytes.toByteArray()
         }
+
+        // Answer a close, so the closing handshake completes and the server
+        // can shut down.
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            webSocket.close(1000, null)
+        }
     }
+
+    /** Every server socket a test opened; OkHttp adds to it from its own thread. */
+    private val opened = java.util.concurrent.CopyOnWriteArrayList<WebSocket>()
 
     @BeforeTest
     fun start() {
@@ -50,6 +60,10 @@ class WssClientTest {
 
     @AfterTest
     fun stop() {
+        // A socket a test left open would hold the server's queue open. A
+        // server-side socket has no call to cancel, so it is closed; closing
+        // one that already is does nothing.
+        opened.forEach { it.close(1001, "the test is over") }
         server.close()
     }
 

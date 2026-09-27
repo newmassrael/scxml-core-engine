@@ -8,6 +8,8 @@
 // router core that applies them. Transport-free: bytes and the clock come
 // from the host (SCE_MESH.md §mesh-6.4).
 
+import java.io.File
+
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     `maven-publish`
@@ -15,6 +17,33 @@ plugins {
 
 group = "com.sce"
 version = "1.0.0"
+
+// The Rust server machine the cross-language loopback test dials
+// (backends/rust/mesh/examples/wss_peer.rs): the Rust core decodes what this
+// module's core encodes and the other way round, over one real socket.
+//
+// Built from the current sources whenever cargo is on PATH, the way
+// forge-runtime builds `sce-codegen`; the cargo check is inlined in `onlyIf`
+// because a script-level function is something the configuration cache
+// refuses to serialise. Without cargo the task is skipped and the test fails
+// on the missing binary — a skip would be a cross-language claim nobody made.
+val wssPeerTargetDir: String = System.getenv("CARGO_TARGET_DIR") ?: rootProject.file("target").absolutePath
+val wssPeer = File(wssPeerTargetDir, "debug/examples/wss_peer")
+val buildWssPeer by tasks.registering(Exec::class) {
+    workingDir = rootProject.projectDir
+    commandLine("cargo", "build", "-p", "sce-rust-mesh", "--features", "wss", "--example", "wss_peer")
+    inputs.dir(rootProject.layout.projectDirectory.dir("backends/rust/mesh/src"))
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(rootProject.layout.projectDirectory.dir("backends/rust/mesh/examples"))
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(rootProject.layout.projectDirectory.file("backends/rust/mesh/Cargo.toml"))
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    outputs.file(wssPeer)
+    onlyIf {
+        val path = System.getenv("PATH") ?: return@onlyIf false
+        path.split(File.pathSeparator).any { File(it, "cargo").let { c -> c.exists() && c.canExecute() } }
+    }
+}
 
 kotlin {
     jvmToolchain(17)
@@ -51,4 +80,9 @@ kotlin {
             }
         }
     }
+}
+
+tasks.named<Test>("jvmTest") {
+    dependsOn(buildWssPeer)
+    systemProperty("sce.mesh.wssPeer", wssPeer.absolutePath)
 }
