@@ -349,13 +349,29 @@ Write the reason for whoever has to answer it, not for yourself: what the
 source does and does not say, what you tried, and what would settle it. A
 marker with no reason is a guess with a label.
 
-When you chose a VALUE among a few you considered, list them all, the chosen
-one included, on the same `<data>`: `sce:assumed-candidates="OFF ON"` beside
-`expr="ign ? 1 : OFF"`. The chosen one must appear in the expression exactly
-once (or be the whole expression); `check` refuses a list whose place it
-cannot find. A failing case can then be run with each other candidate in its
-place (`gaps --counterfactual`), and the one that repairs it is the answer
-to send back.
+Every `sce:assumed` also lists the values the decision could take under the
+specification, the current one included: `sce:assumed-candidates="OFF ON"`.
+One value alone says the decision has no other. `check` refuses a guess
+without the list. A failing case can then be run with each other value in its
+place (`gaps --counterfactual`), and the one that repairs it is the answer to
+send back.
+
+Give each decided value its own `<data>` -- a decision variable -- whose
+`expr` is that value alone, mark IT `sce:assumed`, and have the logic read it:
+
+    <data id="offRedZone" sce:type="int32" sce:direction="out"
+          sce:assumed="REDZONE_OFF" sce:assumed-reason="..."
+          sce:assumed-candidates="1 2" expr="1"/>
+    <data id="redZone" sce:type="int32" sce:direction="out"
+          expr="ign ? computed : offRedZone"/>
+
+In a transform every field is `in` or `out`, so the decision variable is an
+`out` the binding lands nowhere: `offRedZone: {internal: true}`. Then the list
+has exactly one place to go. A value written inline, once, in
+a larger expression is accepted too; a value the expression writes more than
+once is not, because which of them the decision is cannot be told apart. A
+value held before the first round can be the decision as well
+(`sce:initial`).
 
 ⚠ THE SAME APPLIES TO ADDRESSES, AND YOU MAY NOT HAVE THEM YET.
 

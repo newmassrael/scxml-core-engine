@@ -421,8 +421,8 @@ def main(argv=None) -> int:
     g.add_argument("--out", help="write every gap as NDJSON as well")
     g.add_argument("--ask-out",
                    help="write only what to ask the authors -- one question per "
-                        "guess a failure rests on that lists no candidates -- "
-                        "with nothing a case holds, so it can be handed over")
+                        "document guess that lists no candidates, failing or "
+                        "not -- with nothing a case holds, so it can be handed over")
     g.add_argument("--counterfactual", action="store_true",
                    help="change each binding guess a failure implicates to every "
                         "alternative it has and run the cases again, to find "

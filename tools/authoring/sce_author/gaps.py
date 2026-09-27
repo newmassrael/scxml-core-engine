@@ -108,10 +108,10 @@ class Gap:
 def ask_of_author(assumption, kind: str) -> str:
     """The question for a guess's author, or '' when there is none to ask.
 
-    A failure rests on a document's guess and nobody wrote down what else it
-    could have been, so nothing can be tried in its place. The request is an
-    EDIT to the document: add the attribute listing the decision's plausible
-    values.
+    A document's guess lists no values it could have been, so nothing can be
+    tried in its place when a case fails on it -- and `check` refuses it. The
+    request is an EDIT to the document: add the attribute listing the
+    decision's plausible values.
 
     ⚠ The question names the GUESS and nothing the cases hold: not which case
     failed, not what it expected. An author told the expected value would
@@ -120,9 +120,9 @@ def ask_of_author(assumption, kind: str) -> str:
     request is the one a specification owner could send without the tests in
     hand: which other values could this decision take.
     """
+    # ⚠ Every guess without them, failing or not: asking only where a failure
+    # rests would tell the author which guesses the tests contradict.
     if assumption.source != "document" or assumption.candidates:
-        return ""
-    if kind not in ("refuted", "implicated"):
         return ""
     handle = assumption.marker or assumption.subject
     return (f"for `{handle}` on `{assumption.subject}`: add "

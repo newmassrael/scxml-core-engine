@@ -108,9 +108,9 @@ class Document:
     # Identifier -> the marker itself (`sce:assumed="..."`), the handle an
     # author and a gap report name the guess by; `assumed` holds the reason.
     assumed_marker: dict = dataclasses.field(default_factory=dict)
-    # Identifier -> (the values its author weighed, its `expr`):
-    # `sce:assumed-candidates`, space-separated, the one chosen among them --
-    # what `gaps --counterfactual` puts in the chosen one's place.
+    # Identifier -> (the values the decision could take, its `expr`, its
+    # `sce:initial`): `sce:assumed-candidates`, space-separated, the current
+    # one among them -- what `gaps --counterfactual` puts in its place.
     assumed_candidates: dict = dataclasses.field(default_factory=dict)
     # Output identifier -> the reason its author gave for leaving it
     # `sce:unresolved`: a value nobody has decided, written as a question
@@ -389,10 +389,10 @@ def read_document(path: pathlib.Path) -> Document:
             assumed[ident] = (data.get(f"{SCE_NS}assumed-reason")
                               or data.get(f"{SCE_NS}assumed"))
             assumed_marker[ident] = data.get(f"{SCE_NS}assumed")
-            if data.get(f"{SCE_NS}assumed-candidates"):
+            if data.get(f"{SCE_NS}assumed-candidates") is not None:
                 assumed_candidates[ident] = (
                     tuple(data.get(f"{SCE_NS}assumed-candidates").split()),
-                    data.get("expr") or "")
+                    data.get("expr") or "", data.get(f"{SCE_NS}initial"))
         if direction == "out" and data.get(f"{SCE_NS}unresolved"):
             # Both halves: the marker is the question's handle, the reason is
             # what to go and ask. The product's refusal named both.
@@ -1254,11 +1254,26 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
     if prose is not None:
         out.extend(unread_preconditions(pack, prose, declared_inputs, set(document.inputs)))
 
-    # The values an author weighed for a guess must say where they go: the
-    # chosen one appears in its expression, once (`counterfactual`).
+    # ⚠ Every recorded guess says what else it could have been. A guess that
+    # does not cannot be tried when a case fails on it -- `gaps` can only say
+    # it is among the suspects -- and asking for the values AFTER a failure
+    # tells the author which guesses failed. Measured 2026-09-28: asked while
+    # writing, one author in five listed any, and on guesses nothing failed.
+    # A list of one value is an answer too: this decision has no other.
     from .counterfactual import candidate_site
-    for ident, (candidates, expr) in sorted(document.assumed_candidates.items()):
-        _, why = candidate_site(expr, candidates)
+    for ident in sorted(document.assumed):
+        listed = document.assumed_candidates.get(ident)
+        if listed is None or not listed[0]:
+            out.append(Finding(
+                f"document {ident}",
+                "`sce:assumed` without `sce:assumed-candidates`: list the values "
+                "this decision could take under the specification, the current "
+                "one included -- the current one alone says it has no other. "
+                "Give the decided value its own `<data>` whose `expr` is that "
+                "value, so the list has one place to go"))
+            continue
+        candidates, expr, initial = listed
+        _, _, why = candidate_site(expr, candidates, initial)
         if why:
             out.append(Finding(f"document {ident}", f"`sce:assumed-candidates`: {why}"))
 

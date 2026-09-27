@@ -21,6 +21,10 @@ Asserted here, over one lamp a document decides and a binding lands:
     a document's guess is run with each of its `sce:assumed-candidates`
                                                         (the discriminator)
     candidates whose place in the expression is not known are refused
+    every guess must list candidates -- one alone says there is no other
+                                                        (the discriminator)
+    a decision variable takes each candidate whole; the place may also be
+    the value held before the first round, and never two places at once
     a guess without candidates is not changed -- and its author is asked
     for them, told the guess's handle and nothing a case holds
                                                         (the discriminator)
@@ -33,7 +37,7 @@ import unittest
 
 import yaml
 
-from sce_author.counterfactual import explore, lines
+from sce_author.counterfactual import candidate_site, explore, lines
 from sce_author.gaps import report
 from sce_author.verify import _default_codegen, verify
 from tests.test_refusals_actually_fire import CONVENTIONS, MODEL, Fixture
@@ -71,13 +75,15 @@ def case(name, expect, at=SWITCH, value="true"):
 @unittest.skipUnless(_default_codegen().exists(),
                      "the product's code generator is not built")
 class AGuessIsChangedToSeeWhatRestsOnIt(Fixture):
-    def run_with(self, inputs, lamp, cases, max_runs=64, text=None, model=SWITCHED):
+    def run_with(self, inputs, lamp, cases, max_runs=64, text=None, model=SWITCHED,
+                 failing=True, also=None):
         self.write_pack(model, CONVENTIONS)
         (self.root / "changed.scxml").write_text(text or document("bool", "on"),
                                                  encoding="utf-8")
         path = self.root / "changed.binding.yaml"
         path.write_text(yaml.safe_dump({"version": 1, "document": "changed.scxml",
-                                        "inputs": inputs, "outputs": {"lamp": lamp}}),
+                                        "inputs": inputs,
+                                        "outputs": {"lamp": lamp, **(also or {})}}),
                         encoding="utf-8")
         (self.pack_dir / "examples.yaml").write_text(yaml.safe_dump({
             "version": 1, "origin": "written for this test",
@@ -87,7 +93,7 @@ class AGuessIsChangedToSeeWhatRestsOnIt(Fixture):
         self.assertTrue(base.ran, base.refusal)
         # Every case here is a judged failure: what is asserted is what
         # changing a guess does to one, and a refused case changes nothing.
-        self.assertTrue(all(r.judged and r.failures for r in base.results),
+        self.assertTrue(all(r.judged and bool(r.failures) == failing for r in base.results),
                         [(r.name, r.refusal, r.failures, r.compared, r.unwritten)
                          for r in base.results])
         found = explore(pack, path, base, lambda variant: verify(pack, variant), max_runs)
@@ -231,6 +237,71 @@ class AGuessIsChangedToSeeWhatRestsOnIt(Fixture):
             [case("counted", "ON")], text=text)
         self.assertEqual("", gaps["lamp"].ask)
 
+    def found_by_check(self, text):
+        self.write_pack(SWITCHED, CONVENTIONS)
+        (self.root / "changed.scxml").write_text(text, encoding="utf-8")
+        return [str(f) for f in self.bind(
+            {"version": 1, "document": "changed.scxml",
+             "inputs": {"on": {"address": SWITCH, "when_absent": False}},
+             "outputs": {"lamp": {**LAMP, "map": {1: "OFF", 2: "ON"}}}})]
+
+    def test_check_refuses_a_guess_that_lists_no_candidates(self):
+        """⚠ The discriminator for the requirement. A guess that says nothing
+        of its alternatives cannot be tried when a case fails on it."""
+        found = self.found_by_check(document("bool", "on"))
+        self.assertTrue(any("without `sce:assumed-candidates`" in f for f in found), found)
+
+    def test_one_candidate_says_there_is_no_other(self):
+        text = document("bool", "on").replace(
+            'expr="on ? 1 : 2"', 'sce:assumed-candidates="on" expr="on ? 1 : 2"')
+        self.assertFalse([f for f in self.found_by_check(text)
+                          if "assumed-candidates" in f])
+        base, found, _ = self.run_with(
+            {"on": {"address": SWITCH, "when_absent": False}},
+            LAMP, [case("counted", "ON")], text=text)
+        cf = found["document:lamp"]
+        self.assertEqual(("untried", True), (cf.verdict, cf.exhaustive))
+        self.assertIn("its author lists no value but the current one", cf.untried)
+
+    def test_a_decision_variable_takes_each_candidate_whole(self):
+        """The decided value in its own `<data>`, the logic reading it: the
+        list has one place, and a value the expression writes twice elsewhere
+        does not matter."""
+        text = document("bool", "on").replace(
+            '<data id="lamp" sce:type="int32" sce:direction="out"\n'
+            '          sce:assumed="lamp-rule"\n'
+            '          sce:assumed-reason="the text does not say which way round the lamp reads"\n'
+            '          expr="on ? 1 : 2"/>',
+            '<data id="onValue" sce:type="int32" sce:direction="out" '
+            'sce:assumed="lamp-rule" sce:assumed-reason="r" '
+            'sce:assumed-candidates="1 2" expr="1"/>\n'
+            '    <data id="lamp" sce:type="int32" sce:direction="out" '
+            'expr="on ? onValue : (1 + 1)"/>')
+        self.assertIn('expr="1"', text)
+        self.assertFalse([f for f in self.found_by_check(text) if "assumed-candidates" in f])
+        base, found, gaps = self.run_with(
+            {"on": {"address": SWITCH, "when_absent": False}},
+            LAMP, [case("counted", "ON")], text=text,
+            also={"onValue": {"internal": True}})
+        cf = found["document:onValue"]
+        self.assertEqual("witness", cf.verdict)
+        self.assertEqual([("candidate", "2")], [(f.decision, f.value) for f in cf.flips])
+
+    def test_a_value_written_twice_is_refused_with_the_shape_that_works(self):
+        text = document("bool", "on").replace(
+            'expr="on ? 1 : 2"', 'sce:assumed-candidates="1 2" expr="on ? 1 : (1 + 1)"')
+        found = [f for f in self.found_by_check(text) if "assumed-candidates" in f]
+        self.assertTrue(found and "its own `<data>`" in found[0], found)
+
+    def test_every_guess_without_candidates_is_asked_about_failing_or_not(self):
+        """Asking only where a failure rests would tell the author which
+        guesses the tests contradict."""
+        base, found, gaps = self.run_with(
+            {"on": {"address": SWITCH, "when_absent": False}},
+            LAMP, [case("counted", "OFF")], failing=False)
+        self.assertEqual("held", gaps["lamp"].kind)
+        self.assertIn("`lamp-rule`", gaps["lamp"].ask)
+
     def test_a_guess_without_candidates_is_not_changed(self):
         base, found, _ = self.run_with(
             {"on": {"address": SWITCH, "when_absent": False}},
@@ -248,6 +319,30 @@ class AGuessIsChangedToSeeWhatRestsOnIt(Fixture):
         self.assertEqual(("untried", False), (cf.verdict, cf.exhaustive))
         self.assertTrue(any("run budget" in u for u in cf.untried))
         self.assertEqual("implicated", gaps["input on"].kind)
+
+
+class WhereACandidateGoes(unittest.TestCase):
+    """`candidate_site` alone: which one place the current value is."""
+
+    def test_a_decision_variable_is_its_whole_expression(self):
+        self.assertEqual(("expr", "1", ""), candidate_site("1", ("1", "2")))
+
+    def test_the_value_held_before_the_first_round_is_a_place(self):
+        self.assertEqual(("sce:initial", "false", ""),
+                         candidate_site("x &gt; 0 || previous(held)", ("false", "true"),
+                                        initial="false"))
+
+    def test_one_occurrence_inside_an_expression_is_a_place(self):
+        self.assertEqual(("expr", "3", ""), candidate_site("on ? 3 : 7", ("3", "4")))
+
+    def test_two_places_at_once_are_refused(self):
+        site = candidate_site("1", ("1", "2"), initial="2")
+        self.assertEqual(("", ""), site[:2])
+        self.assertIn("one `<data>` per decision", site[2])
+
+    def test_no_place_is_refused(self):
+        site = candidate_site("on ? 3 : 7", ("4", "5"))
+        self.assertIn("list the current value among them", site[2])
 
 
 if __name__ == "__main__":

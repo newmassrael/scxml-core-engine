@@ -204,29 +204,30 @@ or `previous()` is tried at the same points as a sample, reported as one, and
 never cleared.
 
 A document's own guess is changed to each of its `sce:assumed-candidates` —
-the values its author weighed, the chosen one among them, space-separated
-(`sce:assumed-candidates="OFF ON"` beside `expr="ign ? 1 : OFF"`). ⚠ The
-product accepts that attribute and reads nothing from it; here it means that
-the chosen value appears in the expression exactly once, or is the whole
-expression, and each other candidate goes in its place. `check` refuses a
-list whose place it cannot find, rather than guessing which part of the
-expression it was about. Trying every candidate is exhaustive over what the
-author weighed, and the report says which one repairs the failures. Without
-candidates the guess is not changed, and "the only one left" is elimination
-among RECORDED guesses, not proof. `--max-runs` bounds the runs (one per
-alternative), and what it did not try is listed.
+the values the decision could take under the specification, the current one
+among them, space-separated. ⚠ The product accepts that attribute and reads
+nothing from it; here it means the current value sits in exactly one place,
+and each other candidate goes there. That place is one of: the whole `expr`
+(a DECISION VARIABLE — a `<data>` whose expression is the decided value, which
+the logic reads; the shape `brief` asks for), the whole `sce:initial`, or one
+occurrence inside a larger `expr`. `check` refuses a list whose place it
+cannot find — a value a nested expression writes several times cannot be told
+apart, and measured 2026-09-28 that was four of nine guesses in one document
+— rather than guessing which of them the decision was. Trying every candidate
+is exhaustive over the list, and the report says which one repairs the
+failures; a list of the current value alone says the decision has no other.
+`--max-runs` bounds the runs (one per alternative), and what it did not try is
+listed.
 
-A document's guess a failure rests on that lists no candidates carries a
-question for its AUTHOR (`ask`, and `--ask-out` writes the questions alone,
-one per line): add the candidates — the values the decision could plausibly
-take under the specification, the current one included. ⚠ The
-question names the guess and nothing a case holds — not which case failed,
-not what it expected. Measured 2026-09-28, an instruction to list candidates
-while writing reached one author in five, and that one listed them on guesses
-nothing had failed; asking after the run reaches the guesses that matter. But
-an author told the expected value would list it, and the run would then
-confirm the author's copy of the test — so the request is only what a
-specification owner could send without the tests in hand.
+⚠ `check` refuses an `sce:assumed` with no `sce:assumed-candidates`. A guess
+that says nothing of its alternatives cannot be tried when a case fails on it,
+so the report could only name it among the suspects. Asked while writing, one
+author in five listed any (2026-09-28); asked after a failure, the author
+learns which guesses the tests contradict. Requiring the list of every guess
+avoids both. `gaps` carries the request for each guess still without one
+(`ask`; `--ask-out` writes the requests alone, one per line), and the request
+names the guess and nothing a case holds — so it can go back to the author of
+a document written before this rule.
 
 With `--prose` each gap is located in the text by file and line (never
 quoted, so the report can travel further than the specification may) and the

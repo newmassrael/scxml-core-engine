@@ -104,36 +104,59 @@ def _token(text: str) -> str:
     return rf"(?<![\w.]){re.escape(text)}(?![\w.])"
 
 
-def candidate_site(expr: str, candidates) -> tuple[str, str]:
-    """(the chosen candidate, '') -- or ('', why the site is not known).
+def candidate_site(expr: str, candidates, initial: str | None = None) -> tuple[str, str, str]:
+    """(the attribute the chosen candidate sits in, the chosen candidate, '')
+    -- or ('', '', why the site is not known).
 
     ⚠ The product accepts `sce:assumed-candidates` and reads nothing from it;
     what it MEANS is fixed here, where it is first used: the values the
-    author weighed, the chosen one AMONG them, and the chosen one is where
-    the others go. So the expression must hold exactly one of them, once --
-    or be one of them whole. Anything else would be this tool deciding which
-    part of the author's expression the list was about.
+    decision could take, the current one AMONG them, and the current one is
+    where the others go. It sits in one of three places, and only one:
+
+        the whole `expr`             -- a decision variable: a `<data>` whose
+                                        expression IS the decided value
+        the whole `sce:initial`      -- the value held before the first round
+        one occurrence in `expr`     -- a literal inside a larger expression
+
+    The first is the shape a guess should have (`brief` asks for it): the
+    decision is named, sits in one place, and the logic reads it. The third
+    is admitted and is where it goes wrong: measured 2026-09-28, four of nine
+    guesses in one document chose a literal that its nested conditions wrote
+    several times, and no single place could be named.
     """
+    sites = []
     if expr.strip() in candidates:
-        return expr.strip(), ""
-    found = [(c, len(re.findall(_token(c), expr))) for c in candidates]
-    present = [(c, n) for c, n in found if n]
-    if len(present) == 1 and present[0][1] == 1:
-        return present[0][0], ""
-    if not present:
-        return "", (f"none of its candidates ({' '.join(candidates)}) appears in "
-                    f"its expression, so which part of it they replace is not "
-                    f"known -- list the value it chose among them")
-    return "", (f"its expression holds {', '.join(f'{c} ×{n}' for c, n in present)} "
-                f"of its candidates, so which one it chose is not known -- the "
-                f"chosen value must appear once")
+        sites.append(("expr", expr.strip()))
+    if initial is not None and initial.strip() in candidates:
+        sites.append(("sce:initial", initial.strip()))
+    if not sites:
+        present = [(c, len(re.findall(_token(c), expr))) for c in candidates]
+        present = [(c, n) for c, n in present if n]
+        if len(present) == 1 and present[0][1] == 1:
+            sites.append(("expr", present[0][0]))
+        elif present:
+            return "", "", (
+                f"its expression holds {', '.join(f'{c} ×{n}' for c, n in present)} "
+                f"of its candidates, so which one it decides is not known -- give "
+                f"the decided value its own `<data>`, whose `expr` is that value "
+                f"alone, and have the logic read it")
+    if len(sites) == 1:
+        return sites[0][0], sites[0][1], ""
+    if not sites:
+        return "", "", (f"none of its candidates ({' '.join(candidates)}) is its "
+                        f"`expr` or its `sce:initial`, or appears in its "
+                        f"expression, so which value they replace is not known -- "
+                        f"list the current value among them")
+    return "", "", (f"both its `expr` and its `sce:initial` are among its "
+                    f"candidates, so which decision they are about is not known "
+                    f"-- one `<data>` per decision")
 
 
-def with_candidate(expr: str, chosen: str, other: str) -> str:
-    """The expression with `other` where `chosen` is (`candidate_site`)."""
-    if expr.strip() == chosen:
+def with_candidate(text: str, chosen: str, other: str) -> str:
+    """An attribute's text with `other` where `chosen` is (`candidate_site`)."""
+    if text.strip() == chosen:
         return other
-    return re.sub(_token(chosen), lambda _m: other, expr, count=1)
+    return re.sub(_token(chosen), lambda _m: other, text, count=1)
 
 
 def number_uses(name: str, texts) -> tuple[list, bool]:
@@ -286,15 +309,15 @@ _DATA = re.compile(r"<data\b((?:\s+[\w:.-]+\s*=\s*(?:\"[^\"]*\"|'[^']*'))*)(\s*/
 _ATTRIBUTE = re.compile(r"(\s+)([\w:.-]+)(\s*=\s*)(\"[^\"]*\"|'[^']*')")
 
 
-def document_with(text: str, ident: str, expr: str) -> str:
-    """The document's text with `<data id=ident>`'s `expr` replaced.
+def document_with(text: str, ident: str, value: str, attribute: str = "expr") -> str:
+    """The document's text with `<data id=ident>`'s `attribute` replaced.
 
     ⚠ On the TEXT, not a re-serialised tree: a parser keeps no record of
     namespace prefixes, and the product reads `sce:` by prefix as much as by
     namespace (`read_document` says why), so a rewritten tree is a different
     document. Each attribute value is delimited by its own quote, so a `>`
     inside an expression -- legal XML -- does not end the element early."""
-    escaped = (expr.replace("&", "&amp;").replace("<", "&lt;")
+    escaped = (value.replace("&", "&amp;").replace("<", "&lt;")
                .replace(">", "&gt;").replace('"', "&quot;"))
 
     def element(match: re.Match) -> str:
@@ -303,14 +326,14 @@ def document_with(text: str, ident: str, expr: str) -> str:
             return match.group(0)
 
         def one(a: re.Match) -> str:
-            if a.group(2) != "expr":
+            if a.group(2) != attribute:
                 return a.group(0)
-            return f'{a.group(1)}expr{a.group(3)}"{escaped}"'
+            return f'{a.group(1)}{attribute}{a.group(3)}"{escaped}"'
         return "<data" + _ATTRIBUTE.sub(one, attributes) + match.group(2)
 
     changed = _DATA.sub(element, text)
     if changed == text:
-        raise ValueError(f"no <data id={ident!r}> with an expr in the document")
+        raise ValueError(f"no <data id={ident!r}> with {attribute} in the document")
     return changed
 
 
@@ -367,9 +390,10 @@ def explore(pack, binding_path: pathlib.Path, base, run, max_runs: int = MAX_RUN
                     home = pathlib.Path(tmp) / f"variant-{runs}"
                     home.mkdir()
                     changed = home / document.name
-                    expr, chosen = path
+                    attribute, text, chosen = path
                     changed.write_text(
-                        document_with(source, subject, with_candidate(expr, chosen, value)),
+                        document_with(source, subject, with_candidate(text, chosen, value),
+                                      attribute),
                         encoding="utf-8")
                     variant["document"] = str(changed)
                 else:
@@ -396,21 +420,26 @@ def explore(pack, binding_path: pathlib.Path, base, run, max_runs: int = MAX_RUN
 
 
 def document_options(ident: str, declared) -> tuple[list, list, bool]:
-    """What a document's `sce:assumed` can be changed to: its expression with
-    each other candidate its author weighed where the chosen one is. The
-    candidates the author listed are all there are, so trying each is
-    exhaustive -- over what the author weighed, which is what the report
-    says it is."""
+    """What a document's `sce:assumed` can be changed to: each other candidate
+    its author listed, where the current one is. The candidates are all the
+    values the author says the decision could take, so trying each is
+    exhaustive -- over that list, which is what the report says it is. A list
+    of one is the author saying there is no other: nothing to try, and that
+    is said rather than read as an oversight."""
     listed = declared.assumed_candidates.get(ident)
     if not listed:
         return [], [("no `sce:assumed-candidates` on it: nobody wrote down what "
                      "else it could have been")], False
-    candidates, expr = listed
-    chosen, why = candidate_site(expr, candidates)
+    candidates, expr, initial = listed
+    attribute, chosen, why = candidate_site(expr, candidates, initial)
     if why:
         return [], [why], False
-    return ([("candidate", (expr, chosen), other)
-             for other in candidates if other != chosen], [], True)
+    text = expr if attribute == "expr" else initial
+    others = [other for other in candidates if other != chosen]
+    if not others:
+        return [], ["its author lists no value but the current one"], True
+    return ([("candidate", (attribute, text, chosen), other) for other in others],
+            [], True)
 
 
 def repairs_all(flip: Flip, cf: Counterfactual) -> bool:
