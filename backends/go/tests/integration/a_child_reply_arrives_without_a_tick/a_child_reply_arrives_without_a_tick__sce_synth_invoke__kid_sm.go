@@ -157,8 +157,8 @@ func (e AChildReplyArrivesWithoutATickSceSynthInvokeKidEvent) String() string {
 type AChildReplyArrivesWithoutATickSceSynthInvokeKidPolicy struct {
 	// W3C SCXML 5.10: Session ID
 	SessionID string
-	// W3C SCXML 6.4: Parent communication
-	ParentExternalQueue chan sce.ParentEvent
+	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
+	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
@@ -379,7 +379,7 @@ func (p *AChildReplyArrivesWithoutATickSceSynthInvokeKidPolicy) ExecuteEntryActi
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
 	if p.ParentExternalQueue != nil {
-		p.ParentExternalQueue <- sce.ParentEvent{Name: "hello", Data: eventDataStr}
+		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "hello", Data: eventDataStr})
 	}
 	}
 

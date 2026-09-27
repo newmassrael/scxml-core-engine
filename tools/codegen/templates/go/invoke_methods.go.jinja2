@@ -9,8 +9,7 @@
 {% if invoke_info.child_needs_script_engine %}
 			childPolicy.ScriptEngine = p.ScriptEngine
 {% endif %}
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
 			// W3C SCXML C.1: the child adopts the id its parent recorded for
@@ -113,8 +112,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% if invoke_info.child_needs_script_engine %}
 			childPolicy.ScriptEngine = p.ScriptEngine
 {% endif %}
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
 			// W3C SCXML C.1: the child adopts the id its parent recorded for
@@ -596,7 +594,7 @@ func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) IsInFin
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
@@ -619,7 +617,7 @@ func (w *{{ wrapper }}) IsInFinalState() bool { return w.engine.IsInFinalState()
 func (w *{{ wrapper }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *{{ wrapper }}) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *{{ wrapper }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *{{ wrapper }}) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *{{ wrapper }}) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *{{ wrapper }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 {% endfor %}
 {% endfor %}

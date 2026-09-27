@@ -268,8 +268,8 @@ type EmptyFinalizeUpdatesTheLocationPolicy struct {
 	pendingDoneInvokeInvAbsent bool
 	childInvUnmatched sce.ChildEngine
 	pendingDoneInvokeInvUnmatched bool
-	// W3C SCXML 6.4: Parent communication
-	ParentExternalQueue chan sce.ParentEvent
+	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
+	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
@@ -556,8 +556,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// W3C SCXML 6.4: Create child state machine
 			childPolicy := NewEmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy()
 			childPolicy.ScriptEngine = p.ScriptEngine
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
 			// W3C SCXML C.1: the child adopts the id its parent recorded for
@@ -640,8 +639,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// W3C SCXML 6.4: Create child state machine
 			childPolicy := NewEmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy()
 			childPolicy.ScriptEngine = p.ScriptEngine
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
 			// W3C SCXML C.1: the child adopts the id its parent recorded for
@@ -724,8 +722,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// W3C SCXML 6.4: Create child state machine
 			childPolicy := NewEmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy()
 			childPolicy.ScriptEngine = p.ScriptEngine
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
 			// W3C SCXML C.1: the child adopts the id its parent recorded for
@@ -923,7 +920,7 @@ func (w *childEngineWrapperInvEmpty) IsInFinalState() bool { return w.engine.IsI
 func (w *childEngineWrapperInvEmpty) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvEmpty) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapperInvEmpty) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvEmpty) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvEmpty) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvEmpty) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 type childEngineWrapperInvAbsent struct {
 	engine *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent]
@@ -936,7 +933,7 @@ func (w *childEngineWrapperInvAbsent) IsInFinalState() bool { return w.engine.Is
 func (w *childEngineWrapperInvAbsent) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvAbsent) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapperInvAbsent) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvAbsent) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvAbsent) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvAbsent) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 type childEngineWrapperInvUnmatched struct {
 	engine *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent]
@@ -949,7 +946,7 @@ func (w *childEngineWrapperInvUnmatched) IsInFinalState() bool { return w.engine
 func (w *childEngineWrapperInvUnmatched) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvUnmatched) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapperInvUnmatched) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvUnmatched) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvUnmatched) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvUnmatched) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 
 

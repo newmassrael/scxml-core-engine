@@ -183,8 +183,8 @@ func (e NestedFinalNotTerminalEvent) String() string {
 type NestedFinalNotTerminalPolicy struct {
 	// W3C SCXML 5.10: Session ID
 	SessionID string
-	// W3C SCXML 6.4: Parent communication
-	ParentExternalQueue chan sce.ParentEvent
+	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
+	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after

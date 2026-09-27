@@ -203,8 +203,8 @@ type DonedataLateCompletionPolicy struct {
 	activeInvokes  map[string]*sce.ChildSession
 	childInvLate sce.ChildEngine
 	pendingDoneInvokeInvLate bool
-	// W3C SCXML 6.4: Parent communication
-	ParentExternalQueue chan sce.ParentEvent
+	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
+	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
@@ -412,8 +412,7 @@ func (p *DonedataLateCompletionPolicy) ExecutePendingInvokes(engine *sce.Engine[
 			// W3C SCXML 6.4: Create child state machine
 			childPolicy := NewDonedataLateCompletionSceSynthInvokeInvLatePolicy()
 			childPolicy.ScriptEngine = p.ScriptEngine
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
 			// W3C SCXML C.1: the child adopts the id its parent recorded for
@@ -523,7 +522,7 @@ func (w *childEngineWrapperInvLate) IsInFinalState() bool { return w.engine.IsIn
 func (w *childEngineWrapperInvLate) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvLate) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapperInvLate) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvLate) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvLate) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvLate) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 
 

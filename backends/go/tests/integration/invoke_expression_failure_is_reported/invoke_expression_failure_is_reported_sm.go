@@ -193,8 +193,8 @@ type InvokeExpressionFailureIsReportedPolicy struct {
 	activeInvokes  map[string]*sce.ChildSession
 	childInvoke0 sce.ChildEngine
 	pendingDoneInvokeInvoke0 bool
-	// W3C SCXML 6.4: Parent communication
-	ParentExternalQueue chan sce.ParentEvent
+	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
+	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
@@ -419,8 +419,7 @@ func (p *InvokeExpressionFailureIsReportedPolicy) ExecutePendingInvokes(engine *
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 
 			childPolicy := NewInvokeExpressionFailureIsReportedHybrid0Policy()
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
 			// W3C SCXML C.1: the child adopts the id its parent recorded for
@@ -503,7 +502,7 @@ func (w *childEngineWrapperInvoke0) IsInFinalState() bool { return w.engine.IsIn
 func (w *childEngineWrapperInvoke0) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvoke0) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapperInvoke0) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvoke0) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvoke0) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvoke0) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 
 

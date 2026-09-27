@@ -156,7 +156,7 @@ type ChildEngine interface {
 	RaiseExternalByNameWithMeta(eventName string, metadata EventMetadata)
 
 	SetCompletionCallback(callback func())
-	GetParentEventQueue() chan ParentEvent
+	GetParentEventQueue() *ParentEventQueue
 
 	// DonedataAtFinal returns the donedata payload stashed by the child's
 	// top-level <final> onentry, for the parent's RaiseDoneInvoke to lift
@@ -180,24 +180,19 @@ func DrainAndRaiseChildEvents[S comparable, E comparable](
 	if queue == nil {
 		return
 	}
-	for {
-		select {
-		case ev := <-queue:
-			event, ok := engine.policy.GetEventFromName(ev.Name)
-			if !ok {
-				continue
-			}
-			meta := NewEventWithMetadata(event)
-			meta.Metadata.Data = ev.Data
-			if cs, found := activeInvokes[invokeKey]; found {
-				meta.Metadata.InvokeID = cs.InvokeID
-				meta.Metadata.Origin = cs.SessionID
-				meta.Metadata.OriginType = SCXMLEventProcessorType
-			}
-			engine.RaiseExternalWithMeta(meta)
-		default:
-			return
+	for _, ev := range queue.Drain() {
+		event, ok := engine.policy.GetEventFromName(ev.Name)
+		if !ok {
+			continue
 		}
+		meta := NewEventWithMetadata(event)
+		meta.Metadata.Data = ev.Data
+		if cs, found := activeInvokes[invokeKey]; found {
+			meta.Metadata.InvokeID = cs.InvokeID
+			meta.Metadata.Origin = cs.SessionID
+			meta.Metadata.OriginType = SCXMLEventProcessorType
+		}
+		engine.RaiseExternalWithMeta(meta)
 	}
 }
 

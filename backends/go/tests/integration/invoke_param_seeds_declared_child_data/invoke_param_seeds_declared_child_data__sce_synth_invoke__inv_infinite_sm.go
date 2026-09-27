@@ -190,8 +190,8 @@ type InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy struct {
 	// guessing one. Empty means no such endpoint is deployed, and no BasicHTTP
 	// entry is published in _ioprocessors.
 	BasicHTTPAccessURI string
-	// W3C SCXML 6.4: Parent communication
-	ParentExternalQueue chan sce.ParentEvent
+	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
+	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
@@ -715,7 +715,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) Execu
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
 	if p.ParentExternalQueue != nil {
-		p.ParentExternalQueue <- sce.ParentEvent{Name: "seed.ok", Data: eventDataStr}
+		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "seed.ok", Data: eventDataStr})
 	}
 	}
 
@@ -728,7 +728,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) Execu
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
 	if p.ParentExternalQueue != nil {
-		p.ParentExternalQueue <- sce.ParentEvent{Name: "seed.missing", Data: eventDataStr}
+		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "seed.missing", Data: eventDataStr})
 	}
 	}
 
@@ -741,7 +741,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) Execu
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
 	if p.ParentExternalQueue != nil {
-		p.ParentExternalQueue <- sce.ParentEvent{Name: "seed.collapsed", Data: eventDataStr}
+		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "seed.collapsed", Data: eventDataStr})
 	}
 	}
 

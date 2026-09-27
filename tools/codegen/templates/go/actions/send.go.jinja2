@@ -364,7 +364,7 @@
 	// W3C SCXML 6.2: Send to parent
 {% if action.event %}
 	if p.ParentExternalQueue != nil {
-		p.ParentExternalQueue <- sce.ParentEvent{Name: "{{ action.event | escape_go }}", Data: eventDataStr}
+		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "{{ action.event | escape_go }}", Data: eventDataStr})
 	}
 {% endif %}
 {% elif action.target and action.target is startingwith('#_') and action.target != '#_parent' and action.target != '#_internal' %}

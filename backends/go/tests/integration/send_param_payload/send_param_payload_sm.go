@@ -281,8 +281,8 @@ type SendParamPayloadPolicy struct {
 	activeInvokes  map[string]*sce.ChildSession
 	childInvEmitter sce.ChildEngine
 	pendingDoneInvokeInvEmitter bool
-	// W3C SCXML 6.4: Parent communication
-	ParentExternalQueue chan sce.ParentEvent
+	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
+	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
@@ -544,8 +544,7 @@ func (p *SendParamPayloadPolicy) ExecutePendingInvokes(engine *sce.Engine[SendPa
 
 			// W3C SCXML 6.4: Create child state machine
 			childPolicy := NewSendParamPayloadSceSynthInvokeInvEmitterPolicy()
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
 			// W3C SCXML C.1: the child adopts the id its parent recorded for
@@ -655,7 +654,7 @@ func (w *childEngineWrapperInvEmitter) IsInFinalState() bool { return w.engine.I
 func (w *childEngineWrapperInvEmitter) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvEmitter) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapperInvEmitter) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvEmitter) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvEmitter) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvEmitter) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 
 

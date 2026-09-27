@@ -173,8 +173,8 @@ type SessionIdsAreDistinctSceSynthInvokeInvBPolicy struct {
 	// guessing one. Empty means no such endpoint is deployed, and no BasicHTTP
 	// entry is published in _ioprocessors.
 	BasicHTTPAccessURI string
-	// W3C SCXML 6.4: Parent communication
-	ParentExternalQueue chan sce.ParentEvent
+	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
+	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
@@ -589,7 +589,7 @@ func (p *SessionIdsAreDistinctSceSynthInvokeInvBPolicy) ExecuteEntryActions(stat
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
 	if p.ParentExternalQueue != nil {
-		p.ParentExternalQueue <- sce.ParentEvent{Name: "fromChild", Data: eventDataStr}
+		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "fromChild", Data: eventDataStr})
 	}
 		// W3C SCXML 4.9: the <param> error ends the block.
 		if paramFailed {

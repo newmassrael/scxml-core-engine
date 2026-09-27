@@ -306,8 +306,8 @@ type InvokeParamSeedsDeclaredChildDataPolicy struct {
 	pendingDoneInvokeInvNamelist bool
 	childInvInfinite sce.ChildEngine
 	pendingDoneInvokeInvInfinite bool
-	// W3C SCXML 6.4: Parent communication
-	ParentExternalQueue chan sce.ParentEvent
+	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
+	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
@@ -559,8 +559,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// W3C SCXML 6.4: Create child state machine
 			childPolicy := NewInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy()
 			childPolicy.ScriptEngine = p.ScriptEngine
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
 			// W3C SCXML C.1: the child adopts the id its parent recorded for
@@ -657,8 +656,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// W3C SCXML 6.4: Create child state machine
 			childPolicy := NewInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy()
 			childPolicy.ScriptEngine = p.ScriptEngine
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
 			// W3C SCXML C.1: the child adopts the id its parent recorded for
@@ -728,8 +726,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// W3C SCXML 6.4: Create child state machine
 			childPolicy := NewInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy()
 			childPolicy.ScriptEngine = p.ScriptEngine
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
 			// W3C SCXML C.1: the child adopts the id its parent recorded for
@@ -813,8 +810,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// W3C SCXML 6.4: Create child state machine
 			childPolicy := NewInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy()
 			childPolicy.ScriptEngine = p.ScriptEngine
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
 			// W3C SCXML C.1: the child adopts the id its parent recorded for
@@ -898,8 +894,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// W3C SCXML 6.4: Create child state machine
 			childPolicy := NewInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedPolicy()
 			childPolicy.ScriptEngine = p.ScriptEngine
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
 			// W3C SCXML C.1: the child adopts the id its parent recorded for
@@ -1122,7 +1117,7 @@ func (w *childEngineWrapperInvShadow) IsInFinalState() bool { return w.engine.Is
 func (w *childEngineWrapperInvShadow) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvShadow) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapperInvShadow) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvShadow) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvShadow) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvShadow) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 type childEngineWrapperInvSole struct {
 	engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent]
@@ -1135,7 +1130,7 @@ func (w *childEngineWrapperInvSole) IsInFinalState() bool { return w.engine.IsIn
 func (w *childEngineWrapperInvSole) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvSole) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapperInvSole) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvSole) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvSole) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvSole) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 type childEngineWrapperInvUnmatched struct {
 	engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent]
@@ -1148,7 +1143,7 @@ func (w *childEngineWrapperInvUnmatched) IsInFinalState() bool { return w.engine
 func (w *childEngineWrapperInvUnmatched) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvUnmatched) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapperInvUnmatched) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvUnmatched) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvUnmatched) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvUnmatched) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 type childEngineWrapperInvNamelist struct {
 	engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent]
@@ -1161,7 +1156,7 @@ func (w *childEngineWrapperInvNamelist) IsInFinalState() bool { return w.engine.
 func (w *childEngineWrapperInvNamelist) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvNamelist) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapperInvNamelist) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvNamelist) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvNamelist) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvNamelist) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 type childEngineWrapperInvInfinite struct {
 	engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent]
@@ -1174,7 +1169,7 @@ func (w *childEngineWrapperInvInfinite) IsInFinalState() bool { return w.engine.
 func (w *childEngineWrapperInvInfinite) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvInfinite) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapperInvInfinite) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvInfinite) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvInfinite) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvInfinite) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 
 

@@ -498,8 +498,8 @@ type AiLoopPolicy struct {
 	// entry is published in _ioprocessors.
 	BasicHTTPAccessURI string
 	inPredicateStates []string
-	// W3C SCXML 6.4: Parent communication
-	ParentExternalQueue chan sce.ParentEvent
+	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
+	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after

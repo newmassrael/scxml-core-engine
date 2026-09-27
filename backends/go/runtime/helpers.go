@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -378,6 +379,42 @@ func IsValidIdentifier(name string) bool {
 type ParentEvent struct {
 	Name string
 	Data string
+}
+
+// ParentEventQueue holds the events a child has sent its parent until the
+// parent drains them (W3C SCXML 6.4: they are the parent's external events
+// from the moment they are sent). It is unbounded and keeps send order.
+//
+// It used to be a `chan ParentEvent` buffered at 100, written with a
+// blocking send. The child runs on the parent's goroutine, so nothing can
+// drain the channel while the child is running: the 101st event a child sent
+// in one tick blocked forever and the whole engine stopped. A slice behind a
+// mutex is the shape the Rust runtime has (`Arc<Mutex<VecDeque>>`), and the
+// only bound on it is memory, as for every other queue here.
+type ParentEventQueue struct {
+	mu     sync.Mutex
+	events []ParentEvent
+}
+
+// NewParentEventQueue returns an empty queue.
+func NewParentEventQueue() *ParentEventQueue {
+	return &ParentEventQueue{}
+}
+
+// Push appends one event. It never blocks.
+func (q *ParentEventQueue) Push(ev ParentEvent) {
+	q.mu.Lock()
+	q.events = append(q.events, ev)
+	q.mu.Unlock()
+}
+
+// Drain removes and returns every queued event, oldest first.
+func (q *ParentEventQueue) Drain() []ParentEvent {
+	q.mu.Lock()
+	out := q.events
+	q.events = nil
+	q.mu.Unlock()
+	return out
 }
 
 // PayloadReading is which reading of W3C SCXML B.2.8.1 a payload actually got.

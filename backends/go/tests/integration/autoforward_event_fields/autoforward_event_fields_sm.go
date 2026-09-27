@@ -203,8 +203,8 @@ type AutoforwardEventFieldsPolicy struct {
 	activeInvokes  map[string]*sce.ChildSession
 	childInvEcho sce.ChildEngine
 	pendingDoneInvokeInvEcho bool
-	// W3C SCXML 6.4: Parent communication
-	ParentExternalQueue chan sce.ParentEvent
+	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
+	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
@@ -412,8 +412,7 @@ func (p *AutoforwardEventFieldsPolicy) ExecutePendingInvokes(engine *sce.Engine[
 			// W3C SCXML 6.4: Create child state machine
 			childPolicy := NewAutoforwardEventFieldsSceSynthInvokeInvEchoPolicy()
 			childPolicy.ScriptEngine = p.ScriptEngine
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
 			// W3C SCXML C.1: the child adopts the id its parent recorded for
@@ -543,7 +542,7 @@ func (w *childEngineWrapperInvEcho) IsInFinalState() bool { return w.engine.IsIn
 func (w *childEngineWrapperInvEcho) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvEcho) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapperInvEcho) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvEcho) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvEcho) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvEcho) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 
 
