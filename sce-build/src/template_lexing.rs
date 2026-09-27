@@ -554,12 +554,18 @@ struct Rules {
     /// literal to the end of the file, swallowing eighteen lines of comment
     /// into what it called code.
     ///
-    /// Dropping it costs nothing here: a character literal holds ONE
-    /// character, so it can contain neither `//` nor `/*` nor `#`, and no
-    /// comment can hide inside one. Python keeps its `'` because there it
-    /// delimits a full string, and Python has no digit separator spelled that
-    /// way.
+    /// A character literal is recognised by [`Rules::char_literals`] instead:
+    /// it holds ONE character, so it can hide no comment — but that character
+    /// may be a `"`, and `case '"':` read with the `'` ignored opens a string
+    /// that runs to the next quote in the file, flipping every comment after
+    /// it into code. Python keeps its `'` here because there it delimits a
+    /// full string, and Python has no digit separator spelled that way.
     strings: &'static [StringDelim],
+    /// Whether `'x'` and `'\…'` are character literals: C-family, Go runes,
+    /// Kotlin and Rust chars. Read by shape — [`end_of_char_literal`] — so a
+    /// digit separator or a Rust lifetime, which never closes one character
+    /// later, is not taken for one.
+    char_literals: bool,
     /// Delimiters whose content reads as prose when the literal begins a line
     /// — Python's docstring.
     prose_when_line_initial: &'static [&'static str],
@@ -658,6 +664,7 @@ impl Rules {
             block: &[("/*", "*/")],
             nests: false,
             strings: C_FAMILY_STRINGS,
+            char_literals: true,
             prose_when_line_initial: &[],
             cpp_raw: true,
             rust_raw: false,
@@ -672,6 +679,7 @@ impl Rules {
             block: &[("/*", "*/")],
             nests: false,
             strings: GO_STRINGS,
+            char_literals: true,
             prose_when_line_initial: &[],
             cpp_raw: false,
             rust_raw: false,
@@ -690,6 +698,7 @@ impl Rules {
             block: &[("/*", "*/")],
             nests: true,
             strings: KOTLIN_STRINGS,
+            char_literals: true,
             prose_when_line_initial: &[],
             cpp_raw: false,
             rust_raw: false,
@@ -704,6 +713,7 @@ impl Rules {
             block: &[],
             nests: false,
             strings: PYTHON_STRINGS,
+            char_literals: false,
             prose_when_line_initial: &["\"\"\"", "'''"],
             cpp_raw: false,
             rust_raw: false,
@@ -711,8 +721,9 @@ impl Rules {
             opaque: &[],
         }
     }
-    /// Rust as a template emits it. Lifetimes are not modelled: a `'` never
-    /// delimits here, for the reason C-family's does not.
+    /// Rust as a template emits it. A lifetime (`'a`) is not a character
+    /// literal by shape — it never closes one character later — so only
+    /// `'x'` and `'\…'` are read as one.
     fn rust() -> Self {
         Rules {
             line: &["//"],
@@ -720,6 +731,7 @@ impl Rules {
             block: &[("/*", "*/")],
             nests: true,
             strings: RUST_STRINGS,
+            char_literals: true,
             prose_when_line_initial: &[],
             cpp_raw: false,
             rust_raw: true,
@@ -736,6 +748,7 @@ impl Rules {
             block: &[("{#", "#}")],
             nests: false,
             strings: &[],
+            char_literals: false,
             prose_when_line_initial: &[],
             cpp_raw: false,
             rust_raw: false,
@@ -773,6 +786,15 @@ fn classify_chars(s: &[char], rules: &Rules) -> Vec<Class> {
         if rules.cpp_raw {
             if let Some(end) = end_of_cpp_raw_string(s, i) {
                 mark(&mut class, i, end, Class::RawLiteral);
+                i = end;
+                continue;
+            }
+        }
+        // A character literal before a string: `'"'` holds a quote that
+        // opens nothing.
+        if rules.char_literals {
+            if let Some(end) = end_of_char_literal(s, i) {
+                mark(&mut class, i, end, Class::Literal);
                 i = end;
                 continue;
             }
@@ -954,6 +976,38 @@ fn end_of_rust_raw_string(s: &[char], at: usize) -> Option<usize> {
     Some(s.len())
 }
 
+/// One past a character literal opening at `at` — one character between
+/// quotes (`'"'`), or an escape (`'\''`, `'\\'`, `'\x41'`, `'\u{1F600}'`) —
+/// or `None` when no literal opens there.
+///
+/// Read by shape, which is what keeps out the two other uses of `'`: a
+/// digit separator follows a digit (`0x0000'FFFF`), and a Rust lifetime
+/// (`'a`) never closes one character later.
+fn end_of_char_literal(s: &[char], at: usize) -> Option<usize> {
+    /// The longest escape any of the languages writes, quotes included:
+    /// `'\u{10FFFF}'`.
+    const LONGEST: usize = 12;
+    if s.get(at) != Some(&'\'') {
+        return None;
+    }
+    if at > 0 && (s[at - 1].is_alphanumeric() || s[at - 1] == '_') {
+        return None;
+    }
+    match *s.get(at + 1)? {
+        '\\' => {
+            // The escaped character may itself be a quote (`'\''`), so the
+            // search for the closing one starts after it.
+            let limit = (at + LONGEST).min(s.len());
+            (at + 3..limit)
+                .take_while(|&j| s[j] != '\n')
+                .find(|&j| s[j] == '\'')
+                .map(|j| j + 1)
+        }
+        '\'' | '\n' => None,
+        _ => (s.get(at + 2) == Some(&'\'')).then_some(at + 3),
+    }
+}
+
 /// Where a C++ raw string `R"delim(` opening at `at` ends, if one does.
 fn end_of_cpp_raw_string(s: &[char], at: usize) -> Option<usize> {
     if s[at] != 'R' || at + 1 >= s.len() || s[at + 1] != '"' {
@@ -991,6 +1045,35 @@ mod tests {
             .into_iter()
             .map(|i| (i.tag, i.context))
             .collect()
+    }
+
+    /// A quote inside a character literal opens nothing, and the two other
+    /// uses of `'` — a digit separator, a Rust lifetime — are not literals.
+    /// The first shape is the one that turned a C comment after
+    /// `case '"':` into code.
+    #[test]
+    fn a_character_literal_holding_a_quote_opens_no_string() {
+        let c = "switch (c) { case '\"': x = '\\''; break; }\n/* {{ y }} */\n";
+        assert_eq!(
+            contexts(c, Syntax::CFamily)[0].1,
+            Class::Comment,
+            "C-family"
+        );
+        let go = "r := '\"'\n// {{ y }}\n";
+        assert_eq!(contexts(go, Syntax::Go)[0].1, Class::Comment, "Go");
+        let kt = "val q = '\"'\n// {{ y }}\n";
+        assert_eq!(contexts(kt, Syntax::Kotlin)[0].1, Class::Comment, "Kotlin");
+        let rs = "fn f<'a>(s: &'a str) -> char { '\"' }\n// {{ y }}\n";
+        assert_eq!(contexts(rs, Syntax::Rust)[0].1, Class::Comment, "Rust");
+        // A digit separator is not a literal: the comment after it stays one,
+        // and the string after it stays a string.
+        let sep = "auto m = 0x0000'FFFF'FFFF'FFFFULL; // {{ a }}\nconst char *s = \"{{ b }}\";\n";
+        let sep = contexts(sep, Syntax::CFamily);
+        assert_eq!(
+            (sep[0].1, sep[1].1),
+            (Class::Comment, Class::Literal),
+            "{sep:?}"
+        );
     }
 
     #[test]
