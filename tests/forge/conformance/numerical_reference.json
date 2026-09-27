@@ -1816,6 +1816,42 @@
         { "args": [[], []], "expected": [], "note": "two empty replicas" }
       ]
     },
+    "outbound_overflows": {
+      "fixture": "outbound_overflows",
+      "signature": "(depth: u32, maxPending: u32) -> bool",
+      "formula": "depth >= maxPending: an envelope that cannot be sent at once is dropped because its target's queue is full (SCE_MESH.md §mesh-10.10; the standard document sce:std/mesh/outbound_overflows.scxml)",
+      "cases": [
+        { "args": [3, 4], "expected": false, "note": "room for one more" },
+        { "args": [4, 4], "expected": true, "note": "full" },
+        { "args": [5, 4], "expected": true },
+        { "args": [0, 1], "expected": false },
+        { "args": [0, 0], "expected": true, "note": "a queue of no envelopes, which deploy validation refuses" },
+        { "args": [4294967295, 4294967295], "expected": true }
+      ]
+    },
+    "outbound_sends_now": {
+      "fixture": "outbound_sends_now",
+      "signature": "(ready: bool, depth: u32) -> bool",
+      "formula": "ready and nothing queued: an envelope goes to its transport at once, never past a queue (SCE_MESH.md §mesh-10.10; the standard document sce:std/mesh/outbound_sends_now.scxml)",
+      "cases": [
+        { "args": [true, 0], "expected": true },
+        { "args": [true, 1], "expected": false, "note": "ready, but the queue has not drained" },
+        { "args": [false, 0], "expected": false },
+        { "args": [false, 5], "expected": false }
+      ]
+    },
+    "outbound_stale": {
+      "fixture": "outbound_stale",
+      "signature": "(enqueuedAtMs: i64, now: i64, maxAgeMs: i64) -> bool may-fail",
+      "formula": "maxAgeMs > 0 and now - enqueuedAtMs > maxAgeMs: a queued envelope is dropped rather than sent; 0 is no bound, and an age that cannot be computed within int64 fails 'overflow' (SCE_MESH.md §mesh-10.10; the standard document sce:std/mesh/outbound_stale.scxml)",
+      "cases": [
+        { "args": [100, 150, 50], "expected": false, "note": "exactly the bound is still sent" },
+        { "args": [100, 151, 50], "expected": true, "note": "one millisecond past it" },
+        { "args": [100, 1000000, 0], "expected": false, "note": "0 is no bound, not drop everything" },
+        { "args": [100, 100, 1], "expected": false },
+        { "args": [-9223372036854775808, 9223372036854775807, 1], "fails": "overflow", "note": "an age past int64" }
+      ]
+    },
     "second_of_day": {
       "fixture": "second_of_day",
       "signature": "(seconds: i64) -> i32",

@@ -1474,6 +1474,52 @@
       }
     },
     {
+      "name": "outbound_overflows",
+      "document": "sce:std/mesh/outbound_overflows.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "outbound_overflows",
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "output": {
+        "type": "bool",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "outbound_sends_now",
+      "document": "sce:std/mesh/outbound_sends_now.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "outbound_sends_now",
+      "args": [
+        "bool",
+        "u32"
+      ],
+      "output": {
+        "type": "bool",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "outbound_stale",
+      "document": "sce:std/mesh/outbound_stale.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "outbound_stale",
+      "args": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "output": {
+        "type": "bool",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "second_of_day",
       "document": "sce:std/time/second_of_day.scxml",
       "kind": "algorithm",

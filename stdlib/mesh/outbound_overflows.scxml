@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/outbound_overflows.scxml — whether an envelope that cannot be
+  sent now is dropped because its target's queue is full (SCE_MESH.md
+  §mesh-10.10): the queue already holds `maxPending` envelopes or more. The
+  drop is the BACKPRESSURE_DROP of §mesh-16.7, raised with `depth` as the
+  queue depth; otherwise the envelope joins the queue.
+
+  Asked only when outbound_sends_now is false. `maxPending` is deploy.yaml's
+  `max_pending_per_target`, which deploy validation holds at 1 or more; at 0
+  every envelope that cannot be sent at once would drop.
+
+  depth 3, maxPending 4 → false · depth 4 → true · depth 0, maxPending 0 → true.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="outbound_overflows" version="1.0">
+  <sce:signature>
+    <sce:param name="depth" type="uint32"/>
+    <sce:param name="maxPending" type="uint32"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="depth &gt;= maxPending"/>
+  </sce:body>
+</scxml>

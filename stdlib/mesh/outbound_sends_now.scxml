@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/outbound_sends_now.scxml — whether an envelope bound for one
+  target goes to its transport at once (SCE_MESH.md §mesh-10.10): only when
+  the transport is ready and nothing is queued ahead of it. An envelope
+  sent past a queue would overtake the ones waiting, so a ready transport
+  with a queue still queues until the queue has drained.
+
+  When this is false the envelope queues, unless outbound_overflows says
+  the queue is full.
+
+  ready, depth 0 → true · ready, depth 1 → false · not ready → false.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="outbound_sends_now" version="1.0">
+  <sce:signature>
+    <sce:param name="ready" type="bool"/>
+    <sce:param name="depth" type="uint32"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="ready &amp;&amp; depth === 0"/>
+  </sce:body>
+</scxml>

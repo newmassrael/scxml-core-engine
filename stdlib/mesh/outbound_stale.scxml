@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/outbound_stale.scxml — whether a queued envelope is dropped
+  instead of sent when its transport becomes ready (SCE_MESH.md §mesh-10.10):
+  it has waited longer than `maxAgeMs`. The drop is the OUTBOUND_STALE_DROP
+  of §mesh-16.7, raised with the age and the bound.
+
+  `maxAgeMs` is deploy.yaml's `max_age_ms`, which is at least 1 when given;
+  a buffer declared without one passes 0, which means no bound, not "drop
+  everything". An envelope exactly `maxAgeMs` old is still sent — the bound
+  is on waiting longer than it. Times are milliseconds of one monotonic
+  clock; a reading that cannot be subtracted within int64 fails `overflow`.
+
+  enqueued 100, now 150, maxAge 50 → false · now 151 → true · maxAge 0 → false.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="outbound_stale" version="1.0">
+  <sce:signature>
+    <sce:param name="enqueuedAtMs" type="int64"/>
+    <sce:param name="now" type="int64"/>
+    <sce:param name="maxAgeMs" type="int64"/>
+    <sce:return type="bool" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="stale" type="bool" init="false"/>
+    <sce:if cond="maxAgeMs &gt; 0">
+      <sce:assign target="stale" expr="now - enqueuedAtMs &gt; maxAgeMs"/>
+    </sce:if>
+    <sce:return expr="stale"/>
+  </sce:body>
+</scxml>
