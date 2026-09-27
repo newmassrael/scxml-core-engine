@@ -721,20 +721,28 @@ func (p *UndecodablePayloadIsReportedPolicy) ExecuteTransitionContent(source Und
 		switch transitionIndex {
 		case 1:
 			//line undecodable_payload_is_reported.scxml:65
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="answers" expr="answers + 1">
 	if err := p.assignVariable(`answers`, `_scxml_add(answers, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(UndecodablePayloadIsReportedEventErrorExecution, "<assign> to 'answers' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 2:
 			//line undecodable_payload_is_reported.scxml:68
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="notes" expr="notes + 1">
 	if err := p.assignVariable(`notes`, `_scxml_add(notes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(UndecodablePayloadIsReportedEventErrorExecution, "<assign> to 'notes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

@@ -3989,6 +3989,11 @@
           "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
           "symbol": "has_variable",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/core/ForeachHelper.h",
+          "symbol": "ForeachOutcome",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -4267,6 +4272,16 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
           "symbol": "ActionBlockAbort",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ForeachHelper.h",
+          "symbol": "ForeachOutcome",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeForeachAction",
           "kind": "implements"
         }
       ],

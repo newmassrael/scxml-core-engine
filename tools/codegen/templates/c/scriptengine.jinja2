@@ -486,32 +486,20 @@
 {# W3C SCXML B.2: the target is authored ECMAScript, lowered by the same
    frontend the reads go through — `arr[0]` names one cell whichever side
    of the `=` it is written on. #}
-{% macro lua_assign(loc, expr) %}
+{# `ends_block`: inside a <foreach> body, where W3C SCXML 4.6 has the
+   processor "cease execution of the foreach element and the block that
+   contains it" — every block this backend emits is its own C function, so
+   `return` ends the loop and the block at once. #}
+{% macro lua_assign(loc, expr, ends_block=false) %}
     if (luaL_dostring(sm->L,
         "{{ loc | to_lua_location | escape_c }} = ({{ expr | to_lua_expr | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
             "<assign> to '{{ loc | escape_c }}' failed");
-    }
-{% endmacro %}
-
-{# In-foreach-body assign variant: same chunk as lua_assign, but the
-   luaL_dostring return value is checked and the enclosing C `for` loop
-   is broken on failure (W3C SCXML 4.6 — first error inside <foreach>
-   body must cease execution of the loop). On error the lua stack carries
-   the chunk's error message; pop it so the next caller sees a clean
-   stack. The surrounding-block-abort half of the W3C sentence (cease
-   "the block that contains it") is deferred until a fixture forces the
-   stricter semantics — test156's pass guard only needs loop break.
-   This emit path is reachable only when emit_action is invoked with
-   `in_foreach=true`; the standalone `lua_assign` path stays silent-drop
-   so existing fixtures (test147 outside <foreach>) are unaffected. #}
-{% macro lua_assign_in_foreach_body(loc, expr) %}
-    if (luaL_dostring(sm->L,
-        "{{ loc | to_lua_location | escape_c }} = ({{ expr | to_lua_expr | escape_c }})") != 0) {
-        lua_pop(sm->L, 1);
-        break;
+{% if ends_block %}
+        return;
+{% endif %}
     }
 {% endmacro %}
 
@@ -631,7 +619,7 @@
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                 "a runtime-built expression failed to evaluate");
-            break;
+            return;  /* W3C SCXML 4.6: ends the <foreach> and its block */
         }
     }
 {% endmacro %}

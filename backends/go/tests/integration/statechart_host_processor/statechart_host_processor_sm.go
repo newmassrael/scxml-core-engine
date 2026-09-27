@@ -637,9 +637,9 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 	switch state {
 	case StatechartHostProcessorStateDispatching:
 		//line statechart_host_processor.scxml:36
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -698,7 +698,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 	}
 	}
 
-		}
+		}()
 	default:
 		// No entry actions
 	}
@@ -798,28 +798,40 @@ func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source Statecha
 		switch transitionIndex {
 		case 0:
 			//line statechart_host_processor.scxml:48
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="plain" expr="plain + 1">
 	if err := p.assignVariable(`plain`, `_scxml_add(plain, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<assign> to 'plain' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line statechart_host_processor.scxml:51
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="served" expr="served + 1">
 	if err := p.assignVariable(`served`, `_scxml_add(served, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<assign> to 'served' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 2:
 			//line statechart_host_processor.scxml:54
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="refused" expr="refused + 1">
 	if err := p.assignVariable(`refused`, `_scxml_add(refused, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<assign> to 'refused' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

@@ -656,6 +656,8 @@ func (p *InvokeParamErrorStartsTheChildSceSynthInvokeInvProbePolicy) ExecuteTran
 		switch transitionIndex {
 		case 0:
 			//line invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:26
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -689,9 +691,14 @@ func (p *InvokeParamErrorStartsTheChildSceSynthInvokeInvProbePolicy) ExecuteTran
 	if p.ParentExternalQueue != nil {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "childUp", Data: eventDataStr})
 	}
-		_ = paramFailed  // transition content has no block exit to take
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
 	}
 
+			}()
 		}
 	}
 }

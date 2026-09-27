@@ -440,9 +440,9 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteEntryAction
 	switch state {
 	case AutoforwardDequeuePointSceSynthInvokeInvProbeStateProbe:
 		//line autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:5
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -454,7 +454,7 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteEntryAction
 	}
 	}
 
-		}
+		}()
 	default:
 		// No entry actions
 	}
@@ -563,6 +563,8 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteTransitionC
 		switch transitionIndex {
 		case 1:
 			//line autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:13
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
@@ -574,11 +576,14 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteTransitionC
 	}
 	}
 
+			}()
 		}
 	case AutoforwardDequeuePointSceSynthInvokeInvProbeStateMarked:
 		switch transitionIndex {
 		case 0:
 			//line autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:18
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
@@ -590,6 +595,7 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteTransitionC
 	}
 	}
 
+			}()
 		}
 	}
 }

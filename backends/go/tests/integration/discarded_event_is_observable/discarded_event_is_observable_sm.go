@@ -756,20 +756,28 @@ func (p *DiscardedEventIsObservablePolicy) ExecuteTransitionContent(source Disca
 		switch transitionIndex {
 		case 0:
 			//line discarded_event_is_observable.scxml:38
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(DiscardedEventIsObservableEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line discarded_event_is_observable.scxml:41
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="nudges" expr="nudges + 1">
 	if err := p.assignVariable(`nudges`, `_scxml_add(nudges, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(DiscardedEventIsObservableEventErrorExecution, "<assign> to 'nudges' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

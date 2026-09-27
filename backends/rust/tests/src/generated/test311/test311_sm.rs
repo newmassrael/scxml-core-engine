@@ -615,6 +615,8 @@ impl StatePolicy for Test311Policy {
                             Test311Event::ErrorExecution,
                             "<assign> has an invalid or read-only location ''",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
                 }
             }

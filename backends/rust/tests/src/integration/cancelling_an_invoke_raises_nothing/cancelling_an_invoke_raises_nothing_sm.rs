@@ -1048,56 +1048,68 @@ impl StatePolicy for CancellingAnInvokeRaisesNothingPolicy {
                     0 => {
                         // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:33 :: s2 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="spurious">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(spurious, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "spurious", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'spurious': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    CancellingAnInvokeRaisesNothingEvent::ErrorExecution,
-                                    "<assign> to 'spurious' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="spurious">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(spurious, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "spurious", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'spurious': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            CancellingAnInvokeRaisesNothingEvent::ErrorExecution,
+                                            "<assign> to 'spurious' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }
                     1 => {
                         // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:36 :: s2 :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="spurious">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(spurious, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "spurious", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'spurious': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    CancellingAnInvokeRaisesNothingEvent::ErrorExecution,
-                                    "<assign> to 'spurious' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="spurious">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(spurious, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "spurious", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'spurious': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            CancellingAnInvokeRaisesNothingEvent::ErrorExecution,
+                                            "<assign> to 'spurious' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }

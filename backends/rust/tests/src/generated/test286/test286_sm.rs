@@ -598,6 +598,8 @@ impl StatePolicy for Test286Policy {
                             Test286Event::ErrorExecution,
                             "<assign> has an invalid or read-only location ''",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
 
                     // W3C SCXML 3.8.1: <raise event="foo">

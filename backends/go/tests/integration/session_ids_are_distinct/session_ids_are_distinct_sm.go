@@ -1037,12 +1037,16 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteTransitionContent(source SessionIds
 		switch transitionIndex {
 		case 0:
 			//line session_ids_are_distinct.scxml:101
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="firstSid" expr="_event.data.sid">
 	if err := p.assignVariable(`firstSid`, `_event.data.sid`); err != nil {
 		engine.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, "<assign> to 'firstSid' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

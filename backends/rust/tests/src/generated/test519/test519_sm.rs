@@ -737,7 +737,8 @@ impl StatePolicy for Test519Policy {
                         } // end of if let Some(ref _rt) = _resolved_target
 
                         // W3C SCXML 4.9: a <param> that could not be read raised an error while
-                        // this element was processed, so the rest of the block does not run.
+                        // this element was processed, so the rest of the block does not run —
+                        // from however deep a <foreach> it came.
                         if _param_failed {
                             break 'action_block;
                         }

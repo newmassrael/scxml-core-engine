@@ -409,7 +409,7 @@ class Test460StateMachine(
                 // SCE-MAP: test460.scxml:10 :: s0 :: _state_body
 
 
-            run {
+            if (run foreach@{
                 ensureScriptEngine()
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -422,13 +422,19 @@ class Test460StateMachine(
 
             engine.assign(sid, com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var2, 1)", "Var2 + 1"))
                     }
+                    false
                 } catch (e: com.sce.runtime.ActionBlockAbort) {
                     // W3C SCXML 4.9: a body element raised its error and ended the
                     // block; nothing more is raised here.
+                    true
                 } catch (e: Exception) {
                     raisePlatformError(Test460Event.Error.Execution, "<foreach array='Var1'> failed to iterate")
+                    true
                 }
-            }
+            }) {
+                // W3C SCXML 4.6 + 4.9: the block that contains the <foreach> ends.
+                return
+            } // end of run foreach@
             }
         }
     }

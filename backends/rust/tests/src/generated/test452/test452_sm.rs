@@ -653,7 +653,7 @@ impl StatePolicy for Test452Policy {
                                 Test452Event::ErrorExecution,
                                 "<assign> to 'foo' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }
@@ -679,7 +679,7 @@ impl StatePolicy for Test452Policy {
                                 Test452Event::ErrorExecution,
                                 "<assign> to 'foo.bar' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }

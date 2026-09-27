@@ -643,7 +643,7 @@ impl StatePolicy for Test176Policy {
                                 Test176Event::ErrorExecution,
                                 "<assign> to 'Var1' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }
@@ -718,7 +718,8 @@ impl StatePolicy for Test176Policy {
                         }
 
                         // W3C SCXML 4.9: a <param> that could not be read raised an error while
-                        // this element was processed, so the rest of the block does not run.
+                        // this element was processed, so the rest of the block does not run —
+                        // from however deep a <foreach> it came.
                         if _param_failed {
                             break 'action_block;
                         }
@@ -883,28 +884,34 @@ impl StatePolicy for Test176Policy {
                     0 => {
                         // SCE-MAP: test176.scxml:19 :: s0 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="Var2">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_event.data.aParam";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "Var2", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'Var2': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    Test176Event::ErrorExecution,
-                                    "<assign> to 'Var2' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="Var2">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_event.data.aParam";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "Var2", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'Var2': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            Test176Event::ErrorExecution,
+                                            "<assign> to 'Var2' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }

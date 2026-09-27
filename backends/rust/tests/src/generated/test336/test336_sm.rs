@@ -810,89 +810,92 @@ impl StatePolicy for Test336Policy {
                     0 => {
                         // SCE-MAP: test336.scxml:12 :: s0 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let event_data: &str = "";
 
-                            let event_data: &str = "";
-
-                            // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_event.origin")
-                            let _resolved_target: Option<String> = {
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                match se.evaluate_expression(&sid, "_event.origin") {
-                                    Ok(ref val)
-                                        if matches!(
-                                            val,
-                                            sce_rust_runtime::ScriptValue::Null
-                                                | sce_rust_runtime::ScriptValue::Undefined
-                                        ) =>
-                                    {
-                                        // W3C SCXML C.1 (test 496, 521): nil/undefined target raises error.communication
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test336Event::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach"));
-                                        None
-                                    }
-                                    Ok(val) => {
-                                        // §scxml-C-1: a target expression's value is read as text —
-                                        // the same reading C++ `resultToString` gives it.
-                                        let trimmed = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
-                                        if trimmed.starts_with("!") {
-                                            // W3C SCXML 6.2: Invalid target raises error.execution
-                                            {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test336Event::ErrorExecution, "<send> targetexpr produced a target this processor cannot address");
-                                                err_meta.metadata.send_id = send_id.clone();
-                                                engine.raise(err_meta);
-                                            }
+                                // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_event.origin")
+                                let _resolved_target: Option<String> = {
+                                    self.ensure_script_engine();
+                                    let sid = self.session_id.as_ref().unwrap().clone();
+                                    let se = self.script_engine.clone();
+                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                    match se.evaluate_expression(&sid, "_event.origin") {
+                                        Ok(ref val)
+                                            if matches!(
+                                                val,
+                                                sce_rust_runtime::ScriptValue::Null
+                                                    | sce_rust_runtime::ScriptValue::Undefined
+                                            ) =>
+                                        {
+                                            // W3C SCXML C.1 (test 496, 521): nil/undefined target raises error.communication
+                                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test336Event::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach"));
                                             None
-                                        } else {
-                                            Some(trimmed)
+                                        }
+                                        Ok(val) => {
+                                            // §scxml-C-1: a target expression's value is read as text —
+                                            // the same reading C++ `resultToString` gives it.
+                                            let trimmed = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                                            if trimmed.starts_with("!") {
+                                                // W3C SCXML 6.2: Invalid target raises error.execution
+                                                {
+                                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test336Event::ErrorExecution, "<send> targetexpr produced a target this processor cannot address");
+                                                    err_meta.metadata.send_id = send_id.clone();
+                                                    engine.raise(err_meta);
+                                                }
+                                                None
+                                            } else {
+                                                Some(trimmed)
+                                            }
+                                        }
+                                        Err(e) => {
+                                            ::sce_rust_runtime::sce_log_error!(
+                                                "targetexpr eval failed: {}",
+                                                e
+                                            );
+                                            engine.raise(
+                                                sce_rust_runtime::EventWithMetadata::platform_error(
+                                                    Test336Event::ErrorExecution,
+                                                    "<send> targetexpr failed to evaluate",
+                                                ),
+                                            );
+                                            None
                                         }
                                     }
-                                    Err(e) => {
-                                        ::sce_rust_runtime::sce_log_error!(
-                                            "targetexpr eval failed: {}",
-                                            e
-                                        );
-                                        engine.raise(
-                                            sce_rust_runtime::EventWithMetadata::platform_error(
-                                                Test336Event::ErrorExecution,
-                                                "<send> targetexpr failed to evaluate",
-                                            ),
-                                        );
-                                        None
-                                    }
-                                }
-                            };
+                                };
 
-                            if let Some(ref _rt) = _resolved_target {
-                                // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
-                                if _rt == "#_internal" {
-                                    {
-                                        let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                            Test336Event::Bar,
-                                        );
-                                        meta.set_event_data(event_data);
-                                        engine.raise(meta);
+                                if let Some(ref _rt) = _resolved_target {
+                                    // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
+                                    if _rt == "#_internal" {
+                                        {
+                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                                Test336Event::Bar,
+                                            );
+                                            meta.set_event_data(event_data);
+                                            engine.raise(meta);
+                                        }
+                                    } else {
+                                        {
+                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                                Test336Event::Bar,
+                                            );
+                                            meta.metadata =
+                                                sce_rust_runtime::EventMetadata::external(
+                                                    send_id.clone(),
+                                                    ::sce_rust_runtime::SceString::new(),
+                                                );
+                                            meta.set_event_data(event_data);
+                                            engine.raise_external_with_meta(meta);
+                                        }
                                     }
-                                } else {
-                                    {
-                                        let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                            Test336Event::Bar,
-                                        );
-                                        meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                            send_id.clone(),
-                                            ::sce_rust_runtime::SceString::new(),
-                                        );
-                                        meta.set_event_data(event_data);
-                                        engine.raise_external_with_meta(meta);
-                                    }
-                                }
-                            } // end of if let Some(ref _rt) = _resolved_target
+                                } // end of if let Some(ref _rt) = _resolved_target
 
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            }
                         }
                     }
                     _ => {}

@@ -1447,13 +1447,13 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	switch state {
 	case AiLoopStateAbandoned:
 		//line ai_loop.scxml:493
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	engine.Raise(sce.NewEventWithMetadata(AiLoopEventRunBlocked))
 
-		}
+		}()
 		// W3C SCXML 3.7: Final state reached — raise done.state.drive
 		engine.Raise(sce.NewEventWithMetadata(AiLoopEventDoneStateDrive))
 		// W3C SCXML 3.4 / §scxml-D-enterStates: a region of run
@@ -1466,9 +1466,9 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		}
 	case AiLoopStateClosing:
 		//line ai_loop.scxml:405
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_7"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -1518,18 +1518,19 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 			engine.Raise(errEvt)
 		}
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
-		}
+		}()
 	case AiLoopStateJudging:
 		//line ai_loop.scxml:344
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_3"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -1579,18 +1580,19 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 			engine.Raise(errEvt)
 		}
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
-		}
+		}()
 	case AiLoopStatePaused:
 		//line ai_loop.scxml:451
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_8"
 	{
@@ -1624,12 +1626,12 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	}
 	}
 
-		}
+		}()
 	case AiLoopStatePriming:
 		//line ai_loop.scxml:291
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -1679,23 +1681,24 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 			engine.Raise(errEvt)
 		}
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
-		}
+		}()
 	case AiLoopStateReflecting:
 		//line ai_loop.scxml:374
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="turns_since_reflect" expr="0">
 	if err := p.assignVariable(`turns_since_reflect`, `0`); err != nil {
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turns_since_reflect' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
@@ -1731,28 +1734,28 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	}
 	}
 
-		}
+		}()
 	case AiLoopStateReported:
 		//line ai_loop.scxml:426
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	engine.Raise(sce.NewEventWithMetadata(AiLoopEventRunConverged))
 
-		}
+		}()
 		// W3C SCXML 3.7: Final state reached — raise done.state.running
 		engine.Raise(sce.NewEventWithMetadata(AiLoopEventDoneStateRunning))
 	case AiLoopStateRestarting:
 		//line ai_loop.scxml:394
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="restarts" expr="restarts + 1">
 	if err := p.assignVariable(`restarts`, `_scxml_add(restarts, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'restarts' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
@@ -1788,17 +1791,17 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	}
 	}
 
-		}
+		}()
 	case AiLoopStateScreening:
 		//line ai_loop.scxml:327
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="screened" expr="screened + 1">
 	if err := p.assignVariable(`screened`, `_scxml_add(screened, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'screened' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
@@ -1834,25 +1837,25 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	}
 	}
 
-		}
+		}()
 	case AiLoopStateSpent:
 		//line ai_loop.scxml:529
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	engine.Raise(sce.NewEventWithMetadata(AiLoopEventRunExhausted))
 
-		}
+		}()
 	case AiLoopStateStuck:
 		//line ai_loop.scxml:434
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	engine.Raise(sce.NewEventWithMetadata(AiLoopEventRunExhausted))
 
-		}
+		}()
 		// W3C SCXML 3.7: Final state reached — raise done.state.running
 		engine.Raise(sce.NewEventWithMetadata(AiLoopEventDoneStateRunning))
 	default:
@@ -2285,6 +2288,8 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 		switch transitionIndex {
 		case 2:
 			//line ai_loop.scxml:362
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -2334,45 +2339,62 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 			engine.Raise(errEvt)
 		}
 	}
-		_ = paramFailed  // transition content has no block exit to take
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
 	}
 
+			}()
 		}
 	case AiLoopStatePaused:
 		switch transitionIndex {
 		case 0:
 			//line ai_loop.scxml:468
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="turns_since_reflect" expr="turns_since_reflect + 1">
 	if err := p.assignVariable(`turns_since_reflect`, `_scxml_add(turns_since_reflect, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turns_since_reflect' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case AiLoopStateReflecting:
 		switch transitionIndex {
 		case 0:
 			//line ai_loop.scxml:379
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="start_prompt" expr="_event.data.start_prompt">
 	if err := p.assignVariable(`start_prompt`, `_event.data.start_prompt`); err != nil {
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'start_prompt' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="turn_prompt" expr="_event.data.turn_prompt">
 	if err := p.assignVariable(`turn_prompt`, `_event.data.turn_prompt`); err != nil {
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turn_prompt' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="milestone" expr="_event.data.milestone">
 	if err := p.assignVariable(`milestone`, `_event.data.milestone`); err != nil {
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'milestone' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line ai_loop.scxml:385
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_4"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -2422,39 +2444,56 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 			engine.Raise(errEvt)
 		}
 	}
-		_ = paramFailed  // transition content has no block exit to take
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
 	}
 
+			}()
 		}
 	case AiLoopStateWithin:
 		switch transitionIndex {
 		case 0:
 			//line ai_loop.scxml:522
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="turns" expr="turns + 1">
 	if err := p.assignVariable(`turns`, `_scxml_add(turns, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turns' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line ai_loop.scxml:525
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="turns" expr="turns + 1">
 	if err := p.assignVariable(`turns`, `_scxml_add(turns, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turns' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case AiLoopStateWorking:
 		switch transitionIndex {
 		case 0:
 			//line ai_loop.scxml:311
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="turns_since_reflect" expr="turns_since_reflect + 1">
 	if err := p.assignVariable(`turns_since_reflect`, `_scxml_add(turns_since_reflect, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turns_since_reflect' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

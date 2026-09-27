@@ -655,25 +655,31 @@ class LuaScriptEngine : ScxmlScriptEngine {
         offerToScope(session, item)
         if (index.isNotEmpty()) offerToScope(session, index)
 
-        val length = LuaNative.rawLen(L, -1)
-        for (i in 1..length) {
-            LuaNative.rawGetI(L, -1, i)
-            val element = luaToKotlin(L, -1)
-            LuaNative.pop(L, 1)
+        // A body element that fails ends the loop by throwing (W3C SCXML 4.9),
+        // so the array table is popped however the loop is left; a skipped pop
+        // would leave it under every later value on this session's stack.
+        try {
+            val length = LuaNative.rawLen(L, -1)
+            for (i in 1..length) {
+                LuaNative.rawGetI(L, -1, i)
+                val element = luaToKotlin(L, -1)
+                LuaNative.pop(L, 1)
 
-            // Set item variable
-            pushKotlinValue(L, element)
-            LuaNative.setGlobal(L, item)
+                // Set item variable
+                pushKotlinValue(L, element)
+                LuaNative.setGlobal(L, item)
 
-            // Set index variable (0-based for ECMAScript compatibility)
-            if (index.isNotEmpty()) {
-                LuaNative.pushInteger(L, i - 1)
-                LuaNative.setGlobal(L, index)
+                // Set index variable (0-based for ECMAScript compatibility)
+                if (index.isNotEmpty()) {
+                    LuaNative.pushInteger(L, i - 1)
+                    LuaNative.setGlobal(L, index)
+                }
+
+                body()
             }
-
-            body()
+        } finally {
+            LuaNative.pop(L, 1)  // pop array table
         }
-        LuaNative.pop(L, 1)  // pop array table
     }
 
     override fun loadDataFromSrc(src: String, basePath: String): String? {

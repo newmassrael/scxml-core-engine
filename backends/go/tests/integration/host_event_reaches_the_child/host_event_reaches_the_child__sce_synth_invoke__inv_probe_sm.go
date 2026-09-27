@@ -413,9 +413,9 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteEntryActio
 	switch state {
 	case HostEventReachesTheChildSceSynthInvokeInvProbeStateWatch:
 		//line host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:5
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
@@ -427,7 +427,7 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteEntryActio
 	}
 	}
 
-		}
+		}()
 	default:
 		// No entry actions
 	}
@@ -512,6 +512,8 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteTransition
 		switch transitionIndex {
 		case 0:
 			//line host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:9
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -523,8 +525,11 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteTransition
 	}
 	}
 
+			}()
 		case 1:
 			//line host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:12
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
@@ -536,6 +541,7 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteTransition
 	}
 	}
 
+			}()
 		}
 	}
 }

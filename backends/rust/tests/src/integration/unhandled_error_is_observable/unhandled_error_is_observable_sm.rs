@@ -958,96 +958,114 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                     0 => {
                         // SCE-MAP: unhandled_error_is_observable.scxml:90 :: guarded :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="booms">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(booms, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "booms", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'booms': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            UnhandledErrorIsObservableEvent::ErrorExecution,
+                                            "<assign> to 'booms' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
+                            }
 
-                        {
-                            // W3C SCXML 5.3: <assign location="booms">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(booms, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "booms", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            {
+                                // W3C SCXML 5.3: <assign location="">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                // W3C SCXML 5.3/B.2: Invalid or read-only location ""
                                 ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'booms': {}",
-                                    e
+                                    "W3C SCXML 5.3: Invalid assign location ''"
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     UnhandledErrorIsObservableEvent::ErrorExecution,
-                                    "<assign> to 'booms' failed",
+                                    "<assign> has an invalid or read-only location ''",
                                 ));
+                                // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                break 'action_block;
                             }
-                        }
-
-                        {
-                            // W3C SCXML 5.3: <assign location="">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            // W3C SCXML 5.3/B.2: Invalid or read-only location ""
-                            ::sce_rust_runtime::sce_log_error!(
-                                "W3C SCXML 5.3: Invalid assign location ''"
-                            );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                UnhandledErrorIsObservableEvent::ErrorExecution,
-                                "<assign> has an invalid or read-only location ''",
-                            ));
                         }
                     }
                     1 => {
                         // SCE-MAP: unhandled_error_is_observable.scxml:94 :: guarded :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="caught">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(caught, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "caught", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'caught': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    UnhandledErrorIsObservableEvent::ErrorExecution,
-                                    "<assign> to 'caught' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="caught">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(caught, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "caught", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'caught': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            UnhandledErrorIsObservableEvent::ErrorExecution,
+                                            "<assign> to 'caught' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
-                        }
 
-                        {
-                            // W3C SCXML 5.3: <assign location="detail">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_event.name";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "detail", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'detail': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    UnhandledErrorIsObservableEvent::ErrorExecution,
-                                    "<assign> to 'detail' failed",
-                                ));
+                            {
+                                // W3C SCXML 5.3: <assign location="detail">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_event.name";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "detail", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'detail': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            UnhandledErrorIsObservableEvent::ErrorExecution,
+                                            "<assign> to 'detail' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }
@@ -1059,120 +1077,142 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                     0 => {
                         // SCE-MAP: unhandled_error_is_observable.scxml:55 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="pokes">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(pokes, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "pokes", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'pokes': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    UnhandledErrorIsObservableEvent::ErrorExecution,
-                                    "<assign> to 'pokes' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="pokes">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(pokes, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "pokes", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'pokes': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            UnhandledErrorIsObservableEvent::ErrorExecution,
+                                            "<assign> to 'pokes' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }
                     1 => {
                         // SCE-MAP: unhandled_error_is_observable.scxml:58 :: idle :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 3.8.1: <raise event="unheard">
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                UnhandledErrorIsObservableEvent::Unheard,
+                            ));
 
-                        // W3C SCXML 3.8.1: <raise event="unheard">
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            UnhandledErrorIsObservableEvent::Unheard,
-                        ));
+                            // W3C SCXML 3.8.1: <raise event="retry.error.execution">
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                UnhandledErrorIsObservableEvent::RetryErrorExecution,
+                            ));
 
-                        // W3C SCXML 3.8.1: <raise event="retry.error.execution">
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            UnhandledErrorIsObservableEvent::RetryErrorExecution,
-                        ));
-
-                        // W3C SCXML 3.8.1: <raise event="heard">
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            UnhandledErrorIsObservableEvent::Heard,
-                        ));
+                            // W3C SCXML 3.8.1: <raise event="heard">
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                UnhandledErrorIsObservableEvent::Heard,
+                            ));
+                        }
                     }
                     2 => {
                         // SCE-MAP: unhandled_error_is_observable.scxml:80 :: idle :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="heards">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(heards, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "heards", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'heards': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    UnhandledErrorIsObservableEvent::ErrorExecution,
-                                    "<assign> to 'heards' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="heards">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(heards, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "heards", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'heards': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            UnhandledErrorIsObservableEvent::ErrorExecution,
+                                            "<assign> to 'heards' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }
                     3 => {
                         // SCE-MAP: unhandled_error_is_observable.scxml:83 :: idle :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="booms">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(booms, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "booms", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'booms': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            UnhandledErrorIsObservableEvent::ErrorExecution,
+                                            "<assign> to 'booms' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
+                            }
 
-                        {
-                            // W3C SCXML 5.3: <assign location="booms">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(booms, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "booms", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            {
+                                // W3C SCXML 5.3: <assign location="">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                // W3C SCXML 5.3/B.2: Invalid or read-only location ""
                                 ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'booms': {}",
-                                    e
+                                    "W3C SCXML 5.3: Invalid assign location ''"
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     UnhandledErrorIsObservableEvent::ErrorExecution,
-                                    "<assign> to 'booms' failed",
+                                    "<assign> has an invalid or read-only location ''",
                                 ));
+                                // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                break 'action_block;
                             }
-                        }
-
-                        {
-                            // W3C SCXML 5.3: <assign location="">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            // W3C SCXML 5.3/B.2: Invalid or read-only location ""
-                            ::sce_rust_runtime::sce_log_error!(
-                                "W3C SCXML 5.3: Invalid assign location ''"
-                            );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                UnhandledErrorIsObservableEvent::ErrorExecution,
-                                "<assign> has an invalid or read-only location ''",
-                            ));
                         }
                     }
                     _ => {}

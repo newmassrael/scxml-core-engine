@@ -650,9 +650,9 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteEntryActions(state EventTypeNamesI
 	switch state {
 	case EventTypeNamesItsQueueStateS0:
 		//line event_type_names_its_queue.scxml:39
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -699,13 +699,14 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteEntryActions(state EventTypeNamesI
 		meta.Metadata.Data = eventDataStr
 		engine.Raise(meta)
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
-		}
+		}()
 	default:
 		// No entry actions
 	}
@@ -806,12 +807,15 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 		switch transitionIndex {
 		case 0:
 			//line event_type_names_its_queue.scxml:48
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	if p.evaluateGuard(`_scxml_eq(_event.type, "internal")`, engine) {
 
 	// W3C SCXML 5.3: <assign location="intCode" expr="1">
 	if err := p.assignVariable(`intCode`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'intCode' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	} else if p.evaluateGuard(`_scxml_eq(_event.type, "external")`, engine) {
@@ -819,6 +823,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 	// W3C SCXML 5.3: <assign location="intCode" expr="2">
 	if err := p.assignVariable(`intCode`, `2`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'intCode' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	} else {
@@ -826,17 +831,22 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 	// W3C SCXML 5.3: <assign location="intCode" expr="3">
 	if err := p.assignVariable(`intCode`, `3`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'intCode' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	}
+			}()
 		case 1:
 			//line event_type_names_its_queue.scxml:58
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	if p.evaluateGuard(`_scxml_eq(_event.type, "internal")`, engine) {
 
 	// W3C SCXML 5.3: <assign location="sendCode" expr="1">
 	if err := p.assignVariable(`sendCode`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'sendCode' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	} else if p.evaluateGuard(`_scxml_eq(_event.type, "external")`, engine) {
@@ -844,6 +854,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 	// W3C SCXML 5.3: <assign location="sendCode" expr="2">
 	if err := p.assignVariable(`sendCode`, `2`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'sendCode' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	} else {
@@ -851,17 +862,22 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 	// W3C SCXML 5.3: <assign location="sendCode" expr="3">
 	if err := p.assignVariable(`sendCode`, `3`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'sendCode' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	}
+			}()
 		case 2:
 			//line event_type_names_its_queue.scxml:68
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	if p.evaluateGuard(`_scxml_eq(_event.type, "internal")`, engine) {
 
 	// W3C SCXML 5.3: <assign location="extCode" expr="1">
 	if err := p.assignVariable(`extCode`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'extCode' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	} else if p.evaluateGuard(`_scxml_eq(_event.type, "external")`, engine) {
@@ -869,6 +885,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 	// W3C SCXML 5.3: <assign location="extCode" expr="2">
 	if err := p.assignVariable(`extCode`, `2`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'extCode' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	} else {
@@ -876,9 +893,11 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 	// W3C SCXML 5.3: <assign location="extCode" expr="3">
 	if err := p.assignVariable(`extCode`, `3`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'extCode' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	}
+			}()
 		}
 	}
 }

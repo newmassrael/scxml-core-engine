@@ -1112,7 +1112,7 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
 
     // §scxml-4.6: Use ForeachHelper as Single Source of Truth
     // ARCHITECTURE.md: Zero Duplication Principle - shared logic between Interpreter and AOT engines
-    bool success = Core::ForeachHelper::executeForeachWithActions(
+    Core::ForeachOutcome outcome = Core::ForeachHelper::executeForeachWithActions(
         scriptEngine_, sessionId_, jsArrayExpr, transformVariableName(itemVar),
         indexVar.empty() ? "" : transformVariableName(indexVar), [&](size_t i) -> bool {
             // Execute nested actions for this iteration
@@ -1121,25 +1121,24 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
 
             for (const auto &nestedAction : action.getIterationActions()) {
                 if (nestedAction && !nestedAction->execute(context)) {
-                    SCE_LOG_ERROR("Failed to execute action in foreach iteration {}", i);
-                    if (eventRaiser_ && eventRaiser_->isReady()) {
-                        eventRaiser_->raiseEvent("error.execution", "Failed to execute nested action in foreach");
-                    }
-                    return false;  // §scxml-4.6: Stop foreach execution on error
+                    // §scxml-4.9: the element raised its own error; stopping here
+                    // ends the iteration, and returning false below ends the block.
+                    SCE_LOG_DEBUG("Action in foreach iteration {} failed; the block ends", i);
+                    return false;
                 }
             }
             return true;  // Continue to next iteration
         });
 
-    // W3C SCXML compliance: Generate error.execution event on failure
-    if (!success) {
+    // §scxml-4.6: only a collection the <foreach> could not walk is its own error.
+    if (outcome == Core::ForeachOutcome::CollectionRejected) {
         SCE_LOG_ERROR("Foreach action execution failed for array expression: {}", arrayExpr);
         if (eventRaiser_ && eventRaiser_->isReady()) {
             eventRaiser_->raiseEvent("error.execution", "Foreach execution failed");
         }
     }
 
-    return success;
+    return outcome == Core::ForeachOutcome::Completed;
 }
 
 bool ActionExecutorImpl::setLoopVariable(const std::string &varName, const std::string &value, size_t iteration) {

@@ -750,11 +750,13 @@ impl StatePolicy for Test405Policy {
                     0 => {
                         // SCE-MAP: test405.scxml:24 :: s01p11 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML 3.8.1: <raise event="event3">
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            Test405Event::Event3,
-                        ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 3.8.1: <raise event="event3">
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                Test405Event::Event3,
+                            ));
+                        }
                     }
                     _ => {}
                 }
@@ -764,11 +766,13 @@ impl StatePolicy for Test405Policy {
                     0 => {
                         // SCE-MAP: test405.scxml:38 :: s01p21 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML 3.8.1: <raise event="event4">
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            Test405Event::Event4,
-                        ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 3.8.1: <raise event="event4">
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                Test405Event::Event4,
+                            ));
+                        }
                     }
                     _ => {}
                 }

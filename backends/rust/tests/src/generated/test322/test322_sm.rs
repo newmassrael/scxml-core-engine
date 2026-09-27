@@ -634,6 +634,8 @@ impl StatePolicy for Test322Policy {
                             Test322Event::ErrorExecution,
                             "<assign> has an invalid or read-only location '_sessionid'",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
 
                     // W3C SCXML 3.8.1: <raise event="foo">

@@ -588,9 +588,9 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteEntryActions(state InvokePrec
 	switch state {
 	case InvokePrecedesDequeueMidrunStateArm:
 		//line invoke_precedes_dequeue_midrun.scxml:45
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -605,12 +605,12 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteEntryActions(state InvokePrec
 	}
 	}
 
-		}
+		}()
 	case InvokePrecedesDequeueMidrunStatePhase:
 		//line invoke_precedes_dequeue_midrun.scxml:54
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
@@ -625,7 +625,7 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteEntryActions(state InvokePrec
 	}
 	}
 
-		}
+		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_watch", "phase", sce.NextInvokeCounter())
@@ -766,6 +766,8 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteTransitionContent(source Invo
 		switch transitionIndex {
 		case 1:
 			//line invoke_precedes_dequeue_midrun.scxml:82
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
@@ -777,6 +779,7 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteTransitionContent(source Invo
 	}
 	}
 
+			}()
 		}
 	}
 }

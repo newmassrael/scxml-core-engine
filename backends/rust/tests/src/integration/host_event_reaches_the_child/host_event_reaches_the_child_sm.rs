@@ -798,19 +798,21 @@ impl StatePolicy for HostEventReachesTheChildPolicy {
                     0 => {
                         // SCE-MAP: host_event_reaches_the_child.scxml:95 :: armed :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let event_data: &str = "";
 
-                            let event_data: &str = "";
+                                // W3C SCXML 6.4: Send to child invoke 'inv_probe' via #_inv_probe
+                                if let Some(ref mut child) = self.child_inv_probe {
+                                    child.raise_external_by_name("marker", &event_data);
+                                }
 
-                            // W3C SCXML 6.4: Send to child invoke 'inv_probe' via #_inv_probe
-                            if let Some(ref mut child) = self.child_inv_probe {
-                                child.raise_external_by_name("marker", &event_data);
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
                             }
-
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
                         }
                     }
                     _ => {}

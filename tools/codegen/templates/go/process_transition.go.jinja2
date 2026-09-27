@@ -135,13 +135,16 @@ func (p *{{ machine_name }}Policy) ExecuteTransitionContent(source {{ machine_na
 {% if trans.source_location %}
 			{{ sce_map.source_marker(trans.source_location, "go", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 {% for action in trans.actions %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "go", "			") -}}
 {%- endif %}
-			{% include 'actions/' ~ action.type ~ '.go.jinja2' %}
+			{% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
 
 {% endfor %}
+			}()
 {% endif %}
 {% endfor %}
 		}

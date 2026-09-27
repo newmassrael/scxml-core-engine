@@ -172,8 +172,8 @@
 		engine.Raise(errEvt)
 	}
 {% endif %}
-{% if in_entry_exit is defined and in_entry_exit %}
-	break
+{% if in_action_block is defined and in_action_block %}
+	return  // W3C SCXML 4.9: the error ends the block
 {% endif %}
 {% elif action.send_type_host_served %}
 	// §scxml-6.2.5: "{{ action.send_type }}" is served by the host, which
@@ -268,8 +268,8 @@
 		engine.Raise(errEvt)
 	}
 {% endif %}
-{% if in_entry_exit is defined and in_entry_exit %}
-	break
+{% if in_action_block is defined and in_action_block %}
+	return  // W3C SCXML 4.9: the error ends the block
 {% endif %}
 {% elif action.send_type and 'BasicHTTPEventProcessor' in action.send_type %}
 	// W3C SCXML C.2: BasicHTTP send
@@ -466,13 +466,14 @@
 		}
 {% endif %}
 {% if has_dynamic_params %}
-{% if in_entry_exit is defined and in_entry_exit %}
-		// W3C SCXML 4.9: the <param> error ends the block.
+{% if in_action_block is defined and in_action_block %}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 {% else %}
-		_ = paramFailed  // transition content has no block exit to take
+		_ = paramFailed  // no enclosing block to leave
 {% endif %}
 {% endif %}
 	}

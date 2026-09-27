@@ -608,19 +608,21 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) ExecuteEntr
 	switch state {
 	case AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateC0:
 		//line a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:19
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 4.6: foreach over items
 	{
 		foreachItemName := "item"
 		if foreachItemName == "" || !sce.IsValidIdentifier(foreachItemName) {
 			engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, "<foreach item='item'> is missing or not a legal variable name"))
+			return
 		} else {
 			foreachArrVal, foreachErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `items`)
 			if foreachErr != nil {
 				engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, "<foreach array='items'> failed to evaluate"))
+				return
 			} else if foreachArr, foreachOk := sce.ToSlice(foreachArrVal); foreachOk {
 				foreachSuccess := true
 				for foreachIdx, foreachItem := range foreachArr {
@@ -642,16 +644,18 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) ExecuteEntr
 
 				}
 				if !foreachSuccess {
-					engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, "an action inside <foreach> failed"))
+					engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, "<foreach> could not set its loop variable"))
+					return
 				}
 			} else {
 				// Not an array — raise error.execution (W3C SCXML 5.6)
 				engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, "<foreach array='items'> is not an array"))
+				return
 			}
 		}
 	}
 
-		}
+		}()
 	default:
 		// No entry actions
 	}

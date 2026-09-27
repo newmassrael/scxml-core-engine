@@ -741,43 +741,47 @@ impl StatePolicy for Test240SceSynthInvokeInvoke1Policy {
                     0 => {
                         // SCE-MAP: test240__sce_synth_invoke__invoke_1.scxml:9 :: sub02 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let event_data: &str = "";
 
-                            let event_data: &str = "";
-
-                            // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
-                            if let Some(ref parent_queue) = self.parent_external_queue {
-                                if let Ok(mut q) = parent_queue.lock() {
-                                    q.push(("success".to_string(), event_data.to_string()));
+                                // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
+                                if let Some(ref parent_queue) = self.parent_external_queue {
+                                    if let Ok(mut q) = parent_queue.lock() {
+                                        q.push(("success".to_string(), event_data.to_string()));
+                                    }
+                                } else {
                                 }
-                            } else {
-                            }
 
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            }
                         }
                     }
                     1 => {
                         // SCE-MAP: test240__sce_synth_invoke__invoke_1.scxml:12 :: sub02 :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
 
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                                let event_data: &str = "";
 
-                            let event_data: &str = "";
-
-                            // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
-                            if let Some(ref parent_queue) = self.parent_external_queue {
-                                if let Ok(mut q) = parent_queue.lock() {
-                                    q.push(("failure".to_string(), event_data.to_string()));
+                                // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
+                                if let Some(ref parent_queue) = self.parent_external_queue {
+                                    if let Ok(mut q) = parent_queue.lock() {
+                                        q.push(("failure".to_string(), event_data.to_string()));
+                                    }
+                                } else {
                                 }
-                            } else {
-                            }
 
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            }
                         }
                     }
                     _ => {}

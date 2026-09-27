@@ -163,6 +163,9 @@ public:
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "cpp", "                    ") -}}
 {%- endif %}
+{# W3C SCXML 4.9: a transition's content is its own block, and this call runs
+   exactly one transition's, so leaving the function ends that block. #}
+{% set block_exit = 'return;' %}
 {% include 'actions/' + action.type + '.jinja2' %}
 {% endfor %}
                 }

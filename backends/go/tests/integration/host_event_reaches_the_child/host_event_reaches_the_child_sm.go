@@ -728,6 +728,8 @@ func (p *HostEventReachesTheChildPolicy) ExecuteTransitionContent(source HostEve
 		switch transitionIndex {
 		case 0:
 			//line host_event_reaches_the_child.scxml:95
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -739,6 +741,7 @@ func (p *HostEventReachesTheChildPolicy) ExecuteTransitionContent(source HostEve
 	}
 	}
 
+			}()
 		}
 	}
 }

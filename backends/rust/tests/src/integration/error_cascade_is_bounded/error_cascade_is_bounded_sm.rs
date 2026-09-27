@@ -751,6 +751,8 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                             ErrorCascadeIsBoundedEvent::ErrorExecution,
                             "<assign> has an invalid or read-only location ''",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
                 }
             }
@@ -773,6 +775,8 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                             ErrorCascadeIsBoundedEvent::ErrorExecution,
                             "<assign> has an invalid or read-only location ''",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
                 }
             }
@@ -1019,49 +1023,59 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                     0 => {
                         // SCE-MAP: error_cascade_is_bounded.scxml:68 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="pokes">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(pokes, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "pokes", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'pokes': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    ErrorCascadeIsBoundedEvent::ErrorExecution,
-                                    "<assign> to 'pokes' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="pokes">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(pokes, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "pokes", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'pokes': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            ErrorCascadeIsBoundedEvent::ErrorExecution,
+                                            "<assign> to 'pokes' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }
                     1 => {
                         // SCE-MAP: error_cascade_is_bounded.scxml:74 :: idle :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            // W3C SCXML 5.3/B.2: Invalid or read-only location ""
-                            ::sce_rust_runtime::sce_log_error!(
-                                "W3C SCXML 5.3: Invalid assign location ''"
-                            );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                ErrorCascadeIsBoundedEvent::ErrorExecution,
-                                "<assign> has an invalid or read-only location ''",
-                            ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                // W3C SCXML 5.3/B.2: Invalid or read-only location ""
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "W3C SCXML 5.3: Invalid assign location ''"
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    ErrorCascadeIsBoundedEvent::ErrorExecution,
+                                    "<assign> has an invalid or read-only location ''",
+                                ));
+                                // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                break 'action_block;
+                            }
                         }
                     }
                     _ => {}
@@ -1072,105 +1086,125 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                     0 => {
                         // SCE-MAP: error_cascade_is_bounded.scxml:107 :: runaway :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="runs">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(runs, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "runs", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'runs': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            ErrorCascadeIsBoundedEvent::ErrorExecution,
+                                            "<assign> to 'runs' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
+                            }
 
-                        {
-                            // W3C SCXML 5.3: <assign location="runs">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(runs, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "runs", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            // W3C SCXML 3.8.1: <raise event="tick">
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                ErrorCascadeIsBoundedEvent::Tick,
+                            ));
+
+                            {
+                                // W3C SCXML 5.3: <assign location="">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                // W3C SCXML 5.3/B.2: Invalid or read-only location ""
                                 ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'runs': {}",
-                                    e
+                                    "W3C SCXML 5.3: Invalid assign location ''"
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     ErrorCascadeIsBoundedEvent::ErrorExecution,
-                                    "<assign> to 'runs' failed",
+                                    "<assign> has an invalid or read-only location ''",
                                 ));
+                                // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                break 'action_block;
                             }
-                        }
-
-                        // W3C SCXML 3.8.1: <raise event="tick">
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            ErrorCascadeIsBoundedEvent::Tick,
-                        ));
-
-                        {
-                            // W3C SCXML 5.3: <assign location="">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            // W3C SCXML 5.3/B.2: Invalid or read-only location ""
-                            ::sce_rust_runtime::sce_log_error!(
-                                "W3C SCXML 5.3: Invalid assign location ''"
-                            );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                ErrorCascadeIsBoundedEvent::ErrorExecution,
-                                "<assign> has an invalid or read-only location ''",
-                            ));
                         }
                     }
                     1 => {
                         // SCE-MAP: error_cascade_is_bounded.scxml:120 :: runaway :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="ticks">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(ticks, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "ticks", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'ticks': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    ErrorCascadeIsBoundedEvent::ErrorExecution,
-                                    "<assign> to 'ticks' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="ticks">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(ticks, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "ticks", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'ticks': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            ErrorCascadeIsBoundedEvent::ErrorExecution,
+                                            "<assign> to 'ticks' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }
                     2 => {
                         // SCE-MAP: error_cascade_is_bounded.scxml:123 :: runaway :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="pokes">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(pokes, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "pokes", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'pokes': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    ErrorCascadeIsBoundedEvent::ErrorExecution,
-                                    "<assign> to 'pokes' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="pokes">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(pokes, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "pokes", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'pokes': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            ErrorCascadeIsBoundedEvent::ErrorExecution,
+                                            "<assign> to 'pokes' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }
@@ -1182,72 +1216,86 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                     0 => {
                         // SCE-MAP: error_cascade_is_bounded.scxml:89 :: settling :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="repairs">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(repairs, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "repairs", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'repairs': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            ErrorCascadeIsBoundedEvent::ErrorExecution,
+                                            "<assign> to 'repairs' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
+                            }
 
-                        {
-                            // W3C SCXML 5.3: <assign location="repairs">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(repairs, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "repairs", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            {
+                                // W3C SCXML 5.3: <assign location="">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                // W3C SCXML 5.3/B.2: Invalid or read-only location ""
                                 ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'repairs': {}",
-                                    e
+                                    "W3C SCXML 5.3: Invalid assign location ''"
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     ErrorCascadeIsBoundedEvent::ErrorExecution,
-                                    "<assign> to 'repairs' failed",
+                                    "<assign> has an invalid or read-only location ''",
                                 ));
+                                // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                break 'action_block;
                             }
-                        }
-
-                        {
-                            // W3C SCXML 5.3: <assign location="">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            // W3C SCXML 5.3/B.2: Invalid or read-only location ""
-                            ::sce_rust_runtime::sce_log_error!(
-                                "W3C SCXML 5.3: Invalid assign location ''"
-                            );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                ErrorCascadeIsBoundedEvent::ErrorExecution,
-                                "<assign> has an invalid or read-only location ''",
-                            ));
                         }
                     }
                     1 => {
                         // SCE-MAP: error_cascade_is_bounded.scxml:93 :: settling :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="pokes">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(pokes, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "pokes", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'pokes': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    ErrorCascadeIsBoundedEvent::ErrorExecution,
-                                    "<assign> to 'pokes' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="pokes">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(pokes, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "pokes", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'pokes': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            ErrorCascadeIsBoundedEvent::ErrorExecution,
+                                            "<assign> to 'pokes' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }

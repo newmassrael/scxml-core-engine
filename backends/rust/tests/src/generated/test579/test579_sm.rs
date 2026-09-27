@@ -735,10 +735,13 @@ impl StatePolicy for Test579Policy {
     ) {
         match history {
             Test579History::Sh1 => {
-                // W3C SCXML 3.8.1: <raise event="event3">
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                    Test579Event::Event3,
-                ));
+                // W3C SCXML 4.9: the default content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 3.8.1: <raise event="event3">
+                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                        Test579Event::Event3,
+                    ));
+                }
             }
             _ => {}
         }
@@ -795,7 +798,7 @@ impl StatePolicy for Test579Policy {
                                 Test579Event::ErrorExecution,
                                 "<assign> to 'Var1' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }

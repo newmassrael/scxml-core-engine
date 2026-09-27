@@ -779,9 +779,11 @@ impl StatePolicy for Test207Policy {
                     0 => {
                         // SCE-MAP: test207.scxml:44 :: s01 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML 6.3: <cancel sendid="foo">
-                        engine.cancel_event("foo");
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 6.3: <cancel sendid="foo">
+                            engine.cancel_event("foo");
+                        }
                     }
                     _ => {}
                 }

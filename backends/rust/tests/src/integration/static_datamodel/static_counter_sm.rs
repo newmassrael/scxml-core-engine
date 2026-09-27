@@ -658,21 +658,25 @@ impl StatePolicy for StaticCounterPolicy {
                     0 => {
                         // SCE-MAP: static_counter.scxml:22 :: counting :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="count">
+                            let _ =
+                                (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                                    self.count = sce_forge_runtime::algorithm::add::<u32>(
+                                        self.count, self.step,
+                                    )?;
+                                    Ok(())
+                                })();
 
-                        // W3C SCXML 5.3: <assign location="count">
-                        let _ = (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.count =
-                                sce_forge_runtime::algorithm::add::<u32>(self.count, self.step)?;
-                            Ok(())
-                        })();
-
-                        // W3C SCXML 5.9: cond="count === 5"
-                        if self.count == 5 {
-                            // W3C SCXML 5.3: <assign location="ready">
-                            self.ready = true;
-                        } else if self.count > 7 {
-                            // W3C SCXML 5.3: <assign location="ready">
-                            self.ready = false;
+                            // W3C SCXML 5.9: cond="count === 5"
+                            if self.count == 5 {
+                                // W3C SCXML 5.3: <assign location="ready">
+                                self.ready = true;
+                            } else if self.count > 7 {
+                                // W3C SCXML 5.3: <assign location="ready">
+                                self.ready = false;
+                            }
                         }
                     }
                     _ => {}

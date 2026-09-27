@@ -863,43 +863,59 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionContent(source Unhan
 		switch transitionIndex {
 		case 0:
 			//line unhandled_error_is_observable.scxml:90
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="booms" expr="booms + 1">
 	if err := p.assignVariable(`booms`, `_scxml_add(booms, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'booms' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
 	engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> has an invalid or read-only location ''"))
+	return  // W3C SCXML 4.9: the error ends the block
 
+			}()
 		case 1:
 			//line unhandled_error_is_observable.scxml:94
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="caught" expr="caught + 1">
 	if err := p.assignVariable(`caught`, `_scxml_add(caught, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'caught' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="detail" expr="_event.name">
 	if err := p.assignVariable(`detail`, `_event.name`); err != nil {
 		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'detail' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case UnhandledErrorIsObservableStateIdle:
 		switch transitionIndex {
 		case 0:
 			//line unhandled_error_is_observable.scxml:55
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line unhandled_error_is_observable.scxml:58
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	engine.Raise(sce.NewEventWithMetadata(UnhandledErrorIsObservableEventUnheard))
 
@@ -909,26 +925,36 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionContent(source Unhan
 
 	engine.Raise(sce.NewEventWithMetadata(UnhandledErrorIsObservableEventHeard))
 
+			}()
 		case 2:
 			//line unhandled_error_is_observable.scxml:80
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="heards" expr="heards + 1">
 	if err := p.assignVariable(`heards`, `_scxml_add(heards, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'heards' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 3:
 			//line unhandled_error_is_observable.scxml:83
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="booms" expr="booms + 1">
 	if err := p.assignVariable(`booms`, `_scxml_add(booms, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'booms' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
 	engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> has an invalid or read-only location ''"))
+	return  // W3C SCXML 4.9: the error ends the block
 
+			}()
 		}
 	}
 }

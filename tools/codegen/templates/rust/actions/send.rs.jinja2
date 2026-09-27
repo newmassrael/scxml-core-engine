@@ -311,7 +311,7 @@
         engine.raise(err_meta);
     }
 {% endif %}
-{% if in_entry_exit is defined and in_entry_exit %}
+{% if in_action_block is defined and in_action_block %}
     break 'action_block;
 {% endif %}
 {% elif action.send_type_host_served %}
@@ -411,7 +411,7 @@
         engine.raise(err_meta);
     }
 {% endif %}
-{% if in_entry_exit is defined and in_entry_exit %}
+{% if in_action_block is defined and in_action_block %}
     break 'action_block;
 {% endif %}
 {% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.target and not action.targetexpr %}
@@ -423,7 +423,7 @@
         engine.raise(err_meta);
     }
 {% endif %}
-{% if in_entry_exit is defined and in_entry_exit %}
+{% if in_action_block is defined and in_action_block %}
     break 'action_block;
 {% endif %}
 {% elif not action.targetexpr and action.target == '#_internal' %}
@@ -689,21 +689,15 @@
     } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on an argument error)
 {% endif %}
 {% if _param_can_fail.any %}
-{% if in_foreach is defined and in_foreach %}
+{% if in_action_block is defined and in_action_block %}
     // W3C SCXML 4.9: a <param> that could not be read raised an error while
-    // this element was processed, so the rest of the foreach body does not run.
-    if _param_failed {
-        iteration_success = false;
-        break 'foreach_body;
-    }
-{% elif in_entry_exit is defined and in_entry_exit %}
-    // W3C SCXML 4.9: a <param> that could not be read raised an error while
-    // this element was processed, so the rest of the block does not run.
+    // this element was processed, so the rest of the block does not run —
+    // from however deep a <foreach> it came.
     if _param_failed {
         break 'action_block;
     }
 {% else %}
-    let _ = _param_failed;  // transition content has no block exit to take
+    let _ = _param_failed;  // no enclosing block to leave
 {% endif %}
 {% endif %}
     let _ = send_id;  // suppress unused warning when no send operation

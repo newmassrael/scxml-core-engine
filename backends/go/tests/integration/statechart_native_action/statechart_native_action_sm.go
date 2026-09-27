@@ -513,13 +513,13 @@ func (p *StatechartNativeActionPolicy) ExecuteEntryActions(state StatechartNativ
 	switch state {
 	case StatechartNativeActionStateIdle:
 		//line statechart_native_action.scxml:38
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 		// W3C SCXML G.7: <sce:action name="on_idle_entry">
 		p.actions.OnIdleEntry()
-		}
+		}()
 	default:
 		// No entry actions
 	}
@@ -547,13 +547,13 @@ func (p *StatechartNativeActionPolicy) ExecuteExitActions(state StatechartNative
 	switch state {
 	case StatechartNativeActionStateAssembling:
 		//line statechart_native_action.scxml:59
-		// W3C SCXML 3.9: onexit block 0
-		for exitBlock0 := 0; exitBlock0 < 1; exitBlock0++ {
-			_ = exitBlock0
+		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
+		// error ends it with `return`.
+		func() {
 
 		// W3C SCXML G.7: <sce:action name="on_assembling_exit">
 		p.actions.OnAssemblingExit()
-		}
+		}()
 	default:
 		// No exit actions
 	}
@@ -647,14 +647,19 @@ func (p *StatechartNativeActionPolicy) ExecuteTransitionContent(source Statechar
 		switch transitionIndex {
 		case 0:
 			//line statechart_native_action.scxml:63
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 		// W3C SCXML G.7: <sce:action name="reset_slot">
 		p.actions.ResetSlot()
+			}()
 		}
 	case StatechartNativeActionStateIdle:
 		switch transitionIndex {
 		case 0:
 			//line statechart_native_action.scxml:42
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 		// W3C SCXML G.7: <sce:action name="append_fragment_payload">
 		if p.pendingPayloadTag == StatechartNativeActionPayloadTagFragmentReceived {
@@ -662,11 +667,15 @@ func (p *StatechartNativeActionPolicy) ExecuteTransitionContent(source Statechar
 	} else {
 		engine.Raise(sce.NewPlatformError(StatechartNativeActionEventErrorExecution, "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry"))
 	}
+			}()
 		case 1:
 			//line statechart_native_action.scxml:55
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	engine.Raise(sce.NewEventWithMetadata(StatechartNativeActionEventFragmentReceived))
 
+			}()
 		}
 	}
 }

@@ -702,9 +702,9 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 	switch state {
 	case APayloadRidesOnItsOwnEventStateS0:
 		//line a_payload_rides_on_its_own_event.scxml:37
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	engine.Raise(sce.NewEventWithMetadata(APayloadRidesOnItsOwnEventEventPlain1))
 
@@ -737,16 +737,17 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 		meta.Metadata.Data = eventDataStr
 		engine.Raise(meta)
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
-		}
-		// W3C SCXML 3.8: onentry block 1 (break on error stops subsequent actions)
-		for actionBlock1 := 0; actionBlock1 < 1; actionBlock1++ {
-			_ = actionBlock1
+		}()
+		// W3C SCXML 3.8 + 4.9: onentry block 1, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -777,19 +778,20 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
 
 	engine.Raise(sce.NewEventWithMetadata(APayloadRidesOnItsOwnEventEventPlain2))
 
-		}
-		// W3C SCXML 3.8: onentry block 2 (break on error stops subsequent actions)
-		for actionBlock2 := 0; actionBlock2 < 1; actionBlock2++ {
-			_ = actionBlock2
+		}()
+		// W3C SCXML 3.8 + 4.9: onentry block 2, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -831,10 +833,10 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 
 	engine.Raise(sce.NewEventWithMetadata(APayloadRidesOnItsOwnEventEventPlain3))
 
-		}
-		// W3C SCXML 3.8: onentry block 3 (break on error stops subsequent actions)
-		for actionBlock3 := 0; actionBlock3 < 1; actionBlock3++ {
-			_ = actionBlock3
+		}()
+		// W3C SCXML 3.8 + 4.9: onentry block 3, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_3"
 	{
@@ -862,7 +864,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 
 	engine.Raise(sce.NewEventWithMetadata(APayloadRidesOnItsOwnEventEventPlain4))
 
-		}
+		}()
 	default:
 		// No entry actions
 	}
@@ -1003,52 +1005,76 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteTransitionContent(source APayl
 		switch transitionIndex {
 		case 0:
 			//line a_payload_rides_on_its_own_event.scxml:61
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="stolen" expr="stolen + 1">
 	if err := p.assignVariable(`stolen`, `_scxml_add(stolen, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<assign> to 'stolen' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line a_payload_rides_on_its_own_event.scxml:64
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="plains" expr="plains + 1">
 	if err := p.assignVariable(`plains`, `_scxml_add(plains, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<assign> to 'plains' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 2:
 			//line a_payload_rides_on_its_own_event.scxml:67
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="got" expr="got + 1">
 	if err := p.assignVariable(`got`, `_scxml_add(got, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<assign> to 'got' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 3:
 			//line a_payload_rides_on_its_own_event.scxml:70
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="got" expr="got + 1">
 	if err := p.assignVariable(`got`, `_scxml_add(got, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<assign> to 'got' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 4:
 			//line a_payload_rides_on_its_own_event.scxml:73
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="got" expr="got + 1">
 	if err := p.assignVariable(`got`, `_scxml_add(got, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<assign> to 'got' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 5:
 			//line a_payload_rides_on_its_own_event.scxml:76
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="got" expr="got + 1">
 	if err := p.assignVariable(`got`, `_scxml_add(got, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<assign> to 'got' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

@@ -702,26 +702,26 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteEntryActions(state ErrorCascadeIsBo
 	switch state {
 	case ErrorCascadeIsBoundedStateRunaway:
 		//line error_cascade_is_bounded.scxml:103
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
 	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> has an invalid or read-only location ''"))
-	break
+	return  // W3C SCXML 4.9: the error ends the block
 
-		}
+		}()
 	case ErrorCascadeIsBoundedStateSettling:
 		//line error_cascade_is_bounded.scxml:85
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
 	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> has an invalid or read-only location ''"))
-	break
+	return  // W3C SCXML 4.9: the error ends the block
 
-		}
+		}()
 	default:
 		// No entry actions
 	}
@@ -909,27 +909,38 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 		switch transitionIndex {
 		case 0:
 			//line error_cascade_is_bounded.scxml:68
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line error_cascade_is_bounded.scxml:74
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
 	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> has an invalid or read-only location ''"))
+	return  // W3C SCXML 4.9: the error ends the block
 
+			}()
 		}
 	case ErrorCascadeIsBoundedStateRunaway:
 		switch transitionIndex {
 		case 0:
 			//line error_cascade_is_bounded.scxml:107
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="runs" expr="runs + 1">
 	if err := p.assignVariable(`runs`, `_scxml_add(runs, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'runs' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
@@ -938,46 +949,65 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
 	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> has an invalid or read-only location ''"))
+	return  // W3C SCXML 4.9: the error ends the block
 
+			}()
 		case 1:
 			//line error_cascade_is_bounded.scxml:120
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="ticks" expr="ticks + 1">
 	if err := p.assignVariable(`ticks`, `_scxml_add(ticks, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'ticks' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 2:
 			//line error_cascade_is_bounded.scxml:123
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case ErrorCascadeIsBoundedStateSettling:
 		switch transitionIndex {
 		case 0:
 			//line error_cascade_is_bounded.scxml:89
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="repairs" expr="repairs + 1">
 	if err := p.assignVariable(`repairs`, `_scxml_add(repairs, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'repairs' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
 	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> has an invalid or read-only location ''"))
+	return  // W3C SCXML 4.9: the error ends the block
 
+			}()
 		case 1:
 			//line error_cascade_is_bounded.scxml:93
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

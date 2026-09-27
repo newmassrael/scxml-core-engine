@@ -689,12 +689,16 @@ func (p *UnseenEventIsReportedPolicy) ExecuteTransitionContent(source UnseenEven
 		switch transitionIndex {
 		case 0:
 			//line unseen_event_is_reported.scxml:48
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(UnseenEventIsReportedEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

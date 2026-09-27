@@ -1003,9 +1003,9 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		}
 	case SendParamPayloadStateEscapePhase:
 		//line send_param_payload.scxml:236
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_3"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -1041,18 +1041,19 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		meta.Metadata.Data = eventDataStr
 		engine.Raise(meta)
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
-		}
+		}()
 	case SendParamPayloadStateInternalPhase:
 		//line send_param_payload.scxml:125
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -1075,12 +1076,12 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 	}
 	}
 
-		}
+		}()
 	case SendParamPayloadStateParamErrorPhase:
 		//line send_param_payload.scxml:192
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -1111,18 +1112,19 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		meta.Metadata.Data = eventDataStr
 		engine.Raise(meta)
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
-		}
+		}()
 	case SendParamPayloadStateTypedPhase:
 		//line send_param_payload.scxml:141
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -1170,13 +1172,14 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		meta.Metadata.Data = eventDataStr
 		engine.Raise(meta)
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
-		}
+		}()
 	default:
 		// No entry actions
 	}
@@ -1440,12 +1443,16 @@ func (p *SendParamPayloadPolicy) ExecuteTransitionContent(source SendParamPayloa
 		switch transitionIndex {
 		case 0:
 			//line send_param_payload.scxml:199
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="sawParamError" expr="1">
 	if err := p.assignVariable(`sawParamError`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<assign> to 'sawParamError' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

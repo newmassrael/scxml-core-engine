@@ -899,20 +899,28 @@ func (p *CancellingAnInvokeRaisesNothingPolicy) ExecuteTransitionContent(source 
 		switch transitionIndex {
 		case 0:
 			//line cancelling_an_invoke_raises_nothing.scxml:33
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="spurious" expr="spurious + 1">
 	if err := p.assignVariable(`spurious`, `_scxml_add(spurious, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(CancellingAnInvokeRaisesNothingEventErrorExecution, "<assign> to 'spurious' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line cancelling_an_invoke_raises_nothing.scxml:36
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="spurious" expr="spurious + 1">
 	if err := p.assignVariable(`spurious`, `_scxml_add(spurious, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(CancellingAnInvokeRaisesNothingEventErrorExecution, "<assign> to 'spurious' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

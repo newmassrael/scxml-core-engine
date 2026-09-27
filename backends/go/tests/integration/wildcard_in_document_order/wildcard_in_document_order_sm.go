@@ -800,54 +800,54 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteEntryActions(state WildcardInDocu
 	switch state {
 	case WildcardInDocumentOrderStateGuardClosed:
 		//line wildcard_in_document_order.scxml:58
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	engine.Raise(sce.NewEventWithMetadata(WildcardInDocumentOrderEventProbe))
 
-		}
+		}()
 	case WildcardInDocumentOrderStateGuardedInternal:
 		//line wildcard_in_document_order.scxml:80
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="guardedEntries" expr="guardedEntries + 1">
 	if err := p.assignVariable(`guardedEntries`, `_scxml_add(guardedEntries, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, "<assign> to 'guardedEntries' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	engine.Raise(sce.NewEventWithMetadata(WildcardInDocumentOrderEventHop))
 
-		}
+		}()
 	case WildcardInDocumentOrderStateGuardOpen:
 		//line wildcard_in_document_order.scxml:70
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	engine.Raise(sce.NewEventWithMetadata(WildcardInDocumentOrderEventProbe))
 
-		}
+		}()
 	case WildcardInDocumentOrderStateSealedInternal:
 		//line wildcard_in_document_order.scxml:93
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="sealedEntries" expr="sealedEntries + 1">
 	if err := p.assignVariable(`sealedEntries`, `_scxml_add(sealedEntries, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, "<assign> to 'sealedEntries' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	engine.Raise(sce.NewEventWithMetadata(WildcardInDocumentOrderEventHop))
 
-		}
+		}()
 	default:
 		// No entry actions
 	}
@@ -1034,12 +1034,16 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteTransitionContent(source Wildcard
 		switch transitionIndex {
 		case 0:
 			//line wildcard_in_document_order.scxml:62
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="armed" expr="true">
 	if err := p.assignVariable(`armed`, `true`); err != nil {
 		engine.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, "<assign> to 'armed' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

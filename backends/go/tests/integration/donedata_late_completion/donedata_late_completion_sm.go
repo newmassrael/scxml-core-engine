@@ -874,6 +874,8 @@ func (p *DonedataLateCompletionPolicy) ExecuteTransitionContent(source DonedataL
 		switch transitionIndex {
 		case 0:
 			//line donedata_late_completion.scxml:67
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -885,6 +887,7 @@ func (p *DonedataLateCompletionPolicy) ExecuteTransitionContent(source DonedataL
 	}
 	}
 
+			}()
 		}
 	}
 }

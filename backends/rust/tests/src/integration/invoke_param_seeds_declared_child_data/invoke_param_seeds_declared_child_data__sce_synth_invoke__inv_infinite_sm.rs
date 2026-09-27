@@ -781,64 +781,76 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteP
                     0 => {
                         // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:9 :: report :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let event_data: &str = "";
 
-                            let event_data: &str = "";
-
-                            // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
-                            if let Some(ref parent_queue) = self.parent_external_queue {
-                                if let Ok(mut q) = parent_queue.lock() {
-                                    q.push(("seed.ok".to_string(), event_data.to_string()));
+                                // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
+                                if let Some(ref parent_queue) = self.parent_external_queue {
+                                    if let Ok(mut q) = parent_queue.lock() {
+                                        q.push(("seed.ok".to_string(), event_data.to_string()));
+                                    }
+                                } else {
                                 }
-                            } else {
-                            }
 
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            }
                         }
                     }
                     1 => {
                         // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:12 :: report :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
 
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                                let event_data: &str = "";
 
-                            let event_data: &str = "";
-
-                            // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
-                            if let Some(ref parent_queue) = self.parent_external_queue {
-                                if let Ok(mut q) = parent_queue.lock() {
-                                    q.push(("seed.missing".to_string(), event_data.to_string()));
+                                // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
+                                if let Some(ref parent_queue) = self.parent_external_queue {
+                                    if let Ok(mut q) = parent_queue.lock() {
+                                        q.push((
+                                            "seed.missing".to_string(),
+                                            event_data.to_string(),
+                                        ));
+                                    }
+                                } else {
                                 }
-                            } else {
-                            }
 
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            }
                         }
                     }
                     2 => {
                         // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:15 :: report :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
 
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                                let event_data: &str = "";
 
-                            let event_data: &str = "";
-
-                            // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
-                            if let Some(ref parent_queue) = self.parent_external_queue {
-                                if let Ok(mut q) = parent_queue.lock() {
-                                    q.push(("seed.collapsed".to_string(), event_data.to_string()));
+                                // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
+                                if let Some(ref parent_queue) = self.parent_external_queue {
+                                    if let Ok(mut q) = parent_queue.lock() {
+                                        q.push((
+                                            "seed.collapsed".to_string(),
+                                            event_data.to_string(),
+                                        ));
+                                    }
+                                } else {
                                 }
-                            } else {
-                            }
 
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            }
                         }
                     }
                     _ => {}

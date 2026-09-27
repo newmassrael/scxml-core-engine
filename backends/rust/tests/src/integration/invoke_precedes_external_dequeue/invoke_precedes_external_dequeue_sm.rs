@@ -798,19 +798,21 @@ impl StatePolicy for InvokePrecedesExternalDequeuePolicy {
                     1 => {
                         // SCE-MAP: invoke_precedes_external_dequeue.scxml:85 :: phase :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let event_data: &str = "";
 
-                            let event_data: &str = "";
+                                // W3C SCXML 6.4: Send to child invoke 'inv_watch' via #_inv_watch
+                                if let Some(ref mut child) = self.child_inv_watch {
+                                    child.raise_external_by_name("probe", &event_data);
+                                }
 
-                            // W3C SCXML 6.4: Send to child invoke 'inv_watch' via #_inv_watch
-                            if let Some(ref mut child) = self.child_inv_watch {
-                                child.raise_external_by_name("probe", &event_data);
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
                             }
-
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
                         }
                     }
                     _ => {}

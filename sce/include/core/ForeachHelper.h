@@ -26,6 +26,22 @@
 namespace SCE::Core {
 
 /**
+ * @brief How a <foreach> with a body ended, so its caller raises only the
+ * errors that are the <foreach>'s own.
+ *
+ * §scxml-4.6 names the errors a <foreach> raises itself: an `array` that is not
+ * an iterable collection, an `item` or `index` that cannot be declared. A body
+ * element that fails has already raised its own error (§scxml-4.9), and a
+ * second one from the <foreach> would be an event the document never caused.
+ * Either way the block the <foreach> sits in ends.
+ */
+enum class ForeachOutcome {
+    Completed,           ///< every iteration ran to its end
+    CollectionRejected,  ///< the <foreach> failed on its own attributes; the caller raises
+    BodyFailed,          ///< a body element failed and raised its own error; the caller raises nothing
+};
+
+/**
  * @brief Helper for §scxml-4.6 foreach loop variable handling
  *
  * Single Source of Truth for foreach variable setting logic shared between engines.
@@ -311,13 +327,15 @@ public:
      * @param itemVar Item variable name (e.g., "Var2")
      * @param indexVar Index variable name (empty string if not used)
      * @param executeBody Lambda/callable that executes iteration actions.
-     *                    Return true to continue, false to stop loop (W3C 4.6 error handling)
-     * @return true if all iterations succeeded, false if loop was stopped due to error
-     * @throws std::runtime_error if array evaluation or variable setting fails
+     *                    Return true to continue, false to stop loop (W3C 4.6 error handling);
+     *                    false means the failing element has already raised its error.
+     * @return Completed when every iteration ran; CollectionRejected when the
+     *         collection or a loop variable failed, for the caller to raise;
+     *         BodyFailed when the body stopped the loop, which raises nothing more.
      *
      * @example Interpreter Engine usage:
      * @code
-     * bool success = ForeachHelper::executeForeachWithActions(
+     * ForeachOutcome outcome = ForeachHelper::executeForeachWithActions(
      *     jsEngine, sessionId, "myArray", "item", "index",
      *     [&](size_t i) {
      *         // Execute nested actions
@@ -333,7 +351,7 @@ public:
      *
      * @example AOT Engine usage (generated code):
      * @code
-     * bool success = ::SCE::Core::ForeachHelper::executeForeachWithActions(
+     * ForeachOutcome outcome = ::SCE::Core::ForeachHelper::executeForeachWithActions(
      *     jsEngine, sessionId_.value(), "Var3", "Var2", "",
      *     [&](size_t i) {
      *         // Custom C++ generated code
@@ -349,13 +367,13 @@ public:
      * @endcode
      */
     template <typename JSEngineType, typename BodyFunc>
-    static inline bool executeForeachWithActions(JSEngineType &jsEngine, const std::string &sessionId,
-                                                 const ScriptSource &arrayExpr, const std::string &itemVar,
-                                                 const std::string &indexVar, BodyFunc &&executeBody) {
+    static inline ForeachOutcome executeForeachWithActions(JSEngineType &jsEngine, const std::string &sessionId,
+                                                           const ScriptSource &arrayExpr, const std::string &itemVar,
+                                                           const std::string &indexVar, BodyFunc &&executeBody) {
         // Evaluate array expression — returns ScriptValue elements directly (no string round-trip)
         auto arrayValuesOpt = evaluateForeachArray(jsEngine, sessionId, arrayExpr);
         if (!arrayValuesOpt.has_value()) {
-            return false;
+            return ForeachOutcome::CollectionRejected;
         }
         auto &arrayValues = arrayValuesOpt.value();
 
@@ -365,31 +383,31 @@ public:
         // and abandons the whole block when a nested action raises an error.
         if (!setLoopVariable(jsEngine, sessionId, itemVar, ScriptValue(ScriptUndefined{}))) {
             SCE_LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
-            return false;
+            return ForeachOutcome::CollectionRejected;
         }
 
         if (!indexVar.empty()) {
             if (!setLoopVariable(jsEngine, sessionId, indexVar, ScriptValue(ScriptUndefined{}))) {
                 SCE_LOG_ERROR("Failed to declare foreach index variable: {}", indexVar);
-                return false;
+                return ForeachOutcome::CollectionRejected;
             }
         }
 
         // §scxml-4.6: Execute foreach loop with error handling
         for (size_t i = 0; i < arrayValues.size(); ++i) {
             if (!setForeachIterationVariables(jsEngine, sessionId, itemVar, arrayValues[i], indexVar, i)) {
-                return false;
+                return ForeachOutcome::CollectionRejected;
             }
 
             // Execute body actions for this iteration
             // §scxml-4.6: If body returns false (error), stop loop execution
             if (!executeBody(i)) {
                 SCE_LOG_DEBUG("Foreach loop stopped at iteration {} due to error (W3C SCXML 4.6)", i);
-                return false;  // Single Source of Truth for W3C 4.6 compliance
+                return ForeachOutcome::BodyFailed;  // Single Source of Truth for W3C 4.6 compliance
             }
         }
 
-        return true;  // All iterations succeeded
+        return ForeachOutcome::Completed;
     }
 };
 

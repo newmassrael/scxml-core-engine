@@ -715,16 +715,20 @@ impl StatePolicy for StaticRecordPolicy {
                     0 => {
                         // SCE-MAP: static_record.scxml:26 :: showing :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML 5.3: <assign location="shown.dayOfMonth">
-                        if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.shown.dayOfMonth =
-                                sce_forge_runtime::algorithm::add::<u8>(self.shown.dayOfMonth, 1)?;
-                            Ok(())
-                        })()
-                        .is_err()
-                        {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordEvent::ErrorExecution, "<assign location='shown.dayOfMonth'>: an integer operation overflowed or failed"));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="shown.dayOfMonth">
+                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                                self.shown.dayOfMonth = sce_forge_runtime::algorithm::add::<u8>(
+                                    self.shown.dayOfMonth,
+                                    1,
+                                )?;
+                                Ok(())
+                            })()
+                            .is_err()
+                            {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordEvent::ErrorExecution, "<assign location='shown.dayOfMonth'>: an integer operation overflowed or failed"));
+                            }
                         }
                     }
                     1 => {
@@ -734,29 +738,33 @@ impl StatePolicy for StaticRecordPolicy {
                             StaticRecordPayload::DayPicked(ev) => ev.clone(),
                             _ => return,
                         };
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="shown.year">
+                            self.shown.year = ev.year;
 
-                        // W3C SCXML 5.3: <assign location="shown.year">
-                        self.shown.year = ev.year;
+                            // W3C SCXML 5.3: <assign location="shown.month">
+                            self.shown.month = ev.month;
 
-                        // W3C SCXML 5.3: <assign location="shown.month">
-                        self.shown.month = ev.month;
-
-                        // W3C SCXML 5.3: <assign location="shown.dayOfMonth">
-                        self.shown.dayOfMonth = ev.dayOfMonth;
+                            // W3C SCXML 5.3: <assign location="shown.dayOfMonth">
+                            self.shown.dayOfMonth = ev.dayOfMonth;
+                        }
                     }
                     2 => {
                         // SCE-MAP: static_record.scxml:36 :: showing :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
-
-                        // W3C SCXML 5.3: <assign location="refusals">
-                        if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.refusals =
-                                sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
-                            Ok(())
-                        })()
-                        .is_err()
-                        {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="refusals">
+                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                                self.refusals =
+                                    sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
+                                Ok(())
+                            })()
+                            .is_err()
+                            {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                            }
                         }
                     }
                     _ => {}

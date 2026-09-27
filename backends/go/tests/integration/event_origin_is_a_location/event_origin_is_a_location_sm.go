@@ -894,6 +894,8 @@ func (p *EventOriginIsALocationPolicy) ExecuteTransitionContent(source EventOrig
 		switch transitionIndex {
 		case 0:
 			//line event_origin_is_a_location.scxml:75
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -930,6 +932,7 @@ func (p *EventOriginIsALocationPolicy) ExecuteTransitionContent(source EventOrig
 	}
 	}
 
+			}()
 		}
 	}
 }

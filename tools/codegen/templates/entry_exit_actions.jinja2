@@ -414,7 +414,7 @@
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "cpp", "                        ") -}}
 {%- endif %}
-                        {% set in_entry_exit = true %}
+                        {% set block_exit = 'return;' %}
                         {% include 'actions/' + action.type + '.jinja2' %}
 
 {% endfor %}
@@ -438,7 +438,7 @@
                 if (defaultEntry) {
                     [&]() {
 {% for action in state.initial_transition_actions %}
-                        {% set in_entry_exit = true %}
+                        {% set block_exit = 'return;' %}
                         {% include 'actions/' + action.type + '.jinja2' %}
 
 {% endfor %}
@@ -604,7 +604,7 @@
         if (history == History::{{ history_id | capitalize }}) {
             AOT_DEBUG("AOT executeHistoryDefaultContent: {{ history_id }}");
 {% for action in history_info.default_actions %}
-            {% set in_entry_exit = true %}
+            {% set block_exit = 'return;' %}
             {% include 'actions/' + action.type + '.jinja2' %}
 
 {% endfor %}
@@ -712,7 +712,7 @@
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "cpp", "                        ") -}}
 {%- endif %}
-                        {% set in_entry_exit = true %}
+                        {% set block_exit = 'return;' %}
                         {% include 'actions/' + action.type + '.jinja2' %}
 
 {% endfor %}

@@ -771,47 +771,52 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
                     0 => {
                         // SCE-MAP: autoforward_internal_queue.scxml:75 :: phase :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
-
-                            let event_data: &str = "";
-
-                            // W3C SCXML 6.2: Unsupported send type "urn:x-sce-unsupported-processor" raises error.execution
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
                             {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AutoforwardInternalQueueEvent::ErrorExecution, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support");
-                                engine.raise(err_meta);
-                            }
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let event_data: &str = "";
+
+                                // W3C SCXML 6.2: Unsupported send type "urn:x-sce-unsupported-processor" raises error.execution
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AutoforwardInternalQueueEvent::ErrorExecution, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support");
+                                    engine.raise(err_meta);
+                                }
+                                break 'action_block;
+
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            }
                         }
                     }
                     1 => {
                         // SCE-MAP: autoforward_internal_queue.scxml:78 :: phase :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
-
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
-
-                            let event_data: &str = "";
-
-                            // W3C SCXML 6.2: Default send (no target = external event)
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
                             {
-                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                    AutoforwardInternalQueueEvent::Probe,
-                                );
-                                // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                                meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                    send_id.clone(),
-                                    ::sce_rust_runtime::SceString::new(),
-                                );
-                                meta.set_event_data(event_data);
-                                engine.raise_external_with_meta(meta);
-                            }
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
 
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let event_data: &str = "";
+
+                                // W3C SCXML 6.2: Default send (no target = external event)
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        AutoforwardInternalQueueEvent::Probe,
+                                    );
+                                    // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+                                    meta.metadata = sce_rust_runtime::EventMetadata::external(
+                                        send_id.clone(),
+                                        ::sce_rust_runtime::SceString::new(),
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise_external_with_meta(meta);
+                                }
+
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            }
                         }
                     }
                     _ => {}

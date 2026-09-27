@@ -736,17 +736,17 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteEntryActions(state
 	switch state {
 	case TargetlessTransitionCompletesMacrostepStateRecycled:
 		//line targetless_transition_completes_macrostep.scxml:147
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="entries" expr="entries + 1">
 	if err := p.assignVariable(`entries`, `_scxml_add(entries, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<assign> to 'entries' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-		}
+		}()
 	default:
 		// No entry actions
 	}
@@ -901,52 +901,75 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteTransitionContent(
 		switch transitionIndex {
 		case 0:
 			//line targetless_transition_completes_macrostep.scxml:86
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="chained" expr="chained + 1">
 	if err := p.assignVariable(`chained`, `_scxml_add(chained, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<assign> to 'chained' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line targetless_transition_completes_macrostep.scxml:93
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="quiet" expr="quiet + 1">
 	if err := p.assignVariable(`quiet`, `_scxml_add(quiet, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<assign> to 'quiet' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 2:
 			//line targetless_transition_completes_macrostep.scxml:100
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="armed" expr="1">
 	if err := p.assignVariable(`armed`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<assign> to 'armed' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 3:
 			//line targetless_transition_completes_macrostep.scxml:107
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	engine.Raise(sce.NewEventWithMetadata(TargetlessTransitionCompletesMacrostepEventPong))
 
+			}()
 		case 4:
 			//line targetless_transition_completes_macrostep.scxml:111
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="answered" expr="answered + 1">
 	if err := p.assignVariable(`answered`, `_scxml_add(answered, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<assign> to 'answered' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case TargetlessTransitionCompletesMacrostepStateSettled:
 		switch transitionIndex {
 		case 0:
 			//line targetless_transition_completes_macrostep.scxml:126
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="polished" expr="polished + 1">
 	if err := p.assignVariable(`polished`, `_scxml_add(polished, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<assign> to 'polished' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

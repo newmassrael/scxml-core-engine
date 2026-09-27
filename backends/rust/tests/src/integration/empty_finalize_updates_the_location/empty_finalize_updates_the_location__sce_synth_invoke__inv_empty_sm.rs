@@ -711,67 +711,77 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy
                     0 => {
                         // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_empty.scxml:9 :: answer :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let mut _param_failed = false;
 
-                            let mut _param_failed = false;
-
-                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                            // delivered, so each name carries a vector. The typed value is kept
-                            // rather than its text — a receiver reading `_event.data.value === 42`
-                            // finds the string "42" unequal.
-                            //
-                            // Declared out here rather than inside the payload block because
-                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                            // below are renderings of that one evaluation: the BasicHTTP and
-                            // host-served arms read this map instead of asking the data model again.
-                            // While it was block-scoped they had to, and what they re-read was
-                            // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
-                            // posted zero form parameters, against §scxml-C-2.
-                            let mut _send_wire_params: ::std::collections::BTreeMap<
-                                String,
-                                Vec<::sce_rust_runtime::ScriptValue>,
-                            > = ::std::collections::BTreeMap::new();
-                            // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
-                            let event_data_string: String = {
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let wire_params = &mut _send_wire_params;
-                                match se.evaluate_expression(&sid, "7") {
-                                    Ok(val) => {
-                                        wire_params
-                                            .entry("tally".to_string())
-                                            .or_default()
-                                            .push(val);
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                // While it was block-scoped they had to, and what they re-read was
+                                // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
+                                // posted zero form parameters, against §scxml-C-2.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                                let event_data_string: String = {
+                                    self.ensure_script_engine();
+                                    let sid = self.session_id.as_ref().unwrap().clone();
+                                    let se = self.script_engine.clone();
+                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                    let wire_params = &mut _send_wire_params;
+                                    match se.evaluate_expression(&sid, "7") {
+                                        Ok(val) => {
+                                            wire_params
+                                                .entry("tally".to_string())
+                                                .or_default()
+                                                .push(val);
+                                        }
+                                        Err(e) => {
+                                            ::sce_rust_runtime::sce_log_error!(
+                                                "send param 'tally' eval failed: {}",
+                                                e
+                                            );
+                                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent::ErrorExecution, "<send> <param name='tally'> could not be read"));
+                                            // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                                            _param_failed = true;
+                                        }
                                     }
-                                    Err(e) => {
-                                        ::sce_rust_runtime::sce_log_error!(
-                                            "send param 'tally' eval failed: {}",
-                                            e
-                                        );
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent::ErrorExecution, "<send> <param name='tally'> could not be read"));
-                                        // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
-                                        _param_failed = true;
-                                    }
-                                }
-                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                            };
-                            let event_data: &str = &event_data_string;
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
 
-                            // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
-                            if let Some(ref parent_queue) = self.parent_external_queue {
-                                if let Ok(mut q) = parent_queue.lock() {
-                                    q.push(("fromEmptyChild".to_string(), event_data.to_string()));
+                                // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
+                                if let Some(ref parent_queue) = self.parent_external_queue {
+                                    if let Ok(mut q) = parent_queue.lock() {
+                                        q.push((
+                                            "fromEmptyChild".to_string(),
+                                            event_data.to_string(),
+                                        ));
+                                    }
+                                } else {
                                 }
-                            } else {
+
+                                // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                                // this element was processed, so the rest of the block does not run —
+                                // from however deep a <foreach> it came.
+                                if _param_failed {
+                                    break 'action_block;
+                                }
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
                             }
-
-                            let _ = _param_failed; // transition content has no block exit to take
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
                         }
                     }
                     _ => {}

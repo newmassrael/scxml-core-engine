@@ -1104,28 +1104,34 @@ impl StatePolicy for Test253Policy {
                     0 => {
                         // SCE-MAP: test253.scxml:54 :: s01 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="Var1">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_event.origintype";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "Var1", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'Var1': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    Test253Event::ErrorExecution,
-                                    "<assign> to 'Var1' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="Var1">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_event.origintype";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "Var1", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'Var1': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            Test253Event::ErrorExecution,
+                                            "<assign> to 'Var1' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }
@@ -1137,37 +1143,41 @@ impl StatePolicy for Test253Policy {
                     0 => {
                         // SCE-MAP: test253.scxml:61 :: s02 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
 
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                                let event_data: &str = "";
 
-                            let event_data: &str = "";
+                                // W3C SCXML 6.4: Send to child invoke 'foo' via #_foo
+                                if let Some(ref mut child) = self.child_foo {
+                                    child.raise_external_by_name("parentToChild", &event_data);
+                                }
 
-                            // W3C SCXML 6.4: Send to child invoke 'foo' via #_foo
-                            if let Some(ref mut child) = self.child_foo {
-                                child.raise_external_by_name("parentToChild", &event_data);
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
                             }
-
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
                         }
                     }
                     1 => {
                         // SCE-MAP: test253.scxml:64 :: s02 :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
 
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                                let event_data: &str = "";
 
-                            let event_data: &str = "";
+                                // W3C SCXML 6.4: Send to child invoke 'foo' via #_foo
+                                if let Some(ref mut child) = self.child_foo {
+                                    child.raise_external_by_name("parentToChild", &event_data);
+                                }
 
-                            // W3C SCXML 6.4: Send to child invoke 'foo' via #_foo
-                            if let Some(ref mut child) = self.child_foo {
-                                child.raise_external_by_name("parentToChild", &event_data);
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
                             }
-
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
                         }
                     }
                     _ => {}

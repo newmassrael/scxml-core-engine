@@ -639,7 +639,7 @@ impl StatePolicy for Test329Policy {
                                 Test329Event::ErrorExecution,
                                 "<assign> to 'Var1' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }
@@ -658,6 +658,8 @@ impl StatePolicy for Test329Policy {
                             Test329Event::ErrorExecution,
                             "<assign> has an invalid or read-only location '_sessionid'",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
                 }
             }
@@ -684,7 +686,7 @@ impl StatePolicy for Test329Policy {
                                 Test329Event::ErrorExecution,
                                 "<assign> to 'Var2' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }
@@ -703,6 +705,8 @@ impl StatePolicy for Test329Policy {
                             Test329Event::ErrorExecution,
                             "<assign> has an invalid or read-only location '_event'",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
                 }
             }
@@ -729,7 +733,7 @@ impl StatePolicy for Test329Policy {
                                 Test329Event::ErrorExecution,
                                 "<assign> to 'Var3' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }
@@ -748,6 +752,8 @@ impl StatePolicy for Test329Policy {
                             Test329Event::ErrorExecution,
                             "<assign> has an invalid or read-only location '_name'",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
                 }
             }
@@ -774,7 +780,7 @@ impl StatePolicy for Test329Policy {
                                 Test329Event::ErrorExecution,
                                 "<assign> to 'Var4' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }
@@ -793,6 +799,8 @@ impl StatePolicy for Test329Policy {
                             Test329Event::ErrorExecution,
                             "<assign> has an invalid or read-only location '_ioprocessors'",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
                 }
             }

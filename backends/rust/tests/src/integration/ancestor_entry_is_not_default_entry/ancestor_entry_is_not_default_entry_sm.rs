@@ -992,7 +992,7 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
                                 AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
                                 "<assign> to 'defaulted' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }
@@ -1024,7 +1024,7 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
                                 AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
                                 "<assign> to 'targeted' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }
@@ -1053,7 +1053,7 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
                                 AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
                                 "<assign> to 'idled' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }
@@ -1085,7 +1085,7 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
                                 AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
                                 "<assign> to 'lobbied' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }

@@ -737,7 +737,7 @@ impl StatePolicy for Test388Policy {
                                 Test388Event::ErrorExecution,
                                 "<assign> to 'Var1' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }
@@ -1027,22 +1027,24 @@ impl StatePolicy for Test388Policy {
                     0 => {
                         // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let event_data: &str = "";
 
-                            let event_data: &str = "";
+                                // W3C SCXML 6.2: Delayed send (2000ms)
+                                engine.schedule_event(
+                                    Test388Event::Timeout,
+                                    core::time::Duration::from_millis(2000),
+                                    &send_id,
+                                    event_data,
+                                );
 
-                            // W3C SCXML 6.2: Delayed send (2000ms)
-                            engine.schedule_event(
-                                Test388Event::Timeout,
-                                core::time::Duration::from_millis(2000),
-                                &send_id,
-                                event_data,
-                            );
-
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            }
                         }
                     }
                     _ => {}

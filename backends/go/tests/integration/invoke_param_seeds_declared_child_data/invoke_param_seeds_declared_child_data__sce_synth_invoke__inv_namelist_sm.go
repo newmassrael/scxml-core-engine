@@ -691,6 +691,8 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) Execu
 		switch transitionIndex {
 		case 0:
 			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist.scxml:9
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -702,8 +704,11 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) Execu
 	}
 	}
 
+			}()
 		case 1:
 			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist.scxml:12
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
@@ -715,6 +720,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) Execu
 	}
 	}
 
+			}()
 		}
 	}
 }

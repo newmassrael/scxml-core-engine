@@ -693,11 +693,13 @@ impl StatePolicy for Test404Policy {
                     0 => {
                         // SCE-MAP: test404.scxml:19 :: s01p :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML 3.8.1: <raise event="event4">
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            Test404Event::Event4,
-                        ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 3.8.1: <raise event="event4">
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                Test404Event::Event4,
+                            ));
+                        }
                     }
                     _ => {}
                 }

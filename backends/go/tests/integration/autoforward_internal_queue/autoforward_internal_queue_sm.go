@@ -700,6 +700,8 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionContent(source Autofor
 		switch transitionIndex {
 		case 0:
 			//line autoforward_internal_queue.scxml:75
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -711,10 +713,14 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionContent(source Autofor
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 	}
+	return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line autoforward_internal_queue.scxml:78
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
@@ -729,6 +735,7 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionContent(source Autofor
 	}
 	}
 
+			}()
 		}
 	}
 }

@@ -782,7 +782,8 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                         }
 
                         // W3C SCXML 4.9: a <param> that could not be read raised an error while
-                        // this element was processed, so the rest of the block does not run.
+                        // this element was processed, so the rest of the block does not run —
+                        // from however deep a <foreach> it came.
                         if _param_failed {
                             break 'action_block;
                         }
@@ -930,87 +931,96 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                     0 => {
                         // SCE-MAP: event_type_names_its_queue.scxml:48 :: s0 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML 5.9: Script engine guard (_event.type == 'internal')
-                        if self.safe_evaluate_guard("_scxml_eq(_event.type, \"internal\")", engine)
-                        {
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.9: Script engine guard (_event.type == 'internal')
+                            if self
+                                .safe_evaluate_guard("_scxml_eq(_event.type, \"internal\")", engine)
                             {
-                                // W3C SCXML 5.3: <assign location="intCode">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "1";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "intCode", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'intCode': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            EventTypeNamesItsQueueEvent::ErrorExecution,
-                                            "<assign> to 'intCode' failed",
-                                        ),
-                                    );
+                                {
+                                    // W3C SCXML 5.3: <assign location="intCode">
+                                    self.ensure_script_engine();
+                                    let sid = self.session_id.as_ref().unwrap().clone();
+                                    let se = self.script_engine.clone();
+                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                    let expr = "1";
+                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                    // and create a fresh table, breaking reference equality.
+                                    let assign_script = format!("{} = {}", "intCode", expr);
+                                    if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "Assign failed for 'intCode': {}",
+                                            e
+                                        );
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                EventTypeNamesItsQueueEvent::ErrorExecution,
+                                                "<assign> to 'intCode' failed",
+                                            ),
+                                        );
+                                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                        break 'action_block;
+                                    }
                                 }
-                            }
-                        } else if self
-                            .safe_evaluate_guard("_scxml_eq(_event.type, \"external\")", engine)
-                        {
+                            } else if self
+                                .safe_evaluate_guard("_scxml_eq(_event.type, \"external\")", engine)
                             {
-                                // W3C SCXML 5.3: <assign location="intCode">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "2";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "intCode", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'intCode': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            EventTypeNamesItsQueueEvent::ErrorExecution,
-                                            "<assign> to 'intCode' failed",
-                                        ),
-                                    );
+                                {
+                                    // W3C SCXML 5.3: <assign location="intCode">
+                                    self.ensure_script_engine();
+                                    let sid = self.session_id.as_ref().unwrap().clone();
+                                    let se = self.script_engine.clone();
+                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                    let expr = "2";
+                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                    // and create a fresh table, breaking reference equality.
+                                    let assign_script = format!("{} = {}", "intCode", expr);
+                                    if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "Assign failed for 'intCode': {}",
+                                            e
+                                        );
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                EventTypeNamesItsQueueEvent::ErrorExecution,
+                                                "<assign> to 'intCode' failed",
+                                            ),
+                                        );
+                                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                        break 'action_block;
+                                    }
                                 }
-                            }
-                        } else {
-                            {
-                                // W3C SCXML 5.3: <assign location="intCode">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "3";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "intCode", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'intCode': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            EventTypeNamesItsQueueEvent::ErrorExecution,
-                                            "<assign> to 'intCode' failed",
-                                        ),
-                                    );
+                            } else {
+                                {
+                                    // W3C SCXML 5.3: <assign location="intCode">
+                                    self.ensure_script_engine();
+                                    let sid = self.session_id.as_ref().unwrap().clone();
+                                    let se = self.script_engine.clone();
+                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                    let expr = "3";
+                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                    // and create a fresh table, breaking reference equality.
+                                    let assign_script = format!("{} = {}", "intCode", expr);
+                                    if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "Assign failed for 'intCode': {}",
+                                            e
+                                        );
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                EventTypeNamesItsQueueEvent::ErrorExecution,
+                                                "<assign> to 'intCode' failed",
+                                            ),
+                                        );
+                                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                        break 'action_block;
+                                    }
                                 }
                             }
                         }
@@ -1018,87 +1028,96 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                     1 => {
                         // SCE-MAP: event_type_names_its_queue.scxml:58 :: s0 :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
-
-                        // W3C SCXML 5.9: Script engine guard (_event.type == 'internal')
-                        if self.safe_evaluate_guard("_scxml_eq(_event.type, \"internal\")", engine)
-                        {
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.9: Script engine guard (_event.type == 'internal')
+                            if self
+                                .safe_evaluate_guard("_scxml_eq(_event.type, \"internal\")", engine)
                             {
-                                // W3C SCXML 5.3: <assign location="sendCode">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "1";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "sendCode", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'sendCode': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            EventTypeNamesItsQueueEvent::ErrorExecution,
-                                            "<assign> to 'sendCode' failed",
-                                        ),
-                                    );
+                                {
+                                    // W3C SCXML 5.3: <assign location="sendCode">
+                                    self.ensure_script_engine();
+                                    let sid = self.session_id.as_ref().unwrap().clone();
+                                    let se = self.script_engine.clone();
+                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                    let expr = "1";
+                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                    // and create a fresh table, breaking reference equality.
+                                    let assign_script = format!("{} = {}", "sendCode", expr);
+                                    if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "Assign failed for 'sendCode': {}",
+                                            e
+                                        );
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                EventTypeNamesItsQueueEvent::ErrorExecution,
+                                                "<assign> to 'sendCode' failed",
+                                            ),
+                                        );
+                                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                        break 'action_block;
+                                    }
                                 }
-                            }
-                        } else if self
-                            .safe_evaluate_guard("_scxml_eq(_event.type, \"external\")", engine)
-                        {
+                            } else if self
+                                .safe_evaluate_guard("_scxml_eq(_event.type, \"external\")", engine)
                             {
-                                // W3C SCXML 5.3: <assign location="sendCode">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "2";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "sendCode", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'sendCode': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            EventTypeNamesItsQueueEvent::ErrorExecution,
-                                            "<assign> to 'sendCode' failed",
-                                        ),
-                                    );
+                                {
+                                    // W3C SCXML 5.3: <assign location="sendCode">
+                                    self.ensure_script_engine();
+                                    let sid = self.session_id.as_ref().unwrap().clone();
+                                    let se = self.script_engine.clone();
+                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                    let expr = "2";
+                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                    // and create a fresh table, breaking reference equality.
+                                    let assign_script = format!("{} = {}", "sendCode", expr);
+                                    if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "Assign failed for 'sendCode': {}",
+                                            e
+                                        );
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                EventTypeNamesItsQueueEvent::ErrorExecution,
+                                                "<assign> to 'sendCode' failed",
+                                            ),
+                                        );
+                                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                        break 'action_block;
+                                    }
                                 }
-                            }
-                        } else {
-                            {
-                                // W3C SCXML 5.3: <assign location="sendCode">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "3";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "sendCode", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'sendCode': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            EventTypeNamesItsQueueEvent::ErrorExecution,
-                                            "<assign> to 'sendCode' failed",
-                                        ),
-                                    );
+                            } else {
+                                {
+                                    // W3C SCXML 5.3: <assign location="sendCode">
+                                    self.ensure_script_engine();
+                                    let sid = self.session_id.as_ref().unwrap().clone();
+                                    let se = self.script_engine.clone();
+                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                    let expr = "3";
+                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                    // and create a fresh table, breaking reference equality.
+                                    let assign_script = format!("{} = {}", "sendCode", expr);
+                                    if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "Assign failed for 'sendCode': {}",
+                                            e
+                                        );
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                EventTypeNamesItsQueueEvent::ErrorExecution,
+                                                "<assign> to 'sendCode' failed",
+                                            ),
+                                        );
+                                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                        break 'action_block;
+                                    }
                                 }
                             }
                         }
@@ -1106,87 +1125,96 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                     2 => {
                         // SCE-MAP: event_type_names_its_queue.scxml:68 :: s0 :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
-
-                        // W3C SCXML 5.9: Script engine guard (_event.type == 'internal')
-                        if self.safe_evaluate_guard("_scxml_eq(_event.type, \"internal\")", engine)
-                        {
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.9: Script engine guard (_event.type == 'internal')
+                            if self
+                                .safe_evaluate_guard("_scxml_eq(_event.type, \"internal\")", engine)
                             {
-                                // W3C SCXML 5.3: <assign location="extCode">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "1";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "extCode", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'extCode': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            EventTypeNamesItsQueueEvent::ErrorExecution,
-                                            "<assign> to 'extCode' failed",
-                                        ),
-                                    );
+                                {
+                                    // W3C SCXML 5.3: <assign location="extCode">
+                                    self.ensure_script_engine();
+                                    let sid = self.session_id.as_ref().unwrap().clone();
+                                    let se = self.script_engine.clone();
+                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                    let expr = "1";
+                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                    // and create a fresh table, breaking reference equality.
+                                    let assign_script = format!("{} = {}", "extCode", expr);
+                                    if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "Assign failed for 'extCode': {}",
+                                            e
+                                        );
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                EventTypeNamesItsQueueEvent::ErrorExecution,
+                                                "<assign> to 'extCode' failed",
+                                            ),
+                                        );
+                                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                        break 'action_block;
+                                    }
                                 }
-                            }
-                        } else if self
-                            .safe_evaluate_guard("_scxml_eq(_event.type, \"external\")", engine)
-                        {
+                            } else if self
+                                .safe_evaluate_guard("_scxml_eq(_event.type, \"external\")", engine)
                             {
-                                // W3C SCXML 5.3: <assign location="extCode">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "2";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "extCode", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'extCode': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            EventTypeNamesItsQueueEvent::ErrorExecution,
-                                            "<assign> to 'extCode' failed",
-                                        ),
-                                    );
+                                {
+                                    // W3C SCXML 5.3: <assign location="extCode">
+                                    self.ensure_script_engine();
+                                    let sid = self.session_id.as_ref().unwrap().clone();
+                                    let se = self.script_engine.clone();
+                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                    let expr = "2";
+                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                    // and create a fresh table, breaking reference equality.
+                                    let assign_script = format!("{} = {}", "extCode", expr);
+                                    if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "Assign failed for 'extCode': {}",
+                                            e
+                                        );
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                EventTypeNamesItsQueueEvent::ErrorExecution,
+                                                "<assign> to 'extCode' failed",
+                                            ),
+                                        );
+                                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                        break 'action_block;
+                                    }
                                 }
-                            }
-                        } else {
-                            {
-                                // W3C SCXML 5.3: <assign location="extCode">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "3";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "extCode", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'extCode': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            EventTypeNamesItsQueueEvent::ErrorExecution,
-                                            "<assign> to 'extCode' failed",
-                                        ),
-                                    );
+                            } else {
+                                {
+                                    // W3C SCXML 5.3: <assign location="extCode">
+                                    self.ensure_script_engine();
+                                    let sid = self.session_id.as_ref().unwrap().clone();
+                                    let se = self.script_engine.clone();
+                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                    let expr = "3";
+                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                    // and create a fresh table, breaking reference equality.
+                                    let assign_script = format!("{} = {}", "extCode", expr);
+                                    if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "Assign failed for 'extCode': {}",
+                                            e
+                                        );
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                EventTypeNamesItsQueueEvent::ErrorExecution,
+                                                "<assign> to 'extCode' failed",
+                                            ),
+                                        );
+                                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                        break 'action_block;
+                                    }
                                 }
                             }
                         }

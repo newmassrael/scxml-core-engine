@@ -1666,7 +1666,8 @@ impl StatePolicy for AiLoopPolicy {
                         }
 
                         // W3C SCXML 4.9: a <param> that could not be read raised an error while
-                        // this element was processed, so the rest of the block does not run.
+                        // this element was processed, so the rest of the block does not run —
+                        // from however deep a <foreach> it came.
                         if _param_failed {
                             break 'action_block;
                         }
@@ -1761,7 +1762,8 @@ impl StatePolicy for AiLoopPolicy {
                         }
 
                         // W3C SCXML 4.9: a <param> that could not be read raised an error while
-                        // this element was processed, so the rest of the block does not run.
+                        // this element was processed, so the rest of the block does not run —
+                        // from however deep a <foreach> it came.
                         if _param_failed {
                             break 'action_block;
                         }
@@ -1893,7 +1895,8 @@ impl StatePolicy for AiLoopPolicy {
                         }
 
                         // W3C SCXML 4.9: a <param> that could not be read raised an error while
-                        // this element was processed, so the rest of the block does not run.
+                        // this element was processed, so the rest of the block does not run —
+                        // from however deep a <foreach> it came.
                         if _param_failed {
                             break 'action_block;
                         }
@@ -1928,7 +1931,7 @@ impl StatePolicy for AiLoopPolicy {
                                 AiLoopEvent::ErrorExecution,
                                 "<assign> to 'turns_since_reflect' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }
@@ -2009,7 +2012,7 @@ impl StatePolicy for AiLoopPolicy {
                                 AiLoopEvent::ErrorExecution,
                                 "<assign> to 'restarts' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }
@@ -2075,7 +2078,7 @@ impl StatePolicy for AiLoopPolicy {
                                 AiLoopEvent::ErrorExecution,
                                 "<assign> to 'screened' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }
@@ -2671,90 +2674,97 @@ impl StatePolicy for AiLoopPolicy {
                     2 => {
                         // SCE-MAP: ai_loop.scxml:362 :: judging :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
-
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
-
-                            let mut _param_failed = false;
-
-                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                            // delivered, so each name carries a vector. The typed value is kept
-                            // rather than its text — a receiver reading `_event.data.value === 42`
-                            // finds the string "42" unequal.
-                            //
-                            // Declared out here rather than inside the payload block because
-                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                            // below are renderings of that one evaluation: the BasicHTTP and
-                            // host-served arms read this map instead of asking the data model again.
-                            // While it was block-scoped they had to, and what they re-read was
-                            // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
-                            // posted zero form parameters, against §scxml-C-2.
-                            let mut _send_wire_params: ::std::collections::BTreeMap<
-                                String,
-                                Vec<::sce_rust_runtime::ScriptValue>,
-                            > = ::std::collections::BTreeMap::new();
-                            // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
-                            let event_data_string: String = {
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let wire_params = &mut _send_wire_params;
-                                match se.evaluate_expression(&sid, "turn_prompt") {
-                                    Ok(val) => {
-                                        wire_params
-                                            .entry("text".to_string())
-                                            .or_default()
-                                            .push(val);
-                                    }
-                                    Err(e) => {
-                                        ::sce_rust_runtime::sce_log_error!(
-                                            "send param 'text' eval failed: {}",
-                                            e
-                                        );
-                                        engine.raise(
-                                            sce_rust_runtime::EventWithMetadata::platform_error(
-                                                AiLoopEvent::ErrorExecution,
-                                                "<send> <param name='text'> could not be read",
-                                            ),
-                                        );
-                                        // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
-                                        _param_failed = true;
-                                    }
-                                }
-                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                            };
-                            let event_data: &str = &event_data_string;
-
-                            // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
-                            // which declared it to this build. Dispatch rather than refuse.
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
                             {
-                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                let __sce_request = sce_rust_runtime::HostSendRequest {
-                                    processor_type: "x-sce-host".to_string(),
-                                    event_name: "prompt.turn".to_string(),
-                                    target: "".to_string(),
-                                    content: "".to_string(),
-                                    params: host_params,
-                                    send_id: send_id.to_string(),
-                                };
-                                let __sce_served = engine.perform_host_send(__sce_request);
-                                // W3C SCXML 6.2: a declared type with no handler registered is,
-                                // from the document's side, a processor the platform does not
-                                // support — the act it asked for was performed by nobody. Same
-                                // event, so a wiring mistake cannot read as success.
-                                if __sce_served.is_none()
-                                    && !engine.has_event_processor("x-sce-host")
-                                {
-                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
-                                    err_meta.metadata.send_id = send_id.clone();
-                                    engine.raise(err_meta);
-                                }
-                            }
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
 
-                            let _ = _param_failed; // transition content has no block exit to take
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let mut _param_failed = false;
+
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                // While it was block-scoped they had to, and what they re-read was
+                                // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
+                                // posted zero form parameters, against §scxml-C-2.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                                let event_data_string: String = {
+                                    self.ensure_script_engine();
+                                    let sid = self.session_id.as_ref().unwrap().clone();
+                                    let se = self.script_engine.clone();
+                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                    let wire_params = &mut _send_wire_params;
+                                    match se.evaluate_expression(&sid, "turn_prompt") {
+                                        Ok(val) => {
+                                            wire_params
+                                                .entry("text".to_string())
+                                                .or_default()
+                                                .push(val);
+                                        }
+                                        Err(e) => {
+                                            ::sce_rust_runtime::sce_log_error!(
+                                                "send param 'text' eval failed: {}",
+                                                e
+                                            );
+                                            engine.raise(
+                                                sce_rust_runtime::EventWithMetadata::platform_error(
+                                                    AiLoopEvent::ErrorExecution,
+                                                    "<send> <param name='text'> could not be read",
+                                                ),
+                                            );
+                                            // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                                            _param_failed = true;
+                                        }
+                                    }
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
+
+                                // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                                // which declared it to this build. Dispatch rather than refuse.
+                                {
+                                    let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                    let __sce_request = sce_rust_runtime::HostSendRequest {
+                                        processor_type: "x-sce-host".to_string(),
+                                        event_name: "prompt.turn".to_string(),
+                                        target: "".to_string(),
+                                        content: "".to_string(),
+                                        params: host_params,
+                                        send_id: send_id.to_string(),
+                                    };
+                                    let __sce_served = engine.perform_host_send(__sce_request);
+                                    // W3C SCXML 6.2: a declared type with no handler registered is,
+                                    // from the document's side, a processor the platform does not
+                                    // support — the act it asked for was performed by nobody. Same
+                                    // event, so a wiring mistake cannot read as success.
+                                    if __sce_served.is_none()
+                                        && !engine.has_event_processor("x-sce-host")
+                                    {
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                        err_meta.metadata.send_id = send_id.clone();
+                                        engine.raise(err_meta);
+                                    }
+                                }
+
+                                // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                                // this element was processed, so the rest of the block does not run —
+                                // from however deep a <foreach> it came.
+                                if _param_failed {
+                                    break 'action_block;
+                                }
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            }
                         }
                     }
                     _ => {}
@@ -2765,28 +2775,34 @@ impl StatePolicy for AiLoopPolicy {
                     0 => {
                         // SCE-MAP: ai_loop.scxml:468 :: paused :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="turns_since_reflect">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(turns_since_reflect, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "turns_since_reflect", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'turns_since_reflect': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    AiLoopEvent::ErrorExecution,
-                                    "<assign> to 'turns_since_reflect' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="turns_since_reflect">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(turns_since_reflect, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "turns_since_reflect", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'turns_since_reflect': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AiLoopEvent::ErrorExecution,
+                                            "<assign> to 'turns_since_reflect' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }
@@ -2798,166 +2814,187 @@ impl StatePolicy for AiLoopPolicy {
                     0 => {
                         // SCE-MAP: ai_loop.scxml:379 :: reflecting :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="start_prompt">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_event.data.start_prompt";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "start_prompt", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'start_prompt': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    AiLoopEvent::ErrorExecution,
-                                    "<assign> to 'start_prompt' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="start_prompt">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_event.data.start_prompt";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "start_prompt", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'start_prompt': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AiLoopEvent::ErrorExecution,
+                                            "<assign> to 'start_prompt' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
-                        }
 
-                        {
-                            // W3C SCXML 5.3: <assign location="turn_prompt">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_event.data.turn_prompt";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "turn_prompt", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'turn_prompt': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    AiLoopEvent::ErrorExecution,
-                                    "<assign> to 'turn_prompt' failed",
-                                ));
+                            {
+                                // W3C SCXML 5.3: <assign location="turn_prompt">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_event.data.turn_prompt";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "turn_prompt", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'turn_prompt': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AiLoopEvent::ErrorExecution,
+                                            "<assign> to 'turn_prompt' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
-                        }
 
-                        {
-                            // W3C SCXML 5.3: <assign location="milestone">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_event.data.milestone";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "milestone", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'milestone': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    AiLoopEvent::ErrorExecution,
-                                    "<assign> to 'milestone' failed",
-                                ));
+                            {
+                                // W3C SCXML 5.3: <assign location="milestone">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_event.data.milestone";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "milestone", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'milestone': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AiLoopEvent::ErrorExecution,
+                                            "<assign> to 'milestone' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }
                     1 => {
                         // SCE-MAP: ai_loop.scxml:385 :: reflecting :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
-
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
-
-                            let mut _param_failed = false;
-
-                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                            // delivered, so each name carries a vector. The typed value is kept
-                            // rather than its text — a receiver reading `_event.data.value === 42`
-                            // finds the string "42" unequal.
-                            //
-                            // Declared out here rather than inside the payload block because
-                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                            // below are renderings of that one evaluation: the BasicHTTP and
-                            // host-served arms read this map instead of asking the data model again.
-                            // While it was block-scoped they had to, and what they re-read was
-                            // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
-                            // posted zero form parameters, against §scxml-C-2.
-                            let mut _send_wire_params: ::std::collections::BTreeMap<
-                                String,
-                                Vec<::sce_rust_runtime::ScriptValue>,
-                            > = ::std::collections::BTreeMap::new();
-                            // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
-                            let event_data_string: String = {
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let wire_params = &mut _send_wire_params;
-                                match se.evaluate_expression(&sid, "turn_prompt") {
-                                    Ok(val) => {
-                                        wire_params
-                                            .entry("text".to_string())
-                                            .or_default()
-                                            .push(val);
-                                    }
-                                    Err(e) => {
-                                        ::sce_rust_runtime::sce_log_error!(
-                                            "send param 'text' eval failed: {}",
-                                            e
-                                        );
-                                        engine.raise(
-                                            sce_rust_runtime::EventWithMetadata::platform_error(
-                                                AiLoopEvent::ErrorExecution,
-                                                "<send> <param name='text'> could not be read",
-                                            ),
-                                        );
-                                        // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
-                                        _param_failed = true;
-                                    }
-                                }
-                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                            };
-                            let event_data: &str = &event_data_string;
-
-                            // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
-                            // which declared it to this build. Dispatch rather than refuse.
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
                             {
-                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                let __sce_request = sce_rust_runtime::HostSendRequest {
-                                    processor_type: "x-sce-host".to_string(),
-                                    event_name: "prompt.turn".to_string(),
-                                    target: "".to_string(),
-                                    content: "".to_string(),
-                                    params: host_params,
-                                    send_id: send_id.to_string(),
-                                };
-                                let __sce_served = engine.perform_host_send(__sce_request);
-                                // W3C SCXML 6.2: a declared type with no handler registered is,
-                                // from the document's side, a processor the platform does not
-                                // support — the act it asked for was performed by nobody. Same
-                                // event, so a wiring mistake cannot read as success.
-                                if __sce_served.is_none()
-                                    && !engine.has_event_processor("x-sce-host")
-                                {
-                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
-                                    err_meta.metadata.send_id = send_id.clone();
-                                    engine.raise(err_meta);
-                                }
-                            }
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
 
-                            let _ = _param_failed; // transition content has no block exit to take
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let mut _param_failed = false;
+
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                // While it was block-scoped they had to, and what they re-read was
+                                // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
+                                // posted zero form parameters, against §scxml-C-2.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                                let event_data_string: String = {
+                                    self.ensure_script_engine();
+                                    let sid = self.session_id.as_ref().unwrap().clone();
+                                    let se = self.script_engine.clone();
+                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                    let wire_params = &mut _send_wire_params;
+                                    match se.evaluate_expression(&sid, "turn_prompt") {
+                                        Ok(val) => {
+                                            wire_params
+                                                .entry("text".to_string())
+                                                .or_default()
+                                                .push(val);
+                                        }
+                                        Err(e) => {
+                                            ::sce_rust_runtime::sce_log_error!(
+                                                "send param 'text' eval failed: {}",
+                                                e
+                                            );
+                                            engine.raise(
+                                                sce_rust_runtime::EventWithMetadata::platform_error(
+                                                    AiLoopEvent::ErrorExecution,
+                                                    "<send> <param name='text'> could not be read",
+                                                ),
+                                            );
+                                            // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                                            _param_failed = true;
+                                        }
+                                    }
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
+
+                                // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                                // which declared it to this build. Dispatch rather than refuse.
+                                {
+                                    let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                    let __sce_request = sce_rust_runtime::HostSendRequest {
+                                        processor_type: "x-sce-host".to_string(),
+                                        event_name: "prompt.turn".to_string(),
+                                        target: "".to_string(),
+                                        content: "".to_string(),
+                                        params: host_params,
+                                        send_id: send_id.to_string(),
+                                    };
+                                    let __sce_served = engine.perform_host_send(__sce_request);
+                                    // W3C SCXML 6.2: a declared type with no handler registered is,
+                                    // from the document's side, a processor the platform does not
+                                    // support — the act it asked for was performed by nobody. Same
+                                    // event, so a wiring mistake cannot read as success.
+                                    if __sce_served.is_none()
+                                        && !engine.has_event_processor("x-sce-host")
+                                    {
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                        err_meta.metadata.send_id = send_id.clone();
+                                        engine.raise(err_meta);
+                                    }
+                                }
+
+                                // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                                // this element was processed, so the rest of the block does not run —
+                                // from however deep a <foreach> it came.
+                                if _param_failed {
+                                    break 'action_block;
+                                }
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            }
                         }
                     }
                     _ => {}
@@ -2968,56 +3005,68 @@ impl StatePolicy for AiLoopPolicy {
                     0 => {
                         // SCE-MAP: ai_loop.scxml:522 :: within :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="turns">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(turns, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "turns", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'turns': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    AiLoopEvent::ErrorExecution,
-                                    "<assign> to 'turns' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="turns">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(turns, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "turns", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'turns': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AiLoopEvent::ErrorExecution,
+                                            "<assign> to 'turns' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }
                     1 => {
                         // SCE-MAP: ai_loop.scxml:525 :: within :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="turns">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(turns, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "turns", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'turns': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    AiLoopEvent::ErrorExecution,
-                                    "<assign> to 'turns' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="turns">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(turns, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "turns", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'turns': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AiLoopEvent::ErrorExecution,
+                                            "<assign> to 'turns' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }
@@ -3029,28 +3078,34 @@ impl StatePolicy for AiLoopPolicy {
                     0 => {
                         // SCE-MAP: ai_loop.scxml:311 :: working :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        {
-                            // W3C SCXML 5.3: <assign location="turns_since_reflect">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_scxml_add(turns_since_reflect, 1)";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "turns_since_reflect", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'turns_since_reflect': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    AiLoopEvent::ErrorExecution,
-                                    "<assign> to 'turns_since_reflect' failed",
-                                ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="turns_since_reflect">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(turns_since_reflect, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "turns_since_reflect", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'turns_since_reflect': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AiLoopEvent::ErrorExecution,
+                                            "<assign> to 'turns_since_reflect' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
                     }

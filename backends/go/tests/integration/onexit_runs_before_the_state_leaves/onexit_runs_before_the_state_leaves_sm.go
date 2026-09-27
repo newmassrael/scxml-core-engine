@@ -820,14 +820,14 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 	switch state {
 	case OnexitRunsBeforeTheStateLeavesStateInner:
 		//line onexit_runs_before_the_state_leaves.scxml:56
-		// W3C SCXML 3.9: onexit block 0
-		for exitBlock0 := 0; exitBlock0 < 1; exitBlock0++ {
-			_ = exitBlock0
+		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
+		// error ends it with `return`.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="exits" expr="exits + 1">
 	if err := p.assignVariable(`exits`, `_scxml_add(exits, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<assign> to 'exits' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
@@ -836,7 +836,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 	// W3C SCXML 5.3: <assign location="selfInInner" expr="1">
 	if err := p.assignVariable(`selfInInner`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<assign> to 'selfInInner' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	}
@@ -846,21 +846,21 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 	// W3C SCXML 5.3: <assign location="parentInInner" expr="1">
 	if err := p.assignVariable(`parentInInner`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<assign> to 'parentInInner' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	}
-		}
+		}()
 	case OnexitRunsBeforeTheStateLeavesStateOuter:
 		//line onexit_runs_before_the_state_leaves.scxml:45
-		// W3C SCXML 3.9: onexit block 0
-		for exitBlock0 := 0; exitBlock0 < 1; exitBlock0++ {
-			_ = exitBlock0
+		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
+		// error ends it with `return`.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="exits" expr="exits + 1">
 	if err := p.assignVariable(`exits`, `_scxml_add(exits, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<assign> to 'exits' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
@@ -869,7 +869,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 	// W3C SCXML 5.3: <assign location="selfInOuter" expr="1">
 	if err := p.assignVariable(`selfInOuter`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<assign> to 'selfInOuter' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	}
@@ -879,11 +879,11 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 	// W3C SCXML 5.3: <assign location="childInOuter" expr="1">
 	if err := p.assignVariable(`childInOuter`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<assign> to 'childInOuter' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	}
-		}
+		}()
 	default:
 		// No exit actions
 	}

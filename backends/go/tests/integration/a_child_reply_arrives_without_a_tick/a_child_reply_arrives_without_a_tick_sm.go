@@ -856,12 +856,16 @@ func (p *AChildReplyArrivesWithoutATickPolicy) ExecuteTransitionContent(source A
 		switch transitionIndex {
 		case 0:
 			//line a_child_reply_arrives_without_a_tick.scxml:44
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="hellos" expr="hellos + 1">
 	if err := p.assignVariable(`hellos`, `_scxml_add(hellos, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AChildReplyArrivesWithoutATickEventErrorExecution, "<assign> to 'hellos' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

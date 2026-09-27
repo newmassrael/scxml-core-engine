@@ -654,6 +654,8 @@ impl StatePolicy for Test402Policy {
                             Test402Event::ErrorExecution,
                             "<assign> has an invalid or read-only location ''",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
                 }
             }
@@ -862,11 +864,13 @@ impl StatePolicy for Test402Policy {
                     0 => {
                         // SCE-MAP: test402.scxml:24 :: s01 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML 3.8.1: <raise event="event2">
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            Test402Event::Event2,
-                        ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 3.8.1: <raise event="event2">
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                Test402Event::Event2,
+                            ));
+                        }
                     }
                     _ => {}
                 }

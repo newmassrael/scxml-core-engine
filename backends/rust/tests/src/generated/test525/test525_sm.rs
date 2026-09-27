@@ -660,6 +660,7 @@ impl StatePolicy for Test525Policy {
                                 Test525Event::ErrorExecution,
                                 "<foreach item='Var3'> is not a legal variable name",
                             ));
+                            break 'action_block;
                         } else {
                             // Evaluate array expression
                             match se.evaluate_expression(&sid, "Var1") {
@@ -677,53 +678,41 @@ impl StatePolicy for Test525Policy {
                                             foreach_success = false;
                                             break;
                                         }
-                                        // W3C SCXML 4.6: Execute body actions — stop on first error.
-                                        // Each body action runs inside a labeled block `'foreach_body`. Action
-                                        // templates that raise error.execution also `break 'foreach_body` so
-                                        // subsequent body actions for this iteration are skipped, then the
-                                        // outer loop is aborted (matches W3C spec and C++ ForeachHelper).
-                                        let mut iteration_success = true;
-                                        'foreach_body: {
+                                        // W3C SCXML 4.6: Execute body actions. A failing one raises its
+                                        // own error and leaves the enclosing block from here.
+
+                                        {
+                                            // W3C SCXML 5.3: <assign location="Var2">
+                                            self.ensure_script_engine();
+                                            let sid = self.session_id.as_ref().unwrap().clone();
+                                            let se = self.script_engine.clone();
+                                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                            let expr = "_scxml_add(Var2, 1)";
+                                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                            // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                            // and create a fresh table, breaking reference equality.
+                                            let assign_script = format!("{} = {}", "Var2", expr);
+                                            if let Err(e) = se.execute_script(&sid, &assign_script)
                                             {
-                                                // W3C SCXML 5.3: <assign location="Var2">
-                                                self.ensure_script_engine();
-                                                let sid = self.session_id.as_ref().unwrap().clone();
-                                                let se = self.script_engine.clone();
-                                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                                let expr = "_scxml_add(Var2, 1)";
-                                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                                // and create a fresh table, breaking reference equality.
-                                                let assign_script =
-                                                    format!("{} = {}", "Var2", expr);
-                                                if let Err(e) =
-                                                    se.execute_script(&sid, &assign_script)
-                                                {
-                                                    ::sce_rust_runtime::sce_log_error!(
-                                                        "Assign failed for 'Var2': {}",
-                                                        e
-                                                    );
-                                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test525Event::ErrorExecution, "<assign> to 'Var2' failed"));
-                                                    // W3C SCXML 4.6: Stop current foreach iteration and loop on error
-                                                    iteration_success = false;
-                                                    break 'foreach_body;
-                                                }
+                                                ::sce_rust_runtime::sce_log_error!(
+                                                    "Assign failed for 'Var2': {}",
+                                                    e
+                                                );
+                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test525Event::ErrorExecution, "<assign> to 'Var2' failed"));
+                                                // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                                break 'action_block;
                                             }
-                                        }
-                                        if !iteration_success {
-                                            ::sce_rust_runtime::sce_log_debug!("Foreach: body action failed at iteration {}, stopping loop (W3C SCXML 4.6)", _idx);
-                                            foreach_success = false;
-                                            break;
                                         }
                                     }
                                     if !foreach_success {
                                         engine.raise(
                                             sce_rust_runtime::EventWithMetadata::platform_error(
                                                 Test525Event::ErrorExecution,
-                                                "an action inside <foreach> failed",
+                                                "<foreach> could not set its loop variable",
                                             ),
                                         );
+                                        break 'action_block;
                                     }
                                 }
                                 Ok(_) => {
@@ -737,6 +726,7 @@ impl StatePolicy for Test525Policy {
                                             "<foreach array='Var1'> is not an array",
                                         ),
                                     );
+                                    break 'action_block;
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
@@ -749,6 +739,7 @@ impl StatePolicy for Test525Policy {
                                             "<foreach array='Var1'> failed to evaluate",
                                         ),
                                     );
+                                    break 'action_block;
                                 }
                             }
                         }

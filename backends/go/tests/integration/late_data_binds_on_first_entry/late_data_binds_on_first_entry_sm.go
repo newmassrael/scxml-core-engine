@@ -702,31 +702,31 @@ func (p *LateDataBindsOnFirstEntryPolicy) ExecuteEntryActions(state LateDataBind
 		if engine.ClaimLateBindingFirstEntry(state) {
 			p.bindStateData(state, engine)
 		}
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="entries" expr="entries + 1">
 	if err := p.assignVariable(`entries`, `_scxml_add(entries, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, "<assign> to 'entries' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="seen" expr="seen * 10 + v">
 	if err := p.assignVariable(`seen`, `_scxml_add((seen * 10), v)`); err != nil {
 		engine.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, "<assign> to 'seen' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="contentSeen" expr="c">
 	if err := p.assignVariable(`contentSeen`, `c`); err != nil {
 		engine.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, "<assign> to 'contentSeen' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-		}
+		}()
 	default:
 		// No entry actions
 	}
@@ -829,12 +829,16 @@ func (p *LateDataBindsOnFirstEntryPolicy) ExecuteTransitionContent(source LateDa
 		switch transitionIndex {
 		case 0:
 			//line late_data_binds_on_first_entry.scxml:50
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="v" expr="5">
 	if err := p.assignVariable(`v`, `5`); err != nil {
 		engine.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, "<assign> to 'v' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

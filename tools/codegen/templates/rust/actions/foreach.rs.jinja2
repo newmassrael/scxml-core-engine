@@ -1,11 +1,18 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# W3C SCXML 5.6: <foreach> - Iterate over array
+{# W3C SCXML 4.6: <foreach> - Iterate over array
    1:1 with C++ ForeachHelper::executeForeachWithActions:
-   - Returns false on error; stops iteration immediately (W3C 4.6)
-   - "If evaluation of any child element causes an error, processor MUST cease execution"
+   - "If the evaluation of any child element of foreach causes an error, the
+     processor MUST cease execution of the foreach element and the block that
+     contains it." A body element that fails raises its own error and leaves
+     the enclosing `'action_block` itself — a labelled block a `break` can
+     leave from inside this loop — so nothing here raises for it.
+   - This template raises only the errors that are the <foreach>'s own: a
+     collection it cannot walk, a loop variable it cannot set; and those end
+     the block too.
 #}
+{% set foreach_ends_block = in_action_block is defined and in_action_block %}
 {
     // W3C SCXML 5.6: <foreach array="{{ action.array | default("") }}" item="{{ action.item | default("") }}">
     self.ensure_script_engine();
@@ -25,6 +32,9 @@
 {% if 'error.execution' in model.events %}
     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<foreach> has no 'item' attribute"));
 {% endif %}
+{% if foreach_ends_block %}
+    break 'action_block;
+{% endif %}
 {% else %}
     {# W3C SCXML 4.6: `item` is a location expression, so it is lowered by
        the same frontend every other write target goes through. A legal
@@ -34,6 +44,9 @@
         ::sce_rust_runtime::sce_log_error!("Foreach validation failed: '{}' is not a legal variable name", item_name);
 {% if 'error.execution' in model.events %}
         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<foreach item='{{ action.item }}'> is not a legal variable name"));
+{% endif %}
+{% if foreach_ends_block %}
+        break 'action_block;
 {% endif %}
     } else {
         // Evaluate array expression
@@ -57,29 +70,21 @@
                     }
 {% endif %}
 {% if action.actions and action.actions | length > 0 %}
-                    // W3C SCXML 4.6: Execute body actions — stop on first error.
-                    // Each body action runs inside a labeled block `'foreach_body`. Action
-                    // templates that raise error.execution also `break 'foreach_body` so
-                    // subsequent body actions for this iteration are skipped, then the
-                    // outer loop is aborted (matches W3C spec and C++ ForeachHelper).
-                    let mut iteration_success = true;
-                    'foreach_body: {
+                    // W3C SCXML 4.6: Execute body actions. A failing one raises its
+                    // own error and leaves the enclosing block from here.
 {% for body_action in action.actions %}
-                        {% with action=body_action, in_foreach=true %}
-                        {% include 'actions/' ~ body_action.type ~ '.rs.jinja2' %}
-                        {% endwith %}
+                    {% with action=body_action %}
+                    {% include 'actions/' ~ body_action.type ~ '.rs.jinja2' %}
+                    {% endwith %}
 {% endfor %}
-                    }
-                    if !iteration_success {
-                        ::sce_rust_runtime::sce_log_debug!("Foreach: body action failed at iteration {}, stopping loop (W3C SCXML 4.6)", _idx);
-                        foreach_success = false;
-                        break;
-                    }
 {% endif %}
                 }
                 if !foreach_success {
 {% if 'error.execution' in model.events %}
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "an action inside <foreach> failed"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<foreach> could not set its loop variable"));
+{% endif %}
+{% if foreach_ends_block %}
+                    break 'action_block;
 {% endif %}
                 }
             }
@@ -89,11 +94,17 @@
 {% if 'error.execution' in model.events %}
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<foreach array='{{ action.array | default("") }}'> is not an array"));
 {% endif %}
+{% if foreach_ends_block %}
+                break 'action_block;
+{% endif %}
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Foreach: failed to evaluate array '{{ action.array | default("") }}': {}", e);
 {% if 'error.execution' in model.events %}
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<foreach array='{{ action.array | default("") }}'> failed to evaluate"));
+{% endif %}
+{% if foreach_ends_block %}
+                break 'action_block;
 {% endif %}
             }
         }

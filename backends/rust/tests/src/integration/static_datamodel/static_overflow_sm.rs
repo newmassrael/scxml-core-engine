@@ -598,30 +598,35 @@ impl StatePolicy for StaticOverflowPolicy {
                     0 => {
                         // SCE-MAP: static_overflow.scxml:22 :: waiting :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML 5.3: <assign location="level">
-                        if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.level = sce_forge_runtime::algorithm::add::<u8>(self.level, 3)?;
-                            Ok(())
-                        })()
-                        .is_err()
-                        {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOverflowEvent::ErrorExecution, "<assign location='level'>: an integer operation overflowed or failed"));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="level">
+                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                                self.level =
+                                    sce_forge_runtime::algorithm::add::<u8>(self.level, 3)?;
+                                Ok(())
+                            })()
+                            .is_err()
+                            {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOverflowEvent::ErrorExecution, "<assign location='level'>: an integer operation overflowed or failed"));
+                            }
                         }
                     }
                     2 => {
                         // SCE-MAP: static_overflow.scxml:26 :: waiting :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
-
-                        // W3C SCXML 5.3: <assign location="refusals">
-                        if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.refusals =
-                                sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
-                            Ok(())
-                        })()
-                        .is_err()
-                        {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOverflowEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="refusals">
+                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                                self.refusals =
+                                    sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
+                                Ok(())
+                            })()
+                            .is_err()
+                            {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOverflowEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                            }
                         }
                     }
                     _ => {}

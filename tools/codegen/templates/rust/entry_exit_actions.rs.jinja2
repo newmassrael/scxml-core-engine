@@ -95,7 +95,7 @@
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "rust", "                ") -}}
 {%- endif %}
-                {% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
+                {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
 
 {% endfor %}
                 }
@@ -109,7 +109,7 @@
                 if is_default_entry {
                     'action_block: {
 {% for action in state.initial_transition_actions %}
-                    {% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
+                    {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
 
 {% endfor %}
                     }
@@ -352,10 +352,13 @@
 {% for history_id, history_info in model.history_states | dictsort %}
 {% if history_info.default_actions %}
             {{ machine_name }}History::{{ history_id | to_state_variant }} => {
+                // W3C SCXML 4.9: the default content is one block; an error ends it.
+                'action_block: {
 {% for action in history_info.default_actions %}
-                {% include 'actions/' ~ action.type ~ '.rs.jinja2' %}
+                {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
 
 {% endfor %}
+                }
             }
 {% endif %}
 {% endfor %}
@@ -417,7 +420,7 @@
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "rust", "                ") -}}
 {%- endif %}
-                {% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
+                {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
 
 {% endfor %}
                 }

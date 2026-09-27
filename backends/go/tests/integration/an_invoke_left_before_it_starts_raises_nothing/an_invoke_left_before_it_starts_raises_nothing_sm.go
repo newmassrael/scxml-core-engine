@@ -760,12 +760,16 @@ func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) ExecuteTransitionContent
 		switch transitionIndex {
 		case 0:
 			//line an_invoke_left_before_it_starts_raises_nothing.scxml:29
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEventErrorExecution, "<assign> to 'errors' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

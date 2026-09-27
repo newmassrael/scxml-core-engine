@@ -606,7 +606,7 @@ impl StatePolicy for Test487Policy {
                                 Test487Event::ErrorExecution,
                                 "<assign> to 'Var1' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }

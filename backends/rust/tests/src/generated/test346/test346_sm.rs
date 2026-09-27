@@ -619,6 +619,8 @@ impl StatePolicy for Test346Policy {
                             Test346Event::ErrorExecution,
                             "<assign> has an invalid or read-only location '_sessionid'",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
 
                     // W3C SCXML 3.8.1: <raise event="event1">
@@ -646,6 +648,8 @@ impl StatePolicy for Test346Policy {
                             Test346Event::ErrorExecution,
                             "<assign> has an invalid or read-only location '_event'",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
 
                     // W3C SCXML 3.8.1: <raise event="event2">
@@ -673,6 +677,8 @@ impl StatePolicy for Test346Policy {
                             Test346Event::ErrorExecution,
                             "<assign> has an invalid or read-only location '_ioprocessors'",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
 
                     // W3C SCXML 3.8.1: <raise event="event3">
@@ -700,6 +706,8 @@ impl StatePolicy for Test346Policy {
                             Test346Event::ErrorExecution,
                             "<assign> has an invalid or read-only location '_name'",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
 
                     // W3C SCXML 3.8.1: <raise event="event4">

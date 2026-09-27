@@ -670,7 +670,8 @@ impl StatePolicy for Test178Policy {
                         }
 
                         // W3C SCXML 4.9: a <param> that could not be read raised an error while
-                        // this element was processed, so the rest of the block does not run.
+                        // this element was processed, so the rest of the block does not run —
+                        // from however deep a <foreach> it came.
                         if _param_failed {
                             break 'action_block;
                         }
@@ -810,21 +811,23 @@ impl StatePolicy for Test178Policy {
                     0 => {
                         // SCE-MAP: test178.scxml:20 :: s0 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML 4.7: <log> with script engine expression
-                        {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se.evaluate_expression(&sid, "_event.raw") {
-                                Ok(val) => {
-                                    ::sce_rust_runtime::sce_log_info!("{}: {:?}", "_event ", val)
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 4.7: <log> with script engine expression
+                            {
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                match se.evaluate_expression(&sid, "_event.raw") {
+                                    Ok(val) => ::sce_rust_runtime::sce_log_info!(
+                                        "{}: {:?}", "_event ", val
+                                    ),
+                                    Err(e) => ::sce_rust_runtime::sce_log_error!(
+                                        "Log expression eval failed: {}",
+                                        e
+                                    ),
                                 }
-                                Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                    "Log expression eval failed: {}",
-                                    e
-                                ),
                             }
                         }
                     }

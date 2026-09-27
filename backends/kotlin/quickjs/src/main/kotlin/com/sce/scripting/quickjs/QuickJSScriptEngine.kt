@@ -330,15 +330,19 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
             QuickJSNative.eval(handle, "var $index;")
         }
 
-        for (i in 0 until length) {
-            QuickJSNative.eval(handle, "$item = __sce_foreach[$i]")
-            if (index.isNotEmpty()) {
-                QuickJSNative.eval(handle, "$index = $i")
+        // A body element that fails ends the loop by throwing (W3C SCXML 4.9),
+        // so the temporary is released however the loop is left.
+        try {
+            for (i in 0 until length) {
+                QuickJSNative.eval(handle, "$item = __sce_foreach[$i]")
+                if (index.isNotEmpty()) {
+                    QuickJSNative.eval(handle, "$index = $i")
+                }
+                body()
             }
-            body()
+        } finally {
+            QuickJSNative.eval(handle, "delete __sce_foreach")
         }
-
-        QuickJSNative.eval(handle, "delete __sce_foreach")
     }
 
     override fun loadDataFromSrc(src: String, basePath: String): String? {

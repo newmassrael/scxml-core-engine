@@ -656,6 +656,7 @@ impl StatePolicy for Test151Policy {
                                 Test151Event::ErrorExecution,
                                 "<foreach item='Var1'> is not a legal variable name",
                             ));
+                            break 'action_block;
                         } else {
                             // Evaluate array expression
                             match se.evaluate_expression(&sid, "Var3") {
@@ -691,9 +692,10 @@ impl StatePolicy for Test151Policy {
                                         engine.raise(
                                             sce_rust_runtime::EventWithMetadata::platform_error(
                                                 Test151Event::ErrorExecution,
-                                                "an action inside <foreach> failed",
+                                                "<foreach> could not set its loop variable",
                                             ),
                                         );
+                                        break 'action_block;
                                     }
                                 }
                                 Ok(_) => {
@@ -707,6 +709,7 @@ impl StatePolicy for Test151Policy {
                                             "<foreach array='Var3'> is not an array",
                                         ),
                                     );
+                                    break 'action_block;
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
@@ -719,6 +722,7 @@ impl StatePolicy for Test151Policy {
                                             "<foreach array='Var3'> failed to evaluate",
                                         ),
                                     );
+                                    break 'action_block;
                                 }
                             }
                         }
@@ -755,6 +759,7 @@ impl StatePolicy for Test151Policy {
                                 Test151Event::ErrorExecution,
                                 "<foreach item='Var4'> is not a legal variable name",
                             ));
+                            break 'action_block;
                         } else {
                             // Evaluate array expression
                             match se.evaluate_expression(&sid, "Var3") {
@@ -790,9 +795,10 @@ impl StatePolicy for Test151Policy {
                                         engine.raise(
                                             sce_rust_runtime::EventWithMetadata::platform_error(
                                                 Test151Event::ErrorExecution,
-                                                "an action inside <foreach> failed",
+                                                "<foreach> could not set its loop variable",
                                             ),
                                         );
+                                        break 'action_block;
                                     }
                                 }
                                 Ok(_) => {
@@ -806,6 +812,7 @@ impl StatePolicy for Test151Policy {
                                             "<foreach array='Var3'> is not an array",
                                         ),
                                     );
+                                    break 'action_block;
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
@@ -818,6 +825,7 @@ impl StatePolicy for Test151Policy {
                                             "<foreach array='Var3'> failed to evaluate",
                                         ),
                                     );
+                                    break 'action_block;
                                 }
                             }
                         }

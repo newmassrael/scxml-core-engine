@@ -828,32 +828,36 @@ impl StatePolicy for Test307Policy {
                     0 => {
                         // SCE-MAP: test307.scxml:13 :: s0 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML 4.7: <log> with script engine expression
-                        {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se.evaluate_expression(&sid, "_event") {
-                                Ok(val) => ::sce_rust_runtime::sce_log_info!(
-                                    "{}: {:?}",
-                                    "error in state s0",
-                                    val
-                                ),
-                                Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                    "Log expression eval failed: {}",
-                                    e
-                                ),
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 4.7: <log> with script engine expression
+                            {
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                match se.evaluate_expression(&sid, "_event") {
+                                    Ok(val) => ::sce_rust_runtime::sce_log_info!(
+                                        "{}: {:?}",
+                                        "error in state s0",
+                                        val
+                                    ),
+                                    Err(e) => ::sce_rust_runtime::sce_log_error!(
+                                        "Log expression eval failed: {}",
+                                        e
+                                    ),
+                                }
                             }
                         }
                     }
                     1 => {
                         // SCE-MAP: test307.scxml:16 :: s0 :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
-
-                        // W3C SCXML 4.7: <log label="no error in s0">
-                        ::sce_rust_runtime::sce_log_info!("{}", "no error in s0");
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 4.7: <log label="no error in s0">
+                            ::sce_rust_runtime::sce_log_info!("{}", "no error in s0");
+                        }
                     }
                     _ => {}
                 }
@@ -863,32 +867,36 @@ impl StatePolicy for Test307Policy {
                     0 => {
                         // SCE-MAP: test307.scxml:31 :: s1 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML 4.7: <log> with script engine expression
-                        {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se.evaluate_expression(&sid, "_event") {
-                                Ok(val) => ::sce_rust_runtime::sce_log_info!(
-                                    "{}: {:?}",
-                                    "error in state s1",
-                                    val
-                                ),
-                                Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                    "Log expression eval failed: {}",
-                                    e
-                                ),
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 4.7: <log> with script engine expression
+                            {
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                match se.evaluate_expression(&sid, "_event") {
+                                    Ok(val) => ::sce_rust_runtime::sce_log_info!(
+                                        "{}: {:?}",
+                                        "error in state s1",
+                                        val
+                                    ),
+                                    Err(e) => ::sce_rust_runtime::sce_log_error!(
+                                        "Log expression eval failed: {}",
+                                        e
+                                    ),
+                                }
                             }
                         }
                     }
                     1 => {
                         // SCE-MAP: test307.scxml:34 :: s1 :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
-
-                        // W3C SCXML 4.7: <log label="No error in s1">
-                        ::sce_rust_runtime::sce_log_info!("{}", "No error in s1");
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 4.7: <log label="No error in s1">
+                            ::sce_rust_runtime::sce_log_info!("{}", "No error in s1");
+                        }
                     }
                     _ => {}
                 }

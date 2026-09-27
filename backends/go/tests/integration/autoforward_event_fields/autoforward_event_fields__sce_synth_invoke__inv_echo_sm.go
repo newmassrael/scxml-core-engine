@@ -585,9 +585,9 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteEntryActions(
 	switch state {
 	case AutoforwardEventFieldsSceSynthInvokeInvEchoStateEmit:
 		//line autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -615,13 +615,14 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteEntryActions(
 	if p.ParentExternalQueue != nil {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "childToParent", Data: eventDataStr})
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
-		}
+		}()
 	default:
 		// No entry actions
 	}
@@ -713,6 +714,8 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteTransitionCon
 		switch transitionIndex {
 		case 0:
 			//line autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:11
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -724,8 +727,11 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteTransitionCon
 	}
 	}
 
+			}()
 		case 1:
 			//line autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:18
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
@@ -737,6 +743,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteTransitionCon
 	}
 	}
 
+			}()
 		}
 	}
 }

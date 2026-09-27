@@ -490,6 +490,8 @@ func (p *AutoforwardDoneInvokeSceSynthInvokeInvWatchPolicy) ExecuteTransitionCon
 		switch transitionIndex {
 		case 0:
 			//line autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:6
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -501,8 +503,11 @@ func (p *AutoforwardDoneInvokeSceSynthInvokeInvWatchPolicy) ExecuteTransitionCon
 	}
 	}
 
+			}()
 		case 1:
 			//line autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:9
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
@@ -514,6 +519,7 @@ func (p *AutoforwardDoneInvokeSceSynthInvokeInvWatchPolicy) ExecuteTransitionCon
 	}
 	}
 
+			}()
 		}
 	}
 }

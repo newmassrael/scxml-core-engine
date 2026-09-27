@@ -746,9 +746,9 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 	switch state {
 	case ABadSendParamEndsItsBlockStateS0:
 		//line a_bad_send_param_ends_its_block.scxml:56
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -784,9 +784,10 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 		meta.Metadata.Data = eventDataStr
 		engine.Raise(meta)
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
@@ -794,13 +795,13 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 	// W3C SCXML 5.3: <assign location="after" expr="after + 1">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<assign> to 'after' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-		}
-		// W3C SCXML 3.8: onentry block 1 (break on error stops subsequent actions)
-		for actionBlock1 := 0; actionBlock1 < 1; actionBlock1++ {
-			_ = actionBlock1
+		}()
+		// W3C SCXML 3.8 + 4.9: onentry block 1, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -836,9 +837,10 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 		meta.Metadata.Data = eventDataStr
 		engine.Raise(meta)
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
@@ -846,13 +848,13 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 	// W3C SCXML 5.3: <assign location="after" expr="after + 100">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 100)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<assign> to 'after' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-		}
-		// W3C SCXML 3.8: onentry block 2 (break on error stops subsequent actions)
-		for actionBlock2 := 0; actionBlock2 < 1; actionBlock2++ {
-			_ = actionBlock2
+		}()
+		// W3C SCXML 3.8 + 4.9: onentry block 2, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -880,9 +882,10 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
@@ -890,13 +893,13 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 	// W3C SCXML 5.3: <assign location="after" expr="after + 10">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 10)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<assign> to 'after' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-		}
-		// W3C SCXML 3.8: onentry block 3 (break on error stops subsequent actions)
-		for actionBlock3 := 0; actionBlock3 < 1; actionBlock3++ {
-			_ = actionBlock3
+		}()
+		// W3C SCXML 3.8 + 4.9: onentry block 3, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_3"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -926,13 +929,14 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 		meta.Metadata.Data = eventDataStr
 		engine.Raise(meta)
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
-		}
+		}()
 	default:
 		// No entry actions
 	}
@@ -1053,36 +1057,52 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteTransitionContent(source ABadSe
 		switch transitionIndex {
 		case 0:
 			//line a_bad_send_param_ends_its_block.scxml:83
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<assign> to 'errors' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line a_bad_send_param_ends_its_block.scxml:86
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="partials" expr="partials + 1">
 	if err := p.assignVariable(`partials`, `_scxml_add(partials, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<assign> to 'partials' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 2:
 			//line a_bad_send_param_ends_its_block.scxml:89
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="bares" expr="bares + 1">
 	if err := p.assignVariable(`bares`, `_scxml_add(bares, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<assign> to 'bares' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 3:
 			//line a_bad_send_param_ends_its_block.scxml:92
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="carried" expr="1">
 	if err := p.assignVariable(`carried`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<assign> to 'carried' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

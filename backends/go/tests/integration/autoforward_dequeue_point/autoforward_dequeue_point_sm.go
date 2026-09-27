@@ -705,6 +705,8 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteTransitionContent(source Autoforw
 		switch transitionIndex {
 		case 0:
 			//line autoforward_dequeue_point.scxml:97
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -733,8 +735,11 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteTransitionContent(source Autoforw
 	}
 	}
 
+			}()
 		case 1:
 			//line autoforward_dequeue_point.scxml:101
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
@@ -746,6 +751,7 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteTransitionContent(source Autoforw
 	}
 	}
 
+			}()
 		}
 	}
 }

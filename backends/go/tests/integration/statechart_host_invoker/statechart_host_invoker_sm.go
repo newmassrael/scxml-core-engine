@@ -1886,17 +1886,17 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 	switch state {
 	case StatechartHostInvokerStateDone:
 		//line statechart_host_invoker.scxml:194
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="ended" expr="ended + 1">
 	if err := p.assignVariable(`ended`, `_scxml_add(ended, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'ended' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-		}
+		}()
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1941,17 +1941,17 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 		}
 	case StatechartHostInvokerStateInvoking:
 		//line statechart_host_invoker.scxml:149
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="entered" expr="entered + 1">
 	if err := p.assignVariable(`entered`, `_scxml_add(entered, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'entered' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-		}
+		}()
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1974,9 +1974,9 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 		}
 	case StatechartHostInvokerStateLocating:
 		//line statechart_host_invoker.scxml:205
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	// W3C SCXML 6.2.4: the send id goes to `idlocation`, through the
@@ -2021,7 +2021,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 	}
 	}
 
-		}
+		}()
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -2521,98 +2521,140 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 		switch transitionIndex {
 		case 0:
 			//line statechart_host_invoker.scxml:199
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="matched" expr="matched + 1">
 	if err := p.assignVariable(`matched`, `_scxml_add(matched, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'matched' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case StatechartHostInvokerStateEvaluating:
 		switch transitionIndex {
 		case 0:
 			//line statechart_host_invoker.scxml:189
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="dropped" expr="dropped + 1">
 	if err := p.assignVariable(`dropped`, `_scxml_add(dropped, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'dropped' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case StatechartHostInvokerStateInvoking:
 		switch transitionIndex {
 		case 0:
 			//line statechart_host_invoker.scxml:159
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="started" expr="started + 1">
 	if err := p.assignVariable(`started`, `_scxml_add(started, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'started' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line statechart_host_invoker.scxml:162
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="started2" expr="started2 + 1">
 	if err := p.assignVariable(`started2`, `_scxml_add(started2, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'started2' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 2:
 			//line statechart_host_invoker.scxml:165
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="refused" expr="refused + 1">
 	if err := p.assignVariable(`refused`, `_scxml_add(refused, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'refused' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case StatechartHostInvokerStateLocating:
 		switch transitionIndex {
 		case 0:
 			//line statechart_host_invoker.scxml:213
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="slotted" expr="slotted + 1">
 	if err := p.assignVariable(`slotted`, `_scxml_add(slotted, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'slotted' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line statechart_host_invoker.scxml:216
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pinged" expr="pinged + 1">
 	if err := p.assignVariable(`pinged`, `_scxml_add(pinged, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'pinged' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 2:
 			//line statechart_host_invoker.scxml:219
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="leaked" expr="leaked + 1">
 	if err := p.assignVariable(`leaked`, `_scxml_add(leaked, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'leaked' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 3:
 			//line statechart_host_invoker.scxml:222
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="lost" expr="lost + 1">
 	if err := p.assignVariable(`lost`, `_scxml_add(lost, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'lost' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case StatechartHostInvokerStateTimed:
 		switch transitionIndex {
 		case 0:
 			//line statechart_host_invoker.scxml:234
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="misdated" expr="misdated + 1">
 	if err := p.assignVariable(`misdated`, `_scxml_add(misdated, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'misdated' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line statechart_host_invoker.scxml:240
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	{
 		cancelSendIDVal, cancelErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `""`)
@@ -2621,57 +2663,82 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 		}
 	}
 
+			}()
 		case 3:
 			//line statechart_host_invoker.scxml:247
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="expired" expr="expired + 1">
 	if err := p.assignVariable(`expired`, `_scxml_add(expired, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'expired' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 4:
 			//line statechart_host_invoker.scxml:251
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="finished" expr="finished + 1">
 	if err := p.assignVariable(`finished`, `_scxml_add(finished, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'finished' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case StatechartHostInvokerStateTyped:
 		switch transitionIndex {
 		case 0:
 			//line statechart_host_invoker.scxml:266
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="granted" expr="granted + 1">
 	if err := p.assignVariable(`granted`, `_scxml_add(granted, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'granted' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line statechart_host_invoker.scxml:269
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="denied" expr="denied + 1">
 	if err := p.assignVariable(`denied`, `_scxml_add(denied, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'denied' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 2:
 			//line statechart_host_invoker.scxml:272
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="unreadable" expr="unreadable + 1">
 	if err := p.assignVariable(`unreadable`, `_scxml_add(unreadable, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'unreadable' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 3:
 			//line statechart_host_invoker.scxml:275
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="level" expr="'high'">
 	if err := p.assignVariable(`level`, `"high"`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'level' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

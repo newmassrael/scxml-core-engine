@@ -951,28 +951,30 @@ impl StatePolicy for AutoforwardDoneInvokePolicy {
                     0 => {
                         // SCE-MAP: autoforward_done_invoke.scxml:84 :: phase :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        {
-                            let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
-
-                            let event_data: &str = "";
-
-                            // W3C SCXML 6.2: Default send (no target = external event)
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
                             {
-                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                    AutoforwardDoneInvokeEvent::Probe,
-                                );
-                                // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                                meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                    send_id.clone(),
-                                    ::sce_rust_runtime::SceString::new(),
-                                );
-                                meta.set_event_data(event_data);
-                                engine.raise_external_with_meta(meta);
-                            }
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                            let _ = send_id; // suppress unused warning when no send operation
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let event_data: &str = "";
+
+                                // W3C SCXML 6.2: Default send (no target = external event)
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        AutoforwardDoneInvokeEvent::Probe,
+                                    );
+                                    // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+                                    meta.metadata = sce_rust_runtime::EventMetadata::external(
+                                        send_id.clone(),
+                                        ::sce_rust_runtime::SceString::new(),
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise_external_with_meta(meta);
+                                }
+
+                                let _ = send_id; // suppress unused warning when no send operation
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            }
                         }
                     }
                     _ => {}

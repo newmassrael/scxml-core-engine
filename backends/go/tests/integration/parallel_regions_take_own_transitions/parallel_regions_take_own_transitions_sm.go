@@ -849,23 +849,31 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteTransitionContent(sourc
 		switch transitionIndex {
 		case 0:
 			//line parallel_regions_take_own_transitions.scxml:62
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="m" expr="m + 1">
 	if err := p.assignVariable(`m`, `_scxml_add(m, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ParallelRegionsTakeOwnTransitionsEventErrorExecution, "<assign> to 'm' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case ParallelRegionsTakeOwnTransitionsStateWorking:
 		switch transitionIndex {
 		case 0:
 			//line parallel_regions_take_own_transitions.scxml:38
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="n" expr="n + 1">
 	if err := p.assignVariable(`n`, `_scxml_add(n, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ParallelRegionsTakeOwnTransitionsEventErrorExecution, "<assign> to 'n' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

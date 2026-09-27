@@ -320,6 +320,10 @@ class RhinoScriptEngine : ScxmlScriptEngine {
             }
         } catch (e: ScriptEngineException) {
             throw e
+        } catch (e: com.sce.runtime.ActionBlockAbort) {
+            // W3C SCXML 4.9: a body element that raised its own error ended the
+            // block; wrapping it would make the <foreach> raise a second one.
+            throw e
         } catch (e: Exception) {
             throw ScriptEngineException("Foreach execution failed for array: $array", e)
         } finally {

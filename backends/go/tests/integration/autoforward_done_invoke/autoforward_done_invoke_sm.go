@@ -807,6 +807,8 @@ func (p *AutoforwardDoneInvokePolicy) ExecuteTransitionContent(source Autoforwar
 		switch transitionIndex {
 		case 0:
 			//line autoforward_done_invoke.scxml:84
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -821,6 +823,7 @@ func (p *AutoforwardDoneInvokePolicy) ExecuteTransitionContent(source Autoforwar
 	}
 	}
 
+			}()
 		}
 	}
 }

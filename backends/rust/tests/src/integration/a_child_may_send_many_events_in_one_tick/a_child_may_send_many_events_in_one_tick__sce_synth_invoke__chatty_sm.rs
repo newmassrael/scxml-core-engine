@@ -670,6 +670,7 @@ impl StatePolicy for AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy 
                                 item_name
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, "<foreach item='item'> is not a legal variable name"));
+                            break 'action_block;
                         } else {
                             // Evaluate array expression
                             match se.evaluate_expression(&sid, "items") {
@@ -687,46 +688,35 @@ impl StatePolicy for AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy 
                                             foreach_success = false;
                                             break;
                                         }
-                                        // W3C SCXML 4.6: Execute body actions — stop on first error.
-                                        // Each body action runs inside a labeled block `'foreach_body`. Action
-                                        // templates that raise error.execution also `break 'foreach_body` so
-                                        // subsequent body actions for this iteration are skipped, then the
-                                        // outer loop is aborted (matches W3C spec and C++ ForeachHelper).
-                                        let mut iteration_success = true;
-                                        'foreach_body: {
+                                        // W3C SCXML 4.6: Execute body actions. A failing one raises its
+                                        // own error and leaves the enclosing block from here.
+
+                                        {
+                                            let send_id =
+                                                ::sce_rust_runtime::sce_string_from_str("__send_0");
+
+                                            let event_data: &str = "";
+
+                                            // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
+                                            if let Some(ref parent_queue) =
+                                                self.parent_external_queue
                                             {
-                                                let send_id =
-                                                    ::sce_rust_runtime::sce_string_from_str(
-                                                        "__send_0",
-                                                    );
-
-                                                let event_data: &str = "";
-
-                                                // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
-                                                if let Some(ref parent_queue) =
-                                                    self.parent_external_queue
-                                                {
-                                                    if let Ok(mut q) = parent_queue.lock() {
-                                                        q.push((
-                                                            "tick".to_string(),
-                                                            event_data.to_string(),
-                                                        ));
-                                                    }
-                                                } else {
+                                                if let Ok(mut q) = parent_queue.lock() {
+                                                    q.push((
+                                                        "tick".to_string(),
+                                                        event_data.to_string(),
+                                                    ));
                                                 }
-
-                                                let _ = send_id; // suppress unused warning when no send operation
-                                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                            } else {
                                             }
-                                        }
-                                        if !iteration_success {
-                                            ::sce_rust_runtime::sce_log_debug!("Foreach: body action failed at iteration {}, stopping loop (W3C SCXML 4.6)", _idx);
-                                            foreach_success = false;
-                                            break;
+
+                                            let _ = send_id; // suppress unused warning when no send operation
+                                            let _ = event_data; // suppress unused warning in branches that skip dispatch
                                         }
                                     }
                                     if !foreach_success {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, "an action inside <foreach> failed"));
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, "<foreach> could not set its loop variable"));
+                                        break 'action_block;
                                     }
                                 }
                                 Ok(_) => {
@@ -735,6 +725,7 @@ impl StatePolicy for AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy 
                                         "Foreach: 'items' is not an array"
                                     );
                                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, "<foreach array='items'> is not an array"));
+                                    break 'action_block;
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
@@ -742,6 +733,7 @@ impl StatePolicy for AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy 
                                         e
                                     );
                                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, "<foreach array='items'> failed to evaluate"));
+                                    break 'action_block;
                                 }
                             }
                         }

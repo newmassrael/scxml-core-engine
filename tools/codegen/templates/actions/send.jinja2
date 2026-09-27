@@ -37,6 +37,12 @@
    its body is a block the store can leave; `break` is the one exit, and this
    template writes no loop of its own for it to be confused with. #}
 {% set idloc_guard = action.idlocation and (model.needs_script_engine or model.needs_event_origin) %}
+{# W3C SCXML 4.9: the statement that ends the block this <send> sits in, named
+   by whoever includes it — `return;` in an entry, exit, initial, history or
+   transition block, which is its own function or lambda, and `return false;`
+   in a <foreach> body, whose iteration is a lambda returning whether to go
+   on. A bare `return;` there is ill-formed, so no arm spells one itself. #}
+{% set block_end = block_exit if block_exit is defined and block_exit else '' %}
 {% if idloc_guard %}do {{ '{' }}{% else %}{{ '{' }}{% endif %}
 {% if param_ns.can_fail %}
 [[maybe_unused]] bool paramFailed = false;  // W3C SCXML 5.7.1 + 4.9: read after the message has gone
@@ -65,8 +71,8 @@ ensureSessionId();
     engine.raise(typename Engine::EventWithMetadata(
         Event::Error_execution,
         "<send type='{{ action.send_type }}'> names a processor this platform does not support"));
-{% if in_entry_exit is defined and in_entry_exit %}
-    return;  // W3C SCXML 5.10: Stop execution of subsequent actions in entry/exit/transition
+{% if block_end %}
+    {{ block_end }}  // W3C SCXML 4.9: Stop execution of subsequent actions in this block
 {% endif %}
 }
 {% endif %}
@@ -116,8 +122,8 @@ if (!::SCE::SendHelper::isSupportedSendType(dynamicType)) {
     engine.raise(typename Engine::EventWithMetadata(
         Event::Error_execution,
         "<send> typeexpr names a processor this platform does not support"));
-{% if in_entry_exit is defined and in_entry_exit %}
-    return;  // W3C SCXML 5.10: Stop execution of subsequent actions in entry/exit/transition
+{% if block_end %}
+    {{ block_end }}  // W3C SCXML 4.9: Stop execution of subsequent actions in this block
 {% endif %}
 }
 {% endif %}
@@ -155,7 +161,7 @@ if (::SCE::SendHelper::isInvalidTarget(dynamicTarget)) {
     pendingEventSendId_ = sendId;
 {% endif %}
     engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "", "", sendId));
-    return;  // W3C SCXML 5.10: Stop execution of subsequent executable content
+    {{ block_end or 'return;' }}  // W3C SCXML 5.10: Stop execution of subsequent executable content
 }
 
 // W3C SCXML C.1 (test 496): Check for unreachable target using SendHelper (ARCHITECTURE.md Zero Duplication)
@@ -163,7 +169,7 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
     SCE_LOG_ERROR("Send target evaluation resulted in invalid target: '{}'", dynamicTarget);
     engine.raise(typename Engine::EventWithMetadata(
         Event::Error_communication, "<send> targetexpr resolved to a target that cannot be reached"));
-    return;  // W3C SCXML 5.10: Stop execution of subsequent executable content
+    {{ block_end or 'return;' }}  // W3C SCXML 5.10: Stop execution of subsequent executable content
 }
 {% elif action.target %}
 {% if action.target == '#_parent' %}
@@ -182,8 +188,8 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
 // parent's macrostep selection). Emit error.execution so authors notice
 // rather than silently dropping the delay.
 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "", "", sendId));
-{% if in_entry_exit is defined and in_entry_exit %}
-return;
+{% if block_end %}
+{{ block_end }}
 {% endif %}
 {% else %}
 // W3C SCXML 6.2 + SCE_MESH.md §9.6.2 wire-16: Immediate send to parent via
@@ -406,8 +412,8 @@ if (::SCE::SendHelper::isInvalidTarget("{{ action.target }}")) {
 {% endif %}
     // W3C SCXML 5.10: Invalid target raises error.execution and stops subsequent executable content
     engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "", "", sendId));
-{% if in_entry_exit is defined and in_entry_exit %}
-    return;  // Stop execution of subsequent actions in this entry/exit/transition
+{% if block_end %}
+    {{ block_end }}  // Stop execution of subsequent actions in this block
 {% endif %}
 }
 {% endif %}
@@ -418,7 +424,7 @@ if (::SCE::SendHelper::isInvalidTarget("{{ action.target }}")) {
 if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
     engine.raise(typename Engine::EventWithMetadata(
         Event::Error_communication, "<send> over BasicHTTPEventProcessor has no target to post to"));
-    return;  // W3C SCXML 5.10: Stop execution of subsequent executable content
+    {{ block_end or 'return;' }}  // W3C SCXML 5.10: Stop execution of subsequent executable content
 }
 {% endif %}
 {% endif %}
@@ -514,7 +520,7 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
     engine.raise(typename Engine::EventWithMetadata(
         Event::Error_communication,
         "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL"));
-    return;
+    {{ block_end or 'return;' }}
 }
 {% endif %}
 {% set http_target_cpp = 'dynamicTarget' if action.targetexpr else '"' ~ action.target ~ '"' %}
@@ -553,7 +559,9 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
                 Event::Error_execution, "<send> namelist: " + msg));
         }
     );
-    if (!namelistOk) return;
+    if (!namelistOk) {
+        {{ block_end or 'return;' }}
+    }
     for (auto& [k, v] : namelistParams) {
         for (auto& val : v) httpParams[k].push_back(std::move(val));
     }
@@ -567,7 +575,7 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
     } else {
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
                                                         "<send> contentexpr failed to evaluate"));
-        return;
+        {{ block_end or 'return;' }}
     }
 {% else %}
     std::string httpContent = "{{ action.content | escape_cpp }}";
@@ -648,7 +656,9 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
             },
             &typedParams
         );
-        if (!success) return;
+        if (!success) {
+            {{ block_end or 'return;' }}
+        }
     }
 {% endif %}
 {% endif %}
@@ -728,7 +738,9 @@ std::map<std::string, std::vector<ScriptValue>> typedParams;
         },
         &typedParams
     );
-    if (!success) return;
+    if (!success) {
+        {{ block_end or 'return;' }}
+    }
 }
 {% endif %}
 {% endif %}
@@ -1039,11 +1051,11 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
 {% endif %}
 {% endif %}
 {% endif %}
-{% if param_ns.can_fail and in_entry_exit is defined and in_entry_exit %}
+{% if param_ns.can_fail and block_end %}
 // W3C SCXML 4.9: a <param> that could not be read raised an error while this
 // element was processed, so the rest of the block does not run.
 if (paramFailed) {
-    return;
+    {{ block_end }}
 }
 {% endif %}
 {{ '}' }}{% if idloc_guard %} while (false);{% endif %}

@@ -1,13 +1,25 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# W3C SCXML 4.6: <foreach> — script engine iteration or static Kotlin #}
+{# W3C SCXML 4.6: <foreach> — script engine iteration or static Kotlin.
+
+   "If the evaluation of any child element of foreach causes an error, the
+   processor MUST cease execution of the foreach element and the block that
+   contains it." The body runs inside `executeForeach`'s lambda, which a
+   `return` cannot leave, so a body element that raised its own error throws
+   `ActionBlockAbort` and this <foreach> raises nothing more for it. Any
+   other exception is the <foreach>'s own failure — a collection it cannot
+   walk, or an engine refusal a body element left for it to report — and it
+   raises that one error. Either way the enclosing block then ends, the way
+   the <send> in this backend ends it: rethrown to an enclosing <foreach>,
+   `return@run` out of a multi-block `run {}`, or `return`. #}
+{% set foreach_in_body = _in_foreach_body is defined and _in_foreach_body %}
 {% if model.needs_script_engine %}
 {% if not action.array or not action.item %}
             // W3C SCXML 4.6: Missing required foreach attribute (array/item)
             raisePlatformError({{ machine_name }}Event.Error.Execution, "<foreach> is missing its 'array' or 'item' attribute")
 {% else %}
-            run {
+            if (run foreach@{
                 ensureScriptEngine()
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -19,16 +31,29 @@
 {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
                     }
+                    false
                 } catch (e: com.sce.runtime.ActionBlockAbort) {
                     // W3C SCXML 4.9: a body element raised its error and ended the
                     // block; nothing more is raised here.
-{% if _in_foreach_body is defined and _in_foreach_body %}
-                    throw e
-{% endif %}
+                    true
                 } catch (e: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<foreach array='{{ action.array }}'> failed to iterate")
+                    true
                 }
-            }
+            }) {
+                // W3C SCXML 4.6 + 4.9: the block that contains the <foreach> ends.
+{# The closing line sits in every arm so this partial ends on a block tag, as
+   every partial `_render` includes does. #}
+{% if foreach_in_body %}
+                throw com.sce.runtime.ActionBlockAbort()
+            } // end of run foreach@
+{% elif in_run_block is defined and in_run_block %}
+                return@run
+            } // end of run foreach@
+{% else %}
+                return
+            } // end of run foreach@
+{% endif %}
 {% endif %}
 {% else %}
             {{ action.array }}.forEach { {{ action.item }} ->

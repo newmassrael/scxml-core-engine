@@ -91,30 +91,29 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 		}
 {% endif %}
 {% for block in state.on_entry_blocks %}
-		// W3C SCXML 3.8: onentry block {{ loop.index0 }} (break on error stops subsequent actions)
-		for actionBlock{{ loop.index0 }} := 0; actionBlock{{ loop.index0 }} < 1; actionBlock{{ loop.index0 }}++ {
-			_ = actionBlock{{ loop.index0 }}
+		// W3C SCXML 3.8 + 4.9: onentry block {{ loop.index0 }}, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 {% for action in block %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "go", "			") -}}
 {%- endif %}
-			{% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
+			{% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
 
 {% endfor %}
-		}
+		}()
 {% endfor %}
 {% if state.initial_transition_actions %}
 		// W3C SCXML 3.3.2 / §scxml-D-enterStates: the <initial> transition's
 		// content runs when this state's initial state is entered by DEFAULT —
 		// not when the state is entered only as an ancestor of a deeper target.
 		if isDefaultEntry {
-			for initialBlock := 0; initialBlock < 1; initialBlock++ {
-				_ = initialBlock
+			func() {
 {% for action in state.initial_transition_actions %}
-				{% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
+				{% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
 
 {% endfor %}
-			}
+			}()
 		}
 {% endif %}
 {% if state.is_final and state.donedata %}
@@ -289,10 +288,13 @@ func (p *{{ machine_name }}Policy) ExecuteHistoryDefaultContent(history sce.Hist
 {% for history_id, history_info in model.history_states | dictsort %}
 {% if history_info.default_actions %}
 	case {{ machine_name }}History{{ history_id | to_state_variant }}:
+		// W3C SCXML 4.9: the default content is one block; an error ends it.
+		func() {
 {% for action in history_info.default_actions %}
-		{% include 'actions/' ~ action.type ~ '.go.jinja2' %}
+		{% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
 
 {% endfor %}
+		}()
 {% endif %}
 {% endfor %}
 	}
@@ -333,17 +335,17 @@ func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}St
 		{{ sce_map.source_marker(state.source_location, "go", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
 {% for block in state.on_exit_blocks %}
-		// W3C SCXML 3.9: onexit block {{ loop.index0 }}
-		for exitBlock{{ loop.index0 }} := 0; exitBlock{{ loop.index0 }} < 1; exitBlock{{ loop.index0 }}++ {
-			_ = exitBlock{{ loop.index0 }}
+		// W3C SCXML 3.9 + 4.9: onexit block {{ loop.index0 }}, its own function so an
+		// error ends it with `return`.
+		func() {
 {% for action in block %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "go", "			") -}}
 {%- endif %}
-			{% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
+			{% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
 
 {% endfor %}
-		}
+		}()
 {% endfor %}
 {% endif %}
 {% endfor %}

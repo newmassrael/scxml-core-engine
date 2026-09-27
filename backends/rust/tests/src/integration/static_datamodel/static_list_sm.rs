@@ -713,37 +713,43 @@ impl StatePolicy for StaticListPolicy {
                             StaticListPayload::DayPicked(ev) => ev.clone(),
                             _ => return,
                         };
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // SCE Accepted Subset §2.15: <sce:append target="picked">
+                            if self.picked.len() < 3 {
+                                self.picked.push(ev.dayOfMonth);
+                            } else {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListEvent::ErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 3"));
+                            }
 
-                        // SCE Accepted Subset §2.15: <sce:append target="picked">
-                        if self.picked.len() < 3 {
-                            self.picked.push(ev.dayOfMonth);
-                        } else {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListEvent::ErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 3"));
+                            // W3C SCXML 5.3: <assign location="count">
+                            self.count = (self.picked).len() as u32;
                         }
-
-                        // W3C SCXML 5.3: <assign location="count">
-                        self.count = (self.picked).len() as u32;
                     }
                     2 => {
                         // SCE-MAP: static_list.scxml:27 :: collecting :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
-
-                        // SCE Accepted Subset §2.15: <sce:clear target="picked">
-                        self.picked.clear();
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // SCE Accepted Subset §2.15: <sce:clear target="picked">
+                            self.picked.clear();
+                        }
                     }
                     3 => {
                         // SCE-MAP: static_list.scxml:30 :: collecting :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
-
-                        // W3C SCXML 5.3: <assign location="refusals">
-                        if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.refusals =
-                                sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
-                            Ok(())
-                        })()
-                        .is_err()
-                        {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="refusals">
+                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                                self.refusals =
+                                    sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
+                                Ok(())
+                            })()
+                            .is_err()
+                            {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                            }
                         }
                     }
                     _ => {}

@@ -191,13 +191,16 @@
                             _ => return,
                         };
 {% endif %}
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
 {% for action in trans.actions %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "rust", "                        ") -}}
 {%- endif %}
-                        {% include 'actions/' ~ action.type ~ '.rs.jinja2' %}
+                        {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
 
 {% endfor %}
+                        }
                     }
 {% endif %}
 {% endfor %}

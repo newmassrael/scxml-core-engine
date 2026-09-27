@@ -436,20 +436,26 @@ class Test151StateMachine(
                 // SCE-MAP: test151.scxml:15 :: s0 :: _state_body
 
 
-            run {
+            if (run foreach@{
                 ensureScriptEngine()
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
                     engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var3", "Var3"), "Var1", "Var2") {
                     }
+                    false
                 } catch (e: com.sce.runtime.ActionBlockAbort) {
                     // W3C SCXML 4.9: a body element raised its error and ended the
                     // block; nothing more is raised here.
+                    true
                 } catch (e: Exception) {
                     raisePlatformError(Test151Event.Error.Execution, "<foreach array='Var3'> failed to iterate")
+                    true
                 }
-            }
+            }) {
+                // W3C SCXML 4.6 + 4.9: the block that contains the <foreach> ends.
+                return
+            } // end of run foreach@
 
             raiseInternal(Test151Event.Foo)
             }
@@ -457,20 +463,26 @@ class Test151StateMachine(
                 // SCE-MAP: test151.scxml:25 :: s1 :: _state_body
 
 
-            run {
+            if (run foreach@{
                 ensureScriptEngine()
                 val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
                     engine.executeForeach(sid, com.sce.runtime.ScriptSource.lua("Var3", "Var3"), "Var4", "Var5") {
                     }
+                    false
                 } catch (e: com.sce.runtime.ActionBlockAbort) {
                     // W3C SCXML 4.9: a body element raised its error and ended the
                     // block; nothing more is raised here.
+                    true
                 } catch (e: Exception) {
                     raisePlatformError(Test151Event.Error.Execution, "<foreach array='Var3'> failed to iterate")
+                    true
                 }
-            }
+            }) {
+                // W3C SCXML 4.6 + 4.9: the block that contains the <foreach> ends.
+                return
+            } // end of run foreach@
 
             raiseInternal(Test151Event.Bar)
             }

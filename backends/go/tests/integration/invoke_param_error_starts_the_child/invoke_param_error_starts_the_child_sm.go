@@ -838,9 +838,9 @@ func (p *InvokeParamErrorStartsTheChildPolicy) ExecuteEntryActions(state InvokeP
 	switch state {
 	case InvokeParamErrorStartsTheChildStateParamPhase:
 		//line invoke_param_error_starts_the_child.scxml:70
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -856,7 +856,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) ExecuteEntryActions(state InvokeP
 	}
 	}
 
-		}
+		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_probe", "paramPhase", sce.NextInvokeCounter())
@@ -1015,12 +1015,16 @@ func (p *InvokeParamErrorStartsTheChildPolicy) ExecuteTransitionContent(source I
 		switch transitionIndex {
 		case 0:
 			//line invoke_param_error_starts_the_child.scxml:117
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="sawParamError" expr="1">
 	if err := p.assignVariable(`sawParamError`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, "<assign> to 'sawParamError' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

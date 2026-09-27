@@ -710,14 +710,14 @@ func (p *TheRunEndsByExitingEveryStatePolicy) ExecuteExitActions(state TheRunEnd
 	switch state {
 	case TheRunEndsByExitingEveryStateStateDone:
 		//line the_run_ends_by_exiting_every_state.scxml:60
-		// W3C SCXML 3.9: onexit block 0
-		for exitBlock0 := 0; exitBlock0 < 1; exitBlock0++ {
-			_ = exitBlock0
+		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
+		// error ends it with `return`.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="finalExits" expr="finalExits + 1">
 	if err := p.assignVariable(`finalExits`, `_scxml_add(finalExits, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, "<assign> to 'finalExits' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
@@ -726,37 +726,37 @@ func (p *TheRunEndsByExitingEveryStatePolicy) ExecuteExitActions(state TheRunEnd
 	// W3C SCXML 5.3: <assign location="selfInFinal" expr="1">
 	if err := p.assignVariable(`selfInFinal`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, "<assign> to 'selfInFinal' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	}
-		}
+		}()
 	case TheRunEndsByExitingEveryStateStateInner:
 		//line the_run_ends_by_exiting_every_state.scxml:52
-		// W3C SCXML 3.9: onexit block 0
-		for exitBlock0 := 0; exitBlock0 < 1; exitBlock0++ {
-			_ = exitBlock0
+		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
+		// error ends it with `return`.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="order" expr="order * 10 + 1">
 	if err := p.assignVariable(`order`, `_scxml_add((order * 10), 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, "<assign> to 'order' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-		}
+		}()
 	case TheRunEndsByExitingEveryStateStateOuter:
 		//line the_run_ends_by_exiting_every_state.scxml:47
-		// W3C SCXML 3.9: onexit block 0
-		for exitBlock0 := 0; exitBlock0 < 1; exitBlock0++ {
-			_ = exitBlock0
+		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
+		// error ends it with `return`.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="order" expr="order * 10 + 2">
 	if err := p.assignVariable(`order`, `_scxml_add((order * 10), 2)`); err != nil {
 		engine.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, "<assign> to 'order' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-		}
+		}()
 	default:
 		// No exit actions
 	}

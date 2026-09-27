@@ -634,6 +634,8 @@ impl StatePolicy for Test326Policy {
                             Test326Event::ErrorExecution,
                             "<assign> has an invalid or read-only location '_ioprocessors'",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
 
                     // W3C SCXML 3.8.1: <raise event="foo">
@@ -663,7 +665,7 @@ impl StatePolicy for Test326Policy {
                                 Test326Event::ErrorExecution,
                                 "<assign> to 'Var2' failed",
                             ));
-                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
                     }

@@ -1190,9 +1190,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 	switch state {
 	case EmptyFinalizeUpdatesTheLocationStateAbsentPhase:
 		//line empty_finalize_updates_the_location.scxml:105
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
@@ -1208,7 +1208,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 	}
 	}
 
-		}
+		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_absent", "absentPhase", sce.NextInvokeCounter())
@@ -1220,9 +1220,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 		}
 	case EmptyFinalizeUpdatesTheLocationStateEmptyPhase:
 		//line empty_finalize_updates_the_location.scxml:71
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -1238,7 +1238,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 	}
 	}
 
-		}
+		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_empty", "emptyPhase", sce.NextInvokeCounter())
@@ -1250,9 +1250,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 		}
 	case EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase:
 		//line empty_finalize_updates_the_location.scxml:144
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
@@ -1268,7 +1268,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 	}
 	}
 
-		}
+		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_unmatched", "unmatchedPhase", sce.NextInvokeCounter())

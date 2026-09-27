@@ -599,6 +599,8 @@ impl StatePolicy for Test324Policy {
                             Test324Event::ErrorExecution,
                             "<assign> has an invalid or read-only location '_name'",
                         ));
+                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                        break 'action_block;
                     }
                 }
             }

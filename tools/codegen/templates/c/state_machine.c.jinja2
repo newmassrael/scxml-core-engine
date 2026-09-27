@@ -541,11 +541,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
    The caller (execute_entry_actions / execute_exit_actions) supplies the
    surrounding `case` block — we never emit `case`/`break` ourselves.
 
-   `in_foreach` (default false) flips the <assign> dispatch onto the
-   error-checking variant (`lua_assign_in_foreach_body`) so a failing
-   chunk breaks the enclosing C `for` loop. <if>/<elseif>/<else> propagate
-   their caller's `in_foreach` verbatim, so an <assign> nested inside an
-   <if> nested inside a <foreach> body still reaches the break path.
+   `in_foreach` (default false) marks a <foreach> body: an element there
+   that raises an error `return`s, which ends the loop and the block that
+   contains it (W3C SCXML 4.6) — every block is its own C function.
+   <if>/<elseif>/<else> propagate their caller's `in_foreach` verbatim, so an
+   <assign> nested inside an <if> nested inside a <foreach> body still
+   reaches that exit.
    <foreach>'s own sub-action recursion forces `in_foreach=true` — nested
    <foreach> is intentionally unsupported per scriptengine.jinja2 (lua
    global `_sce_foreach_arr` collides), and an inner <foreach>'s own body
@@ -581,7 +582,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                 "<assign> has an invalid or read-only location '{{ action.location | escape_c }}'");
 {% if in_foreach %}
-            break;  /* W3C 4.6: error inside <foreach> body breaks the loop */
+            return;  /* W3C 4.6: ends the <foreach> and the block that contains it */
 {% endif %}
 {% elif (not action.expr) and action.content %}
             /* W3C SCXML 5.4.2: `<assign location="{{ action.location }}">` with
@@ -600,13 +601,11 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                     "<assign> to '{{ action.location | escape_c }}' failed");
 {% if in_foreach %}
-                break;
+                return;  /* W3C 4.6: ends the <foreach> and the block that contains it */
 {% endif %}
             }
-{% elif in_foreach %}
-{{ se.lua_assign_in_foreach_body(action.location, action.expr) }}
 {% else %}
-{{ se.lua_assign(action.location, action.expr) }}
+{{ se.lua_assign(action.location, action.expr, in_foreach) }}
 {% endif %}
         }
 {% elif action.type == 'foreach' %}
@@ -884,14 +883,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                executable content; the enclosing `execute_entry_actions` /
                `execute_exit_actions` / `execute_transition_actions` switch
                case returns immediately, mirroring cpp
-               `actions/send.jinja2` lines 321-333 (in_entry_exit return). The
+               `actions/send.jinja2`'s `block_end` exit. The
                other target shapes (`#_parent`, `#_child`, `#_<invokeid>`,
                BasicHTTP URI, mesh `#...`, runtime targetexpr) land in
-               their own arms below. The
-               `not in_foreach` guard preserves the loop-body carve-out that
-               cpp ships (its `in_entry_exit` flag is unset inside foreach
-               bodies) — invalid-target send inside a `<foreach>` body lands
-               with its own force fixture. */
+               their own arms below. The `not in_foreach` guard keeps this
+               arm out of a `<foreach>` body: an invalid-target send there
+               has no fixture on any channel yet, and lands with its own. */
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                 "<send target='{{ action.target | escape_c }}'> is not a target this processor can address");
@@ -1962,21 +1959,16 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                <script> is rejected at parser time (parse_global_scripts
                handles top-level src; inline `<script src="...">` is
                outside W3C 5.8's scope per the corpus). */
-{% if in_foreach %}
-            if (luaL_dostring(sm->L,
-                "{{ action.content | to_lua_script | escape_c }}") != 0) {
-                lua_pop(sm->L, 1);
-                break;  /* W3C 4.6: error inside <foreach> body breaks the loop */
-            }
-{% else %}
             if (luaL_dostring(sm->L,
                 "{{ action.content | to_lua_script | escape_c }}") != 0) {
                 lua_pop(sm->L, 1);
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                     "<script> failed to execute");
-            }
+{% if in_foreach %}
+                return;  /* W3C 4.6: ends the <foreach> and the block that contains it */
 {% endif %}
+            }
         }
 {% elif action.type == 'native_action' %}
 {# W3C SCXML G.7: <sce:action> native host dispatch. The call site (including

@@ -965,28 +965,40 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteTransitionContent(source ABadDo
 		switch transitionIndex {
 		case 0:
 			//line a_bad_donedata_pair_is_ignored.scxml:51
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<assign> to 'errors' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line a_bad_donedata_pair_is_ignored.scxml:54
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="shape" expr="1">
 	if err := p.assignVariable(`shape`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<assign> to 'shape' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 2:
 			//line a_bad_donedata_pair_is_ignored.scxml:58
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="shape" expr="2">
 	if err := p.assignVariable(`shape`, `2`); err != nil {
 		engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<assign> to 'shape' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

@@ -883,50 +883,70 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionContent(source Even
 		switch transitionIndex {
 		case 0:
 			//line eventless_macrostep_is_bounded.scxml:85
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="laps" expr="laps + 1">
 	if err := p.assignVariable(`laps`, `_scxml_add(laps, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'laps' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line eventless_macrostep_is_bounded.scxml:90
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case EventlessMacrostepIsBoundedStateIdle:
 		switch transitionIndex {
 		case 0:
 			//line eventless_macrostep_is_bounded.scxml:72
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case EventlessMacrostepIsBoundedStateSpinA:
 		switch transitionIndex {
 		case 0:
 			//line eventless_macrostep_is_bounded.scxml:105
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="spins" expr="spins + 1">
 	if err := p.assignVariable(`spins`, `_scxml_add(spins, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'spins' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line eventless_macrostep_is_bounded.scxml:108
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

@@ -837,30 +837,37 @@ func (p *TypedReaderNamesPolicy) ExecuteTransitionContent(source TypedReaderName
 		switch transitionIndex {
 		case 0:
 			//line typed_reader_names.scxml:49
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="box" expr="box + 10">
 	if err := p.assignVariable(`box`, `_scxml_add(box, 10)`); err != nil {
 		engine.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<assign> to 'box' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="object" expr="object + 10">
 	if err := p.assignVariable(`object`, `_scxml_add(object, 10)`); err != nil {
 		engine.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<assign> to 'object' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="pass" expr="pass + 10">
 	if err := p.assignVariable(`pass`, `_scxml_add(pass, 10)`); err != nil {
 		engine.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<assign> to 'pass' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="a_b" expr="a_b + 10">
 	if err := p.assignVariable(`a_b`, `_scxml_add(a_b, 10)`); err != nil {
 		engine.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<assign> to 'a_b' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

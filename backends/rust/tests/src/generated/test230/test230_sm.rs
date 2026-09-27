@@ -1073,127 +1073,133 @@ impl StatePolicy for Test230Policy {
                     0 => {
                         // SCE-MAP: test230.scxml:44 :: s01 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML 4.7: <log> with script engine expression
-                        {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se.evaluate_expression(&sid, "_event.name") {
-                                Ok(val) => {
-                                    ::sce_rust_runtime::sce_log_info!("{}: {:?}", "name is ", val)
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 4.7: <log> with script engine expression
+                            {
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                match se.evaluate_expression(&sid, "_event.name") {
+                                    Ok(val) => ::sce_rust_runtime::sce_log_info!(
+                                        "{}: {:?}", "name is ", val
+                                    ),
+                                    Err(e) => ::sce_rust_runtime::sce_log_error!(
+                                        "Log expression eval failed: {}",
+                                        e
+                                    ),
                                 }
-                                Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                    "Log expression eval failed: {}",
-                                    e
-                                ),
                             }
-                        }
 
-                        // W3C SCXML 4.7: <log> with script engine expression
-                        {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se.evaluate_expression(&sid, "_event.type") {
-                                Ok(val) => {
-                                    ::sce_rust_runtime::sce_log_info!("{}: {:?}", "type is ", val)
+                            // W3C SCXML 4.7: <log> with script engine expression
+                            {
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                match se.evaluate_expression(&sid, "_event.type") {
+                                    Ok(val) => ::sce_rust_runtime::sce_log_info!(
+                                        "{}: {:?}", "type is ", val
+                                    ),
+                                    Err(e) => ::sce_rust_runtime::sce_log_error!(
+                                        "Log expression eval failed: {}",
+                                        e
+                                    ),
                                 }
-                                Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                    "Log expression eval failed: {}",
-                                    e
-                                ),
                             }
-                        }
 
-                        // W3C SCXML 4.7: <log> with script engine expression
-                        {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se.evaluate_expression(&sid, "_event.sendid") {
-                                Ok(val) => {
-                                    ::sce_rust_runtime::sce_log_info!("{}: {:?}", "sendid is ", val)
+                            // W3C SCXML 4.7: <log> with script engine expression
+                            {
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                match se.evaluate_expression(&sid, "_event.sendid") {
+                                    Ok(val) => ::sce_rust_runtime::sce_log_info!(
+                                        "{}: {:?}",
+                                        "sendid is ",
+                                        val
+                                    ),
+                                    Err(e) => ::sce_rust_runtime::sce_log_error!(
+                                        "Log expression eval failed: {}",
+                                        e
+                                    ),
                                 }
-                                Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                    "Log expression eval failed: {}",
-                                    e
-                                ),
                             }
-                        }
 
-                        // W3C SCXML 4.7: <log> with script engine expression
-                        {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se.evaluate_expression(&sid, "_event.origin") {
-                                Ok(val) => {
-                                    ::sce_rust_runtime::sce_log_info!("{}: {:?}", "origin is ", val)
+                            // W3C SCXML 4.7: <log> with script engine expression
+                            {
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                match se.evaluate_expression(&sid, "_event.origin") {
+                                    Ok(val) => ::sce_rust_runtime::sce_log_info!(
+                                        "{}: {:?}",
+                                        "origin is ",
+                                        val
+                                    ),
+                                    Err(e) => ::sce_rust_runtime::sce_log_error!(
+                                        "Log expression eval failed: {}",
+                                        e
+                                    ),
                                 }
-                                Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                    "Log expression eval failed: {}",
-                                    e
-                                ),
                             }
-                        }
 
-                        // W3C SCXML 4.7: <log> with script engine expression
-                        {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se.evaluate_expression(&sid, "_event.origintype") {
-                                Ok(val) => ::sce_rust_runtime::sce_log_info!(
-                                    "{}: {:?}",
-                                    "origintype is ",
-                                    val
-                                ),
-                                Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                    "Log expression eval failed: {}",
-                                    e
-                                ),
-                            }
-                        }
-
-                        // W3C SCXML 4.7: <log> with script engine expression
-                        {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se.evaluate_expression(&sid, "_event.invokeid") {
-                                Ok(val) => ::sce_rust_runtime::sce_log_info!(
-                                    "{}: {:?}",
-                                    "invokeid is ",
-                                    val
-                                ),
-                                Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                    "Log expression eval failed: {}",
-                                    e
-                                ),
-                            }
-                        }
-
-                        // W3C SCXML 4.7: <log> with script engine expression
-                        {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se.evaluate_expression(&sid, "_event.data") {
-                                Ok(val) => {
-                                    ::sce_rust_runtime::sce_log_info!("{}: {:?}", "data is ", val)
+                            // W3C SCXML 4.7: <log> with script engine expression
+                            {
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                match se.evaluate_expression(&sid, "_event.origintype") {
+                                    Ok(val) => ::sce_rust_runtime::sce_log_info!(
+                                        "{}: {:?}",
+                                        "origintype is ",
+                                        val
+                                    ),
+                                    Err(e) => ::sce_rust_runtime::sce_log_error!(
+                                        "Log expression eval failed: {}",
+                                        e
+                                    ),
                                 }
-                                Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                    "Log expression eval failed: {}",
-                                    e
-                                ),
+                            }
+
+                            // W3C SCXML 4.7: <log> with script engine expression
+                            {
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                match se.evaluate_expression(&sid, "_event.invokeid") {
+                                    Ok(val) => ::sce_rust_runtime::sce_log_info!(
+                                        "{}: {:?}",
+                                        "invokeid is ",
+                                        val
+                                    ),
+                                    Err(e) => ::sce_rust_runtime::sce_log_error!(
+                                        "Log expression eval failed: {}",
+                                        e
+                                    ),
+                                }
+                            }
+
+                            // W3C SCXML 4.7: <log> with script engine expression
+                            {
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                match se.evaluate_expression(&sid, "_event.data") {
+                                    Ok(val) => ::sce_rust_runtime::sce_log_info!(
+                                        "{}: {:?}", "data is ", val
+                                    ),
+                                    Err(e) => ::sce_rust_runtime::sce_log_error!(
+                                        "Log expression eval failed: {}",
+                                        e
+                                    ),
+                                }
                             }
                         }
                     }

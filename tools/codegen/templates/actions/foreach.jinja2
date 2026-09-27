@@ -26,10 +26,15 @@
 
     Critical Fixes:
     - 2025-11-03: Refactored from exception-based to return-value error handling
-    - Exception-free execution phase with bool foreachSuccess checking
+    - Exception-free execution phase with ForeachOutcome checking
     - Proper error.execution event generation matching Interpreter engine
     - Fixes test 457 (W3C SCXML B.2 foreach array validation)
 #}
+{# W3C SCXML 4.9: the statement that ends the block this <foreach> sits in, as
+   `send.jinja2` reads it. The body gets its own — `return false;`, which ends
+   the iteration lambda — and a nested <foreach> reads that one as its block's,
+   so a failure deep inside ends every enclosing loop and then the block. #}
+{% set foreach_exit = block_exit if block_exit is defined and block_exit else '' %}
 // W3C SCXML 4.6: Foreach validation and execution
 {
     std::string validationError;
@@ -37,6 +42,9 @@
         // Validation failed (invalid item/array attribute)
         SCE_LOG_ERROR("Foreach validation failed: {}", validationError);
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, validationError));
+{% if foreach_exit %}
+        {{ foreach_exit }}  // W3C SCXML 4.9: the error ends the block
+{% endif %}
     }
 }
 {% if action.actions and action.actions | length > 0 %}
@@ -45,7 +53,7 @@
     this->ensureScriptEngine();
     auto& scriptEngine = getScriptEngine();
     // W3C SCXML 4.6: Use ForeachHelper for centralized error handling
-    bool foreachSuccess = ::SCE::Core::ForeachHelper::executeForeachWithActions(
+    ::SCE::Core::ForeachOutcome foreachOutcome = ::SCE::Core::ForeachHelper::executeForeachWithActions(
         scriptEngine, sessionId_.value(),
         {{ action.array | to_script_source_expr }}, "{{ action.item }}", "{{ action.index }}",
         [&]([[maybe_unused]] size_t i) -> bool {
@@ -61,7 +69,7 @@
             // W3C SCXML 4.6: Execute child action {{ loop.index }}/{{ action.actions | length }}
             {% if body_action.type == 'assign' %}\
             // Assign action: no block scope, success accessible in foreach lambda
-            {% with action=body_action, in_foreach=True %}\
+            {% with action=body_action, in_foreach=True, block_exit='return false;' %}\
             {% include 'actions/' + body_action.type + '.jinja2' %}\
             {% endwith %}\
             iterationSuccess = iterationSuccess && success;
@@ -70,9 +78,9 @@
                 return false;  // Stop foreach on error
             }
             {% else %}\
-            // Non-assign action: no success tracking needed
+            // Non-assign action: ends the iteration itself through `block_exit`
             {
-                {% with action=body_action %}\
+                {% with action=body_action, block_exit='return false;' %}\
                 {% include 'actions/' + body_action.type + '.jinja2' %}\
                 {% endwith %}\
             }
@@ -81,11 +89,18 @@
             return iterationSuccess;  // Return true only if all actions succeeded
         }
     );
-    // W3C SCXML 4.6: Check foreach execution result and raise error.execution on failure
-    if (!foreachSuccess) {
+    // W3C SCXML 4.6: only a collection this <foreach> could not walk is its own
+    // error; a body element that failed has raised its own already.
+    if (foreachOutcome == ::SCE::Core::ForeachOutcome::CollectionRejected) {
         SCE_LOG_ERROR("Foreach execution failed for array: {{ action.array | escape_cpp_format }}");
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "Foreach execution failed"));
     }
+{% if foreach_exit %}
+    // W3C SCXML 4.6 + 4.9: either failure ends the block that contains the <foreach>.
+    if (foreachOutcome != ::SCE::Core::ForeachOutcome::Completed) {
+        {{ foreach_exit }}
+    }
+{% endif %}
 }
 {% else %}
 {
@@ -99,6 +114,9 @@
     if (!foreachSuccess) {
         SCE_LOG_ERROR("Foreach execution failed for array: {{ action.array | escape_cpp_format }}");
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "Foreach execution failed"));
+{% if foreach_exit %}
+        {{ foreach_exit }}  // W3C SCXML 4.9: the error ends the block
+{% endif %}
     }
 }
 {% endif %}

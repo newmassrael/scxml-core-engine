@@ -726,9 +726,9 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 	switch state {
 	case SendNamelistOverHttpStateDiscardPhase:
 		//line send_namelist_over_http.scxml:95
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
@@ -801,12 +801,12 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 		}
 	}
 
-		}
+		}()
 	case SendNamelistOverHttpStateMapPhase:
 		//line send_namelist_over_http.scxml:71
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -879,7 +879,7 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 		}
 	}
 
-		}
+		}()
 	default:
 		// No entry actions
 	}
@@ -1038,23 +1038,31 @@ func (p *SendNamelistOverHttpPolicy) ExecuteTransitionContent(source SendNamelis
 		switch transitionIndex {
 		case 0:
 			//line send_namelist_over_http.scxml:106
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="sawNamelistError" expr="1">
 	if err := p.assignVariable(`sawNamelistError`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, "<assign> to 'sawNamelistError' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case SendNamelistOverHttpStateMapPhase:
 		switch transitionIndex {
 		case 0:
 			//line send_namelist_over_http.scxml:82
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="echoed" expr="_event.data.Var1">
 	if err := p.assignVariable(`echoed`, `_event.data.Var1`); err != nil {
 		engine.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, "<assign> to 'echoed' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

@@ -576,13 +576,16 @@ impl<A: StaticHostCallActions + 'static> StatePolicy for StaticHostCallPolicy<A>
                     0 => {
                         // SCE-MAP: static_host_call.scxml:25 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML 5.3: <assign location="attempts">
-                        let _ = (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                            self.attempts =
-                                sce_forge_runtime::algorithm::add::<u32>(self.attempts, 1)?;
-                            Ok(())
-                        })();
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="attempts">
+                            let _ =
+                                (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                                    self.attempts =
+                                        sce_forge_runtime::algorithm::add::<u32>(self.attempts, 1)?;
+                                    Ok(())
+                                })();
+                        }
                     }
                     _ => {}
                 }

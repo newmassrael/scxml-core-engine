@@ -669,9 +669,11 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
                     0 => {
                         // SCE-MAP: statechart_native_action.scxml:63 :: assembling :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML G.7: <sce:action name="reset_slot">
-                        self.actions.reset_slot();
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML G.7: <sce:action name="reset_slot">
+                            self.actions.reset_slot();
+                        }
                     }
                     _ => {}
                 }
@@ -681,25 +683,29 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
                     0 => {
                         // SCE-MAP: statechart_native_action.scxml:42 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
-
-                        // W3C SCXML G.7: <sce:action name="append_fragment_payload">
-                        match &self.pending_payload {
-                            StatechartNativeActionPayload::FragmentReceived(ev) => {
-                                self.actions.append_fragment_payload(&ev.payload, ev.offset);
-                            }
-                            _ => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartNativeActionEvent::ErrorExecution, "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry"));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML G.7: <sce:action name="append_fragment_payload">
+                            match &self.pending_payload {
+                                StatechartNativeActionPayload::FragmentReceived(ev) => {
+                                    self.actions.append_fragment_payload(&ev.payload, ev.offset);
+                                }
+                                _ => {
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartNativeActionEvent::ErrorExecution, "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry"));
+                                }
                             }
                         }
                     }
                     1 => {
                         // SCE-MAP: statechart_native_action.scxml:55 :: idle :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
-
-                        // W3C SCXML 3.8.1: <raise event="fragment.received">
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            StatechartNativeActionEvent::FragmentReceived,
-                        ));
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 3.8.1: <raise event="fragment.received">
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                StatechartNativeActionEvent::FragmentReceived,
+                            ));
+                        }
                     }
                     _ => {}
                 }

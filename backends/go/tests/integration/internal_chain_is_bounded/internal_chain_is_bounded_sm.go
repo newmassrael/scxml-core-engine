@@ -1091,112 +1091,159 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 		switch transitionIndex {
 		case 0:
 			//line internal_chain_is_bounded.scxml:212
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="alts" expr="alts + 1">
 	if err := p.assignVariable(`alts`, `_scxml_add(alts, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'alts' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="pending" expr="1">
 	if err := p.assignVariable(`pending`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pending' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line internal_chain_is_bounded.scxml:216
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pending" expr="0">
 	if err := p.assignVariable(`pending`, `0`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pending' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventTick))
 
+			}()
 		case 2:
 			//line internal_chain_is_bounded.scxml:220
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case InternalChainIsBoundedStateBounded:
 		switch transitionIndex {
 		case 0:
 			//line internal_chain_is_bounded.scxml:154
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="laps" expr="laps + 1">
 	if err := p.assignVariable(`laps`, `_scxml_add(laps, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'laps' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventLink))
 
+			}()
 		case 1:
 			//line internal_chain_is_bounded.scxml:158
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="laps" expr="laps + 1">
 	if err := p.assignVariable(`laps`, `_scxml_add(laps, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'laps' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 2:
 			//line internal_chain_is_bounded.scxml:163
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case InternalChainIsBoundedStateIdle:
 		switch transitionIndex {
 		case 0:
 			//line internal_chain_is_bounded.scxml:123
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 1:
 			//line internal_chain_is_bounded.scxml:126
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventLink))
 
+			}()
 		case 2:
 			//line internal_chain_is_bounded.scxml:129
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventLink))
 
+			}()
 		case 3:
 			//line internal_chain_is_bounded.scxml:132
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventBeat))
 
+			}()
 		case 4:
 			//line internal_chain_is_bounded.scxml:135
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventTick))
 
+			}()
 		case 5:
 			//line internal_chain_is_bounded.scxml:138
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventBeatless))
 
+			}()
 		}
 	case InternalChainIsBoundedStateIgnoring:
 		switch transitionIndex {
 		case 0:
 			//line internal_chain_is_bounded.scxml:245
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="ignores" expr="ignores + 1">
 	if err := p.assignVariable(`ignores`, `_scxml_add(ignores, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'ignores' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
@@ -1205,74 +1252,103 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventBeatless))
 
+			}()
 		case 1:
 			//line internal_chain_is_bounded.scxml:250
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="ignores" expr="ignores + 1">
 	if err := p.assignVariable(`ignores`, `_scxml_add(ignores, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'ignores' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 2:
 			//line internal_chain_is_bounded.scxml:253
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case InternalChainIsBoundedStateResuming:
 		switch transitionIndex {
 		case 0:
 			//line internal_chain_is_bounded.scxml:193
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="beats" expr="beats + 1">
 	if err := p.assignVariable(`beats`, `_scxml_add(beats, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'beats' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventBeat))
 
+			}()
 		case 1:
 			//line internal_chain_is_bounded.scxml:197
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="beats" expr="beats + 1">
 	if err := p.assignVariable(`beats`, `_scxml_add(beats, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'beats' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		case 2:
 			//line internal_chain_is_bounded.scxml:200
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	case InternalChainIsBoundedStateSpin:
 		switch transitionIndex {
 		case 0:
 			//line internal_chain_is_bounded.scxml:175
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="links" expr="links + 1">
 	if err := p.assignVariable(`links`, `_scxml_add(links, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'links' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventLink))
 
+			}()
 		case 1:
 			//line internal_chain_is_bounded.scxml:179
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

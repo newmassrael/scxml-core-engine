@@ -853,56 +853,56 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) ExecuteEntryActions(state Ancesto
 	switch state {
 	case AncestorEntryIsNotDefaultEntryStateByDefault:
 		//line ancestor_entry_is_not_default_entry.scxml:116
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="defaulted" expr="defaulted + 1">
 	if err := p.assignVariable(`defaulted`, `_scxml_add(defaulted, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AncestorEntryIsNotDefaultEntryEventErrorExecution, "<assign> to 'defaulted' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-		}
+		}()
 	case AncestorEntryIsNotDefaultEntryStateChosen:
 		//line ancestor_entry_is_not_default_entry.scxml:127
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="targeted" expr="targeted + 1">
 	if err := p.assignVariable(`targeted`, `_scxml_add(targeted, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AncestorEntryIsNotDefaultEntryEventErrorExecution, "<assign> to 'targeted' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-		}
+		}()
 	case AncestorEntryIsNotDefaultEntryStateIdle:
 		//line ancestor_entry_is_not_default_entry.scxml:150
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="idled" expr="idled + 1">
 	if err := p.assignVariable(`idled`, `_scxml_add(idled, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AncestorEntryIsNotDefaultEntryEventErrorExecution, "<assign> to 'idled' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-		}
+		}()
 	case AncestorEntryIsNotDefaultEntryStateLobby:
 		//line ancestor_entry_is_not_default_entry.scxml:102
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 5.3: <assign location="lobbied" expr="lobbied + 1">
 	if err := p.assignVariable(`lobbied`, `_scxml_add(lobbied, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AncestorEntryIsNotDefaultEntryEventErrorExecution, "<assign> to 'lobbied' failed"))
-		break
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-		}
+		}()
 	default:
 		// No entry actions
 	}

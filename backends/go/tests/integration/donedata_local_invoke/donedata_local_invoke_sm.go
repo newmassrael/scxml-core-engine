@@ -1044,12 +1044,16 @@ func (p *DonedataLocalInvokePolicy) ExecuteTransitionContent(source DonedataLoca
 		switch transitionIndex {
 		case 0:
 			//line donedata_local_invoke.scxml:47
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
 
 	// W3C SCXML 5.3: <assign location="param_ok" expr="true">
 	if err := p.assignVariable(`param_ok`, `true`); err != nil {
 		engine.Raise(sce.NewPlatformError(DonedataLocalInvokeEventErrorExecution, "<assign> to 'param_ok' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
 		}
 	}
 }

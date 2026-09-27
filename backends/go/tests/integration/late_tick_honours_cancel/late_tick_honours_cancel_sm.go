@@ -415,9 +415,9 @@ func (p *LateTickHonoursCancelPolicy) ExecuteEntryActions(state LateTickHonoursC
 	switch state {
 	case LateTickHonoursCancelStateActive:
 		//line late_tick_honours_cancel.scxml:50
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	engine.CancelEvent("s1")
 
@@ -436,12 +436,12 @@ func (p *LateTickHonoursCancelPolicy) ExecuteEntryActions(state LateTickHonoursC
 	}
 	}
 
-		}
+		}()
 	case LateTickHonoursCancelStateWaiting:
 		//line late_tick_honours_cancel.scxml:42
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="s1"
 	{
@@ -472,7 +472,7 @@ func (p *LateTickHonoursCancelPolicy) ExecuteEntryActions(state LateTickHonoursC
 	}
 	}
 
-		}
+		}()
 	default:
 		// No entry actions
 	}

@@ -561,9 +561,9 @@ func (p *SessionIdsAreDistinctSceSynthInvokeInvBPolicy) ExecuteEntryActions(stat
 	switch state {
 	case SessionIdsAreDistinctSceSynthInvokeInvBStateEmit:
 		//line session_ids_are_distinct__sce_synth_invoke__inv_b.scxml:5
-		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
-		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
-			_ = actionBlock0
+		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -591,13 +591,14 @@ func (p *SessionIdsAreDistinctSceSynthInvokeInvBPolicy) ExecuteEntryActions(stat
 	if p.ParentExternalQueue != nil {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "fromChild", Data: eventDataStr})
 	}
-		// W3C SCXML 4.9: the <param> error ends the block.
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
 		if paramFailed {
-			break
+			return
 		}
 	}
 
-		}
+		}()
 	default:
 		// No entry actions
 	}
