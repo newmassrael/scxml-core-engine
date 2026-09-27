@@ -16,6 +16,10 @@ detected:
     an answer arriving INSIDE the window is met at its first moment
                                                         (the discriminator)
     an answer never met in the window fails, read at its end
+    read as the first announcement, the first round that WRITES an expected
+    position answers: a held position announces when it is written
+                                                        (the discriminator)
+    and a window nothing writes in is a wait that went unanswered
     uncertainty CARRIES: a setup step's window widens every later reading,
     and a deadline the slack may put inside a window is not guessed at
     nothing pending, nothing carried: the slack resets
@@ -144,6 +148,58 @@ class ATimeKnownOnlyAsAWindow(unittest.TestCase):
         self.assertTrue(result.ran, result.refusal)
         self.assertEqual((1, 0, 0), (result.passed, result.failed, result.unjudged),
                          details(result))
+
+    def hold_until_sent(self):
+        """The signal's position is written only when the machine sends to
+        it: a round that sends nothing hands the rule a value its map lacks,
+        and a `hold_last` rule writes nothing then."""
+        self.binding["outputs"] = {"roadSignal": {
+            **BINDING["outputs"]["roadSignal"],
+            "when_nothing_sent": "signal.unchanged", "hold_last": True}}
+
+    def test_a_position_that_holds_is_first_announced_when_it_is_written(self):
+        """⚠ The discriminator for WHICH round announces. Nothing writes the
+        signal until the delayed send at 500 ms, so that is the first
+        announcement, inside a window that opens at 400. Read as 'the drive's
+        round announces', the same run failed as arriving at 0 ms -- and a
+        document written to announce late could not be told from one that
+        announced early."""
+        self.declare_host()
+        self.hold_until_sent()
+        case = detected("FLASHING", {"min": 400, "max": 700})
+        case["observed"] = "first"
+        result = self.run_cases([case])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((1, 0, 0), (result.passed, result.failed, result.unjudged),
+                         details(result))
+
+    def test_a_held_position_written_before_the_window_arrived_early(self):
+        self.declare_host()
+        self.hold_until_sent()
+        case = detected("FLASHING", {"min": 600, "max": 900})
+        case["observed"] = "first"
+        result = self.run_cases([case])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((0, 1, 0), (result.passed, result.failed, result.unjudged),
+                         details(result))
+        failed = dict((a, (w, g)) for a, w, g in result.results[0].failures)
+        self.assertEqual(("between 600 and 900 ms after the drive", "at 500 ms"),
+                         failed["(first announcement)"])
+
+    def test_a_wait_nothing_announces_in_fails(self):
+        """A window that closes before the delayed send: nothing writes the
+        position in it, so the harness waited out the window unanswered."""
+        self.declare_host()
+        self.hold_until_sent()
+        case = detected("DARK", {"min": 0, "max": 300})
+        case["observed"] = "first"
+        result = self.run_cases([case])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((0, 1, 0), (result.passed, result.failed, result.unjudged),
+                         details(result))
+        failed = dict((a, (w, g)) for a, w, g in result.results[0].failures)
+        self.assertEqual(("between 0 and 300 ms after the drive", "none by 300 ms"),
+                         failed["(first announcement)"])
 
     def test_an_answer_never_met_in_the_window_fails_at_its_end(self):
         """Nothing fires before 400 ms, so FLASHING is never met: the harness

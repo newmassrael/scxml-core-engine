@@ -592,16 +592,28 @@ document to it — does with outputs, once for the platform rather than in every
 binding:
 
     host:
-      writes: every-round     # every bound position, every round, changed or not
+      writes: every-round     # every position its rule writes, every round, changed or not
 
 `verify` models that host, and a case read as its first announcement
 (`observed: first`) is judged on it, so such a case is refused where the pack
-does not say. ⚠ `every-round` is the only policy listed because it is the only
-one modelled, not because platforms share it: on one platform's original
-components about half the outputs were written in the rounds that delivered an
-input they read, and the rest by guards, transitions, timers and the grouping
-of their code. A policy is added here when `verify` can model it and a
-platform's own acceptance run agrees with the model.
+does not say. The first announcement is the first round from the drive on that
+WRITES a position the case expects: a rule that answers when nothing was sent
+writes every round, so for most outputs that is the drive's own round; a
+`hold_last` rule handed a value its map lacks writes nothing, so its position
+announces only in a round the document sends it a mapped value — a delayed act
+included. A window nothing writes in is a wait the harness saw go unanswered,
+and fails as one.
+
+⚠ That is how an output written only at certain moments is stated: in its
+rule, not in the host. On one platform's original components about half the
+outputs were written in the rounds that delivered an input they read, and the
+rest by guards, transitions, timers and the grouping of their code — a timing
+that differs output by output, which a single host-wide policy cannot say. A
+document that sends such an output only at those moments, bound `hold_last`
+with a `when_nothing_sent` its map leaves out, is read at the moment it wrote.
+`every-round` is the only host policy listed because it is the only one
+modelled; another is added when `verify` can model it and a platform's own
+acceptance run agrees with the model.
 
 ### examples
 

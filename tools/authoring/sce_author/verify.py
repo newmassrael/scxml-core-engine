@@ -1914,8 +1914,9 @@ class StatechartRun:
                 f"up to {self.slack_ms:g} ms past it -- whether it fired is "
                 f"not known, so no configuration from here on is")
 
-    def moments(self, case):
-        """The instants a JUDGED step's reading may be taken at, earliest first.
+    def moments(self, case, from_drive: bool = False):
+        """The instants a JUDGED step's reading may be taken at, earliest
+        first, each yielded as its age after the drive in ms.
 
         ⚠ A judged reading is not "the state at the window's end". A harness
         that waits UP TO a timeout returns at the first notification that
@@ -1933,13 +1934,19 @@ class StatechartRun:
         guessed at (`ClockLost`). The slack is unchanged by the reading -- the
         harness returned when the machine answered, not at a moment of its
         own choosing.
+
+        `from_drive` starts at the drive's own round instead of the window's
+        earliest end: a reading taken at the FIRST announcement must see the
+        rounds before the window as well, since an announcement there is the
+        one the harness returned at, too early.
         """
-        lo, hi = case.elapsed_window
+        lo, hi = case.elapsed_window or (0, 0)
         if lo < 0:
             raise VerifyError(f"records `elapsed_ms` of {lo:g}, and an age cannot be negative")
-        span = hi - lo
-        self.engine.advance_time(int(lo))
-        yield
+        start = 0 if from_drive else lo
+        span = hi - start
+        self.engine.advance_time(int(start))
+        yield start
         elapsed = 0
         while True:
             due = self.engine.time_until_next_scheduled_ms()
@@ -1953,11 +1960,11 @@ class StatechartRun:
                     f"engine's clock -- whether it fell inside is not known")
             self.engine.advance_time(int(due))
             elapsed += due
-            yield
+            yield start + elapsed
         if elapsed < span:
             # Nothing answered inside: the harness read at the window's end.
             self.engine.advance_time(int(span - elapsed))
-            yield
+            yield hi
 
 
 def verify_statechart(pack: Pack, binding: dict, module, build: Build,
@@ -2158,8 +2165,9 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         if id(owner) in failed:
             continue
         result = CaseResult(name=owner.name)
-        # (lo, hi) of a window the first announcement came before, if it did.
-        arrived_early = None
+        # (lo, hi, what arrived) when the first announcement came before the
+        # window or never came in it.
+        arrival = None
         if lost:
             if judged:
                 withhold(result, case)
@@ -2227,16 +2235,35 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             # machine in between, which is the whole point of it having one.
             if judged and case.observed == "first":
                 # ⚠ The record's reading is the FIRST announcement after the
-                # drive, and the host this models writes every position the
-                # binding claims in every round -- so the drive's own round
-                # announces, at 0 ms, whatever the machine holds then. A case
-                # whose window opens later asserted an answer that arrives
-                # later; the run announced something first, and the harness
-                # judged that.
-                read = read_round(run.recorder.take(), judged)
-                lo = case.elapsed_window[0] if case.elapsed_window else 0
-                if lo > 0:
-                    arrived_early = (lo, case.elapsed_window[1])
+                # drive: the first round that writes a position the case
+                # expects, whatever it writes there. The host this models
+                # writes every position its rule writes that round -- every
+                # one, for a rule that answers when nothing was sent, and
+                # none, for a `hold_last` rule handed a value its map lacks.
+                # So the drive's own round announces at 0 ms unless every
+                # expected position holds; a case whose window opens later
+                # asserted an answer that arrives later, and an announcement
+                # before it is the one the harness judged.
+                #
+                # ⚠ This read the drive's round alone, which is right only
+                # while every expected position is written in every round.
+                # A position that holds until a delayed act writes it was
+                # read as announced at 0 ms, so a document written to
+                # announce late could not be told from one announcing early.
+                lo, hi = case.elapsed_window or (0, 0)
+                expected = set(case.expect)
+                taken, read, heard_at = [], None, None
+                for moment in run.moments(case, from_drive=True):
+                    step = run.recorder.take()
+                    taken += step
+                    read = read_round(taken, judged)
+                    if read_round(step, judged).fresh & expected:
+                        heard_at = moment
+                        break
+                if heard_at is None:
+                    arrival = (lo, hi, f"none by {hi:g} ms")
+                elif heard_at < lo:
+                    arrival = (lo, hi, f"at {heard_at:g} ms")
                 run.settle()
             elif judged and case.elapsed_window is not None:
                 # The first moment in the window that meets the case is the
@@ -2284,14 +2311,15 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         # After the round was driven, observed and its sends taken, so the
         # machine is where the record left it either way.
         if not withhold_unreceived(result, case, pack.model):
-            if arrived_early is not None:
+            if arrival is not None:
                 # A failure of WHEN, beside any of what: the harness asserts
                 # the arrival time too, and an answer before the window is
-                # not the one it waited for, whatever it said.
-                lo, hi = arrived_early
+                # not the one it waited for, whatever it said -- nor is a
+                # wait that nothing answered.
+                lo, hi, arrived = arrival
                 result.failures.append(("(first announcement)",
                                         f"between {lo:g} and {hi:g} ms after the drive",
-                                        "at 0 ms"))
+                                        arrived))
             judge.judge(result, case, produced, planted=stood_in)
         verification.results.append(result)
     judge.attribute()
