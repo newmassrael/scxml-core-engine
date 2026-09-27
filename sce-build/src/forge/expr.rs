@@ -5256,11 +5256,7 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal
         if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
             let l_raw = emit_rust(left, expected)?;
             let r_raw = emit_rust(right, expected)?;
-            let l = if child_needs_parens(left, *op, true, rust_precedence) {
-                format!("({l_raw})")
-            } else {
-                l_raw
-            };
+            let l = rust_left_operand(left, *op, l_raw);
             let r = if child_needs_parens(right, *op, false, rust_precedence) {
                 format!("({r_raw})")
             } else {
@@ -5393,11 +5389,7 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_rust(left, operand_ty)?;
             let r_raw = emit_rust(right, operand_ty)?;
-            let l = if child_needs_parens(left, *op, true, rust_precedence) {
-                format!("({l_raw})")
-            } else {
-                l_raw
-            };
+            let l = rust_left_operand(left, *op, l_raw);
             let r = if child_needs_parens(right, *op, false, rust_precedence) {
                 format!("({r_raw})")
             } else {
@@ -5655,6 +5647,54 @@ fn rust_cast(raw: String, node: &TypedExpr, target: &str) -> String {
     } else {
         format!("{raw} as {target}")
     }
+}
+
+/// The left operand of a Rust binary operator, parenthesised where the
+/// grammar needs it. Beyond precedence there is one case precedence does
+/// not see: a cast. `a as u32 < b` and `a as u32 << b` do not parse —
+/// rustc reads the `<` after a type as the start of its generic arguments —
+/// and a cast reaches this operand from several places (`len` and
+/// `round`/`floor` widened to the expected integer, `rust_coerce`,
+/// `rust_cast`), none of which knows the operator it will stand before.
+/// So the operator decides, from the text it was handed.
+fn rust_left_operand(left: &TypedExpr, op: BinOp, raw: String) -> String {
+    let before_angle = matches!(op, BinOp::Lt | BinOp::Shl);
+    if child_needs_parens(left, op, true, rust_precedence)
+        || (before_angle && rust_is_top_level_cast(&raw))
+    {
+        format!("({raw})")
+    } else {
+        raw
+    }
+}
+
+/// Whether emitted Rust text is, at its top level, an `as` cast — an ` as `
+/// outside every bracket, brace and string literal.
+fn rust_is_top_level_cast(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut depth = 0usize;
+    let mut in_str = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_str {
+            match b {
+                b'\\' => i += 1,
+                b'"' => in_str = false,
+                _ => {}
+            }
+        } else {
+            match b {
+                b'"' => in_str = true,
+                b'(' | b'[' | b'{' => depth += 1,
+                b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+                b' ' if depth == 0 && bytes[i..].starts_with(b" as ") => return true,
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    false
 }
 
 fn rust_int_type(signed: bool, bits: u8) -> &'static str {
@@ -6948,6 +6988,43 @@ mod tests {
     #[test]
     fn rust_comparison_verbatim() {
         assert_eq!(tp("rpm > 8000", ExprTarget::Rust), "rpm > 8000");
+    }
+
+    /// `a as u32 < b` does not parse in Rust: the `<` after a type opens its
+    /// generic arguments. A widened `len` before `<` is the shape
+    /// `sce:std/mesh/dedup_admit` wrote; `<=` parses and stays as it was.
+    #[test]
+    fn rust_cast_before_less_than_is_parenthesised() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("buf", InferredType::Bytes);
+        ctx.insert_var("n", int(false, 32));
+        ctx.insert_var("x", float(64));
+        ctx.insert_var("m", int(true, 64));
+        assert_eq!(
+            tp_with("len(buf) < n", ExprTarget::Rust, &ctx),
+            "((buf).len() as u32) < n"
+        );
+        assert_eq!(
+            tp_with("len(buf) <= n", ExprTarget::Rust, &ctx),
+            "(buf).len() as u32 <= n"
+        );
+        assert_eq!(
+            tp_with("round(x) < m", ExprTarget::Rust, &ctx),
+            "((x).round() as i64) < m"
+        );
+        assert_eq!(
+            tp_with("n > len(buf)", ExprTarget::Rust, &ctx),
+            "n > (buf).len() as u32"
+        );
+    }
+
+    #[test]
+    fn rust_top_level_cast_ignores_brackets_and_strings() {
+        assert!(rust_is_top_level_cast("(a).len() as u32"));
+        assert!(!rust_is_top_level_cast("(a as u32)"));
+        assert!(!rust_is_top_level_cast("f(a as u8)"));
+        assert!(!rust_is_top_level_cast("\"was as is\""));
+        assert!(!rust_is_top_level_cast("alias"));
     }
 
     #[test]
