@@ -31,10 +31,16 @@
 			t.Errorf("{{ f.name }} field {{ loop.index0 }}: oracle names %q, manifest %q",
 				spec.Fields[{{ loop.index0 }}].Name, "{{ field.name }}")
 		}
-		if int64(payload.{{ field.name | to_pascal_case }}) != spec.Fields[{{ loop.index0 }}].Value {
-			t.Errorf("{{ f.name }}.{{ field.name }} = %d, want %d",
-				int64(payload.{{ field.name | to_pascal_case }}),
-				spec.Fields[{{ loop.index0 }}].Value)
+{% if field.sce_type == "bool" %}
+		if want := spec.Fields[{{ loop.index0 }}].boolValue(t); payload.{{ field.name | to_pascal_case }} != want {
+			t.Errorf("{{ f.name }}.{{ field.name }} = %t, want %t",
+				payload.{{ field.name | to_pascal_case }}, want)
 		}
+{% else %}
+		if want := spec.Fields[{{ loop.index0 }}].int64Value(t); int64(payload.{{ field.name | to_pascal_case }}) != want {
+			t.Errorf("{{ f.name }}.{{ field.name }} = %d, want %d",
+				int64(payload.{{ field.name | to_pascal_case }}), want)
+		}
+{% endif %}
 {% endfor %}
 	}

@@ -21,8 +21,13 @@
         # Positional construction, so a reordered dataclass puts each value in
         # the wrong field and the read-backs below disagree.
         payload = {{ f.name }}.{{ f.name | to_pascal_case }}Payload(
+{# Python spells a boolean True/False; the manifest writes true/false. #}
 {% for field in f.fields %}
+{% if field.sce_type == "bool" %}
+            {{ "True" if field.value else "False" }},
+{% else %}
             {{ field.value }},
+{% endif %}
 {% endfor %}
         )
 
@@ -32,9 +37,19 @@
             "{{ field.name }}",
             "{{ f.name }} field {{ loop.index0 }} name",
         )
+{% if field.sce_type == "bool" %}
+        {# `int(True) == 1 == True` would let a number pass for a bool, so
+           the bool arm compares the bool itself. #}
+        self.assertIs(
+            payload.{{ field.name }},
+            fields[{{ loop.index0 }}]["value"],
+            "{{ f.name }}.{{ field.name }}",
+        )
+{% else %}
         self.assertEqual(
             int(payload.{{ field.name }}),
             fields[{{ loop.index0 }}]["value"],
             "{{ f.name }}.{{ field.name }}",
         )
+{% endif %}
 {% endfor %}

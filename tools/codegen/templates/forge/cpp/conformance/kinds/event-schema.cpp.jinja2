@@ -41,10 +41,17 @@
             CHECK(o["name"].get<std::string>() == "{{ field.name }}",
                   "{{ f.name }} field {{ loop.index0 }}: oracle names '%s', manifest '{{ field.name }}'",
                   o["name"].get<std::string>().c_str());
+{% if field.sce_type == "bool" %}
+            CHECK(payload.{{ field.name }} == o["value"].get<bool>(),
+                  "{{ f.name }}.{{ field.name }} = %d, expected %d",
+                  static_cast<int>(payload.{{ field.name }}),
+                  static_cast<int>(o["value"].get<bool>()));
+{% else %}
             CHECK(static_cast<long long>(payload.{{ field.name }}) == o["value"].get<long long>(),
                   "{{ f.name }}.{{ field.name }} = %lld, expected %lld",
                   static_cast<long long>(payload.{{ field.name }}),
                   o["value"].get<long long>());
+{% endif %}
         }
 {% endfor %}
     }

@@ -192,9 +192,29 @@ type eventSchemaSpec struct {
 	Fields    []eventSchemaFieldSpec `json:"fields"`
 }
 
+// Value is kept raw: a field declared `bool` holds true/false and every other
+// field a number, and the fragment decodes it as the kind it declared.
 type eventSchemaFieldSpec struct {
-	Name  string `json:"name"`
-	Value int64  `json:"value"`
+	Name  string          `json:"name"`
+	Value json.RawMessage `json:"value"`
+}
+
+func (f eventSchemaFieldSpec) int64Value(t *testing.T) int64 {
+	t.Helper()
+	var v int64
+	if err := json.Unmarshal(f.Value, &v); err != nil {
+		t.Fatalf("field %q: value %s is not a number: %v", f.Name, f.Value, err)
+	}
+	return v
+}
+
+func (f eventSchemaFieldSpec) boolValue(t *testing.T) bool {
+	t.Helper()
+	var v bool
+	if err := json.Unmarshal(f.Value, &v); err != nil {
+		t.Fatalf("field %q: value %s is not a bool: %v", f.Name, f.Value, err)
+	}
+	return v
 }
 {% if has_timer %}
 

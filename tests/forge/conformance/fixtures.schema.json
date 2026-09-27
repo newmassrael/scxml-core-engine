@@ -167,11 +167,26 @@
           "type": "string"
         },
         "value": {
-          "description": "A value in range for every arm's rendering of the declared type.",
-          "type": "integer",
-          "format": "int64"
+          "description": "A value in range for every arm's rendering of the declared type — a number, or a `bool` for a field declared `bool` (SCE_FORGE.md §4.12 admits `bool` fields; the kind of value must match `sce_type`, which the manifest check holds it to).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/EventSchemaFieldValue"
+            }
+          ]
         }
       }
+    },
+    "EventSchemaFieldValue": {
+      "description": "The value an event-schema field fixture writes and reads back. Untagged, so the manifest keeps writing a bare JSON number or `true`/`false`, and a template renders it as the literal it is — each arm branches on `sce_type == \"bool\"` where its language spells a boolean differently.",
+      "anyOf": [
+        {
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
     },
     "Fixture": {
       "description": "One fixture entry. `name` and `ref_section` are common to every kind; kind-specific data lives in the `spec` tagged enum below. The `#[serde(flatten)]` on `spec` means the on-disk JSON stays a single flat object (`{name, ref_section, kind, args, output, ...}`) so per-language Jinja2 templates can continue to read `f.args` / `f.output` / etc. without having to walk a nested `f.spec.*` path.",

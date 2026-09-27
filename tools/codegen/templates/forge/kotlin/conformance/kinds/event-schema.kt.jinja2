@@ -49,9 +49,17 @@
             fields[{{ loop.index0 }}].jsonObject["name"]!!.jsonPrimitive.content,
             "{{ f.name }} field {{ loop.index0 }} name",
         )
+{% if field.sce_type == "bool" %}
+        assertEquals(
+            fields[{{ loop.index0 }}].jsonObject["value"]!!.jsonPrimitive.boolean,
+            payload.{{ field.name }},
+            "{{ f.name }}.{{ field.name }}",
+        )
+{% else %}
         assertEquals(
             fields[{{ loop.index0 }}].jsonObject["value"]!!.jsonPrimitive.long,
             payload.{{ field.name }}.toLong(),
             "{{ f.name }}.{{ field.name }}",
         )
+{% endif %}
 {% endfor %}

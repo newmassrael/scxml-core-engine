@@ -327,8 +327,11 @@ pub struct EventSchemaFieldFixture {
     /// manifest serves six arms whose identifier conventions disagree, and
     /// each fragment applies its own case filter.
     pub name: String,
-    /// A value in range for every arm's rendering of the declared type.
-    pub value: i64,
+    /// A value in range for every arm's rendering of the declared type — a
+    /// number, or a `bool` for a field declared `bool` (SCE_FORGE.md §4.12
+    /// admits `bool` fields; the kind of value must match `sce_type`, which
+    /// the manifest check holds it to).
+    pub value: EventSchemaFieldValue,
     /// The `sce:type` the document declares, verbatim (`uint16`, `int32`, …).
     ///
     /// ⚠ Carried for CONSTRUCTION, not as a width claim. Kotlin needs
@@ -336,6 +339,18 @@ pub struct EventSchemaFieldFixture {
     /// build the payload without knowing what the field was declared as. The
     /// assertion still compares values, not widths — see the type's header.
     pub sce_type: String,
+}
+
+/// The value an event-schema field fixture writes and reads back. Untagged,
+/// so the manifest keeps writing a bare JSON number or `true`/`false`, and a
+/// template renders it as the literal it is — each arm branches on
+/// `sce_type == "bool"` where its language spells a boolean differently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum EventSchemaFieldValue {
+    Int(i64),
+    Bool(bool),
 }
 
 /// One fixture entry. `name` and `ref_section` are common to every kind;
@@ -1366,6 +1381,23 @@ impl Manifest {
                                  assertion per name, so a duplicate silently \
                                  drops a check",
                                 f.name, field.name
+                            ));
+                        }
+                        // A bool written to a numeric field (or a number to a
+                        // bool) would be rendered as a literal of the wrong
+                        // kind — a compile error in the typed arms, a silent
+                        // coercion in Python.
+                        let declared_bool = field.sce_type == "bool";
+                        let value_bool = matches!(field.value, EventSchemaFieldValue::Bool(_));
+                        if declared_bool != value_bool {
+                            return Err(format!(
+                                "fixture {}: event-schema field `{}` is declared \
+                                 `{}` but its value is {} — a `bool` field takes \
+                                 true/false and every other field a number",
+                                f.name,
+                                field.name,
+                                field.sce_type,
+                                if value_bool { "a bool" } else { "a number" }
                             ));
                         }
                     }

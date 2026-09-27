@@ -36,7 +36,9 @@ static void test_{{ f.name }}(void) {
         long long expected;
     } fields[] = {
 {% for field in f.fields %}
-        { "{{ field.name }}", {{ field.value }}LL }{{ "," if not loop.last }}
+{# A bool field compares as 0 or 1: `actual` below casts the field to
+   long long, and the expected side is written the same way. #}
+        { "{{ field.name }}", {% if field.sce_type == "bool" %}{{ 1 if field.value else 0 }}{% else %}{{ field.value }}{% endif %}LL }{{ "," if not loop.last }}
 {% endfor %}
     };
 
