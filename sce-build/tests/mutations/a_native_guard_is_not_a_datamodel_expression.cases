@@ -144,10 +144,12 @@ edit("tools/codegen/templates/actions/if.jinja2",
      "{% if false %}{{ elseif.cond_cpp_transformed }}")
 PY
 
+# The `kt:` arm follows the lowered-slot arm (`native_cond`, a `sce-static`
+# condition) since the two became one `if`/`elif` chain; the arm is the same.
 mutation_case "Kotlin's <if> loses its native arm" <<'PY'
 edit("tools/codegen/templates/kotlin/actions/if.kt.jinja2",
-     "{% if outer_if_action.is_kt_condition and outer_if_action.cond_kt %}",
-     "{% if false %}")
+     "{% elif outer_if_action.is_kt_condition and outer_if_action.cond_kt %}",
+     "{% elif false %}")
 PY
 
 mutation_case "the shared decision stops answering for <if>" <<'PY'
