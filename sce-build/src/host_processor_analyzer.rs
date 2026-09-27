@@ -267,8 +267,8 @@ pub const RESERVED_TYPE_PREFIX: &str = "sce:";
 /// with [`RESERVED_TYPE_PREFIX`], spelled exactly.
 ///
 /// The build's copy of the rule every runtime's registration applies. Every
-/// copy reads `tests/host_processor/reserved_type_cases.json`, so a type one
-/// of them refuses is one they all refuse.
+/// copy reads `sce-build/tests/fixtures/host_processor/reserved_type_cases.json`,
+/// so a type one of them refuses is one they all refuse.
 pub fn is_reserved_type(processor_type: &str) -> bool {
     processor_type.starts_with(RESERVED_TYPE_PREFIX)
 }
@@ -791,12 +791,12 @@ mod tests {
         }
     }
 
-    /// tests/host_processor/reserved_type_cases.json: the table every copy
+    /// tests/fixtures/host_processor/reserved_type_cases.json: the table every copy
     /// of the reserved-type rule reads, at build time and at run time.
     #[test]
     fn a_reserved_type_is_read_by_the_shared_table() {
         let table: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/host_processor/reserved_type_cases.json"
+            "../tests/fixtures/host_processor/reserved_type_cases.json"
         ))
         .expect("the table is JSON");
         let cases = table["cases"].as_array().expect("the table has cases");

@@ -10,7 +10,7 @@
     "host's to use.",
     "",
     "The same answer is computed at build time by",
-    "host_processor_analyzer::check_host_declarations and at run time by each",
+    "host_processor_analyzer::is_reserved_type and at run time by each",
     "runtime's event-processor and invoker registration. Every copy reads",
     "this table, so a type one of them refuses is one they all refuse."
   ],

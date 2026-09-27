@@ -162,6 +162,41 @@ pub fn parse_host_invoke_deadline_ms(written: &str) -> Option<u64> {
     whole.parse::<i64>().ok().map(|ms| ms as u64)
 }
 
+/// The prefix SCE keeps for the Event I/O Processors and invoke types it
+/// defines itself: [`MESH_PROCESSOR_TYPE`] and `sce:mesh-rpc`.
+///
+/// §scxml-6.2.5 leaves the processor set open to the platform, and SCE shares
+/// that namespace with its host. A host registering a handler under `sce:`
+/// would not add a processor but replace one of SCE's, with nothing on the
+/// wire saying so — so registration refuses it, as the build refuses the same
+/// declaration (`cli/reserved-host-type`).
+pub const RESERVED_TYPE_PREFIX: &str = "sce:";
+
+/// The `<send type>` a Mesh send is lowered to on every backend whose Mesh
+/// router the host registers — see `Engine::register_mesh_router`.
+pub const MESH_PROCESSOR_TYPE: &str = "sce:mesh";
+
+/// Whether a host may not register `processor_type`: it starts with
+/// [`RESERVED_TYPE_PREFIX`], spelled exactly.
+///
+/// The runtime's copy of the rule the build applies to a declaration. Every
+/// copy reads `sce-build/tests/fixtures/host_processor/reserved_type_cases.json`,
+/// so a type one of them refuses is one they all refuse.
+pub fn is_reserved_type(processor_type: &str) -> bool {
+    processor_type.starts_with(RESERVED_TYPE_PREFIX)
+}
+
+/// Panic when a host registers under [`RESERVED_TYPE_PREFIX`], naming the
+/// call and the type — the refusal both registrations share.
+pub(crate) fn refuse_reserved_type(call: &str, processor_type: &str) {
+    assert!(
+        !is_reserved_type(processor_type),
+        "{call}({processor_type:?}): the `{RESERVED_TYPE_PREFIX}` prefix is reserved for the \
+         processors SCE defines itself; register a Mesh router with register_mesh_router, and \
+         give a host type another prefix, such as `x-`"
+    );
+}
+
 /// An `<invoke>` the host runs, at the point the state was entered.
 ///
 /// §scxml-6.4.1 leaves the invokable set to the platform in the same

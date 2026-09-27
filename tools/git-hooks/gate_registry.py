@@ -695,9 +695,8 @@ GATES: dict[str, dict] = {
             "apis/**",
             "tests/json_text/**",
             "tests/durations/**",
-            # Shared cross-language predicate tables the build reads.
+            # The shared Mesh-target predicate table the build reads.
             "tests/mesh/**",
-            "tests/host_processor/**",
         ],
         # The crate whose test suite this gate runs. `include-str-coverage`
         # in the self-test reads it: every file the sources under this root

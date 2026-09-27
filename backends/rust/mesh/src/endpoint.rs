@@ -30,8 +30,9 @@ use crate::outbound::{AfterFailure, Attempts};
 use crate::router::{Effect, Router, RouterError};
 use crate::signal::Signal;
 
-/// The `<send type>` a Mesh send is lowered to.
-pub const MESH_PROCESSOR_TYPE: &str = "sce:mesh";
+/// The `<send type>` a Mesh send is lowered to — the runtime's constant, so
+/// the type this crate serves is the one the engine's router door registers.
+pub use sce_rust_runtime::MESH_PROCESSOR_TYPE;
 
 /// `_event.origin` of a Mesh-delivered event is this scheme and the sending
 /// machine's name (§mesh-10.7) — the C++ core's `kMeshOriginScheme`.
@@ -274,7 +275,7 @@ where
     E: Environment + 'static,
 {
     let endpoint = Arc::clone(endpoint);
-    engine.register_event_processor(MESH_PROCESSOR_TYPE, move |request| {
+    engine.register_mesh_router(move |request| {
         endpoint
             .lock()
             .expect("a Mesh endpoint is never left mid-update: nothing in it panics while locked")

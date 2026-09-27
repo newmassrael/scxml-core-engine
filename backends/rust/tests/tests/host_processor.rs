@@ -236,3 +236,58 @@ fn the_registry_reports_what_it_holds() {
     assert!(engine.has_event_processor(DECLARED_TYPE));
     assert!(!engine.has_event_processor("x-never-registered"));
 }
+
+/// sce-build/tests/fixtures/host_processor/reserved_type_cases.json: the
+/// table the build's declaration check and every runtime's registration
+/// read. Each case is asked of the registration itself, not only of the
+/// predicate, so a registration that stopped consulting it fails here.
+#[test]
+fn registration_refuses_the_reserved_types_the_shared_table_names() {
+    let table: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../sce-build/tests/fixtures/host_processor/reserved_type_cases.json"
+    ))
+    .expect("the table is JSON");
+    let cases = table["cases"].as_array().expect("the table has cases");
+    assert!(cases.len() >= 10, "the table lost cases: {}", cases.len());
+    for case in cases {
+        let name = case["type"]
+            .as_str()
+            .expect("a type is a string")
+            .to_string();
+        let reserved = case["reserved"].as_bool().expect("reserved is a bool");
+        assert_eq!(
+            sce_rust_runtime::is_reserved_type(&name),
+            reserved,
+            "{name:?}"
+        );
+        for invoker in [false, true] {
+            let registered = std::panic::catch_unwind(|| {
+                let (mut engine, _script_engine) = started();
+                if invoker {
+                    engine.register_invoker(&name, |_event| None);
+                } else {
+                    engine.register_event_processor(&name, |_req: HostSendRequest| Vec::new());
+                }
+            });
+            assert_eq!(
+                registered.is_err(),
+                reserved,
+                "{name:?} (invoker: {invoker}) was {} by registration",
+                if registered.is_err() {
+                    "refused"
+                } else {
+                    "accepted"
+                },
+            );
+        }
+    }
+}
+
+/// The Mesh router's own door serves the type the general one refuses.
+#[test]
+fn a_mesh_router_is_registered_through_its_own_door() {
+    let (mut engine, _script_engine) = started();
+    assert!(!engine.has_event_processor(sce_rust_runtime::MESH_PROCESSOR_TYPE));
+    engine.register_mesh_router(|_req: HostSendRequest| Vec::new());
+    assert!(engine.has_event_processor(sce_rust_runtime::MESH_PROCESSOR_TYPE));
+}

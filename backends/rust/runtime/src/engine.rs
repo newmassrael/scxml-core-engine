@@ -2453,6 +2453,17 @@ impl<P: StatePolicy> Engine<P> {
     /// Replaces any handler already registered for the type; see
     /// `HostProcessorRegistry::register` for why replacing beats
     /// refusing.
+    ///
+    /// # Panics
+    ///
+    /// When `processor_type` is under
+    /// [`crate::host_processor::RESERVED_TYPE_PREFIX`]: those types are SCE's
+    /// own, and a handler registered under one would replace SCE's processor
+    /// with nothing saying so. The Mesh router has its own door,
+    /// [`Engine::register_mesh_router`]. A panic rather than a `Result`
+    /// because this is wiring the host writes once, like a route table, and a
+    /// refusal a caller could ignore would bring back the silent replacement
+    /// it exists to prevent.
     #[cfg(not(feature = "no_std"))]
     pub fn register_event_processor<F>(&mut self, processor_type: &str, handler: F)
     where
@@ -2462,8 +2473,33 @@ impl<P: StatePolicy> Engine<P> {
             + Send
             + 'static,
     {
+        crate::host_processor::refuse_reserved_type("register_event_processor", processor_type);
         self.host_processors
             .register(processor_type, Box::new(handler));
+    }
+
+    /// Register `router` as the Event I/O Processor Mesh sends reach — the
+    /// build lowers a `<send target="#peer">` to
+    /// `<send type="sce:mesh">` and reports `needs_mesh_router` on its
+    /// manifest when the machine has one.
+    ///
+    /// The one way to serve [`crate::host_processor::MESH_PROCESSOR_TYPE`]:
+    /// [`Engine::register_event_processor`] refuses the reserved prefix, so a
+    /// router is only ever installed by a call that names itself one.
+    /// Unregistered, a Mesh send raises `error.execution` as any host
+    /// processor without a handler does; a registered router that cannot
+    /// reach the peer raises `error.communication` itself.
+    #[cfg(not(feature = "no_std"))]
+    pub fn register_mesh_router<F>(&mut self, router: F)
+    where
+        F: FnMut(
+                crate::host_processor::HostSendRequest,
+            ) -> Vec<crate::host_processor::HostSendResponse>
+            + Send
+            + 'static,
+    {
+        self.host_processors
+            .register(crate::host_processor::MESH_PROCESSOR_TYPE, Box::new(router));
     }
 
     /// §scxml-6.4.1: register `handler` as the invoker for
@@ -2489,6 +2525,12 @@ impl<P: StatePolicy> Engine<P> {
     /// the engine. Stated here because the surrounding §scxml-6.4
     /// machinery exists for SCXML children and silence would read as a
     /// promise.
+    ///
+    /// # Panics
+    ///
+    /// When `processor_type` is under
+    /// [`crate::host_processor::RESERVED_TYPE_PREFIX`], for the reason
+    /// [`Engine::register_event_processor`] gives.
     #[cfg(not(feature = "no_std"))]
     pub fn register_invoker<F>(&mut self, processor_type: &str, handler: F)
     where
@@ -2498,6 +2540,7 @@ impl<P: StatePolicy> Engine<P> {
             + Send
             + 'static,
     {
+        crate::host_processor::refuse_reserved_type("register_invoker", processor_type);
         self.host_processors
             .register_invoker(processor_type, Box::new(handler));
     }

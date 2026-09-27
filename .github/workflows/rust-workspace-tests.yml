@@ -98,10 +98,9 @@ on:
       # sce-build's unit tests: an edit to a table alone starts the suite.
       - 'tests/json_text/**'
       - 'tests/durations/**'
-      # Shared tables every copy of a cross-language predicate reads; the
-      # build's copy `include_str!`s them.
+      # The shared table every copy of the Mesh-target predicate reads; the
+      # build's copy `include_str!`s it.
       - 'tests/mesh/**'
-      - 'tests/host_processor/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -146,10 +145,9 @@ on:
       # sce-build's unit tests: an edit to a table alone starts the suite.
       - 'tests/json_text/**'
       - 'tests/durations/**'
-      # Shared tables every copy of a cross-language predicate reads; the
-      # build's copy `include_str!`s them.
+      # The shared table every copy of the Mesh-target predicate reads; the
+      # build's copy `include_str!`s it.
       - 'tests/mesh/**'
-      - 'tests/host_processor/**'
 
 # This lane is not superseded by the push that follows it.
 #
