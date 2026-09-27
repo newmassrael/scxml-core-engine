@@ -85,6 +85,14 @@
         {
           "file": "backends/rust/mesh/src/endpoint.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Endpoint.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Outbound.kt",
+          "kind": "references"
         }
       ]
     },
@@ -314,6 +322,10 @@
         {
           "file": "backends/rust/mesh/src/inbound.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Inbound.kt",
+          "kind": "references"
         }
       ]
     },
@@ -402,6 +414,10 @@
         {
           "file": "backends/rust/mesh/src/inbound.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Inbound.kt",
+          "kind": "references"
         }
       ]
     },
@@ -448,6 +464,10 @@
         },
         {
           "file": "backends/rust/mesh/src/inbound.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Inbound.kt",
           "kind": "references"
         }
       ],
@@ -513,6 +533,14 @@
         {
           "file": "backends/rust/mesh/src/router.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Inbound.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
+          "kind": "references"
         }
       ]
     },
@@ -552,6 +580,10 @@
         },
         {
           "file": "backends/rust/mesh/src/inbound.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Inbound.kt",
           "kind": "references"
         }
       ]
@@ -595,6 +627,14 @@
         },
         {
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Endpoint.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
           "kind": "references"
         }
       ]
@@ -2443,6 +2483,14 @@
         {
           "file": "backends/rust/mesh/src/endpoint.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Endpoint.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Signal.kt",
+          "kind": "references"
         }
       ]
     },
@@ -2844,6 +2892,10 @@
         {
           "file": "backends/rust/mesh/src/router.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction"
@@ -2931,6 +2983,14 @@
         },
         {
           "file": "backends/rust/mesh/src/endpoint.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Endpoint.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
           "kind": "references"
         }
       ]

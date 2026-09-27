@@ -161,6 +161,9 @@ paths = [
     # own are §synth-5, emitted from forge templates), so scanning the tree
     # judges the hand-written core and nothing else.
     "backends/rust/mesh/src",
+    # Its Kotlin twin (`sce-kotlin-mesh`), cited section for section. Its
+    # generated tree likewise carries only §synth- cites, measured 2026-09-28.
+    "backends/kotlin/mesh/src",
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
