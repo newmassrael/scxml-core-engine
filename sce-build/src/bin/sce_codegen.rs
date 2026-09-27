@@ -3759,11 +3759,13 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             // `<send type="x">` sites into dispatches and refused the
             // backends with no registry, while `check` had no way to be
             // told about `x` at all and reported every backend `ok`.
-            sce_build::host_processor_analyzer::declare_host_surfaces(
+            if let Err(refused) = sce_build::host_processor_analyzer::declare_host_surfaces(
                 &mut model,
                 &host_processor,
                 &host_invoker,
-            );
+            ) {
+                cli_exit(refused.into());
+            }
 
             // §scxml-5.8: a rejected document is a successful run that
             // produced stubs. `check` reports the rejection the same way
@@ -4329,11 +4331,13 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // §scxml-6.2.5: apply the host's declaration before any backend
     // renders, so what the emitted code does, what the analyzer reports
     // and what the manifest publishes are one decision.
-    sce_build::host_processor_analyzer::declare_host_surfaces(
+    if let Err(refused) = sce_build::host_processor_analyzer::declare_host_surfaces(
         &mut model,
         &host_processor,
         &host_invoker,
-    );
+    ) {
+        cli_exit(refused.into());
+    }
 
     // AST export — emit the analyzed model BEFORE any deploy-time
     // mutations (resolve_source_path, inject_server_model_mutations,

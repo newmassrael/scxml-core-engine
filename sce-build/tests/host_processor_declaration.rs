@@ -94,6 +94,65 @@ fn out_dir(tag: &str) -> PathBuf {
     dir
 }
 
+/// `sce:` is SCE's half of the processor namespace (`sce:mesh`,
+/// `sce:mesh-rpc`), so a host that declares a type there is refused on
+/// both surfaces and by both commands that take a declaration — with one
+/// record that names the type, and nothing on stdout.
+#[test]
+fn a_host_type_under_the_reserved_prefix_is_refused() {
+    let out = out_dir("reserved");
+    let file = fixture();
+    let cases: [(&[&str], &str); 3] = [
+        (
+            &["generate", "-l", "rust", "-o", out.to_str().unwrap()],
+            "--host-processor",
+        ),
+        (
+            &["generate", "-l", "rust", "-o", out.to_str().unwrap()],
+            "--host-invoker",
+        ),
+        (&["check"], "--host-processor"),
+    ];
+    for (command, flag) in cases {
+        let mut args: Vec<&str> = command.to_vec();
+        args.extend([
+            file.to_str().unwrap(),
+            flag,
+            "sce:mesh",
+            "--error-format=json",
+        ]);
+        let r = run(&args);
+        assert_ne!(
+            r.exit,
+            Some(0),
+            "{args:?} accepted a reserved type: {}",
+            r.stdout
+        );
+        assert!(
+            r.stdout.is_empty(),
+            "{args:?} wrote a manifest: {}",
+            r.stdout
+        );
+        let records: Vec<serde_json::Value> = r
+            .stderr
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("{e}: {l}")))
+            .collect();
+        assert_eq!(records.len(), 1, "{args:?}: {}", r.stderr);
+        assert_eq!(
+            records[0]["code"], "cli/reserved-host-type",
+            "{args:?}: {}",
+            r.stderr
+        );
+        assert_eq!(records[0]["actual"], "sce:mesh");
+        let message = records[0]["message"].as_str().unwrap_or_default();
+        assert!(
+            message.starts_with(flag),
+            "{args:?} names the wrong flag: {message}"
+        );
+    }
+}
+
 #[test]
 fn without_a_declaration_the_build_names_the_unserved_send() {
     let out = out_dir("undeclared");

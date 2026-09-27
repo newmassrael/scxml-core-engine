@@ -368,6 +368,14 @@ pub enum ForgeError {
     #[error(transparent)]
     Mesh(Box<crate::mesh::error::MeshError>),
 
+    /// A refusal whose subject is the caller's own arguments rather than
+    /// the document — raised on a library route (the `build.rs` facade,
+    /// `orchestrate`) that has no argv of its own but was handed the same
+    /// option the command line takes. Carried whole so the wire record is
+    /// the one `sce-codegen` would emit for that option.
+    #[error(transparent)]
+    Cli(Box<crate::cli_error::CliError>),
+
     #[error("I/O error on {path}: {source}")]
     Io {
         path: PathBuf,
@@ -428,6 +436,18 @@ impl From<crate::scxml_semantic::ScxmlSemanticError> for ForgeError {
 impl From<Box<crate::scxml_semantic::ScxmlSemanticError>> for ForgeError {
     fn from(err: Box<crate::scxml_semantic::ScxmlSemanticError>) -> Self {
         Self::Scxml(err)
+    }
+}
+
+impl From<crate::cli_error::CliError> for ForgeError {
+    fn from(err: crate::cli_error::CliError) -> Self {
+        Self::Cli(Box::new(err))
+    }
+}
+
+impl From<crate::host_processor_analyzer::ReservedHostType> for ForgeError {
+    fn from(err: crate::host_processor_analyzer::ReservedHostType) -> Self {
+        Self::Cli(Box::new(err.into()))
     }
 }
 
@@ -5249,6 +5269,9 @@ impl ForgeError {
             // (`sce-codegen mesh ...`). MeshError owns the categorical
             // mapping per its own taxonomy.
             ForgeError::Mesh(e) => e.exit_code(),
+            // The exit code `sce-codegen` gives the same refusal, so a
+            // library route and the command line agree on it too.
+            ForgeError::Cli(e) => crate::forge::diagnostic::ToDiagnostics::exit_code(e.as_ref()),
             ForgeError::Io { .. } => 8,
             ForgeError::Positioned { error, .. } => error.exit_code(),
         }

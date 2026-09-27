@@ -2312,6 +2312,15 @@ pub enum DiagnosticCode {
     /// can see lapse is a golden file.
     #[serde(rename = "cli/acceptance-lapsed")]
     CliAcceptanceLapsed,
+    /// A host declared a `<send>` or `<invoke>` type under the `sce:`
+    /// prefix, which SCE keeps for the processors it defines itself
+    /// (`sce:mesh`, `sce:mesh-rpc`).
+    ///
+    /// Refused rather than ignored: a host handler registered under one of
+    /// those names would replace SCE's processor with nothing on the wire
+    /// saying so.
+    #[serde(rename = "cli/reserved-host-type")]
+    CliReservedHostType,
     /// A requirement claim pointing out of its document does not land
     /// within the set given — Requirement-closure RFC §5.2e/§5.2f.
     ///
@@ -3417,6 +3426,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliQueryNoMatch,
         CliClosureInputUnusable,
         CliAcceptanceLapsed,
+        CliReservedHostType,
         CliRequirementClosureBroken,
         CliReviewTableUnavailable,
         CliPseudoUnavailable,
@@ -4336,6 +4346,7 @@ impl DiagnosticCode {
             | CliQueryNoMatch
             | CliClosureInputUnusable
             | CliAcceptanceLapsed
+            | CliReservedHostType
             | CliRequirementClosureBroken
             | CliReviewTableUnavailable
             | CliPseudoUnavailable
@@ -4761,6 +4772,7 @@ impl DiagnosticCode {
             CliQueryNoMatch => "cli/query-no-match",
             CliClosureInputUnusable => "cli/closure-input-unusable",
             CliAcceptanceLapsed => "cli/acceptance-lapsed",
+            CliReservedHostType => "cli/reserved-host-type",
             CliRequirementClosureBroken => "cli/requirement-closure-broken",
             CliReviewTableUnavailable => "cli/review-table-unavailable",
             CliPseudoUnavailable => "cli/pseudo-unavailable",
@@ -5322,6 +5334,12 @@ fn forge_error_fields(err: &ForgeError) -> DiagnosticPayload {
         // preserves the cross-doc validator wire shape.
         ForgeError::Mesh(e) => {
             <crate::mesh::error::MeshError as SingleDiagnostic>::diagnostic_payload(e)
+        }
+        // Delegate to `CliError`'s own payload, so a refusal of the
+        // caller's arguments reached through a library route is the record
+        // the command line emits for the same option.
+        ForgeError::Cli(e) => {
+            <crate::cli_error::CliError as SingleDiagnostic>::diagnostic_payload(e)
         }
         ForgeError::Io { path, .. } => DiagnosticPayload {
             code: DiagnosticCode::IoFilesystem,
@@ -14716,6 +14734,18 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:d06121782c34018d","code":"cli/acceptance-lapsed","stage":"cli","message":"acceptance/base.json: the acceptance no longer holds: design/frag.xml: changed since it was accepted","actual":"design/frag.xml: changed since it was accepted"}"#,
             ),
+            // ── A host type under SCE's reserved prefix ──
+            //    The flag and the name key the record: the same name on
+            //    the other surface is a different line of the host's to
+            //    fix. The name alone is the `actual`.
+            (
+                "cli/reserved-host-type",
+                CliError::ReservedHostType(crate::host_processor_analyzer::ReservedHostType {
+                    surface: crate::host_processor_analyzer::HostSurface::Send,
+                    type_name: "sce:mesh".into(),
+                }),
+                r#"{"v":1,"id":"fnv1a:8203972e7f263db5","code":"cli/reserved-host-type","stage":"cli","message":"--host-processor sce:mesh: the `sce:` prefix is reserved for the processors SCE defines itself; a host type needs another prefix, such as `x-`","actual":"sce:mesh"}"#,
+            ),
             // ── A requirement closure with a hole in it ──
             //    Keyed on the claims alone. They are spelled in document
             //    and requirement ids, which no checkout renames, so the
@@ -15628,6 +15658,9 @@ mod tests {
             // A lapse lists what moved; the repair is a person accepting
             // again, which no candidate list can spell.
             | CliAcceptanceLapsed
+            // The repair is a type name the host chooses, from no set SCE
+            // knows; the reserved prefix is already named in the message.
+            | CliReservedHostType
             // The repair is an edit to a manifest, or another manifest on
             // the command line; neither is a candidate from a known set.
             | CliRequirementClosureBroken
@@ -16340,7 +16373,7 @@ mod tests {
                 | CliInvalidSuitePackage
                 | CliGeneratorSourceDrift | CliGeneratorSourceUnverifiable
                 | CliUsage | CliQueryNoMatch | CliClosureInputUnusable
-                | CliAcceptanceLapsed | CliRequirementClosureBroken
+                | CliAcceptanceLapsed | CliReservedHostType | CliRequirementClosureBroken
                 | CliReviewTableUnavailable | CliPseudoUnavailable
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
@@ -16501,9 +16534,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            396,
+            397,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 396 distinct variants to match the DiagnosticCode \
+             expected 397 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17477,6 +17510,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CliQueryNoMatch
             | CliClosureInputUnusable
             | CliAcceptanceLapsed
+            | CliReservedHostType
             | CliRequirementClosureBroken
             | CliReviewTableUnavailable
             | CliPseudoUnavailable => Registered(NoAnchor::NoAuthoredArtefact),
@@ -18139,8 +18173,8 @@ mod anchor_contract_tests {
         // by measuring nothing at all.
         assert_eq!(
             filed.len(),
-            28,
-            "expected the 28 `cli`/`io` codes to be filed as permanent \
+            29,
+            "expected the 29 `cli`/`io` codes to be filed as permanent \
              exemptions; got {}: {filed:?}. If the code set genuinely \
              changed, re-derive this number from the namespace census \
              rather than editing it to match.",

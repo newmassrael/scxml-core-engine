@@ -1,0 +1,30 @@
+{
+  "about": [
+    "Which host-declared <send> / <invoke> types SCE refuses, written out by hand.",
+    "",
+    "A type is reserved when it starts with `sce:` - the prefix SCE keeps for",
+    "the processors it defines itself (`sce:mesh`, `sce:mesh-rpc`). A host",
+    "declaring or registering one would replace SCE's processor with nothing",
+    "on the wire saying so. The rule is the leading prefix, spelled exactly:",
+    "a name that merely contains it, or spells it in another case, is a",
+    "host's to use.",
+    "",
+    "The same answer is computed at build time by",
+    "host_processor_analyzer::check_host_declarations and at run time by each",
+    "runtime's event-processor and invoker registration. Every copy reads",
+    "this table, so a type one of them refuses is one they all refuse."
+  ],
+  "cases": [
+    { "type": "sce:mesh", "reserved": true },
+    { "type": "sce:mesh-rpc", "reserved": true },
+    { "type": "sce:", "reserved": true },
+    { "type": "sce:x-anything", "reserved": true },
+    { "type": "x-sce-host", "reserved": false },
+    { "type": "x-sce:mesh", "reserved": false },
+    { "type": "SCE:mesh", "reserved": false },
+    { "type": "sce", "reserved": false },
+    { "type": "scemesh", "reserved": false },
+    { "type": "", "reserved": false },
+    { "type": "http://www.w3.org/TR/scxml/#SCXMLEventProcessor", "reserved": false }
+  ]
+}

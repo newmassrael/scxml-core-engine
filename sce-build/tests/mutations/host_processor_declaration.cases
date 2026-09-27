@@ -268,11 +268,13 @@ PY
 # red, which the deleting form never got far enough to do.
 mutation_case "check accepts the declaration and never applies it" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     """            sce_build::host_processor_analyzer::declare_host_surfaces(
+     """            if let Err(refused) = sce_build::host_processor_analyzer::declare_host_surfaces(
                 &mut model,
                 &host_processor,
                 &host_invoker,
-            );""",
+            ) {
+                cli_exit(refused.into());
+            }""",
      "            let _ = (&host_processor, &host_invoker);")
 PY
 

@@ -988,6 +988,7 @@ references against a real document and drift silently.
 | `cli/query-no-match` | `cli` | no |  |
 | `cli/read-input` | `cli` | no |  |
 | `cli/requirement-closure-broken` | `cli` | no |  |
+| `cli/reserved-host-type` | `cli` | no |  |
 | `cli/review-table-unavailable` | `cli` | no |  |
 | `cli/scxml-generate` | `cli` | no |  |
 | `cli/unknown-language` | `cli` | `replace_one_of` |  |

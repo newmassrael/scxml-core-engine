@@ -242,20 +242,95 @@ pub fn needs_host_processor(model: &SCXMLModel) -> bool {
 /// untouched — still refused, still reported. Declaring one of the two
 /// standard processors is a no-op rather than an error: it names
 /// something already true.
-pub fn declare_host_processors(model: &mut SCXMLModel, types: &[String]) {
+///
+/// A type under [`RESERVED_TYPE_PREFIX`] is refused — see
+/// [`ReservedHostType`].
+pub fn declare_host_processors(
+    model: &mut SCXMLModel,
+    types: &[String],
+) -> Result<(), ReservedHostType> {
     declare_host_surfaces(model, types, &[])
 }
 
-/// [`declare_host_processors`] together with the `<invoke>` half.
+/// The prefix SCE keeps for the Event I/O Processors and invoke types it
+/// defines itself: [`MESH_PROCESSOR_TYPE`] and `sce:mesh-rpc`.
 ///
-/// The two are separate lists because they are separate contracts. A host
-/// that can deliver an event is not thereby able to run an invoked
-/// process with a lifecycle — start, cancel, and a `done.invoke` when it
-/// finishes — and a single list would make declaring one silently claim
-/// the other. §scxml-6.4.1 leaves the invokable set to the platform in
-/// the same words §scxml-6.2.5 uses for `<send>`, and SCE keeps the two
-/// answers separable for the same reason the specification states them
-/// separately.
+/// §scxml-6.2.5 leaves the processor set open to the platform, and a
+/// platform that shares a namespace with its host has to say which half
+/// is whose. SCE's half is `sce:`. A host declaring a type there would
+/// not be adding a processor but taking over one of SCE's — a
+/// `--host-processor sce:mesh` would make every Mesh send the host's to
+/// deliver, with nothing on the wire saying the router had been replaced.
+pub const RESERVED_TYPE_PREFIX: &str = "sce:";
+
+/// Whether a host may not declare or register `processor_type`: it starts
+/// with [`RESERVED_TYPE_PREFIX`], spelled exactly.
+///
+/// The build's copy of the rule every runtime's registration applies. Every
+/// copy reads `tests/host_processor/reserved_type_cases.json`, so a type one
+/// of them refuses is one they all refuse.
+pub fn is_reserved_type(processor_type: &str) -> bool {
+    processor_type.starts_with(RESERVED_TYPE_PREFIX)
+}
+
+/// Which host declaration a [`ReservedHostType`] came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostSurface {
+    /// `<send type>` — `--host-processor`, `host_processor_types`.
+    Send,
+    /// `<invoke type>` — `--host-invoker`, `host_invoker_types`.
+    Invoke,
+}
+
+impl HostSurface {
+    /// The command-line flag that declares this surface, which is how the
+    /// refusal names it: the CLI and the `build.rs` facade take the same
+    /// lists, and the flag is the spelling both readers know.
+    pub fn flag(self) -> &'static str {
+        match self {
+            HostSurface::Send => "--host-processor",
+            HostSurface::Invoke => "--host-invoker",
+        }
+    }
+}
+
+/// A host declared a type under [`RESERVED_TYPE_PREFIX`].
+///
+/// Refused rather than ignored: ignoring it would leave the host believing
+/// its handler serves the type while SCE's processor does, and the first
+/// sign would be an event arriving from the wrong place.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "{} {type_name}: the `{RESERVED_TYPE_PREFIX}` prefix is reserved for the \
+     processors SCE defines itself; a host type needs another prefix, such as `x-`",
+    surface.flag()
+)]
+pub struct ReservedHostType {
+    pub surface: HostSurface,
+    pub type_name: String,
+}
+
+/// The first declared type under [`RESERVED_TYPE_PREFIX`], `<send>` half
+/// first.
+pub fn check_host_declarations(
+    send_types: &[String],
+    invoke_types: &[String],
+) -> Result<(), ReservedHostType> {
+    let surfaces = [
+        (HostSurface::Send, send_types),
+        (HostSurface::Invoke, invoke_types),
+    ];
+    for (surface, types) in surfaces {
+        if let Some(type_name) = types.iter().find(|t| is_reserved_type(t)) {
+            return Err(ReservedHostType {
+                surface,
+                type_name: type_name.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
 /// The reserved `<param>` a host-run `<invoke>` names its deadline with, in
 /// milliseconds — read by each runtime, never handed to the host. One name
 /// for both invoke types that have a deadline; `sce:mesh-rpc` accepts it
@@ -289,11 +364,26 @@ pub fn parse_deadline_ms(written: &str) -> Option<u64> {
     whole.parse::<i64>().ok().map(|ms| ms as u64)
 }
 
+/// [`declare_host_processors`] together with the `<invoke>` half.
+///
+/// The two are separate lists because they are separate contracts. A host
+/// that can deliver an event is not thereby able to run an invoked
+/// process with a lifecycle — start, cancel, and a `done.invoke` when it
+/// finishes — and a single list would make declaring one silently claim
+/// the other. §scxml-6.4.1 leaves the invokable set to the platform in
+/// the same words §scxml-6.2.5 uses for `<send>`, and SCE keeps the two
+/// answers separable for the same reason the specification states them
+/// separately.
+///
+/// Every route a declaration takes into a build passes through here, so
+/// this is where [`check_host_declarations`] runs; the model is left
+/// untouched when it refuses.
 pub fn declare_host_surfaces(
     model: &mut SCXMLModel,
     send_types: &[String],
     invoke_types: &[String],
-) {
+) -> Result<(), ReservedHostType> {
+    check_host_declarations(send_types, invoke_types)?;
     model.host_processor_types = send_types.to_vec();
     model.host_invoker_types = invoke_types.to_vec();
     if !invoke_types.is_empty() {
@@ -338,7 +428,7 @@ pub fn declare_host_surfaces(
         crate::script_engine_analyzer::record_host_invoke_causes(model);
     }
     if send_types.is_empty() && invoke_types.is_empty() {
-        return;
+        return Ok(());
     }
     let types = send_types;
     visit_actions_mut(model, &mut |action| claim_action(action, types));
@@ -347,6 +437,7 @@ pub fn declare_host_surfaces(
     // keeps `needs_host_processor` and the emitted code the same answer.
     model.host_processor_causes = analyze(model);
     record_delayed_host_sends(model);
+    Ok(())
 }
 
 /// The most host-run invocations this machine can have in flight at once.
@@ -700,6 +791,23 @@ mod tests {
         }
     }
 
+    /// tests/host_processor/reserved_type_cases.json: the table every copy
+    /// of the reserved-type rule reads, at build time and at run time.
+    #[test]
+    fn a_reserved_type_is_read_by_the_shared_table() {
+        let table: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/host_processor/reserved_type_cases.json"
+        ))
+        .expect("the table is JSON");
+        let cases = table["cases"].as_array().expect("the table has cases");
+        assert!(cases.len() >= 10, "the table lost cases: {}", cases.len());
+        for case in cases {
+            let name = case["type"].as_str().expect("a type is a string");
+            let reserved = case["reserved"].as_bool().expect("reserved is a bool");
+            assert_eq!(is_reserved_type(name), reserved, "{name:?}");
+        }
+    }
+
     /// Every send the lowering must reach and every one it must leave.
     const MESH_SENDS: &str = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
         datamodel="ecmascript" initial="s">
@@ -854,7 +962,8 @@ mod tests {
             0,
             "nothing is host-served yet"
         );
-        declare_host_surfaces(&mut model, &[], &["x-host".to_string()]);
+        declare_host_surfaces(&mut model, &[], &["x-host".to_string()])
+            .expect("x- is not reserved");
         // `s` + both regions of `p` = 3; `s` + `q` = 2 (q2 is not served);
         // `t` = 1.
         assert_eq!(host_invocation_peak(&model), 3);
@@ -1038,7 +1147,8 @@ mod tests {
         ));
         assert!(needs_host_processor(&model));
 
-        declare_host_processors(&mut model, &["x-example-host".to_string()]);
+        declare_host_processors(&mut model, &["x-example-host".to_string()])
+            .expect("x- is not reserved");
 
         let action = &model.states["s"].on_entry_blocks[0][0];
         assert!(!action.send_type_unsupported, "still marked refused");
@@ -1060,7 +1170,8 @@ mod tests {
                  <send type="x-example-host" event="served"/>
                  <send type="x-other-host" event="refused"/>
                </onentry></state>"#));
-        declare_host_processors(&mut model, &["x-example-host".to_string()]);
+        declare_host_processors(&mut model, &["x-example-host".to_string()])
+            .expect("x- is not reserved");
         let verdicts: Vec<(bool, bool)> = model.states["s"].on_entry_blocks[0]
             .iter()
             .map(|a| (a.send_type_unsupported, a.send_type_host_served))
@@ -1076,7 +1187,8 @@ mod tests {
         let mut model = parse(&doc(
             r#"<state id="s"><onentry><send type="x-example-host-2" event="e"/></onentry></state>"#,
         ));
-        declare_host_processors(&mut model, &["x-example-host".to_string()]);
+        declare_host_processors(&mut model, &["x-example-host".to_string()])
+            .expect("x- is not reserved");
         let action = &model.states["s"].on_entry_blocks[0][0];
         assert!(action.send_type_unsupported, "a neighbour type was claimed");
         assert!(!action.send_type_host_served);
@@ -1098,7 +1210,8 @@ mod tests {
         let mut model = parse(&doc(
             r#"<state id="s"><invoke id="probe" type="x-example-host-2"/></state>"#,
         ));
-        declare_host_surfaces(&mut model, &[], &["x-example-host".to_string()]);
+        declare_host_surfaces(&mut model, &[], &["x-example-host".to_string()])
+            .expect("x- is not reserved");
 
         let Invoke::Unsupported(info) = &model.states["s"].invokes[0] else {
             panic!("the fixture's <invoke> stopped being classified Unsupported");
@@ -1122,7 +1235,8 @@ mod tests {
         let mut model = parse(&doc(
             r#"<state id="s"><invoke id="probe" type="x-example-host"/></state>"#,
         ));
-        declare_host_surfaces(&mut model, &[], &["x-example-host".to_string()]);
+        declare_host_surfaces(&mut model, &[], &["x-example-host".to_string()])
+            .expect("x- is not reserved");
 
         let Invoke::Unsupported(info) = &model.states["s"].invokes[0] else {
             panic!("the fixture's <invoke> stopped being classified Unsupported");
@@ -1142,7 +1256,8 @@ mod tests {
         let mut model = parse(&doc(r#"<state id="s"><onentry>
                  <if cond="true"><send type="x-example-host" event="a"/></if>
                </onentry></state>"#));
-        declare_host_processors(&mut model, &["x-example-host".to_string()]);
+        declare_host_processors(&mut model, &["x-example-host".to_string()])
+            .expect("x- is not reserved");
         assert!(
             model.host_processor_causes.is_empty(),
             "a nested send was left refused: {:?}",
@@ -1158,7 +1273,8 @@ mod tests {
         let mut model = parse(&doc(
             r#"<state id="s"><invoke id="probe" type="x-example-host"/></state>"#,
         ));
-        declare_host_processors(&mut model, &["x-example-host".to_string()]);
+        declare_host_processors(&mut model, &["x-example-host".to_string()])
+            .expect("x- is not reserved");
         assert_eq!(
             model.host_processor_causes.len(),
             1,
@@ -1175,10 +1291,45 @@ mod tests {
             r#"<state id="s"><onentry><send type="x-example-host" event="e"/></onentry></state>"#,
         ));
         let before = analyze(&model);
-        declare_host_processors(&mut model, &[]);
+        declare_host_processors(&mut model, &[]).expect("an empty declaration is not reserved");
         assert_eq!(analyze(&model), before);
         assert!(model.states["s"].on_entry_blocks[0][0].send_type_unsupported);
         assert!(model.host_processor_types.is_empty());
+    }
+
+    /// A host cannot take over one of SCE's own processors by declaring
+    /// its type: each surface refuses the prefix and names the flag it came
+    /// through, and the refused model is the parsed one, unchanged.
+    #[test]
+    fn a_declaration_under_the_reserved_prefix_is_refused() {
+        let body = r#"<state id="s"><onentry><send type="sce:mesh" event="e"/></onentry></state>"#;
+        for (send, invoke, surface) in [
+            (
+                vec![MESH_PROCESSOR_TYPE.to_string()],
+                vec![],
+                HostSurface::Send,
+            ),
+            (
+                vec![],
+                vec!["sce:mesh-rpc".to_string()],
+                HostSurface::Invoke,
+            ),
+        ] {
+            let mut model = parse(&doc(body));
+            let before = analyze(&model);
+            let refused = declare_host_surfaces(&mut model, &send, &invoke)
+                .expect_err("a type under the reserved prefix must be refused");
+            assert_eq!(refused.surface, surface);
+            assert!(refused.to_string().starts_with(surface.flag()));
+            assert!(model.host_processor_types.is_empty());
+            assert!(model.host_invoker_types.is_empty());
+            assert_eq!(analyze(&model), before);
+        }
+        // The prefix is the whole rule: a name that merely contains it is
+        // a host's to use.
+        let mut model = parse(&doc(body));
+        declare_host_processors(&mut model, &["x-sce:mesh".to_string()])
+            .expect("only a leading prefix is reserved");
     }
 
     /// The set is decided here at build time and again by

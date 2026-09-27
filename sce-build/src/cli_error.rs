@@ -353,6 +353,16 @@ pub enum CliError {
     #[error("{record}: the acceptance no longer holds: {}", lapses.join("; "))]
     AcceptanceLapsed { record: String, lapses: Vec<String> },
 
+    /// A host declared a `<send>` or `<invoke>` type under the prefix SCE
+    /// keeps for the processors it defines itself
+    /// (`host_processor_analyzer::RESERVED_TYPE_PREFIX`).
+    ///
+    /// Raised by the command line and by the `build.rs` facade alike: both
+    /// hand their lists to `declare_host_surfaces`, which is the one place
+    /// that refuses.
+    #[error(transparent)]
+    ReservedHostType(#[from] crate::host_processor_analyzer::ReservedHostType),
+
     /// A requirement claim pointing out of its document does not land
     /// within the manifests this run was given.
     ///
@@ -683,6 +693,19 @@ impl SingleDiagnostic for CliError {
                 DiagnosticCode::CliAcceptanceLapsed,
                 lapses.clone(),
                 Some(lapses.join("; ")),
+                None,
+            ),
+            // The flag joins the key because the same name is a different
+            // refusal on the other surface: `sce:mesh` declared as a
+            // processor and as an invoker are two lines to fix. No fix: the
+            // repair is a name the host chooses, from no set SCE knows.
+            CliError::ReservedHostType(refused) => (
+                DiagnosticCode::CliReservedHostType,
+                vec![
+                    refused.surface.flag().to_string(),
+                    refused.type_name.clone(),
+                ],
+                Some(refused.type_name.clone()),
                 None,
             ),
             // The claims key the record and nothing else does: they name

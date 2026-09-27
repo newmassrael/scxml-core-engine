@@ -1226,7 +1226,15 @@ fn compile_scxml_lang_typed_mutated(
         &mut model,
         &options.host_processor_types,
         &options.host_invoker_types,
-    );
+    )
+    .map_err(|refused| {
+        forge::error::Located::new(
+            forge::error::ForgeError::from(refused),
+            scxml_path,
+            None,
+            None,
+        )
+    })?;
     mutate(&mut model)?;
     if !model.driver_refs.is_empty() {
         match driver_root {
