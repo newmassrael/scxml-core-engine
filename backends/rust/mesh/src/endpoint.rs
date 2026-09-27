@@ -7,7 +7,7 @@
 //!
 //! The router decides and this module performs. A transmission that fails
 //! is retried on the binding's schedule (§mesh-10.10) or given up as its
-//! §16.7 row; an event the router releases, and every row it raises, becomes
+//! §mesh-16.7 row; an event the router releases, and every row it raises, becomes
 //! an [`EngineEvent`] carrying the `_event` fields the C++ core gives the
 //! same event (sce/include/mesh/MeshDispatch.h), so a document cannot tell
 //! which core it runs beside.

@@ -39,7 +39,7 @@ pub enum Signal {
         codec: &'static str,
     },
     /// MISSING_SEQUENCE (row 11): an envelope reached an ordered binding
-    /// without a `sequence_no`, so it cannot be placed (§10.6.3).
+    /// without a `sequence_no`, so it cannot be placed (§mesh-10.6.3).
     MissingSequence { source: String },
     /// BACKPRESSURE_DROP: an envelope that could not be sent at once found
     /// its target's queue already holding `depth` envelopes, and was dropped.

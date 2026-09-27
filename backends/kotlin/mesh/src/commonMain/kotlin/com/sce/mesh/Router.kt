@@ -21,17 +21,17 @@ import com.sce.runtime.StateMachineEngine
 
 /** What deployment says about one peer this machine talks to. */
 data class PeerConfig(
-    /** The binding's transport kind (`"wss"`, `"custom_tcp"`, ...): the `transport` column of its §16.7 rows. */
+    /** The binding's transport kind (`"wss"`, `"custom_tcp"`, ...): the `transport` column of its §mesh-16.7 rows. */
     val transport: String,
-    /** deploy.yaml's `max_pending_per_target` (§10.10). */
+    /** deploy.yaml's `max_pending_per_target` (§mesh-10.10). */
     val maxPending: UInt,
-    /** deploy.yaml's `max_age_ms`, 0 for no bound (§10.10). */
+    /** deploy.yaml's `max_age_ms`, 0 for no bound (§mesh-10.10). */
     val maxAgeMs: Long,
-    /** deploy.yaml's `retry` block, if the binding has one (§10.10). */
+    /** deploy.yaml's `retry` block, if the binding has one (§mesh-10.10). */
     val retry: RetryPolicy?,
-    /** Whether envelopes TO this peer carry a `sequence_no`: `ordering: required` on a transport that does not order (§10.6.3). */
+    /** Whether envelopes TO this peer carry a `sequence_no`: `ordering: required` on a transport that does not order (§mesh-10.6.3). */
     val stampSequence: Boolean,
-    /** How envelopes FROM this peer are delivered (§10.5, §10.6). */
+    /** How envelopes FROM this peer are delivered (§mesh-10.5, §mesh-10.6). */
     val delivery: Delivery,
 )
 
@@ -47,11 +47,11 @@ sealed class Effect {
      */
     data class Deliver(val event: String, val data: String, val source: String, val sendId: String?) : Effect()
 
-    /** Raise `error.communication` with this §16.7 row; [peer] names the binding it is about, when there is one. */
+    /** Raise `error.communication` with this §mesh-16.7 row; [peer] names the binding it is about, when there is one. */
     data class Raise(val peer: String?, val signal: Signal) : Effect()
 }
 
-/** Why the router could not do what the host asked. None of these is a §16.7 row: each is the host's to act on. */
+/** Why the router could not do what the host asked. None of these is a §mesh-16.7 row: each is the host's to act on. */
 sealed class RouterError {
     /** The host handed [Router.send] a target that is not a Mesh peer reference (see [meshPeer]). */
     data class NotMeshTarget(val target: String) : RouterError()
@@ -114,7 +114,7 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
      * Perform a `<send target="#peer">` the engine handed the host. [id] is the
      * envelope id the host drew (a UUID v7), [nowMs] its monotonic clock. A
      * Mesh target this router has no binding for is unreachable, and says so
-     * as §16.7 row 1.
+     * as §mesh-16.7 row 1.
      */
     fun send(request: StateMachineEngine.HostSendRequest, id: ByteArray, nowMs: Long): Routed {
         val peerName = meshPeer(request.target) ?: return Routed.Refused(RouterError.NotMeshTarget(request.target))
@@ -164,7 +164,7 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
 
     /**
      * Envelope [bytes] a transport received from [peer], at [nowMs]. An
-     * envelope that cannot be read is §16.7 row 4 and one an ordered binding
+     * envelope that cannot be read is §mesh-16.7 row 4 and one an ordered binding
      * cannot place is row 11, so both are effects; a rule's refusal is a
      * limit of this receiver, which no row names, so it is returned.
      */
@@ -201,7 +201,7 @@ private fun effectsOf(outcome: Outcome, peer: String?): List<Effect> =
 /**
  * The event an admitted envelope raises. A JSON or empty payload is the
  * `_event.data` text the sender's engine wrote; a payload in another codec is
- * bytes the engine's text surface cannot be handed, so it is §16.7 row 4
+ * bytes the engine's text surface cannot be handed, so it is §mesh-16.7 row 4
  * naming that codec. [peer] is the binding it arrived on, when a receipt
  * rather than a tick released it.
  */

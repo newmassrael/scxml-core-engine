@@ -36,19 +36,19 @@ use crate::signal::{Binding, Signal};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PeerConfig {
     /// The binding's transport kind (`"wss"`, `"custom_tcp"`, ...): the
-    /// `transport` column of the §16.7 rows observed on it.
+    /// `transport` column of the §mesh-16.7 rows observed on it.
     pub transport: &'static str,
-    /// deploy.yaml's `max_pending_per_target` (§10.10).
+    /// deploy.yaml's `max_pending_per_target` (§mesh-10.10).
     pub max_pending: u32,
-    /// deploy.yaml's `max_age_ms`, 0 for no bound (§10.10).
+    /// deploy.yaml's `max_age_ms`, 0 for no bound (§mesh-10.10).
     pub max_age_ms: i64,
-    /// deploy.yaml's `retry` block, if the binding has one (§10.10).
+    /// deploy.yaml's `retry` block, if the binding has one (§mesh-10.10).
     pub retry: Option<RetryPolicy>,
     /// Whether envelopes TO this peer carry a `sequence_no`: the binding
     /// declares `ordering: required` on a transport that does not itself
-    /// order (§10.6.3).
+    /// order (§mesh-10.6.3).
     pub stamp_sequence: bool,
-    /// How envelopes FROM this peer are delivered (§10.5, §10.6).
+    /// How envelopes FROM this peer are delivered (§mesh-10.5, §mesh-10.6).
     pub delivery: Delivery,
 }
 
@@ -66,7 +66,7 @@ pub enum Effect {
         source: String,
         send_id: Option<String>,
     },
-    /// Raise `error.communication` with this §16.7 row. `peer` names the
+    /// Raise `error.communication` with this §mesh-16.7 row. `peer` names the
     /// binding the row is about, when there is one.
     Raise {
         peer: Option<String>,
@@ -115,7 +115,7 @@ impl Router {
     /// clock.
     ///
     /// A Mesh target this router has no binding for is unreachable, and says
-    /// so as §16.7 row 1: the router is registered, so this is not the
+    /// so as §mesh-16.7 row 1: the router is registered, so this is not the
     /// `error.execution` of a processor nobody serves.
     pub fn send(
         &mut self,
@@ -240,7 +240,7 @@ impl Router {
     /// Envelope `bytes` a transport received from `peer`, at `now_ms`.
     ///
     /// What the document is told about is an effect; what only the host can
-    /// act on is an error. An envelope that cannot be read is §16.7 row 4
+    /// act on is an error. An envelope that cannot be read is §mesh-16.7 row 4
     /// and one an ordered binding cannot place is row 11, so both are
     /// effects. A hold that is full or a sequence at the `u64` maximum is a
     /// limit of this receiver, which no row names and distribution may not
@@ -296,7 +296,7 @@ impl Router {
 }
 
 /// Why the router could not do what the host asked. None of these is a
-/// §16.7 row: each is the host's to act on, not the document's.
+/// §mesh-16.7 row: each is the host's to act on, not the document's.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RouterError {
     /// The host handed [`Router::send`] a target that is not a Mesh peer
@@ -346,7 +346,7 @@ fn effects_of(outcome: Outcome, peer: Option<&str>) -> Vec<Effect> {
 
 /// The event an admitted envelope raises. A JSON or empty payload is the
 /// `_event.data` text the sender's engine wrote. A payload in another codec
-/// is bytes the engine's text surface cannot be handed, so it is §16.7 row 4
+/// is bytes the engine's text surface cannot be handed, so it is §mesh-16.7 row 4
 /// naming that codec rather than a string made from bytes that are not one.
 /// `peer` is the binding it arrived on, when a receipt rather than a tick
 /// released it.
