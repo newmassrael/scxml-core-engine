@@ -139,9 +139,23 @@ class Endpoint(
         }
     }
 
+    /**
+     * A transmission the transport accepted and then could not complete — an
+     * envelope still queued on a link that closed (SCE_MESH.md §mesh-18.3). It
+     * is that envelope's first failed send: sent again on the binding's
+     * schedule, or given up as its row.
+     */
+    fun transmitFailed(peer: String, bytes: ByteArray, failure: TransportFailure) {
+        afterFailure(peer, bytes, Attempts(), failure)
+    }
+
     /** Transmit [bytes] to [peer]; a failure waits out the binding's backoff or is given up as its row. */
     private fun transmit(peer: String, bytes: ByteArray, attempts: Attempts) {
         val failure = transport.transmit(peer, bytes) ?: return
+        afterFailure(peer, bytes, attempts, failure)
+    }
+
+    private fun afterFailure(peer: String, bytes: ByteArray, attempts: Attempts, failure: TransportFailure) {
         val decided = attempts.afterFailure(
             router.retryPolicy(peer),
             failure.retryable,

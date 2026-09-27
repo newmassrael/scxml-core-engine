@@ -907,8 +907,9 @@ sce_gate_step "the emitted Kotlin suite built and passed $suite_cases case(s)"
 # BUILD SUCCESSFUL for a test task that ran nothing, and a floor typed here
 # would go on passing when a test stopped running.
 sce_gate_step "running the Kotlin Mesh core's own tests"
-MESH_TESTS="backends/kotlin/mesh/src/commonTest"
-mesh_declared="$(grep -rh '^\s*@Test' "$MESH_TESTS" | grep -c . || true)"
+# Every test source set `jvmTest` compiles: the common core's and the JVM
+# WebSocket client's.
+mesh_declared="$(grep -rh '^\s*@Test' backends/kotlin/mesh/src/*Test | grep -c . || true)"
 mesh_status=0
 ./gradlew --console=plain :sce-kotlin-mesh:jvmTest >"$LOG/kotlin-mesh.log" 2>&1 || mesh_status=$?
 if (( mesh_status != 0 )); then

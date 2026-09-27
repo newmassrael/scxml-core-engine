@@ -38,5 +38,17 @@ kotlin {
                 implementation(kotlin("test"))
             }
         }
+        // The WebSocket binding's client (SCE_MESH.md §mesh-18): OkHttp is a
+        // JVM library, so the adapter is JVM code while the core stays common.
+        val jvmMain by getting {
+            dependencies {
+                implementation(libs.okhttp)
+            }
+        }
+        val jvmTest by getting {
+            dependencies {
+                implementation(libs.okhttp.mockwebserver)
+            }
+        }
     }
 }

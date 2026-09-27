@@ -2704,6 +2704,14 @@
         {
           "file": "backends/rust/mesh/src/wss.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/jvmMain/kotlin/com/sce/mesh/WssClient.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/WssClientTest.kt",
+          "kind": "references"
         }
       ]
     },
@@ -2716,6 +2724,14 @@
         {
           "file": "backends/rust/mesh/src/wss.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Link.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/jvmMain/kotlin/com/sce/mesh/WssClient.kt",
+          "kind": "references"
         }
       ]
     },
@@ -2727,6 +2743,10 @@
       "bindings": [
         {
           "file": "backends/rust/mesh/src/wss.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/jvmMain/kotlin/com/sce/mesh/WssClient.kt",
           "kind": "references"
         }
       ]
@@ -2743,6 +2763,14 @@
         },
         {
           "file": "backends/rust/mesh/src/endpoint.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Endpoint.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/jvmMain/kotlin/com/sce/mesh/WssClient.kt",
           "kind": "references"
         }
       ]
