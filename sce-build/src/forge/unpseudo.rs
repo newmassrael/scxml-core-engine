@@ -1537,13 +1537,25 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
             why: format!("`{type_word}` is not an sce:type"),
         })?;
         // A record local is its declaration plus one nested `field = expr`
-        // line per field — the shape `pseudo` writes.
+        // line per field — the shape `pseudo` writes — or, received whole
+        // from a call, one line with `= <call>` and nothing under it
+        // (SCE_FORGE.md §4.12).
         if let Some(alias) = sce_type.record_alias() {
-            if init.is_some() {
-                return Err(ParseError {
-                    line: line.number,
-                    why: "a record var has no `= <expr>`; its fields are the lines under it"
-                        .to_string(),
+            if let Some(init) = init {
+                if !kids.is_empty() {
+                    return Err(ParseError {
+                        line: line.number,
+                        why: "a record var takes `= <call>` or field lines under it, not both"
+                            .to_string(),
+                    });
+                }
+                return Ok(AlgorithmStmt::RecordFromCall {
+                    name: undo(name, line.number)?,
+                    name_spelling: None,
+                    alias: alias.to_string(),
+                    type_spelling: None,
+                    init: undo(init, line.number)?,
+                    init_spelling: None,
                 });
             }
             let mut fields = Vec::new();
