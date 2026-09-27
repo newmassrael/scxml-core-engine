@@ -77,6 +77,10 @@
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "MIN_OUTBOUND_BUFFER_MAX_PENDING",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/outbound.rs",
+          "kind": "references"
         }
       ]
     },
@@ -302,6 +306,10 @@
           "file": "sce-build/src/mesh/codegen.rs",
           "symbol": "compute_needs_dedup",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/inbound.rs",
+          "kind": "references"
         }
       ]
     },
@@ -386,6 +394,10 @@
           "file": "sce-build/src/mesh/codegen.rs",
           "symbol": "compute_needs_ordering",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/inbound.rs",
+          "kind": "references"
         }
       ]
     },
@@ -428,6 +440,10 @@
         {
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "DEFAULT_TICK_PERIOD_MS",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/inbound.rs",
           "kind": "references"
         }
       ],
@@ -485,6 +501,10 @@
         {
           "file": "tests/mesh/MeshEnvelopeCodecTest.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/rust/mesh/src/inbound.rs",
+          "kind": "references"
         }
       ]
     },
@@ -521,6 +541,10 @@
         {
           "file": "tests/mesh/test_mesh_order_injection.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/rust/mesh/src/inbound.rs",
+          "kind": "references"
         }
       ]
     },
@@ -2383,6 +2407,10 @@
           "file": "sce-build/src/mesh/transport/someip.rs",
           "symbol": "SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/signal.rs",
+          "kind": "references"
         }
       ]
     },
@@ -2776,6 +2804,10 @@
         {
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/lib.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction"

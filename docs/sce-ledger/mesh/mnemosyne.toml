@@ -155,6 +155,12 @@ paths = [
     "sce-build/src/lib.rs",
     "sce-build/src/w3c_dist_manifest.rs",
     "tools/codegen/templates/mesh",
+    # The Rust Mesh crate: the router core that applies the generated
+    # `sce:std/mesh` rules (§10.5 dedup, §10.6 ordering, §10.10 buffering and
+    # retry, §16.7 signals). Its `src/generated/` carries no §mesh- cite (its
+    # own are §synth-5, emitted from forge templates), so scanning the tree
+    # judges the hand-written core and nothing else.
+    "backends/rust/mesh/src",
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
