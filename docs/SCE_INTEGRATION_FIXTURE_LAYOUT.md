@@ -1288,6 +1288,32 @@ backend's documented resource limit and is read only by generated code; its
 test target raises the bound to 256, so what it measures there is the
 delivery rather than the configuration.
 
+`an_error_inside_a_foreach_ends_its_block` covers §scxml-4.6 with §4.9: an
+element inside a `<foreach>` body that raises an error ends the iteration
+and the block that contains the `<foreach>`, and its own error is the only
+one raised — §4.6 names the errors a `<foreach>` raises of its own, a
+collection it cannot walk and an item it cannot name, and a failing child is
+neither. Three blocks each run a `<foreach>` whose first body counts the
+iteration and then fails: a `<send>` with an unreadable `<param>` in
+`<onentry>`, an `<assign>` to an unreadable location in `<onentry>`, and the
+same `<send>` in transition content. Each block ends with an `<assign>` that
+must not run.
+
+Measured 2026-09-27 by reading every channel against this shape, only
+Python and C11's `<send>` met all three halves. The C++ Interpreter raised
+three errors (its own two over the element's); C++ AOT did not compile the
+`<send>`, whose block exit was a bare `return;` inside the iteration lambda;
+Rust raised a second error and ran the rest of the block; Go and Kotlin ran
+the rest of the block, and Kotlin under Rhino raised a second error; C11's
+`<assign>` raised none. Every channel now ends the block from however deep a
+`<foreach>` the failure came — C++ AOT through the block's exit statement,
+`return false;` inside the lambda; Rust by leaving a labelled
+`'action_block`; Go by returning from the block's function; Kotlin by
+throwing `ActionBlockAbort` to the `<foreach>`, which ends its own block;
+C11 by returning from the block's function — and the shared C++
+`ForeachHelper` reports whether the collection or the body stopped the
+loop, so the `<foreach>` raises only for the former.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

@@ -1049,6 +1049,8 @@ add_executable(integration_tests
     integration/AChildReplyArrivesWithoutATickAotTest.cpp
     integration/AChildMaySendManyEventsInOneTickTest.cpp
     integration/AChildMaySendManyEventsInOneTickAotTest.cpp
+    integration/AnErrorInsideAForeachEndsItsBlockTest.cpp
+    integration/AnErrorInsideAForeachEndsItsBlockAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
     integration/EventDataArrivesAsSentAotTest.cpp
     integration/XmlDataIsADomTreeTest.cpp
@@ -1606,6 +1608,11 @@ sce_generate_static_integration_test(a_child_reply_arrives_without_a_tick ${STAT
 # W3C SCXML 6.4: every event an invoked child sends to `#_parent` reaches the
 # parent, however many it sends before the parent next takes one.
 sce_generate_static_integration_test(a_child_may_send_many_events_in_one_tick ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 4.9 + 4.6: an error raised inside a <foreach> body ends the block
+# that contains the <foreach> — in <onentry> and in transition content — and
+# it is the only error that element's failure raises.
+sce_generate_static_integration_test(an_error_inside_a_foreach_ends_its_block ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach the
 # datamodel as a value. `raiseExternalEvent(name, data)` and

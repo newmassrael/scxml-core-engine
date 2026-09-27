@@ -98,16 +98,16 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 246
+engine-documents 247
 native-prefix-documents 2
-datamodel-variable-init 315
+datamodel-variable-init 326
 transition-guard 230
-assign-action 268
+assign-action 277
 child-invoke-needs-script-engine 47
 log-expr 45
-send-param-expr 42
+send-param-expr 44
 send-dynamic-attr 32
-foreach-action 15
+foreach-action 18
 static-invoke-namelist 9
 donedata-param 10
 donedata-content 9
@@ -221,10 +221,15 @@ never spelled correctly.
   and the two guards that judge them) raised `datamodel-variable-init`,
   `send-param-expr` and `transition-guard` by two — in the commit after
   the one that caused it, which left the tree red until this.
+  Then `an_error_inside_a_foreach_ends_its_block.scxml` (one engine
+  document: eleven data items, nine assigns, three `<foreach>` and two
+  `<send>` `<param>`s that read the datamodel) raised `engine-documents` by
+  one, `datamodel-variable-init` by eleven, `assign-action` by nine,
+  `foreach-action` by three and `send-param-expr` by two.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
-- **49% of judged documents need an engine** (246 of 499). The remaining
+- **49% of judged documents need an engine** (247 of 500). The remaining
   51% already compile without one, which is what makes "the engine is a
   fallback" a description of the tree rather than an aspiration.
   ⚠ This figure was previously stated as 32%, taken over the 736 walked

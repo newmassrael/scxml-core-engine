@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 4.9 + 4.6: an error raised by an element inside a <foreach> body
+  ends the block the <foreach> sits in — the iteration and everything after
+  the <foreach> — and it is the only error that element's failure raises.
+
+  §4.9 has the processor, once an element raises an error, "not process the
+  remaining elements of the block". A <foreach> is an element of its block,
+  and the body it runs is part of processing it, so the remaining iterations
+  and the elements after the <foreach> are the remaining elements of that
+  block. §4.6 names the errors <foreach> raises of its own — an `array` that
+  is not an iterable collection, an `item` that is not a legal variable
+  name — and a failing child is neither, so the child's own error is the only
+  one.
+
+  Three blocks, each with a <foreach> over three items whose body counts the
+  iteration and then fails:
+
+    1  `s1`'s <onentry>: an internal <send> whose <param> reads
+       `obj.missing.deep`. §5.7.1: the message still goes, without the pair.
+    2  `s2`'s <onentry>: an <assign> to the location `obj.missing.deep`.
+    3  the targetless transition on the host's `t`: the same <send> as 1, in
+       transition content rather than <onentry>.
+
+  Each block ends with an <assign> that must not run.
+
+    iters1 / iters2 / iters3  1 — each <foreach> stops after its first body.
+    after1 / after2 / after3  0 — nothing after a failed <foreach> runs.
+    errors                    3 — one error.execution per failed element.
+    sent                      2 — both failed sends still deliver their
+                                  message.
+    and the host's `finish` ends the run in `done`.
+
+  A channel whose <foreach> raises its own error on a failed body moves
+  `errors` above 3; one that ends only the iteration moves an `after`; one
+  that lets the iteration run on moves an `iters`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="an_error_inside_a_foreach_ends_its_block" datamodel="ecmascript"
+       initial="run">
+
+  <datamodel>
+    <data id="errors" expr="0"/>
+    <data id="sent" expr="0"/>
+    <data id="iters1" expr="0"/>
+    <data id="after1" expr="0"/>
+    <data id="iters2" expr="0"/>
+    <data id="after2" expr="0"/>
+    <data id="iters3" expr="0"/>
+    <data id="after3" expr="0"/>
+    <data id="items" expr="[1, 2, 3]"/>
+    <data id="item" expr="0"/>
+    <data id="obj" expr="({})"/>
+  </datamodel>
+
+  <state id="run" initial="s1">
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <transition event="sent">
+      <assign location="sent" expr="sent + 1"/>
+    </transition>
+    <transition event="t">
+      <foreach array="items" item="item">
+        <assign location="iters3" expr="iters3 + 1"/>
+        <send event="sent" target="#_internal">
+          <param name="bad" expr="obj.missing.deep"/>
+        </send>
+      </foreach>
+      <assign location="after3" expr="1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+
+    <state id="s1">
+      <onentry>
+        <foreach array="items" item="item">
+          <assign location="iters1" expr="iters1 + 1"/>
+          <send event="sent" target="#_internal">
+            <param name="bad" expr="obj.missing.deep"/>
+          </send>
+        </foreach>
+        <assign location="after1" expr="1"/>
+      </onentry>
+      <transition event="go" target="s2"/>
+    </state>
+
+    <state id="s2">
+      <onentry>
+        <foreach array="items" item="item">
+          <assign location="iters2" expr="iters2 + 1"/>
+          <assign location="obj.missing.deep" expr="1"/>
+        </foreach>
+        <assign location="after2" expr="1"/>
+      </onentry>
+    </state>
+  </state>
+
+  <final id="done"/>
+</scxml>
