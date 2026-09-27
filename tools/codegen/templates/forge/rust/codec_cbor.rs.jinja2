@@ -1,0 +1,172 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- The read of one entry's value, as the expression bound to it. Every CBOR
+    item is the runtime's (`sce_forge_runtime::cbor`); this spells none. #}
+{% macro decode_value(e) -%}
+{%- if e.kind == "bool" -%}
+cbor::read_bool(&mut c)?
+{%- elif e.kind == "text" -%}
+cbor::read_text(&mut c, {% if e.max_size is not none %}Some({{ e.max_size }}){% else %}None{% endif %})?
+{%- elif e.kind == "bytes" -%}
+cbor::read_bytes(&mut c, {% if e.max_size is not none %}Some({{ e.max_size }}){% else %}None{% endif %})?
+{%- elif e.kind == "bytes_exact" -%}
+cbor::read_bytes_exact(&mut c, {{ e.length }})?
+{%- elif e.kind == "enum" and e.enum_is_open -%}
+{{ e.enum_from_underlying }}(cbor::read_uint(&mut c)?.try_into().map_err(|_| CodecError::CborOutOfRange)?)
+{%- elif e.kind == "enum" -%}
+{{ e.enum_from_underlying }}(cbor::read_uint(&mut c)?.try_into().map_err(|_| CodecError::CborOutOfRange)?)
+                        .ok_or(CodecError::UndeclaredEnumValue)?
+{%- elif e.value_type == "u64" -%}
+cbor::read_uint(&mut c)?
+{%- else -%}
+cbor::read_uint_upto(&mut c, u64::from({{ e.value_type }}::MAX))? as {{ e.value_type }}
+{%- endif -%}
+{%- endmacro %}
+{#- The write of one entry's value `v`, key already written. #}
+{% macro encode_value(e) -%}
+{%- if e.kind == "bool" -%}
+cbor::write_bool(w, v)?;
+{%- elif e.kind == "text" -%}
+{% if e.max_size is not none %}if v.len() > {{ e.max_size }} {
+            return Err(CodecError::CborOutOfRange);
+        }
+        {% endif %}cbor::write_text(w, v)?;
+{%- elif e.kind == "bytes" -%}
+{% if e.max_size is not none %}if v.len() > {{ e.max_size }} {
+            return Err(CodecError::CborOutOfRange);
+        }
+        {% endif %}cbor::write_bytes(w, v)?;
+{%- elif e.kind == "bytes_exact" -%}
+if v.len() != {{ e.length }} {
+            return Err(CodecError::CborWrongLength);
+        }
+        cbor::write_bytes(w, v)?;
+{%- elif e.kind == "enum" -%}
+cbor::write_uint(w, u64::try_from({{ e.enum_to_underlying }}).map_err(|_| CodecError::CborOutOfRange)?)?;
+{%- elif e.value_type == "u64" -%}
+cbor::write_uint(w, v)?;
+{%- else -%}
+cbor::write_uint(w, u64::from(v))?;
+{%- endif -%}
+{%- endmacro %}
+{{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+use sce_forge_runtime::cbor;
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
+// `VecSink` and the heap-backed `encode_to_vec` facade are gated on the
+// runtime's `alloc` feature, as they are for a positional codec.
+#[cfg(feature = "alloc")]
+extern crate alloc;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+#[cfg(feature = "alloc")]
+use sce_forge_runtime::codec::VecSink;
+{% if all_imports %}
+
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
+
+/// One CBOR map (SCE_FORGE.md §4.6.1). Decode takes the keys in any order
+/// and skips one this codec does not declare; encode writes the entries
+/// present in ascending key order, every head in its shortest form.
+// pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
+// §6 codec), so an unused field is not dead code.
+#[allow(dead_code)]
+{{ codec_struct_derives_attr }}
+pub struct {{ struct_name }}{{ lifetime }} {
+{% for e in entries %}
+    /// Map key {{ e.key }}{% if e.required %}, required{% endif %}.
+    pub {{ e.name }}: {{ e.field_type }},
+{% endfor %}
+}
+
+#[allow(dead_code)]
+impl{{ lifetime }} {{ struct_name }}{{ lifetime }} {
+    /// An instance with every entry at its type's [`Default`] and every
+    /// optional entry absent — the infallible constructor every codec
+    /// offers, as a positional one does.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Decode one map from `cursor`. On success the cursor advances past it;
+    /// on any refusal the cursor is left untouched.
+    pub fn decode(cursor: &mut SceCursor<{{ cursor_lifetime }}>) -> Result<Self, CodecError> {
+        let mut c = *cursor;
+        let count = cbor::read_map_len(&mut c)?;
+{% for e in entries %}
+        let mut {{ e.name }}: Option<{{ e.value_type }}> = None;
+{% endfor %}
+        for _ in 0..count {
+            match cbor::read_uint(&mut c)? {
+{% for e in entries_by_key %}
+                {{ e.key }} => {
+                    // A key given twice is not one map entry.
+                    if {{ e.name }}.is_some() {
+                        return Err(CodecError::CborMalformed);
+                    }
+                    {{ e.name }} = Some({{ decode_value(e) }});
+                }
+{% endfor %}
+                _ => cbor::skip(&mut c)?,
+            }
+        }
+        let value = Self {
+{% for e in entries %}
+{% if e.required %}
+            {{ e.name }}: {{ e.name }}.ok_or(CodecError::CborRequiredKeyMissing)?,
+{% else %}
+            {{ e.name }},
+{% endif %}
+{% endfor %}
+        };
+        // Only a map that decoded whole moves the cursor.
+        *cursor = c;
+        Ok(value)
+    }
+
+    /// Encode this map into `w`. An entry whose value breaks its declared
+    /// bound — an exact length, a maximum size — is refused, not written.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
+{% if optional_count %}
+        let mut count: u64 = {{ required_count }};
+{% for e in entries if not e.required %}
+        if self.{{ e.name }}.is_some() {
+            count += 1;
+        }
+{% endfor %}
+{% else %}
+        let count: u64 = {{ required_count }};
+{% endif %}
+        cbor::write_map_head(w, count)?;
+{% for e in entries_by_key %}
+{% if e.required %}
+        let v = self.{{ e.name }};
+        cbor::write_uint(w, {{ e.key }})?;
+        {{ encode_value(e) }}
+{% else %}
+        if let Some(v) = self.{{ e.name }} {
+            cbor::write_uint(w, {{ e.key }})?;
+            {{ encode_value(e) | indent(4) }}
+        }
+{% endif %}
+{% endfor %}
+        Ok(())
+    }
+
+    /// [`encode`](Self::encode) into a new `Vec`.
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+        let mut out: Vec<u8> = Vec::new();
+        self.encode(&mut VecSink::new(&mut out))?;
+        Ok(out)
+    }
+}

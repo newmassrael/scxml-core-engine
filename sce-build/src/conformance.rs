@@ -1575,6 +1575,17 @@ pub fn lang_supports_fixture(
             return Ok(false);
         }
     }
+    // Per-fixture CBOR gate (SCE_FORGE.md §4.6.1): a backend generates a
+    // `sce:encoding="cbor"` codec from the commit that lands its generation,
+    // and refuses one until then — the same answer the generator reads.
+    if matches!(fixture.spec, FixtureSpec::Codec { .. })
+        && !crate::forge::cbor_codec::lowers(language)
+    {
+        let scxml_path = fixture.document_path(resource_dir);
+        if document_exists(&scxml_path) && read_codec_is_cbor(&scxml_path, &fixture.name)? {
+            return Ok(false);
+        }
+    }
     // Per-fixture `may-fail` gate (SCE_FORGE.md §3.4.1): a backend lowers a
     // `may-fail` algorithm in the commit that teaches it the checked
     // lowering, and refuses it until then — so the harness schedules the
@@ -1961,6 +1972,26 @@ fn read_algorithm_may_fail(scxml_path: &Path, fixture_name: &str) -> Result<bool
         _ => Err(format!(
             "fixture {fixture_name}: the manifest says `algorithm`, and {} is not an \
              algorithm document",
+            scxml_path.display()
+        )),
+    }
+}
+
+/// Whether the codec fixture's document is `sce:encoding="cbor"`, asked of
+/// the same parse the generator reads.
+fn read_codec_is_cbor(scxml_path: &Path, fixture_name: &str) -> Result<bool, String> {
+    let text = crate::load_forge_source(scxml_path, &[])
+        .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?
+        .positions
+        .expanded;
+    match crate::forge::parser::parse_forge(&text, crate::DocumentLabel::symmetric(fixture_name))
+        .map_err(|e| format!("{}: {e}", scxml_path.display()))?
+    {
+        Some(crate::forge::model::ForgeDocument::Codec(m)) => {
+            Ok(m.encoding == crate::forge::model::CodecEncoding::Cbor)
+        }
+        _ => Err(format!(
+            "fixture {fixture_name}: the manifest says `codec`, and {} is not a codec document",
             scxml_path.display()
         )),
     }

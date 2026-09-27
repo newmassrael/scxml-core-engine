@@ -20173,7 +20173,7 @@ struct EnumImport {
     first_variant: String,
 }
 
-struct LangCtx {
+pub(crate) struct LangCtx {
     lang: crate::generator::Language,
     /// Every enum this document imports, in this language's spelling.
     /// Empty for [`LangCtx::primitive`].
@@ -20188,7 +20188,7 @@ impl LangCtx {
     ///
     /// Every enum import is resolved here, once, so every type question
     /// asked of this context afterwards can answer an alias.
-    fn new(lang: crate::generator::Language, imports: &[ImportContext]) -> Self {
+    pub(crate) fn new(lang: crate::generator::Language, imports: &[ImportContext]) -> Self {
         let enum_types = imports
             .iter()
             .filter(|imp| imp.kind == "enum")
@@ -20276,7 +20276,7 @@ impl LangCtx {
 
     /// `value` as the carrier the wire holds — the value itself for a
     /// scalar field, the enum's own conversion for an enum-typed one.
-    fn codec_carrier_expr(&self, ty: &SceType, value: &str) -> String {
+    pub(crate) fn codec_carrier_expr(&self, ty: &SceType, value: &str) -> String {
         let SceType::Enum(r) = ty else {
             return value.to_string();
         };
@@ -20309,7 +20309,14 @@ impl LangCtx {
     /// the carrier is a value of the type at all, so each backend's decode
     /// wraps this call in its own way — which is why the call is handed
     /// over as a name rather than as a finished expression.
-    fn enum_from_underlying(&self, alias: &str) -> String {
+    /// Whether the enum `alias` names is an open set
+    /// (`sce:strict-variants="false"`), whose conversion from its carrier is
+    /// total rather than partial.
+    pub(crate) fn enum_is_open(&self, alias: &str) -> bool {
+        self.enum_import(alias).is_open
+    }
+
+    pub(crate) fn enum_from_underlying(&self, alias: &str) -> String {
         use crate::generator::Language;
         let imported = self.enum_import(alias);
         let qualified = &imported.qualified;
@@ -20379,7 +20386,7 @@ impl LangCtx {
 
     /// The language-native type of `ty`, with an enum alias resolved
     /// through this document's imports.
-    fn type_name(&self, ty: &SceType) -> std::borrow::Cow<'static, str> {
+    pub(crate) fn type_name(&self, ty: &SceType) -> std::borrow::Cow<'static, str> {
         if let SceType::Enum(r) = ty {
             return std::borrow::Cow::Owned(self.enum_type(&r.alias).to_string());
         }
@@ -20514,7 +20521,7 @@ impl LangCtx {
     }
 
     /// Base context fields common to all kinds (guard, namespace, package).
-    fn base_context(&self, name: &str) -> serde_json::Map<String, serde_json::Value> {
+    pub(crate) fn base_context(&self, name: &str) -> serde_json::Map<String, serde_json::Value> {
         let mut m = serde_json::Map::new();
         let struct_name = filters::to_pascal_case(name.to_string());
         m.insert("struct_name".into(), struct_name.clone().into());
@@ -20644,7 +20651,7 @@ impl LangCtx {
     }
 
     /// Render a template from a serde_json::Map context.
-    fn render(
+    pub(crate) fn render(
         &self,
         env: &minijinja::Environment,
         kind: &str,
@@ -20656,7 +20663,7 @@ impl LangCtx {
     }
 
     /// Insert standard import fields into a context map.
-    fn insert_imports(
+    pub(crate) fn insert_imports(
         &self,
         ctx: &mut serde_json::Map<String, serde_json::Value>,
         imports: &[ImportContext],

@@ -991,9 +991,20 @@ thing.
 `<sce:flags>`, `<sce:repeat>`, `<sce:tlv-chain>`, `<sce:embed>`,
 `<sce:variant>`, `<sce:flag-inputs>` and `<sce:test-vector>` elements.
 
-**Generation.** A backend emits a CBOR codec once its generation lands; until
-then it refuses the document by name (`generate/unsupported-feature`) rather
-than emitting a type with no fields.
+An indefinite-length item is refused as malformed; the hand-written Mesh
+envelope codec never writes one.
+
+**Generation.** Rust generates a CBOR codec: a struct of the entries (an
+optional one as `Option<T>`, `string` and `bytes` as views of the input),
+`decode(&mut SceCursor)` — which moves the cursor only when the whole map
+decoded — `encode(&mut impl SceSink)` and `encode_to_vec()`, every CBOR item
+read and written by the runtime's `sce_forge_runtime::cbor`. The refusals are
+typed: `CborMalformed`, `CborRequiredKeyMissing`, `CborWrongLength`,
+`CborTooDeep`, `CborOutOfRange`, and the existing `InvalidUtf8` /
+`UndeclaredEnumValue`. Every other backend refuses the document by name
+(`generate/unsupported-feature`) until its generation lands, rather than
+emitting a type with no fields; the conformance harness schedules a CBOR
+fixture exactly where the generator admits it (`cbor_codec::lowers`).
 
 ### 4.7 validator
 

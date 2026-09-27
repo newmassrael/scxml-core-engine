@@ -92,6 +92,24 @@ pub enum CodecError {
     /// Cpp + Kotlin collapse to the truncation sentinel
     /// (`std::nullopt` / `null`), as they do for `InvalidUtf8`.
     UndeclaredEnumValue,
+    /// A `sce:encoding="cbor"` codec (SCE_FORGE.md §4.6.1) read bytes that
+    /// are not the CBOR it expects: a head it cannot read (reserved
+    /// additional information, an indefinite length), a value of another
+    /// major type than the entry declares, a key that is not an unsigned
+    /// integer, or a key given twice.
+    CborMalformed,
+    /// A CBOR codec's map lacked an entry declared `sce:required="true"`.
+    CborRequiredKeyMissing,
+    /// A CBOR codec's `bytes` entry declared `sce:length` held another
+    /// number of bytes — on decode, or on encode.
+    CborWrongLength,
+    /// A CBOR codec skipped an unknown entry nested deeper than the bound
+    /// (SCE_FORGE.md §4.6.1: 16) — the defence against a map built to
+    /// exhaust the reader's stack.
+    CborTooDeep,
+    /// A CBOR codec read a value its entry's width cannot hold, or a
+    /// `string` / `bytes` longer than its `sce:max-size`.
+    CborOutOfRange,
 }
 
 /// Project an owned list into the bounded inline list

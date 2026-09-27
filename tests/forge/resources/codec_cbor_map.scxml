@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_FORGE.md §4.6.1: a codec that writes one CBOR map (RFC 8949).
+
+  The shape of the SCE Mesh envelope's head (SCE_MESH.md §13): an exact
+  16-byte id, a required text, a required small integer, an optional
+  64-bit integer, an optional truth value and a required byte string with
+  a bound — every entry kind the envelope carries except its enums.
+  Declared in an order that is not the key order, so the ascending-key
+  write is observable.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="cbor" name="codec_cbor_map" version="1.0">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="source" sce:type="string" sce:key="1" sce:required="true" sce:max-size="64" sce:direction="out"/>
+    <data id="id" sce:type="bytes" sce:key="0" sce:required="true" sce:length="16" sce:direction="out"/>
+    <data id="pattern" sce:type="uint8" sce:key="3" sce:required="true" sce:direction="out"/>
+    <data id="payload" sce:type="bytes" sce:key="5" sce:required="true" sce:max-size="256" sce:direction="out"/>
+    <data id="deadline" sce:type="uint64" sce:key="12" sce:direction="out"/>
+    <data id="urgent" sce:type="bool" sce:key="7" sce:direction="out"/>
+  </datamodel>
+</scxml>
