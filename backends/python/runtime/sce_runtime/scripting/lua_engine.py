@@ -836,6 +836,27 @@ def _json_to_lua_table(text: str) -> Optional[str]:
     return _python_to_lua_literal(parsed)
 
 
+def _lua_string(text: str) -> str:
+    """`text` as a Lua short string literal (Lua 5.4 §3.1).
+
+    A short string may not hold a raw line break, so a payload value with a
+    newline, rendered by escaping only `\\` and `"`, made the whole literal
+    a syntax error and the event arrived with no `_event.data` at all. Every
+    control character, and DEL, is written as a three-digit decimal escape —
+    three digits always, so a digit that follows cannot extend it."""
+    parts = []
+    for c in text:
+        if c == "\\":
+            parts.append("\\\\")
+        elif c == '"':
+            parts.append('\\"')
+        elif ord(c) < 0x20 or ord(c) == 0x7F:
+            parts.append(f"\\{ord(c):03d}")
+        else:
+            parts.append(c)
+    return '"' + "".join(parts) + '"'
+
+
 def _python_to_lua_literal(value: Any) -> str:
     """Render a Python value as the corresponding Lua source text. Used
     by `_coerce_event_data_to_lua` for the JSON-to-Lua fallback so the
@@ -850,7 +871,7 @@ def _python_to_lua_literal(value: Any) -> str:
     if isinstance(value, (int, float)):
         return repr(value)
     if isinstance(value, str):
-        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+        return _lua_string(value)
     if isinstance(value, list):
         return "{" + ", ".join(_python_to_lua_literal(v) for v in value) + "}"
     if isinstance(value, dict):

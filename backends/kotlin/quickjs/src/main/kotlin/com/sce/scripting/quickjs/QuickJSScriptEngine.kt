@@ -12,6 +12,7 @@
 
 package com.sce.scripting.quickjs
 
+import com.sce.runtime.EngineHeldValue
 import com.sce.runtime.IoProcessorDescriptor
 import com.sce.runtime.SceXmlDom
 import com.sce.runtime.PayloadReading
@@ -40,7 +41,19 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
      * `__sce_refs[refId]` from a different context would silently return the
      * wrong value (or undefined).
      */
-    private data class QuickJSRef(val refId: Int, val originHandle: Long)
+    private data class QuickJSRef(val refId: Int, val originHandle: Long) : EngineHeldValue {
+        /**
+         * §scxml-B-2-9: the referenced value as its own context's
+         * `JSON.stringify` writes it. Without this a ref leaving the data
+         * model — an object-valued `<param>` — was written as the text of
+         * this handle, and the receiver found none of the object's members.
+         */
+        override fun toJson(): String {
+            val encoded = QuickJSNative.evalExpression(
+                originHandle, "JSON.stringify(__sce_refs[$refId])")
+            return if (encoded != null && encoded.startsWith("S")) encoded.substring(1) else "null"
+        }
+    }
 
     // No list of declared names here on purpose. One lived here, written by
     // four call sites and read by two, and `executeScript` was not among the

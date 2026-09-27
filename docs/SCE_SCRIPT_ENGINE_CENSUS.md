@@ -100,12 +100,12 @@ documents-floor 700
 documents-judged-floor 450
 engine-documents 246
 native-prefix-documents 2
-datamodel-variable-init 313
-transition-guard 228
+datamodel-variable-init 315
+transition-guard 230
 assign-action 268
 child-invoke-needs-script-engine 47
 log-expr 45
-send-param-expr 40
+send-param-expr 42
 send-dynamic-attr 32
 foreach-action 15
 static-invoke-namelist 9
@@ -215,6 +215,12 @@ never spelled correctly.
   the same shape) raised the same three by one, and — its inline child
   iterating with `<foreach>`, which needs an engine where the earlier
   fixture's child did not — `child-invoke-needs-script-engine` by one.
+  Then `send_param_payload.scxml`'s `escapePhase` (the payload must be
+  JSON: a text with a newline and an object whose member names hold `"`
+  and `\`, both read from `<data>` so they reach the runtime serialiser,
+  and the two guards that judge them) raised `datamodel-variable-init`,
+  `send-param-expr` and `transition-guard` by two — in the commit after
+  the one that caused it, which left the tree red until this.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.

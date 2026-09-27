@@ -3114,6 +3114,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     protected fun valueToJson(value: Any?): String = when (value) {
         null -> "null"
+        is EngineHeldValue -> value.toJson()
         is Boolean -> value.toString()
         is Number -> {
             val d = value.toDouble()
@@ -3175,7 +3176,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // Already text: quoting it would deliver characters the document
         // never wrote.
         is String -> value
-        is Map<*, *>, is List<*>, is Array<*>, is RepeatedParam -> valueToJson(value)
+        is Map<*, *>, is List<*>, is Array<*>, is RepeatedParam, is EngineHeldValue -> valueToJson(value)
         else -> value.toString()
     }
 

@@ -30,15 +30,16 @@ def _json_string(text: str) -> str:
     is the one the other five backends apply — `json.dumps` also escapes
     non-ASCII by default, which would make the same payload differ
     between backends byte for byte.
+
+    Every control character below U+0020 is escaped (RFC 8259 §7): the
+    five with a short form take it, the rest `\\u00XX`, as the C++ writer
+    spells them. The short forms alone left the others raw, and a raw
+    control character makes the text not JSON.
     """
-    escaped = (
-        text.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t")
-        .replace("\b", "\\b")
-        .replace("\f", "\\f")
+    short = {'"': '\\"', "\\": "\\\\", "\b": "\\b", "\f": "\\f",
+             "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+    escaped = "".join(
+        short.get(c) or (f"\\u{ord(c):04x}" if ord(c) < 0x20 else c) for c in text
     )
     return f'"{escaped}"'
 

@@ -12551,6 +12551,11 @@
           "file": "sce/src/scripting/LuaEngine.cpp",
           "symbol": "LuaEngine::setCurrentEvent",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/EngineHeldValue.kt",
+          "symbol": "EngineHeldValue",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

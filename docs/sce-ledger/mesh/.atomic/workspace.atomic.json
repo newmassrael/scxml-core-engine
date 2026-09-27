@@ -1867,11 +1867,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/mesh/MeshEnvelopeCodec.cpp",
-          "symbol": "isValidPatternKind",
-          "kind": "references"
-        },
-        {
           "file": "tests/w3c/dist/test417/Test417_Main.h",
           "kind": "references"
         },
@@ -3409,11 +3404,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/mesh/MeshEnvelopeCodec.cpp",
-          "symbol": "isValidPatternKind",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/mesh/codegen.rs",
           "symbol": "generate_cpp_mesh",
           "kind": "implements"
@@ -3496,6 +3486,11 @@
           "file": "sce-build/src/mesh/transport/zenoh.rs",
           "symbol": "SCXML_INVOKE_KEY_PREFIX",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/PatternKind.h",
+          "symbol": "PatternKind",
+          "kind": "implements"
         }
       ]
     },
@@ -3632,11 +3627,6 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "stashDonedataAtFinal",
           "kind": "references"
-        },
-        {
-          "file": "sce/src/mesh/MeshEnvelopeCodec.cpp",
-          "symbol": "isValidPatternKind",
-          "kind": "implements"
         },
         {
           "file": "sce-build/src/mesh/error.rs",
@@ -3800,7 +3790,44 @@
   "changelog_entries": {},
   "inventory_entries": {},
   "confirmation_events": {},
-  "mutation_reasons": [],
+  "mutation_reasons": [
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-16.5",
+      "reason": "The pattern-kind value set moved to the generated codec: sce/src/mesh/generated/pattern_kind.h from_underlying, from stdlib/mesh/pattern_kind.scxml"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-9.6",
+      "reason": "The pattern-kind value set moved to the generated codec: sce/src/mesh/generated/pattern_kind.h from_underlying, from stdlib/mesh/pattern_kind.scxml"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-9.6.2",
+      "reason": "The pattern-kind value set moved to the generated codec: sce/src/mesh/generated/pattern_kind.h from_underlying, from stdlib/mesh/pattern_kind.scxml"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-16.5",
+      "reason": "A generated header carries no citation to back a binding; the hand-written enum that declares these wire values does"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-9.6",
+      "reason": "A generated header carries no citation to back a binding; the hand-written enum that declares these wire values does"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-9.6.2",
+      "reason": "A generated header carries no citation to back a binding; the hand-written enum that declares these wire values does"
+    }
+  ],
   "frames": {},
   "branches": {},
   "entities": {},
