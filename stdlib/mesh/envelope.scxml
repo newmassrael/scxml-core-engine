@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
 <!--
-  SCE_MESH.md §13 — the Mesh envelope, as one CBOR map (SCE_FORGE.md §4.6.1).
+  sce:std/mesh/envelope.scxml — the Mesh envelope (SCE_MESH.md §13), as one
+  CBOR map (SCE_FORGE.md §4.6.1).
 
   Every Mesh message between two machines is one of these, whatever carries
   it. The keys, the six required entries, the exact 16-byte identifiers and
@@ -11,17 +14,16 @@
   Key 13 (`qos`) is reserved and never written by any producer, so it is not
   declared here; a decode skips it like any key it does not know.
 
-  ⚠ Here rather than in the standard library beside its enums: a standard
-  document is one every backend generates, and a CBOR codec generates on
-  Rust and Kotlin only (SCE_FORGE.md §4.6.1). It moves to
-  `stdlib/mesh/envelope.scxml` in the commit that lands the last backend's
-  CBOR generation.
+  A standard document because every backend generates it: the strings are
+  bounded, so C11 holds each in a fixed array — sized to the wire's bounds,
+  which makes a whole envelope a large value a C11 host keeps in static
+  storage rather than on a stack.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="codec" sce:encoding="cbor" name="mesh_envelope">
-  <sce:import kind="enum" src="sce:std/mesh/pattern_kind.scxml" as="PatternKind"/>
-  <sce:import kind="enum" src="sce:std/mesh/payload_codec.scxml" as="PayloadCodec"/>
-  <sce:import kind="enum" src="sce:std/mesh/rpc_status.scxml" as="RpcStatus"/>
+       version="1.0" sce:kind="codec" sce:encoding="cbor" name="envelope">
+  <sce:import kind="enum" src="pattern_kind.scxml" as="PatternKind"/>
+  <sce:import kind="enum" src="payload_codec.scxml" as="PayloadCodec"/>
+  <sce:import kind="enum" src="rpc_status.scxml" as="RpcStatus"/>
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
     <!-- The envelope's own id: a UUID. -->

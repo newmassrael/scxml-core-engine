@@ -12,9 +12,9 @@ mod codec_cbor_map {
     include!(concat!(env!("OUT_DIR"), "/codec_cbor_map.rs"));
 }
 
-// The Mesh envelope (`tests/forge/resources/mesh_envelope.scxml`) and the
-// standard enums it imports, as siblings — the envelope names them
-// `super::pattern_kind` and so on.
+// The Mesh envelope (`sce:std/mesh/envelope.scxml`) and the standard enums
+// it imports, as siblings — the envelope names them `super::pattern_kind`
+// and so on.
 mod mesh {
     pub mod pattern_kind {
         include!(concat!(env!("OUT_DIR"), "/pattern_kind.rs"));
@@ -25,8 +25,8 @@ mod mesh {
     pub mod rpc_status {
         include!(concat!(env!("OUT_DIR"), "/rpc_status.rs"));
     }
-    pub mod mesh_envelope {
-        include!(concat!(env!("OUT_DIR"), "/mesh_envelope.rs"));
+    pub mod envelope {
+        include!(concat!(env!("OUT_DIR"), "/envelope.rs"));
     }
 }
 
@@ -169,7 +169,7 @@ fn every_refusal_the_section_names_leaves_the_cursor_where_it_was() {
 /// hand-written one only if this holds.
 #[test]
 fn the_mesh_envelope_writes_the_bytes_the_cpp_codec_writes() {
-    use mesh::mesh_envelope::MeshEnvelope as Envelope;
+    use mesh::envelope::Envelope;
     use mesh::pattern_kind::PatternKind;
     use mesh::payload_codec::PayloadCodec;
 

@@ -2218,7 +2218,8 @@
       ]
     },
     {
-      "name": "mesh_envelope",
+      "name": "envelope",
+      "document": "sce:std/mesh/envelope.scxml",
       "kind": "codec",
       "ref_section": "codecs",
       "oracle_eligible": false,

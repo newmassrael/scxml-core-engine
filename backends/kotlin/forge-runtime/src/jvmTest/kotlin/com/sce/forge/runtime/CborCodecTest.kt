@@ -11,7 +11,7 @@
 package com.sce.forge.runtime
 
 import com.sce.generated.codec_cbor_map.CodecCborMap
-import com.sce.generated.mesh_envelope.MeshEnvelope as Envelope
+import com.sce.generated.envelope.Envelope
 import com.sce.generated.pattern_kind.PatternKind
 import com.sce.generated.payload_codec.PayloadCodec
 import kotlin.test.Test
@@ -117,7 +117,7 @@ class CborCodecTest {
     /**
      * The C++ codec's `GoldenBytesForFixedEnvelope`
      * (tests/mesh/MeshEnvelopeCodecTest.cpp), read and written by the codec
-     * generated from `tests/forge/resources/mesh_envelope.scxml` — the vector the Rust
+     * generated from `sce:std/mesh/envelope.scxml` — the vector the Rust
      * suite holds its envelope to as well.
      */
     @Test
