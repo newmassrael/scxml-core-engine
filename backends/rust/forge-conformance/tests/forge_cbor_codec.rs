@@ -12,6 +12,24 @@ mod codec_cbor_map {
     include!(concat!(env!("OUT_DIR"), "/codec_cbor_map.rs"));
 }
 
+// The Mesh envelope (`tests/forge/resources/mesh_envelope.scxml`) and the
+// standard enums it imports, as siblings — the envelope names them
+// `super::pattern_kind` and so on.
+mod mesh {
+    pub mod pattern_kind {
+        include!(concat!(env!("OUT_DIR"), "/pattern_kind.rs"));
+    }
+    pub mod payload_codec {
+        include!(concat!(env!("OUT_DIR"), "/payload_codec.rs"));
+    }
+    pub mod rpc_status {
+        include!(concat!(env!("OUT_DIR"), "/rpc_status.rs"));
+    }
+    pub mod mesh_envelope {
+        include!(concat!(env!("OUT_DIR"), "/mesh_envelope.rs"));
+    }
+}
+
 use codec_cbor_map::CodecCborMap;
 use sce_forge_runtime::codec::{CodecError, SceCursor};
 
@@ -46,7 +64,7 @@ fn decode(bytes: &[u8]) -> Result<CodecCborMap<'_>, CodecError> {
 }
 
 #[test]
-fn a_value_is_written_as_rfc_8949_fixes_it() {
+fn a_value_is_written_in_its_one_deterministic_encoding() {
     assert_eq!(value().encode_to_vec().expect("encodes"), expected());
 }
 
@@ -143,6 +161,55 @@ fn every_refusal_the_section_names_leaves_the_cursor_where_it_was() {
 
     // An indefinite-length map.
     refused(&[0xbf, 0xff], CodecError::CborMalformed);
+}
+
+/// The C++ codec's `GoldenBytesForFixedEnvelope`
+/// (tests/mesh/MeshEnvelopeCodecTest.cpp): the same envelope must be the same
+/// bytes whichever backend wrote it — the generated codec replaces the
+/// hand-written one only if this holds.
+#[test]
+fn the_mesh_envelope_writes_the_bytes_the_cpp_codec_writes() {
+    use mesh::mesh_envelope::MeshEnvelope as Envelope;
+    use mesh::pattern_kind::PatternKind;
+    use mesh::payload_codec::PayloadCodec;
+
+    const SAMPLE_ID: [u8; 16] = [
+        0x01, 0x82, 0xb1, 0x4d, 0xa3, 0x5c, 0x70, 0x12, 0xb4, 0xde, 0xf0, 0x42, 0x9a, 0x88, 0x77,
+        0x66,
+    ];
+    let envelope = Envelope {
+        id: &SAMPLE_ID,
+        source: "ecu",
+        event_type: "evt",
+        pattern: PatternKind::FireForget,
+        datacontenttype: PayloadCodec::Json,
+        data: &[0xAA, 0xBB],
+        ..Envelope::default()
+    };
+    let mut golden = vec![0xA6, 0x00, 0x50];
+    golden.extend_from_slice(&SAMPLE_ID);
+    golden.extend_from_slice(&[0x01, 0x63, b'e', b'c', b'u']);
+    golden.extend_from_slice(&[0x02, 0x63, b'e', b'v', b't']);
+    golden.extend_from_slice(&[0x03, 0x01, 0x04, 0x01, 0x05, 0x42, 0xAA, 0xBB]);
+
+    assert_eq!(envelope.encode_to_vec().expect("encodes"), golden);
+    assert_eq!(
+        Envelope::decode(&mut SceCursor::new(&golden)),
+        Ok(envelope.clone())
+    );
+
+    // A pattern in the reserved Stream range (10–13) is not a value of the
+    // closed set, as the C++ decoder refuses it.
+    let mut reserved = golden.clone();
+    let at = reserved
+        .windows(2)
+        .position(|w| w == [0x03, 0x01])
+        .expect("3: 1");
+    reserved[at + 1] = 0x0b;
+    assert_eq!(
+        Envelope::decode(&mut SceCursor::new(&reserved)),
+        Err(CodecError::UndeclaredEnumValue)
+    );
 }
 
 #[test]

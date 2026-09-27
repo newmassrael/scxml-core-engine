@@ -4128,6 +4128,60 @@
         { "name": "requestOutOfRange", "value": 49 },
         { "name": "responsePending", "value": 120 }
       ]
+    },
+    "pattern_kind": {
+      "fixture": "PatternKind",
+      "signature": "enum PatternKind : uint16",
+      "description": "The Mesh envelope's pattern (SCE_MESH.md §13, key 3), from sce:std/mesh/pattern_kind.scxml. The numbers are the wire's; 10-13 are reserved for the Stream patterns and must not appear, so a conversion that assigned ordinals would give 17 consecutive values and fail here.",
+      "underlying_type": "uint16",
+      "variants": [
+        { "name": "fireForget", "value": 1 },
+        { "name": "rpcRequest", "value": 2 },
+        { "name": "rpcReply", "value": 3 },
+        { "name": "eventSubscribe", "value": 4 },
+        { "name": "eventUnsubscribe", "value": 5 },
+        { "name": "eventNotify", "value": 6 },
+        { "name": "fieldRead", "value": 7 },
+        { "name": "fieldWrite", "value": 8 },
+        { "name": "fieldNotify", "value": 9 },
+        { "name": "invokeStart", "value": 14 },
+        { "name": "invokeStarted", "value": 15 },
+        { "name": "childEvent", "value": 16 },
+        { "name": "parentEvent", "value": 17 },
+        { "name": "invokeDone", "value": 18 },
+        { "name": "invokeCancel", "value": 19 },
+        { "name": "invokeError", "value": 20 },
+        { "name": "parallelRegionDone", "value": 21 }
+      ]
+    },
+    "payload_codec": {
+      "fixture": "PayloadCodec",
+      "signature": "enum PayloadCodec : uint8",
+      "description": "The Mesh envelope's datacontenttype (SCE_MESH.md §13, key 4), from sce:std/mesh/payload_codec.scxml.",
+      "underlying_type": "uint8",
+      "variants": [
+        { "name": "none", "value": 0 },
+        { "name": "json", "value": 1 },
+        { "name": "cbor", "value": 2 },
+        { "name": "typed", "value": 3 },
+        { "name": "raw", "value": 4 }
+      ]
+    },
+    "rpc_status": {
+      "fixture": "RpcStatus",
+      "signature": "enum RpcStatus : uint8",
+      "description": "The Mesh envelope's rpc_status (SCE_MESH.md §13, key 10), from sce:std/mesh/rpc_status.scxml: the gRPC status codes the Mesh uses, with the holes of the codes it does not.",
+      "underlying_type": "uint8",
+      "variants": [
+        { "name": "ok", "value": 0 },
+        { "name": "cancelled", "value": 1 },
+        { "name": "invalidArgument", "value": 3 },
+        { "name": "deadlineExceeded", "value": 4 },
+        { "name": "notFound", "value": 5 },
+        { "name": "unimplemented", "value": 12 },
+        { "name": "internal", "value": 13 },
+        { "name": "unavailable", "value": 14 }
+      ]
     }
   },
   "timers": {

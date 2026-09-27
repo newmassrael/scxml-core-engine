@@ -1970,6 +1970,67 @@
       ]
     },
     {
+      "name": "pattern_kind",
+      "document": "sce:std/mesh/pattern_kind.scxml",
+      "kind": "enum",
+      "ref_section": "enums",
+      "variants": [
+        { "name": "fireForget", "value": 1 },
+        { "name": "rpcRequest", "value": 2 },
+        { "name": "rpcReply", "value": 3 },
+        { "name": "eventSubscribe", "value": 4 },
+        { "name": "eventUnsubscribe", "value": 5 },
+        { "name": "eventNotify", "value": 6 },
+        { "name": "fieldRead", "value": 7 },
+        { "name": "fieldWrite", "value": 8 },
+        { "name": "fieldNotify", "value": 9 },
+        { "name": "invokeStart", "value": 14 },
+        { "name": "invokeStarted", "value": 15 },
+        { "name": "childEvent", "value": 16 },
+        { "name": "parentEvent", "value": 17 },
+        { "name": "invokeDone", "value": 18 },
+        { "name": "invokeCancel", "value": 19 },
+        { "name": "invokeError", "value": 20 },
+        { "name": "parallelRegionDone", "value": 21 }
+      ]
+    },
+    {
+      "name": "payload_codec",
+      "document": "sce:std/mesh/payload_codec.scxml",
+      "kind": "enum",
+      "ref_section": "enums",
+      "variants": [
+        { "name": "none", "value": 0 },
+        { "name": "json", "value": 1 },
+        { "name": "cbor", "value": 2 },
+        { "name": "typed", "value": 3 },
+        { "name": "raw", "value": 4 }
+      ]
+    },
+    {
+      "name": "rpc_status",
+      "document": "sce:std/mesh/rpc_status.scxml",
+      "kind": "enum",
+      "ref_section": "enums",
+      "variants": [
+        { "name": "ok", "value": 0 },
+        { "name": "cancelled", "value": 1 },
+        { "name": "invalidArgument", "value": 3 },
+        { "name": "deadlineExceeded", "value": 4 },
+        { "name": "notFound", "value": 5 },
+        { "name": "unimplemented", "value": 12 },
+        { "name": "internal", "value": 13 },
+        { "name": "unavailable", "value": 14 }
+      ]
+    },
+    {
+      "name": "mesh_envelope",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
       "name": "timer_tester_present",
       "kind": "timer",
       "ref_section": "timers",

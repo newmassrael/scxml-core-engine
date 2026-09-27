@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_MESH.md §13 — the envelope's `pattern` (key 3): which interaction an
+  envelope is one edge of. The values are the wire's, and the holes are
+  deliberate: 10–13 are reserved for the Stream patterns (§8.1) and must not
+  be assigned, so a closed set refuses them on decode.
+
+  Mirrors sce/include/mesh/PatternKind.h, whose static_asserts pin the same
+  numbers.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="pattern_kind" sce:underlying-type="uint16">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="fireForget" value="1"/>
+      <sce:variant name="rpcRequest" value="2"/>
+      <sce:variant name="rpcReply" value="3"/>
+      <sce:variant name="eventSubscribe" value="4"/>
+      <sce:variant name="eventUnsubscribe" value="5"/>
+      <sce:variant name="eventNotify" value="6"/>
+      <sce:variant name="fieldRead" value="7"/>
+      <sce:variant name="fieldWrite" value="8"/>
+      <sce:variant name="fieldNotify" value="9"/>
+      <sce:variant name="invokeStart" value="14"/>
+      <sce:variant name="invokeStarted" value="15"/>
+      <sce:variant name="childEvent" value="16"/>
+      <sce:variant name="parentEvent" value="17"/>
+      <sce:variant name="invokeDone" value="18"/>
+      <sce:variant name="invokeCancel" value="19"/>
+      <sce:variant name="invokeError" value="20"/>
+      <sce:variant name="parallelRegionDone" value="21"/>
+    </data>
+  </datamodel>
+</scxml>

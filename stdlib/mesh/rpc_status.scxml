@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_MESH.md §13 — the envelope's `rpc_status` (key 10): how an RpcReply
+  answered. The numbers are gRPC's status codes, of which the Mesh uses these;
+  the holes are codes it does not use. Mirrors sce/include/mesh/RpcStatus.h.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="rpc_status" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="ok" value="0"/>
+      <sce:variant name="cancelled" value="1"/>
+      <sce:variant name="invalidArgument" value="3"/>
+      <sce:variant name="deadlineExceeded" value="4"/>
+      <sce:variant name="notFound" value="5"/>
+      <sce:variant name="unimplemented" value="12"/>
+      <sce:variant name="internal" value="13"/>
+      <sce:variant name="unavailable" value="14"/>
+    </data>
+  </datamodel>
+</scxml>

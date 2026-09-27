@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_MESH.md §13 — the Mesh envelope, as one CBOR map (SCE_FORGE.md §4.6.1).
+
+  Every Mesh message between two machines is one of these, whatever carries
+  it. The keys, the six required entries, the exact 16-byte identifiers and
+  the size bounds are the wire's, and are those of the hand-written C++ codec
+  (sce/src/mesh/MeshEnvelopeCodec.cpp) this document is held byte-for-byte
+  against: its GoldenBytesForFixedEnvelope vector is this codec's own test.
+
+  Key 13 (`qos`) is reserved and never written by any producer, so it is not
+  declared here; a decode skips it like any key it does not know.
+
+  ⚠ Here rather than in the standard library beside its enums: a standard
+  document is one every backend generates, and a CBOR codec generates on
+  Rust and Kotlin only (SCE_FORGE.md §4.6.1). It moves to
+  `stdlib/mesh/envelope.scxml` in the commit that lands the last backend's
+  CBOR generation.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="codec" sce:encoding="cbor" name="mesh_envelope">
+  <sce:import kind="enum" src="sce:std/mesh/pattern_kind.scxml" as="PatternKind"/>
+  <sce:import kind="enum" src="sce:std/mesh/payload_codec.scxml" as="PayloadCodec"/>
+  <sce:import kind="enum" src="sce:std/mesh/rpc_status.scxml" as="RpcStatus"/>
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <!-- The envelope's own id: a UUID. -->
+    <data id="id" sce:type="bytes" sce:key="0" sce:required="true" sce:length="16" sce:direction="out"/>
+    <!-- The sending machine. -->
+    <data id="source" sce:type="string" sce:key="1" sce:required="true" sce:max-size="262144" sce:direction="out"/>
+    <!-- The event name — the C++ struct's `type`, named so every backend can
+         spell it (`type` is reserved in Rust and Kotlin); the wire carries
+         the key, never the name. -->
+    <data id="event_type" sce:type="string" sce:key="2" sce:required="true" sce:max-size="262144" sce:direction="out"/>
+    <data id="pattern" sce:type="enum:PatternKind" sce:key="3" sce:required="true" sce:direction="out"/>
+    <data id="datacontenttype" sce:type="enum:PayloadCodec" sce:key="4" sce:required="true" sce:direction="out"/>
+    <data id="data" sce:type="bytes" sce:key="5" sce:required="true" sce:max-size="16777216" sce:direction="out"/>
+    <data id="subject" sce:type="string" sce:key="6" sce:max-size="262144" sce:direction="out"/>
+    <data id="correlation_id" sce:type="bytes" sce:key="7" sce:length="16" sce:direction="out"/>
+    <data id="reply_to" sce:type="string" sce:key="8" sce:max-size="262144" sce:direction="out"/>
+    <data id="invoke_id" sce:type="bytes" sce:key="9" sce:length="16" sce:direction="out"/>
+    <data id="rpc_status" sce:type="enum:RpcStatus" sce:key="10" sce:direction="out"/>
+    <data id="rpc_error_message" sce:type="string" sce:key="11" sce:max-size="262144" sce:direction="out"/>
+    <data id="deadline_unix_ms" sce:type="uint64" sce:key="12" sce:direction="out"/>
+    <data id="sequence_no" sce:type="uint64" sce:key="14" sce:direction="out"/>
+    <data id="routing_id" sce:type="bytes" sce:key="15" sce:length="16" sce:direction="out"/>
+    <data id="parallel_id" sce:type="string" sce:key="16" sce:max-size="262144" sce:direction="out"/>
+    <data id="region_id" sce:type="string" sce:key="17" sce:max-size="262144" sce:direction="out"/>
+    <data id="child_session_id" sce:type="string" sce:key="18" sce:max-size="262144" sce:direction="out"/>
+  </datamodel>
+</scxml>

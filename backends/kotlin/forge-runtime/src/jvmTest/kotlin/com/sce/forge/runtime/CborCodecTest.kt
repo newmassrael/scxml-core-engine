@@ -11,6 +11,9 @@
 package com.sce.forge.runtime
 
 import com.sce.generated.codec_cbor_map.CodecCborMap
+import com.sce.generated.mesh_envelope.MeshEnvelope as Envelope
+import com.sce.generated.pattern_kind.PatternKind
+import com.sce.generated.payload_codec.PayloadCodec
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -47,7 +50,7 @@ class CborCodecTest {
     }
 
     @Test
-    fun aValueIsWrittenAsRfc8949FixesIt() {
+    fun aValueIsWrittenInItsOneDeterministicEncoding() {
         assertContentEquals(expected(), value().encodeToByteArray())
     }
 
@@ -109,6 +112,48 @@ class CborCodecTest {
         refused(e.copyOfRange(0, e.size - 1) + bytes(0x61, 'x'.code))
         // An indefinite-length map.
         refused(bytes(0xbf, 0xff))
+    }
+
+    /**
+     * The C++ codec's `GoldenBytesForFixedEnvelope`
+     * (tests/mesh/MeshEnvelopeCodecTest.cpp), read and written by the codec
+     * generated from `tests/forge/resources/mesh_envelope.scxml` — the vector the Rust
+     * suite holds its envelope to as well.
+     */
+    @Test
+    fun theMeshEnvelopeWritesTheBytesTheCppCodecWrites() {
+        val sampleId = bytes(
+            0x01, 0x82, 0xb1, 0x4d, 0xa3, 0x5c, 0x70, 0x12, 0xb4, 0xde, 0xf0, 0x42, 0x9a, 0x88, 0x77, 0x66,
+        )
+        val envelope = Envelope(
+            id = sampleId,
+            source = "ecu",
+            event_type = "evt",
+            pattern = PatternKind.FIRE_FORGET,
+            datacontenttype = PayloadCodec.JSON,
+            data = bytes(0xAA, 0xBB),
+        )
+        val golden = bytes(0xA6, 0x00, 0x50) + sampleId +
+            bytes(0x01, 0x63, 'e'.code, 'c'.code, 'u'.code) +
+            bytes(0x02, 0x63, 'e'.code, 'v'.code, 't'.code) +
+            bytes(0x03, 0x01, 0x04, 0x01, 0x05, 0x42, 0xAA, 0xBB)
+
+        assertContentEquals(golden, envelope.encodeToByteArray())
+        val decoded = Envelope.decode(SceCursor(golden))
+        assertNotNull(decoded)
+        assertContentEquals(sampleId, decoded.id)
+        assertEquals("ecu", decoded.source)
+        assertEquals("evt", decoded.event_type)
+        assertEquals(PatternKind.FIRE_FORGET, decoded.pattern)
+        assertEquals(PayloadCodec.JSON, decoded.datacontenttype)
+        assertContentEquals(bytes(0xAA, 0xBB), decoded.data)
+        assertNull(decoded.deadline_unix_ms)
+
+        // 11 is in the reserved Stream range, not a value of the closed set.
+        val reserved = golden.copyOf()
+        val at = (0 until reserved.size - 1).first { reserved[it] == 0x03.toByte() && reserved[it + 1] == 0x01.toByte() }
+        reserved[at + 1] = 0x0b
+        assertNull(Envelope.decode(SceCursor(reserved)))
     }
 
     @Test

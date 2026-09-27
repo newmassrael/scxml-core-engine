@@ -298,6 +298,11 @@ impl Names {
                 if let Some(variant) = &m.variant {
                     self.codec_variant(variant);
                 }
+                // A CBOR codec's entries are its fields (SCE_FORGE.md §4.6.1);
+                // an enum one names its import like any positional field.
+                for entry in &m.cbor_entries {
+                    self.ty(&entry.sce_type);
+                }
                 Ok(())
             }
             ForgeDocument::Filter(m) => self.fields([&m.input, &m.output]),

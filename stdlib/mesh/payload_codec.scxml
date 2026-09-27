@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_MESH.md §13 — the envelope's `datacontenttype` (key 4): how its `data`
+  is encoded. Mirrors sce/include/mesh/PayloadCodec.h.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="payload_codec" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="none" value="0"/>
+      <sce:variant name="json" value="1"/>
+      <sce:variant name="cbor" value="2"/>
+      <sce:variant name="typed" value="3"/>
+      <sce:variant name="raw" value="4"/>
+    </data>
+  </datamodel>
+</scxml>
