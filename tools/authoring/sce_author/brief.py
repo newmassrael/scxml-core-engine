@@ -373,6 +373,19 @@ once is not, because which of them the decision is cannot be told apart. A
 value held before the first round can be the decision as well
 (`sce:initial`).
 
+A decision between two SHAPES of logic -- whether a condition gates an output
+at all, which of two readings of a table applies -- is a decision variable
+too: a `bool` the logic branches on, its candidates `true false`.
+
+    <data id="gateOilOnIgnition" sce:type="bool" sce:direction="out"
+          sce:assumed="OIL_GATE" sce:assumed-reason="..."
+          sce:assumed-candidates="false true" expr="false"/>
+    <data id="oilTemp" sce:type="int32" sce:direction="out"
+          expr="(gateOilOnIgnition &amp;&amp; !ign) ? 0 : rawOilTemp"/>
+
+Both shapes are then written once, the one chosen is a value, and a failing
+case can be run under the other.
+
 ⚠ THE SAME APPLIES TO ADDRESSES, AND YOU MAY NOT HAVE THEM YET.
 
 The document is already independent of the platform: it uses its own

@@ -1270,7 +1270,9 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
                 "this decision could take under the specification, the current "
                 "one included -- the current one alone says it has no other. "
                 "Give the decided value its own `<data>` whose `expr` is that "
-                "value, so the list has one place to go"))
+                "value, so the list has one place to go -- and a choice between "
+                "two shapes of logic its own `bool` the logic branches on, "
+                "candidates `true false`"))
             continue
         candidates, expr, initial = listed
         _, _, why = candidate_site(expr, candidates, initial)

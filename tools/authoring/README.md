@@ -209,7 +209,9 @@ among them, space-separated. ⚠ The product accepts that attribute and reads
 nothing from it; here it means the current value sits in exactly one place,
 and each other candidate goes there. That place is one of: the whole `expr`
 (a DECISION VARIABLE — a `<data>` whose expression is the decided value, which
-the logic reads; the shape `brief` asks for), the whole `sce:initial`, or one
+the logic reads; the shape `brief` asks for, and for a choice between two
+shapes of logic a `bool` the logic branches on, candidates `true false`), the
+whole `sce:initial`, or one
 occurrence inside a larger `expr`. `check` refuses a list whose place it
 cannot find — a value a nested expression writes several times cannot be told
 apart, and measured 2026-09-28 that was four of nine guesses in one document
