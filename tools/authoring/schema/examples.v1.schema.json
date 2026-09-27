@@ -37,6 +37,11 @@
             "$ref": "#/$defs/elapsed",
             "description": "How long the situation had held when this case was observed, in milliseconds -- a number when the record knows it, or a `{min, max}` window when it knows only bounds. ⚠ A DURATION, not a timestamp -- it restarts whenever the situation does, and a record where it goes backwards is ordinary rather than broken. This was first published as `at_ms`, a moment on a timeline, and the data said otherwise: on one corpus the two cases a specification described as 4 seconds and 70 seconds carried 4123 and 70123, which is time since a condition began and nothing else. ⚠⚠ Time is not a signal: no address, no value space, nothing drives it. That is why it sits on the case rather than in `given`. The unit is fixed so two packs cannot mean different things by one number."
           },
+          "observed": {
+            "enum": ["any", "first"],
+            "default": "any",
+            "description": "How the record READ its expectation within `elapsed_ms`. `any`: the expectation held at some moment in the window -- a harness that collects everything announced and asks whether the expectation is among it. `first`: the expectation is what the FIRST announcement after the drive said -- a harness that returns at the first notification and judges it, including when it arrived. ⚠ The two disagree exactly where a document announces something before the answer the case waits for: measured 2026-09-27, one case expected an event to arrive 2 s after the drive; the harness took the unchanged status the host re-announced at 2 ms as its answer and failed, while a reading of 'any moment in the window' passed the same run. Whether a round announces anything is the HOST's behaviour (`verify` models a host that writes every bound position every round)."
+          },
           "given": {
             "type": "object",
             "additionalProperties": {},

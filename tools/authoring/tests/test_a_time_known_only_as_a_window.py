@@ -100,6 +100,32 @@ class ATimeKnownOnlyAsAWindow(unittest.TestCase):
         self.assertEqual((1, 0, 0), (result.passed, result.failed, result.unjudged),
                          details(result))
 
+    def test_read_as_the_first_announcement_an_early_one_is_the_answer(self):
+        """⚠ The discriminator for `observed: first`. The same record as the
+        case above, read the way a harness that returns at its FIRST
+        notification reads it: the host announces the dark signal in the
+        drive's own round, at 0 ms, and that is the answer -- wrong in value
+        and too early for a window that opens at 400. Read as 'any moment in
+        the window', the same run passes."""
+        case = detected("FLASHING", {"min": 400, "max": 700})
+        case["observed"] = "first"
+        result = self.run_cases([case])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((0, 1, 0), (result.passed, result.failed, result.unjudged),
+                         details(result))
+        failed = dict((a, (w, g)) for a, w, g in result.results[0].failures)
+        self.assertEqual(("between 400 and 700 ms after the drive", "at 0 ms"),
+                         failed["(first announcement)"])
+        self.assertIn(SIGNAL, failed)
+
+    def test_read_as_the_first_announcement_a_prompt_answer_passes(self):
+        case = detected("DARK", {"min": 0, "max": 1000})
+        case["observed"] = "first"
+        result = self.run_cases([case])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((1, 0, 0), (result.passed, result.failed, result.unjudged),
+                         details(result))
+
     def test_an_answer_never_met_in_the_window_fails_at_its_end(self):
         """Nothing fires before 400 ms, so FLASHING is never met: the harness
         waited the whole window, and what it read at the end is the verdict."""

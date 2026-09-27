@@ -516,6 +516,9 @@ class Case:
     # exact value only -- a reading that needs THE number (a clock input)
     # must not be handed one end of a window as though it were the time.
     elapsed_window: tuple | None = None
+    # How the record read its expectation in that window: "any" moment, or
+    # the "first" announcement after the drive (the schema says why).
+    observed: str = "any"
 
     def __post_init__(self):
         # One source of truth: an exact time IS a window of width zero, so a
@@ -618,7 +621,8 @@ def load_examples(paths: list[pathlib.Path]) -> Examples:
             exact, window = _elapsed(case.get("elapsed_ms"), f"{path}: {name}")
             cases.append(Case(name, given, expect, exact,
                               tuple(case.get("drove") or ()),
-                              variant, tuple(before), elapsed_window=window))
+                              variant, tuple(before), elapsed_window=window,
+                              observed=case.get("observed") or "any"))
     return Examples(origin, frozenset(driven), frozenset(expected), count,
                     tuple(cases), independent, ordered)
 

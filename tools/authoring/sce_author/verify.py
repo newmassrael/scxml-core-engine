@@ -2145,6 +2145,8 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         if id(owner) in failed:
             continue
         result = CaseResult(name=owner.name)
+        # (lo, hi) of a window the first announcement came before, if it did.
+        arrived_early = None
         if lost:
             if judged:
                 withhold(result, case)
@@ -2210,7 +2212,20 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             # starts the situation whose age `elapsed_ms` states, and the
             # reading is what that age dates -- so a delayed act reaches the
             # machine in between, which is the whole point of it having one.
-            if judged and case.elapsed_window is not None:
+            if judged and case.observed == "first":
+                # ⚠ The record's reading is the FIRST announcement after the
+                # drive, and the host this models writes every position the
+                # binding claims in every round -- so the drive's own round
+                # announces, at 0 ms, whatever the machine holds then. A case
+                # whose window opens later asserted an answer that arrives
+                # later; the run announced something first, and the harness
+                # judged that.
+                read = read_round(run.recorder.take(), judged)
+                lo = case.elapsed_window[0] if case.elapsed_window else 0
+                if lo > 0:
+                    arrived_early = (lo, case.elapsed_window[1])
+                run.settle()
+            elif judged and case.elapsed_window is not None:
                 # The first moment in the window that meets the case is the
                 # one the record read (`StatechartRun.moments`); failing
                 # every one, the window's end.
@@ -2256,6 +2271,14 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         # After the round was driven, observed and its sends taken, so the
         # machine is where the record left it either way.
         if not withhold_unreceived(result, case, pack.model):
+            if arrived_early is not None:
+                # A failure of WHEN, beside any of what: the harness asserts
+                # the arrival time too, and an answer before the window is
+                # not the one it waited for, whatever it said.
+                lo, hi = arrived_early
+                result.failures.append(("(first announcement)",
+                                        f"between {lo:g} and {hi:g} ms after the drive",
+                                        "at 0 ms"))
             judge.judge(result, case, produced, planted=stood_in)
         verification.results.append(result)
     judge.attribute()

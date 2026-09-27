@@ -634,6 +634,19 @@ the situation does, and a record where it goes backwards is ordinary. Time is
 its own category: no address, no value space, nothing drives it, which is why
 it sits on the case rather than in `given`.
 
+`observed` says how the record READ its expectation: `any` (the default) when
+the expectation held at some moment in `elapsed_ms` — a harness that collects
+everything announced — or `first` when it is what the first announcement
+after the drive said, a harness that returns at its first notification and
+also checks when it came. ⚠ They differ exactly where a document announces
+something before the answer a case waits for. `verify` models a host that
+writes every bound position every round, so under `first` the drive's own
+round is the reading, at 0 ms; a window that opens later fails on arrival as
+well as on value. Measured 2026-09-27 across thirteen documents run through a
+platform's own acceptance tests: with the reading declared per case, `verify`
+and the product agreed on 460 of 460 cases both judged, where one case had
+disagreed while every case was read as `any`.
+
 `before` is the setup of a case, as the record states it: steps driven in order
 BEFORE the case, moving everything a round moves — a machine's state, a latch,
 a remembered previous value — and never judged. ⚠ `given` holds only where a
