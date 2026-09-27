@@ -64,6 +64,14 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/rust-workspace-tests.yml'
+      # The Kotlin runtime jars the statechart smoke tests compile against
+      # are built here with Gradle, whose version catalog, wrapper and
+      # settings live at the root rather than under backends/.
+      - 'gradle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew'
       # ⚠ NOT `.github/workflows/**`, though two suites here read the other
       # workflow files as their subject
       # (`mutation_round_survives_the_next_push`, `ci_supersession_policy`).
@@ -100,6 +108,14 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/rust-workspace-tests.yml'
+      # The Kotlin runtime jars the statechart smoke tests compile against
+      # are built here with Gradle, whose version catalog, wrapper and
+      # settings live at the root rather than under backends/.
+      - 'gradle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew'
       # ⚠ NOT `.github/workflows/**`, though two suites here read the other
       # workflow files as their subject
       # (`mutation_round_survives_the_next_push`, `ci_supersession_policy`).

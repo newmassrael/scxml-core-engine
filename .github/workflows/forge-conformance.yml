@@ -41,6 +41,14 @@ on:
       - 'backends/python/**'
       - 'backends/c/**'
       - 'backends/kotlin/**'
+      # The Kotlin arm's build, which lives at the root rather than under
+      # backends/kotlin/: the version catalog, the wrapper and the settings.
+      # Without these a dependency bump classified to no gate at all.
+      - 'gradle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew'
   pull_request:
     branches: [ main ]
     paths:
@@ -65,6 +73,14 @@ on:
       - 'backends/python/**'
       - 'backends/c/**'
       - 'backends/kotlin/**'
+      # The Kotlin arm's build, which lives at the root rather than under
+      # backends/kotlin/: the version catalog, the wrapper and the settings.
+      # Without these a dependency bump classified to no gate at all.
+      - 'gradle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew'
   workflow_dispatch:
 
 # Re-measured 2026-09-02 over this lane's own last 25 runs: a 25.5 min median
