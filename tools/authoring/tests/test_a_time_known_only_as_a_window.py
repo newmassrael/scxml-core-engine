@@ -100,6 +100,23 @@ class ATimeKnownOnlyAsAWindow(unittest.TestCase):
         self.assertEqual((1, 0, 0), (result.passed, result.failed, result.unjudged),
                          details(result))
 
+    def declare_host(self):
+        """The pack states what the host announces -- a first-announcement
+        reading rests on it."""
+        path = self.tmp / "conventions.yaml"
+        conventions = yaml.safe_load(path.read_text(encoding="utf-8"))
+        conventions["host"] = {"writes": "every-round"}
+        path.write_text(yaml.safe_dump(conventions), encoding="utf-8")
+
+    def test_a_first_announcement_reading_needs_the_host_stated(self):
+        """Which positions a round announces is the host's behaviour; a pack
+        that reads cases that way and does not say is refused, not guessed."""
+        case = detected("DARK", {"min": 0, "max": 1000})
+        case["observed"] = "first"
+        result = self.run_cases([case])
+        self.assertFalse(result.ran)
+        self.assertIn("host.writes", result.refusal)
+
     def test_read_as_the_first_announcement_an_early_one_is_the_answer(self):
         """⚠ The discriminator for `observed: first`. The same record as the
         case above, read the way a harness that returns at its FIRST
@@ -107,6 +124,7 @@ class ATimeKnownOnlyAsAWindow(unittest.TestCase):
         drive's own round, at 0 ms, and that is the answer -- wrong in value
         and too early for a window that opens at 400. Read as 'any moment in
         the window', the same run passes."""
+        self.declare_host()
         case = detected("FLASHING", {"min": 400, "max": 700})
         case["observed"] = "first"
         result = self.run_cases([case])
@@ -119,6 +137,7 @@ class ATimeKnownOnlyAsAWindow(unittest.TestCase):
         self.assertIn(SIGNAL, failed)
 
     def test_read_as_the_first_announcement_a_prompt_answer_passes(self):
+        self.declare_host()
         case = detected("DARK", {"min": 0, "max": 1000})
         case["observed"] = "first"
         result = self.run_cases([case])

@@ -587,6 +587,22 @@ longer reading passes; `both` because the round where both move is ordinary and
 all three answers occur; `last` because the record's own order says which was
 more recent, which is what the idiom is named for.
 
+`host` states what the platform's HOST — the code connecting a generated
+document to it — does with outputs, once for the platform rather than in every
+binding:
+
+    host:
+      writes: every-round     # every bound position, every round, changed or not
+
+`verify` models that host, and a case read as its first announcement
+(`observed: first`) is judged on it, so such a case is refused where the pack
+does not say. ⚠ `every-round` is the only policy listed because it is the only
+one modelled, not because platforms share it: on one platform's original
+components about half the outputs were written in the rounds that delivered an
+input they read, and the rest by guards, transitions, timers and the grouping
+of their code. A policy is added here when `verify` can model it and a
+platform's own acceptance run agrees with the model.
+
 ### examples
 
 The second thing that can expect something, and therefore the second thing that

@@ -296,6 +296,9 @@ class Conventions:
     # platform, for the inputs whose pack says so. What `check` holds a
     # binding to; an input with only a description is known by name alone.
     precondition_rules: dict[str, dict] = field(default_factory=dict)
+    # What the host does with the document's outputs (`host.writes`), or
+    # empty when the pack does not say. See the schema.
+    host: dict = field(default_factory=dict)
 
     def classify(self, name: str) -> str | None:
         for nc in self.name_classes:
@@ -391,6 +394,7 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
     comparison = None
     gate_off_note = ""
     protocols: dict[str, dict] = {}
+    host: dict = {}
     rules: dict[str, dict] = {}
 
     for path in paths:
@@ -451,6 +455,7 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
         plumbing += doc.get("infrastructure") or []
         time_inputs += doc.get("time_inputs") or []
         protocols.update(doc.get("protocols") or {})
+        host.update(doc.get("host") or {})
         if doc.get("duration_pattern"):
             duration = re.compile(doc["duration_pattern"])
         if doc.get("comparison_pattern"):
@@ -480,6 +485,7 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
         comparison_pattern=comparison,
         protocols=protocols,
         precondition_rules=rules,
+        host=host,
     )
 
 

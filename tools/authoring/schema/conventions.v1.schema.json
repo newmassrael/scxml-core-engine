@@ -163,6 +163,19 @@
       "description": "A regular expression with named groups `name`, `op` and `token`, recognising the way THIS kind of document writes a comparison. The core carries a default in programming notation (`X == Y`), which is what the specifications measured so far happen to use; a document that writes `X is Y`, `X equals Y` or a natural-language equivalent replaces it here rather than in the core. It is the one thing about the SHAPE of prose the core would otherwise have assumed."
     },
 
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["writes"],
+      "description": "What the HOST -- the code connecting a generated document to this platform -- does with the document's outputs, stated once for the platform rather than in every binding. `verify` models this host; a host that behaves otherwise is not the one verified, and every such difference measured so far made `verify` pass a case the platform failed.",
+      "properties": {
+        "writes": {
+          "enum": ["every-round"],
+          "description": "Which positions a round writes, and therefore announces. `every-round`: every position the binding claims, in every round, changed or not. ⚠ The only policy `verify` models, and the one listed here for that reason, not because it is the only true one: measured 2026-09-27 on one platform's original components, about half of the outputs were written in the rounds that delivered an input they read, and the rest by guards, transitions, timers and their code's grouping. A case read as its first announcement (`observed: first`) depends on this, so `verify` refuses such a case where the pack does not state it."
+        }
+      }
+    },
+
     "protocols": {
       "type": "object",
       "additionalProperties": {

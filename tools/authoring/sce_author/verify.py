@@ -1971,6 +1971,19 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             "partly the result of the cases before it. Reading the file's "
             "line order as a timeline it was never promised would produce a "
             "verdict about an order nobody recorded."))
+    # ⚠ A case read as its FIRST announcement is judged on what the host
+    # announces in each round, and that is the host's behaviour, not the
+    # document's. Unstated, the reading would rest on the one host `verify`
+    # happens to model -- the same silent assumption that let `verify` pass
+    # a case a platform failed. Refused where it is needed, as `activation`
+    # is: a pack whose records never read that way need not say.
+    if (any(case.observed == "first" for case in examples.cases)
+            and not pack.conventions.host.get("writes")):
+        return Verification(refusal=(
+            "cases are read as their first announcement (`observed: first`), "
+            "and which positions a round announces is the host's to say: the "
+            "pack's conventions give no `host.writes`, so there is no host to "
+            "model the reading against"))
     # A window is a recorded time too: it moves the clock to its earliest end.
     if build.needs_event_scheduler and not any(
             step.elapsed_window is not None
