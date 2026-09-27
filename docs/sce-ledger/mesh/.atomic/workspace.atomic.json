@@ -2821,6 +2821,11 @@
       "parent_section": "mesh-18",
       "decision_status": "active"
     },
+    "mesh-19": {
+      "title": "Host Mesh Router",
+      "parent_doc": "mesh",
+      "decision_status": "active"
+    },
     "mesh-2": {
       "title": "Architecture",
       "parent_doc": "mesh",

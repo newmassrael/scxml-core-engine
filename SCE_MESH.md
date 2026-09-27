@@ -4224,3 +4224,13 @@ It is not a generated C++ transport: `mesh_transport.h.jinja2` has no arm for it
 
 The adapter is the only code per language that this binding adds: it moves bytes and readiness between a socket and the core (`receive`, `peer_ready`, `peer_not_ready`), and every decision — ordering, duplicates, buffering, retry, which §16.7 row — stays in the core, which is the same generated rules on every language.
 
+## 19. Host Mesh Router
+
+How a machine generated for a backend other than C++ reaches a Mesh core. C++ keeps its own route — the generated `TransportRouter` takes a Mesh send through its mesh-send hook — and nothing here changes it.
+
+- **Lowering.** On every other backend the build rewrites a `<send>` whose literal `target` names a peer (`#` followed by a name that does not start with `_`, the same predicate as `SendHelper::isMeshTarget`, held to `tests/mesh/mesh_target_cases.json`) and whose `type` is absent or the SCXML Event I/O Processor to `<send type="sce:mesh">`, served by the host. The send then travels the host-served path every backend already has: its arguments evaluated once, its delay honoured, its `<cancel>` reached.
+- **Manifest.** `sce-codegen generate` reports `needs_mesh_router: true` on its manifest (SCE_ERROR_CONTRACT.md §10.1) when the machine has such a send and the backend routes it through the host, so the host learns it must register a router from the build rather than from the first send.
+- **Registration.** The host registers its router — `sce-rust-mesh`'s or `sce-kotlin-mesh`'s endpoint, or its own — with the runtime's dedicated call: `register_mesh_router` (Rust, Python), `registerMeshRouter` (Kotlin), `RegisterMeshRouter` (Go), `sce_host_registry_register_mesh_router` or the machine's `_register_mesh_router` (C11).
+- **Reservation.** The `sce:` prefix is SCE's own: a host may not declare a type under it to the build (`cli/reserved-host-type`), and the general registrations — `register_event_processor` / `register_invoker` and their spellings — refuse one at run time. A router is therefore only ever installed by a call that names itself one; a handler registered as `sce:mesh` by accident would otherwise take every Mesh send with nothing on the wire saying so. Every copy of the rule reads `sce-build/tests/fixtures/host_processor/reserved_type_cases.json`.
+- **Errors.** The two ways a Mesh send can fail before a peer answers are different faults and raise different events. No router registered is a configuration fault of the host and raises `error.execution`, as any host-served send with no handler does (W3C SCXML §6.2.5). A registered router that cannot reach the peer raises `error.communication` itself, with the §16.7 row that says why.
+
