@@ -1246,6 +1246,26 @@ payload on the event record, as the `#_parent` and internal `<param>`
 paths already did, and a payload too large for that record is refused with
 error.execution rather than truncated.
 
+`a_child_reply_arrives_without_a_tick` covers §scxml-6.4: an event an
+invoked child sends to `#_parent` goes on the parent's external queue when
+it is sent, so a host that only hands the machine events — and never
+advances a clock — still sees a reply already sent, ahead of its own later
+events. The child replies while it is being started, inside the parent's
+own macrostep; that reply must be processed before the host's `finish`
+ends the run.
+
+Measured 2026-09-27, Python collected a child's parent-bound events only
+inside `advance_time`, so a host driving the machine with `send_event`
+alone saw `finish` overtake the reply. It now collects them in the main
+event loop, after the macrostep's invokes start and before the external
+queue is read — where Go and Rust already drained them. A reply the child
+sends only after processing an event the parent forwards is not asserted:
+whether the child session runs before the host's next event reaches the
+parent is left open by the specification, and measured the same day
+Python, which runs a forwarded event synchronously, answers it one way
+while Rust, Go and Kotlin, which run the child on its own tick, answer it
+the other.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

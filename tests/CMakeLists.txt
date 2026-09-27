@@ -1045,6 +1045,8 @@ add_executable(integration_tests
     integration/ABadSendParamEndsItsBlockAotTest.cpp
     integration/APayloadRidesOnItsOwnEventTest.cpp
     integration/APayloadRidesOnItsOwnEventAotTest.cpp
+    integration/AChildReplyArrivesWithoutATickTest.cpp
+    integration/AChildReplyArrivesWithoutATickAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
     integration/EventDataArrivesAsSentAotTest.cpp
     integration/XmlDataIsADomTreeTest.cpp
@@ -1594,6 +1596,10 @@ sce_generate_static_integration_test(a_bad_send_param_ends_its_block ${STATIC_IN
 # W3C SCXML 5.10 + 6.2: a <send>'s payload is the data of the event it sends,
 # and a data-less event dequeued before it carries none.
 sce_generate_static_integration_test(a_payload_rides_on_its_own_event ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 6.4: an invoked child's replies reach the parent's external queue
+# when sent, ahead of the host's later events, with no clock advanced.
+sce_generate_static_integration_test(a_child_reply_arrives_without_a_tick ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach the
 # datamodel as a value. `raiseExternalEvent(name, data)` and

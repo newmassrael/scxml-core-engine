@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 6.4: an event an invoked child sends to `#_parent` is placed on
+  the parent's external event queue when it is sent. Nothing in the clause
+  waits for time to pass, so a host that only hands the machine events —
+  and never advances a clock — must still see a reply the child has already
+  sent, ahead of the host's own later events.
+
+  The child's <onentry> sends `hello` while the child is being started,
+  which happens inside the parent's own macrostep (§6.4 invoke). By the time
+  the host's `finish` exists, `hello` has been sent.
+
+    hellos  1 — the start-time reply arrives before `finish`, which ends the
+                run in `done` and would otherwise overtake it.
+
+  A reply the child sends only after processing an event the parent
+  forwards to it is deliberately not asserted: the child is a separate
+  session, and whether it runs before the host's next event reaches the
+  parent is an interleaving the specification leaves open (the channels
+  answer it differently, and each answer is allowed).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="a_child_reply_arrives_without_a_tick" datamodel="ecmascript"
+       initial="s0">
+
+  <datamodel>
+    <data id="hellos" expr="0"/>
+  </datamodel>
+
+  <state id="s0">
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+               datamodel="ecmascript" initial="c0">
+          <state id="c0">
+            <onentry>
+              <send target="#_parent" event="hello"/>
+            </onentry>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+
+    <transition event="hello">
+      <assign location="hellos" expr="hellos + 1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>

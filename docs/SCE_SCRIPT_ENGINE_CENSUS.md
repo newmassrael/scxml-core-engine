@@ -98,11 +98,11 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 244
+engine-documents 245
 native-prefix-documents 2
-datamodel-variable-init 311
+datamodel-variable-init 312
 transition-guard 228
-assign-action 266
+assign-action 267
 child-invoke-needs-script-engine 46
 log-expr 45
 send-param-expr 40
@@ -207,11 +207,14 @@ never spelled correctly.
   with a numeric `expr` and one `namelist`) raised `engine-documents` and
   `send-namelist` by one, `datamodel-variable-init` by four,
   `assign-action` by six, `transition-guard` by five and `send-param-expr`
-  by two.
+  by two. Then `a_child_reply_arrives_without_a_tick.scxml` (one engine
+  document: one counter and the assign that bumps it; its inline child is
+  split out and not tracked) raised `engine-documents`,
+  `datamodel-variable-init` and `assign-action` by one.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
-- **49% of judged documents need an engine** (244 of 497). The remaining
+- **49% of judged documents need an engine** (245 of 498). The remaining
   51% already compile without one, which is what makes "the engine is a
   fallback" a description of the tree rather than an aspiration.
   ⚠ This figure was previously stated as 32%, taken over the 736 walked
