@@ -98,21 +98,21 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 243
+engine-documents 244
 native-prefix-documents 2
-datamodel-variable-init 307
-transition-guard 223
-assign-action 260
+datamodel-variable-init 311
+transition-guard 228
+assign-action 266
 child-invoke-needs-script-engine 46
 log-expr 45
-send-param-expr 38
+send-param-expr 40
 send-dynamic-attr 32
 foreach-action 15
 static-invoke-namelist 9
 donedata-param 10
 donedata-content 9
 inline-script-action 2
-send-namelist 5
+send-namelist 6
 if-condition 6
 elseif-condition 3
 global-script 3
@@ -201,11 +201,17 @@ never spelled correctly.
   `datamodel-variable-init` and `assign-action` by seven, and
   `send-param-expr` by five. The same commit made the analyzer count a
   `<send>` `<param>` given only a `location` under `send-param-expr`; no
-  other tracked document has one, so it moved no other count.
+  other tracked document has one, so it moved no other count. Then
+  `a_payload_rides_on_its_own_event.scxml` (one engine document: four data
+  items, six assigns, five guards that read `_event.data`, two `<param>`s
+  with a numeric `expr` and one `namelist`) raised `engine-documents` and
+  `send-namelist` by one, `datamodel-variable-init` by four,
+  `assign-action` by six, `transition-guard` by five and `send-param-expr`
+  by two.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
-- **49% of judged documents need an engine** (243 of 496). The remaining
+- **49% of judged documents need an engine** (244 of 497). The remaining
   51% already compile without one, which is what makes "the engine is a
   fallback" a description of the tree rather than an aspiration.
   ⚠ This figure was previously stated as 32%, taken over the 736 walked

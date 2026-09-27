@@ -1227,6 +1227,25 @@ without lowering it and silently omitted a `location=""` pair; and C++ AOT
 evaluated the absent `expr` in its place. An `<invoke>`'s `<param>` is
 untouched here; §scxml-6.4's rule for it is a separate change.
 
+`a_payload_rides_on_its_own_event` covers §scxml-5.10 with §scxml-6.2: a
+`<send>`'s payload is the data of the event it sends and of no other, so a
+data-less event dequeued before it — internal events drain first, and an
+earlier raise is queued first — carries no data. Four `onentry` blocks
+each pair a payload-carrying send (internal `<param>`, external `<param>`,
+`namelist`, `<content>`) with a data-less `<raise>` dequeued ahead of it;
+every payload event must arrive with its own payload and every raised one
+empty.
+
+Measured 2026-09-27, C11 staged the external `<param>`, `namelist` and
+`<content>` payloads in one Lua global that the NEXT dequeue promoted onto
+`_event.data`, whichever event that was: each `<raise>` behind such a send
+was handed its data, and the `namelist` and `<content>` sends arrived with
+none (the external `<param>` send also wrote the event's own `data[]`, so
+it arrived intact while its raise got a copy). C11 now carries every
+payload on the event record, as the `#_parent` and internal `<param>`
+paths already did, and a payload too large for that record is refused with
+error.execution rather than truncated.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

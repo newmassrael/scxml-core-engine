@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 5.10 + 6.2: a <send>'s payload is the data of the event it
+  sends, and of no other. §5.10 binds `_event.data` from the event being
+  processed; an event raised in between — dequeued first because internal
+  events drain before external ones, or because it was queued first — is a
+  different event and carries its own data, here none.
+
+  `s0` has four <onentry> blocks. Each sends one event with a payload and
+  raises a data-less event that is dequeued before it, so a processor that
+  keeps a payload anywhere but on its own event hands it to the wrong one:
+
+    1  <raise plain1>, then an internal <send withV> with <param v=7>;
+    2  an external <send extV> with <param v=8>, then <raise plain2>;
+    3  an external <send extN namelist="v9">, then <raise plain3>;
+    4  an external <send extC> with <content>10</content>, then <raise plain4>.
+
+    got     4 — each payload event arrives carrying its own payload.
+    stolen  0 — no data-less event arrives carrying a payload.
+    plains  4 — every data-less event arrives, and arrives empty.
+    and the host's `finish` ends the run in `done`.
+
+  A plain event is judged by `_event.data` being truthy, which every payload
+  here is (a non-empty object, the number 10) and an absent one is not.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="a_payload_rides_on_its_own_event" datamodel="ecmascript"
+       initial="s0">
+
+  <datamodel>
+    <data id="got" expr="0"/>
+    <data id="stolen" expr="0"/>
+    <data id="plains" expr="0"/>
+    <data id="v9" expr="9"/>
+  </datamodel>
+
+  <state id="s0">
+    <onentry>
+      <raise event="plain1"/>
+      <send event="withV" target="#_internal">
+        <param name="v" expr="7"/>
+      </send>
+    </onentry>
+    <onentry>
+      <send event="extV">
+        <param name="v" expr="8"/>
+      </send>
+      <raise event="plain2"/>
+    </onentry>
+    <onentry>
+      <send event="extN" namelist="v9"/>
+      <raise event="plain3"/>
+    </onentry>
+    <onentry>
+      <send event="extC">
+        <content>10</content>
+      </send>
+      <raise event="plain4"/>
+    </onentry>
+
+    <transition event="plain1 plain2 plain3 plain4" cond="_event.data">
+      <assign location="stolen" expr="stolen + 1"/>
+    </transition>
+    <transition event="plain1 plain2 plain3 plain4">
+      <assign location="plains" expr="plains + 1"/>
+    </transition>
+    <transition event="withV" cond="_event.data.v === 7">
+      <assign location="got" expr="got + 1"/>
+    </transition>
+    <transition event="extV" cond="_event.data.v === 8">
+      <assign location="got" expr="got + 1"/>
+    </transition>
+    <transition event="extN" cond="_event.data.v9 === 9">
+      <assign location="got" expr="got + 1"/>
+    </transition>
+    <transition event="extC" cond="_event.data === 10">
+      <assign location="got" expr="got + 1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>
