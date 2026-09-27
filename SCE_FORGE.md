@@ -1013,7 +1013,15 @@ when the whole map decoded, `encode(SceSink&)` and `encode_to_vec()`, which
 answers `std::nullopt` when encode refuses; a refused decode is `std::nullopt`,
 the C++ codec convention, and encode's refusals are `CodecError::CborOutOfRange`
 and `CborWrongLength`. `sce/forge/cbor.h` holds its items, rule for rule the
-Rust runtime's (`cbor_runtime_test`).
+Rust runtime's (`cbor_runtime_test`). Go generates a struct of owned values
+whose optional entries are pointers — so an absent byte string (`nil`) and a
+present empty one stay two values — with `Decode<Name>(*codec.SceCursor)`, which
+moves the cursor only when the whole map decoded, `Encode(codec.SceSink)` and
+`EncodeToBytes() ([]byte, error)`; its refusals are the typed
+`codec.ErrCborMalformed`, `ErrCborRequiredKeyMissing`, `ErrCborWrongLength`,
+`ErrCborTooDeep` and `ErrCborOutOfRange`, and `codec/cbor.go` holds its items.
+An enum whose carrier is signed refuses a negative number on encode on every
+backend: no CBOR unsigned integer carries it.
 The backends are held to the same bytes and the same refusals by one oracle —
 the conformance harness's `codec_cbor_map` round-trip cases, whose absent
 optional entries are JSON `null`, and its reject vectors. Rust and Kotlin are

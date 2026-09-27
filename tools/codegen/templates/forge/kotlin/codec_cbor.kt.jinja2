@@ -36,7 +36,10 @@ Cbor.writeBool(w, v)?.let { return it }
 if (v.size != {{ e.length }}) return CodecError.CborWrongLength
 {{ indent }}Cbor.writeBytes(w, v)?.let { return it }
 {%- elif e.kind == "enum" -%}
-Cbor.writeUint(w, ({{ e.enum_to_underlying }}).toULong())?.let { return it }
+{#- A signed carrier's negative number is no CBOR unsigned integer, and
+    `toULong()` would wrap it; refused as the Rust backend refuses it. #}
+{% if e.carrier_signed %}if (({{ e.enum_to_underlying }}) < 0) return CodecError.CborOutOfRange
+{{ indent }}{% endif %}Cbor.writeUint(w, ({{ e.enum_to_underlying }}).toULong())?.let { return it }
 {%- else -%}
 Cbor.writeUint(w, v.toULong())?.let { return it }
 {%- endif -%}

@@ -29,7 +29,10 @@ use crate::generator::Language;
 /// is run exactly where the generator admits it (the `lowers_may_fail`
 /// pattern).
 pub fn lowers(lang: Language) -> bool {
-    matches!(lang, Language::Rust | Language::Kotlin | Language::Cpp)
+    matches!(
+        lang,
+        Language::Rust | Language::Kotlin | Language::Cpp | Language::Go
+    )
 }
 
 /// Render a CBOR codec for `lang`.
@@ -56,7 +59,8 @@ pub fn render(
         Language::Rust => render_rust(env, m, imports),
         Language::Kotlin => render_kotlin(env, m, imports),
         Language::Cpp => render_cpp(env, m, imports),
-        _ => unreachable!("`lowers` admits Rust, Kotlin and C++ alone"),
+        Language::Go => render_go(env, m, imports),
+        _ => unreachable!("`lowers` admits Rust, Kotlin, C++ and Go alone"),
     }
 }
 
@@ -70,6 +74,23 @@ fn kind(entry: &CborEntry) -> &'static str {
         SceType::Enum(_) => "enum",
         _ => "uint",
     }
+}
+
+/// The largest number an integer type holds, as the bound its entry's read
+/// is held to — written into the context once so no template spells a
+/// language's own constant for it.
+fn int_max(ty: &SceType) -> Option<u64> {
+    Some(match ty {
+        SceType::Uint8 => u64::from(u8::MAX),
+        SceType::Uint16 => u64::from(u16::MAX),
+        SceType::Uint32 => u64::from(u32::MAX),
+        SceType::Uint64 => u64::MAX,
+        SceType::Int8 => i8::MAX as u64,
+        SceType::Int16 => i16::MAX as u64,
+        SceType::Int32 => i32::MAX as u64,
+        SceType::Int64 => i64::MAX as u64,
+        _ => return None,
+    })
 }
 
 /// The carrier type of the enum `alias` names, as the import resolved it.
@@ -102,6 +123,7 @@ fn common_context(
             "value_type": value_type(e),
             "length": e.length,
             "max_size": e.max_size,
+            "max": int_max(&e.sce_type),
         });
         if let SceType::Enum(r) = &e.sce_type {
             let carrier = enum_carrier(imports, &r.alias).ok_or_else(|| {
@@ -117,6 +139,16 @@ fn common_context(
             entry["enum_to_underlying"] = l.codec_carrier_expr(&e.sce_type, "v").into();
             entry["enum_is_open"] = l.enum_is_open(&r.alias).into();
             entry["carrier_type"] = l.type_name(&carrier).into_owned().into();
+            // A signed carrier can hold a number no CBOR unsigned integer
+            // carries, which encode refuses; an unsigned one cannot, and a
+            // template writes no check for it (a comparison that is always
+            // false is a compile warning, not a guard).
+            entry["carrier_signed"] = matches!(
+                carrier,
+                SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64
+            )
+            .into();
+            entry["max"] = int_max(&carrier).into();
         }
         entries.push(entry);
     }
@@ -187,17 +219,38 @@ fn render_cpp(
                 _ => String::new(),
             }
             .into();
-            // A signed carrier can hold a number no CBOR unsigned integer
-            // carries, which encode refuses; an unsigned one cannot, and the
-            // check is not written for it (a comparison that is always false
-            // is a compile warning, not a guard).
-            if let SceType::Enum(r) = &e.sce_type {
-                entry["carrier_signed"] = matches!(
-                    enum_carrier(imports, &r.alias),
-                    Some(SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64)
-                )
-                .into();
+        }
+    }
+    l.render(env, "codec_cbor", ctx)
+}
+
+fn render_go(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let l = LangCtx::new(Language::Go, imports);
+    // Owned values, as every Go codec holds them. An optional entry is a
+    // pointer, so an absent byte string (`nil`) and a present empty one stay
+    // two values; a required one is the value itself.
+    let mut ctx = common_context(&l, m, imports, |e| l.type_name(&e.sce_type).into_owned())?;
+    if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
+        for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
+            let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
+            entry["field_type"] = if e.required {
+                value_type
+            } else {
+                format!("*{value_type}")
             }
+            .into();
+            // A required enum starts at its first declared variant, as the
+            // other backends' do: a closed set need not declare the zero Go
+            // would otherwise start it at.
+            entry["init"] = match &e.sce_type {
+                SceType::Enum(r) if e.required => l.enum_default_expr(&r.alias),
+                _ => String::new(),
+            }
+            .into();
         }
     }
     l.render(env, "codec_cbor", ctx)

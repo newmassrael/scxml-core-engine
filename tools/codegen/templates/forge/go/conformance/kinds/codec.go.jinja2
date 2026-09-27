@@ -23,7 +23,9 @@
 	cases := ref.codecCases(t, "{{ f.ref_section }}", "{{ f.name }}")
 	type decodedShape struct {
 {% for field in f.fields %}
-		{{ field.name | to_pascal_case }} {{ field.type | go_type }} `json:"{{ field.name }}"`
+		{# An absent entry is JSON `null`, which unmarshals to a nil pointer —
+		   the generated struct's own spelling of an absent optional entry. #}
+		{{ field.name | to_pascal_case }} {% if field.optional %}*{% endif %}{{ field.type | go_type }} `json:"{{ field.name }}"`
 {% endfor %}
 	}
 	for i, c := range cases {
@@ -39,7 +41,17 @@
 			{{ field.name | to_pascal_case }}: d.{{ field.name | to_pascal_case }},
 {% endfor %}
 		}
+{% if f.cbor %}
+		{# A CBOR encode refuses a value past its declared bound with an error
+		   (SCE_FORGE.md §4.6.1); every case is in bounds. #}
+		encoded, encodeErr := value.EncodeToBytes()
+		if encodeErr != nil {
+			t.Errorf("{{ f.name }} case %d encode refused: %v", i, encodeErr)
+			continue
+		}
+{% else %}
 		encoded := value.EncodeToBytes()
+{% endif %}
 		if len(encoded) != len(expectedBytes) {
 			t.Errorf("{{ f.name }} case %d encode: length actual=%d expected=%d", i, len(encoded), len(expectedBytes))
 		} else {
@@ -68,7 +80,15 @@
 		}
 {% endif %}
 {% for field in f.fields %}
-{% if field.type == "bytes" %}
+{% set fp = field.name | to_pascal_case %}
+{% if field.optional %}
+		{# Present on both sides with one value, or absent on both. A byte
+		   string compares as its bytes (`string(...)`), a scalar directly. #}
+		if (roundTripped.{{ fp }} == nil) != (d.{{ fp }} == nil) ||
+			(roundTripped.{{ fp }} != nil && {% if field.type == "bytes" %}string(*roundTripped.{{ fp }}) != string(*d.{{ fp }}){% else %}*roundTripped.{{ fp }} != *d.{{ fp }}{% endif %}) {
+			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: present actual=%v expected=%v, or the values differ", i, roundTripped.{{ fp }} != nil, d.{{ fp }} != nil)
+		}
+{% elif field.type == "bytes" %}
 		if len(roundTripped.{{ field.name | to_pascal_case }}) != len(d.{{ field.name | to_pascal_case }}) {
 			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: length actual=%d expected=%d", i, len(roundTripped.{{ field.name | to_pascal_case }}), len(d.{{ field.name | to_pascal_case }}))
 		} else {

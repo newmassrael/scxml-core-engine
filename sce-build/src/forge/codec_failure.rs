@@ -134,8 +134,8 @@ impl CodecFailure {
             }
             (Language::Go, CodecFailure::NeedMoreBytes) => Some("codec.ErrNeedMoreBytes"),
             (Language::Go, CodecFailure::TlvChainOverflow) => Some("codec.ErrTlvChainOverflow"),
-            // The CBOR reader's refusals are named on Rust, whose decode
-            // returns the runtime's `CodecError`. C11 and Go do not lower a
+            // The CBOR reader's refusals are named on Rust and Go, whose
+            // decodes return the runtime's typed error. C11 does not lower a
             // CBOR codec yet (`forge::cbor_codec::lowers`), so nothing there
             // can be observed; the arm names that instead of a symbol.
             (Language::Rust, CodecFailure::CborMalformed) => Some("CodecError::CborMalformed"),
@@ -144,8 +144,14 @@ impl CodecFailure {
             }
             (Language::Rust, CodecFailure::CborWrongLength) => Some("CodecError::CborWrongLength"),
             (Language::Rust, CodecFailure::CborOutOfRange) => Some("CodecError::CborOutOfRange"),
+            (Language::Go, CodecFailure::CborMalformed) => Some("codec.ErrCborMalformed"),
+            (Language::Go, CodecFailure::CborRequiredKeyMissing) => {
+                Some("codec.ErrCborRequiredKeyMissing")
+            }
+            (Language::Go, CodecFailure::CborWrongLength) => Some("codec.ErrCborWrongLength"),
+            (Language::Go, CodecFailure::CborOutOfRange) => Some("codec.ErrCborOutOfRange"),
             (
-                Language::C11 | Language::Go,
+                Language::C11,
                 CodecFailure::CborMalformed
                 | CodecFailure::CborRequiredKeyMissing
                 | CodecFailure::CborWrongLength

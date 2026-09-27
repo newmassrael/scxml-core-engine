@@ -1,0 +1,218 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- The read of one entry's value into `v`, which the caller stores; a
+    refusal returns its typed error, this backend's decode convention.
+    Every CBOR item is the runtime's (`codec.Cbor*`). #}
+{% macro decode_value(e) %}
+{% if e.kind == "bool" %}
+			v, err := codec.CborReadBool(c)
+			if err != nil {
+				return nil, err
+			}
+{% elif e.kind == "text" %}
+			v, err := codec.CborReadText(c, {{ e.max_size if e.max_size is not none else "-1" }})
+			if err != nil {
+				return nil, err
+			}
+{% elif e.kind == "bytes" %}
+			v, err := codec.CborReadBytes(c, {{ e.max_size if e.max_size is not none else "-1" }})
+			if err != nil {
+				return nil, err
+			}
+{% elif e.kind == "bytes_exact" %}
+			v, err := codec.CborReadBytesExact(c, {{ e.length }})
+			if err != nil {
+				return nil, err
+			}
+{% elif e.kind == "enum" %}
+			raw, err := codec.CborReadUintUpto(c, {{ e.max }})
+			if err != nil {
+				return nil, err
+			}
+{% if e.enum_is_open %}
+			v := {{ e.enum_from_underlying }}({{ e.carrier_type }}(raw))
+{% else %}
+			v, ok := {{ e.enum_from_underlying }}({{ e.carrier_type }}(raw))
+			if !ok {
+				return nil, codec.ErrUndeclaredEnumValue
+			}
+{% endif %}
+{% else %}
+			raw, err := codec.CborReadUintUpto(c, {{ e.max }})
+			if err != nil {
+				return nil, err
+			}
+			v := {{ e.value_type }}(raw)
+{% endif %}
+{% endmacro %}
+{#- The write of one entry's value `v`, key already written. #}
+{% macro encode_value(e) %}
+{% if e.kind == "bool" %}
+		if err := codec.CborWriteBool(w, v); err != nil {
+			return err
+		}
+{% elif e.kind == "text" or e.kind == "bytes" %}
+{% if e.max_size is not none %}
+		if len(v) > {{ e.max_size }} {
+			return codec.ErrCborOutOfRange
+		}
+{% endif %}
+		if err := codec.CborWrite{% if e.kind == "text" %}Text{% else %}Bytes{% endif %}(w, v); err != nil {
+			return err
+		}
+{% elif e.kind == "bytes_exact" %}
+		if len(v) != {{ e.length }} {
+			return codec.ErrCborWrongLength
+		}
+		if err := codec.CborWriteBytes(w, v); err != nil {
+			return err
+		}
+{% elif e.kind == "enum" %}
+		u := {{ e.enum_to_underlying }}
+{% if e.carrier_signed %}
+		{# A signed carrier's negative number is no CBOR unsigned integer;
+		   refused as the Rust backend refuses it. #}
+		if u < 0 {
+			return codec.ErrCborOutOfRange
+		}
+{% endif %}
+		if err := codec.CborWriteUint(w, uint64(u)); err != nil {
+			return err
+		}
+{% else %}
+		if err := codec.CborWriteUint(w, uint64(v)); err != nil {
+			return err
+		}
+{% endif %}
+{% endmacro %}
+{{ sce_map.source_marker(source_location, "go", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package }}
+
+import (
+	"github.com/newmassrael/sce-forge-runtime/codec"
+{% for imp in all_imports %}
+{% if imp.include_stmt %}
+{{ imp.include_stmt }}
+{% endif %}
+{% endfor %}
+)
+
+// {{ struct_name }} is one CBOR map (SCE_FORGE.md §4.6.1). Decode takes the
+// keys in any order and skips one this codec does not declare; encode writes
+// the entries present in ascending key order, every head in its shortest
+// form. An optional entry is a pointer, nil when absent.
+type {{ struct_name }} struct {
+{% for e in entries %}
+	// {{ e.name }} is map key {{ e.key }}{% if e.required %}, required{% endif %}.
+	{{ e.name }} {{ e.field_type }}
+{% endfor %}
+}
+
+// New{{ struct_name }} returns the infallible starting value: a required
+// entry at its type's default, an optional one absent.
+func New{{ struct_name }}() *{{ struct_name }} {
+	return &{{ struct_name }}{
+{% for e in entries if e.init %}
+		{{ e.name }}: {{ e.init }},
+{% endfor %}
+	}
+}
+
+// Decode{{ struct_name }} decodes one map from cursor. On success the cursor
+// advances past it; on any refusal it returns the error with the cursor left
+// where it was.
+func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error) {
+	c := *cursor
+	value, err := decode{{ struct_name }}At(&c)
+	if err != nil {
+		return nil, err
+	}
+	*cursor = c
+	return value, nil
+}
+
+func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
+	count, err := codec.CborReadMapLen(c)
+	if err != nil {
+		return nil, err
+	}
+{% for e in entries %}
+	var {{ e.name | lower }}Held *{{ e.value_type }}
+{% endfor %}
+	for i := uint64(0); i < count; i++ {
+		key, err := codec.CborReadUint(c)
+		if err != nil {
+			return nil, err
+		}
+		switch key {
+{% for e in entries_by_key %}
+		case {{ e.key }}:
+			// A key given twice is not one map entry.
+			if {{ e.name | lower }}Held != nil {
+				return nil, codec.ErrCborMalformed
+			}
+{{ decode_value(e) }}			{{ e.name | lower }}Held = &v
+{% endfor %}
+		default:
+			if err := codec.CborSkip(c); err != nil {
+				return nil, err
+			}
+		}
+	}
+{% for e in entries if e.required %}
+	if {{ e.name | lower }}Held == nil {
+		return nil, codec.ErrCborRequiredKeyMissing
+	}
+{% endfor %}
+	return &{{ struct_name }}{
+{% for e in entries %}
+		{{ e.name }}: {% if e.required %}*{% endif %}{{ e.name | lower }}Held,
+{% endfor %}
+	}, nil
+}
+
+// Encode writes this map into w; nil on success. An entry whose value breaks
+// its declared bound — an exact length, a maximum size — is refused, not
+// written.
+func (s *{{ struct_name }}) Encode(w codec.SceSink) error {
+	count := uint64({{ required_count }})
+{% for e in entries if not e.required %}
+	if s.{{ e.name }} != nil {
+		count++
+	}
+{% endfor %}
+	if err := codec.CborWriteMapHead(w, count); err != nil {
+		return err
+	}
+{% for e in entries_by_key %}
+{% if e.required %}
+	{
+		v := s.{{ e.name }}
+{% else %}
+	if s.{{ e.name }} != nil {
+		v := *s.{{ e.name }}
+{% endif %}
+		if err := codec.CborWriteUint(w, {{ e.key }}); err != nil {
+			return err
+		}
+{{ encode_value(e) }}	}
+{% endfor %}
+	return nil
+}
+
+// EncodeToBytes is Encode into a new slice; the error when encode refuses
+// the value.
+func (s *{{ struct_name }}) EncodeToBytes() ([]byte, error) {
+	var out []byte
+	if err := s.Encode(codec.NewBytesSink(&out)); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
