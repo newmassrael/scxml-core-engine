@@ -29,8 +29,16 @@
 package com.sce.integration
 
 import com.sce.integration.statechart_host_processor.StatechartHostProcessorStateMachine
+import com.sce.runtime.MESH_PROCESSOR_TYPE
 import com.sce.runtime.StateMachineEngine
+import com.sce.runtime.isReservedType
 import com.sce.w3c.W3CTestBase
+import java.io.File
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -242,6 +250,55 @@ class HostProcessorTest {
             assertFalse(supersededRan, "the superseded handler still served the act")
             assertTrue(currentRan, "the current handler never ran")
             assertEquals(1L, counter(sm, "served"))
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /// sce-build/tests/fixtures/host_processor/reserved_type_cases.json: the
+    /// table the build's declaration check and every runtime's registration
+    /// read. Each case is asked of both registrations, not only of the
+    /// predicate, so a registration that stopped consulting it fails here.
+    @Test
+    fun registrationRefusesTheReservedTypesTheSharedTableNames() {
+        // Found by walking up rather than by a fixed depth, because Gradle's
+        // working directory is the project's and that is a build detail.
+        val root = generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
+            .firstOrNull { File(it, "sce-build").isDirectory }
+            ?: error("no ancestor of ${System.getProperty("user.dir")} holds sce-build/")
+        val cases = Json.parseToJsonElement(
+            File(root, "sce-build/tests/fixtures/host_processor/reserved_type_cases.json").readText()
+        ).jsonObject.getValue("cases").jsonArray
+        // A floor: an empty table would pass every assertion below.
+        assertTrue(cases.size >= 10, "the table lost cases: ${cases.size}")
+        for (case in cases) {
+            val name = case.jsonObject.getValue("type").jsonPrimitive.content
+            val reserved = case.jsonObject.getValue("reserved").jsonPrimitive.boolean
+            assertEquals(reserved, isReservedType(name), "\"$name\"")
+            val registrations = listOf<Pair<String, (StatechartHostProcessorStateMachine) -> Unit>>(
+                "registerEventProcessor" to { sm -> sm.registerEventProcessor(name) { emptyList() } },
+                "registerInvoker" to { sm -> sm.registerInvoker(name) { null } },
+            )
+            for ((call, register) in registrations) {
+                val sm = machine()
+                try {
+                    val refused = runCatching { register(sm) }.exceptionOrNull() is IllegalArgumentException
+                    assertEquals(reserved, refused, "$call(\"$name\") refused=$refused")
+                } finally {
+                    sm.cleanup()
+                }
+            }
+        }
+    }
+
+    /// The router's door serves the type the general one refuses.
+    @Test
+    fun aMeshRouterIsRegisteredThroughItsOwnDoor() {
+        val sm = machine()
+        try {
+            assertFalse(sm.hasEventProcessor(MESH_PROCESSOR_TYPE))
+            sm.registerMeshRouter { emptyList() }
+            assertTrue(sm.hasEventProcessor(MESH_PROCESSOR_TYPE))
         } finally {
             sm.cleanup()
         }

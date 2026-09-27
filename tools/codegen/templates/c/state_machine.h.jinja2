@@ -707,11 +707,17 @@ const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefi
    For the acts a machine performs while entering its initial
    configuration, this is too late: use `_init_with_host_processors`.
 
-   Returns false when the registry is full or the type does not fit its
-   slot, because a registration that did not happen must not read as one
-   that did. */
+   Returns false when the registry is full, the type does not fit its slot,
+   or the type is under SCE_RESERVED_HOST_TYPE_PREFIX, because a
+   registration that did not happen must not read as one that did. */
 bool {{ csym_prefix }}{{ model.name }}_register_event_processor({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
                                                                 sce_host_send_handler_fn handler, void *user_data);
+
+/* Register `router` as the Mesh router, the processor for
+   SCE_MESH_PROCESSOR_TYPE — the one type `_register_event_processor`
+   refuses by name. See `sce_host_registry_register_mesh_router`. */
+bool {{ csym_prefix }}{{ model.name }}_register_mesh_router({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                            sce_host_send_handler_fn router, void *user_data);
 
 /* Whether a handler is registered for `processor_type`. Two things can go
    wrong with a host-served send — no handler, or a handler that reported

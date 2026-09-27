@@ -36,13 +36,16 @@
 
 #include "statechart_host_processor_sm.h"
 
+#include <fstream>
 #include <gtest/gtest.h>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "common/SendHelper.h"
 #include "core/HostProcessor.h"
 #include "scripting/JSEngine.h"
 #include "scripting/ScriptEngineProvider.h"
@@ -193,6 +196,43 @@ TEST_F(HostProcessorAotTest, AHandlerRegisteredForAnotherTypeDoesNotServeThisOne
     EXPECT_EQ(sm.getPolicy().refused(), std::optional<int64_t>(1))
         << "a handler registered for another type served this one";
     EXPECT_EQ(sm.getPolicy().served(), std::optional<int64_t>(0));
+}
+
+// sce-build/tests/fixtures/host_processor/reserved_type_cases.json: the table
+// the build's declaration check and every runtime's registration read. Each
+// case is asked of both registrations, not only of the predicate, so a
+// registration that stopped consulting it fails here.
+TEST_F(HostProcessorAotTest, RegistrationRefusesTheReservedTypesTheSharedTableNames) {
+    const std::string path =
+        std::string(SCE_PROJECT_ROOT) + "/sce-build/tests/fixtures/host_processor/reserved_type_cases.json";
+    std::ifstream file(path);
+    const auto cases = nlohmann::json::parse(file).at("cases");
+    // A floor: an empty table would pass every assertion below.
+    ASSERT_GE(cases.size(), 10u) << "the table was not read from " << path;
+    for (const auto &row : cases) {
+        const auto name = row.at("type").get<std::string>();
+        const bool reserved = row.at("reserved").get<bool>();
+        EXPECT_EQ(SCE::SendHelper::isReservedHostType(name), reserved) << name;
+
+        Machine send;
+        bool sendRefused = false;
+        try {
+            send.registerEventProcessor(
+                name, [](const SCE::HostSendRequest &) { return std::vector<SCE::HostSendResponse>{}; });
+        } catch (const std::invalid_argument &) {
+            sendRefused = true;
+        }
+        EXPECT_EQ(sendRefused, reserved) << "registerEventProcessor(\"" << name << "\")";
+
+        Machine invoke;
+        bool invokeRefused = false;
+        try {
+            invoke.registerInvoker(name, [](const SCE::HostInvokeEvent &) { return std::nullopt; });
+        } catch (const std::invalid_argument &) {
+            invokeRefused = true;
+        }
+        EXPECT_EQ(invokeRefused, reserved) << "registerInvoker(\"" << name << "\")";
+    }
 }
 
 }  // namespace SCE::Tests

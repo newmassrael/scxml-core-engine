@@ -49,6 +49,7 @@ from .configuration import ConfigurationRejection, validate_configuration
 from .event import EventMetadata, EventWithMetadata, is_error_event
 from .host_processor import (
     HOST_INVOKE_DEADLINE_PARAM,
+    MESH_PROCESSOR_TYPE,
     HostInvokeCancel,
     HostInvokeDeadline,
     HostInvokeEvent,
@@ -59,6 +60,7 @@ from .host_processor import (
     HostSendResponse,
     is_host_invoke_completion,
     parse_host_invoke_deadline_ms,
+    refuse_reserved_type,
 )
 from .http import HttpSendRequest, HttpSendResponse
 from . import io_processors
@@ -952,8 +954,27 @@ class Engine(Generic[S, E]):
         Registering twice for one type replaces the handler: two handlers
         for one type would make dispatch depend on registration order, and
         a host re-registering during a run means to change what serves the
-        act. Mirrors `sce_rust_runtime::Engine::register_event_processor`."""
+        act. Mirrors `sce_rust_runtime::Engine::register_event_processor`.
+
+        Raises `ValueError` when `processor_type` is under
+        `RESERVED_TYPE_PREFIX`; the Mesh router has its own door,
+        `register_mesh_router`."""
+        refuse_reserved_type("register_event_processor", processor_type)
         self._host_processors[processor_type] = handler
+
+    def register_mesh_router(self, router: HostSendHandler) -> None:
+        """Register `router` as the Event I/O Processor Mesh sends reach — the
+        build lowers a ``<send target="#peer">`` to ``<send type="sce:mesh">``
+        and reports ``needs_mesh_router`` on its manifest when the machine has
+        one.
+
+        The one way to serve `MESH_PROCESSOR_TYPE`:
+        `register_event_processor` refuses the reserved prefix, so a router is
+        only ever installed by a call that names itself one. Unregistered, a
+        Mesh send raises ``error.execution`` as any host processor without a
+        handler does; a registered router that cannot reach the peer raises
+        ``error.communication`` itself."""
+        self._host_processors[MESH_PROCESSOR_TYPE] = router
 
     def has_event_processor(self, processor_type: str) -> bool:
         """Whether a handler is registered for `processor_type`.
@@ -1010,7 +1031,9 @@ class Engine(Generic[S, E]):
         declaring either silently claim both.
 
         Registering twice for one type replaces the handler, for the reason
-        the send half does."""
+        the send half does. Raises `ValueError` when `processor_type` is under
+        `RESERVED_TYPE_PREFIX`, for the reason the send half does."""
+        refuse_reserved_type("register_invoker", processor_type)
         self._host_invokers[processor_type] = handler
 
     def has_invoker(self, processor_type: str) -> bool:

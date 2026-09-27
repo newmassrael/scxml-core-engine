@@ -8790,6 +8790,16 @@
           "file": "sce/include/core/HostProcessor.h",
           "symbol": "HostInvokeRequest",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "isReservedHostType",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "RESERVED_TYPE_PREFIX",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

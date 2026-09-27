@@ -27,8 +27,11 @@ import com.sce.runtime.EventMetadata
 import com.sce.runtime.IoProcessors
 import com.sce.runtime.StateMachineEngine
 
-/** The `<send type>` a Mesh send is lowered to. */
-const val MESH_PROCESSOR_TYPE = "sce:mesh"
+/**
+ * The `<send type>` a Mesh send is lowered to — the runtime's constant, so the
+ * type this core serves is the one the engine's router door registers.
+ */
+const val MESH_PROCESSOR_TYPE = com.sce.runtime.MESH_PROCESSOR_TYPE
 
 /** `_event.origin` of a Mesh-delivered event is this scheme and the sending machine's name (§mesh-10.7). */
 const val MESH_ORIGIN_SCHEME = "mesh://"
@@ -208,7 +211,7 @@ fun raiseInto(engine: StateMachineEngine<*, *>, events: List<EngineEvent>) {
  * step that sent it.
  */
 fun register(engine: StateMachineEngine<*, *>, endpoint: Endpoint) {
-    engine.registerEventProcessor(MESH_PROCESSOR_TYPE) { request ->
+    engine.registerMeshRouter { request ->
         endpoint.send(request)
         emptyList()
     }

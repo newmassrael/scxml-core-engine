@@ -2051,6 +2051,11 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     target_include_directories(sce_c_integration_host_processor PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
+    # The reserved-type rule every runtime shares is held to one table, read
+    # by this test from the checkout.
+    target_compile_definitions(sce_c_integration_host_processor PRIVATE
+        SCE_RESERVED_TYPE_TABLE="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/reserved_type_cases.json"
+    )
     set_target_properties(sce_c_integration_host_processor PROPERTIES
         C_STANDARD 11
         C_STANDARD_REQUIRED ON

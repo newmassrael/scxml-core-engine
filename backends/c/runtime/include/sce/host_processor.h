@@ -244,19 +244,44 @@ typedef struct sce_host_processor_registry_s {
 } sce_host_processor_registry_t;
 
 /**
- * Register `handler` for `type`, replacing any handler already there.
+ * The prefix SCE keeps for the Event I/O Processors and invoke types it
+ * defines itself: `SCE_MESH_PROCESSOR_TYPE` and `sce:mesh-rpc`.
  *
- * Replacement rather than a second entry: two handlers for one type
- * would make dispatch depend on registration order, and a host
- * re-registering during a run means to change what serves the act.
- *
- * Returns false when the registry is full or the type does not fit,
- * because a registration that did not happen must not read as one that
- * did — the send would then raise `error.execution` with nothing
- * naming why.
+ * §scxml-6.2.5 leaves the processor set open to the platform, and SCE shares
+ * that namespace with its host. A handler registered under `sce:` would not
+ * add a processor but replace one of SCE's, with nothing on the wire saying
+ * so — so registration refuses it, as the build refuses the same declaration
+ * (`cli/reserved-host-type`).
  */
-static inline bool sce_host_registry_register(sce_host_processor_registry_t *registry, const char *type,
-                                              sce_host_send_handler_fn handler, void *user_data) {
+#define SCE_RESERVED_HOST_TYPE_PREFIX "sce:"
+
+/**
+ * The `<send type>` a Mesh send is lowered to on every backend whose Mesh
+ * router the host registers — see `sce_host_registry_register_mesh_router`.
+ */
+#define SCE_MESH_PROCESSOR_TYPE "sce:mesh"
+
+/**
+ * Whether a host may not register `type`: it starts with
+ * `SCE_RESERVED_HOST_TYPE_PREFIX`, spelled exactly.
+ *
+ * The C11 copy of the rule the build applies to a declaration. Every copy
+ * reads `sce-build/tests/fixtures/host_processor/reserved_type_cases.json`, so
+ * a type one of them refuses is one they all refuse.
+ */
+static inline bool sce_is_reserved_host_type(const char *type) {
+    return type != NULL && strncmp(type, SCE_RESERVED_HOST_TYPE_PREFIX, sizeof(SCE_RESERVED_HOST_TYPE_PREFIX) - 1) == 0;
+}
+
+/**
+ * Put `handler` in the slot for `type`, replacing any handler already there.
+ *
+ * The one body behind `sce_host_registry_register` and
+ * `sce_host_registry_register_mesh_router`, which differ only in which types
+ * they accept.
+ */
+static inline bool sce_host_registry_put(sce_host_processor_registry_t *registry, const char *type,
+                                         sce_host_send_handler_fn handler, void *user_data) {
     if (registry == NULL || type == NULL || handler == NULL) {
         return false;
     }
@@ -280,6 +305,43 @@ static inline bool sce_host_registry_register(sce_host_processor_registry_t *reg
     slot->user_data = user_data;
     registry->count++;
     return true;
+}
+
+/**
+ * Register `handler` for `type`, replacing any handler already there.
+ *
+ * Replacement rather than a second entry: two handlers for one type
+ * would make dispatch depend on registration order, and a host
+ * re-registering during a run means to change what serves the act.
+ *
+ * Returns false when the registry is full, the type does not fit, or the
+ * type is under `SCE_RESERVED_HOST_TYPE_PREFIX` (the Mesh router has its own
+ * door, `sce_host_registry_register_mesh_router`), because a registration
+ * that did not happen must not read as one that did — the send would then
+ * raise `error.execution` with nothing naming why.
+ */
+static inline bool sce_host_registry_register(sce_host_processor_registry_t *registry, const char *type,
+                                              sce_host_send_handler_fn handler, void *user_data) {
+    if (sce_is_reserved_host_type(type)) {
+        return false;
+    }
+    return sce_host_registry_put(registry, type, handler, user_data);
+}
+
+/**
+ * Register `router` as the Event I/O Processor Mesh sends reach — the build
+ * lowers a `<send target="#peer">` to `<send type="sce:mesh">` and reports
+ * `needs_mesh_router` on its manifest when the machine has one.
+ *
+ * The one way to serve `SCE_MESH_PROCESSOR_TYPE`: `sce_host_registry_register`
+ * refuses the reserved prefix, so a router is only ever installed by a call
+ * that names itself one. Unregistered, a Mesh send raises `error.execution` as
+ * any host processor without a handler does; a registered router that cannot
+ * reach the peer raises `error.communication` itself.
+ */
+static inline bool sce_host_registry_register_mesh_router(sce_host_processor_registry_t *registry,
+                                                          sce_host_send_handler_fn router, void *user_data) {
+    return sce_host_registry_put(registry, SCE_MESH_PROCESSOR_TYPE, router, user_data);
 }
 
 /** The entry serving `type`, or NULL when nothing is registered. */
@@ -505,15 +567,15 @@ typedef struct sce_host_invoker_registry_s {
 /**
  * Register `handler` for `type`, replacing any handler already there.
  *
- * Returns false when the registry is full or the type does not fit its
- * slot, because a registration that did not happen must not read as one
- * that did.
+ * Returns false when the registry is full, the type does not fit its slot,
+ * or the type is under `SCE_RESERVED_HOST_TYPE_PREFIX`, because a
+ * registration that did not happen must not read as one that did.
  */
 static inline bool sce_host_invoker_register(sce_host_invoker_registry_t *registry, const char *type,
                                              sce_host_invoke_handler_fn handler, void *user_data) {
     int i;
     sce_host_invoker_entry_t *slot;
-    if (registry == NULL || type == NULL || handler == NULL) {
+    if (registry == NULL || type == NULL || handler == NULL || sce_is_reserved_host_type(type)) {
         return false;
     }
     if (strlen(type) >= (size_t)SCE_MAX_ID_LEN) {

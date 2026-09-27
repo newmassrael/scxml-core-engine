@@ -41,6 +41,10 @@
 
 #include "statechart_host_processor_sm.h"
 
+#ifndef SCE_RESERVED_TYPE_TABLE
+#error "SCE_RESERVED_TYPE_TABLE must name the shared reserved-type table (backends/c/tests/CMakeLists.txt)"
+#endif
+
 // The type the fixture was compiled for. `backends/c/tests/CMakeLists.txt`
 // passes this same string to `--host-processor`; a test registering a
 // different one would measure nothing and pass, which is why the
@@ -466,6 +470,91 @@ static int an_entry_too_large_for_its_slot_is_refused(void) {
     return bad;
 }
 
+static void unused_invoker(void *user_data, const sce_host_invoke_event_t *event, sce_host_invoke_response_t *out) {
+    (void)user_data;
+    (void)event;
+    (void)out;
+}
+
+// Copy the JSON string that starts at `from` (just past its opening quote)
+// into `out`. The table's strings carry no escapes, which the read checks.
+static const char *read_json_string(const char *from, char *out, size_t size) {
+    const char *end = strchr(from, '"');
+    if (end == NULL || (size_t)(end - from) >= size || memchr(from, '\\', (size_t)(end - from)) != NULL) {
+        return NULL;
+    }
+    memcpy(out, from, (size_t)(end - from));
+    out[end - from] = '\0';
+    return end + 1;
+}
+
+// sce-build/tests/fixtures/host_processor/reserved_type_cases.json: the table
+// the build's declaration check and every runtime's registration read. Each
+// case is asked of both registries, not only of the predicate, so a
+// registration that stopped consulting it fails here.
+static int registration_refuses_the_reserved_types_the_shared_table_names(void) {
+    static char text[8192];
+    FILE *file = fopen(SCE_RESERVED_TYPE_TABLE, "rb");
+    if (file == NULL) {
+        (void)fprintf(stderr, "host_processor: FAIL [reserved] - cannot read %s\n", SCE_RESERVED_TYPE_TABLE);
+        return 1;
+    }
+    size_t len = fread(text, 1, sizeof(text) - 1, file);
+    (void)fclose(file);
+    text[len] = '\0';
+
+    int bad = 0;
+    int cases = 0;
+    const char *cursor = strstr(text, "\"cases\"");
+    while (cursor != NULL && (cursor = strstr(cursor, "\"type\": \"")) != NULL) {
+        char name[128];
+        cursor = read_json_string(cursor + strlen("\"type\": \""), name, sizeof(name));
+        const char *flag = cursor == NULL ? NULL : strstr(cursor, "\"reserved\": ");
+        if (flag == NULL) {
+            (void)fprintf(stderr, "host_processor: FAIL [reserved] - case %d is not a {type, reserved} pair\n", cases);
+            return 1;
+        }
+        flag += strlen("\"reserved\": ");
+        const bool reserved = strncmp(flag, "true", 4) == 0;
+        cursor = flag;
+        cases++;
+
+        sce_host_processor_registry_t sends;
+        memset(&sends, 0, sizeof(sends));
+        sce_host_invoker_registry_t invokers;
+        memset(&invokers, 0, sizeof(invokers));
+        const bool send_refused = !sce_host_registry_register(&sends, name, recording_handler, NULL);
+        const bool invoke_refused = !sce_host_invoker_register(&invokers, name, unused_invoker, NULL);
+        if (sce_is_reserved_host_type(name) != reserved || send_refused != reserved || invoke_refused != reserved) {
+            (void)fprintf(stderr,
+                          "host_processor: FAIL [reserved] - \"%s\": predicate=%d send refused=%d "
+                          "invoke refused=%d, want %d\n",
+                          name, sce_is_reserved_host_type(name), send_refused, invoke_refused, reserved);
+            bad = 1;
+        }
+    }
+    // A floor: an empty sweep would pass every assertion above.
+    if (cases < 10) {
+        (void)fprintf(stderr, "host_processor: FAIL [reserved] - the table lost cases: %d\n", cases);
+        bad = 1;
+    }
+    return bad;
+}
+
+// The router's door serves the type the general one refuses.
+static int a_mesh_router_is_registered_through_its_own_door(void) {
+    sce_host_processor_registry_t wiring;
+    memset(&wiring, 0, sizeof(wiring));
+    int bad = 0;
+    if (!sce_host_registry_register_mesh_router(&wiring, recording_handler, NULL) ||
+        sce_host_registry_find(&wiring, SCE_MESH_PROCESSOR_TYPE) == NULL) {
+        (void)fprintf(stderr, "host_processor: FAIL [mesh router] - the router door did not serve %s\n",
+                      SCE_MESH_PROCESSOR_TYPE);
+        bad = 1;
+    }
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
     bad |= a_registered_handler_receives_the_send_and_its_reply_arrives();
@@ -476,11 +565,13 @@ int main(void) {
     bad |= a_reply_naming_an_undeclared_event_is_dropped();
     bad |= a_report_that_does_not_fit_is_reported_rather_than_shortened();
     bad |= an_entry_too_large_for_its_slot_is_refused();
+    bad |= registration_refuses_the_reserved_types_the_shared_table_names();
+    bad |= a_mesh_router_is_registered_through_its_own_door();
 
     if (bad != 0) {
         (void)fprintf(stderr, "host_processor: FAIL - see the scenario(s) named above\n");
         return 1;
     }
-    (void)printf("host_processor: PASS - 8 scenarios\n");
+    (void)printf("host_processor: PASS - 10 scenarios\n");
     return 0;
 }

@@ -15,6 +15,9 @@ from .engine import Engine
 from .event import Event, EventMetadata, EventWithMetadata
 from .host_processor import (
     HOST_INVOKE_DEADLINE_PARAM,
+    MESH_PROCESSOR_TYPE,
+    RESERVED_TYPE_PREFIX,
+    is_reserved_type,
     HostInvokeCancel,
     HostInvokeEvent,
     HostInvokeHandler,
@@ -71,7 +74,9 @@ __all__ = [
     "IScriptEngine",
     "Invoke",
     "LuaScriptEngine",
+    "MESH_PROCESSOR_TYPE",
     "PendingInvoke",
+    "RESERVED_TYPE_PREFIX",
     "RequestFieldType",
     "ScheduledEvent",
     "Scheduler",
@@ -83,6 +88,7 @@ __all__ = [
     "StateTarget",
     "create_done_invoke_event_name",
     "is_invalid_target",
+    "is_reserved_type",
     "is_supported_send_type",
     "parse_delay_ms",
     "parse_host_invoke_deadline_ms",

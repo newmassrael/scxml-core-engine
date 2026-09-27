@@ -215,3 +215,39 @@ def test_registering_a_type_twice_replaces() -> None:
     assert not superseded, "the superseded handler still served the act"
     assert current, "the current handler never ran"
     assert _counter(engine, "served") == 1
+
+
+def test_registration_refuses_the_reserved_types_the_shared_table_names() -> None:
+    """sce-build/tests/fixtures/host_processor/reserved_type_cases.json: the
+    table the build's declaration check and every runtime's registration read.
+    Each case is asked of both registrations, not only of the predicate, so a
+    registration that stopped consulting it fails here."""
+    from sce_runtime import is_reserved_type
+
+    table_path = (
+        _HERE.parents[4] / "sce-build/tests/fixtures/host_processor/reserved_type_cases.json"
+    )
+    cases = json.loads(table_path.read_text(encoding="utf-8"))["cases"]
+    # A floor: an empty table would pass every assertion below.
+    assert len(cases) >= 10, f"the table lost cases: {len(cases)}"
+    for case in cases:
+        name, reserved = case["type"], case["reserved"]
+        assert is_reserved_type(name) == reserved, repr(name)
+        for register in ("register_event_processor", "register_invoker"):
+            engine = _started()
+            try:
+                getattr(engine, register)(name, lambda _request: None)
+                refused = False
+            except ValueError:
+                refused = True
+            assert refused == reserved, f"{register}({name!r}) refused={refused}"
+
+
+def test_a_mesh_router_is_registered_through_its_own_door() -> None:
+    """The router's door serves the type the general one refuses."""
+    from sce_runtime import MESH_PROCESSOR_TYPE
+
+    engine = _started()
+    assert not engine.has_event_processor(MESH_PROCESSOR_TYPE)
+    engine.register_mesh_router(lambda _request: [])
+    assert engine.has_event_processor(MESH_PROCESSOR_TYPE)

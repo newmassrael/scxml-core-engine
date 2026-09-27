@@ -4963,6 +4963,14 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_register_event_processor({{ csy
     return sce_host_registry_register(&sm->host_processors, processor_type, handler, user_data);
 }
 
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_register_mesh_router({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                      sce_host_send_handler_fn router, void *user_data) {
+    if (sm == NULL) {
+        return false;
+    }
+    return sce_host_registry_register_mesh_router(&sm->host_processors, router, user_data);
+}
+
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_has_event_processor(const {{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type) {
     if (sm == NULL) {
         return false;

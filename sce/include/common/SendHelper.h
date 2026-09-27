@@ -290,6 +290,28 @@ public:
     }
 
     /**
+     * @brief Whether a host may not register `processorType`: it starts with
+     * `sce:`, the prefix SCE keeps for the processors it defines itself
+     * (`sce:mesh`, `sce:mesh-rpc`).
+     *
+     * §scxml-6.2.5 leaves the processor set open to the platform, and SCE
+     * shares that namespace with its host. A handler registered under `sce:`
+     * would not add a processor but replace one of SCE's, with nothing on the
+     * wire saying so — so registration refuses it, as the build refuses the
+     * same declaration (`cli/reserved-host-type`).
+     *
+     * The C++ copy of the rule. Every copy reads
+     * `sce-build/tests/fixtures/host_processor/reserved_type_cases.json`, so a
+     * type one of them refuses is one they all refuse.
+     */
+    static bool isReservedHostType(const std::string &processorType) {
+        return processorType.rfind(RESERVED_HOST_TYPE_PREFIX, 0) == 0;
+    }
+
+    /// The prefix [isReservedHostType] reserves.
+    static constexpr const char *RESERVED_HOST_TYPE_PREFIX = "sce:";
+
+    /**
      * @brief Validate send target according to §scxml-6.2
      *
      * §scxml-6.2 (tests 159, 194): Invalid target values (e.g., starting with "!")

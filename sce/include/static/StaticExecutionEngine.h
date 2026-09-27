@@ -2768,9 +2768,28 @@ public:
      * whether a site dispatches or refuses, and a registration alone cannot
      * change emitted code. Registering an already-registered type replaces its
      * handler, which is what a host re-wiring one expects.
+     *
+     * @throws std::invalid_argument when `processorType` is under the `sce:`
+     * prefix SCE keeps for its own processors (`SendHelper::isReservedHostType`).
+     * C++ Mesh sends reach the generated TransportRouter, not a host processor,
+     * so there is no router to register here.
      */
     void registerEventProcessor(const std::string &processorType, ::SCE::HostSendHandler handler) {
+        refuseReservedHostType("registerEventProcessor", processorType);
         hostProcessors_[processorType] = std::move(handler);
+    }
+
+    /**
+     * @brief Refuse a registration under the reserved `sce:` prefix, naming the
+     * call and the type — the refusal both registrations share.
+     */
+    static void refuseReservedHostType(const char *call, const std::string &processorType) {
+        if (::SCE::SendHelper::isReservedHostType(processorType)) {
+            throw std::invalid_argument(std::string(call) + "(\"" + processorType + "\"): the `" +
+                                        ::SCE::SendHelper::RESERVED_HOST_TYPE_PREFIX +
+                                        "` prefix is reserved for the processors SCE defines itself; "
+                                        "give a host type another prefix, such as `x-`");
+        }
     }
 
     /**
@@ -2842,6 +2861,7 @@ public:
      * handler, which is what a host re-wiring one expects.
      */
     void registerInvoker(const std::string &processorType, ::SCE::HostInvokeHandler handler) {
+        refuseReservedHostType("registerInvoker", processorType);
         hostInvokers_[processorType] = std::move(handler);
     }
 

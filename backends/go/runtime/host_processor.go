@@ -101,6 +101,43 @@ type HostSendResponse struct {
 // produce exactly the silence this whole surface exists to remove.
 type HostSendHandler func(HostSendRequest) []HostSendResponse
 
+// ReservedTypePrefix is the prefix SCE keeps for the Event I/O Processors and
+// invoke types it defines itself: MeshProcessorType and `sce:mesh-rpc`.
+//
+// §scxml-6.2.5 leaves the processor set open to the platform, and SCE shares
+// that namespace with its host. A host registering a handler under `sce:` would
+// not add a processor but replace one of SCE's, with nothing on the wire saying
+// so — so registration refuses it, as the build refuses the same declaration
+// (`cli/reserved-host-type`).
+const ReservedTypePrefix = "sce:"
+
+// MeshProcessorType is the `<send type>` a Mesh send is lowered to on every
+// backend whose Mesh router the host registers — see RegisterMeshRouter.
+const MeshProcessorType = "sce:mesh"
+
+// IsReservedType reports whether a host may not register processorType: it
+// starts with ReservedTypePrefix, spelled exactly.
+//
+// The Go copy of the rule the build applies to a declaration. Every copy reads
+// sce-build/tests/fixtures/host_processor/reserved_type_cases.json, so a type
+// one of them refuses is one they all refuse.
+func IsReservedType(processorType string) bool {
+	return strings.HasPrefix(processorType, ReservedTypePrefix)
+}
+
+// refuseReservedType panics when a host registers under ReservedTypePrefix,
+// naming the call and the type. A panic rather than an error, as net/http
+// panics on a conflicting route: this is wiring the host writes once, and a
+// refusal a caller could drop would bring back the silent replacement it
+// exists to prevent.
+func refuseReservedType(call, processorType string) {
+	if IsReservedType(processorType) {
+		panic(fmt.Sprintf("%s(%q): the `%s` prefix is reserved for the processors SCE defines "+
+			"itself; register a Mesh router with RegisterMeshRouter, and give a host type "+
+			"another prefix, such as `x-`", call, processorType, ReservedTypePrefix))
+	}
+}
+
 // RegisterEventProcessor registers what performs every `<send type="<t>">` this
 // machine executes (§scxml-6.2.5).
 //
@@ -112,7 +149,29 @@ type HostSendHandler func(HostSendRequest) []HostSendResponse
 // Registering twice for one type replaces the handler: two handlers for one
 // type would make dispatch depend on registration order, and a host
 // re-registering during a run means to change what serves the act.
+//
+// Panics when processorType is under ReservedTypePrefix; the Mesh router has
+// its own door, RegisterMeshRouter.
 func (e *Engine[S, E]) RegisterEventProcessor(processorType string, handler HostSendHandler) {
+	refuseReservedType("RegisterEventProcessor", processorType)
+	e.registerEventProcessor(processorType, handler)
+}
+
+// RegisterMeshRouter registers router as the Event I/O Processor Mesh sends
+// reach — the build lowers a `<send target="#peer">` to
+// `<send type="sce:mesh">` and reports `needs_mesh_router` on its manifest when
+// the machine has one.
+//
+// The one way to serve MeshProcessorType: RegisterEventProcessor refuses the
+// reserved prefix, so a router is only ever installed by a call that names
+// itself one. Unregistered, a Mesh send raises `error.execution` as any host
+// processor without a handler does; a registered router that cannot reach the
+// peer raises `error.communication` itself.
+func (e *Engine[S, E]) RegisterMeshRouter(router HostSendHandler) {
+	e.registerEventProcessor(MeshProcessorType, router)
+}
+
+func (e *Engine[S, E]) registerEventProcessor(processorType string, handler HostSendHandler) {
 	if e.hostProcessors == nil {
 		e.hostProcessors = make(map[string]HostSendHandler)
 	}
@@ -307,8 +366,10 @@ type HostInvokeHandler func(HostInvokeEvent) *HostInvokeResponse
 //
 // Separate from RegisterEventProcessor because they are separate contracts.
 // Registering twice for one type replaces the handler, for the reason the send
-// half does.
+// half does. Panics when processorType is under ReservedTypePrefix, for the
+// reason RegisterEventProcessor does.
 func (e *Engine[S, E]) RegisterInvoker(processorType string, handler HostInvokeHandler) {
+	refuseReservedType("RegisterInvoker", processorType)
 	if e.hostInvokers == nil {
 		e.hostInvokers = make(map[string]HostInvokeHandler)
 	}

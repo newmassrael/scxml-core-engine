@@ -94,6 +94,47 @@ fun parseHostInvokeDeadlineMs(written: String): Long? {
 }
 
 /**
+ * The prefix SCE keeps for the Event I/O Processors and invoke types it defines
+ * itself: [MESH_PROCESSOR_TYPE] and `sce:mesh-rpc`.
+ *
+ * §scxml-6.2.5 leaves the processor set open to the platform, and SCE shares
+ * that namespace with its host. A host registering a handler under `sce:` would
+ * not add a processor but replace one of SCE's, with nothing on the wire saying
+ * so — so registration refuses it, as the build refuses the same declaration
+ * (`cli/reserved-host-type`).
+ */
+const val RESERVED_TYPE_PREFIX = "sce:"
+
+/**
+ * The `<send type>` a Mesh send is lowered to on every backend whose Mesh
+ * router the host registers — see [StateMachineEngine.registerMeshRouter].
+ */
+const val MESH_PROCESSOR_TYPE = "sce:mesh"
+
+/**
+ * Whether a host may not register [processorType]: it starts with
+ * [RESERVED_TYPE_PREFIX], spelled exactly.
+ *
+ * The Kotlin copy of the rule the build applies to a declaration. Every copy
+ * reads `sce-build/tests/fixtures/host_processor/reserved_type_cases.json`, so a
+ * type one of them refuses is one they all refuse.
+ */
+fun isReservedType(processorType: String): Boolean = processorType.startsWith(RESERVED_TYPE_PREFIX)
+
+/**
+ * Refuse a registration under [RESERVED_TYPE_PREFIX] with
+ * [IllegalArgumentException], naming the call and the type — the refusal both
+ * registrations share.
+ */
+private fun refuseReservedType(call: String, processorType: String) {
+    require(!isReservedType(processorType)) {
+        "$call(\"$processorType\"): the `$RESERVED_TYPE_PREFIX` prefix is reserved for the " +
+            "processors SCE defines itself; register a Mesh router with registerMeshRouter, " +
+            "and give a host type another prefix, such as `x-`"
+    }
+}
+
+/**
  * §scxml-5.10: Event metadata for _event system variable.
  *
  * Carries type, data, sendid, origin, origintype, and invokeid
@@ -687,12 +728,32 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Registering twice for one type replaces the handler: two handlers for
      * one type would make dispatch depend on registration order, and a host
      * re-registering during a run means to change what serves the act.
+     *
+     * @throws IllegalArgumentException when [processorType] is under
+     *   [RESERVED_TYPE_PREFIX]; the Mesh router has its own door,
+     *   [registerMeshRouter].
      */
     fun registerEventProcessor(
         processorType: String,
         handler: (HostSendRequest) -> List<HostSendResponse>
     ) {
+        refuseReservedType("registerEventProcessor", processorType)
         hostProcessors[processorType] = handler
+    }
+
+    /**
+     * Register [router] as the Event I/O Processor Mesh sends reach — the build
+     * lowers a `<send target="#peer">` to `<send type="sce:mesh">` and reports
+     * `needs_mesh_router` on its manifest when the machine has one.
+     *
+     * The one way to serve [MESH_PROCESSOR_TYPE]: [registerEventProcessor]
+     * refuses the reserved prefix, so a router is only ever installed by a call
+     * that names itself one. Unregistered, a Mesh send raises `error.execution`
+     * as any host processor without a handler does; a registered router that
+     * cannot reach the peer raises `error.communication` itself.
+     */
+    fun registerMeshRouter(router: (HostSendRequest) -> List<HostSendResponse>) {
+        hostProcessors[MESH_PROCESSOR_TYPE] = router
     }
 
     /**
@@ -838,11 +899,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *
      * Separate from [registerEventProcessor] because they are separate
      * contracts. Registering twice for one type replaces the handler.
+     *
+     * @throws IllegalArgumentException when [processorType] is under
+     *   [RESERVED_TYPE_PREFIX], for the reason [registerEventProcessor] gives.
      */
     fun registerInvoker(
         processorType: String,
         handler: (HostInvokeEvent) -> HostInvokeResponse?
     ) {
+        refuseReservedType("registerInvoker", processorType)
         hostInvokers[processorType] = handler
     }
 
