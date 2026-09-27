@@ -31,7 +31,7 @@ use crate::generator::Language;
 pub fn lowers(lang: Language) -> bool {
     matches!(
         lang,
-        Language::Rust | Language::Kotlin | Language::Cpp | Language::Go
+        Language::Rust | Language::Kotlin | Language::Cpp | Language::Go | Language::Python
     )
 }
 
@@ -60,7 +60,8 @@ pub fn render(
         Language::Kotlin => render_kotlin(env, m, imports),
         Language::Cpp => render_cpp(env, m, imports),
         Language::Go => render_go(env, m, imports),
-        _ => unreachable!("`lowers` admits Rust, Kotlin, C++ and Go alone"),
+        Language::Python => render_python(env, m, imports),
+        _ => unreachable!("`lowers` admits every backend but C11"),
     }
 }
 
@@ -253,6 +254,42 @@ fn render_go(
             .into();
         }
     }
+    l.render(env, "codec_cbor", ctx)
+}
+
+fn render_python(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let l = LangCtx::new(Language::Python, imports);
+    let mut ctx = common_context(&l, m, imports, |e| l.type_name(&e.sce_type).into_owned())?;
+    // A required entry starts at its type's own default — an enum at its
+    // first declared variant — and an optional one absent (`None`).
+    if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
+        for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
+            let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
+            entry["field_type"] = if e.required {
+                value_type
+            } else {
+                format!("Optional[{value_type}]")
+            }
+            .into();
+            entry["default"] = if e.required {
+                l.default_expr(&e.sce_type)
+            } else {
+                "None".to_string()
+            }
+            .into();
+        }
+    }
+    ctx.insert(
+        "has_closed_enum".into(),
+        m.cbor_entries
+            .iter()
+            .any(|e| matches!(&e.sce_type, SceType::Enum(r) if !l.enum_is_open(&r.alias)))
+            .into(),
+    );
     l.render(env, "codec_cbor", ctx)
 }
 

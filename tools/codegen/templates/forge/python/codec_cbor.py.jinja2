@@ -1,0 +1,169 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- The read of one entry's value, bound to `v`; a refusal raises the
+    runtime's typed error, which `decode` turns into `None`, this backend's
+    decode convention. Every CBOR item is the runtime's
+    (`sce_forge_runtime.cbor`). #}
+{% macro decode_value(e) %}
+{% if e.kind == "bool" %}
+                v = cbor.read_bool(c)
+{% elif e.kind == "text" %}
+                v = cbor.read_text(c, {{ e.max_size if e.max_size is not none else "None" }})
+{% elif e.kind == "bytes" %}
+                v = cbor.read_bytes(c, {{ e.max_size if e.max_size is not none else "None" }})
+{% elif e.kind == "bytes_exact" %}
+                v = cbor.read_bytes_exact(c, {{ e.length }})
+{% elif e.kind == "enum" %}
+{% if e.enum_is_open %}
+                v = {{ e.enum_from_underlying }}(cbor.read_uint_upto(c, {{ e.max }}))
+{% else %}
+                v = {{ e.enum_from_underlying }}(cbor.read_uint_upto(c, {{ e.max }}))
+                if v is None:
+                    raise UndeclaredEnumValue()
+{% endif %}
+{% else %}
+                v = cbor.read_uint_upto(c, {{ e.max }})
+{% endif %}
+{% endmacro %}
+{#- The write of one entry — its key, then its value `v` — at indent `i`. #}
+{% macro encode_entry(e, i) %}
+{{ i }}cbor.write_uint(w, {{ e.key }})
+{% if e.kind == "bool" %}
+{{ i }}cbor.write_bool(w, v)
+{% elif e.kind == "text" %}
+{% if e.max_size is not none %}
+{{ i }}if len(v.encode("utf-8")) > {{ e.max_size }}:
+{{ i }}    raise cbor.CborOutOfRange()
+{% endif %}
+{{ i }}cbor.write_text(w, v)
+{% elif e.kind == "bytes" %}
+{% if e.max_size is not none %}
+{{ i }}if len(v) > {{ e.max_size }}:
+{{ i }}    raise cbor.CborOutOfRange()
+{% endif %}
+{{ i }}cbor.write_bytes(w, v)
+{% elif e.kind == "bytes_exact" %}
+{{ i }}if len(v) != {{ e.length }}:
+{{ i }}    raise cbor.CborWrongLength()
+{{ i }}cbor.write_bytes(w, v)
+{% elif e.kind == "enum" %}
+{{ i }}u = {{ e.enum_to_underlying }}
+{% if e.carrier_signed %}
+{#- A signed carrier's negative number is no CBOR unsigned integer; refused
+    as the Rust backend refuses it. #}
+{{ i }}if u < 0:
+{{ i }}    raise cbor.CborOutOfRange()
+{% endif %}
+{{ i }}cbor.write_uint(w, u)
+{% else %}
+{#- A Python int is unbounded, so the declared width is held here rather
+    than by the type. #}
+{{ i }}if not 0 <= v <= {{ e.max }}:
+{{ i }}    raise cbor.CborOutOfRange()
+{{ i }}cbor.write_uint(w, v)
+{% endif %}
+{% endmacro %}
+{{ sce_map.source_marker(source_location, "python", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
+# Runtime: {{ runtime_dep }}
+# Do not edit — regenerate from the source SCXML file.
+
+from __future__ import annotations
+
+from sce_forge_runtime import cbor
+from sce_forge_runtime.codec import BytearraySink, CodecError, SceCursor, SceSink{{ ", UndeclaredEnumValue" if has_closed_enum else "" }}
+{% for imp in all_imports %}
+{% if imp.include_stmt %}
+{{ imp.include_stmt }}
+{% endif %}
+{% endfor %}
+
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class {{ struct_name }}:
+    """One CBOR map (SCE_FORGE.md §4.6.1). Decode takes the keys in any order
+    and skips one this codec does not declare; encode writes the entries
+    present in ascending key order, every head in its shortest form. A
+    required entry starts at its type's default and an optional one absent
+    (``None``), so ``{{ struct_name }}()`` is the infallible constructor every
+    codec offers."""
+
+{% for e in entries %}
+    #: Map key {{ e.key }}{% if e.required %}, required{% endif %}.
+    {{ e.name }}: {{ e.field_type }} = {{ e.default }}
+{% endfor %}
+
+    @classmethod
+    def decode(cls, cursor: SceCursor) -> Optional[{{ struct_name }}]:
+        """Decode one map from ``cursor``. On success the cursor advances
+        past it; ``None`` on any refusal, with the cursor left where it was."""
+        mark = cursor.mark()
+        try:
+            return cls._decode_at(cursor)
+        except CodecError:
+            cursor.reset(mark)
+            return None
+
+    @classmethod
+    def _decode_at(cls, c: SceCursor) -> {{ struct_name }}:
+        count = cbor.read_map_len(c)
+{% for e in entries %}
+        held_{{ e.name }}: Optional[{{ e.value_type }}] = None
+{% endfor %}
+        for _ in range(count):
+            key = cbor.read_uint(c)
+{% for e in entries_by_key %}
+{% if loop.first %}            if{% else %}            elif{% endif %} key == {{ e.key }}:
+                # A key given twice is not one map entry.
+                if held_{{ e.name }} is not None:
+                    raise cbor.CborMalformed()
+{{ decode_value(e) }}                held_{{ e.name }} = v
+{% endfor %}
+{% if entries_by_key %}
+            else:
+                cbor.skip(c)
+{% else %}
+            cbor.skip(c)
+{% endif %}
+{% for e in entries if e.required %}
+        if held_{{ e.name }} is None:
+            raise cbor.CborRequiredKeyMissing()
+{% endfor %}
+        return cls(
+{% for e in entries %}
+            {{ e.name }}=held_{{ e.name }},
+{% endfor %}
+        )
+
+    def encode(self, w: SceSink) -> None:
+        """Encode this map into ``w``. An entry whose value breaks its
+        declared bound — an exact length, a maximum size, its integer width
+        — raises :class:`sce_forge_runtime.cbor.CborOutOfRange` or
+        :class:`~sce_forge_runtime.cbor.CborWrongLength` rather than being
+        written."""
+        count = {{ required_count }}
+{% for e in entries if not e.required %}
+        if self.{{ e.name }} is not None:
+            count += 1
+{% endfor %}
+        cbor.write_map_head(w, count)
+{% for e in entries_by_key %}
+        v = self.{{ e.name }}
+{% if e.required %}
+{{ encode_entry(e, "        ") }}{% else %}
+        if v is not None:
+{{ encode_entry(e, "            ") }}{% endif %}
+{% endfor %}
+
+    def encode_to_bytes(self) -> bytes:
+        """:meth:`encode` into a new ``bytes``; raises as :meth:`encode`
+        does when it refuses the value."""
+        out = bytearray()
+        self.encode(BytearraySink(out))
+        return bytes(out)

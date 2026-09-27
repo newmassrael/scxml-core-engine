@@ -1020,6 +1020,13 @@ moves the cursor only when the whole map decoded, `Encode(codec.SceSink)` and
 `EncodeToBytes() ([]byte, error)`; its refusals are the typed
 `codec.ErrCborMalformed`, `ErrCborRequiredKeyMissing`, `ErrCborWrongLength`,
 `ErrCborTooDeep` and `ErrCborOutOfRange`, and `codec/cbor.go` holds its items.
+Python generates a dataclass (an optional entry `Optional[T] = None`) whose
+`decode(cursor)` answers `None` for every refusal — the Python codec
+convention — with the cursor returned to where it was (`SceCursor.mark` /
+`reset`), and whose `encode` / `encode_to_bytes` raise
+`sce_forge_runtime.cbor.CborOutOfRange` or `CborWrongLength` for a value past
+its bound, an integer past its declared width among them: a Python `int`
+carries no width of its own. `sce_forge_runtime.cbor` holds its items.
 An enum whose carrier is signed refuses a negative number on encode on every
 backend: no CBOR unsigned integer carries it.
 The backends are held to the same bytes and the same refusals by one oracle —

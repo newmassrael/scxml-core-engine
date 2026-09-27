@@ -114,6 +114,16 @@ class SceCursor:
             raise NeedMoreBytes()
         self._pos += n
 
+    def mark(self) -> int:
+        """The cursor's position, for :meth:`reset` to return to — how a
+        decode that reads item by item (an ``sce:encoding="cbor"`` map)
+        leaves the cursor where it was when the whole value is refused."""
+        return self._pos
+
+    def reset(self, mark: int) -> None:
+        """Return to a position :meth:`mark` answered."""
+        self._pos = mark
+
     def _read_vle_inner(self, max_bits: int) -> int:
         """Read a base-128 variable-length encoded unsigned value of up
         to ``max_bits`` payload width. LSB-first byte order; leading
