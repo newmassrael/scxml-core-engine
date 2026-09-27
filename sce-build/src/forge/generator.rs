@@ -9765,20 +9765,26 @@ fn tlv_chain_guard(
     use crate::forge::codec_failure::CodecFailure;
     use crate::forge::model::TlvOverflowPolicy;
     let reject = matches!(on_overflow, TlvOverflowPolicy::Reject);
+    // Both are positional failures, which every backend raises with a
+    // statement (`codec_failure::tests::only_a_positional_failure_has_a_raise_statement`).
+    let raise = |f: CodecFailure| {
+        f.raise_stmt(lang)
+            .expect("a positional codec failure has a raise statement on every backend")
+    };
     if !entry_flag {
         return if reject {
             chain_guard_if(
                 lang,
                 indent,
                 chain_cursor_nonempty(lang),
-                CodecFailure::TlvChainOverflow.raise_stmt(lang),
+                raise(CodecFailure::TlvChainOverflow),
             )
         } else {
             String::new()
         };
     }
-    let truncated = CodecFailure::NeedMoreBytes.raise_stmt(lang);
-    let overflow = CodecFailure::TlvChainOverflow.raise_stmt(lang);
+    let truncated = raise(CodecFailure::NeedMoreBytes);
+    let overflow = raise(CodecFailure::TlvChainOverflow);
     let and = if matches!(lang, crate::generator::Language::Python) {
         "and"
     } else {

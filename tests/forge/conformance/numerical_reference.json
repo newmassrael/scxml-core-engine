@@ -3238,6 +3238,38 @@
           "encoded": [166, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 244, 12, 0],
           "note": "a present false and a present zero are written, and are not absence"
         }
+      ],
+      "rejects": [
+        {
+          "why": "the required pattern entry (key 3) is absent from a four-entry map",
+          "encoded": [164, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 5, 66, 222, 173, 7, 245],
+          "error": "cbor-required-key-missing"
+        },
+        {
+          "why": "the id is fifteen bytes where its declared length is sixteen",
+          "encoded": [165, 0, 79, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 245],
+          "error": "cbor-wrong-length"
+        },
+        {
+          "why": "key 7 is given twice",
+          "encoded": [166, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 245, 7, 244],
+          "error": "cbor-malformed"
+        },
+        {
+          "why": "pattern holds 300, past a uint8",
+          "encoded": [165, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 25, 1, 44, 5, 66, 222, 173, 7, 245],
+          "error": "cbor-out-of-range"
+        },
+        {
+          "why": "a text string where the urgent entry expects a truth value",
+          "encoded": [165, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 97, 120],
+          "error": "cbor-malformed"
+        },
+        {
+          "why": "an indefinite-length map, which the codec never reads",
+          "encoded": [191, 255],
+          "error": "cbor-malformed"
+        }
       ]
     },
     "codec_zenoh_ext_envelope": {

@@ -31,15 +31,39 @@ pub enum CodecFailure {
     /// A `<sce:tlv-chain>` carried more entries than `max-depth` admits,
     /// under `on-overflow="reject"`.
     TlvChainOverflow,
+    /// An `sce:encoding="cbor"` map is not one the codec reads
+    /// (SCE_FORGE.md §4.6.1): not a definite-length map, a key given twice,
+    /// or an entry of the wrong major type.
+    CborMalformed,
+    /// A CBOR map lacks an entry declared `sce:required="true"`.
+    CborRequiredKeyMissing,
+    /// A CBOR byte string is not its declared `sce:length`.
+    CborWrongLength,
+    /// A CBOR value does not fit its declared type or `sce:max-size`.
+    CborOutOfRange,
 }
 
 impl CodecFailure {
+    /// Every failure, in declaration order — the set `parse` accepts.
+    pub const ALL: [CodecFailure; 6] = [
+        CodecFailure::NeedMoreBytes,
+        CodecFailure::TlvChainOverflow,
+        CodecFailure::CborMalformed,
+        CodecFailure::CborRequiredKeyMissing,
+        CodecFailure::CborWrongLength,
+        CodecFailure::CborOutOfRange,
+    ];
+
     /// Kebab-case name naming this failure in the conformance oracle's
     /// reject vectors.
     pub fn wire_name(self) -> &'static str {
         match self {
             CodecFailure::NeedMoreBytes => "need-more-bytes",
             CodecFailure::TlvChainOverflow => "tlv-chain-overflow",
+            CodecFailure::CborMalformed => "cbor-malformed",
+            CodecFailure::CborRequiredKeyMissing => "cbor-required-key-missing",
+            CodecFailure::CborWrongLength => "cbor-wrong-length",
+            CodecFailure::CborOutOfRange => "cbor-out-of-range",
         }
     }
 
@@ -47,42 +71,52 @@ impl CodecFailure {
     /// name is an authoring mistake, and failing the render is how the
     /// author hears about it.
     pub fn parse(name: &str) -> Result<Self, String> {
-        [CodecFailure::NeedMoreBytes, CodecFailure::TlvChainOverflow]
+        Self::ALL
             .into_iter()
             .find(|f| f.wire_name() == name)
             .ok_or_else(|| {
                 format!(
                     "unknown codec failure '{name}' — expected one of: {}",
-                    [CodecFailure::NeedMoreBytes, CodecFailure::TlvChainOverflow]
-                        .map(|f| f.wire_name())
-                        .join(", ")
+                    Self::ALL.map(|f| f.wire_name()).join(", ")
                 )
             })
     }
 
-    /// The statement a generated decode uses to signal this failure.
-    pub fn raise_stmt(self, lang: Language) -> &'static str {
-        match (lang, self) {
-            (Language::Rust, CodecFailure::NeedMoreBytes) => {
-                "return Err(CodecError::NeedMoreBytes);"
-            }
-            (Language::Rust, CodecFailure::TlvChainOverflow) => {
-                "return Err(CodecError::TlvChainOverflow);"
-            }
-            (Language::C11, CodecFailure::NeedMoreBytes) => {
-                "return SCE_FORGE_CODEC_NEED_MORE_BYTES;"
-            }
-            (Language::C11, CodecFailure::TlvChainOverflow) => {
-                "return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;"
-            }
-            (Language::Cpp, _) => "return std::nullopt;",
-            (Language::Kotlin, _) => "return null",
-            (Language::Go, CodecFailure::NeedMoreBytes) => "return nil, codec.ErrNeedMoreBytes",
-            (Language::Go, CodecFailure::TlvChainOverflow) => {
-                "return nil, codec.ErrTlvChainOverflow"
-            }
-            (Language::Python, CodecFailure::NeedMoreBytes) => "raise NeedMoreBytes()",
-            (Language::Python, CodecFailure::TlvChainOverflow) => "raise TlvChainOverflow()",
+    /// Whether this is a failure of the CBOR map reader rather than of a
+    /// positional decode.
+    pub fn is_cbor(self) -> bool {
+        matches!(
+            self,
+            CodecFailure::CborMalformed
+                | CodecFailure::CborRequiredKeyMissing
+                | CodecFailure::CborWrongLength
+                | CodecFailure::CborOutOfRange
+        )
+    }
+
+    /// The statement a generated positional decode uses to signal this
+    /// failure. `None` for a CBOR failure: no generated statement raises
+    /// one — the runtime's CBOR reader and the CBOR codec templates return
+    /// it as a value (SCE_FORGE.md §4.6.1).
+    pub fn raise_stmt(self, lang: Language) -> Option<&'static str> {
+        let truncated = matches!(self, CodecFailure::NeedMoreBytes);
+        match self {
+            CodecFailure::NeedMoreBytes | CodecFailure::TlvChainOverflow => Some(match lang {
+                Language::Rust if truncated => "return Err(CodecError::NeedMoreBytes);",
+                Language::Rust => "return Err(CodecError::TlvChainOverflow);",
+                Language::C11 if truncated => "return SCE_FORGE_CODEC_NEED_MORE_BYTES;",
+                Language::C11 => "return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;",
+                Language::Cpp => "return std::nullopt;",
+                Language::Kotlin => "return null",
+                Language::Go if truncated => "return nil, codec.ErrNeedMoreBytes",
+                Language::Go => "return nil, codec.ErrTlvChainOverflow",
+                Language::Python if truncated => "raise NeedMoreBytes()",
+                Language::Python => "raise TlvChainOverflow()",
+            }),
+            CodecFailure::CborMalformed
+            | CodecFailure::CborRequiredKeyMissing
+            | CodecFailure::CborWrongLength
+            | CodecFailure::CborOutOfRange => None,
         }
     }
 
@@ -100,6 +134,23 @@ impl CodecFailure {
             }
             (Language::Go, CodecFailure::NeedMoreBytes) => Some("codec.ErrNeedMoreBytes"),
             (Language::Go, CodecFailure::TlvChainOverflow) => Some("codec.ErrTlvChainOverflow"),
+            // The CBOR reader's refusals are named on Rust, whose decode
+            // returns the runtime's `CodecError`. C11 and Go do not lower a
+            // CBOR codec yet (`forge::cbor_codec::lowers`), so nothing there
+            // can be observed; the arm names that instead of a symbol.
+            (Language::Rust, CodecFailure::CborMalformed) => Some("CodecError::CborMalformed"),
+            (Language::Rust, CodecFailure::CborRequiredKeyMissing) => {
+                Some("CodecError::CborRequiredKeyMissing")
+            }
+            (Language::Rust, CodecFailure::CborWrongLength) => Some("CodecError::CborWrongLength"),
+            (Language::Rust, CodecFailure::CborOutOfRange) => Some("CodecError::CborOutOfRange"),
+            (
+                Language::C11 | Language::Go,
+                CodecFailure::CborMalformed
+                | CodecFailure::CborRequiredKeyMissing
+                | CodecFailure::CborWrongLength
+                | CodecFailure::CborOutOfRange,
+            ) => None,
             // Cpp / Kotlin / Python: refusal is observable, its name is not.
             (Language::Cpp | Language::Kotlin | Language::Python, _) => None,
         }
@@ -114,7 +165,7 @@ mod tests {
     /// author and this table cannot disagree about spelling.
     #[test]
     fn wire_names_round_trip() {
-        for f in [CodecFailure::NeedMoreBytes, CodecFailure::TlvChainOverflow] {
+        for f in CodecFailure::ALL {
             assert_eq!(CodecFailure::parse(f.wire_name()), Ok(f));
         }
     }
@@ -138,21 +189,39 @@ mod tests {
             Language::Go,
             Language::Python,
         ] {
-            for f in [CodecFailure::NeedMoreBytes, CodecFailure::TlvChainOverflow] {
-                if let Some(symbol) = f.observable_symbol(lang) {
+            for f in CodecFailure::ALL {
+                if let (Some(symbol), Some(raise)) = (f.observable_symbol(lang), f.raise_stmt(lang))
+                {
                     assert!(
-                        f.raise_stmt(lang).contains(symbol),
-                        "{lang:?} {f:?}: raise `{}` does not mention observable `{symbol}`",
-                        f.raise_stmt(lang),
+                        raise.contains(symbol),
+                        "{lang:?} {f:?}: raise `{raise}` does not mention observable `{symbol}`",
                     );
                 }
             }
         }
     }
 
-    /// The two failures must be distinguishable wherever they are
-    /// observable at all — a backend that named both the same would let a
-    /// reject vector pass on the wrong refusal.
+    /// A positional failure is raised by a generated statement on every
+    /// backend, and a CBOR one by none — the reader returns it.
+    #[test]
+    fn only_a_positional_failure_has_a_raise_statement() {
+        for lang in [
+            Language::Rust,
+            Language::C11,
+            Language::Cpp,
+            Language::Kotlin,
+            Language::Go,
+            Language::Python,
+        ] {
+            for f in CodecFailure::ALL {
+                assert_eq!(f.raise_stmt(lang).is_some(), !f.is_cbor(), "{lang:?} {f:?}");
+            }
+        }
+    }
+
+    /// The failures must be distinguishable wherever they are observable at
+    /// all — a backend that named two the same would let a reject vector
+    /// pass on the wrong refusal.
     #[test]
     fn observable_failures_are_distinguishable() {
         for lang in [
@@ -163,11 +232,18 @@ mod tests {
             Language::Go,
             Language::Python,
         ] {
-            let short = CodecFailure::NeedMoreBytes.observable_symbol(lang);
-            let over = CodecFailure::TlvChainOverflow.observable_symbol(lang);
-            if short.is_some() || over.is_some() {
-                assert_ne!(short, over, "{lang:?} names both failures identically");
-            }
+            let named: Vec<&str> = CodecFailure::ALL
+                .into_iter()
+                .filter_map(|f| f.observable_symbol(lang))
+                .collect();
+            let mut distinct = named.clone();
+            distinct.sort_unstable();
+            distinct.dedup();
+            assert_eq!(
+                distinct.len(),
+                named.len(),
+                "{lang:?} names two failures identically"
+            );
         }
     }
 }

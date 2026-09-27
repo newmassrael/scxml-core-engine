@@ -2344,6 +2344,16 @@ fn fold_reject_vectors(
             .and_then(|v| v.as_str())
             .ok_or_else(|| format!("{at} must name the failure it expects in 'error'"))?;
         let failure = CodecFailure::parse(error_name).map_err(|e| format!("{at}: {e}"))?;
+        // Only a CBOR map reader can refuse with a CBOR failure; naming one
+        // on a positional codec is a vector no decode could ever satisfy.
+        let codec_is_cbor = matches!(fixture.spec, FixtureSpec::Codec { cbor: true, .. });
+        if failure.is_cbor() && !codec_is_cbor {
+            return Err(format!(
+                "{at}: '{error_name}' is a CBOR map failure, and {} is not an \
+                 sce:encoding=\"cbor\" codec",
+                fixture.name
+            ));
+        }
 
         let mut out = serde_json::Map::new();
         out.insert("why".into(), serde_json::Value::from(why));
