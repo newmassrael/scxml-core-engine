@@ -29,7 +29,7 @@
     { "name": "every other C0 control, lowercase hex", "text": "\u0000\u0001\u000b\u001f", "escaped": "\\u0000\\u0001\\u000b\\u001f" },
     { "name": "solidus is not escaped", "text": "a/b", "escaped": "a/b" },
     { "name": "DEL is not a C0 control", "text": "\u007f", "escaped": "\u007f" },
-    { "name": "non-ASCII is written as UTF-8", "text": "é漢😀", "escaped": "é漢😀" },
+    { "name": "non-ASCII is written as UTF-8: two, three and four bytes", "text": "é€😀", "escaped": "é€😀" },
     { "name": "mixed", "text": "k=\"v\"\n\u0002", "escaped": "k=\\\"v\\\"\\n\\u0002" }
   ]
 }

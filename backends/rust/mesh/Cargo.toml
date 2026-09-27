@@ -43,9 +43,9 @@ sce-portable-bytes = { path = "../portable-bytes", default-features = false }
 # shape every generated send site fills rather than a second copy of it.
 # Without `http-send`, which is the runtime's own transport and not Mesh's.
 sce-rust-runtime = { path = "../runtime", default-features = false }
-# The `wss` feature's socket plumbing: the client and server the owner chose
-# for this binding (claudedocs/shared-calendar/README.md, 2026-09-25).
-# rustls with webpki roots, so a `wss://` client needs no system TLS library.
+# The `wss` feature's socket plumbing (SCE_MESH.md §mesh-18.4): the client
+# and server the owner chose for this binding on 2026-09-25. rustls with
+# webpki roots, so a `wss://` client needs no system TLS library.
 tokio = { version = "1", optional = true, default-features = false, features = ["net", "rt", "sync", "time", "macros"] }
 tokio-tungstenite = { version = "0.30", optional = true, default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
 futures-util = { version = "0.3", optional = true, default-features = false, features = ["sink", "std"] }

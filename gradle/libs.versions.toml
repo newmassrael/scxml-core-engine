@@ -11,8 +11,8 @@ compose-bom = "2025.03.00"
 activity-compose = "1.10.1"
 lifecycle = "2.9.3"
 core-ktx = "1.16.0"
-# The WebSocket binding's client (SCE_MESH.md §mesh-18), the owner's choice for
-# Android (claudedocs/shared-calendar/README.md, 2026-09-25).
+# The WebSocket binding's client (SCE_MESH.md §mesh-18.4), the owner's choice
+# for Android on 2026-09-25.
 okhttp = "5.5.0"
 
 [libraries]

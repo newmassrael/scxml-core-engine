@@ -72,8 +72,10 @@ class CrossLanguageLoopbackTest {
             link.connect()
             deliver(endpoint, events.next().also { assertEquals(LinkEvent.Ready("server"), it) })
 
-            // Text the escaping rules would get wrong if either side had its own.
-            val data = """{"n":1,"s":"q\"\\ \u0001 é 漢"}"""
+            // Text the escaping rules would get wrong if either side had its own:
+            // a quote, a backslash, a C0 control as JSON writes it, and a two-
+            // and a three-byte UTF-8 character (U+00E9, U+20AC).
+            val data = """{"n":1,"s":"q\"\\ \u0001 é €"}"""
             endpoint.send(
                 StateMachineEngine.HostSendRequest(
                     processorType = MESH_PROCESSOR_TYPE,
