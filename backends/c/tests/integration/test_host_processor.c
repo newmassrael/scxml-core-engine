@@ -321,7 +321,9 @@ static int the_registry_reports_what_it_holds(void) {
 
     int bad = 0;
     bad |= check("registry", "superseded handler calls", superseded.calls, 0);
-    bad |= check("registry", "current handler calls", current.calls, 1);
+    // Two, both to the current handler: its reply served the machine, which
+    // then made the fixture's second host-served send from `pairs`.
+    bad |= check("registry", "current handler calls", current.calls, 2);
     bad |= check("registry", "served", counter(&sm, "served"), 1);
 
     if (!statechart_host_processor_has_event_processor(&sm, DECLARED_TYPE)) {
@@ -375,9 +377,14 @@ static int a_reply_naming_an_undeclared_event_is_dropped(void) {
     // enum's zero value, which matches no transition — so the document's
     // counters are identical either way, and only the engine's own tally
     // separates them. A reply refused at the door never reaches the queue,
-    // so nothing is dequeued and discarded; one that was raised anyway is
-    // counted here.
-    bad |= check("undeclared-reply", "discarded", (int64_t)statechart_host_processor_discarded_external_events(&sm), 0);
+    // so nothing is dequeued and discarded for it; one that was raised anyway
+    // is counted here.
+    //
+    // The one discard that IS expected is the fixture's own `advance`: it
+    // moves on to `pairs` only for a machine the host served, and this one was
+    // not, so it matches no transition. The baseline is therefore 1, and a
+    // raised reply would make it 2.
+    bad |= check("undeclared-reply", "discarded", (int64_t)statechart_host_processor_discarded_external_events(&sm), 1);
     statechart_host_processor_destroy(&sm);
     return bad;
 }
