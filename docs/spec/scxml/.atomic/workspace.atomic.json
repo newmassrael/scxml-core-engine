@@ -8237,6 +8237,16 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
           "symbol": "isInvalidTarget",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/send.py",
+          "symbol": "is_supported_send_type",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/send.py",
+          "symbol": "is_invalid_target",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
