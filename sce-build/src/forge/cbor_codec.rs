@@ -18,6 +18,10 @@
 use crate::forge::error::{ForgeError, GenerateError};
 use crate::forge::generator::{ImportContext, LangCtx};
 use crate::forge::model::{CborEntry, CodecModel, SceType};
+
+// ⚠ An entry's `name` is the backend's field identifier
+// (`LangCtx::codec_field_id` — snake_case in Rust), the same spelling a
+// positional codec gives its fields; the map key is `key`, never the name.
 use crate::generator::Language;
 
 /// Whether `lang` generates a CBOR codec — the one answer the generator's
@@ -25,7 +29,7 @@ use crate::generator::Language;
 /// is run exactly where the generator admits it (the `lowers_may_fail`
 /// pattern).
 pub fn lowers(lang: Language) -> bool {
-    matches!(lang, Language::Rust)
+    matches!(lang, Language::Rust | Language::Kotlin)
 }
 
 /// Render a CBOR codec for `lang`.
@@ -50,7 +54,8 @@ pub fn render(
     }
     match lang {
         Language::Rust => render_rust(env, m, imports),
-        _ => unreachable!("`lowers` admits Rust alone"),
+        Language::Kotlin => render_kotlin(env, m, imports),
+        _ => unreachable!("`lowers` admits Rust and Kotlin alone"),
     }
 }
 
@@ -66,47 +71,51 @@ fn kind(entry: &CborEntry) -> &'static str {
     }
 }
 
-fn render_rust(
-    env: &minijinja::Environment,
+/// The carrier type of the enum `alias` names, as the import resolved it.
+fn enum_carrier(imports: &[ImportContext], alias: &str) -> Option<SceType> {
+    imports
+        .iter()
+        .find(|i| i.kind == "enum" && i.alias == alias)
+        .and_then(|i| i.enum_underlying.clone())
+}
+
+/// The context every backend's template reads: one entry per map entry, in
+/// declaration order and in key order, and the count of required entries.
+/// `value_type` is this backend's type for one value of the entry; the
+/// templates wrap it as their language makes an entry optional.
+fn common_context(
+    l: &LangCtx,
     m: &CodecModel,
     imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let l = LangCtx::new(Language::Rust, imports);
+    value_type: impl Fn(&CborEntry) -> String,
+) -> Result<serde_json::Map<String, serde_json::Value>, ForgeError> {
     let mut ctx = l.base_context(&m.name);
     l.insert_imports(&mut ctx, imports);
-
-    // A string or byte string is a view of the input, so the struct borrows
-    // only when one of its entries does.
-    let borrows = m
-        .cbor_entries
-        .iter()
-        .any(|e| matches!(e.sce_type, SceType::String | SceType::Bytes));
     let mut entries: Vec<serde_json::Value> = Vec::new();
     for e in &m.cbor_entries {
-        let value_type = match &e.sce_type {
-            SceType::String => "&'a str".to_string(),
-            SceType::Bytes => "&'a [u8]".to_string(),
-            other => l.type_name(other).into_owned(),
-        };
-        let field_type = if e.required {
-            value_type.clone()
-        } else {
-            format!("Option<{value_type}>")
-        };
         let mut entry = serde_json::json!({
-            "name": e.id,
+            "name": l.codec_field_id(&e.id),
             "key": e.key,
             "required": e.required,
             "kind": kind(e),
-            "value_type": value_type,
-            "field_type": field_type,
+            "value_type": value_type(e),
             "length": e.length,
             "max_size": e.max_size,
         });
         if let SceType::Enum(r) = &e.sce_type {
+            let carrier = enum_carrier(imports, &r.alias).ok_or_else(|| {
+                ForgeError::from(GenerateError::unsupported_at(
+                    format!(
+                        "codec '{}': entry '{}' names enum '{}', whose import resolved no carrier",
+                        m.name, e.id, r.alias
+                    ),
+                    m.source_location.clone(),
+                ))
+            })?;
             entry["enum_from_underlying"] = l.enum_from_underlying(&r.alias).into();
             entry["enum_to_underlying"] = l.codec_carrier_expr(&e.sce_type, "v").into();
             entry["enum_is_open"] = l.enum_is_open(&r.alias).into();
+            entry["carrier_type"] = l.type_name(&carrier).into_owned().into();
         }
         entries.push(entry);
     }
@@ -123,6 +132,60 @@ fn render_rust(
     );
     ctx.insert("entries".into(), entries.into());
     ctx.insert("entries_by_key".into(), by_key.into());
+    Ok(ctx)
+}
+
+fn render_kotlin(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let l = LangCtx::new(Language::Kotlin, imports);
+    let mut ctx = common_context(&l, m, imports, |e| l.type_name(&e.sce_type).into_owned())?;
+    // A required entry starts at its type's own default — for an enum the
+    // first declared variant — and is filled in by decode; an optional one
+    // starts absent.
+    if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
+        for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
+            entry["default"] = if e.required {
+                l.default_expr(&e.sce_type)
+            } else {
+                "null".to_string()
+            }
+            .into();
+        }
+    }
+    l.render(env, "codec_cbor", ctx)
+}
+
+fn render_rust(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let l = LangCtx::new(Language::Rust, imports);
+    // A string or byte string is a view of the input, so the struct borrows
+    // only when one of its entries does.
+    let borrows = m
+        .cbor_entries
+        .iter()
+        .any(|e| matches!(e.sce_type, SceType::String | SceType::Bytes));
+    let mut ctx = common_context(&l, m, imports, |e| match &e.sce_type {
+        SceType::String => "&'a str".to_string(),
+        SceType::Bytes => "&'a [u8]".to_string(),
+        other => l.type_name(other).into_owned(),
+    })?;
+    if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
+        for entry in entries.iter_mut() {
+            let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
+            entry["field_type"] = if entry["required"].as_bool() == Some(true) {
+                value_type
+            } else {
+                format!("Option<{value_type}>")
+            }
+            .into();
+        }
+    }
     ctx.insert("lifetime".into(), if borrows { "<'a>" } else { "" }.into());
     ctx.insert(
         "cursor_lifetime".into(),

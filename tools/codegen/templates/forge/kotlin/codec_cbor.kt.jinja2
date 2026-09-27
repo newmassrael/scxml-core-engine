@@ -1,0 +1,153 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- The read of one entry's value, as the expression bound to it; a refusal
+    returns `null` from `decodeAt`, this backend's decode convention. Every
+    CBOR item is the runtime's (`com.sce.forge.runtime.Cbor`). #}
+{% macro decode_value(e) -%}
+{%- if e.kind == "bool" -%}
+Cbor.readBool(c) ?: return null
+{%- elif e.kind == "text" -%}
+Cbor.readText(c, {{ e.max_size if e.max_size is not none else "null" }}) ?: return null
+{%- elif e.kind == "bytes" -%}
+Cbor.readBytes(c, {{ e.max_size if e.max_size is not none else "null" }}) ?: return null
+{%- elif e.kind == "bytes_exact" -%}
+Cbor.readBytesExact(c, {{ e.length }}) ?: return null
+{%- elif e.kind == "enum" -%}
+{{ e.enum_from_underlying }}((Cbor.readUintUpto(c, {{ e.carrier_type }}.MAX_VALUE.toULong()) ?: return null).to{{ e.carrier_type }}()){% if not e.enum_is_open %} ?: return null{% endif %}
+{%- elif e.value_type == "ULong" -%}
+Cbor.readUint(c) ?: return null
+{%- else -%}
+(Cbor.readUintUpto(c, {{ e.value_type }}.MAX_VALUE.toULong()) ?: return null).to{{ e.value_type }}()
+{%- endif -%}
+{%- endmacro %}
+{#- The write of one entry's value `v`, key already written. #}
+{% macro encode_value(e, indent) -%}
+{%- if e.kind == "bool" -%}
+Cbor.writeBool(w, v)?.let { return it }
+{%- elif e.kind == "text" -%}
+{% if e.max_size is not none %}if (v.encodeToByteArray().size > {{ e.max_size }}) return CodecError.CborOutOfRange
+{{ indent }}{% endif %}Cbor.writeText(w, v)?.let { return it }
+{%- elif e.kind == "bytes" -%}
+{% if e.max_size is not none %}if (v.size > {{ e.max_size }}) return CodecError.CborOutOfRange
+{{ indent }}{% endif %}Cbor.writeBytes(w, v)?.let { return it }
+{%- elif e.kind == "bytes_exact" -%}
+if (v.size != {{ e.length }}) return CodecError.CborWrongLength
+{{ indent }}Cbor.writeBytes(w, v)?.let { return it }
+{%- elif e.kind == "enum" -%}
+Cbor.writeUint(w, ({{ e.enum_to_underlying }}).toULong())?.let { return it }
+{%- else -%}
+Cbor.writeUint(w, v.toULong())?.let { return it }
+{%- endif -%}
+{%- endmacro %}
+{{ sce_map.source_marker(source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+package com.sce.generated.{{ package }}
+
+import com.sce.forge.runtime.Cbor
+import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.MutableListSink
+import com.sce.forge.runtime.SceCursor
+import com.sce.forge.runtime.SceSink
+{% for imp in all_imports %}
+{% if imp.include_stmt %}
+{{ imp.include_stmt }}
+{% endif %}
+{% endfor %}
+
+/**
+ * One CBOR map (SCE_FORGE.md §4.6.1). Decode takes the keys in any order and
+ * skips one this codec does not declare; encode writes the entries present in
+ * ascending key order, every head in its shortest form. A required entry
+ * starts at its type's default and an optional one absent (`null`), so
+ * `{{ struct_name }}()` is the infallible constructor every codec offers.
+ */
+data class {{ struct_name }}(
+{% for e in entries %}
+    /** Map key {{ e.key }}{% if e.required %}, required{% endif %}. */
+    var {{ e.name }}: {{ e.value_type }}{% if not e.required %}?{% endif %} = {{ e.default }},
+{% endfor %}
+) {
+    /**
+     * Encode this map into [w]; `null` on success. An entry whose value breaks
+     * its declared bound — an exact length, a maximum size — is refused, not
+     * written.
+     */
+    fun encode(w: SceSink): CodecError? {
+{% if optional_count %}
+        var count = {{ required_count }}UL
+{% for e in entries if not e.required %}
+        if ({{ e.name }} != null) count++
+{% endfor %}
+{% else %}
+        val count = {{ required_count }}UL
+{% endif %}
+        Cbor.writeMapHead(w, count)?.let { return it }
+{% for e in entries_by_key %}
+{% if e.required %}
+        run {
+            val v = {{ e.name }}
+            Cbor.writeUint(w, {{ e.key }}UL)?.let { return it }
+            {{ encode_value(e, "            ") }}
+        }
+{% else %}
+        {{ e.name }}?.let { v ->
+            Cbor.writeUint(w, {{ e.key }}UL)?.let { return it }
+            {{ encode_value(e, "            ") }}
+        }
+{% endif %}
+{% endfor %}
+        return null
+    }
+
+    /** [encode] into a new array; `null` when encode refuses the value. */
+    fun encodeToByteArray(): ByteArray? {
+        val out = mutableListOf<Byte>()
+        if (encode(MutableListSink(out)) != null) return null
+        return out.toByteArray()
+    }
+
+    companion object {
+        /**
+         * Decode one map from [cursor]. On success the cursor advances past
+         * it; `null` on any refusal, with the cursor left where it was.
+         */
+        fun decode(cursor: SceCursor): {{ struct_name }}? {
+            val mark = cursor.mark()
+            val value = decodeAt(cursor)
+            if (value == null) cursor.reset(mark)
+            return value
+        }
+
+        private fun decodeAt(c: SceCursor): {{ struct_name }}? {
+            val count = Cbor.readMapLen(c) ?: return null
+{% for e in entries %}
+            var {{ e.name }}: {{ e.value_type }}? = null
+{% endfor %}
+            var i = 0UL
+            while (i < count) {
+                i++
+                when (Cbor.readUint(c) ?: return null) {
+{% for e in entries_by_key %}
+                    {{ e.key }}UL -> {
+                        // A key given twice is not one map entry.
+                        if ({{ e.name }} != null) return null
+                        {{ e.name }} = {{ decode_value(e) }}
+                    }
+{% endfor %}
+                    else -> if (!Cbor.skip(c)) return null
+                }
+            }
+            return {{ struct_name }}(
+{% for e in entries %}
+                {{ e.name }} = {{ e.name }}{% if e.required %} ?: return null{% endif %},
+{% endfor %}
+            )
+        }
+    }
+}

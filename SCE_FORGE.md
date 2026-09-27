@@ -1001,7 +1001,13 @@ decoded — `encode(&mut impl SceSink)` and `encode_to_vec()`, every CBOR item
 read and written by the runtime's `sce_forge_runtime::cbor`. The refusals are
 typed: `CborMalformed`, `CborRequiredKeyMissing`, `CborWrongLength`,
 `CborTooDeep`, `CborOutOfRange`, and the existing `InvalidUtf8` /
-`UndeclaredEnumValue`. Every other backend refuses the document by name
+`UndeclaredEnumValue`. Kotlin generates the same codec as a data class (an
+optional entry nullable, `bytes` a `ByteArray`), `encode(SceSink):
+CodecError?`, `encodeToByteArray(): ByteArray?` and `decode(SceCursor)`,
+which answers `null` for every refusal — Kotlin's codec convention — and
+leaves the cursor where it was; `com.sce.forge.runtime.Cbor` holds its items.
+Both backends are held to the same bytes (the Rust `forge_cbor_codec` and
+Kotlin `CborCodecTest` suites over `codec_cbor_map`). Every other backend refuses the document by name
 (`generate/unsupported-feature`) until its generation lands, rather than
 emitting a type with no fields; the conformance harness schedules a CBOR
 fixture exactly where the generator admits it (`cbor_codec::lowers`).

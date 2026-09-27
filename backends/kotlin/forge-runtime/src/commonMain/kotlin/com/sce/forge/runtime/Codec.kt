@@ -37,6 +37,20 @@ sealed class CodecError {
     /// the next write. Only the bounded [ByteArraySink] can raise
     /// this; the growable [MutableListSink] is effectively infallible.
     object BufferOverflow : CodecError()
+    /// A `sce:encoding="cbor"` codec (SCE_FORGE.md §4.6.1) read bytes that
+    /// are not the CBOR it expects. Decode-side; Kotlin's `decode()`
+    /// collapses it to `null` as it does every decode failure.
+    object CborMalformed : CodecError()
+    /// A CBOR codec's map lacked an entry declared `sce:required="true"`.
+    object CborRequiredKeyMissing : CodecError()
+    /// A CBOR codec's `bytes` entry declared `sce:length` held another number
+    /// of bytes — raised by `encode()`; decode collapses it to `null`.
+    object CborWrongLength : CodecError()
+    /// A CBOR codec skipped an unknown entry nested deeper than 16.
+    object CborTooDeep : CodecError()
+    /// A CBOR codec's value exceeds its entry's width or `sce:max-size` —
+    /// raised by `encode()`; decode collapses it to `null`.
+    object CborOutOfRange : CodecError()
 }
 
 /// Read-only cursor over a borrowed input buffer. Decode bodies use
@@ -58,6 +72,21 @@ class SceCursor(private val buf: ByteArray, private var pos: Int = 0) {
         if (remaining() < n) return false
         pos += n
         return true
+    }
+
+    /// Where the cursor stands, to [reset] to — a decode that reads item by
+    /// item (a CBOR map) leaves the cursor untouched when it refuses.
+    fun mark(): Int = pos
+
+    /// Return to a position [mark] answered.
+    fun reset(mark: Int) {
+        pos = mark
+    }
+
+    /// The next byte, advancing past it; `null` at the end of the input.
+    fun readByte(): Int? {
+        if (remaining() < 1) return null
+        return buf[pos++].toInt() and 0xFF
     }
 
     /// Read a base-128 variable-length encoded unsigned value of up to

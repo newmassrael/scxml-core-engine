@@ -20369,7 +20369,7 @@ impl LangCtx {
     /// and C11 only on a gated field's absent branch; both ask
     /// [`enum_default_expr`](Self::enum_default_expr) directly. Go has
     /// only its language's zero value, which no emission can change.
-    fn default_expr(&self, ty: &SceType) -> String {
+    pub(crate) fn default_expr(&self, ty: &SceType) -> String {
         if let SceType::Enum(r) = ty {
             return self.enum_default_expr(&r.alias);
         }
@@ -20695,7 +20695,7 @@ impl LangCtx {
     }
 
     /// Codec field ID: Go PascalCase, Rust/Python/C11 snake_case, others as-is.
-    fn codec_field_id(&self, id: &str) -> String {
+    pub(crate) fn codec_field_id(&self, id: &str) -> String {
         match self.lang {
             crate::generator::Language::Go => filters::to_pascal_case(id.to_string()),
             crate::generator::Language::Rust
