@@ -32,7 +32,16 @@
 {% if f.fields %}
         let decoded = &case["decoded"];
 {% for field in f.fields %}
+{% if field.optional %}
+        {# An absent entry is JSON `null` in the case and `None` in the struct. #}
+        let input_{{ field.name | to_snake_case }} = if decoded["{{ field.name }}"].is_null() {
+            None
+        } else {
+            Some({{ ('decoded["' ~ field.name ~ '"]') | rust_unmarshal(field.type) }})
+        };
+{% else %}
         let input_{{ field.name | to_snake_case }} = {{ ('decoded["' ~ field.name ~ '"]') | rust_unmarshal(field.type) }};
+{% endif %}
 {% endfor %}
 {% endif %}
         let expected_bytes: Vec<u8> = case["encoded"]
@@ -44,7 +53,9 @@
 
         let encoded = {{ f.name | to_pascal_case }} {
 {% for field in f.fields %}
-{% if field.type == "bytes" %}
+{% if field.type == "bytes" and field.optional %}
+            {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }}.as_deref(),
+{% elif field.type == "bytes" %}
             {# Borrowed zero-copy: the codec field is `&'a [u8]`, so bind a
                borrow of the owned oracle `Vec<u8>` (alive through the encode
                call) rather than an owned clone. #}
@@ -59,7 +70,14 @@
 {% endif %}
 {% endfor %}
         }
+{% if f.cbor %}
+        {# A CBOR encode refuses a value past its declared bound, so it
+           returns a Result (SCE_FORGE.md §4.6.1); every case is in bounds. #}
+        .encode_to_vec()
+        .expect("{{ f.name }} encode must succeed");
+{% else %}
         .encode_to_vec();
+{% endif %}
         assert_eq!(
             encoded, expected_bytes,
             "{{ f.name }} case {i} encode"
@@ -73,7 +91,7 @@
 {% if field.type == "bytes" %}
         assert_eq!(
             round_tripped.{{ field.name | to_snake_case }},
-            input_{{ field.name | to_snake_case }}.as_slice(),
+            input_{{ field.name | to_snake_case }}.{% if field.optional %}as_deref(){% else %}as_slice(){% endif %},
             "{{ f.name }} case {i} decode {{ field.name }}"
         );
 {% elif field.type == "string" %}

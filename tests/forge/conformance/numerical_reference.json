@@ -3213,6 +3213,33 @@
     }
   },
   "codecs": {
+    "codec_cbor_map": {
+      "fixture": "CodecCborMap",
+      "signature": "(raw: &[u8]) <-> CBOR map {0: id bytes len 16, 1: source text, 3: pattern uint8, 5: payload bytes, 7?: urgent bool, 12?: deadline uint64}",
+      "description": "SCE_FORGE.md §4.6.1: an integer-keyed CBOR map written in RFC 8949's deterministic encoding — keys ascending, shortest heads — with an optional entry written only when present. `null` in a case is an absent optional entry. id = 00 01 … 0f, source = \"node-a\" (6e 6f 64 65 2d 61), payload = de ad.",
+      "cases": [
+        {
+          "decoded": { "source": "node-a", "id": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], "pattern": 3, "payload": [222, 173], "deadline": null, "urgent": true },
+          "encoded": [165, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 245],
+          "note": "five entries (0xa5); the absent deadline is not written"
+        },
+        {
+          "decoded": { "source": "node-a", "id": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], "pattern": 3, "payload": [222, 173], "deadline": 4294967296, "urgent": true },
+          "encoded": [166, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 245, 12, 27, 0, 0, 0, 1, 0, 0, 0, 0],
+          "note": "deadline 2^32 needs the 8-byte head (0x1b), and key 12 follows key 7"
+        },
+        {
+          "decoded": { "source": "node-a", "id": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], "pattern": 3, "payload": [222, 173], "deadline": null, "urgent": null },
+          "encoded": [164, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173],
+          "note": "only the four required entries"
+        },
+        {
+          "decoded": { "source": "node-a", "id": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], "pattern": 3, "payload": [222, 173], "deadline": 0, "urgent": false },
+          "encoded": [166, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 244, 12, 0],
+          "note": "a present false and a present zero are written, and are not absence"
+        }
+      ]
+    },
     "codec_zenoh_ext_envelope": {
       "fixture": "CodecZenohExtEnvelope",
       "signature": "(raw: &[u8]) -> {header_flags: u8 @ byte 0, extensions: tlv-chain<codec_zenoh_ext_entry> max-depth=8 on-overflow=reject terminate-on=entry-flag(Z)}",

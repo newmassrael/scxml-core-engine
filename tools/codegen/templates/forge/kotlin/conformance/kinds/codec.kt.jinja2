@@ -29,7 +29,14 @@
             val decoded = caseEl.jsonObject["decoded"]!!.jsonObject
 {% endif %}
 {% for field in f.fields %}
+{% if field.optional %}
+            {# An absent entry is JSON `null` in the case and `null` in the class. #}
+            val input{{ field.name | to_pascal_case }} = decoded["{{ field.name }}"]!!.let { el ->
+                if (el is kotlinx.serialization.json.JsonNull) null else {{ 'el' | kt_unmarshal(field.type) }}
+            }
+{% else %}
             val input{{ field.name | to_pascal_case }} = {{ ('decoded["' ~ field.name ~ '"]!!') | kt_unmarshal(field.type) }}
+{% endif %}
 {% endfor %}
             val expectedBytes = caseEl.jsonObject["encoded"]!!.jsonArray
                 .map { it.jsonPrimitive.int.toByte() }
@@ -40,7 +47,14 @@
                 {{ field.name }} = input{{ field.name | to_pascal_case }}{% if not loop.last %},{% endif %}
 {% endfor %}
             )
+{% if f.cbor %}
+            {# A CBOR encode refuses a value past its declared bound with
+               `null` (SCE_FORGE.md §4.6.1); every case is in bounds. #}
             val encoded = valueObj.encodeToByteArray()
+                ?: error("{{ f.name }} case $i encode refused")
+{% else %}
+            val encoded = valueObj.encodeToByteArray()
+{% endif %}
             assertTrue(
                 encoded.contentEquals(expectedBytes),
                 "{{ f.name }} case $i encode: actual=${encoded.joinToString()} expected=${expectedBytes.joinToString()}",
@@ -53,7 +67,8 @@
 {% if field.type == "bytes" %}
             assertTrue(
                 roundTripped.{{ field.name }}.contentEquals(input{{ field.name | to_pascal_case }}),
-                "{{ f.name }} case $i decode {{ field.name }}: actual_size=${roundTripped.{{ field.name }}.size} expected_size=${input{{ field.name | to_pascal_case }}.size}",
+{% set q = '?' if field.optional else '' %}
+                "{{ f.name }} case $i decode {{ field.name }}: actual_size=${roundTripped.{{ field.name }}{{ q }}.size} expected_size=${input{{ field.name | to_pascal_case }}{{ q }}.size}",
             )
 {% else %}
             assertEquals(

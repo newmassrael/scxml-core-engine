@@ -1666,8 +1666,14 @@
       "name": "codec_cbor_map",
       "kind": "codec",
       "ref_section": "codecs",
-      "oracle_eligible": false,
-      "fields": []
+      "fields": [
+        { "name": "source", "type": "string", "compare": "equality" },
+        { "name": "id", "type": "bytes", "compare": "equality" },
+        { "name": "pattern", "type": "u8", "compare": "equality" },
+        { "name": "payload", "type": "bytes", "compare": "equality" },
+        { "name": "deadline", "type": "u64", "compare": "equality" },
+        { "name": "urgent", "type": "bool", "compare": "equality" }
+      ]
     },
     {
       "name": "codec_flags_basic",

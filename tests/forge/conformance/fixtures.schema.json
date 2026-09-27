@@ -463,6 +463,10 @@
             "kind"
           ],
           "properties": {
+            "cbor": {
+              "description": "The document is `sce:encoding=\"cbor\"` (SCE_FORGE.md §4.6.1): its encode can refuse a value, so a fragment unwraps the encode's result, and its non-required entries are `optional` fields. Derived from the same parse the generator reads, like `has_test_vectors`; fixtures.json never states it.",
+              "type": "boolean"
+            },
             "fields": {
               "type": "array",
               "items": {
@@ -781,6 +785,10 @@
         },
         "name": {
           "type": "string"
+        },
+        "optional": {
+          "description": "The field may be absent — an entry of an `sce:encoding=\"cbor\"` codec not declared `sce:required=\"true\"` (SCE_FORGE.md §4.6.1), which each language carries as its optional type. A round-trip case writes an absent value as JSON `null`. Derived from the document at render time, like `has_test_vectors`; fixtures.json never states it.",
+          "type": "boolean"
         },
         "type": {
           "$ref": "#/definitions/CanonicalType"

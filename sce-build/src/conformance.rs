@@ -280,6 +280,13 @@ pub struct StructField {
     #[serde(rename = "type")]
     pub ty: CanonicalType,
     pub compare: CompareMode,
+    /// The field may be absent — an entry of an `sce:encoding="cbor"` codec
+    /// not declared `sce:required="true"` (SCE_FORGE.md §4.6.1), which each
+    /// language carries as its optional type. A round-trip case writes an
+    /// absent value as JSON `null`. Derived from the document at render
+    /// time, like `has_test_vectors`; fixtures.json never states it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub optional: bool,
 }
 
 /// One `<sce:variant name="..." value="..."/>` of an `sce:kind="enum"`.
@@ -604,6 +611,13 @@ pub enum FixtureSpec {
         /// single source of truth.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         has_test_vectors: bool,
+        /// The document is `sce:encoding="cbor"` (SCE_FORGE.md §4.6.1): its
+        /// encode can refuse a value, so a fragment unwraps the encode's
+        /// result, and its non-required entries are `optional` fields.
+        /// Derived from the same parse the generator reads, like
+        /// `has_test_vectors`; fixtures.json never states it.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        cbor: bool,
     },
     /// Periodic timer (`SCE_FORGE.md` §4.10). ONE per document — the
     /// generated class wraps a single `ITimer&` and exposes `start()`,
@@ -1207,9 +1221,25 @@ impl Manifest {
                     }
                 }
                 FixtureSpec::Codec {
-                    fields: _,
+                    fields,
                     has_test_vectors,
+                    cbor,
                 } => {
+                    if *cbor {
+                        return Err(format!(
+                            "fixture {}: codec `cbor` is derived from the \
+                             SCXML (sce:encoding); remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
+                    if let Some(field) = fields.iter().find(|field| field.optional) {
+                        return Err(format!(
+                            "fixture {}: field `{}` states `optional`, which is \
+                             derived from the SCXML (sce:required on a CBOR \
+                             entry); remove it from fixtures.json",
+                            f.name, field.name
+                        ));
+                    }
                     // RFC §synth-5-B empty-codec rule: zero-field codecs
                     // (Zenoh KeepAlive et al.) are permitted. The
                     // round-trip test body still asserts encode →
@@ -1980,6 +2010,15 @@ fn read_algorithm_may_fail(scxml_path: &Path, fixture_name: &str) -> Result<bool
 /// Whether the codec fixture's document is `sce:encoding="cbor"`, asked of
 /// the same parse the generator reads.
 fn read_codec_is_cbor(scxml_path: &Path, fixture_name: &str) -> Result<bool, String> {
+    Ok(read_codec_model(scxml_path, fixture_name)?.encoding
+        == crate::forge::model::CodecEncoding::Cbor)
+}
+
+/// The codec fixture's document, as the generator parses it.
+fn read_codec_model(
+    scxml_path: &Path,
+    fixture_name: &str,
+) -> Result<crate::forge::model::CodecModel, String> {
     let text = crate::load_forge_source(scxml_path, &[])
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?
         .positions
@@ -1987,14 +2026,46 @@ fn read_codec_is_cbor(scxml_path: &Path, fixture_name: &str) -> Result<bool, Str
     match crate::forge::parser::parse_forge(&text, crate::DocumentLabel::symmetric(fixture_name))
         .map_err(|e| format!("{}: {e}", scxml_path.display()))?
     {
-        Some(crate::forge::model::ForgeDocument::Codec(m)) => {
-            Ok(m.encoding == crate::forge::model::CodecEncoding::Cbor)
-        }
+        Some(crate::forge::model::ForgeDocument::Codec(m)) => Ok(m),
         _ => Err(format!(
             "fixture {fixture_name}: the manifest says `codec`, and {} is not a codec document",
             scxml_path.display()
         )),
     }
+}
+
+/// Fill a CBOR codec fixture's derived shape from its document: whether it
+/// is CBOR, and which listed fields are optional. Every listed field of a
+/// CBOR codec must name one of its entries — a manifest field the document
+/// does not declare would be asserted against a struct member that does not
+/// exist, which the fragment would report as a compile error rather than as
+/// the manifest's.
+fn derive_codec_cbor_shape(
+    scxml_path: &Path,
+    fixture_name: &str,
+    fields: &mut [StructField],
+    cbor: &mut bool,
+) -> Result<(), String> {
+    let model = read_codec_model(scxml_path, fixture_name)?;
+    *cbor = model.encoding == crate::forge::model::CodecEncoding::Cbor;
+    if !*cbor {
+        return Ok(());
+    }
+    for field in fields.iter_mut() {
+        let entry = model
+            .cbor_entries
+            .iter()
+            .find(|e| e.id == field.name)
+            .ok_or_else(|| {
+                format!(
+                    "fixture {fixture_name}: field `{}` is not an entry of the CBOR codec {}",
+                    field.name,
+                    scxml_path.display()
+                )
+            })?;
+        field.optional = !entry.required;
+    }
+    Ok(())
 }
 
 /// The oracle section a transform with a holder is judged under.
@@ -2518,8 +2589,13 @@ pub fn render_harness(
                 }
             }
             FixtureSpec::Codec {
-                has_test_vectors, ..
+                fields,
+                has_test_vectors,
+                cbor,
             } => {
+                if document_exists(&scxml_path) {
+                    derive_codec_cbor_shape(&scxml_path, &fixture_name, fields, cbor)?;
+                }
                 // RFC §synth-5-B test-vector: enrich the manifest with the
                 // SCXML-derived `<sce:test-vector>` flag so the per-language
                 // harness fragment can fold the per-fixture sidecar's failure
