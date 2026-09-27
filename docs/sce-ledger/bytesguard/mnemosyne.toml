@@ -127,6 +127,10 @@ scan_exclusions = [
     "sce-build/build.rs",
     "backends/go/forge-runtime/conformance/",
     "backends/rust/link-runtime/",
+    # The Rust Mesh crate. Measured 2026-09-27: no §bytesguard- cite in it —
+    # its own are the Mesh ledger's `§mesh-*` and, in generated codecs,
+    # `§synth-5`.
+    "backends/rust/mesh/",
     "backends/rust/lua/",
     "backends/rust/portable-bytes/",
     "backends/rust/probes/",

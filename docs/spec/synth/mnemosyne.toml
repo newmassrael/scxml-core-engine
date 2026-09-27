@@ -146,6 +146,11 @@ scan_exclusions = [
     "backends/go/forge-runtime/conformance/",
     "backends/rust/link-runtime/",
     "backends/rust/lua/",
+    # The Rust Mesh crate. Its 12 §synth-5 cites (measured 2026-09-27) are all
+    # in `src/generated/`, emitted from the forge algorithm templates `paths`
+    # scans; its hand-written router core cites the Mesh ledger's `§mesh-*`
+    # and nothing here.
+    "backends/rust/mesh/",
     "backends/rust/portable-bytes/",
     "backends/rust/probes/",
     "backends/rust/runtime/tests/",
