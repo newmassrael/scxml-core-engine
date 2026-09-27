@@ -325,14 +325,14 @@ use crate::comment_text;
 use crate::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmStmt, BackpressurePolicy, BitSize,
     BoundedCollectionModel, BufferPoolModel, BufferPoolVariant, CachePolicy, CapacitySource,
-    CodecField, CodecModel, CodecTestVector, CodecVariant, CollectionOrdering, ConcurrencyMode,
-    ConditionModel, CountRef, DecodedFieldValue, DecodedValue, Direction, Endian, EnumModel,
-    EventSchemaModel, FilterModel, FilterType, FlagDef, FoldBody, ForgeDocument, ForgeField,
-    InboxOrdering, InterpolationMethod, InterpolationModel, LinkClass, LinkModel, LookupModel,
-    MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, PresentIfPredicate, PresentIfScope,
-    ProcedureHelper, ProcedureModel, ProcedureState, ProcedureTransition, SceType, TestVector,
-    TestVectorValue, TimerModel, TlvOverflowPolicy, TlvTerminateStrategy, TransformModel,
-    ValidatorModel, WorkerModel,
+    CodecEncoding, CodecField, CodecModel, CodecTestVector, CodecVariant, CollectionOrdering,
+    ConcurrencyMode, ConditionModel, CountRef, DecodedFieldValue, DecodedValue, Direction, Endian,
+    EnumModel, EventSchemaModel, FilterModel, FilterType, FlagDef, FoldBody, ForgeDocument,
+    ForgeField, InboxOrdering, InterpolationMethod, InterpolationModel, LinkClass, LinkModel,
+    LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, PresentIfPredicate,
+    PresentIfScope, ProcedureHelper, ProcedureModel, ProcedureState, ProcedureTransition, SceType,
+    TestVector, TestVectorValue, TimerModel, TlvOverflowPolicy, TlvTerminateStrategy,
+    TransformModel, ValidatorModel, WorkerModel,
 };
 use crate::forge::page::{Indent, Node, Part, Shape, Word, EN};
 use crate::model::BlockRole;
@@ -2646,6 +2646,9 @@ fn present_if_words(p: &PresentIfPredicate) -> String {
 }
 
 fn render_codec(m: &CodecModel) -> Vec<Node> {
+    if m.encoding == CodecEncoding::Cbor {
+        return render_cbor_codec(m);
+    }
     let mut out = Out::new();
     let mut head = vec![
         Part::Word(Word::Codec),
@@ -2671,6 +2674,39 @@ fn render_codec(m: &CodecModel) -> Vec<Node> {
         }
         for tv in &m.test_vectors {
             render_codec_test_vector(tv, out);
+        }
+    });
+    out.nodes
+}
+
+/// `codec <name> encoding cbor`, then one line per map entry:
+/// `entry <id>: <type> key <n> [required] [length <n>] [max-size <n>]`.
+fn render_cbor_codec(m: &CodecModel) -> Vec<Node> {
+    let mut out = Out::new();
+    out.line_of(vec![
+        Part::Word(Word::Codec),
+        Part::Text(text(&m.name).into_owned()),
+        Part::Word(Word::Encoding),
+        Part::Word(Word::Cbor),
+    ]);
+    out.nested(|out| {
+        for e in &m.cbor_entries {
+            let mut line = format!(
+                "entry {}: {} key {}",
+                text(&e.id),
+                e.sce_type.as_attr(),
+                e.key
+            );
+            if e.required {
+                line.push_str(" required");
+            }
+            if let Some(n) = e.length {
+                let _ = write!(line, " length {n}");
+            }
+            if let Some(n) = e.max_size {
+                let _ = write!(line, " max-size {n}");
+            }
+            out.line(&line);
         }
     });
     out.nodes

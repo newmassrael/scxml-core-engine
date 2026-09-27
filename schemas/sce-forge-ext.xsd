@@ -397,6 +397,29 @@
   <!-- Section 4.6: Codec — document-level default endianness -->
   <xs:attribute name="default-endian" type="sce:endianType"/>
 
+  <!-- Section 4.6: Codec wire layout. `positional` (the default) places each
+       field at sce:byte / sce:bit-size; `cbor` writes one CBOR map (RFC 8949)
+       whose entries are the <data sce:key> elements, and refuses every
+       positional attribute and element. -->
+  <xs:attribute name="encoding">
+    <xs:simpleType>
+      <xs:restriction base="xs:string">
+        <xs:enumeration value="positional"/>
+        <xs:enumeration value="cbor"/>
+      </xs:restriction>
+    </xs:simpleType>
+  </xs:attribute>
+  <!-- Section 4.6: a CBOR codec entry's map key — 0..23, a one-byte head. -->
+  <xs:attribute name="key">
+    <xs:simpleType>
+      <xs:restriction base="xs:nonNegativeInteger">
+        <xs:maxInclusive value="23"/>
+      </xs:restriction>
+    </xs:simpleType>
+  </xs:attribute>
+  <!-- Section 4.6: a CBOR codec entry whose absence a decode refuses. -->
+  <xs:attribute name="required" type="xs:boolean"/>
+
   <!-- Section 4.6: Codec field layout — on <data> or <sce:field> -->
   <xs:attribute name="byte" type="xs:nonNegativeInteger"/>
   <xs:attribute name="bit-offset" type="xs:nonNegativeInteger"/>

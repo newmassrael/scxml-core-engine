@@ -977,6 +977,8 @@ fn a_codec_renders_every_field_it_can_carry() {
             source_line: 7,
         }],
         source_location: None,
+        encoding: Default::default(),
+        cbor_entries: Vec::new(),
     };
 
     let expected = "\

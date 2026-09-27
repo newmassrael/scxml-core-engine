@@ -40,12 +40,12 @@ use crate::comment_text;
 use crate::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
     AlgorithmStmt, AlgorithmValueType, BackpressurePolicy, BitSize, BoundedCollectionModel,
-    BufferPoolModel, BufferPoolVariant, CachePolicy, CallArg, CodecField, CodecModel,
-    CodecTestVector, CodecVariant, CountRef, DecodedField, DecodedFieldValue, DecodedValue, Endian,
-    FlagDef, FlagInput, FoldBody, PeekByteSpec, PresentIfPredicate, PresentIfScope,
-    ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction,
-    ProcedureState, ProcedureTransition, TestVector, TestVectorValue, TlvOverflowPolicy,
-    TlvTerminateStrategy, VariantArm,
+    BufferPoolModel, BufferPoolVariant, CachePolicy, CallArg, CborEntry, CodecEncoding, CodecField,
+    CodecModel, CodecTestVector, CodecVariant, CountRef, DecodedField, DecodedFieldValue,
+    DecodedValue, Endian, FlagDef, FlagInput, FoldBody, PeekByteSpec, PresentIfPredicate,
+    PresentIfScope, ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel,
+    ProcedureSendAction, ProcedureState, ProcedureTransition, TestVector, TestVectorValue,
+    TlvOverflowPolicy, TlvTerminateStrategy, VariantArm,
 };
 use crate::forge::model::{
     CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
@@ -2027,9 +2027,90 @@ fn parse_bit_size(w: &[&str], line: usize) -> Result<BitSize, ParseError> {
     })
 }
 
+/// `codec <name> encoding cbor`, then `entry <id>: <type> key <n>
+/// [required] [length <n>] [max-size <n>]` lines.
+fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, ParseError> {
+    let w: Vec<&str> = head.text.split_whitespace().collect();
+    let mut entries = Vec::new();
+    for line in body {
+        let lw: Vec<&str> = line.text.split_whitespace().collect();
+        let fail = |why: String| ParseError {
+            line: line.number,
+            why,
+        };
+        if lw.first().copied() != Some("entry") {
+            return Err(fail(format!(
+                "`{}` is not a cbor codec body line",
+                line.text
+            )));
+        }
+        let id = lw
+            .get(1)
+            .and_then(|v| v.strip_suffix(':'))
+            .ok_or_else(|| fail("a cbor entry needs `<id>:`".to_string()))?;
+        let type_word = lw.get(2).copied().unwrap_or("");
+        let sce_type = SceType::from_attr(type_word)
+            .ok_or_else(|| fail(format!("`{type_word}` is not an sce:type")))?;
+        if lw.get(3).copied() != Some("key") {
+            return Err(fail(
+                "a cbor entry's type is followed by `key <n>`".to_string(),
+            ));
+        }
+        let key = lw
+            .get(4)
+            .and_then(|v| v.parse::<u8>().ok())
+            .ok_or_else(|| fail("a cbor entry's key is not a number".to_string()))?;
+        let mut entry = CborEntry {
+            id: undo(id, line.number)?,
+            line: None,
+            key,
+            sce_type,
+            required: false,
+            length: None,
+            max_size: None,
+        };
+        let mut rest = lw[5..].iter();
+        while let Some(word) = rest.next() {
+            let mut number = |what: &str| {
+                rest.next()
+                    .and_then(|v| v.parse::<u32>().ok())
+                    .ok_or_else(|| fail(format!("`{what}` needs a number")))
+            };
+            match *word {
+                "required" => entry.required = true,
+                "length" => entry.length = Some(number("length")?),
+                "max-size" => entry.max_size = Some(number("max-size")?),
+                other => return Err(fail(format!("`{other}` is not a cbor entry clause"))),
+            }
+        }
+        entries.push(entry);
+    }
+    Ok(CodecModel {
+        name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
+        default_endian: Endian::Big,
+        input_length: None,
+        fields: Vec::new(),
+        variant: None,
+        flag_inputs: Vec::new(),
+        test_vectors: Vec::new(),
+        source_location: None,
+        encoding: CodecEncoding::Cbor,
+        cbor_entries: entries,
+    })
+}
+
 /// `codec <name> endian <e> [input-length <n>]`.
 fn parse_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, ParseError> {
     let w: Vec<&str> = head.text.split_whitespace().collect();
+    if w.get(2).copied() == Some("encoding") {
+        return match w.get(3).copied() {
+            Some("cbor") => parse_cbor_codec(head, body),
+            other => Err(ParseError {
+                line: head.number,
+                why: format!("`{}` is not a codec encoding", other.unwrap_or("")),
+            }),
+        };
+    }
     let mut m = CodecModel {
         name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
         default_endian: endian_of(w.get(3).copied().unwrap_or(""), head.number)?,
@@ -2042,6 +2123,8 @@ fn parse_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, ParseE
         flag_inputs: Vec::new(),
         test_vectors: Vec::new(),
         source_location: None,
+        encoding: Default::default(),
+        cbor_entries: Vec::new(),
     };
 
     for (line, kids) in group(body) {

@@ -946,6 +946,55 @@ struct DtcResponse {
 };
 ```
 
+#### 4.6.1 `sce:encoding="cbor"` — one CBOR map
+
+A codec whose root carries `sce:encoding="cbor"` writes one CBOR map
+(RFC 8949) instead of fields at byte positions. Each entry is a `<data>`
+element of its `<datamodel>` keyed by `sce:key`:
+
+```xml
+<scxml sce:kind="codec" sce:encoding="cbor" name="envelope">
+  <datamodel>
+    <data id="raw"     sce:type="bytes"  sce:direction="in"/>
+    <data id="id"      sce:type="bytes"  sce:key="0" sce:required="true" sce:length="16" sce:direction="out"/>
+    <data id="source"  sce:type="string" sce:key="1" sce:required="true" sce:max-size="262144" sce:direction="out"/>
+    <data id="pattern" sce:type="enum:PatternKind" sce:key="3" sce:required="true" sce:direction="out"/>
+    <data id="deadline" sce:type="uint64" sce:key="12" sce:direction="out"/>
+  </datamodel>
+</scxml>
+```
+
+| Attribute | Meaning |
+|---|---|
+| `sce:key` | The entry's map key, `0`–`23` — a key whose CBOR head is one byte. Unique within the codec. |
+| `sce:type` | An unsigned integer (`uint8`–`uint64`), `bool`, `string` (a CBOR text string), `bytes` (a byte string) or `enum:<alias>` (an unsigned integer checked against the enum's declared values). |
+| `sce:required="true"` | A decode of a map without this key is refused. An entry that is not required is optional in every language. |
+| `sce:length` | On `bytes` only: the exact length; any other length is refused on decode and on encode. |
+| `sce:max-size` | On `string` or `bytes`: the most bytes the entry holds. Not with `sce:length`. |
+
+**Wire rules.** Encode writes a definite-length map of the entries present,
+in ascending key order, every head in its shortest form (RFC 8949 §4.2.1,
+deterministic encoding) — so two backends given the same value write the
+same bytes. Decode takes the keys in any order and skips a key the codec
+does not declare, its value included (nested maps and arrays too, to a
+nesting depth of 16). It refuses a key that is not an unsigned integer, a
+required key that is absent, a value of another CBOR type than its entry
+declares, a value its width cannot hold, and an exact-length byte string
+of another length. Decode accepts a head that is not in its shortest form:
+what it reads is the value, and a sender that wrote it longer said the same
+thing.
+
+**Refused on a CBOR codec** — each is a position, and a map has none:
+`sce:byte`, `sce:bit-offset`, `sce:bit-size`, `sce:endian`,
+`sce:default-endian`, `sce:length-field`, `sce:length-arith`,
+`sce:present-if`, `sce:dma-burst-align`, and the `<sce:field>`,
+`<sce:flags>`, `<sce:repeat>`, `<sce:tlv-chain>`, `<sce:embed>`,
+`<sce:variant>`, `<sce:flag-inputs>` and `<sce:test-vector>` elements.
+
+**Generation.** A backend emits a CBOR codec once its generation lands; until
+then it refuses the document by name (`generate/unsupported-feature`) rather
+than emitting a type with no fields.
+
 ### 4.7 validator
 
 Range check, rate-of-change detection, plausibility verification. Validator has minimal internal state (previous values for rate-of-change).

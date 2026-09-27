@@ -4575,6 +4575,11 @@ fn render_codec(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
+    // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
+    // below to read, so it is rendered by its own module before any of it runs.
+    if m.encoding == CodecEncoding::Cbor {
+        return crate::forge::cbor_codec::render(env, m, imports, lang);
+    }
     // RFC §synth-5-B "MCU-only codec sub-features" — codec-content-level MCU
     // classification. After the all-backend closures only DMA alignment (item B3)
     // genuinely needs MCU-class hardware (memory-mapped peripherals,

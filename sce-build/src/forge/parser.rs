@@ -1580,10 +1580,297 @@ fn parse_condition(
 
 // ── Codec parsing ──────────────────────────────────────────────
 
+/// The attributes that place a positional field, none of which means
+/// anything in a CBOR map (SCE_FORGE.md §4.6).
+const CODEC_POSITIONAL_ATTRS: &[&str] = &[
+    "byte",
+    "bit-offset",
+    "bit-size",
+    "endian",
+    "length-field",
+    "length-arith",
+    "present-if",
+    "dma-burst-align",
+];
+
+/// A `sce:encoding="cbor"` codec: one CBOR map whose entries are the
+/// `<data sce:key>` elements of its `<datamodel>` (SCE_FORGE.md §4.6).
+///
+/// Every positional construct is refused rather than ignored — a
+/// `sce:byte` on an entry, a `<sce:field>`, `<sce:flags>`, `<sce:repeat>`,
+/// `<sce:tlv-chain>`, `<sce:embed>`, a variant, flag inputs, test vectors —
+/// because an author who wrote one expected it to shape the wire, and a
+/// map has no position for it to shape.
+fn parse_cbor_codec(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<CodecModel, Located<ForgeError>> {
+    let doc = label.diagnostic_label;
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            doc,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Codec,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
+    if let Some(attr) = ["default-endian"]
+        .into_iter()
+        .find(|a| sce_attr(root, a).is_some())
+    {
+        return Err(located(
+            root,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: "Codec".into(),
+                attr: format!("sce:{attr}"),
+                value: sce_attr(root, attr).unwrap_or_default(),
+                rule: "no byte-order attribute on a sce:encoding=\"cbor\" codec: CBOR fixes its \
+                       own byte order"
+                    .into(),
+            },
+        ));
+    }
+    // What this encoding takes inside `<datamodel>`: `<data>` entries only.
+    for child in datamodel.children().filter(|c| c.is_element()) {
+        let name = child.tag_name().name();
+        if name != "data" {
+            return Err(located(
+                &child,
+                doc,
+                ValidationError::UnexpectedChildElement {
+                    parent: "Codec datamodel (sce:encoding=\"cbor\")".into(),
+                    child: name.to_string(),
+                    allowed: vec!["data".into()],
+                },
+            ));
+        }
+    }
+    for element in ["variant", "flag-inputs", "test-vector"] {
+        if let Some(child) = find_child(root, element) {
+            return Err(located(
+                &child,
+                doc,
+                ValidationError::UnexpectedChildElement {
+                    parent: "Codec (sce:encoding=\"cbor\")".into(),
+                    child: format!("sce:{element}"),
+                    allowed: vec!["datamodel".into()],
+                },
+            ));
+        }
+    }
+
+    let mut entries: Vec<CborEntry> = Vec::new();
+    for data in data_children(&datamodel) {
+        // The input frame names no field; its length means nothing in a map.
+        if sce_attr(&data, "direction").as_deref() == Some("in") {
+            continue;
+        }
+        entries.push(parse_cbor_entry(&data, doc, &entries)?);
+    }
+    if entries.is_empty() {
+        return Err(located(
+            &datamodel,
+            doc,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Codec,
+                element: "data sce:key".into(),
+            },
+        ));
+    }
+
+    Ok(CodecModel {
+        name: label.identifier.to_string(),
+        default_endian: Endian::Big,
+        input_length: None,
+        fields: Vec::new(),
+        variant: None,
+        flag_inputs: Vec::new(),
+        test_vectors: Vec::new(),
+        source_location: forge_source_location_of(root, doc),
+        encoding: CodecEncoding::Cbor,
+        cbor_entries: entries,
+    })
+}
+
+/// One `<data sce:key>` entry of a CBOR codec, judged against the entries
+/// declared before it.
+fn parse_cbor_entry(
+    node: &roxmltree::Node,
+    doc: &str,
+    before: &[CborEntry],
+) -> Result<CborEntry, Located<ForgeError>> {
+    let refuse = |error: ValidationError| located(node, doc, error);
+    let id = node
+        .attribute("id")
+        .ok_or_else(|| {
+            refuse(ValidationError::MissingAttribute {
+                element: "Codec entry".into(),
+                attr: "id".into(),
+            })
+        })?
+        .to_string();
+    let element = format!("Codec entry '{id}'");
+    if let Some(attr) = CODEC_POSITIONAL_ATTRS
+        .iter()
+        .find(|a| sce_attr(node, a).is_some())
+    {
+        return Err(refuse(ValidationError::AttributeRuleViolated {
+            element,
+            attr: format!("sce:{attr}"),
+            value: sce_attr(node, attr).unwrap_or_default(),
+            rule: "no position on an entry of a sce:encoding=\"cbor\" codec: it is placed by \
+                   its sce:key"
+                .into(),
+        }));
+    }
+    let key_text = sce_attr(node, "key").ok_or_else(|| {
+        refuse(ValidationError::MissingAttribute {
+            element: element.clone(),
+            attr: "sce:key".into(),
+        })
+    })?;
+    let key = parse_int(&key_text).filter(|k| *k <= 23).ok_or_else(|| {
+        refuse(ValidationError::AttributeRuleViolated {
+            element: element.clone(),
+            attr: "sce:key".into(),
+            value: key_text.clone(),
+            rule: "an integer from 0 to 23, a key whose CBOR head is one byte".into(),
+        })
+    })? as u8;
+    if before.iter().any(|e| e.id == id) {
+        return Err(refuse(ValidationError::DuplicateId {
+            kind: ForgeKind::Codec,
+            what: "entry id".into(),
+            id,
+        }));
+    }
+    if before.iter().any(|e| e.key == key) {
+        return Err(refuse(ValidationError::DuplicateId {
+            kind: ForgeKind::Codec,
+            what: "sce:key".into(),
+            id: key.to_string(),
+        }));
+    }
+
+    let type_text = sce_attr(node, "type").ok_or_else(|| {
+        refuse(ValidationError::MissingAttribute {
+            element: element.clone(),
+            attr: "sce:type".into(),
+        })
+    })?;
+    let sce_type = read_type_attr(
+        node,
+        doc,
+        TypeGrammar::ScalarOrEnumRef,
+        format!("entry '{id}'"),
+        "sce:type",
+        &type_text,
+    )?;
+    let admitted = sce_type.is_unsigned()
+        || matches!(
+            sce_type,
+            SceType::Bool | SceType::String | SceType::Bytes | SceType::Enum(_)
+        );
+    if !admitted {
+        return Err(refuse(ValidationError::AttributeRuleViolated {
+            element,
+            attr: "sce:type".into(),
+            value: type_text,
+            rule: "an unsigned integer, bool, string, bytes or enum:<alias> — the kinds a \
+                   sce:encoding=\"cbor\" codec writes"
+                .into(),
+        }));
+    }
+
+    let required = match sce_attr(node, "required").as_deref() {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(other) => {
+            return Err(refuse(ValidationError::InvalidAttribute {
+                element,
+                attr: "sce:required".into(),
+                value: other.to_string(),
+                allowed: vec!["true".into(), "false".into()],
+            }))
+        }
+    };
+    let positive = |attr: &str| -> Result<Option<u32>, Located<ForgeError>> {
+        let Some(text) = sce_attr(node, attr) else {
+            return Ok(None);
+        };
+        parse_int(&text)
+            .filter(|n| *n > 0)
+            .map(Some)
+            .ok_or_else(|| {
+                refuse(ValidationError::AttributeRuleViolated {
+                    element: element.clone(),
+                    attr: format!("sce:{attr}"),
+                    value: text,
+                    rule: "a positive integer".into(),
+                })
+            })
+    };
+    let length = positive("length")?;
+    let max_size = positive("max-size")?;
+    if length.is_some() && sce_type != SceType::Bytes {
+        return Err(refuse(ValidationError::AttributeRuleViolated {
+            element,
+            attr: "sce:length".into(),
+            value: length.unwrap_or_default().to_string(),
+            rule: "an exact length on a bytes entry only".into(),
+        }));
+    }
+    if max_size.is_some() && !matches!(sce_type, SceType::String | SceType::Bytes) {
+        return Err(refuse(ValidationError::AttributeRuleViolated {
+            element,
+            attr: "sce:max-size".into(),
+            value: max_size.unwrap_or_default().to_string(),
+            rule: "a size bound on a string or bytes entry only".into(),
+        }));
+    }
+    if length.is_some() && max_size.is_some() {
+        return Err(refuse(ValidationError::AttributeRuleViolated {
+            element,
+            attr: "sce:max-size".into(),
+            value: max_size.unwrap_or_default().to_string(),
+            rule: "sce:length or sce:max-size, not both: an exact length is its own bound".into(),
+        }));
+    }
+
+    Ok(CborEntry {
+        id,
+        line: Some(row_of(node)),
+        key,
+        sce_type,
+        required,
+        length,
+        max_size,
+    })
+}
+
 fn parse_codec(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,
 ) -> Result<CodecModel, Located<ForgeError>> {
+    match sce_attr(root, "encoding").as_deref() {
+        None | Some("positional") => {}
+        Some("cbor") => return parse_cbor_codec(root, label),
+        Some(other) => {
+            return Err(located(
+                root,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "Codec".into(),
+                    attr: "sce:encoding".into(),
+                    value: other.to_string(),
+                    allowed: vec!["positional".into(), "cbor".into()],
+                },
+            ))
+        }
+    }
     let default_endian = sce_attr(root, "default-endian")
         .and_then(|s| Endian::from_attr(&s))
         .unwrap_or(Endian::Big);
@@ -1771,6 +2058,8 @@ fn parse_codec(
         flag_inputs,
         test_vectors,
         source_location: forge_source_location_of(root, label.diagnostic_label),
+        encoding: CodecEncoding::Positional,
+        cbor_entries: Vec::new(),
     })
 }
 /// RFC flag inversion — parse the optional codec-level
@@ -9974,6 +10263,8 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "default-endian",
     "direction",
     "dma-burst-align",
+    // A codec's wire layout, and a CBOR entry's map key (SCE_FORGE.md §4.6).
+    "encoding",
     "endian",
     "enter",
     "event-domain",
@@ -9990,6 +10281,7 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     // unknown `sce:` attribute, which is how long a second grammar can
     // sit in a spec without anyone writing it.
     "interpolation",
+    "key",
     "kind",
     "leave",
     "length",
@@ -10013,6 +10305,8 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "range-max",
     "range-min",
     "req",
+    // A CBOR codec entry the decode refuses a map without (SCE_FORGE.md §4.6).
+    "required",
     "response-max-size",
     // `retain` names the store a field's value outlives the program in.
     // The label is OPAQUE — SCE compares it for equality and never

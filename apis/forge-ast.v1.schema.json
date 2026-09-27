@@ -986,6 +986,75 @@
         }
       ]
     },
+    "CborEntry": {
+      "description": "One entry of a CBOR codec's map (SCE_FORGE.md §4.6).",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "description": "The map key, `0..=23` — a key whose CBOR head is one byte.",
+          "format": "uint8",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "length": {
+          "description": "`sce:length`: the exact byte length of a `bytes` entry; any other length is refused on decode and on encode.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_size": {
+          "description": "`sce:max-size`: the most bytes a `string` or `bytes` entry holds.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "required": {
+          "description": "`sce:required=\"true\"`: a decode of a map without this key is refused. An entry that is not required is optional in every language.",
+          "type": "boolean"
+        },
+        "sce_type": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SceType"
+            }
+          ],
+          "description": "An unsigned integer, `bool`, `string`, `bytes` or `enum:<alias>`."
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "sce_type"
+      ],
+      "type": "object"
+    },
+    "CodecEncoding": {
+      "description": "How a codec lays its fields on the wire (SCE_FORGE.md §4.6).",
+      "oneOf": [
+        {
+          "description": "Fields at declared byte and bit positions (`sce:byte`, `sce:bit-size`) — every codec before this one.",
+          "enum": [
+            "positional"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "One CBOR map (RFC 8949) whose entries are keyed by small unsigned integers (`sce:key`): order-free on decode, unknown keys skipped, written in ascending key order with the shortest heads on encode (RFC 8949 §4.2.1).",
+          "enum": [
+            "cbor"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "CodecField": {
       "description": "A single field in a codec's byte layout.",
       "properties": {
@@ -2691,6 +2760,13 @@
         {
           "description": "Codec: byte-level encode/decode. Generates struct with decode/encode methods.",
           "properties": {
+            "cbor_entries": {
+              "description": "The entries of a CBOR codec's map, in declaration order. Empty for a positional codec.\n\n⚠ A list of its own rather than a second placement on [`CodecField`]: nothing a positional field carries — a byte offset, a bit size, endianness, flags, `present-if`, repeat, TLV, DMA alignment — means anything in a CBOR map, and every generator reads those members directly. A CBOR entry on that struct would reach each of them as a field with an offset of zero.",
+              "items": {
+                "$ref": "#/definitions/CborEntry"
+              },
+              "type": "array"
+            },
             "default_endian": {
               "allOf": [
                 {
@@ -2698,6 +2774,14 @@
                 }
               ],
               "description": "Document-level default endianness."
+            },
+            "encoding": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/CodecEncoding"
+                }
+              ],
+              "description": "How the fields are laid on the wire (SCE_FORGE.md §4.6). Every positional member above — `fields`, `variant`, `flag_inputs`, `test_vectors`, `input_length` — is empty for a CBOR codec, whose fields are [`Self::cbor_entries`]."
             },
             "fields": {
               "description": "Ordered list of fields in the codec.",

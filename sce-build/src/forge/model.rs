@@ -2531,6 +2531,72 @@ pub struct CodecModel {
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
+    /// How the fields are laid on the wire (SCE_FORGE.md §4.6). Every
+    /// positional member above — `fields`, `variant`, `flag_inputs`,
+    /// `test_vectors`, `input_length` — is empty for a CBOR codec, whose
+    /// fields are [`Self::cbor_entries`].
+    #[serde(default, skip_serializing_if = "CodecEncoding::is_positional")]
+    pub encoding: CodecEncoding,
+    /// The entries of a CBOR codec's map, in declaration order. Empty for a
+    /// positional codec.
+    ///
+    /// ⚠ A list of its own rather than a second placement on
+    /// [`CodecField`]: nothing a positional field carries — a byte offset, a
+    /// bit size, endianness, flags, `present-if`, repeat, TLV, DMA alignment —
+    /// means anything in a CBOR map, and every generator reads those members
+    /// directly. A CBOR entry on that struct would reach each of them as a
+    /// field with an offset of zero.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cbor_entries: Vec<CborEntry>,
+}
+
+/// How a codec lays its fields on the wire (SCE_FORGE.md §4.6).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum CodecEncoding {
+    /// Fields at declared byte and bit positions (`sce:byte`,
+    /// `sce:bit-size`) — every codec before this one.
+    #[default]
+    Positional,
+    /// One CBOR map (RFC 8949) whose entries are keyed by small unsigned
+    /// integers (`sce:key`): order-free on decode, unknown keys skipped,
+    /// written in ascending key order with the shortest heads on encode
+    /// (RFC 8949 §4.2.1).
+    Cbor,
+}
+
+impl CodecEncoding {
+    /// Whether this is the positional encoding — the default, left out of
+    /// the serialized model so every positional codec serializes as before.
+    pub fn is_positional(&self) -> bool {
+        *self == CodecEncoding::Positional
+    }
+}
+
+/// One entry of a CBOR codec's map (SCE_FORGE.md §4.6).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct CborEntry {
+    pub id: String,
+    /// 1-based row of the declaring element, as on [`CodecField`].
+    #[serde(skip)]
+    pub line: Option<u32>,
+    /// The map key, `0..=23` — a key whose CBOR head is one byte.
+    pub key: u8,
+    /// An unsigned integer, `bool`, `string`, `bytes` or `enum:<alias>`.
+    pub sce_type: SceType,
+    /// `sce:required="true"`: a decode of a map without this key is refused.
+    /// An entry that is not required is optional in every language.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub required: bool,
+    /// `sce:length`: the exact byte length of a `bytes` entry; any other
+    /// length is refused on decode and on encode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length: Option<u32>,
+    /// `sce:max-size`: the most bytes a `string` or `bytes` entry holds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_size: Option<u32>,
 }
 
 impl CodecModel {

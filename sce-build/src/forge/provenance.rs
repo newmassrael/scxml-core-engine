@@ -547,6 +547,8 @@ mod tests {
                 flag_inputs: Vec::new(),
                 test_vectors: Vec::new(),
                 source_location: None,
+                encoding: Default::default(),
+                cbor_entries: Vec::new(),
             }),
             ForgeDocument::Validator(ValidatorModel {
                 name: "v".into(),
