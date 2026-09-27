@@ -15,6 +15,14 @@
     if (::SCE::ScriptResultUtils::isSuccess(sendidResult)) {
         std::string sendidToCancel = ::SCE::ScriptResultUtils::resultToString(sendidResult);
         engine.cancelEvent(sendidToCancel);
+    } else {
+        // W3C SCXML 5.9: a sendidexpr that fails raises error.execution, and
+        // (W3C SCXML 4.9) the error ends the block.
+        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                                                        "<cancel> sendidexpr failed to evaluate"));
+{% if block_exit is defined and block_exit %}
+        {{ block_exit }}
+{% endif %}
     }
 }
 {% elif action.sendid %}

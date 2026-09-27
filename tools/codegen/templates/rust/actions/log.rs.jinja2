@@ -19,7 +19,17 @@
     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     match se.evaluate_expression(&sid, "{{ action.expr | to_lua_expr | escape_rust }}") {
         Ok(val) => ::sce_rust_runtime::sce_log_info!("{% if action.label %}{}: {% endif %}{:?}"{% if action.label %}, "{{ action.label }}"{% endif %}, val),
-        Err(e) => ::sce_rust_runtime::sce_log_error!("Log expression eval failed: {}", e),
+        Err(e) => {
+            // W3C SCXML 5.9: an expression that fails raises error.execution,
+            // and (W3C SCXML 4.9) the error ends the block.
+            ::sce_rust_runtime::sce_log_error!("Log expression eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<log> expr failed to evaluate"));
+{% endif %}
+{% if in_action_block is defined and in_action_block %}
+            break 'action_block;
+{% endif %}
+        }
     }
 }
 {% elif action.label %}

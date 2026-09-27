@@ -7,9 +7,12 @@
    is rejected at parse time by the SCXML parser (parser.rs cancel branch,
    wire `validation/require-either`). No `{% else %}` arm — parser
    guarantees one branch matches. #}
+{% import 'block_exit.kt.jinja2' as block_exit %}
 {% if action.sendidexpr and model.needs_script_engine %}
-            // W3C SCXML 6.3: Dynamic sendid evaluation (test210)
-            run {
+            // W3C SCXML 6.3: Dynamic sendid evaluation (test210). A sendidexpr
+            // that fails raises error.execution (W3C SCXML 5.9), and the error
+            // ends the block (W3C SCXML 4.9).
+            if (run cancel@{
                 ensureScriptEngine()
                 val engineCancel = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidCancel = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -17,7 +20,13 @@
                     val v = engineCancel.evaluateExpr(sidCancel, {{ action.sendidexpr | to_script_source_expr }})
                     val sendidToCancel = v?.toString() ?: ""
                     if (sendidToCancel.isNotEmpty()) cancelSend(sendidToCancel)
-                } catch (_: Exception) {}
+                    false
+                } catch (_: Exception) {
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<cancel> sendidexpr failed to evaluate")
+                    true
+                }
+            }) {
+                {{ block_exit.stmt(_in_foreach_body is defined and _in_foreach_body, in_run_block is defined and in_run_block) }}
             }
 {% elif action.sendid %}
             cancelSend("{{ action.sendid | escape_kotlin }}")

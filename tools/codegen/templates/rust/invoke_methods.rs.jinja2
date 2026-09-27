@@ -135,24 +135,33 @@
                 // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
 {% if model.needs_script_engine %}
                 {
+                    // §scxml-6.4: "if the evaluation of its arguments produces an
+                    // error, the SCXML Processor MUST terminate the processing of
+                    // the element without further action". A name that is not a
+                    // readable location is such an error: ONE error.execution for
+                    // the element, however many names are bad, no child, and its
+                    // <param>s are not evaluated. A name is read only once it is
+                    // known to be declared, so the name itself is never lowered as
+                    // an expression — an undeclared one would be refused at build
+                    // time instead of raising here.
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    let mut namelist_valid = true;
+                    let mut namelist_bad: Option<&'static str> = None;
 {% for var_name in invoke_info.namelist | split %}
-                    if !se.has_variable(&sid, "{{ var_name }}") {
-                        ::sce_rust_runtime::sce_log_error!("Namelist validation failed: '{{ var_name }}' not declared in parent");
+                    if namelist_bad.is_none() && !se.has_variable(&sid, "{{ var_name | escape_rust }}") {
+                        namelist_bad = Some("{{ var_name | escape_rust }}");
+                    }
+{% endfor %}
+                    if let Some(bad) = namelist_bad {
+                        ::sce_rust_runtime::sce_log_error!("Namelist validation failed: '{}' is not a readable location", bad);
 {% if 'error.execution' in model.events %}
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
-                            "<invoke> namelist names '{{ var_name }}', which the parent does not declare"));
+                            "<invoke> namelist names a location that cannot be read"));
 {% endif %}
-                        namelist_valid = false;
-                    }
-{% endfor %}
-                    if !namelist_valid {
-                        continue;  // W3C SCXML 6.4.1: Skip invoke on namelist error
+                        continue;  // W3C SCXML 6.4: the element is terminated; no child
                     }
                 }
 {% endif %}
@@ -221,19 +230,38 @@
 
 {% if invoke_info.params %}
                 // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
-{% if invoke_info.child_needs_script_engine %}
+{% if model.needs_script_engine %}
                 {
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
 {% for param in invoke_info.params %}
-{% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
-                    match se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
+{# §scxml-5.7: the value comes from 'expr' or, failing that, 'location' — a
+   location expression, read as its value; both empty is `location=""`, a
+   location that names nothing. The <param> is an argument of this <invoke>
+   whether or not the child declares `name` or runs a script engine, so it is
+   evaluated — and its failure raised — either way; §scxml-6.4.3 decides only
+   what the child keeps. #}
+{% set param_source = param.expr or param.location %}
+{% set child_keeps = invoke_info.child_needs_script_engine and invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
+{% if not param_source %}
+{% if 'error.execution' in model.events %}
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_rust }}'> names no location"));
+{% endif %}
+{% else %}
+                    match se.evaluate_expression(&sid, "{{ param_source | to_lua_expr | escape_rust }}") {
                         Ok(val) => {
+{% if child_keeps %}
                             // §scxml-6.4.3: the VALUE of the param element becomes
                             // the child `<data>`'s initial value.
                             child_policy.set_param_value_in_script_engine("{{ param.name | escape_rust }}", val);
+{% else %}
+                            // §scxml-6.4.3: `{{ param.name }}` matches no top-level
+                            // `<data>` of the child, so the Processor MUST NOT add it
+                            // to the invoked session's data model.
+                            let _ = val;
+{% endif %}
                         }
                         Err(e) => {
                             // §scxml-5.7.1: BOTH halves — `error.execution` on the
@@ -254,15 +282,10 @@
                             // `<donedata>` side.
                             ::sce_rust_runtime::sce_log_error!("invoke param '{{ param.name | escape_rust }}' eval failed: {}", e);
 {% if 'error.execution' in model.events %}
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_rust }}'> could not be read"));
 {% endif %}
                         }
                     }
-{% else %}
-                    // §scxml-6.4.3: `{{ param.name }}` matches no top-level `<data>` of
-                    // the child, so the Processor MUST NOT add it to the invoked
-                    // session's data model. Decided here because both the param
-                    // names and the child's declarations are static.
 {% endif %}
 {% endfor %}
                 }

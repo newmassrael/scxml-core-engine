@@ -86,18 +86,24 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 {% if model.needs_script_engine %}
 			{
+				// W3C SCXML 6.4: "if the evaluation of its arguments produces an
+				// error, the SCXML Processor MUST terminate the processing of the
+				// element without further action". A name that is not a readable
+				// location is such an error: ONE error.execution for the element,
+				// however many names are bad, no child, and its <param>s are not
+				// evaluated.
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 				namelistValid := true
 {% for var_name in invoke_info.namelist | split %}
-				if !se.HasVariable(p.SessionID, "{{ var_name }}") {
-{% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> namelist names '{{ var_name }}', which the parent does not declare"))
-{% endif %}
+				if namelistValid && !se.HasVariable(p.SessionID, "{{ var_name | escape_go }}") {
 					namelistValid = false
 				}
 {% endfor %}
 				if !namelistValid {
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> namelist names a location that cannot be read"))
+{% endif %}
 					continue
 				}
 			}
@@ -143,11 +149,22 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 
 {% if invoke_info.params %}
 			// W3C SCXML 6.4.1: Pass params to child datamodel before initialization
-{% if invoke_info.child_needs_script_engine %}
+{% if model.needs_script_engine %}
 			{
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 {% for param in invoke_info.params %}
+{# §scxml-5.7: the value comes from 'expr' or, failing that, 'location' — a
+   location expression, read as its value; both empty is `location=""`, a
+   location that names nothing. The <param> is an argument of this <invoke>
+   whether or not the child runs a script engine, so it is evaluated — and
+   its failure raised — either way. #}
+{% set param_source = param.expr or param.location %}
+{% if not param_source %}
+{% if 'error.execution' in model.events %}
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> names no location"))
+{% endif %}
+{% else %}
 				{# Raw string: no escaping. See entry_exit_actions.go.jinja2. #}
 				{# §scxml-6.4.3's "if the names do not match, the Processor MUST
 				   NOT add the value ... to the invoked session's data model" is
@@ -159,10 +176,14 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				   `invoke_param_seeds_declared_child_data` is green either way
 				   — and one clause implemented twice is the defect that round
 				   was repaying. #}
-				if val, err := se.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); err == nil {
+				if val, err := se.EvaluateExpression(p.SessionID, `{{ param_source | to_lua_expr }}`); err == nil {
+{% if invoke_info.child_needs_script_engine %}
 					// §scxml-6.4.3: the VALUE of the param element becomes the
 					// child `<data>`'s initial value.
 					childPolicy.SetParamValueInScriptEngine("{{ param.name | escape_go }}", val)
+{% else %}
+					_ = val  // the child runs no script engine and keeps no value
+{% endif %}
 				} else {
 					// §scxml-5.7.1: BOTH halves — `error.execution` on the internal
 					// queue AND the name and value ignored. Only the silent half was
@@ -176,9 +197,10 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 					// element" is not what a failing `<param>` costs: the child
 					// still starts, one pair short.
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> expr failed to evaluate"))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> could not be read"))
 {% endif %}
 				}
+{% endif %}
 {% endfor %}
 			}
 {% endif %}

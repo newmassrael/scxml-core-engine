@@ -1,0 +1,24 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML 4.9: "If the processing of an element causes an error to be
+   raised, the processor MUST NOT process the remaining elements of the
+   block." The statement that ends the block an element sits in, written once
+   for every element that can raise:
+
+     - inside a <foreach> body, which runs in `executeForeach`'s lambda that a
+       `return` cannot leave: throw `ActionBlockAbort`, which the <foreach>
+       catches without raising again and then ends its own block;
+     - inside an entry, exit or <initial> block, each of which is its own
+       `run {}`: `return@run`;
+     - otherwise (transition content, history default content, each one
+       function call running exactly one block): `return`.
+
+   The caller passes the two facts, because an imported macro does not see
+   the includer's context. The statement must sit OUTSIDE any lambda of the
+   element's own, or `return@run` would leave that lambda instead of the
+   block — which is why an element that needs one writes
+   `if (run name@{ ... }) { <this> }`. #}
+{% macro stmt(in_foreach_body, in_run_block) -%}
+{% if in_foreach_body %}throw com.sce.runtime.ActionBlockAbort(){% elif in_run_block %}return@run{% else %}return{% endif %}
+{%- endmacro %}

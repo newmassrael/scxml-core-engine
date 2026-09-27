@@ -19,7 +19,14 @@
     if (::SCE::ScriptResultUtils::isSuccess(logResult)) {
         SCE_LOG_INFO("{% if action.label %}{}: {% endif %}{}"{% if action.label %}, "{{ action.label }}"{% endif %}, ::SCE::ScriptResultUtils::resultToString(logResult));
     } else {
+        // W3C SCXML 5.9: an expression that fails raises error.execution, and
+        // (W3C SCXML 4.9) the error ends the block.
         SCE_LOG_ERROR("Failed to evaluate log expression: {}", "{{ action.expr }}");
+        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                                                        "<log> expr failed to evaluate"));
+{% if block_exit is defined and block_exit %}
+        {{ block_exit }}
+{% endif %}
     }
 }
 {% else %}

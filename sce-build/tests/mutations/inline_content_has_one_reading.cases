@@ -207,6 +207,6 @@ PY
 # back into a string literal, which is the reading this file exists to refuse.
 mutation_case "kotlin quotes an assign's inline text again" <<'PY'
 edit("tools/codegen/templates/kotlin/actions/assign.kt.jinja2",
-     '''            executeAssign({{ action.location | to_script_source_location }}, {{ action.content | to_script_source_assign_content }})''',
-     '''            executeAssign({{ action.location | to_script_source_location }}, "'{{ action.content | escape_kotlin }}'")''')
+     '''            if (!executeAssign({{ action.location | to_script_source_location }}, {{ action.content | to_script_source_assign_content }})) {''',
+     '''            if (!executeAssign({{ action.location | to_script_source_location }}, "'{{ action.content | escape_kotlin }}'")) {''')
 PY

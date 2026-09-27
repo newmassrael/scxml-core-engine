@@ -206,8 +206,11 @@
             value = engine._script_engine.evaluate_expression(
                 self._session_id, lua_expr
             ).to_python()
-        except _ScriptError as exc:
-            value = f"<log eval error: {exc!r}>"
+        except _ScriptError:
+            # W3C SCXML 5.9: an expression that fails raises error.execution,
+            # and (W3C SCXML 4.9) the error ends the block.
+            self._raise_error_execution(engine, "<log> expr failed to evaluate")
+            raise _ActionAbort
         self.log_hook(label, value)
 
     def log_hook(self, label: str, value) -> None:
@@ -284,7 +287,9 @@
         """W3C SCXML 6.2.2 `<cancel sendidexpr>` — evaluate the Lua
         expression and coerce the result to a string. Empty / missing
         values map to the empty string (matches the scheduler contract
-        that empty ids cannot be cancelled)."""
+        that empty ids cannot be cancelled). An expression that fails
+        raises `error.execution` (W3C SCXML 5.9) and ends the block
+        (W3C SCXML 4.9)."""
         if not lua_sendid_expr:
             return ""
         try:
@@ -292,37 +297,64 @@
                 self._session_id, lua_sendid_expr
             ).to_python()
         except _ScriptError:
-            return ""
+            self._raise_error_execution(engine, "<cancel> sendidexpr failed to evaluate")
+            raise _ActionAbort
         return "" if value is None else str(value)
 
-    def _eval_event_name(self, engine, lua_event_expr: str):
-        """W3C SCXML 6.2 `<send eventexpr>` — evaluate the Lua
-        expression and resolve the resulting name to an Event enum
-        member. Returns `None` when the name does not match any
-        declared event (callers raise `error.execution` per W3C 6.2)."""
-        try:
-            value = engine._script_engine.evaluate_expression(
-                self._session_id, lua_event_expr
-            ).to_python()
-        except _ScriptError:
-            return None
-        if value is None:
-            return None
-        return _EVENT_BY_NAME.get(str(value))
+    def _send_argument_error(self, engine, send_id: str, message: str) -> None:
+        """W3C SCXML 6.2: "If the evaluation of `<send>`'s arguments produces
+        an error, the Processor MUST discard the message without attempting
+        to deliver it. Furthermore, it MUST place the error
+        'error.execution' on the internal event queue." The error carries
+        the send id (W3C SCXML 5.10.1, test332), and — raised while the
+        element was processed — it ends the block (W3C SCXML 4.9), which is
+        the `_ActionAbort` every other Python-AOT helper raises."""
+        evt = self.get_event_from_name("error.execution")
+        if evt is not None:
+            engine.raise_internal(
+                evt, EventMetadata(data=message, send_id=send_id, event_type="platform")
+            )
+        raise _ActionAbort
 
-    def _eval_delay_ms(self, engine, lua_delay_expr: str) -> int:
-        """W3C SCXML 6.2 `<send delayexpr>` — evaluate the Lua
-        expression and coerce the result into milliseconds. Accepts:
+    def _eval_send_argument(self, engine, send_id: str, lua_expr: str, message: str):
+        """One of a `<send>`'s own arguments (`eventexpr`, `targetexpr`,
+        `typeexpr`, `delayexpr`), evaluated once, as the ScriptValue the
+        caller reads. An expression that fails is the argument error above,
+        named by `message`."""
+        try:
+            return engine._script_engine.evaluate_expression(self._session_id, lua_expr)
+        except _ScriptError:
+            self._send_argument_error(engine, send_id, message)
+
+    def _eval_send_namelist(self, engine, send_id: str, namelist: str) -> dict:
+        """W3C SCXML 6.2 + B.2 (test553): a `<send namelist>` names locations,
+        and one that is not declared is an argument that cannot be evaluated
+        — one error however many of its names are bad, because the first
+        ends the element. The values are read once here and handed to
+        `_eval_send_payload` as `namelist_values`."""
+        values = {}
+        for var in namelist.split():
+            if not engine._script_engine.has_variable(self._session_id, var):
+                self._send_argument_error(
+                    engine, send_id, f"<send> namelist names '{var}', which is not declared"
+                )
+            try:
+                values[var] = engine._script_engine.get_variable(
+                    self._session_id, var
+                ).to_python()
+            except _ScriptError:
+                self._send_argument_error(
+                    engine, send_id, f"<send> namelist entry '{var}' could not be read"
+                )
+        return values
+
+    def _delay_ms_from_value(self, value) -> int:
+        """W3C SCXML 6.2 `<send delayexpr>` — the milliseconds an evaluated
+        delay names. Accepts:
           * `int` / `float` — interpreted as milliseconds directly;
           * `str` — parsed via `_parse_delay_text` ("5s", "500ms", "0");
-          * anything else — treated as `0` (matches W3C 6.2 "delay must
-            be a non-negative integer" with sensible fallback)."""
-        try:
-            value = engine._script_engine.evaluate_expression(
-                self._session_id, lua_delay_expr
-            ).to_python()
-        except _ScriptError:
-            return 0
+          * anything else — treated as `0`, sent at once, as the Interpreter
+            reads a value that is not a duration."""
         if isinstance(value, bool):
             return 0
         if isinstance(value, (int, float)):
@@ -413,6 +445,7 @@
         namelist: str,
         element: str,
         failures=None,
+        namelist_values=None,
     ):
         """W3C SCXML 5.10 — marshal `<send>` payload into `_event.data`.
         `element` is how a refusal names the element (`<send>`, or the
@@ -452,7 +485,13 @@
         list each failed `<param>`'s name is appended to. A `<send>` passes
         one, and also has an empty `lua_expr` — a `location=""`, which
         names no location — reported the same way; the host-run
-        `<invoke>` passes none and its reading is left as it was."""
+        `<invoke>` passes none and its reading is left as it was.
+
+        A `<send>` reads its namelist in its argument prologue
+        (`_eval_send_namelist`), because a namelist entry is one of the
+        element's own arguments, and passes the values as
+        `namelist_values`; the `namelist` text is then empty. The host-run
+        `<invoke>` still passes the text."""
         if lua_content_expr:
             try:
                 return engine._script_engine.evaluate_expression(
@@ -487,9 +526,9 @@
                     engine, f"{element} <content> failed to evaluate"
                 )
                 raise _ActionAbort
-        if not params and not namelist:
+        if not params and not namelist and not namelist_values:
             return ""
-        marshalled = {}
+        marshalled = dict(namelist_values) if namelist_values else {}
         if namelist:
             for var in namelist.split():
                 if not engine._script_engine.has_variable(
@@ -517,11 +556,15 @@
         # silently dropped every value but the last.
         _repeats: dict = {}
         for name, lua_expr in params:
-            if failures is not None and not lua_expr:
+            if not lua_expr:
+                # W3C SCXML 5.7.1: `location=""` names no location — the same
+                # failure as an expression that will not evaluate, for a
+                # `<send>` and a host-run `<invoke>` alike.
                 self._raise_error_execution(
                     engine, f"{element} <param name='{name}'> names no location"
                 )
-                failures.append(name)
+                if failures is not None:
+                    failures.append(name)
                 continue
             try:
                 _value = engine._script_engine.evaluate_expression(

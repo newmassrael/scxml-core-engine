@@ -47,6 +47,8 @@ from sce_runtime import (
     StatePolicy,
     StateTarget,
     create_done_invoke_event_name,
+    is_invalid_target as _is_invalid_target,
+    is_supported_send_type as _is_supported_send_type,
     published_origin as _published_origin,
     session_id_from_scxml_location as _session_id_from_scxml_location,
 )
@@ -222,7 +224,7 @@ def _coerce_event_data_str(data: Any) -> str:
 
 def _parse_delay_text(text: str) -> int:
     """W3C SCXML 6.2 — convert a `delayexpr` string ("5s", "500ms", "0",
-    bare-number) into milliseconds. Used by the policy's `_eval_delay_ms`
+    bare-number) into milliseconds. Used by the policy's `_delay_ms_from_value`
     helper; lifted to module scope so an empty / invalid string returns
     0 without needing a class instance.
 

@@ -4283,6 +4283,21 @@
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "symbol": "ActionExecutorImpl::executeForeachAction",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeScript",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeIfAction",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeCancelAction",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -6807,6 +6822,11 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::evaluateDoneData",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/InvokeExecutor.cpp",
+          "symbol": "SCXMLInvokeHandler::startInvokeInternal",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -7056,6 +7076,11 @@
           "file": "sce/src/parsing/PugiXMLParser.cpp",
           "symbol": "PugiXMLElement::getTextContent",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeScript",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -7227,6 +7252,11 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
           "symbol": "evaluateCondition",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeCancelAction",
           "kind": "implements"
         }
       ],
@@ -8192,6 +8222,21 @@
           "file": "sce-build/src/lib.rs",
           "symbol": "compile_document_set",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
+          "symbol": "SendHelper",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
+          "symbol": "isSupportedSendType",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
+          "symbol": "isInvalidTarget",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -13040,6 +13085,16 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "raise_external",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
+          "symbol": "SendHelper",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
+          "symbol": "isUnreachableTarget",
           "kind": "implements"
         }
       ],

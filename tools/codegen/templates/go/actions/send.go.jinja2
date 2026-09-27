@@ -4,21 +4,7 @@
 {# W3C SCXML 6.2: Send event (internal, external, delayed, HTTP) #}
 {% import 'param_macros.go.jinja2' as param_macros %}
 {% set send_id = action.id if action.id else action.auto_send_id %}
-{% if send_id %}
-	// W3C SCXML 6.2: send id="{{ send_id }}"
-{% endif %}
-{% if action.idlocation and model.needs_script_engine %}
-	// W3C SCXML 6.2.4: the send id goes to `idlocation`, through the
-	// assignment `<assign>` makes. A location that cannot take it is an
-	// argument that cannot be evaluated, so the message is discarded and
-	// error.execution raised (W3C SCXML 6.2, 5.9.2).
-	if err := p.storeIDInLocation(`{{ action.idlocation | to_lua_location }}`, "{{ send_id | escape_go }}"); err != nil {
-{% if 'error.execution' in model.events %}
-		engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send idlocation='{{ action.idlocation | escape_go }}'> could not take the send id"))
-{% endif %}
-	} else {
-{% endif %}
-{# ── Build event data from <param>, namelist, or <content> ── #}
+{% set in_block = in_action_block is defined and in_action_block %}
 {% set has_params = action.params and action.params | length > 0 %}
 {% set has_namelist = action.namelist and action.namelist | trim %}
 {% if has_params %}
@@ -26,23 +12,164 @@
 {% else %}
 {% set has_dynamic_params = false %}
 {% endif %}
-{% if has_dynamic_params or has_namelist %}
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
-	{
-{% if has_namelist %}
-		sendAborted := false
+{% if send_id %}
+	// W3C SCXML 6.2: send id="{{ send_id }}"
 {% endif %}
+	{
+{# ── The element's own arguments, evaluated once ──
+   W3C SCXML 6.2: "The Processor MUST evaluate all arguments to <send> when the
+   <send> element is evaluated", and "if the evaluation of <send>'s arguments
+   produces an error, the Processor MUST discard the message without attempting
+   to deliver it". So every argument is read here, before any arm runs, and the
+   arms below only read the locals this prologue leaves. The first failure is
+   one error.execution, the message goes nowhere, and — the error having been
+   raised while the element was processed — the block ends (W3C SCXML 4.9).
+   A <param> is not one of these: §5.7.1 leaves its pair out and the message
+   still goes, which the payload below keeps.
+
+   The whole element is one Go block, so two sends in one action block do not
+   declare the same locals twice. #}
+{% set send_prologue = model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation) %}
+{% if send_prologue %}
+	p.ensureScriptEngine()
+	sendArgError := ""
+{% if action.idlocation %}
+	// W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
+	// there even when a later argument fails, through the assignment
+	// `<assign>` makes; a location that cannot take it is an argument that
+	// cannot be evaluated too (W3C SCXML 5.9.2).
+	if err := p.storeIDInLocation(`{{ action.idlocation | to_lua_location }}`, "{{ send_id | escape_go }}"); err != nil {
+		sendArgError = "<send idlocation='{{ action.idlocation | escape_go }}'> could not take the send id"
+	}
+{% endif %}
+{% if action.eventexpr %}
+	// An event name that evaluates to nothing names no event: the same
+	// failure as one that does not evaluate.
+	sendEventName := ""
+	if sendArgError == "" {
+		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`); err == nil {
+			sendEventName = sce.ToWireString(v)
+		}
+		if sendEventName == "" {
+			sendArgError = "<send> eventexpr could not be evaluated to an event name"
+		}
+	}
+	_ = sendEventName
+{% endif %}
+{% if action.targetexpr %}
+	// A target that evaluates to nothing is not an evaluation error: it is
+	// an address nobody answers at, which the arm reports as
+	// error.communication (W3C SCXML 6.2.4).
+	var sendTargetVal any
+	sendTarget := ""
+	if sendArgError == "" {
+		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.targetexpr | to_lua_expr }}`); err == nil {
+			sendTargetVal = v
+			sendTarget = sce.ToWireString(v)
+		} else {
+			sendArgError = "<send> targetexpr could not be evaluated"
+		}
+	}
+	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
+		// W3C SCXML 6.2: a target this processor cannot address is refused
+		// as a static one is, before anything is delivered.
+		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+	}
+	_ = sendTargetVal
+	_ = sendTarget
+{% endif %}
+{% if action.typeexpr %}
+	if sendArgError == "" {
+		// W3C SCXML 6.2: a type the platform does not support is the same
+		// error as one that cannot be evaluated.
+		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.typeexpr | to_lua_expr }}`); err != nil {
+			sendArgError = "<send> typeexpr could not be evaluated"
+		} else if !sce.IsSupportedSendType(sce.ToWireString(v)) {
+			sendArgError = "<send> typeexpr names a processor this platform does not support"
+		}
+	}
+{% endif %}
+{% if action.delayexpr %}
+	sendDelayMs := uint64(0)
+	if sendArgError == "" {
+		// The expression failing is the argument error; the message is not
+		// scheduled under some default wait. A value that does not read as a
+		// duration is sent at once, as the Interpreter reads it.
+		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.delayexpr | to_lua_expr }}`); err != nil {
+			sendArgError = "<send> delayexpr could not be evaluated"
+		} else if ms, ok := sce.ParseDelayToMs(sce.ToWireString(v)); ok {
+			sendDelayMs = ms
+		}
+	}
+	_ = sendDelayMs
+{% endif %}
+{% if has_namelist %}
+	// W3C SCXML 6.2 + B.2: a namelist names locations, and one that is not
+	// declared is an argument that cannot be evaluated — one error however
+	// many of its names are bad.
+	namelistParts := make([]sce.EventDataParam, 0)
+{% for name in action.namelist | split %}
+	if sendArgError == "" {
+		if !p.ScriptEngine.HasVariable(p.SessionID, "{{ name | escape_go }}") {
+			sendArgError = "<send> namelist names '{{ name | escape_go }}', which is not declared"
+		} else if nlVal, nlErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ name }}`); nlErr == nil {
+			namelistParts = append(namelistParts, sce.EventDataParam{Name: "{{ name | escape_go }}", Value: nlVal})
+		} else {
+			sendArgError = "<send> namelist entry '{{ name | escape_go }}' could not be read"
+		}
+	}
+{% endfor %}
+{% endif %}
+	if sendArgError != "" {
+{% if 'error.execution' in model.events %}
+		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sendArgError)
+		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		engine.Raise(errEvt)
+{% endif %}
+{% if in_block %}
+		return  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+	}
+{% if action.targetexpr %}
+	if sendArgError == "" && sendTargetVal == nil {
+		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value
+		// is not reachable — error.communication, nothing delivered, and the
+		// error ends the block as any other would (W3C SCXML 4.9). An empty
+		// STRING is not this case here: a self-sent event carries no origin
+		// on this backend, so `targetexpr="_event.origin"` reads "" and must
+		// reach this session (test336).
+{% if 'error.communication' in model.events %}
+		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		engine.Raise(errEvt)
+{% endif %}
+{% if in_block %}
+		return
+{% else %}
+		sendArgError = "unreachable target"  // discards the message below
+{% endif %}
+	}
+{% endif %}
+{% endif %}
+{% set wraps_rest = send_prologue and not in_block %}
+{% if wraps_rest %}
+	if sendArgError == "" {
+{% endif %}
+{# ── Build event data from <param>, namelist, or <content> ── #}
+{% if has_dynamic_params or has_namelist %}
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
 {% if has_dynamic_params %}
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
 		// the block once it has. Read at the end of this element.
 		paramFailed := false
-{% endif %}
 		p.ensureScriptEngine()
+{% endif %}
 {# Bound only when something is read through it: a send whose one dynamic
    `<param>` is an empty `location=""` evaluates nothing, and Go refuses a
    variable nobody reads. #}
-{% set reads_ns = namespace(any=has_namelist) %}
+{% set reads_ns = namespace(any=false) %}
 {% for param in action.params %}
 {% if not param.is_static_literal and (param.expr or param.location) %}
 {% set reads_ns.any = true %}
@@ -91,31 +218,10 @@
 {% endfor %}
 {% endif %}
 {% if has_namelist %}
-{% for name in action.namelist | split %}
-		// W3C SCXML B.2: Check variable existence before evaluation
-		if !se.HasVariable(p.SessionID, "{{ name }}") {
-{% if 'error.execution' in model.events %}
-			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> namelist names '{{ name }}', which is not declared"))
+		// The namelist values the prologue read, after the params.
+		parts = append(parts, namelistParts...)
 {% endif %}
-			sendAborted = true
-		} else if nlVal, nlErr := se.EvaluateExpression(p.SessionID, `{{ name }}`); nlErr == nil {
-			parts = append(parts, sce.EventDataParam{Name: "{{ name }}", Value: nlVal})
-		} else {
-{% if 'error.execution' in model.events %}
-			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> namelist entry '{{ name }}' failed to evaluate"))
-{% endif %}
-			sendAborted = true
-		}
-{% endfor %}
-{% endif %}
-{% if has_namelist %}
-		eventDataStr := ""
-		if !sendAborted {
-			eventDataStr = sce.BuildJSONFromTypedParams(parts)
-		}
-{% else %}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-{% endif %}
 		_ = eventDataStr
 {% elif has_params %}
 	{
@@ -159,8 +265,12 @@
 		eventDataStr := ""
 		_ = eventDataStr
 {% endif %}
-{% if has_namelist %}
-		if !sendAborted {
+{# The event name every event-carrying arm below uses: the prologue's
+   evaluation when there is an `eventexpr`, the literal otherwise. #}
+{% if action.eventexpr and model.needs_script_engine %}
+{% set event_name_go = 'sendEventName' %}
+{% else %}
+{% set event_name_go = '"' ~ (action.event | default('', true) | escape_go) ~ '"' %}
 {% endif %}
 {# ── Unsupported send type check ── #}
 {% if action.send_type_unsupported %}
@@ -172,7 +282,7 @@
 		engine.Raise(errEvt)
 	}
 {% endif %}
-{% if in_action_block is defined and in_action_block %}
+{% if in_block %}
 	return  // W3C SCXML 4.9: the error ends the block
 {% endif %}
 {% elif action.send_type_host_served %}
@@ -182,26 +292,6 @@
 	// through would also enqueue the event locally and the document would see
 	// the act twice.
 	{
-{% if action.targetexpr and model.needs_script_engine %}
-		// §scxml-6.2: the target is resolved HERE rather than by the shared
-		// resolution further down, because that one sits inside the arm this
-		// branch replaces. A host-served processor is free to give a target
-		// any meaning it likes, so an unresolvable one is passed on as the
-		// empty string rather than refused — the refusals below it are the
-		// SCXML processor's rules about ITS addresses, not this one's.
-		hostTarget := ""
-		if hostTargetVal, hostTargetErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.targetexpr | to_lua_expr }}`); hostTargetErr == nil && hostTargetVal != nil {
-			hostTarget = sce.ToWireString(hostTargetVal)
-		}
-{% endif %}
-{% if action.eventexpr and model.needs_script_engine %}
-		// Same reason: the event name a host-served act carries is whatever
-		// the document computed, and the shared evaluation is downstream.
-		hostEventName := ""
-		if hostEvtVal, hostEvtErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`); hostEvtErr == nil && hostEvtVal != nil {
-			hostEventName = sce.ToWireString(hostEvtVal)
-		}
-{% endif %}
 {% if has_dynamic_params or has_namelist %}
 		hostParams := sce.WireParamsFromTypedParams(parts)
 {% elif has_params %}
@@ -215,8 +305,8 @@
 {% endif %}
 		hostRequest := sce.HostSendRequest{
 			ProcessorType: "{{ action.send_type | escape_go }}",
-			EventName:     {% if action.eventexpr and model.needs_script_engine %}hostEventName{% else %}"{{ action.event | default('', true) | escape_go }}"{% endif %},
-			Target:        {% if action.targetexpr and model.needs_script_engine %}hostTarget{% else %}"{{ action.target | default('', true) | escape_go }}"{% endif %},
+			EventName:     {{ event_name_go }},
+			Target:        {% if action.targetexpr and model.needs_script_engine %}sendTarget{% else %}"{{ action.target | default('', true) | escape_go }}"{% endif %},
 			Content:       "{{ action.content | default('', true) | escape_go }}",
 			Params:        hostParams,
 			SendID:        "{{ send_id | default('') | escape_go }}",
@@ -226,14 +316,7 @@
 {% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
 {% if action.delayexpr or host_delay_ms > 0 %}
 {% if action.delayexpr and model.needs_script_engine %}
-		// W3C SCXML 6.2: the wait is named by an expression evaluated now, at
-		// send time — the same reading the event-carrying arms take.
-		hostDelayMs := int64(0)
-		if hostDelayVal, hostDelayErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.delayexpr | to_lua_expr }}`); hostDelayErr == nil && hostDelayVal != nil {
-			if parsed, parsedOK := sce.ParseDelayToMs(sce.ToWireString(hostDelayVal)); parsedOK {
-				hostDelayMs = int64(parsed)
-			}
-		}
+		hostDelayMs := int64(sendDelayMs)
 {% else %}
 		hostDelayMs := int64({{ host_delay_ms }})
 {% endif %}
@@ -270,54 +353,38 @@
 		engine.Raise(errEvt)
 	}
 {% endif %}
-{% if in_action_block is defined and in_action_block %}
+{% if in_block %}
 	return  // W3C SCXML 4.9: the error ends the block
 {% endif %}
 {% elif action.send_type and 'BasicHTTPEventProcessor' in action.send_type %}
 	// W3C SCXML C.2: BasicHTTP send
 	{
 {% if action.targetexpr and model.needs_script_engine %}
-		httpTargetVal, httpTargetErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.targetexpr | to_lua_expr }}`)
-		httpTarget := ""
-		if httpTargetErr == nil && httpTargetVal != nil {
-			httpTarget = fmt.Sprintf("%v", httpTargetVal)
-		}
+		httpTarget := sendTarget
 {% elif action.target %}
 		httpTarget := "{{ action.target | escape_go }}"
 {% else %}
 		httpTarget := ""
 {% endif %}
-{% if action.eventexpr and model.needs_script_engine %}
-		httpEvtVal, _ := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
-		httpEvtName := fmt.Sprintf("%v", httpEvtVal)
-{% elif action.event %}
-		httpEvtName := "{{ action.event | escape_go }}"
-{% else %}
-		httpEvtName := ""
-{% endif %}
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
 {% if 'error.communication' in model.events %}
-			{
-				errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to")
-				errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
-				engine.Raise(errEvt)
-			}
+			errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to")
+			errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+			engine.Raise(errEvt)
 {% elif 'error.execution' in model.events %}
-			{
-				errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to")
-				errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
-				engine.Raise(errEvt)
-			}
+			errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to")
+			errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+			engine.Raise(errEvt)
+{% endif %}
+{% if in_block %}
+			return  // W3C SCXML 4.9: the error ends the block
 {% endif %}
 		} else {
 {% if has_dynamic_params or has_namelist %}
 			// W3C SCXML C.2 + 6.2.3: the arguments were evaluated once, above.
-			// The form is a rendering of that payload — this arm used to read
-			// the data model again, and its second reading of the namelist had
-			// no error arm at all, so the two could only agree while nothing
-			// failed. It also mapped `<param>` alone, which is the shape that
-			// left a namelist out of the POST entirely.
+			// The form is a rendering of that payload, so a second reading of
+			// the data model cannot disagree with the first.
 			httpParams := sce.WireParamsFromTypedParams(parts)
 {% elif has_params %}
 			// W3C SCXML C.2: Build HTTP params map from <param> elements
@@ -327,7 +394,7 @@
 			// No arguments to map: a nil form leaves the body to `<content>`.
 			var httpParams map[string][]string
 {% endif %}
-			engine.PerformHTTPSend(httpTarget, httpEvtName, {% if has_params or has_namelist %}""{% else %}eventDataStr{% endif %}, httpParams, "{{ send_id | default('') | escape_go }}")
+			engine.PerformHTTPSend(httpTarget, {{ event_name_go }}, {% if has_params or has_namelist %}""{% else %}eventDataStr{% endif %}, httpParams, "{{ send_id | default('') | escape_go }}")
 		}
 	}
 {% elif action.target == '#_internal' %}
@@ -343,22 +410,13 @@
 	// W3C SCXML 6.2: Delayed send
 	{
 {% if action.delayexpr and model.needs_script_engine %}
-		delayVal, _ := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.delayexpr | to_lua_expr }}`)
-		delayDur := sce.ParseDelay(fmt.Sprintf("%v", delayVal))
+		delayDur := time.Duration(sendDelayMs) * time.Millisecond
 {% elif action.delay %}
 		delayDur := sce.ParseDelay("{{ action.delay }}")
 {% else %}
 		delayDur := time.Duration(0)
 {% endif %}
-{% if action.eventexpr and model.needs_script_engine %}
-		delayEvtVal, _ := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
-		delayEvtName := fmt.Sprintf("%v", delayEvtVal)
-{% elif action.event %}
-		delayEvtName := "{{ action.event | escape_go }}"
-{% else %}
-		delayEvtName := ""
-{% endif %}
-		if delayEvt, delayOk := p.GetEventFromName(delayEvtName); delayOk {
+		if delayEvt, delayOk := p.GetEventFromName({{ event_name_go }}); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "{{ send_id | default('') | escape_go }}", eventDataStr)
 		}
 	}
@@ -377,13 +435,8 @@
 {% if invoke_info.invoke_id == invoke_target_id %}
 {% set ns_found.v = true %}
 	if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
-{% if action.event %}
-		p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName("{{ action.event | escape_go }}", eventDataStr)
-{% elif action.eventexpr and model.needs_script_engine %}
-		{
-			childEvtVal, _ := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
-			p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName(fmt.Sprintf("%v", childEvtVal), eventDataStr)
-		}
+{% if action.event or (action.eventexpr and model.needs_script_engine) %}
+		p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName({{ event_name_go }}, eventDataStr)
 {% endif %}
 	}
 {% endif %}
@@ -402,58 +455,31 @@
 	// W3C SCXML 6.2: External send
 {% if action.targetexpr and model.needs_script_engine %}
 	{
-		// W3C SCXML 6.2: Evaluate targetexpr at runtime
-		sendTargetVal, sendTargetErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.targetexpr | to_lua_expr }}`)
-		if sendTargetErr != nil || sendTargetVal == nil || fmt.Sprintf("%v", sendTargetVal) == "<nil>" {
-			// W3C SCXML 6.2.4: If target is not valid, raise error.communication
-{% if 'error.communication' in model.events %}
-			{
-				errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> targetexpr evaluated to nothing, so there is no target to reach")
-				errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
-				engine.Raise(errEvt)
-			}
-{% elif 'error.execution' in model.events %}
-			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> targetexpr evaluated to nothing, so there is no target to reach"))
-{% endif %}
-		} else {
-{% if action.eventexpr and model.needs_script_engine %}
-			sendEvtVal, _ := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
-			sendEvtName := fmt.Sprintf("%v", sendEvtVal)
-{% elif action.event %}
-			sendEvtName := "{{ action.event | escape_go }}"
-{% else %}
-			sendEvtName := ""
-{% endif %}
 {% if model.invokes | scxml %}
-			// W3C SCXML C.1: a target that decodes to one of our children's
-			// published locations is addressed to that child. Without this the
-			// address a peer was told to answer at routes back into the
-			// sender's own queue, so the location compares equal and still
-			// reaches nobody.
-			addressedChild := sce.SessionIDFromScxmlLocation(fmt.Sprintf("%v", sendTargetVal))
-			if !p.DeliverToChildSession(addressedChild, sendEvtName, eventDataStr) {
+		// W3C SCXML C.1: a target that decodes to one of our children's
+		// published locations is addressed to that child. Without this the
+		// address a peer was told to answer at routes back into the
+		// sender's own queue, so the location compares equal and still
+		// reaches nobody.
+		addressedChild := sce.SessionIDFromScxmlLocation(sendTarget)
+		if !p.DeliverToChildSession(addressedChild, {{ event_name_go }}, eventDataStr) {
 {% endif %}
-			if sendEvt, sendOk := p.GetEventFromName(sendEvtName); sendOk {
-				meta := sce.NewEventWithMetadata(sendEvt)
-				meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", "")
-				meta.Metadata.Data = eventDataStr
-				engine.RaiseExternalWithMeta(meta)
-			}
-{% if model.invokes | scxml %}
-			}
-{% endif %}
-		}
-	}
-{% elif action.eventexpr and model.needs_script_engine %}
-	{
-		sendEvtVal, _ := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
-		sendEvtName := fmt.Sprintf("%v", sendEvtVal)
-		if sendEvt, sendOk := p.GetEventFromName(sendEvtName); sendOk {
+		if sendEvt, sendOk := p.GetEventFromName({{ event_name_go }}); sendOk {
 			meta := sce.NewEventWithMetadata(sendEvt)
 			meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", "")
 			meta.Metadata.Data = eventDataStr
 			engine.RaiseExternalWithMeta(meta)
 		}
+{% if model.invokes | scxml %}
+		}
+{% endif %}
+	}
+{% elif action.eventexpr and model.needs_script_engine %}
+	if sendEvt, sendOk := p.GetEventFromName(sendEventName); sendOk {
+		meta := sce.NewEventWithMetadata(sendEvt)
+		meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", "")
+		meta.Metadata.Data = eventDataStr
+		engine.RaiseExternalWithMeta(meta)
 	}
 {% elif action.event %}
 	{
@@ -464,11 +490,8 @@
 	}
 {% endif %}
 {% endif %}
-{% if has_namelist %}
-		}
-{% endif %}
 {% if has_dynamic_params %}
-{% if in_action_block is defined and in_action_block %}
+{% if in_block %}
 		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
 		// <foreach> it came — the block is its own function.
 		if paramFailed {
@@ -479,6 +502,7 @@
 {% endif %}
 {% endif %}
 	}
-{% if action.idlocation and model.needs_script_engine %}
+{% if wraps_rest %}
 	}
 {% endif %}
+	}

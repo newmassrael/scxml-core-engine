@@ -11,7 +11,16 @@
 {% elif action.sendidexpr and model.needs_script_engine %}
 	{
 		cancelSendIDVal, cancelErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.sendidexpr | to_lua_expr }}`)
-		if cancelErr == nil && cancelSendIDVal != nil {
+		if cancelErr != nil {
+			// W3C SCXML 5.9: a sendidexpr that fails raises error.execution,
+			// and (W3C SCXML 4.9) the error ends the block.
+{% if 'error.execution' in model.events %}
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<cancel> sendidexpr failed to evaluate"))
+{% endif %}
+{% if in_action_block is defined and in_action_block %}
+			return
+{% endif %}
+		} else if cancelSendIDVal != nil {
 			engine.CancelEvent(fmt.Sprintf("%v", cancelSendIDVal))
 		}
 	}

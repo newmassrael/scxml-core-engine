@@ -254,13 +254,34 @@
                         // surface is literals. The Interpreter
                         // (`InvokeExecutor.cpp`) has always done it this way.
                         {% for param in invoke_info.params %}
-                        {% if invoke_info.child_needs_script_engine %}
-                        {% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
+                        {% if model.needs_script_engine %}
+                        {# §scxml-5.7: the value comes from 'expr' or, failing that,
+                           'location' — a location expression, read as its value.
+                           The parser admits exactly one, so both empty is
+                           `location=""`, a location that names nothing. The
+                           <param> is an argument of this <invoke> whether or not
+                           the child declares `name` or runs a script engine, so
+                           it is evaluated — and its failure raised — either way;
+                           §scxml-6.4.3 decides only what the child keeps. The
+                           author's text is filtered where it is emitted, never
+                           bound to a name first, so the migration scan reads
+                           the site as the filter call it is. #}
+                        {% set child_keeps = invoke_info.child_needs_script_engine and invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
+                        {% if not (param.expr or param.location) %}
+                        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> names no location"));
+                        {% else %}
                         {
                             ensureScriptEngine();
-                            auto __sce_param = getScriptEngine().evaluateExpression(sessionId_.value(), {{ param.expr | to_script_source_expr }}).get();
+                            auto __sce_param = getScriptEngine().evaluateExpression(sessionId_.value(), {{ (param.expr if param.expr else param.location) | to_script_source_expr }}).get();
                             if (::SCE::ScriptResultUtils::isSuccess(__sce_param)) {
+                                {% if child_keeps %}
                                 child_{{ invoke_info.field_suffix }}_->setParamValueInScriptEngine("{{ param.name | escape_cpp }}", __sce_param.getInternalValue());
+                                {% else %}
+                                // §scxml-6.4.3: `{{ param.name }}` matches no top-level
+                                // `<data>` of the child, so the Processor MUST NOT add
+                                // it to the invoked session's data model.
+                                (void)__sce_param;
+                                {% endif %}
                             } else {
                                 // §scxml-5.7.1: BOTH halves — `error.execution` on
                                 // the internal queue AND the name and value
@@ -276,18 +297,15 @@
                                 // §scxml-6.4.2's "terminate the processing of the
                                 // element" is not what a failing `<param>` costs:
                                 // the child still starts, one pair short.
-                                SCE_LOG_ERROR("Failed to evaluate <invoke> param expression for {}: {}", "{{ param.name | escape_cpp }}", "{{ param.expr | escape_cpp }}");
-                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> expr failed to evaluate"));
+                                SCE_LOG_ERROR("Failed to evaluate <invoke> param expression for {}: {}", "{{ param.name | escape_cpp }}", "{{ (param.expr if param.expr else param.location) | escape_cpp }}");
+                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> could not be read"));
                             }
                         }
-                        {% else %}
-                        // §scxml-6.4.3: `{{ param.name }}` matches no top-level
-                        // `<data>` of the child, so the Processor MUST NOT add
-                        // it to the invoked session's data model.
                         {% endif %}
                         {% else %}
-                        // Child does not use JSEngine - params handled via static datamodel
-                        AOT_DEBUG("Param {{ param.name | escape_cpp }}={{ param.expr | escape_cpp }} - child uses static datamodel");
+                        // No script engine in this document: the <param> is a literal the
+                        // static datamodel carries.
+                        AOT_DEBUG("Param {{ param.name | escape_cpp }}={{ param.expr | escape_cpp }} - static datamodel");
                         {% endif %}
                         {% endfor %}
                         {% endif %}
@@ -559,6 +577,13 @@
                             }
                             hostInvoke.params["{{ param.name | escape_cpp }}"].push_back(*text);
                         }
+                        {% elif not (param.expr or param.location) %}
+                        // W3C SCXML 5.7.1: `location=""` names no location — the same
+                        // failure as an expression that will not evaluate: reported,
+                        // and the pair left out.
+                        engine.raise(typename Engine::EventWithMetadata(
+                            Event::Error_execution,
+                            "<invoke> <param name='{{ param.name | escape_cpp }}'> names no location"));
                         {% else %}
                         {
                             // W3C SCXML 5.7: a `<param>` names its value by

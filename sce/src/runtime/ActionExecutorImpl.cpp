@@ -82,7 +82,12 @@ bool ActionExecutorImpl::executeScript(const std::string &script) {
         auto result = scriptEngine_.executeScript(sessionId_, script).get();
 
         if (!result.isSuccess()) {
+            // §scxml-5.8: a script that fails raises error.execution; returning
+            // false ends the block (§scxml-4.9).
             handleJSError("script execution", "Script execution failed");
+            if (eventRaiser_ && eventRaiser_->isReady()) {
+                eventRaiser_->raiseEvent("error.execution", "<script> failed to execute");
+            }
             return false;
         }
 
@@ -91,6 +96,9 @@ bool ActionExecutorImpl::executeScript(const std::string &script) {
 
     } catch (const std::exception &e) {
         handleJSError("script execution", e.what());
+        if (eventRaiser_ && eventRaiser_->isReady()) {
+            eventRaiser_->raiseEvent("error.execution", "<script> failed to execute");
+        }
         return false;
     }
 }
@@ -614,20 +622,20 @@ bool ActionExecutorImpl::executeIfAction(const IfAction &action) {
             }
 
             if (shouldExecute) {
-                // Execute all actions in this branch
-                bool allSucceeded = true;
-
                 // Create execution context for nested actions
                 auto sharedThis = std::shared_ptr<IActionExecutor>(this, [](IActionExecutor *) {});
                 ExecutionContextImpl context(sharedThis, sessionId_);
 
                 for (const auto &branchAction : branch.actions) {
                     if (branchAction && !branchAction->execute(context)) {
-                        SCE_LOG_ERROR("Failed to execute action in if branch");
-                        allSucceeded = false;
+                        // §scxml-4.9: the element raised its error; the rest of the
+                        // branch does not run, and returning false ends the block
+                        // that contains this <if>.
+                        SCE_LOG_DEBUG("Action in if branch failed; the block ends");
+                        return false;
                     }
                 }
-                return allSucceeded;  // Stop after first matching branch
+                return true;  // Stop after first matching branch
             }
         }
 
@@ -1028,7 +1036,14 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         }
 
     } catch (const std::exception &e) {
+        // §scxml-6.2: an argument of <send> that could not be evaluated
+        // (eventexpr, targetexpr, typeexpr, delayexpr, ...) raises
+        // error.execution and the message is discarded; returning false ends
+        // the block (§scxml-4.9).
         SCE_LOG_ERROR("Failed to execute send action: {}", e.what());
+        if (eventRaiser_ && eventRaiser_->isReady()) {
+            eventRaiser_->raiseEvent("error.execution", "<send> argument failed to evaluate");
+        }
         return false;
     }
 }
@@ -1042,11 +1057,10 @@ bool ActionExecutorImpl::executeCancelAction(const CancelAction &action) {
         if (!action.getSendId().empty()) {
             sendId = action.getSendId();
         } else if (!action.getSendIdExpr().empty()) {
+            // A sendidexpr that fails throws, and is reported below. One that
+            // yields the empty string names no pending send, and cancelling a
+            // send that does not exist is not an error.
             sendId = evaluateExpression(action.getSendIdExpr());
-            if (sendId.empty()) {
-                SCE_LOG_ERROR("Cancel action sendidexpr evaluated to empty: {}", action.getSendIdExpr());
-                return false;
-            }
         } else {
             SCE_LOG_ERROR("Cancel action has no sendid or sendidexpr");
             return false;
@@ -1074,7 +1088,12 @@ bool ActionExecutorImpl::executeCancelAction(const CancelAction &action) {
         }
 
     } catch (const std::exception &e) {
+        // §scxml-5.9: a sendidexpr that fails raises error.execution; returning
+        // false ends the block (§scxml-4.9).
         SCE_LOG_ERROR("Failed to execute cancel action: {}", e.what());
+        if (eventRaiser_ && eventRaiser_->isReady()) {
+            eventRaiser_->raiseEvent("error.execution", "<cancel> sendidexpr failed to evaluate");
+        }
         return false;
     }
 }

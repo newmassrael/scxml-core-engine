@@ -24,11 +24,6 @@ public:
     // Parse all invoke elements within a specific state
     std::vector<std::shared_ptr<IInvokeNode>> parseInvokesInState(const std::shared_ptr<IXMLElement> &stateElement);
 
-    // Parse param elements and return created DataModelItems
-    std::vector<std::shared_ptr<IDataModelItem>>
-    parseParamElementsAndCreateDataItems(const std::shared_ptr<IXMLElement> &invokeElement,
-                                         std::shared_ptr<IInvokeNode> invokeNode);
-
 private:
     std::shared_ptr<NodeFactory> nodeFactory_;
 

@@ -244,12 +244,11 @@ const PASTE_BACKENDS: &[Backend] = &[
                 key_at: 0,
                 value_at: 1,
             },
-            // One marker for all four send shapes: they used to write the
-            // map directly (`paramsP["k"] = v`) and now go through
-            // `putParam(paramsP, "k", v)`, which is what lets a repeated
+            // Every send fills one payload map, `sendPayload`, through
+            // `putParam(sendPayload, "k", v)`, which is what lets a repeated
             // name become an Array instead of overwriting.
             Extractor::HostPairs {
-                marker: "putParam(params",
+                marker: "putParam(sendPayload",
                 key_at: 0,
                 value_at: 1,
             },

@@ -14,6 +14,10 @@
 {% if 'error.execution' in model.events %}
         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<script> failed to execute"));
 {% endif %}
+{% if in_action_block is defined and in_action_block %}
+        // W3C SCXML 4.9: the error ends the block.
+        break 'action_block;
+{% endif %}
     }
 }
 {% endif %}

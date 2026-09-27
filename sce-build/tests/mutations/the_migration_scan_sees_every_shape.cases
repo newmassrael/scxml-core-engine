@@ -75,9 +75,9 @@ PY
 
 mutation_case "the callee sits further away than the window reached" <<'PY'
 edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
-     "                    val v = eng.evaluateExpr(sid, {{ action.targetexpr | to_script_source_expr }})",
-     """                    val v = eng.evaluateExpr(
-                        sid,
-                        "{{ action.targetexpr | escape_kotlin }}",
-                    )""")
+     "                valueToWireString(argEngine.evaluateExpr(argSid, {{ action.targetexpr | to_script_source_expr }}))",
+     """                valueToWireString(argEngine.evaluateExpr(
+                    argSid,
+                    "{{ action.targetexpr | escape_kotlin }}",
+                ))""")
 PY

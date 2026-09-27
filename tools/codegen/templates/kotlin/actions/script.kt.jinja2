@@ -2,8 +2,13 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {# W3C SCXML 5.8: <script> — three-way: kt: function | script engine | no-op #}
+{% import 'block_exit.kt.jinja2' as block_exit %}
 {% if action.get('is_kt_function', false) %}
             {{ action.content_kt | trim }}
 {% elif model.needs_script_engine and action.content %}
-            executeScriptBlock({{ action.content | to_script_source_script }})
+            // W3C SCXML 4.9: a script that fails has raised error.execution, and
+            // the error ends the block.
+            if (!executeScriptBlock({{ action.content | to_script_source_script }})) {
+                {{ block_exit.stmt(_in_foreach_body is defined and _in_foreach_body, in_run_block is defined and in_run_block) }}
+            }
 {% endif %}

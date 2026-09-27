@@ -148,23 +148,24 @@
                     continue
 {% endif %}
 {% if inv.namelist %}
-                # W3C SCXML 6.4.1: Validate namelist variables in PARENT
-                # before instantiating the child. Missing names raise
-                # error.execution and skip the invoke entirely
-                # (mirrors `tools/codegen/templates/rust/invoke_methods.rs.jinja2`
-                # namelist-validation block).
+                # W3C SCXML 6.4: "if the evaluation of its arguments produces
+                # an error, the SCXML Processor MUST terminate the processing
+                # of the element without further action". A name that is not
+                # a readable location is such an error: ONE error.execution for
+                # the element, however many names are bad, no child, and its
+                # <param>s are not evaluated.
                 _namelist_ok = True
 {% for vname in inv.namelist | split %}
-                if not engine._script_engine.has_variable(
+                if _namelist_ok and not engine._script_engine.has_variable(
                     self._session_id, {{ vname | py_string_literal }}
                 ):
-                    self._raise_error_execution(
-                        engine,
-                        "<invoke> namelist names '{{ vname }}', which the parent does not declare",
-                    )
                     _namelist_ok = False
 {% endfor %}
                 if not _namelist_ok:
+                    self._raise_error_execution(
+                        engine,
+                        "<invoke> namelist names a location that cannot be read",
+                    )
                     continue
 {% endif %}
 {% if inv.candidates %}
@@ -233,14 +234,33 @@
 {% endif %}
 {% if inv.params %}
 {% for param in inv.params %}
-{% if inv.child_datamodel_vars is defined and param.name in inv.child_datamodel_vars %}
+{# §scxml-5.7: the value comes from 'expr' or, failing that, 'location' — a
+   location expression, read as its value; both empty is `location=""`, a
+   location that names nothing. The <param> is an argument of this <invoke>
+   whether or not the child declares `name`, so it is evaluated — and its
+   failure raised — either way; §scxml-6.4.3 decides only what the child
+   keeps. #}
+{% set param_source = param.expr or param.location %}
+{% set child_keeps = inv.child_datamodel_vars is defined and param.name in inv.child_datamodel_vars %}
+{% if not param_source %}
+                self._raise_error_execution(
+                    engine,
+                    {{ ("<invoke> <param name='" ~ param.name ~ "'> names no location") | py_string_literal }},
+                )
+{% else %}
                 try:
-                    _pre_init[{{ param.name | py_string_literal }}] = (
-                        engine._script_engine.evaluate_expression(
-                            self._session_id,
-                            {{ param.expr | to_lua_expr | py_string_literal }},
-                        )
+                    _param_value = engine._script_engine.evaluate_expression(
+                        self._session_id,
+                        {{ param_source | to_lua_expr | py_string_literal }},
                     )
+{% if child_keeps %}
+                    _pre_init[{{ param.name | py_string_literal }}] = _param_value
+{% else %}
+                    # §scxml-6.4.3: {{ param.name }} matches no top-level `<data>`
+                    # of the child, so the Processor MUST NOT add it to the
+                    # invoked session's data model.
+                    del _param_value
+{% endif %}
                 except _ScriptError:
                     # §scxml-5.7.1: BOTH halves — `error.execution` on the
                     # internal queue AND the name and value ignored. Only the
@@ -257,15 +277,8 @@
                     # one pair short, and no `_ActionAbort` is raised here.
                     self._raise_error_execution(
                         engine,
-                        {{ ("<invoke> <param name='" ~ param.name ~ "'> expr failed to evaluate") | py_string_literal }},
+                        {{ ("<invoke> <param name='" ~ param.name ~ "'> could not be read") | py_string_literal }},
                     )
-{% else %}
-                # §scxml-6.4.3: {{ param.name }} matches no top-level `<data>`
-                # of the child, so the Processor MUST NOT add it to the
-                # invoked session's data model. The namelist arm above
-                # already read the child's declarations for the same reason;
-                # this arm did not, and a param that named nothing there
-                # became a variable in the child anyway.
 {% endif %}
 {% endfor %}
 {% endif %}

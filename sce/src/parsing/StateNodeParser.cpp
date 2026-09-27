@@ -264,16 +264,11 @@ void SCE::StateNodeParser::parseInvokeElements(const std::shared_ptr<IXMLElement
             // §scxml-6.4: Set parent state ID for invoke ID generation (test 224)
             invokeNode->setStateId(state->getId());
 
-            // Add invoke node to state
+            // Add invoke node to state. Its <param>s are arguments evaluated
+            // when the invoke starts (§scxml-6.4); they declare nothing in this
+            // state's data model.
             state->addInvoke(invokeNode);
             SCE_LOG_DEBUG("Added invoke: {}", invokeNode->getId());
-
-            // Create and add data model items from param elements
-            auto dataItems = invokeParser_->parseParamElementsAndCreateDataItems(invokeElement, invokeNode);
-            for (const auto &dataItem : dataItems) {
-                state->addDataItem(dataItem);
-                SCE_LOG_DEBUG("Added data item from param: {}", dataItem->getId());
-            }
         }
     }
 

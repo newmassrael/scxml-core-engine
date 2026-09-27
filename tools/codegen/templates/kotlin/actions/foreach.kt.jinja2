@@ -13,6 +13,7 @@
    raises that one error. Either way the enclosing block then ends, the way
    the <send> in this backend ends it: rethrown to an enclosing <foreach>,
    `return@run` out of a multi-block `run {}`, or `return`. #}
+{% import 'block_exit.kt.jinja2' as block_exit %}
 {% set foreach_in_body = _in_foreach_body is defined and _in_foreach_body %}
 {% if model.needs_script_engine %}
 {% if not action.array or not action.item %}
@@ -42,18 +43,8 @@
                 }
             }) {
                 // W3C SCXML 4.6 + 4.9: the block that contains the <foreach> ends.
-{# The closing line sits in every arm so this partial ends on a block tag, as
-   every partial `_render` includes does. #}
-{% if foreach_in_body %}
-                throw com.sce.runtime.ActionBlockAbort()
+                {{ block_exit.stmt(foreach_in_body, in_run_block is defined and in_run_block) }}
             } // end of run foreach@
-{% elif in_run_block is defined and in_run_block %}
-                return@run
-            } // end of run foreach@
-{% else %}
-                return
-            } // end of run foreach@
-{% endif %}
 {% endif %}
 {% else %}
             {{ action.array }}.forEach { {{ action.item }} ->

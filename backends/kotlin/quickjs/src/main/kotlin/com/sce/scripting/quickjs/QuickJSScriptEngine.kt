@@ -64,6 +64,10 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
     private data class Session(
         val handle: Long,  // QJSSession pointer
         var stateQueryCallback: ((String) -> Boolean)? = null,
+        // How many <foreach> loops are running right now: each depth caches its
+        // collection under its own global, so a nested loop leaves the array its
+        // enclosing one is walking intact (W3C SCXML 4.6).
+        var foreachDepth: Int = 0,
     )
 
     private val sessions = mutableMapOf<String, Session>()
@@ -290,28 +294,29 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
             throw ScriptEngineException("Illegal foreach index variable name: '$index'")
 
         val handle = session.handle
+        val slot = "__sce_foreach_${session.foreachDepth}"
 
         // Evaluate array once, store in temp variable
         val cleanedArray = cleanExpr(array)
-        val arrErr = QuickJSNative.eval(handle, "__sce_foreach = ($cleanedArray)")
+        val arrErr = QuickJSNative.eval(handle, "$slot = ($cleanedArray)")
         if (arrErr != null) {
             throw ScriptEngineException("Foreach array evaluation failed: $array ($arrErr)")
         }
 
         // Verify array-like (has numeric length property)
         val check = QuickJSNative.evalToBoolean(handle,
-            "typeof __sce_foreach === 'object' && __sce_foreach !== null && " +
-                "typeof __sce_foreach.length === 'number'")
+            "typeof $slot === 'object' && $slot !== null && " +
+                "typeof $slot.length === 'number'")
         if (check != 1) {
-            QuickJSNative.eval(handle, "delete __sce_foreach")
+            QuickJSNative.eval(handle, "delete $slot")
             throw ScriptEngineException("Foreach expression is not an array: $array")
         }
 
         // Get array length
-        val lengthResult = QuickJSNative.evalExpression(handle, "__sce_foreach.length")
+        val lengthResult = QuickJSNative.evalExpression(handle, "$slot.length")
         val length = decodeIntResult(lengthResult)
             ?: run {
-                QuickJSNative.eval(handle, "delete __sce_foreach")
+                QuickJSNative.eval(handle, "delete $slot")
                 throw ScriptEngineException("Foreach array has no valid length: $array")
             }
 
@@ -332,16 +337,24 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
 
         // A body element that fails ends the loop by throwing (W3C SCXML 4.9),
         // so the temporary is released however the loop is left.
+        session.foreachDepth++
         try {
             for (i in 0 until length) {
-                QuickJSNative.eval(handle, "$item = __sce_foreach[$i]")
+                // W3C SCXML 4.6: a loop variable that cannot be set is the
+                // <foreach>'s own error, not a value to carry on without.
+                QuickJSNative.eval(handle, "$item = $slot[$i]")?.let { err ->
+                    throw ScriptEngineException("Foreach could not set '$item': $err")
+                }
                 if (index.isNotEmpty()) {
-                    QuickJSNative.eval(handle, "$index = $i")
+                    QuickJSNative.eval(handle, "$index = $i")?.let { err ->
+                        throw ScriptEngineException("Foreach could not set '$index': $err")
+                    }
                 }
                 body()
             }
         } finally {
-            QuickJSNative.eval(handle, "delete __sce_foreach")
+            session.foreachDepth--
+            QuickJSNative.eval(handle, "delete $slot")
         }
     }
 

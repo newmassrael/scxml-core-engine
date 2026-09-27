@@ -77,4 +77,11 @@ if (::SCE::AssignHelper::isValidLocation("{{ action.location | escape_cpp }}")) 
     SCE_LOG_ERROR("W3C SCXML 5.3: {}", errorMsg);
     engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
 }
+{# W3C SCXML 4.9: the error ends the block. Inside a <foreach> body the loop
+   reads `success` and ends the iteration itself. #}
+{% if not in_foreach and block_exit is defined and block_exit %}
+if (!success) {
+    {{ block_exit }}
+}
+{% endif %}
 {% if not in_foreach %}{{ '}' }}{% endif %}

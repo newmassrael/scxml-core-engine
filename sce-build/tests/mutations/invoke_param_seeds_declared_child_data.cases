@@ -58,9 +58,9 @@ mutation_oracles tests/integration/InvokeParamSeedsDeclaredChildDataTest.cpp tes
 
 mutation_case "the interpreter evaluates an invoke param in the child session" <<'PY'
 edit("sce/src/runtime/InvokeExecutor.cpp",
-     """            auto future = scriptEngine_.evaluateExpression(parentSessionId, expr);
+     """            auto future = scriptEngine_.evaluateExpression(parentSessionId, valueSource);
             auto result = future.get();""",
-     """            auto future = scriptEngine_.evaluateExpression(childSessionId, expr);
+     """            auto future = scriptEngine_.evaluateExpression(childSessionId, valueSource);
             auto result = future.get();""")
 PY
 
@@ -88,8 +88,8 @@ PY
 
 mutation_case "the cpp aot engine evaluates an invoke param in the child session" <<'PY'
 edit("tools/codegen/templates/invoke_methods.jinja2",
-     """                            auto __sce_param = getScriptEngine().evaluateExpression(sessionId_.value(), {{ param.expr | to_script_source_expr }}).get();""",
-     """                            auto __sce_param = getScriptEngine().evaluateExpression(childSessionId, {{ param.expr | to_script_source_expr }}).get();""")
+     "auto __sce_param = getScriptEngine().evaluateExpression(sessionId_.value(),",
+     "auto __sce_param = getScriptEngine().evaluateExpression(childSessionId,")
 PY
 
 # ── C++ AOT: which names are added ─────────────────────────────────
@@ -100,12 +100,8 @@ PY
 
 mutation_case "the cpp aot engine seeds an invoke param the child never declared" <<'PY'
 edit("tools/codegen/templates/invoke_methods.jinja2",
-     """                        {% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
-                        {
-                            ensureScriptEngine();""",
-     """                        {% if true %}
-                        {
-                            ensureScriptEngine();""")
+     """                        {% set child_keeps = invoke_info.child_needs_script_engine and invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}""",
+     """                        {% set child_keeps = invoke_info.child_needs_script_engine %}""")
 PY
 
 # ── C++ AOT: the namelist arm carries a value at all ───────────────
@@ -131,9 +127,9 @@ PY
 mutation_case "the c11 engine evaluates an invoke param in the child lua state" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
      """            if (luaL_dostring(sm->L,
-                "return ({{ param.expr | to_lua_expr | escape_c }})") == 0) {""",
+                "return ({{ param_source | to_lua_expr | escape_c }})") == 0) {""",
      """            if (luaL_dostring(sm->child_{{ invoke_info.field_suffix }}.L,
-                "return ({{ param.expr | to_lua_expr | escape_c }})") == 0) {""")
+                "return ({{ param_source | to_lua_expr | escape_c }})") == 0) {""")
 PY
 
 # ── C11: which names are added ─────────────────────────────────────
@@ -144,8 +140,6 @@ PY
 
 mutation_case "the c11 engine transfers an invoke param the child never declared" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     """            {% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
-            /* `<param name="{{ param.name }}" expr="{{ param.expr }}"/>` */""",
-     """            {% if true %}
-            /* `<param name="{{ param.name }}" expr="{{ param.expr }}"/>` */""")
+     """            {% set child_keeps = invoke_info.child_needs_script_engine and invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}""",
+     """            {% set child_keeps = invoke_info.child_needs_script_engine %}""")
 PY

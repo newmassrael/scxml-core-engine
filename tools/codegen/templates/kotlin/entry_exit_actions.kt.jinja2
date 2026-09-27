@@ -77,11 +77,12 @@
 {% endfor %}
                 }
 {% endif %}
-{% if state.on_entry_blocks | length > 1 %}
+{# W3C SCXML 3.8 + 4.9: every onentry block is its own `run {}`, one block
+   included, so an error ends that block with `return@run` and never leaves
+   `onEntry` — which still has this state's invoke deferral, its done event
+   and its <initial> content to run after the blocks. #}
 {% for block in state.on_entry_blocks %}
                 // W3C SCXML 3.8: Onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }}
-                // C++ EntryExitHelper pattern: each block executes independently
-                // Action-level error handling (try-catch in each action) provides isolation
                 run {
 {% set in_run_block = true %}
 {% for action in block %}
@@ -92,15 +93,6 @@
 {% endfor %}
                 }
 {% endfor %}
-{% elif state.on_entry_blocks %}
-{% set in_run_block = false %}
-{% for action in state.on_entry_blocks[0] %}
-{%- if action.req or action.unresolved %}
-{{ annot.annotation_block(action, "kotlin", "                ") -}}
-{%- endif %}
-    {% include 'actions/_render.kt.jinja2' with context %}
-{% endfor %}
-{% endif %}
 {% if has_invokes %}
 {% for inv in invoke_entries[state_id] %}
 {% if inv.is_unsupported is defined and inv.is_unsupported and inv.host_served is defined and inv.host_served %}
@@ -314,49 +306,53 @@
                     // error.execution and the invocation is never deferred.
                     if (!storeIdInLocation({{ inv.idlocation | to_script_source_location }}, generatedInvokeId, "<invoke>")) return@run
 {% endif %}
-{% if (inv.params or inv.namelist) and model.needs_script_engine %}
-                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
-                    ensureScriptEngine()
-                    val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                    val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                    val invokeParams = mutableMapOf<String, Any?>()
-{% for param in inv.params %}
-{% if param.expr %}
-                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
-                    // `error.execution` on the internal queue AND the name and
-                    // value — and nothing else. The clause delegates only the
-                    // SUCCESSFUL name and value to the context ("Otherwise the use
-                    // of the name and value depends on the context in which the
-                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
-                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
-                    // of the element" is not reached by a failing `<param>`.
-                    //
-                    // This arm used to `return@run`, cancelling the whole invoke
-                    // and raising nothing — the strictest reading of 6.4.2 with
-                    // 5.7.1's reporting half dropped, so a document lost the child
-                    // AND the event that would have explained why. The comment
-                    // called that "the C++ pattern"; C++ does not cancel. The map
-                    // insert is inside the `try`, so a failure leaves the name
-                    // absent, which is the clause's other half.
-                    try {
-                        invokeParams["{{ param.name | escape_kotlin }}"] = engineInv.evaluateExpr(sidInv, {{ param.expr | to_script_source_expr }})
-                    } catch (_: Exception) {
-                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
-                    }
-{% endif %}
-{% endfor %}
-{% if inv.namelist %}
-{% for var_name in inv.namelist.split() %}
-                    // W3C SCXML 6.4.1: Namelist variable must exist in parent (C++ NamelistHelper pattern)
-                    if (!engineInv.hasVariable(sidInv, "{{ var_name }}")) {
-                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> namelist names '{{ var_name }}', which the parent does not declare")
-                        return@run  // C++ pattern: invoke cancelled on namelist error
-                    }
-                    invokeParams["{{ var_name }}"] = engineInv.getVariable(sidInv, "{{ var_name }}")
-{% endfor %}
-{% endif %}
-{% endif %}
                     deferInvoke(state, generatedInvokeId) {
+{% if (inv.params or inv.namelist) and model.needs_script_engine %}
+                        // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
+                        // is executed — at macrostep end, where this deferred body
+                        // runs — not when the state was entered.
+                        ensureScriptEngine()
+                        val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val invokeParams = mutableMapOf<String, Any?>()
+{% if inv.namelist %}
+                        // W3C SCXML 6.4: "if the evaluation of its arguments produces an
+                        // error, the SCXML Processor MUST terminate the processing of the
+                        // element without further action". A name that is not a readable
+                        // location is such an error: ONE error.execution for the element,
+                        // however many names are bad, no child, and its <param>s are not
+                        // evaluated.
+                        if (!({% for var_name in inv.namelist.split() %}engineInv.hasVariable(sidInv, "{{ var_name | escape_kotlin }}"){{ " && " if not loop.last }}{% endfor %})) {
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            return@deferInvoke
+                        }
+{% for var_name in inv.namelist.split() %}
+                        invokeParams["{{ var_name | escape_kotlin }}"] = engineInv.getVariable(sidInv, "{{ var_name | escape_kotlin }}")
+{% endfor %}
+{% endif %}
+{% for param in inv.params %}
+{# §scxml-5.7: the value comes from 'expr' or, failing that, 'location' — a
+   location expression, read as its value; both empty is `location=""`, a
+   location that names nothing. Every <param> is evaluated, and a failure
+   raised, whether or not the child declares its name: the child keeps only
+   the names its own <data> declares (§scxml-6.4.3, filtered where it applies
+   `pendingInvokeParams`). The source is spelled inline rather than bound
+   with `{% raw %}{% set %}{% endraw %}`: this backend's templates never bind author text. #}
+{% if not (param.expr or param.location) %}
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> names no location")
+{% else %}
+                        // §scxml-5.7.1: a `<param>` that will not evaluate costs
+                        // `error.execution` AND the name and value — nothing else: the
+                        // child still starts. The map insert is inside the `try`, so a
+                        // failure leaves the name absent.
+                        try {
+                            invokeParams["{{ param.name | escape_kotlin }}"] = engineInv.evaluateExpr(sidInv, {{ (param.expr or param.location) | to_script_source_expr }})
+                        } catch (_: Exception) {
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> could not be read")
+                        }
+{% endif %}
+{% endfor %}
+{% endif %}
 {% if inv.child_needs_script_engine %}
                         val childSM = {{ inv.child_class }}StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
 {% else %}
@@ -488,9 +484,13 @@
                 // default — not when the state is entered only as the ancestor
                 // of a deeper target.
                 if (isDefaultEntry) {
+                    // W3C SCXML 4.9: its own block, ended by `return@run`.
+                    run {
+{% set in_run_block = true %}
 {% for action in state.initial_transition_actions %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
+                    }
                 }
 {% endif %}
             }
@@ -540,15 +540,11 @@
 {# §scxml-D-exitStates orders one state's exit as onexit, then cancelInvoke,
    then configuration.delete(s) — the engine's `exitState` removes the state
    after this returns. So the <onexit> content comes first and the
-   cancellations after it. A single block written without `run {}` stops on
-   an error with a bare `return`, which would leave this function before the
-   cancellations run, so a state that has invocations takes the `run {}`
-   form even for one block. #}
-{% if state.on_exit_blocks | length > 1 or (exit_has_invokes and state.on_exit_blocks) %}
+   cancellations after it. Every block — one block included — is its own
+   `run {}`, so an error ends it with `return@run` (W3C SCXML 4.9) and never
+   leaves this function before the cancellations run. #}
 {% for block in state.on_exit_blocks %}
                 // W3C SCXML 3.9: Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }}
-                // C++ EntryExitHelper pattern: each block executes independently
-                // Action-level error handling (try-catch in each action) provides isolation
                 run {
 {% set in_run_block = true %}
 {% for action in block %}
@@ -559,15 +555,6 @@
 {% endfor %}
                 }
 {% endfor %}
-{% elif state.on_exit_blocks %}
-{% set in_run_block = false %}
-{% for action in state.on_exit_blocks[0] %}
-{%- if action.req or action.unresolved %}
-{{ annot.annotation_block(action, "kotlin", "                ") -}}
-{%- endif %}
-    {% include 'actions/_render.kt.jinja2' with context %}
-{% endfor %}
-{% endif %}
 {% if exit_has_invokes %}
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)

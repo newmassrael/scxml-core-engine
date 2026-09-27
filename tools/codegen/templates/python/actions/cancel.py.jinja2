@@ -4,8 +4,9 @@
 {# W3C SCXML 6.2.2 — `<cancel sendid|sendidexpr>` removes a pending
    delayed send from the engine scheduler. Static `sendid` skips the
    eval; `sendidexpr` evaluates against the datamodel via the
-   `_eval_sendid` helper (empty / unparseable values are treated as
-   the empty string, which the scheduler cannot match). #}
+   `_eval_sendid` helper (an empty value is the empty string, which the
+   scheduler cannot match; an expression that fails raises error.execution
+   and ends the block, W3C SCXML 5.9 + 4.9). #}
 {%- macro emit(action, indent, machine_name, model) -%}
 {% if action.sendid %}
 {{ indent }}engine.cancel_send({{ action.sendid | py_string_literal }})

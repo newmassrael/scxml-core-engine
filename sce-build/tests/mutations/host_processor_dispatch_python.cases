@@ -82,12 +82,8 @@ PY
 
 mutation_case "the params do not reach the request" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     """{{ indent }}_host_params = self._build_http_params(engine, [
-{%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
-{%- endfor -%}
-], {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})""",
-     "{{ indent }}_host_params = {}")
+     "params=self._wire_params_from_payload(_data),",
+     "params={},")
 PY
 
 # ── The declared `<invoke>` stops being started ─────────────────────

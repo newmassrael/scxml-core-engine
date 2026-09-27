@@ -3010,9 +3010,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * §scxml-6.4: Send event to invoked child by invoke ID.
      * Uses string-based routing for type-erased cross-SM communication.
+     *
+     * [eventData] is the send's payload: a `<param>` or
+     * namelist addressed to a child reaches its `_event.data` as it would a
+     * local delivery's, rather than being dropped at the routing step.
      */
-    protected fun sendToChild(invokeId: String, eventName: String) {
-        activeInvokes[invokeId]?.child?.sendByName(eventName)
+    protected fun sendToChild(invokeId: String, eventName: String, eventData: String = "") {
+        val child = activeInvokes[invokeId]?.child ?: return
+        if (eventData.isEmpty()) child.sendByName(eventName) else child.sendByNameWithData(eventName, eventData)
     }
 
     /**

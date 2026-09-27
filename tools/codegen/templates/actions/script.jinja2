@@ -15,6 +15,9 @@
         std::string errorMsg = "Script execution failed";
         SCE_LOG_ERROR("{}", errorMsg);
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+{% if block_exit is defined and block_exit %}
+        {{ block_exit }}  // W3C SCXML 4.9: the error ends the block
+{% endif %}
     }
     {% elif action.src %}
     // External script loading not implemented

@@ -1,378 +1,280 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
-{# W3C SCXML 6.2 — `<send>`. The dispatch tree below mirrors the
-   Rust template's static / dynamic / parent / internal / HTTP arms;
-   each arm preserves the same byte-stable code shape so the γ-3b
-   fast-path goldens stay unchanged.
-
-   `<send target="#_parent">` (W3C SCXML 6.4) lowers separately so it
-   does not collide with the dynamic/fast-path arms below. Delayed
-   parent sends ride the child's own scheduler — exactly like Go — so
-   when the sending session terminates the still-pending event is
-   silently dropped, matching the W3C 6.2 "if the sending session
-   terminates first" clause. #}
+{# W3C SCXML 6.2 — `<send>`. A send with nothing to evaluate takes the γ-3b
+   fast path at the bottom, whose code shape the fast-path goldens pin.
+   Every other send is composed from four parts, each decided once: the
+   element's own arguments (the prologue), the payload (`_data`), the event,
+   and the delivery. Every delivery arm reads the parts; none evaluates
+   anything itself, so an argument cannot be read one way for one target and
+   another way for the next. #}
 {%- macro emit_send(action, indent, machine_name, model) -%}
-{# W3C SCXML 5.7.1 + 4.9: a `<param>` that cannot be read is reported and its
-   pair left out, and the message still goes; the error ends the block once
-   it has. The payload helpers append each failed name here, and the check
-   at the end of this macro reads it after the act. #}
-{% if action.params %}
-{{ indent }}_param_failures = []
-{% endif %}
-{% if action.send_type_host_served %}
-{# §scxml-6.2.5 — the `type` is served by the HOST, which declared it to
-   this build. Dispatch rather than refuse, and take the whole send: a
-   processor the host serves owns delivery, so falling through would also
-   enqueue the event locally and the document would see the act twice.
-
-   First in the chain, ahead of every target arm, for that reason — the
-   type decides the destination, not the target. One arm for every
-   dimension, unlike its siblings below: those are narrow because the
-   ENGINE has to interpret what the send said, and here it does not. Every
-   field crosses as the text the author wrote and the handler decides what
-   it means. #}
-{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
-{# W3C SCXML 5.10: the payload a local delivery of this send would carry,
-   evaluated once by the helper every local arm calls. The host's text params
-   are that same payload read as the wire reads it, so no `<param>` is
-   evaluated twice, and its event data is the text `_event.data` would hold. #}
-{{ indent }}_host_payload = self._eval_send_payload(engine, [
-{%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
-{%- endfor -%}
-], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})
-{{ indent }}_host_params = self._wire_params_from_payload(_host_payload)
-{{ indent }}_host_event_data = self._event_data_text(_host_payload, {{ action.content | to_lua_data_content | py_string_literal }}, {{ 'True' if (action.params or action.namelist or action.content or action.contentexpr) else 'False' }})
-{% if action.eventexpr -%}
-{{ indent }}try:
-{{ indent }}    _host_evt_name = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.eventexpr | to_lua_expr | py_string_literal }}).to_python())
-{{ indent }}except _ScriptError:
-{{ indent }}    _host_evt_name = ""
-{% else -%}
-{{ indent }}_host_evt_name = {{ action.event | py_string_literal }}
-{% endif -%}
-{% if action.targetexpr -%}
-{{ indent }}try:
-{{ indent }}    _host_target = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.targetexpr | to_lua_expr | py_string_literal }}).to_python())
-{{ indent }}except _ScriptError:
-{{ indent }}    _host_target = ""
-{% else -%}
-{{ indent }}_host_target = {{ action.target | py_string_literal }}
-{% endif -%}
-{{ indent }}_host_request = _HostSendRequest(
-{{ indent }}    processor_type={{ action.send_type | py_string_literal }},
-{{ indent }}    event_name=_host_evt_name,
-{{ indent }}    target=_host_target,
-{{ indent }}    content={{ action.content | py_string_literal }},
-{{ indent }}    params=_host_params,
-{{ indent }}    send_id=_sid,
-{{ indent }}    event_data=_host_event_data,
-{{ indent }})
-{% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
-{% if action.delayexpr or host_delay_ms > 0 %}
-{# W3C SCXML 6.2.4: a `delay` is a property of the SEND, not of the processor
-   it named, so a host-served send carrying one waits exactly as an ordinary
-   send does. Decided here rather than in the delay arms below, because this
-   branch claims every host-served send before they are reached — which is how
-   `delay` came to be discarded on every backend at once. The engine performs
-   the same act from its scheduler drain at the deadline, including the W3C
-   SCXML 6.2 report for an act nobody performed, so the unregistered-handler
-   branch belongs only to the immediate form. W3C SCXML 6.3: it lands in the
-   delayed-send queue under `_sid`, so a `<cancel>` reaches it and the host
-   never sees the act. #}
-{% if action.delayexpr %}
-{{ indent }}try:
-{{ indent }}    _host_delay_ms = _parse_delay_text(str(engine._script_engine.evaluate_expression(self._session_id, {{ action.delayexpr | to_lua_expr | py_string_literal }}).to_python()))
-{{ indent }}except _ScriptError:
-{{ indent }}    _host_delay_ms = 0
-{% else %}
-{{ indent }}_host_delay_ms = {{ host_delay_ms }}
-{% endif %}
-{{ indent }}engine.schedule_host_send(_host_request, _host_delay_ms, _sid)
-{% else %}
-{{ indent }}_host_served = engine.perform_host_send(_host_request)
-{% if 'error.execution' in model.events %}
-{# W3C SCXML 6.2 — a declared type with no handler registered is, from the
-   document's side, a processor the platform does not support: the act it
-   asked for was performed by nobody. Same event as an undeclared type, so
-   a wiring mistake cannot read as success. #}
-{{ indent }}if _host_served is None and not engine.has_event_processor({{ action.send_type | py_string_literal }}):
-{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
-{% endif %}
-{% endif %}
-{% elif action.target == '#_parent' %}
-{% if action.delay_ms > 0 %}
-{{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ action.delay_ms }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}engine._next_auto_sendid(){% endif %})
-{% else %}
-{# W3C SCXML 6.2 (test233/234): `<send target="#_parent">` must
-   marshal the same `<param>` / `<content>` / `namelist` payload onto
-   `_event.data` that any other `<send>` would. Skipping the eval
-   here would land an empty `_event.data` on the parent, so the
-   parent's `<finalize>` body (`<assign expr="_event.data.aParam"/>`)
-   would silently no-op. #}
-{{ indent }}_parent_data = self._eval_send_payload(engine, [
-{%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
-{%- endfor -%}
-], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})
-{{ indent }}self._parent_queue.append(({{ action.event | py_string_literal }}, _parent_data))
-{% endif %}
-{% elif action.target.startswith('!') %}
-{# W3C SCXML 6.2 — `target="!…"` is the SCXML test-suite's
-   deliberate-invalid sentinel; dispatch fails and the processor
-   places `error.execution` on the internal queue. `_resolve_send_id`
-   runs first so `idlocation` writeback still happens (W3C 6.2: "if
-   the sending of the event causes an error, the Processor MUST place
-   the error on the internal queue" — but the sendid is generated
-   BEFORE dispatch, so it's available regardless of failure, and test
-   332 depends on the idlocation having been written). The resolved
-   sendid then rides on the `error.execution` event's metadata so the
-   matching transition's `<assign expr="_event.sendid">` reads back
-   the same value. `raise _ActionAbort` mirrors W3C 3.8 "an error in
-   executable content causes all subsequent elements in the same
-   block to be skipped" — but onentry siblings are separate blocks
-   per 3.8.1, so the abort sentinel (caught by the per-block
-   try/except in `entry_exit_actions.py.jinja2`) is what test376
-   relies on, not a `return` that would also skip the next block. #}
-{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
-{% if 'error.execution' in model.events %}
-{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
-{% endif %}
-{{ indent }}raise _ActionAbort
-{% elif action.target == '#_internal' %}
-{# W3C SCXML 6.2 (test189, test495): static `<send target="#_internal">`
-   enqueues onto the current session's internal queue. Internal events
-   drain before externals (Appendix D.2), so the internal-targeted
-   send overtakes any external sends raised in the same macrostep.
-   Mirrors `tools/codegen/templates/rust/actions/send.rs.jinja2:227`. #}
-{% set _int_has_payload = action.params or action.content or action.contentexpr or action.namelist %}
-{% if _int_has_payload -%}
-{{ indent }}_int_data = self._eval_send_payload(engine, [
-{%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
-{%- endfor -%}
-], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})
-{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }}, EventMetadata(data=_int_data))
-{% else -%}
-{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }})
-{% endif -%}
-{% elif action.target.startswith('#_') and action.target != '#_internal' %}
-{# W3C SCXML 6.4 — parent-to-child send. The active `Invoke` looks up
-   the wire-format event name on the child policy's enum and pushes
-   into the child's external queue via `Invoke.forward_event`. Unknown
-   invoke ids drop silently (W3C 5.10.1 "if no transition is enabled
-   the event is lost"). #}
-{{ indent }}_inv_target = engine._active_invokes.get({{ action.target | slice_from(2) | py_string_literal }})
-{{ indent }}if _inv_target is not None and not _inv_target.is_done():
-{{ indent }}    _inv_target.forward_event({{ action.event | py_string_literal }}, EventMetadata(event_type="external"))
-{% elif action.send_type_unsupported %}
-{# W3C SCXML 6.2 — `<send type="...">` referencing an Event I/O Processor
-   the platform does not support raises `error.execution`. The processor
-   set is intentionally narrow (default SCXMLEventProcessor + BasicHTTP);
-   any other URI lands here. #}
-{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
-{% if 'error.execution' in model.events %}
-{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
-{% endif %}
-{{ indent }}return
-{% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.target and not action.targetexpr %}
-{# W3C SCXML C.2.2 — "If neither the 'target' nor the 'targetexpr' attribute
-   is specified, the SCXML Processor MUST add the event error.communication".
-   A `targetexpr` counts as specified even though its value is only known at
-   action time, so it falls through to the resolving arm below rather than
-   erroring here — this guard used to test `target` alone and swallowed every
-   `<send type="BasicHTTP" targetexpr="...">` before it could reach the wire. #}
-{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
-{% if 'error.communication' in model.events %}
-{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
-{% endif %}
-{{ indent }}return
-{% elif action.target.startswith('http://') or action.target.startswith('https://') %}
-{# W3C SCXML C.2 — BasicHTTP send to a statically-known absolute URL.
-   `engine.perform_http_send` runs the registered HTTP callback (which
-   the pytest harness binds to a Python echo server). Eventexpr /
-   contentexpr lower to script-engine evaluation; eval failures fall
-   through with empty strings (the HTTP layer treats them as best-effort
-   attributes — the spec only requires error.execution on the surrounding
-   executable-content block when ALL attributes fail, which the
-   block-abort wrapper already covers). #}
-{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
-{{ indent }}_http_params = self._build_http_params(engine, [
-{%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
-{%- endfor -%}
-], {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})
-{% if action.contentexpr -%}
-{{ indent }}try:
-{{ indent }}    _http_content = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.contentexpr | to_lua_expr | py_string_literal }}).to_python())
-{{ indent }}except _ScriptError:
-{{ indent }}    _http_content = ""
-{% else -%}
-{{ indent }}_http_content = {{ action.content | py_string_literal }}
-{% endif -%}
-{% if action.eventexpr -%}
-{{ indent }}try:
-{{ indent }}    _http_evt_name = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.eventexpr | to_lua_expr | py_string_literal }}).to_python())
-{{ indent }}except _ScriptError:
-{{ indent }}    _http_evt_name = ""
-{% else -%}
-{{ indent }}_http_evt_name = {{ action.event | py_string_literal }}
-{% endif -%}
-{{ indent }}engine.perform_http_send({{ action.target | py_string_literal }}, _http_evt_name, _http_content, _http_params, _sid)
-{% elif action.targetexpr %}
-{# W3C SCXML C.1 — `<send targetexpr>` resolves the target at action
-   time. Empty / undefined → `error.communication`; `!sentinel` →
-   `error.execution`; `http(s)://...` → `perform_http_send`;
-   `#_internal` → internal raise; `#_<…>` (session URI or invoke id)
-   → external dispatch (send_external when the URI matches a session,
-   `Invoke.forward_event` when it matches an active invoke id);
-   anything else → `error.communication`. The runtime dispatch table
-   keeps the four transports of the static arms inside one branch so
-   the same `targetexpr` can name any of them. #}
-{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
-{{ indent }}try:
-{{ indent }}    _resolved_target = engine._script_engine.evaluate_expression(self._session_id, {{ action.targetexpr | to_lua_expr | py_string_literal }}).to_python()
-{{ indent }}except _ScriptError:
-{{ indent }}    _resolved_target = None
-{# W3C SCXML 5.10.1 (test336): the `targetexpr` evaluated to an empty
-   STRING is W3C-equivalent to the `target` attribute being absent —
-   the send goes to the current session's external queue. Only a
-   Lua nil / ECMAScript undefined target triggers W3C C.1
-   `error.communication`. Mirrors the Rust generated arm in
-   `tools/codegen/templates/rust/actions/send.rs.jinja2` where the
-   `ScriptValue::Null | Undefined` match arm is the sole
-   error.communication trigger, not the empty-string case. #}
-{{ indent }}_target_missing = _resolved_target is None
-{{ indent }}_target_str = "" if _resolved_target is None else str(_resolved_target)
-{{ indent }}_data = self._eval_send_payload(engine, [
-{%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
-{%- endfor -%}
-], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})
-{% if action.eventexpr -%}
-{{ indent }}try:
-{{ indent }}    _dyn_evt_name = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.eventexpr | to_lua_expr | py_string_literal }}).to_python())
-{{ indent }}except _ScriptError:
-{{ indent }}    _dyn_evt_name = ""
-{% else -%}
-{{ indent }}_dyn_evt_name = {{ action.event | py_string_literal }}
-{% endif -%}
-{{ indent }}if _target_missing:
-{% if 'error.communication' in model.events %}
-{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
-{% else %}
-{{ indent }}    pass  # W3C C.1: undefined target — but document declares no error.communication descriptor
-{% endif %}
-{{ indent }}elif not _target_str:
-{{ indent }}    # W3C SCXML 6.2 — empty string target = same-session external queue
-{{ indent }}    _dyn_evt = self.get_event_from_name(_dyn_evt_name)
-{{ indent }}    if _dyn_evt is not None:
-{{ indent }}        engine.send_external(_dyn_evt, _sid, _data)
-{{ indent }}elif _target_str.startswith("!"):
-{% if 'error.execution' in model.events %}
-{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
-{% else %}
-{{ indent }}    pass  # W3C 6.2: invalid target sentinel — no error.execution descriptor declared
-{% endif %}
-{{ indent }}elif _target_str.startswith("http://") or _target_str.startswith("https://"):
-{# W3C SCXML 6.2.3: the arguments were evaluated once, above, before the
-   target decided which transport carries them. The form is a rendering of
-   that payload — re-reading the data model here is what let this arm and
-   the payload disagree about an unreadable namelist item. #}
-{{ indent }}    _http_params_dyn = self._wire_params_from_payload(_data)
-{% if action.contentexpr -%}
-{{ indent }}    try:
-{{ indent }}        _http_content_dyn = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.contentexpr | to_lua_expr | py_string_literal }}).to_python())
-{{ indent }}    except _ScriptError:
-{{ indent }}        _http_content_dyn = ""
-{% else -%}
-{{ indent }}    _http_content_dyn = {{ action.content | py_string_literal }}
-{% endif -%}
-{{ indent }}    engine.perform_http_send(_target_str, _dyn_evt_name, _http_content_dyn, _http_params_dyn, _sid)
-{{ indent }}elif _target_str == "#_internal":
-{{ indent }}    _dyn_evt = self.get_event_from_name(_dyn_evt_name)
-{{ indent }}    if _dyn_evt is not None:
-{{ indent }}        engine.raise_internal(_dyn_evt, EventMetadata(send_id=_sid, data=_data))
-{{ indent }}elif _target_str == "#_parent":
-{{ indent }}    self._parent_queue.append((_dyn_evt_name, _data))
-{{ indent }}elif _target_str.startswith("#_"):
-{# W3C SCXML C.1 — `#_scxml_<sessionid>` (session URI) routes to the
-   addressed session's external queue; `#_<invoke_id>` routes through
-   an active child. The runtime tries invoke first; absent that, it
-   falls back to the local external queue (treating the URI as a
-   self-session reference, which matches the AOT engine's
-   single-session execution model). #}
-{{ indent }}    _inv_id = _target_str[2:]
-{{ indent }}    _inv_obj = engine._active_invokes.get(_inv_id)
-{{ indent }}    if _inv_obj is not None and not _inv_obj.is_done():
-{{ indent }}        _inv_obj.forward_event(_dyn_evt_name, EventMetadata(event_type="external", data=_data))
-{{ indent }}    else:
-{{ indent }}        _dyn_evt = self.get_event_from_name(_dyn_evt_name)
-{{ indent }}        if _dyn_evt is not None:
-{{ indent }}            engine.send_external(_dyn_evt, _sid, _data)
-{{ indent }}elif _session_id_from_scxml_location(_target_str):
-{# W3C SCXML C.1 — the target is an SCXML Event I/O Processor location. When
-   it decodes to one of our own children it is addressed to that child;
-   otherwise it names this session (the AOT engine's single-session execution
-   model) and rides the local external queue. Without this arm the address a
-   peer was told to answer at falls through to `error.communication`, so the
-   location compares equal and still reaches nobody. #}
-{{ indent }}    if not engine.deliver_to_child_session(
-{{ indent }}        _session_id_from_scxml_location(_target_str), _dyn_evt_name, _data
-{{ indent }}    ):
-{{ indent }}        _dyn_evt = self.get_event_from_name(_dyn_evt_name)
-{{ indent }}        if _dyn_evt is not None:
-{{ indent }}            engine.send_external(_dyn_evt, _sid, _data)
-{{ indent }}else:
-{% if 'error.communication' in model.events %}
-{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
-{% else %}
-{{ indent }}    pass  # W3C C.1: unknown target schema — no error.communication descriptor declared
-{% endif %}
-{% else -%}
-{% set has_dynamic = action.eventexpr or action.delayexpr or action.idlocation
-                     or action.params or action.content or action.contentexpr
-                     or action.namelist %}
-{% if has_dynamic -%}
-{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
-{% if action.eventexpr -%}
-{{ indent }}_evt = self._eval_event_name(engine, {{ action.eventexpr | to_lua_expr | py_string_literal }})
-{{ indent }}if _evt is None:
-{% if 'error.execution' in model.events %}
-{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }})
-{% else %}
-{{ indent }}    pass  # W3C SCXML 6.2: unresolved eventexpr — no error.execution declared
-{% endif %}
-{{ indent }}else:
-{% set send_indent = indent ~ '    ' %}
-{%- else -%}
-{% set send_indent = indent %}
-{{ indent }}_evt = {{ machine_name }}Event.{{ action.event | to_python_const }}
-{% endif -%}
-{{ send_indent }}_data = self._eval_send_payload(engine, [
-{%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
-{%- endfor -%}
-], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})
-{% if action.delayexpr -%}
-{{ send_indent }}engine.schedule_send(_evt, self._eval_delay_ms(engine, {{ action.delayexpr | to_lua_expr | py_string_literal }}), _sid, _data)
-{% elif action.delay_ms > 0 -%}
-{{ send_indent }}engine.schedule_send(_evt, {{ action.delay_ms }}, _sid, _data)
-{% else -%}
-{{ send_indent }}engine.send_external(_evt, _sid, _data)
-{% endif -%}
-{% else -%}
+{% set has_namelist = action.namelist and action.namelist | trim %}
+{% set has_payload = action.params or has_namelist or action.content or action.contentexpr %}
+{% set has_delay = action.delayexpr or action.delay_ms > 0 %}
+{% set dyn_event = action.eventexpr and not action.event %}
+{% set is_http = action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' %}
+{% set has_dynamic = action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or action.idlocation
+                     or has_payload or action.send_type_host_served or action.send_type_unsupported
+                     or is_http or action.target.startswith('!') or action.target.startswith('#_')
+                     or action.target.startswith('http://') or action.target.startswith('https://') %}
+{% if not has_dynamic %}
 {# γ-3b fast path: no dynamic attrs, no payload, no idlocation. #}
 {% if action.delay_ms > 0 -%}
 {{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ action.delay_ms }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}engine._next_auto_sendid(){% endif %})
 {% else -%}
 {{ indent }}engine.send_external({{ machine_name }}Event.{{ action.event | to_python_const }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {% endif -%}
-{% endif -%}
-{% endif -%}
+{% else %}
+{# W3C SCXML 5.7.1 + 4.9: a `<param>` that cannot be read is reported and its
+   pair left out, and the message still goes; the error ends the block once
+   it has. The payload helper appends each failed name here, and the check
+   at the end of this macro reads it after the act. #}
+{% if action.params %}
+{{ indent }}_param_failures = []
+{% endif %}
+{# ── The element's own arguments, evaluated once ──
+   W3C SCXML 6.2: "The Processor MUST evaluate all arguments to <send> when the
+   <send> element is evaluated", and "if the evaluation of <send>'s arguments
+   produces an error, the Processor MUST discard the message without attempting
+   to deliver it". The first failure is one error.execution carrying the send
+   id and a block abort (`_send_argument_error`, W3C SCXML 4.9). The send id
+   comes first, so an `idlocation` holds it even when a later argument fails
+   (test332). #}
+{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{% if action.eventexpr %}
+{# An event name that evaluates to nothing names no event: the same failure as
+   one that does not evaluate. #}
+{{ indent }}_evt_name = self._eval_send_argument(engine, _sid, {{ action.eventexpr | to_lua_expr | py_string_literal }}, "<send> eventexpr could not be evaluated to an event name").to_wire_string()
+{{ indent }}if not _evt_name:
+{{ indent }}    self._send_argument_error(engine, _sid, "<send> eventexpr could not be evaluated to an event name")
+{% endif %}
+{% if action.targetexpr %}
+{# §scxml-C-1: a target expression's value is read as text — the same reading
+   C++ `resultToString` gives it. A target this processor cannot address is
+   refused as a static one is (W3C SCXML 6.2, test194). #}
+{{ indent }}_target_value = self._eval_send_argument(engine, _sid, {{ action.targetexpr | to_lua_expr | py_string_literal }}, "<send> targetexpr could not be evaluated")
+{{ indent }}_target_str = _target_value.to_wire_string()
+{{ indent }}if _is_invalid_target(_target_str):
+{{ indent }}    self._send_argument_error(engine, _sid, "<send> targetexpr produced a target this processor cannot address")
+{% endif %}
+{% if action.typeexpr %}
+{# W3C SCXML 6.2: a type the platform does not support is the same error as
+   one that cannot be evaluated. #}
+{{ indent }}if not _is_supported_send_type(self._eval_send_argument(engine, _sid, {{ action.typeexpr | to_lua_expr | py_string_literal }}, "<send> typeexpr could not be evaluated").to_wire_string()):
+{{ indent }}    self._send_argument_error(engine, _sid, "<send> typeexpr names a processor this platform does not support")
+{% endif %}
+{% if action.delayexpr %}
+{# The expression failing is the argument error; the message is not scheduled
+   under some default wait. #}
+{{ indent }}_delay_ms = self._delay_ms_from_value(self._eval_send_argument(engine, _sid, {{ action.delayexpr | to_lua_expr | py_string_literal }}, "<send> delayexpr could not be evaluated").to_python())
+{% endif %}
+{% if has_namelist %}
+{{ indent }}_namelist_values = self._eval_send_namelist(engine, _sid, {{ action.namelist | py_string_literal }})
+{% endif %}
+{% if action.targetexpr %}
+{# W3C SCXML C.1 (test496, test521): a target that evaluates to no value is not
+   reachable — error.communication, nothing delivered, and the error ends the
+   block as any other would (W3C SCXML 4.9). An empty STRING is not this case
+   here: a self-sent event carries no origin on this backend, so
+   `targetexpr="_event.origin"` reads "" and must reach this session
+   (test336). #}
+{{ indent }}if _target_value.to_python() is None:
+{% if 'error.communication' in model.events %}
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(data="<send> targetexpr evaluated to nothing, so there is no target to reach", send_id=_sid, event_type="platform"))
+{% endif %}
+{{ indent }}    raise _ActionAbort
+{% endif %}
+{# ── The payload ── W3C SCXML 5.10: evaluated once, by the helper every arm
+   reads. #}
+{% if has_payload %}
+{{ indent }}_data = self._eval_send_payload(engine, [
+{%- for param in action.params -%}
+({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
+{%- endfor -%}
+], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, "", "<send>", {% if action.params %}_param_failures{% else %}None{% endif %}{% if has_namelist %}, namelist_values=_namelist_values{% endif %})
+{% else %}
+{{ indent }}_data = ""
+{% endif %}
+{# ── The event ── the name a remote end resolves, and the event this machine
+   raises when it delivers locally. A name no transition of this document can
+   match is delivered nowhere, as on every other generated backend. #}
+{% if not dyn_event %}
+{{ indent }}_evt_name = {{ action.event | py_string_literal }}
+{% endif %}
+{% if action.delayexpr %}
+{% set delay_py = '_delay_ms' %}
+{% else %}
+{% set delay_py = action.delay_ms | string %}
+{% endif %}
+{# ── The delivery ── #}
+{% if action.send_type_host_served %}
+{# §scxml-6.2.5 — the `type` is served by the HOST, which declared it to this
+   build. Dispatch rather than refuse, and take the whole send: a processor
+   the host serves owns delivery, so falling through would also enqueue the
+   event locally and the document would see the act twice. The host's text
+   params are the payload read as the wire reads it, so no `<param>` is
+   evaluated twice, and its event data is the text `_event.data` would
+   hold. #}
+{{ indent }}_host_request = _HostSendRequest(
+{{ indent }}    processor_type={{ action.send_type | py_string_literal }},
+{{ indent }}    event_name=_evt_name,
+{{ indent }}    target={% if action.targetexpr %}_target_str{% else %}{{ action.target | py_string_literal }}{% endif %},
+{{ indent }}    content={{ action.content | py_string_literal }},
+{{ indent }}    params=self._wire_params_from_payload(_data),
+{{ indent }}    send_id=_sid,
+{{ indent }}    event_data=self._event_data_text(_data, {{ action.content | to_lua_data_content | py_string_literal }}, {{ 'True' if has_payload else 'False' }}),
+{{ indent }})
+{% if has_delay %}
+{# W3C SCXML 6.2.4: a `delay` is a property of the SEND, not of the processor
+   it named. The engine performs the act from its scheduler drain at the
+   deadline, including the W3C SCXML 6.2 report for an act nobody performed.
+   W3C SCXML 6.3: it lands in the delayed-send queue under `_sid`, so a
+   `<cancel>` reaches it and the host never sees the act. #}
+{{ indent }}engine.schedule_host_send(_host_request, {{ delay_py }}, _sid)
+{% else %}
+{{ indent }}_host_served = engine.perform_host_send(_host_request)
+{% if 'error.execution' in model.events %}
+{# W3C SCXML 6.2 — a declared type with no handler registered is, from the
+   document's side, a processor the platform does not support: the act it
+   asked for was performed by nobody. #}
+{{ indent }}if _host_served is None and not engine.has_event_processor({{ action.send_type | py_string_literal }}):
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
+{% endif %}
+{% elif action.send_type_unsupported %}
+{# W3C SCXML 6.2 (test199) — a processor the platform does not support. #}
+{% if 'error.execution' in model.events %}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
+{{ indent }}raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
+{% elif not action.targetexpr and action.target.startswith('!') %}
+{# W3C SCXML 6.2 (test194) — `target="!…"` is the test suite's
+   deliberate-invalid sentinel. The sendid rides on the error so the matching
+   transition's `<assign expr="_event.sendid">` reads it back (test332). #}
+{% if 'error.execution' in model.events %}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
+{{ indent }}raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
+{% elif is_http and not action.target and not action.targetexpr %}
+{# W3C SCXML C.2.2 — "If neither the 'target' nor the 'targetexpr' attribute
+   is specified, the SCXML Processor MUST add the event error.communication". #}
+{% if 'error.communication' in model.events %}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
+{{ indent }}raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
+{% elif not action.targetexpr and (action.target.startswith('http://') or action.target.startswith('https://')) %}
+{# W3C SCXML C.2 — BasicHTTP send to a statically-known absolute URL. The form
+   is a rendering of the payload evaluated above. #}
+{{ indent }}engine.perform_http_send({{ action.target | py_string_literal }}, _evt_name, {% if action.contentexpr and not (action.params or has_namelist or action.content) %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %}, self._wire_params_from_payload(_data), _sid)
+{% elif not action.targetexpr and action.target == '#_parent' %}
+{% if has_delay %}
+{# Delayed parent sends ride the child's own scheduler, so when the sending
+   session terminates the still-pending event is silently dropped — the W3C
+   SCXML 6.2 "if the sending session terminates first" clause. #}
+{% if dyn_event %}
+{{ indent }}_evt = self.get_event_from_name(_evt_name)
+{{ indent }}if _evt is not None:
+{{ indent }}    engine.schedule_send(_evt, {{ delay_py }}, _sid, _data)
+{% else %}
+{{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ delay_py }}, _sid, _data)
+{% endif %}
+{% else %}
+{# W3C SCXML 6.2 (test233/234): the parent receives the same payload any other
+   `<send>` would carry. #}
+{{ indent }}self._parent_queue.append((_evt_name, _data))
+{% endif %}
+{% elif not action.targetexpr and action.target == '#_internal' %}
+{# W3C SCXML 6.2 (test189, test495): `<send target="#_internal">` enqueues onto
+   this session's internal queue, carrying `_event.data` as an external send
+   does. #}
+{% if dyn_event %}
+{{ indent }}_evt = self.get_event_from_name(_evt_name)
+{{ indent }}if _evt is not None:
+{% if has_payload %}
+{{ indent }}    engine.raise_internal(_evt, EventMetadata(data=_data))
+{% else %}
+{{ indent }}    engine.raise_internal(_evt)
+{% endif %}
+{% elif has_payload %}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }}, EventMetadata(data=_data))
+{% else %}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }})
+{% endif %}
+{% elif not action.targetexpr and action.target.startswith('#_') %}
+{# W3C SCXML 6.4 — parent-to-child send. The active `Invoke` looks up the
+   wire-format event name on the child policy's enum and pushes into the
+   child's external queue, payload included. Unknown invoke ids drop
+   silently (W3C 5.10.1 "if no transition is enabled the event is lost"). #}
+{{ indent }}_inv_target = engine._active_invokes.get({{ action.target | slice_from(2) | py_string_literal }})
+{{ indent }}if _inv_target is not None and not _inv_target.is_done():
+{{ indent }}    _inv_target.forward_event(_evt_name, EventMetadata(event_type="external", data=_data))
+{% elif action.targetexpr and has_delay %}
+{# W3C SCXML 6.2: a delayed send to a dynamic target is scheduled locally (C++
+   pattern: delay before target routing), as on every other backend. #}
+{{ indent }}_evt = self.get_event_from_name(_evt_name)
+{{ indent }}if _evt is not None:
+{{ indent }}    engine.schedule_send(_evt, {{ delay_py }}, _sid, _data)
+{% elif action.targetexpr %}
+{# W3C SCXML C.1 — the target resolved at action time: empty → this session's
+   external queue; `http(s)://...` → `perform_http_send`; `#_internal` →
+   internal raise; `#_parent` → the parent; `#_<…>` → an active invoke, else
+   this session; an SCXML processor location → the child it names, else this
+   session; anything else → `error.communication`. #}
+{{ indent }}if not _target_str:
+{{ indent }}    _dyn_evt = self.get_event_from_name(_evt_name)
+{{ indent }}    if _dyn_evt is not None:
+{{ indent }}        engine.send_external(_dyn_evt, _sid, _data)
+{{ indent }}elif _target_str.startswith("http://") or _target_str.startswith("https://"):
+{{ indent }}    engine.perform_http_send(_target_str, _evt_name, {% if action.contentexpr and not (action.params or has_namelist or action.content) %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %}, self._wire_params_from_payload(_data), _sid)
+{{ indent }}elif _target_str == "#_internal":
+{{ indent }}    _dyn_evt = self.get_event_from_name(_evt_name)
+{{ indent }}    if _dyn_evt is not None:
+{{ indent }}        engine.raise_internal(_dyn_evt, EventMetadata(send_id=_sid, data=_data))
+{{ indent }}elif _target_str == "#_parent":
+{{ indent }}    self._parent_queue.append((_evt_name, _data))
+{{ indent }}elif _target_str.startswith("#_"):
+{{ indent }}    _inv_obj = engine._active_invokes.get(_target_str[2:])
+{{ indent }}    if _inv_obj is not None and not _inv_obj.is_done():
+{{ indent }}        _inv_obj.forward_event(_evt_name, EventMetadata(event_type="external", data=_data))
+{{ indent }}    else:
+{{ indent }}        _dyn_evt = self.get_event_from_name(_evt_name)
+{{ indent }}        if _dyn_evt is not None:
+{{ indent }}            engine.send_external(_dyn_evt, _sid, _data)
+{{ indent }}elif _session_id_from_scxml_location(_target_str):
+{# W3C SCXML C.1 — an SCXML Event I/O Processor location. When it decodes to
+   one of our own children it is addressed to that child; otherwise it names
+   this session (the AOT engine's single-session execution model). #}
+{{ indent }}    if not engine.deliver_to_child_session(
+{{ indent }}        _session_id_from_scxml_location(_target_str), _evt_name, _data
+{{ indent }}    ):
+{{ indent }}        _dyn_evt = self.get_event_from_name(_evt_name)
+{{ indent }}        if _dyn_evt is not None:
+{{ indent }}            engine.send_external(_dyn_evt, _sid, _data)
+{{ indent }}else:
+{% if 'error.communication' in model.events %}
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
+{{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
+{% else %}
+{# W3C SCXML 6.2 — this session's external queue, now or after the delay. #}
+{% if dyn_event %}
+{{ indent }}_evt = self.get_event_from_name(_evt_name)
+{{ indent }}if _evt is not None:
+{% if has_delay %}
+{{ indent }}    engine.schedule_send(_evt, {{ delay_py }}, _sid, _data)
+{% else %}
+{{ indent }}    engine.send_external(_evt, _sid, _data)
+{% endif %}
+{% elif has_delay %}
+{{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ delay_py }}, _sid, _data)
+{% else %}
+{{ indent }}engine.send_external({{ machine_name }}Event.{{ action.event | to_python_const }}, _sid, _data)
+{% endif %}
+{% endif %}
 {% if action.params %}
 {{ indent }}if _param_failures:
 {{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the <param> error ends the block
 {% endif %}
+{% endif -%}
 {% endmacro -%}

@@ -555,11 +555,11 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
    <if>/<elseif>/<else> propagate their caller's `in_foreach` verbatim, so an
    <assign> nested inside an <if> nested inside a <foreach> body still
    reaches that exit.
-   <foreach>'s own sub-action recursion forces `in_foreach=true` — nested
-   <foreach> is intentionally unsupported per scriptengine.jinja2 (lua
-   global `_sce_foreach_arr` collides), and an inner <foreach>'s own body
-   emits its own `for` loop so the outer break is never reached anyway. #}
-{% macro emit_action(action, in_foreach=false) %}
+   <foreach>'s own sub-action recursion forces `in_foreach=true` and raises
+   `foreach_depth`, which names the lua global each depth caches its
+   collection in — so a nested <foreach> walks its own array and leaves its
+   enclosing one's intact. #}
+{% macro emit_action(action, in_foreach=false, foreach_depth=0) %}
 {% if action.type == 'raise' %}
         {
             /* W3C SCXML 3.8.1: <raise event="{{ action.event }}"> */
@@ -589,9 +589,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                 "<assign> has an invalid or read-only location '{{ action.location | escape_c }}'");
-{% if in_foreach %}
-            return;  /* W3C 4.6: ends the <foreach> and the block that contains it */
-{% endif %}
+            return;  /* W3C 4.9: the error ends the block (and any <foreach> in it) */
 {% elif (not action.expr) and action.content %}
             /* W3C SCXML 5.4.2: `<assign location="{{ action.location }}">` with
                in-line children. The children "provide an in-line specification
@@ -608,12 +606,10 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                     "<assign> to '{{ action.location | escape_c }}' failed");
-{% if in_foreach %}
-                return;  /* W3C 4.6: ends the <foreach> and the block that contains it */
-{% endif %}
+                return;  /* W3C 4.9: the error ends the block (and any <foreach> in it) */
             }
 {% else %}
-{{ se.lua_assign(action.location, action.expr, in_foreach) }}
+{{ se.lua_assign(action.location, action.expr) }}
 {% endif %}
         }
 {% elif action.type == 'foreach' %}
@@ -635,7 +631,11 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                 "<foreach> is missing its 'array' or 'item' attribute");
 {% elif action.actions and action.actions | length > 0 %}
-{{ se.lua_foreach_body_prologue(action.array, action.item, action.index) }}
+{# W3C SCXML 4.6: each nesting depth caches its collection under its own
+   Lua global, so an inner <foreach> neither overwrites nor clears the
+   array its enclosing one is still walking. #}
+{% set foreach_slot = '_sce_foreach_arr' ~ foreach_depth %}
+{{ se.lua_foreach_body_prologue(action.array, action.item, action.index, foreach_slot) }}
             if (_sce_n < 0) {
                 /* W3C SCXML 4.6 + 5.4 (test457): `array` must satisfy
                    `instanceof Array` (or be a table per cpp's empty-table
@@ -652,12 +652,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 return;
             }
             for (int _i = 0; _i < _sce_n; ++_i) {
-{{ se.lua_foreach_body_iter(action.item, action.index) }}
+{{ se.lua_foreach_body_iter(action.item, action.index, foreach_slot) }}
                 {% for sub in action.actions %}
-                {{ emit_action(sub, true) }}
+                {{ emit_action(sub, true, foreach_depth + 1) }}
                 {% endfor %}
             }
-{{ se.lua_foreach_body_epilogue() }}
+{{ se.lua_foreach_body_epilogue(foreach_slot) }}
 {% else %}
 {{ se.lua_foreach_no_body(action.array, action.item, action.index) }}
 {% endif %}
@@ -792,10 +792,8 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             }
 {% elif action.eventexpr and not action.target and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test172): dynamic event name via `eventexpr`,
-               no target = internal queue. The event name string is matched
-               against the codegen-time event enum; an unmatched name raises
-               error.execution per W3C 6.2's "the value of 'event' MUST be
-               a valid event name" requirement. The other <send> dimensions
+               no target = external queue. The event name string is matched
+               against the codegen-time event enum. The other <send> dimensions
                (target / delay / params / namelist / content / typeexpr /
                idlocation) land with their first force fixture — keeping
                the C11 send branch minimal until a consumer demands more.
@@ -803,10 +801,16 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             char _send_evt_name[64];
             bool _send_evt_ok;
 {{ se.lua_eval_to_string(action.eventexpr, '_send_evt_name', '64', '_send_evt_ok') }}
-            if (!_send_evt_ok) {
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            if (!_send_evt_ok || _send_evt_name[0] == '\0') {
+                /* W3C SCXML 6.2: an argument that cannot be evaluated — or an
+                   event name that evaluates to nothing — discards the message
+                   with error.execution carrying the send id, and (W3C SCXML
+                   4.9) the error ends the block. */
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<send> eventexpr failed to evaluate");
+                    "<send> eventexpr could not be evaluated to an event name",
+                    "{{ action.auto_send_id | escape_c }}");
+                return;
             } else {
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
                 memset(&_send_evt, 0, sizeof(_send_evt));
@@ -817,12 +821,11 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     _send_evt_matched = true;
                 }
                 {% endfor %}
+                /* W3C SCXML 6.2: a send with no target goes on the external
+                   queue. A name no transition of this document can match is
+                   delivered nowhere, as on every other generated backend. */
                 if (_send_evt_matched) {
-                    {{ csym_prefix }}{{ model.name }}_raise(sm, &_send_evt);
-                } else {
-                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<send> eventexpr named an event this machine does not declare");
+                    {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
                 }
             }
 {% elif action.event and action.delay and action.params and not action.delayexpr and not action.target and not action.eventexpr and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation and (not in_foreach) %}
@@ -914,6 +917,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                         "<send idlocation='{{ action.idlocation | escape_c }}'> could not take the send id");
 {% endif %}
+                    return;  /* W3C SCXML 4.9: the error ends the block */
                 } else {
                     {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
                     memset(&_send_evt, 0, sizeof(_send_evt));
@@ -1262,11 +1266,9 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                the supported processor list. cpp `SendHelper::isSupportedSendType`
                (`sce/include/common/SendHelper.h`) returns true for the
                SCXMLEventProcessor URI plus the empty string default; the
-               C11 port inlines the literal compare. Eval failure
-               falls back to the default SCXMLEventProcessor URI per cpp
-               line 47 ("Invalid typeexpr → use default SCXMLEventProcessor")
-               so a transient eval error doesn't cascade into a spurious
-               processor-mismatch error. Unsupported types raise
+               C11 port inlines the literal compare. Eval failure is an
+               argument error (W3C SCXML 6.2): the message is discarded with
+               error.execution and the block ends. Unsupported types raise
                `error.execution` and stop subsequent executable content
                (W3C 5.10). On a supported type the send proceeds as a bare
                external (the C11 fixtures so far always pair typeexpr with
@@ -1275,11 +1277,14 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             bool _send_type_ok;
 {{ se.lua_eval_to_string(action.typeexpr, '_send_type_buf', '256', '_send_type_ok') }}
             if (!_send_type_ok) {
-                /* cpp default-fallback on eval failure (line 48). */
-                memcpy(_send_type_buf,
-                       "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
-                       (size_t)47);
-                _send_type_buf[47] = '\0';
+                /* W3C SCXML 6.2: a typeexpr that cannot be evaluated is an
+                   argument error — the message is discarded, not sent under
+                   a default type, and (W3C SCXML 4.9) the block ends. */
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<send> typeexpr could not be evaluated",
+                    "{{ action.auto_send_id | escape_c }}");
+                return;
             }
             if (_send_type_buf[0] != '\0'
                 && strcmp(_send_type_buf,
@@ -1316,11 +1321,13 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             bool _send_type_ok;
 {{ se.lua_eval_to_string(action.typeexpr, '_send_type_buf', '256', '_send_type_ok') }}
             if (!_send_type_ok) {
-                /* cpp default-fallback on eval failure (line 47-48). */
-                memcpy(_send_type_buf,
-                       "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
-                       (size_t)47);
-                _send_type_buf[47] = '\0';
+                /* W3C SCXML 6.2: an argument error, as in the typeexpr-only
+                   arm above (kept synchronised). */
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<send> typeexpr could not be evaluated",
+                    "{{ action.auto_send_id | escape_c }}");
+                return;
             }
             if (_send_type_buf[0] != '\0'
                 && strcmp(_send_type_buf,
@@ -1851,7 +1858,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                otherwise lua-free) and a phantom lua trampoline (jinja2-inline). */
             if ({{ action.cond | to_in_predicate_c11(model.name, model.history_states | list) }}) {
                 {% for sub in action.then_actions %}
-                {{ emit_action(sub, in_foreach) }}
+                {{ emit_action(sub, in_foreach, foreach_depth) }}
                 {% endfor %}
             }
 {% elif model.needs_script_engine %}
@@ -1859,7 +1866,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {{ se.lua_eval_guard(action.cond, '_if_pass') }}
             if (_if_pass) {
                 {% for sub in action.then_actions %}
-                {{ emit_action(sub, in_foreach) }}
+                {{ emit_action(sub, in_foreach, foreach_depth) }}
                 {% endfor %}
             }
 {% else %}
@@ -1869,7 +1876,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                emitting a state reference the header never declares. */
             if ({{ 'true' if action.cond_constant else 'false' }}) {
                 {% for sub in action.then_actions %}
-                {{ emit_action(sub, in_foreach) }}
+                {{ emit_action(sub, in_foreach, foreach_depth) }}
                 {% endfor %}
             }
 {% endif %}
@@ -1879,7 +1886,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% if elif.is_pure_in_predicate %}
                 if ({{ elif.cond | to_in_predicate_c11(model.name, model.history_states | list) }}) {
                     {% for sub in elif.actions %}
-                    {{ emit_action(sub, in_foreach) }}
+                    {{ emit_action(sub, in_foreach, foreach_depth) }}
                     {% endfor %}
                 }
 {% elif model.needs_script_engine %}
@@ -1887,14 +1894,14 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {{ se.lua_eval_guard(elif.cond, '_elif_pass') }}
                 if (_elif_pass) {
                     {% for sub in elif.actions %}
-                    {{ emit_action(sub, in_foreach) }}
+                    {{ emit_action(sub, in_foreach, foreach_depth) }}
                     {% endfor %}
                 }
 {% else %}
                 /* W3C SCXML 4.3: decided at build time — see the `<if>` arm. */
                 if ({{ 'true' if elif.cond_constant else 'false' }}) {
                     {% for sub in elif.actions %}
-                    {{ emit_action(sub, in_foreach) }}
+                    {{ emit_action(sub, in_foreach, foreach_depth) }}
                     {% endfor %}
                 }
 {% endif %}
@@ -1903,7 +1910,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             else {
                 /* W3C SCXML 4.3: <else> */
                 {% for sub in action.else_actions %}
-                {{ emit_action(sub, in_foreach) }}
+                {{ emit_action(sub, in_foreach, foreach_depth) }}
                 {% endfor %}
             }
 {% endif %}
@@ -1935,8 +1942,15 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     {% if action.label %}"%s: %s\n", "{{ action.label }}"{% else %}"%s\n"{% endif %},
                     _log_buf);
             } else {
+                /* W3C SCXML 5.9: an expression that fails raises
+                   error.execution, and (W3C SCXML 4.9) the error ends the
+                   block — every block is its own C function. */
                 (void)fprintf(stderr,
                     "Failed to evaluate log expression: %s\n", "{{ action.expr }}");
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<log> expr failed to evaluate");
+                return;
             }
         }
 {% else %}
@@ -1982,6 +1996,14 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {{ se.lua_eval_to_string(action.sendidexpr, '_cancel_buf', '64', '_cancel_ok') }}
             if (_cancel_ok) {
                 scheduled_cancel(sm, _cancel_buf);
+            } else {
+                /* W3C SCXML 5.9: a sendidexpr that fails raises
+                   error.execution, and (W3C SCXML 4.9) the error ends the
+                   block. */
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<cancel> sendidexpr failed to evaluate");
+                return;
             }
         }
 {% endif %}
@@ -2014,9 +2036,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                     "<script> failed to execute");
-{% if in_foreach %}
-                return;  /* W3C 4.6: ends the <foreach> and the block that contains it */
-{% endif %}
+                return;  /* W3C 4.9: the error ends the block (and any <foreach> in it) */
             }
         }
 {% elif action.type == 'native_action' %}

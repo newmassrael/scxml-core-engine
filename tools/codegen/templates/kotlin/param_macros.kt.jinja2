@@ -23,9 +23,9 @@
 
    `failed_flag`, when given, names the `Boolean` a `<send>` declared: the
    error was raised while the element was processed, so the block stops once
-   the message has gone (W3C SCXML 4.9). A `<send>` also refuses an empty
-   `location=""`, which names no location. The host-run `<invoke>` passes
-   none, and its reading of a failed `<param>` is left as it was. #}
+   the message has gone (W3C SCXML 4.9). The host-run `<invoke>` passes none:
+   a failed `<param>` there costs the error and the pair, and the child still
+   starts. Both refuse an empty `location=""`, which names no location. #}
 {% macro collect_wire_params_into(params, model, map, eng, sid, machine_name, element, indent, failed_flag='') %}
 {% for param in params %}
 {% if param.is_static_literal %}
@@ -47,11 +47,13 @@
 {{ indent }}    {{ failed_flag }} = true
 {% endif %}
 {{ indent }}}
-{% elif failed_flag and not (param.expr or param.location) %}
+{% elif model.needs_script_engine and not (param.expr or param.location) %}
 {{ indent }}// W3C SCXML 5.7.1: an empty location names no location in the data
 {{ indent }}// model — reported, and the pair left out.
 {{ indent }}raisePlatformError({{ machine_name }}Event.Error.Execution, "{{ element }} <param name='{{ param.name | escape_kotlin }}'> names no location")
+{% if failed_flag %}
 {{ indent }}{{ failed_flag }} = true
+{% endif %}
 {% endif %}
 {% endfor %}
 {% endmacro %}

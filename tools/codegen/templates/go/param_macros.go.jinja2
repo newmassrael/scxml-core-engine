@@ -42,6 +42,12 @@
 				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_go }}'> location could not be read"))
 {% endif %}
 			}
+{% elif model.needs_script_engine %}
+			// W3C SCXML 5.7.1: `location=""` names no location — the same failure
+			// as an expression that will not evaluate: report it and omit the pair.
+{% if 'error.execution' in model.events %}
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_go }}'> names no location"))
+{% endif %}
 {% endif %}
 {% endfor %}
 {% endmacro %}

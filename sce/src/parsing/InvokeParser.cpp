@@ -220,45 +220,6 @@ void SCE::InvokeParser::parseParamElements(const std::shared_ptr<IXMLElement> &i
     }
 }
 
-std::vector<std::shared_ptr<SCE::IDataModelItem>>
-SCE::InvokeParser::parseParamElementsAndCreateDataItems(const std::shared_ptr<IXMLElement> &invokeElement,
-                                                        std::shared_ptr<IInvokeNode> invokeNode) {
-    std::vector<std::shared_ptr<IDataModelItem>> dataItems;
-
-    if (!invokeElement || !invokeNode) {
-        return dataItems;
-    }
-
-    auto paramElements = SCE::ParsingCommon::findChildElements(invokeElement, "param");
-    for (const auto &paramElement : paramElements) {
-        std::string name, expr, location;
-
-        if (paramElement->hasAttribute("name")) {
-            name = paramElement->getAttribute("name");
-        }
-
-        if (paramElement->hasAttribute("expr")) {
-            expr = paramElement->getAttribute("expr");
-        }
-
-        if (paramElement->hasAttribute("location")) {
-            location = paramElement->getAttribute("location");
-        }
-
-        // Create data model item
-        if (!name.empty() && (!expr.empty() || !location.empty())) {
-            auto dataItem = nodeFactory_->createDataModelItem(name, expr.empty() ? location : expr);
-            if (dataItem) {
-                dataItems.push_back(dataItem);
-            }
-        }
-
-        SCE_LOG_DEBUG("Data item created for param: name={}", name);
-    }
-
-    return dataItems;
-}
-
 void SCE::InvokeParser::parseContentElement(const std::shared_ptr<IXMLElement> &invokeElement,
                                             std::shared_ptr<IInvokeNode> invokeNode) {
     if (!invokeElement || !invokeNode) {

@@ -17,8 +17,19 @@
         Ok(sce_rust_runtime::ScriptValue::String(send_id_val)) => {
             engine.cancel_event(&send_id_val);
         }
-        _ => {
+        // A value that is not a string names no pending send; cancelling a
+        // send that does not exist is not an error.
+        Ok(_) => {}
+        Err(_) => {
+            // W3C SCXML 5.9: a sendidexpr that fails raises error.execution,
+            // and (W3C SCXML 4.9) the error ends the block.
             ::sce_rust_runtime::sce_log_error!("Cancel: failed to evaluate sendidexpr '{}'", "{{ action.sendidexpr | escape_rust }}");
+{% if 'error.execution' in model.events %}
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<cancel> sendidexpr failed to evaluate"));
+{% endif %}
+{% if in_action_block is defined and in_action_block %}
+            break 'action_block;
+{% endif %}
         }
     }
 }

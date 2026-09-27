@@ -468,18 +468,36 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                       childDatamodelVars.size());
     }
 
+    // §scxml-6.4: an argument of this <invoke> that cannot be read costs
+    // error.execution on the parent's internal queue.
+    const auto raiseArgumentError = [&parentSessionId](const std::string &message) {
+        auto raiser = EventRaiserService::getInstance().getEventRaiser(parentSessionId);
+        if (raiser) {
+            raiser->raiseEvent("error.execution", message);
+        } else {
+            SCE_LOG_ERROR("SCXMLInvokeHandler: No EventRaiser for session '{}' - error.execution dropped",
+                          parentSessionId);
+        }
+    };
+
     // §scxml-6.4: Handle namelist attribute - pass datamodel variables by name
     const std::string &namelist = invoke->getNamelist();
     if (!namelist.empty()) {
         std::istringstream iss(namelist);
         std::string varName;
         while (iss >> varName) {
-            // §scxml-6.4: Namelist variable must exist in parent datamodel.
-            // Bridges Lua's nil-for-undeclared gap (JS throws ReferenceError, Lua returns nil).
+            // §scxml-6.4: "if the evaluation of its arguments produces an error,
+            // the SCXML Processor MUST terminate the processing of the element
+            // without further action" (test554). A name that is not a readable
+            // location is such an error: ONE error.execution for the element, no
+            // child, and its <param>s are not evaluated. The declared check
+            // bridges Lua's nil-for-undeclared gap (JS throws ReferenceError, Lua
+            // returns nil).
             if (!scriptEngine_.hasVariable(parentSessionId, varName)) {
                 SCE_LOG_ERROR(
                     "SCXMLInvokeHandler: Namelist variable '{}' not defined in parent session: invoke cancelled",
                     varName);
+                raiseArgumentError("<invoke> namelist names '" + varName + "', which is not a readable location");
                 scriptEngine_.destroySession(childSessionId);
                 return "";
             }
@@ -492,8 +510,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 SCE_LOG_ERROR(
                     "SCXMLInvokeHandler: Failed to evaluate namelist variable '{}' in parent session: invoke cancelled",
                     varName);
-                // §scxml-6.4: If evaluation of invoke's arguments produces an error,
-                // the Processor MUST terminate processing of the element (test 554)
+                raiseArgumentError("<invoke> namelist names '" + varName + "', which is not a readable location");
                 scriptEngine_.destroySession(childSessionId);
                 return "";
             }
@@ -514,14 +531,24 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     const auto &params = invoke->getParams();
     for (const auto &[name, expr, location] : params) {
         if (!name.empty()) {
-            // §scxml-6.4: Only set variable if it exists in child's datamodel
-            // ARCHITECTURE.md Zero Duplication: Use DatamodelValidationHelper
-            if (!DatamodelValidationHelper::isVariableDeclaredInChild(name, childDatamodelVars)) {
-                SCE_LOG_DEBUG("SCXMLInvokeHandler: Skipping param '{}' - not defined in child's datamodel", name);
+            // §scxml-5.7: a <param> names its value through 'expr' or, failing
+            // that, 'location' — a location expression, read as its value. The
+            // parser admits exactly one, so both empty is `location=""`: a
+            // location that names nothing, the same failure as an unreadable
+            // 'expr'.
+            const std::string &valueSource = expr.empty() ? location : expr;
+            if (valueSource.empty()) {
+                SCE_LOG_ERROR("SCXMLInvokeHandler: param '{}' names no location: raising error.execution and "
+                              "omitting the pair",
+                              name);
+                raiseArgumentError("<invoke> <param name='" + name + "'> names no location");
                 continue;
             }
 
-            auto future = scriptEngine_.evaluateExpression(parentSessionId, expr);
+            // Evaluated whether or not the child declares `name`: the <param>
+            // is an argument of this <invoke>, and §scxml-6.4.3 decides only
+            // what the child keeps.
+            auto future = scriptEngine_.evaluateExpression(parentSessionId, valueSource);
             auto result = future.get();
 
             if (!ScriptResultUtils::isSuccess(result)) {
@@ -543,15 +570,15 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 // error is raised AND the `done.state` event still arrives.
                 SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to evaluate param expression '{}' in parent session: "
                               "raising error.execution and omitting the pair",
-                              expr);
-                auto paramErrorRaiser = EventRaiserService::getInstance().getEventRaiser(parentSessionId);
-                if (paramErrorRaiser) {
-                    paramErrorRaiser->raiseEvent("error.execution",
-                                                 "<invoke> <param name='" + name + "'> expr failed to evaluate");
-                } else {
-                    SCE_LOG_ERROR("SCXMLInvokeHandler: No EventRaiser for session '{}' - error.execution dropped",
-                                  parentSessionId);
-                }
+                              valueSource);
+                raiseArgumentError("<invoke> <param name='" + name + "'> could not be read");
+                continue;
+            }
+
+            // §scxml-6.4.3: the child keeps only the values its own <data> declares.
+            // ARCHITECTURE.md Zero Duplication: Use DatamodelValidationHelper
+            if (!DatamodelValidationHelper::isVariableDeclaredInChild(name, childDatamodelVars)) {
+                SCE_LOG_DEBUG("SCXMLInvokeHandler: Skipping param '{}' - not defined in child's datamodel", name);
                 continue;
             }
 
