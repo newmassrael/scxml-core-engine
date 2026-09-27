@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/envelope_id.scxml — a 16-byte envelope identifier (SCE_MESH.md
+  §13, the envelope's `id`, `correlation_id`, `invoke_id` and `routing_id`)
+  as a value the Mesh's pure logic can hold in a list: its first eight bytes
+  and its last eight, each read big-endian.
+
+  Two halves rather than the sixteen bytes because a record's fields are
+  fixed-width scalars (SCE_FORGE.md §4.12). Big-endian, so the halves order
+  as the bytes do: a UUID v7's millisecond prefix lands in `hi`, and two ids
+  compare the way their byte strings do.
+
+  00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
+    → hi 0x0001020304050607, lo 0x08090a0b0c0d0e0f.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="envelope_id"
+       sce:event-name="mesh.envelope_id">
+  <datamodel>
+    <data id="hi" sce:type="uint64" sce:direction="in"/>
+    <data id="lo" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

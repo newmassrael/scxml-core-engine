@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/dedup_holds.scxml — whether one sender's duplicate-suppression
+  window already holds an envelope id (SCE_MESH.md §mesh-10.5): true means
+  the envelope was delivered before and is dropped.
+
+  The window is the list dedup_admit keeps, one per envelope source; a host
+  asks this before admitting. Only ids the window holds match — an all-zero
+  id is novel on an empty window like any other.
+
+  window {1, 2}, id 2 → true · id 3 → false · window {}, id 0 → false.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="dedup_holds" version="1.0">
+  <sce:import kind="event-schema" src="envelope_id.scxml" as="Id"/>
+  <sce:signature>
+    <sce:param name="window" type="list&lt;record:Id&gt;"/>
+    <sce:param name="id" type="record:Id"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="held" type="bool" init="false"/>
+    <sce:foreach item="x" in="window">
+      <sce:if cond="x.hi === id.hi &amp;&amp; x.lo === id.lo">
+        <sce:assign target="held" expr="true"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="held"/>
+  </sce:body>
+</scxml>

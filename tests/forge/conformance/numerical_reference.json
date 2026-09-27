@@ -1647,6 +1647,36 @@
         { "args": [2026, 12], "expected": 31 }
       ]
     },
+    "dedup_admit": {
+      "fixture": "dedup_admit",
+      "signature": "(window: list<record:Id>, id: record:Id, capacity: u32) -> list<record:Id> may-fail",
+      "formula": "the window, oldest first, with id appended when it does not already hold it, keeping the last capacity ids; a capacity of 0 or a window longer than capacity fails 'precondition' — one sender's duplicate-suppression window after an envelope (SCE_MESH.md §mesh-10.5; the standard document sce:std/mesh/dedup_admit.scxml)",
+      "cases": [
+        { "args": [[], { "hi": 0, "lo": 0 }, 3], "expected": [{ "hi": 0, "lo": 0 }], "note": "an all-zero id is novel on an empty window" },
+        { "args": [[{ "hi": 0, "lo": 0 }], { "hi": 0, "lo": 0 }, 3], "expected": [{ "hi": 0, "lo": 0 }], "note": "a duplicate leaves the window as it was" },
+        { "args": [[{ "hi": 0, "lo": 1 }, { "hi": 0, "lo": 2 }], { "hi": 0, "lo": 3 }, 3], "expected": [{ "hi": 0, "lo": 1 }, { "hi": 0, "lo": 2 }, { "hi": 0, "lo": 3 }] },
+        { "args": [[{ "hi": 0, "lo": 1 }, { "hi": 0, "lo": 2 }], { "hi": 0, "lo": 3 }, 2], "expected": [{ "hi": 0, "lo": 2 }, { "hi": 0, "lo": 3 }], "note": "a novel id on a full window drops the oldest" },
+        { "args": [[{ "hi": 0, "lo": 1 }, { "hi": 0, "lo": 2 }], { "hi": 0, "lo": 1 }, 2], "expected": [{ "hi": 0, "lo": 1 }, { "hi": 0, "lo": 2 }], "note": "a duplicate on a full window evicts nothing and is not refreshed" },
+        { "args": [[{ "hi": 0, "lo": 2 }, { "hi": 0, "lo": 3 }], { "hi": 0, "lo": 1 }, 2], "expected": [{ "hi": 0, "lo": 3 }, { "hi": 0, "lo": 1 }], "note": "an evicted id is novel again" },
+        { "args": [[{ "hi": 0, "lo": 1 }], { "hi": 0, "lo": 2 }, 1], "expected": [{ "hi": 0, "lo": 2 }], "note": "a window of one" },
+        { "args": [[{ "hi": 18446744073709551615, "lo": 18446744073709551615 }], { "hi": 18446744073709551615, "lo": 18446744073709551614 }, 2], "expected": [{ "hi": 18446744073709551615, "lo": 18446744073709551615 }, { "hi": 18446744073709551615, "lo": 18446744073709551614 }], "note": "ids that differ in the last bit, through every backend's JSON reader" },
+        { "args": [[], { "hi": 0, "lo": 1 }, 0], "fails": "precondition", "note": "a window of no ids admits every duplicate" },
+        { "args": [[{ "hi": 0, "lo": 1 }, { "hi": 0, "lo": 2 }], { "hi": 0, "lo": 3 }, 1], "fails": "precondition", "note": "a window longer than its capacity" }
+      ]
+    },
+    "dedup_holds": {
+      "fixture": "dedup_holds",
+      "signature": "(window: list<record:Id>, id: record:Id) -> bool",
+      "formula": "whether the window holds id, both halves equal — true means the envelope is a duplicate (SCE_MESH.md §mesh-10.5; the standard document sce:std/mesh/dedup_holds.scxml)",
+      "cases": [
+        { "args": [[{ "hi": 0, "lo": 1 }, { "hi": 0, "lo": 2 }], { "hi": 0, "lo": 2 }], "expected": true },
+        { "args": [[{ "hi": 0, "lo": 1 }, { "hi": 0, "lo": 2 }], { "hi": 0, "lo": 3 }], "expected": false },
+        { "args": [[], { "hi": 0, "lo": 0 }], "expected": false, "note": "an all-zero id on an empty window is novel" },
+        { "args": [[{ "hi": 0, "lo": 1 }], { "hi": 1, "lo": 1 }], "expected": false, "note": "the first halves differ" },
+        { "args": [[{ "hi": 1, "lo": 2 }], { "hi": 2, "lo": 1 }], "expected": false, "note": "the halves are not interchangeable" },
+        { "args": [[{ "hi": 18446744073709551615, "lo": 18446744073709551615 }], { "hi": 18446744073709551615, "lo": 18446744073709551615 }], "expected": true, "note": "the largest id, through every backend's JSON reader" }
+      ]
+    },
     "hlc_compare": {
       "fixture": "hlc_compare",
       "signature": "(a: record:Hlc, b: record:Hlc) -> i32",
@@ -4276,6 +4306,16 @@
         { "name": "wallTime", "value": 1727000000400, "sce_type": "int64" },
         { "name": "counter", "value": 3, "sce_type": "uint32" },
         { "name": "nodeId", "value": 7, "sce_type": "uint64" }
+      ]
+    },
+    "envelope_id": {
+      "fixture": "EnvelopeId",
+      "signature": "struct EnvelopeIdPayload { uint64 hi; uint64 lo; }",
+      "description": "A 16-byte Mesh envelope identifier as its two big-endian halves, the element type of the duplicate-suppression window the standard documents sce:std/mesh/dedup_* take and return (SCE_FORGE.md §4.12). A SHAPE claim like every event-schema fixture: names, order, and that a value reads back.",
+      "event_name": "mesh.envelope_id",
+      "fields": [
+        { "name": "hi", "value": 283686952306183, "sce_type": "uint64" },
+        { "name": "lo", "value": 579005069656919567, "sce_type": "uint64" }
       ]
     },
     "civil_date": {

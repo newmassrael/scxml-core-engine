@@ -1496,7 +1496,7 @@ A list's element may be a record: `type="list&lt;record:Entry&gt;"`. It is the p
 | Python | `list[R]` | `list[R]` |
 | Kotlin | `List<R>` | `ArrayList<R>(N)`, returned as `List<R>` — `SceListBuf` holds 64-bit slots, not objects |
 
-**Executed on every backend**: the observed-remove set of `sce:std/merge` (`orset_union`, `orset_live`, `orset_observed`, `orset_contains`) runs in the numerical conformance harness — list-of-record parameters, nested foreach items, record appends and list-of-record returns. The manifest writes the element as `{"list_of": {"record": "<event-schema fixture>"}}`, its fields derived from the schema as a record's are.
+**Executed on every backend**: the observed-remove set of `sce:std/merge` (`orset_union`, `orset_live`, `orset_observed`, `orset_contains`) and the Mesh duplicate-suppression window of `sce:std/mesh` (`dedup_holds`, `dedup_admit`) run in the numerical conformance harness — list-of-record parameters, a record parameter beside them, nested foreach items, record appends, list-of-record returns and a `may-fail` list-of-record return. The manifest writes the element as `{"list_of": {"record": "<event-schema fixture>"}}`, its fields derived from the schema as a record's are.
 
 ---
 

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/dedup_admit.scxml — one sender's duplicate-suppression window
+  after it observes an envelope id (SCE_MESH.md §mesh-10.5): the window with
+  the id appended, oldest first, keeping the last `capacity` ids.
+
+  An id the window already holds leaves it unchanged — the envelope is a
+  duplicate (dedup_holds), and re-observing it does not refresh it. A novel
+  id on a window already at `capacity` drops the oldest id, and is the
+  DEDUP_WINDOW_OVERFLOW signal of §mesh-16.7 row 7: dedup_holds was false
+  and the window it was admitted to held `capacity` ids. This is the ring of
+  sce/include/mesh/DedupRouter.h, spelled as a list; the eviction order is
+  the ring's.
+
+  `capacity` is deploy.yaml's `window_size` and must be at least 1, and a
+  window longer than it is not one this function produced: either fails
+  `precondition`. The window holds at most 256 ids here (§mesh-10.5's
+  default; SCE_FORGE.md §4.12); a larger `capacity` grows on the heap
+  backends and fails `capacity-exceeded` on the bounded ones.
+
+  window {1, 2}, id 3, capacity 3 → {1, 2, 3} · capacity 2 → {2, 3} ·
+  id 2 → {1, 2}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="dedup_admit" version="1.0">
+  <sce:import kind="event-schema" src="envelope_id.scxml" as="Id"/>
+  <sce:signature>
+    <sce:param name="window" type="list&lt;record:Id&gt;"/>
+    <sce:param name="id" type="record:Id"/>
+    <sce:param name="capacity" type="uint32"/>
+    <sce:return type="list&lt;record:Id&gt;" returns-max-size="256" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="capacity &gt; 0 &amp;&amp; len(window) &lt;= capacity"/>
+    <sce:var name="held" type="bool" init="false"/>
+    <sce:foreach item="x" in="window">
+      <sce:if cond="x.hi === id.hi &amp;&amp; x.lo === id.lo">
+        <sce:assign target="held" expr="true"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:var name="out" type="list&lt;record:Id&gt;" capacity="256"/>
+    <sce:var name="skip" type="uint32" init="held || len(window) &lt; capacity ? 0 : 1"/>
+    <sce:var name="i" type="uint32" init="0"/>
+    <sce:foreach item="kept" in="window">
+      <sce:if cond="i &gt;= skip">
+        <sce:append target="out" expr="kept"/>
+      </sce:if>
+      <sce:assign target="i" expr="i + 1"/>
+    </sce:foreach>
+    <sce:if cond="!held">
+      <sce:append target="out" expr="id"/>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
