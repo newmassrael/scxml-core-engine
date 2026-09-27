@@ -1689,6 +1689,34 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 6.2: a <send> delay is read as one CSS2 time (ARCHITECTURE.md,
+    # "Durations") — a bare number, static or computed, is the argument error,
+    # and two valid delays arrive in the order exact decimal gives them.
+    sce_generate_static_integration_c_test(a_delay_is_a_css2_time "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_a_delay_is_a_css2_time
+        integration/test_a_delay_is_a_css2_time.c
+        ${INTEGRATION_C_TEST_a_delay_is_a_css2_time_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_a_delay_is_a_css2_time PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_a_delay_is_a_css2_time PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_delay_is_a_css2_time PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_delay_is_a_css2_time
+        COMMAND sce_c_integration_a_delay_is_a_css2_time
+    )
+    set_tests_properties(c11_integration_a_delay_is_a_css2_time PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach
     # the datamodel as a value. Every other fixture here leaves the carrier's
     # `data` field zeroed, so this edge — the one a downstream MCU consumer
@@ -2801,6 +2829,27 @@ set_target_properties(sce_c_json_text_unit_test PROPERTIES
 )
 add_test(NAME c11_unit_json_text COMMAND sce_c_json_text_unit_test)
 set_tests_properties(c11_unit_json_text PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+
+# ─── Duration unit test ─────────────────────────────────────────────
+#
+# The runtime's one `<send>` delay reader, measured against
+# tests/durations/css2_time.json — the table every engine's delay reader reads
+# (ARCHITECTURE.md, "Durations (Single Source of Truth)"). Header-only code,
+# so the test needs nothing a configuration can leave out.
+add_executable(sce_c_duration_unit_test unit/duration_test.c)
+target_link_libraries(sce_c_duration_unit_test PRIVATE sce_c_runtime)
+target_compile_definitions(sce_c_duration_unit_test PRIVATE
+    SCE_DURATION_TABLE="${CMAKE_SOURCE_DIR}/tests/durations/css2_time.json")
+set_target_properties(sce_c_duration_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_duration COMMAND sce_c_duration_unit_test)
+set_tests_properties(c11_unit_duration PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
 )

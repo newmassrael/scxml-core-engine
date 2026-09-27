@@ -317,6 +317,40 @@ apply_sce_test_policies(json_text_test)
 add_test(NAME JsonText COMMAND json_text_test)
 
 # ============================================================================
+# One duration grammar (ARCHITECTURE.md, "Durations (Single Source of Truth)")
+#
+# SendSchedulingHelper::parseDelayString — the Interpreter's and the AOT
+# engine's one `<send>` delay reader — measured against
+# tests/durations/css2_time.json, the table every engine's reader reads.
+# ============================================================================
+add_executable(duration_test
+    common/DurationTest.cpp
+)
+
+target_include_directories(duration_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(duration_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+target_compile_definitions(duration_test
+    PRIVATE
+        SCE_DURATION_TABLE="${CMAKE_SOURCE_DIR}/tests/durations/css2_time.json"
+)
+
+apply_sce_test_policies(duration_test)
+
+add_test(NAME Durations COMMAND duration_test)
+
+# ============================================================================
 # Which entry point a host must drive a machine with (§scxml-6.2)
 #
 # `step()` never consults the delayed-send scheduler, so a host that only ever
@@ -1090,6 +1124,8 @@ add_executable(integration_tests
     integration/ABadInvokeArgumentIsReportedOnceAotTest.cpp
     integration/ABadSendArgumentDiscardsItsMessageTest.cpp
     integration/ABadSendArgumentDiscardsItsMessageAotTest.cpp
+    integration/ADelayIsACss2TimeTest.cpp
+    integration/ADelayIsACss2TimeAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
     integration/EventDataArrivesAsSentAotTest.cpp
     integration/XmlDataIsADomTreeTest.cpp
@@ -1666,6 +1702,11 @@ sce_generate_static_integration_test(a_bad_invoke_argument_is_reported_once ${ST
 # targetexpr, delayexpr, idlocation, typeexpr) cannot be evaluated raises
 # error.execution, discards the message, and ends its block.
 sce_generate_static_integration_test(a_bad_send_argument_discards_its_message ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 6.2: a <send> delay is read as one CSS2 time (ARCHITECTURE.md,
+# "Durations") — a bare number, static or computed, is the argument error, and
+# two valid delays arrive in the order exact decimal gives them.
+sce_generate_static_integration_test(a_delay_is_a_css2_time ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach the
 # datamodel as a value. `raiseExternalEvent(name, data)` and

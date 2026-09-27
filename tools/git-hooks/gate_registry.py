@@ -686,7 +686,16 @@ GATES: dict[str, dict] = {
         # in its `paths:`, so the lane starts for a workflow edit. A workflow
         # filter WIDER than its gate's triggers is what `ci-only-coverage`
         # allows; the reverse is what it refuses.
-        "extra": ["docs/SCE_ACCEPTED_SUBSET.md", "schemas/**", "apis/**"],
+        # `tests/json_text/**` and `tests/durations/**` are tables the runtime's
+        # and sce-build's unit tests read at run time — every engine is held to
+        # them — so an edit to a table alone has to start the suite that reads it.
+        "extra": [
+            "docs/SCE_ACCEPTED_SUBSET.md",
+            "schemas/**",
+            "apis/**",
+            "tests/json_text/**",
+            "tests/durations/**",
+        ],
         # The crate whose test suite this gate runs. `include-str-coverage`
         # in the self-test reads it: every file the sources under this root
         # `include_str!` is an input the suite asserts on, so some lane that

@@ -98,15 +98,15 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 250
+engine-documents 251
 native-prefix-documents 2
-datamodel-variable-init 357
+datamodel-variable-init 363
 transition-guard 232
-assign-action 308
+assign-action 314
 child-invoke-needs-script-engine 49
 log-expr 46
 send-param-expr 45
-send-dynamic-attr 37
+send-dynamic-attr 39
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
@@ -252,10 +252,15 @@ never spelled correctly.
   and `send-namelist` by one, `datamodel-variable-init` by four,
   `assign-action` by eight and `send-dynamic-attr` by five. The whole
   table was re-derived from this test's output after a rebase, not merged.
+  Then `a_delay_is_a_css2_time.scxml` (one engine document: six data items,
+  six assigns, and two `<send delayexpr>`s — one whose value is a bare number
+  and one that races a static delay) raised `engine-documents` by one,
+  `datamodel-variable-init` and `assign-action` by six and `send-dynamic-attr`
+  by two.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
-- **49% of judged documents need an engine** (250 of 503). The remaining
+- **49% of judged documents need an engine** (251 of 504). The remaining
   51% already compile without one, which is what makes "the engine is a
   fallback" a description of the tree rather than an aspiration.
   ⚠ This figure was previously stated as 32%, taken over the 736 walked

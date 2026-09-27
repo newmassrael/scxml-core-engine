@@ -86,6 +86,10 @@ on:
       - 'docs/SCE_ACCEPTED_SUBSET.md'
       - 'schemas/**'
       - 'apis/**'
+      # Tables every engine is held to, read at run time by the runtime's and
+      # sce-build's unit tests: an edit to a table alone starts the suite.
+      - 'tests/json_text/**'
+      - 'tests/durations/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -118,6 +122,10 @@ on:
       - 'docs/SCE_ACCEPTED_SUBSET.md'
       - 'schemas/**'
       - 'apis/**'
+      # Tables every engine is held to, read at run time by the runtime's and
+      # sce-build's unit tests: an edit to a table alone starts the suite.
+      - 'tests/json_text/**'
+      - 'tests/durations/**'
 
 # This lane is not superseded by the push that follows it.
 #

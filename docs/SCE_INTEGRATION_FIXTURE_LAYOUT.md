@@ -1367,6 +1367,18 @@ their delivery arms read what the prologue left; C11's enumerated send arms
 were corrected shape by shape, and composing them the same way is its own
 round.
 
+`a_delay_is_a_css2_time` covers how a `<send>` delay is read (ARCHITECTURE.md,
+"Durations"; the cases every reader is held to are
+`tests/durations/css2_time.json`). A static `delay="5"` and a `delayexpr` whose
+value is the number 5 are bare numbers, not CSS2 times, so each is §6.2's
+argument error — one error.execution, nothing scheduled, and the block ends.
+Two valid delays then race: `a` after `delayexpr` `'0.57s'` (570 ms) and `b`
+after `delay="569MS"` (569 ms, the unit in capitals). Exact decimal puts `b`
+first; a reader that goes through a float reads `0.57s` as 569 ms, and the tie
+lets `a`, scheduled first, arrive first. Measured 2026-09-28 before the fix,
+the channels read a bare `5` as 5000 ms or as 5 ms and scheduled it either way,
+and only the C++ reader had a test.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

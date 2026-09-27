@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 6.2: 'delay' and the value of 'delayexpr' must be a valid CSS2
+  time, and SCE reads exactly that on every engine (ARCHITECTURE.md,
+  "Durations (Single Source of Truth)"; the cases are
+  tests/durations/css2_time.json). Three onentry blocks of `s0`:
+
+    1  delay="5" — a bare number is not a CSS2 time. It is the argument error
+       of W3C SCXML 6.2: error.execution, nothing scheduled, and the block
+       ends (W3C SCXML 4.9).
+    2  delayexpr="bare", where `bare` holds the number 5 — the same failure,
+       reached at run time through the value's text.
+    3  two valid delays whose order only exact decimal gets right:
+       `a` after delayexpr '0.57s' (570 ms) and `b` after delay "569MS"
+       (569 ms, the unit in capitals). b is due first. A reader that went
+       through a float reads 0.57s as 569 ms, and the two tie — then the one
+       scheduled first, `a`, arrives first.
+
+  `a` ends the run in `done`, after recording whether `b` had arrived.
+
+    errors   2 — one error.execution per refused delay.
+    after    0 — no assign behind a refused send runs.
+    bad      0 — neither refused message is delivered, however long the run.
+    aAfterB  1 — `b` (569 ms) arrived before `a` (570 ms).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="a_delay_is_a_css2_time" datamodel="ecmascript"
+       initial="s0">
+
+  <datamodel>
+    <data id="errors" expr="0"/>
+    <data id="after" expr="0"/>
+    <data id="bad" expr="0"/>
+    <data id="bSeen" expr="0"/>
+    <data id="aAfterB" expr="-1"/>
+    <data id="bare" expr="5"/>
+  </datamodel>
+
+  <state id="s0">
+    <onentry>
+      <send event="bad" delay="5"/>
+      <assign location="after" expr="after + 1"/>
+    </onentry>
+    <onentry>
+      <send event="bad" delayexpr="bare"/>
+      <assign location="after" expr="after + 1"/>
+    </onentry>
+    <onentry>
+      <send event="a" delayexpr="'0.57s'"/>
+      <send event="b" delay="569MS"/>
+    </onentry>
+
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <transition event="bad">
+      <assign location="bad" expr="bad + 1"/>
+    </transition>
+    <transition event="b">
+      <assign location="bSeen" expr="1"/>
+    </transition>
+    <transition event="a" target="done">
+      <assign location="aAfterB" expr="bSeen"/>
+    </transition>
+  </state>
+
+  <final id="done"/>
+</scxml>

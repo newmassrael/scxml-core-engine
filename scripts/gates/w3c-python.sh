@@ -107,10 +107,17 @@ status=0
 # Appendix D transcription to hand-worked answers over a document written out
 # by hand — the answers the Rust and C++ transcriptions are held to — and no
 # document drives it.
+#
+# `json_text/` and `durations/` are the sixth and seventh: each reads a table
+# every engine is held to (`tests/json_text/string_escape.json`,
+# `tests/durations/css2_time.json`), and a table no runner reads here holds
+# this backend to nothing. `json_text/` sat outside this list from the day it
+# was written, 2026-09-28, until it was named.
 PYTHONPATH="$SCE_REPO_ROOT/backends/python/runtime${PYTHONPATH:+:$PYTHONPATH}" \
     python3 -m pytest backends/python/tests/generated/ backends/python/tests/integration/ \
         backends/python/tests/ecmascript/ backends/python/tests/configuration_entry/ \
-        backends/python/tests/microstep/ \
+        backends/python/tests/microstep/ backends/python/tests/json_text/ \
+        backends/python/tests/durations/ \
         --no-header -v >"$LOG/pytest.log" 2>&1 || status=$?
 cat "$LOG/pytest.log"
 
