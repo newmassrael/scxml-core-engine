@@ -20,9 +20,10 @@ So this writes that half and nothing else:
 
 What it does NOT write is anything that is a reading of the specification:
 which condition produces which value, which inputs the document needs, when
-the host runs it. `activation` is written only when the caller says it -- it
-is a fact about the deployment, and a default here would be a guess made on
-the deployment's behalf.
+the host runs it. `activation` is a fact about the deployment: where the
+pack's `host` states it, the binding takes it from there and is not given a
+copy; otherwise it is written only when the caller says it, since a default
+here would be a guess made on the deployment's behalf.
 
 The result is always a binding `check` can read, so every remaining gap comes
 back as a refusal naming the rule it is about, rather than as a file the
@@ -155,7 +156,19 @@ def draft(pack: Pack, document: str, activation: str | None = None) -> str:
         "version: 1",
         f"document: {_scalar(document)}",
     ]
-    if activation:
+    platform = (pack.conventions.host or {}).get("activation")
+    if activation and platform and activation != platform:
+        raise ScaffoldError(f"activation {activation!r}: the pack's `host` says "
+                            f"this platform runs a document {platform!r}, and "
+                            f"`check` refuses a binding that says otherwise")
+    if platform:
+        # Not copied: a binding that leaves it out takes the platform's, so
+        # there is one place it is written and nothing to drift from it.
+        lines += [
+            f"# activation: {platform} -- the pack's `host` says it for the whole",
+            "# platform, and this binding takes it from there.",
+        ]
+    elif activation:
         lines.append(f"activation: {activation}")
     else:
         lines += [

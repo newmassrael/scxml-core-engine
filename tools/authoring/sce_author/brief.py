@@ -48,6 +48,7 @@ HEADINGS = (
     "## 5. What this specification does not answer",
     "## 6. When you have to decide anyway",
     "## 7. When the answer depends on what happened before",
+    "## 8. What the host does with the document",
 )
 
 
@@ -210,7 +211,75 @@ def _parts(prose: Prose, pack: Pack) -> list[str]:
     parts += ["", "## 6. When you have to decide anyway", "", _DECIDING]
     parts += ["", "## 7. When the answer depends on what happened before",
               "", _REMEMBERING]
+    parts += ["", "## 8. What the host does with the document", "",
+              *host_lines(conv.host)]
     return parts
+
+
+# ⚠ What the host does was a page written by hand for each corpus and handed
+# to the author beside the pack, while `verify` read the pack's `host` -- two
+# statements of one platform fact, one of them invisible to every tool. The
+# first time they parted, the page said "the component writes its outputs at
+# the end of every round", an author wrote every output every round, and an
+# event the specification delays by two seconds announced its old value at
+# 2 ms, failing the platform's own test (measured 2026-09-27). So the author is
+# told here, from the same keys `verify` models.
+_ACTIVATIONS = {
+    "on-change": (
+        "The host runs the document once each time one of its inputs CHANGES "
+        "value. A write of the value an input already holds reaches the "
+        "document not at all, so an input's event means it changed. Each such "
+        "run is one round."),
+    "periodic": (
+        "The host runs the document once per period, whatever changed. Each "
+        "such run is one round."),
+}
+
+_WRITES = {
+    "every-round": """\
+At the end of every round the host writes each output its rule writes that
+round, changed or not -- and every write is seen: whatever waits on an output,
+a test included, is told of each one and reads the first after the input it
+caused. So a round that writes an output announces its value then.
+
+- A transform's outputs, and a statechart output whose rule gives a
+  `when_nothing_sent` its `map` names, are written every round.
+- A statechart output bound `hold_last: true` with a `when_nothing_sent` its
+  `map` leaves out is written only in a round the document sends it a mapped
+  value; in every other round it keeps what it held and nothing is announced.
+
+Where the specification says an output takes its value only at a certain
+moment -- after a delay, on a transition, when a timer expires -- write it then
+and not before: rewriting its old value in the meantime announces that old
+value first. Bind such an output the second way and send it only at that moment
+(a delayed `<send>` for a delay). Everything else, the first way.""",
+}
+
+
+def host_lines(host: dict) -> list[str]:
+    """Section 8: the pack's `host`, in the words an author acts on."""
+    if not host:
+        return ["The pack does not say what the host does. When the document "
+                "runs and which outputs a round writes are facts about the "
+                "deployment: ask whoever hosts it, and state them in the pack's "
+                "`host` so every tool reads the same answer."]
+    lines: list[str] = []
+    activation = host.get("activation")
+    if activation:
+        lines += [f"**When it runs** (`activation: {activation}`, for every "
+                  f"binding on this platform -- a binding leaves it out and "
+                  f"takes this one). " + _ACTIVATIONS[activation], ""]
+    else:
+        lines += ["**When it runs** is not stated for the platform: a binding "
+                  "whose document keeps values says `activation` itself.", ""]
+    writes = host.get("writes")
+    if writes:
+        lines += [f"**What a round writes** (`writes: {writes}`).", "",
+                  _WRITES[writes]]
+    else:
+        lines += ["**What a round writes** is not stated for the platform, so "
+                  "no case can be read as the first thing a round announced."]
+    return lines
 
 
 # ⚠ A specification very often answers from history -- "when A becomes B",
@@ -234,10 +303,11 @@ of the previous activation; `x` is one of its inputs or outputs:
 - A read through `previous()` is not a dependency, so an output may read its
   own previous value. `shown = shown + 1` is a cycle; `previous(shown) + 1` is
   not.
-- The binding says when the host runs the document: `activation: on-change`
-  (once each time its inputs change) or `activation: periodic` (once per
-  period). What "previous" means depends on it, and `check` and `verify`
-  refuse the binding of a document that reads `previous()` until it says.
+- When the host runs the document -- `activation: on-change` (once each time
+  its inputs change) or `activation: periodic` (once per period) -- is the
+  pack's `host` (section 8) or, where the pack does not say, the binding's.
+  What "previous" means depends on it, and `check` and `verify` refuse the
+  binding of a document that reads `previous()` until one of them says.
 
 Do not make the BINDING remember instead (`previous_of`, `state_of`). Memory
 the binding keeps is memory the document does not declare, so the document

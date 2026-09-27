@@ -219,7 +219,8 @@ TOOLS = [
             "position the model declares -- each output with its address, its "
             "field and a map keyed by the platform's numbers, each input with "
             "its address. Nothing that is a reading of the specification is "
-            "written, and `activation` only if you give it. Start the binding "
+            "written, and `activation` only if you give it and the pack's "
+            "`host` does not already say it for the platform. Start the binding "
             "from this, rename rules to your document's identifiers, delete "
             "what the document does not use, and run `check`: it names every "
             "rule that still does not fit."
@@ -240,7 +241,7 @@ TOOLS = [
                 "activation": {
                     "type": "string",
                     "enum": ["on-change", "periodic"],
-                    "description": "When the host runs the document, if you know it.",
+                    "description": "When the host runs the document, if you know it and the pack's `host` does not say it.",
                 },
                 "kind": {
                     "type": "string",

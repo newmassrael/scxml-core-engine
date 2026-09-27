@@ -105,6 +105,27 @@ class ABindingStartsFromTheModel(unittest.TestCase):
         with self.assertRaises(ScaffoldError):
             draft(self.pack, "controller.scxml", "sometimes")
 
+    def test_a_platform_that_says_its_activation_is_not_copied(self):
+        """The pack's `host` says it once; a binding that leaves it out takes
+        it, so the skeleton leaves it out and says why -- a copy in every
+        binding is a copy that can drift from the platform's."""
+        self.pack.conventions.host["activation"] = "on-change"
+        text = draft(self.pack, "controller.scxml")
+        self.assertNotIn("activation", yaml.safe_load(text))
+        self.assertIn("# activation: on-change -- the pack's `host`", text)
+        self.assertEqual([], [f for f in check(self.pack, self.skeleton_path())
+                              if "activation" in str(f)])
+
+    def test_an_activation_the_platform_contradicts_is_refused(self):
+        self.pack.conventions.host["activation"] = "on-change"
+        with self.assertRaises(ScaffoldError) as caught:
+            draft(self.pack, "controller.scxml", "periodic")
+        self.assertIn("runs a document 'on-change'", str(caught.exception))
+
+    def skeleton_path(self) -> pathlib.Path:
+        write(self.pack, "controller.scxml", self.out)
+        return self.out
+
     def test_an_existing_binding_is_never_overwritten(self):
         self.out.write_text("version: 1\ndocument: mine.scxml\n", encoding="utf-8")
         with self.assertRaises(ScaffoldError):

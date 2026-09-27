@@ -40,8 +40,8 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 
 from . import delivery, landing
-from .check import (STATECHART_KINDS, activation_unsaid, driving_refusals,
-                    imports_of, read_binding)
+from .check import (STATECHART_KINDS, activation_in_force, activation_unsaid,
+                    driving_refusals, imports_of, read_binding)
 from .errors import AuthoringError
 from .pack import Pack
 
@@ -1681,8 +1681,9 @@ def unchanged_drives(step, last: dict, model) -> set:
 
     A record's `drove` says the platform WROTE an address; it does not say
     the write changed anything. Whether an unchanged write reaches the
-    document is the host's delivery rule, which the binding states as
-    `activation`. The first value an address is seen at is a change.
+    document is the host's delivery rule, `activation` -- the binding's or
+    the pack's `host` (`activation_in_force`). The first value an address is
+    seen at is a change.
     """
     return {address for address in (step.drove or ())
             if address in last and address in step.given
@@ -2002,7 +2003,9 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             "never fired -- a full run, judged, against a document that was "
             "never given the chance to do half of what it does."))
 
-    activation = binding.get("activation")
+    activation, disagreement = activation_in_force(binding, pack.conventions)
+    if disagreement:
+        return Verification(refusal=disagreement)
     why = restatement_needs_activation(examples.cases, pack.model, activation)
     if why:
         return Verification(refusal=why)
@@ -2538,7 +2541,9 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
     # output's function on its own would hand it no kept value at all.
     holder = build.holder
     if holder:
-        activation = binding.get("activation")
+        activation, disagreement = activation_in_force(binding, pack.conventions)
+        if disagreement:
+            return Verification(refusal=disagreement)
         if activation is None:
             # An incomplete binding, which `check` refuses in these words.
             return Verification(refusal=activation_unsaid(document.name))

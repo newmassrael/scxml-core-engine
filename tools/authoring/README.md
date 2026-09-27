@@ -588,11 +588,23 @@ all three answers occur; `last` because the record's own order says which was
 more recent, which is what the idiom is named for.
 
 `host` states what the platform's HOST — the code connecting a generated
-document to it — does with outputs, once for the platform rather than in every
-binding:
+document to it — does with a document, once for the platform rather than in
+every binding:
 
     host:
+      activation: on-change   # when it runs a document (the binding's `activation`)
       writes: every-round     # every position its rule writes, every round, changed or not
+
+It is written once and every reader takes it from here: `check` and `verify`
+use `activation` for a binding that leaves it out and refuse one that says
+another; `scaffold` leaves it out of the binding it starts, so there is no copy
+to drift; `brief` tells the author what both keys mean (its section 8); and a
+host generated for the platform reads the same keys. ⚠ Before, only the
+binding could say `activation`, and what a round writes reached the author as
+a page written by hand beside the pack — two statements of one platform fact,
+one invisible to every tool. The first time they parted, the page's "writes its
+outputs at the end of every round" produced a document that announced a
+delayed event's old value at 2 ms (2026-09-27).
 
 `verify` models that host, and a case read as its first announcement
 (`observed: first`) is judged on it, so such a case is refused where the pack
@@ -726,10 +738,11 @@ the model's addresses the document's names are.
 **`activation` says when the host runs the document** — once each time its
 inputs change (`on-change`), or once per period whatever changed (`periodic`).
 It decides what `previous(x)` means, the value one ACTIVATION ago, and an edge
-detector means different things under the two, so it is a deployment fact and
-it lives here beside the addresses. A binding for a document that reads
-`previous()` is incomplete without the key, and `check` and `verify` both
-refuse it. `verify` replays one activation per recorded case, which is the
+detector means different things under the two, so it is a deployment fact:
+the pack's `host.activation` says it for the whole platform, and a binding
+that leaves it out takes that one (a binding that says another is refused).
+A binding for a document that reads `previous()` is incomplete when neither
+says it, and `check` and `verify` both refuse it. `verify` replays one activation per recorded case, which is the
 on-change reading, so it also refuses `periodic`, which records of changes
 cannot replay. A document that reads none needs no answer.
 
@@ -796,8 +809,9 @@ declares -- its `address`, its `field`, and a `map` keyed by the platform's own
 numbers (`passthrough` for a field with no value space) -- and one input rule
 per address, with the value space as a comment. For the crossing fixture the
 output half is exactly the half of `controller.binding.yaml` above that is not a
-decision. `activation` is written only when it is given: it is a fact about the
-deployment.
+decision. `activation` is a fact about the deployment: where the pack's `host`
+says it, the binding takes it from there and gets a comment rather than a copy;
+otherwise it is written only when it is given.
 
 It writes nothing that reads the specification -- no comparison, no event, no
 `when`, no `also` -- and a test holds that line: a tool that decided which

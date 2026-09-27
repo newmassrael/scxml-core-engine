@@ -369,13 +369,40 @@ class AKeepingDocumentNeedsItsActivation(Both):
         self.binding["inputs"]["count"] = {"address": "Plant.Input.Count"}
 
     def test_no_activation(self):
-        self.assertSaidByBoth(self.binding, "does not say how the host runs it")
+        self.assertSaidByBoth(self.binding,
+                              "nor the pack's `host` says how the host runs it")
 
     def test_an_activation_is_not_refused(self):
         for activation in ("on-change", "periodic"):
             with self.subTest(activation=activation):
                 self.assertEqual([], self.found({**self.binding,
                                                  "activation": activation}))
+
+    def on_a_platform(self, activation):
+        """The pack says, once for the platform, when a document runs."""
+        self.write_pack(MODEL, {**CONVENTIONS, "host": {"activation": activation}},
+                        EXAMPLES)
+
+    def test_a_binding_that_says_none_takes_the_platforms(self):
+        """⚠ The discriminator for where the fact lives. Before the pack could
+        say it, this binding was refused as incomplete -- every binding on a
+        platform had to restate the platform's schedule."""
+        self.on_a_platform("on-change")
+        self.assertEqual([], self.found(self.binding))
+        if HAVE_CODEGEN:
+            self.assertNotIn("activation", self.refusals(self.verified(self.binding)))
+
+    def test_a_binding_that_restates_the_platforms_is_not_refused(self):
+        self.on_a_platform("on-change")
+        self.assertEqual([], self.found({**self.binding, "activation": "on-change"}))
+
+    def test_a_binding_that_contradicts_the_platform_is_refused_by_both(self):
+        """Two answers to one fact about the deployment: one is wrong, and
+        neither tool knows which, so neither picks."""
+        self.on_a_platform("periodic")
+        self.assertSaidByBoth({**self.binding, "activation": "on-change"},
+                              "the pack's `host` says this platform runs a "
+                              "document `periodic`")
 
     def test_a_document_that_keeps_nothing_needs_none(self):
         self.use(FORGETS)

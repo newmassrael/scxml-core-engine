@@ -674,11 +674,37 @@ def activation_unsaid(document_name: str) -> str:
     """Why a binding for a document that keeps values is incomplete without
     `activation`. `check` reports it, and `verify` refuses in these words."""
     return (f"{document_name} keeps values from one activation to the next (it "
-            f"reads previous()), and the binding does not say how the host runs "
-            f"it. What `previous(x)` means is the value one ACTIVATION ago, so "
-            f"it depends on the host's schedule: say `activation: on-change` "
-            f"(once each time its inputs change) or `activation: periodic` "
-            f"(once per period).")
+            f"reads previous()), and neither the binding nor the pack's `host` "
+            f"says how the host runs it. What `previous(x)` means is the value "
+            f"one ACTIVATION ago, so it depends on the host's schedule: say "
+            f"`activation: on-change` (once each time its inputs change) or "
+            f"`activation: periodic` (once per period) -- in the pack's `host`, "
+            f"where it is a fact about the platform, or in this binding.")
+
+
+def activation_in_force(binding: dict, conventions) -> tuple[str | None, str]:
+    """When the host runs this document, and why that cannot be answered.
+
+    The platform says it once (`conventions.host.activation`); a binding may
+    say it for its own document. Leaving it out takes the platform's; saying
+    another is refused rather than preferred, because either answer could be
+    the wrong one and nothing here knows which. `check` and `verify` both ask
+    this, so they cannot disagree about which schedule a document runs on.
+
+    ⚠ Until 2026-09-27 only the binding said it, and every binding on one
+    platform restated the same `on-change` because a hand-written page told
+    each author to -- a platform fact copied into every document's binding,
+    with nothing to notice a copy that said otherwise.
+    """
+    platform = (conventions.host or {}).get("activation")
+    own = binding.get("activation")
+    if own and platform and own != platform:
+        return None, (f"the binding says `activation: {own}` and the pack's "
+                      f"`host` says this platform runs a document "
+                      f"`{platform}`. One of the two is wrong about the "
+                      f"deployment; drop the binding's to take the platform's, "
+                      f"or correct whichever is not the platform's schedule")
+    return own or platform, ""
 
 
 @dataclass
@@ -1170,17 +1196,21 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
     if prose is not None:
         out.extend(unread_preconditions(pack, prose, declared_inputs, set(document.inputs)))
 
-    # What a document that keeps values needs the binding to say.
-    if document.keeps and not binding.get("activation"):
+    # When the host runs the document: the platform's, the binding's, or a
+    # refusal where the two disagree.
+    activation, disagreement = activation_in_force(binding, conv)
+    if disagreement:
+        out.append(Finding("binding", disagreement))
+    # What a document that keeps values needs somebody to say.
+    elif document.keeps and not activation:
         out.append(Finding("binding", activation_unsaid(document.path.name)))
 
     # A statechart replayed from records that restate a value is judged on
     # the host's delivery rule; `verify` refuses in these words when the
     # binding does not state it, and the two must not disagree.
-    if document.kind in STATECHART_KINDS and pack.examples.cases:
+    if document.kind in STATECHART_KINDS and pack.examples.cases and not disagreement:
         from .verify import restatement_needs_activation  # verify imports this module
-        why = restatement_needs_activation(pack.examples.cases, pack.model,
-                                           binding.get("activation"))
+        why = restatement_needs_activation(pack.examples.cases, pack.model, activation)
         if why:
             out.append(Finding("binding", why))
 
