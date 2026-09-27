@@ -472,12 +472,11 @@ install(TARGETS sce_core sce_base
 # Mesh transport (opt-in via SCE_ENABLE_MESH). sce_mesh_common is a
 # C++-first static library per mesh_cpp_first_policy; it ships with the
 # Core component so `--component Core` on a mesh-enabled build still gets
-# everything required to link AOT mesh machines. tinycbor is vendored
-# like lua54/qjs and must be installed alongside because sce_mesh_common
-# PRIVATE-links it — a static archive consumer still resolves CBOR
-# symbols at link time.
+# everything required to link AOT mesh machines. Its CBOR is the generated
+# envelope codec over the header-only forge runtime, compiled into the
+# archive, so no CBOR library is installed beside it.
 if(SCE_ENABLE_MESH)
-    install(TARGETS sce_mesh_common tinycbor
+    install(TARGETS sce_mesh_common
         EXPORT SCE_CoreTargets
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Core
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Core
@@ -624,15 +623,6 @@ foreach(_sce_license_file IN LISTS SCE_LICENSE_FILES_THIRD_PARTY_CORE)
         COMPONENT Core
     )
 endforeach()
-if(SCE_ENABLE_MESH)
-    foreach(_sce_license_file IN LISTS SCE_LICENSE_FILES_THIRD_PARTY_MESH)
-        get_filename_component(_sce_license_subdir "${_sce_license_file}" DIRECTORY)
-        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${_sce_license_file}"
-            DESTINATION "${CMAKE_INSTALL_DOCDIR}/${_sce_license_subdir}"
-            COMPONENT Core
-        )
-    endforeach()
-endif()
 if(SCE_USE_SPDLOG)
     foreach(_sce_license_file IN LISTS SCE_LICENSE_FILES_THIRD_PARTY_SPDLOG)
         get_filename_component(_sce_license_subdir "${_sce_license_file}" DIRECTORY)

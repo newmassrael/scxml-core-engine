@@ -6,8 +6,9 @@
 //
 // Issue 1's defendable claim: every wire envelope decoded by
 // `ShmChannel::drainWith` populates `MeshEnvelope.type: std::string`
-// from CBOR text bytes via tinycbor's `cbor_value_copy_text_string`
-// API, which performs a heap allocation when the value exceeds
+// from CBOR text bytes — the generated envelope codec's
+// `SCE::Forge::Cbor::read_text` builds a `std::string` the conversion
+// then moves — which performs a heap allocation when the value exceeds
 // glibc's std::string SSO threshold (15 bytes on x86_64 libstdc++).
 // Event names shorter than the threshold land in the inline buffer —
 // zero allocations per event. Longer names trigger one alloc per
@@ -16,7 +17,7 @@
 // Three measurement points distinguish where cost actually lives:
 //
 //   A. `BM_DecodeShortName` — decode envelope whose `type` field is
-//      a 10-character name ("user.click"). Total path: tinycbor
+//      a 10-character name ("user.click"). Total path: CBOR map
 //      walk + SSO-fits string copy + the other CBOR field walks.
 //      No `type`-field heap alloc.
 //

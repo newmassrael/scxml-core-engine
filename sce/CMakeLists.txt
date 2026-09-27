@@ -114,14 +114,15 @@ target_compile_features(sce_core INTERFACE cxx_std_17)
 # ============================================================================
 # Headers: SchedulerConcepts, EventQueueBridge, ShmChannel, PatternKind,
 #          PayloadCodec, RpcStatus, MeshEnvelope, MeshEnvelopeCodec.
-# Compiled: MeshEnvelopeCodec.cpp (CBOR encode/decode using vendored tinycbor).
+# Compiled: MeshEnvelopeCodec.cpp — the envelope's CBOR through the codec
+# generated from sce:std/mesh/envelope.scxml (src/mesh/generated/, committed
+# so a C++ consumer needs no Rust toolchain), whose CBOR items are the C++
+# forge runtime's header-only sce/forge/cbor.h: a private include, since no
+# public header names a generated type.
 # STATIC (not INTERFACE) because MeshEnvelopeCodec.cpp is a compiled
 # unit; consumers (generated transport routing, mesh integration tests) link
 # the static target.
 if(SCE_ENABLE_MESH)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/tinycbor
-                     ${CMAKE_CURRENT_BINARY_DIR}/tinycbor)
-
     add_library(sce_mesh_common STATIC
         src/mesh/MeshEnvelopeCodec.cpp
     )
@@ -129,13 +130,13 @@ if(SCE_ENABLE_MESH)
     target_include_directories(sce_mesh_common
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../backends/cpp/forge-runtime/include
     )
 
     target_link_libraries(sce_mesh_common
         PUBLIC
             sce_core
-        PRIVATE
-            tinycbor
     )
 
     # POSIX shared memory requires -lrt on Linux (shm_open, shm_unlink).

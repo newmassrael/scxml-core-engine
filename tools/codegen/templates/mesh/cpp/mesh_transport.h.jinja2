@@ -307,8 +307,9 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    string the catalog row carries ("someip" / "zenoh" — extend when a
    new transport that decodes envelopes lands). `codec` is always
    "cbor" today (MeshEnvelope wire is canonical CBOR per §7.5);
-   `position` stays absent because tinycbor's bool return does not
-   expose a post-failure cursor. #}
+   `position` stays absent because `decodeEnvelope`'s bool return does
+   not expose a post-failure cursor — the generated envelope codec
+   answers a refusal with `std::nullopt`, not where it refused. #}
 {%- macro raise_envelope_corrupt(transport) -%}
 { ::SCE::Mesh::CommunicationError __sce_decode_err; __sce_decode_err.reason = ::SCE::Mesh::ReasonCode::EnvelopeCorrupt; __sce_decode_err.transport = "{{ transport }}"; __sce_decode_err.codec = "cbor"; raiseCommunicationError(std::move(__sce_decode_err)); return; }
 {%- endmacro %}

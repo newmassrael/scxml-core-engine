@@ -280,8 +280,8 @@ cp "${SCE_ROOT}/${CODEGEN_STYLE_FILE}" \
 # files at the embed root, third_party LICENSE files preserving their
 # repo-relative third_party/<dep>/ path.
 #
-# Embed-package scope: sce_core + sce_base only. Scripting/Runtime/Mesh
-# tier deps (quickjs, cpp-httplib, tinycbor) are out of scope for embed
+# Embed-package scope: sce_core + sce_base only. Scripting/Runtime tier
+# deps (quickjs, cpp-httplib) are out of scope for embed
 # and their LICENSE files are not copied; spdlog rides only when
 # --with-spdlog is set, mirroring the source/header copy above.
 # ============================================================================

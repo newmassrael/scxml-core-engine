@@ -158,7 +158,7 @@ TEST(MeshEnvelopeCodecTest, UnknownIntegerKeySkipped) {
     //   0:bytes16 1:"a" 2:"b" 3:1(uint) 4:1(uint) 5:bytes(0) 99:"future"
     //
     // Wire bytes built explicitly so the test would catch a regression in
-    // tinycbor's advance-past-unknown behavior.
+    // the codec's skip of an unknown entry.
     std::vector<uint8_t> wire;
     wire.push_back(0xA7);  // map(7)
 
@@ -450,7 +450,8 @@ TEST(MeshEnvelopeCodecTest, RoutingIdRoundTrip) {
 TEST(MeshEnvelopeCodecTest, GoldenBytesForFixedEnvelope) {
     // A fully-deterministic envelope and the exact CBOR bytes it must
     // produce. Any change to the wire format — encoder bug, key reorder,
-    // tinycbor regression — flips at least one byte and fails this test.
+    // a change to the generated codec or its CBOR items — flips at least
+    // one byte and fails this test.
     //
     // Envelope: id=kSampleId, source="ecu", type="evt", FireForget+Json,
     //           data={0xAA,0xBB}, no optionals.

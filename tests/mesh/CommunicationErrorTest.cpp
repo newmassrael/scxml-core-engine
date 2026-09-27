@@ -182,9 +182,9 @@ TEST(CommunicationErrorTest, EnvelopeCorruptShape) {
     // canonical CBOR so `codec="cbor"` is the only value stamped
     // by current emitters; the field stays string-typed so a
     // future per-binding-codec transport can mark its slot without
-    // an enum refactor. `position` stays absent on tinycbor-failed
-    // decodes because the parser does not expose a post-failure
-    // cursor through decodeEnvelope's bool return.
+    // an enum refactor. `position` stays absent on a failed decode
+    // because the generated envelope codec reports a refusal, not
+    // where it refused, through decodeEnvelope's bool return.
     CommunicationError err;
     err.reason = ReasonCode::EnvelopeCorrupt;
     err.transport = "someip";

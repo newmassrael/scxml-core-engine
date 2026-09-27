@@ -634,6 +634,30 @@ fn verify_passes_on_real_committed_forge_default_round_trip_go_tree() {
     );
 }
 
+/// The Mesh envelope codec the C++ runtime is built on is generated from the
+/// standard library and committed (sce/src/mesh/generated/), so that a C++
+/// consumer needs no Rust toolchain — which makes it one more tree that goes
+/// stale when a standard document or a cpp template changes.
+#[test]
+fn verify_passes_on_real_committed_mesh_envelope_cpp_tree() {
+    let workspace = workspace_root();
+    let target = workspace
+        .join("sce")
+        .join("src")
+        .join("mesh")
+        .join("generated");
+    let input_root = workspace.join("stdlib").join("mesh");
+    let (code, stderr) = run_verify_real_tree(&target, &input_root);
+    assert_eq!(
+        code, 0,
+        "verify must pass on the committed C++ Mesh envelope tree. \
+         A failure here means a stdlib/mesh/*.scxml or a cpp codec / enum \
+         template changed without refreshing sce/src/mesh/generated/. \
+         Run `sce/src/mesh/generate_envelope.sh` and commit the result. \
+         stderr:\n{stderr}"
+    );
+}
+
 // ── §synth-6.2.6 source-set coverage guard ──────────────────────────
 //
 // The `source-hash` fold is total over whatever the walk collected, so a

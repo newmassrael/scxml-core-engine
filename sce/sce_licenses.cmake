@@ -44,12 +44,6 @@ set(SCE_LICENSE_FILES_THIRD_PARTY_CORE
     third_party/pugixml/LICENSE.md
 )
 
-# Gated by SCE_ENABLE_MESH (still Core tier — sce_mesh_common ships
-# under Core when the option is on; tinycbor is PRIVATE-linked into it).
-set(SCE_LICENSE_FILES_THIRD_PARTY_MESH
-    third_party/tinycbor/LICENSE
-)
-
 # Gated by SCE_HAS_SCRIPTING (Scripting tier). quickjs is the only
 # scripting dep with a standalone LICENSE; lua54's MIT notice rides
 # embedded in lua.h (see file header).
