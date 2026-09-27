@@ -3325,31 +3325,19 @@ pub fn generate_python_with_templates(
 /// document produces a working module instead of a silently degraded
 /// one. `<parallel>`, `<history>`, the executable-content set, and
 /// `<invoke type="scxml">` are all accepted; the rejects below cover
-/// mesh-rpc invokes, action elements outside the supported set, and
-/// `<send>` forms with no supported transport or event identifier.
+/// action elements outside the supported set, and `<send>` forms with no
+/// supported transport or event identifier.
+///
+/// `<invoke type="sce:mesh-rpc">` is not refused here. §scxml-6.4:
+/// `<invoke type="scxml">` (static src=/inline) and `<invoke
+/// srcexpr/contentexpr>` (hybrid) lower the same way — the hybrid stub
+/// `generate_hybrid_child_scxmls` writes produces a child whose immediate
+/// `<final>` raises `done.invoke.<id>`. A mesh-rpc invoke is refused
+/// before this runs, by `reject_mesh_rpc_in_unsupported_lang`, whose
+/// answer is read from the template tree: a second, hand-written refusal
+/// here could only ever disagree with it — it would keep refusing Python
+/// after `templates/mesh/python/` landed.
 fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateError> {
-    // §scxml-6.4: `<invoke type="scxml">` (static src=/inline) and
-    // `<invoke srcexpr/contentexpr>` (hybrid) both lower the same way
-    // now — the hybrid stub written by `generate_hybrid_child_scxmls`
-    // produces a child policy whose immediate `<final>` raises
-    // `done.invoke.<id>` so W3C 6.4.3 / 6.4.4 fixtures observe the
-    // expected event regardless of what the srcexpr/contentexpr would
-    // resolve to. Mesh-rpc invokes remain permanently rejected per
-    // the C++-first mesh policy (`mesh_cpp_first_policy.md`).
-    for inv in &model.invokes {
-        match inv {
-            crate::model::Invoke::Scxml(_)
-            | crate::model::Invoke::Hybrid(_)
-            | crate::model::Invoke::Unsupported(_) => {}
-            crate::model::Invoke::MeshRpc(_) => {
-                return Err(GenerateError::InvalidConfig(
-                    "Python codegen rejects <invoke type=\"sce:mesh-rpc\">: \
-                     mesh runtime is C++ alone (mesh_cpp_first_policy)"
-                        .into(),
-                ));
-            }
-        }
-    }
     // §scxml-5.3 — Python AOT used to reject `<data id>` names that
     // collide with Python keywords (`class`, `lambda`, …) because the
     // pre-Lua datamodel stored values as bare Python identifiers parsed
