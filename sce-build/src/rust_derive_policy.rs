@@ -90,6 +90,17 @@ pub enum RustDeriveCategory {
     /// `lookup.rs.jinja2`'s string-output enum, `observer.rs.jinja2`'s
     /// `ForgeDomainTag`, and `buffer_pool.rs.jinja2`'s `SlotState`.
     ForgeEnum,
+    /// `enum.rs.jinja2`'s closed set — a `sce:kind="enum"` document whose
+    /// variants are the only values. [`Self::ForgeEnum`] plus `Default`,
+    /// marked `#[default]` on the variant the document declares first: a
+    /// holder is default-constructed only to be filled by a decode, and a
+    /// closed set may only hold a value it declares. Derived rather than
+    /// written out because a hand-written `impl Default` returning a unit
+    /// variant is exactly what `clippy::derivable_impls` refuses. The OPEN
+    /// set stays on [`Self::ForgeEnum`] with its impl: its type carries the
+    /// raw value, and a derived default would be the carrier's zero, which
+    /// that set may not declare.
+    ForgeDeclaredEnum,
     /// `bounded_collection.rs.jinja2` — `pub struct {{ pascal }}Handle(u32)`.
     /// Packed slot+generation newtype, used as map key (`Hash`) and
     /// value-copied across the slot-table API.
@@ -168,6 +179,7 @@ impl RustDeriveCategory {
             Self::EventSchemaPayload => &["Debug", "Clone", "PartialEq"],
             Self::EventSchemaPlainPayload => &["Debug", "Clone", "Copy", "PartialEq"],
             Self::ForgeEnum => &["Debug", "Clone", "Copy", "PartialEq", "Eq"],
+            Self::ForgeDeclaredEnum => &["Debug", "Clone", "Copy", "PartialEq", "Eq", "Default"],
             Self::BoundedCollectionHandle => &["Clone", "Copy", "PartialEq", "Eq", "Debug", "Hash"],
             Self::BoundedCollectionOverflowError => &["Clone", "Copy", "PartialEq", "Eq", "Debug"],
             Self::LinkBusEvent => &["Debug", "Clone"],
@@ -314,6 +326,7 @@ mod tests {
             RustDeriveCategory::EventSchemaPayload,
             RustDeriveCategory::EventSchemaPlainPayload,
             RustDeriveCategory::ForgeEnum,
+            RustDeriveCategory::ForgeDeclaredEnum,
             RustDeriveCategory::BoundedCollectionHandle,
             RustDeriveCategory::BoundedCollectionOverflowError,
             RustDeriveCategory::LinkBusEvent,
@@ -378,6 +391,19 @@ mod tests {
         assert_eq!(&state[..event.len()], event);
         assert_eq!(state.last(), Some(&"Default"));
         assert!(!event.contains(&"Default"));
+    }
+
+    #[test]
+    fn a_declared_forge_enum_is_the_forge_enum_plus_default() {
+        // The closed set derives `Default` (its `#[default]` is the first
+        // declared variant); every other forge enum shape does not, since
+        // the open set's derived default would be a value it never declared.
+        let declared = RustDeriveCategory::ForgeDeclaredEnum.derives();
+        let forge = RustDeriveCategory::ForgeEnum.derives();
+        assert_eq!(&declared[..forge.len()], forge);
+        assert_eq!(declared.last(), Some(&"Default"));
+        assert_eq!(declared.len(), forge.len() + 1);
+        assert!(!forge.contains(&"Default"));
     }
 
     #[test]

@@ -8,8 +8,9 @@
 // Do not edit — regenerate from the source SCXML file.
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PayloadCodec {
+    #[default]
     None = 0,
     Json = 1,
     Cbor = 2,
@@ -34,11 +35,5 @@ impl PayloadCodec {
             4 => Some(Self::Raw),
             _ => None,
         }
-    }
-}
-
-impl Default for PayloadCodec {
-    fn default() -> Self {
-        Self::None
     }
 }

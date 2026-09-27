@@ -44,7 +44,16 @@ if v.len() != {{ e.length }} {
         }
         cbor::write_bytes(w, v)?;
 {%- elif e.kind == "enum" -%}
+{#- A signed carrier can hold a value no CBOR unsigned integer carries, so
+    only it is converted with a check; an unsigned one widens, and a
+    fallible conversion that cannot fail is what clippy refuses. -#}
+{%- if e.carrier_signed -%}
 cbor::write_uint(w, u64::try_from({{ e.enum_to_underlying }}).map_err(|_| CodecError::CborOutOfRange)?)?;
+{%- elif e.carrier_type == "u64" -%}
+cbor::write_uint(w, {{ e.enum_to_underlying }})?;
+{%- else -%}
+cbor::write_uint(w, u64::from({{ e.enum_to_underlying }}))?;
+{%- endif -%}
 {%- elif e.value_type == "u64" -%}
 cbor::write_uint(w, v)?;
 {%- else -%}

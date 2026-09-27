@@ -8,8 +8,9 @@
 // Do not edit — regenerate from the source SCXML file.
 
 #[repr(u16)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PatternKind {
+    #[default]
     FireForget = 1,
     RpcRequest = 2,
     RpcReply = 3,
@@ -58,11 +59,5 @@ impl PatternKind {
             21 => Some(Self::ParallelRegionDone),
             _ => None,
         }
-    }
-}
-
-impl Default for PatternKind {
-    fn default() -> Self {
-        Self::FireForget
     }
 }

@@ -8,8 +8,9 @@
 // Do not edit — regenerate from the source SCXML file.
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RpcStatus {
+    #[default]
     Ok = 0,
     Cancelled = 1,
     InvalidArgument = 3,
@@ -40,11 +41,5 @@ impl RpcStatus {
             14 => Some(Self::Unavailable),
             _ => None,
         }
-    }
-}
-
-impl Default for RpcStatus {
-    fn default() -> Self {
-        Self::Ok
     }
 }

@@ -338,16 +338,10 @@ impl<'a> Envelope<'a> {
         cbor::write_text(w, v)?;
         let v = self.pattern;
         cbor::write_uint(w, 3)?;
-        cbor::write_uint(
-            w,
-            u64::try_from(v.to_underlying()).map_err(|_| CodecError::CborOutOfRange)?,
-        )?;
+        cbor::write_uint(w, u64::from(v.to_underlying()))?;
         let v = self.datacontenttype;
         cbor::write_uint(w, 4)?;
-        cbor::write_uint(
-            w,
-            u64::try_from(v.to_underlying()).map_err(|_| CodecError::CborOutOfRange)?,
-        )?;
+        cbor::write_uint(w, u64::from(v.to_underlying()))?;
         let v = self.data;
         cbor::write_uint(w, 5)?;
         if v.len() > 16777216 {
@@ -384,10 +378,7 @@ impl<'a> Envelope<'a> {
         }
         if let Some(v) = self.rpc_status {
             cbor::write_uint(w, 10)?;
-            cbor::write_uint(
-                w,
-                u64::try_from(v.to_underlying()).map_err(|_| CodecError::CborOutOfRange)?,
-            )?;
+            cbor::write_uint(w, u64::from(v.to_underlying()))?;
         }
         if let Some(v) = self.rpc_error_message {
             cbor::write_uint(w, 11)?;

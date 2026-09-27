@@ -2042,11 +2042,16 @@ fn render_enum(
     l.insert_imports(&mut ctx, imports);
 
     if matches!(l.lang, crate::generator::Language::Rust) {
+        // The open set is a value-carrying newtype whose default is written
+        // out; the closed set derives its default (see the category).
+        let category = if m.strict_variants {
+            crate::rust_derive_policy::RustDeriveCategory::ForgeDeclaredEnum
+        } else {
+            crate::rust_derive_policy::RustDeriveCategory::ForgeEnum
+        };
         ctx.insert(
             "forge_enum_derives_attr".into(),
-            crate::rust_derive_policy::RustDeriveCategory::ForgeEnum
-                .derives_attr()
-                .into(),
+            category.derives_attr().into(),
         );
     }
 

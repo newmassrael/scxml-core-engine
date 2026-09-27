@@ -41,6 +41,9 @@ impl {{ enum_name }} {
 {{ forge_enum_derives_attr }}
 pub enum {{ enum_name }} {
 {% for v in variants %}
+{% if loop.first %}
+    #[default]
+{% endif %}
     {{ v.name }} = {{ v.value }},
 {% endfor %}
 }
@@ -63,16 +66,17 @@ impl {{ enum_name }} {
     }
 }
 {% endif %}
+{% if is_open %}
 
-{# Both shapes spell the first declared variant the same way — an
-   associated constant on the open set's newtype, a variant on the
-   closed set's enum — so one impl serves both. The carrier's zero is
-   NOT the default: a closed set does not hold a value it never
-   declared. A holder is default-constructed only to be filled by a
-   decode, so any declared value serves and this is the one the
-   document leads with. #}
+{# Both shapes default to the first declared variant: a holder is
+   default-constructed only to be filled by a decode, so any declared
+   value serves and this is the one the document leads with. The closed
+   set derives it (`#[default]` above); the open set writes it out,
+   because its type carries the raw value and a derived default would be
+   the carrier's zero, which the set may not declare. #}
 impl Default for {{ enum_name }} {
     fn default() -> Self {
         Self::{{ variants[0].name }}
     }
 }
+{% endif %}
