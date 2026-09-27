@@ -19,6 +19,7 @@ members = [
     "backends/rust/forge-runtime",
     "backends/rust/forge-conformance",
     "backends/rust/link-runtime",
+    "backends/rust/mesh",
 ]
 
 [workspace.package]

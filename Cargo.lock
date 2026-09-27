@@ -1721,6 +1721,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sce-rust-mesh"
+version = "0.1.0"
+dependencies = [
+ "sce-forge-runtime",
+ "sce-portable-bytes",
+]
+
+[[package]]
 name = "sce-rust-runtime"
 version = "0.1.0"
 dependencies = [

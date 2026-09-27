@@ -658,6 +658,27 @@ fn verify_passes_on_real_committed_mesh_envelope_cpp_tree() {
     );
 }
 
+#[test]
+fn verify_passes_on_real_committed_mesh_rust_tree() {
+    let workspace = workspace_root();
+    let target = workspace
+        .join("backends")
+        .join("rust")
+        .join("mesh")
+        .join("src")
+        .join("generated");
+    let input_root = workspace.join("stdlib").join("mesh");
+    let (code, stderr) = run_verify_real_tree(&target, &input_root);
+    assert_eq!(
+        code, 0,
+        "verify must pass on the committed Rust Mesh tree. A failure here \
+         means a stdlib/mesh/*.scxml or a Rust forge template changed \
+         without refreshing backends/rust/mesh/src/generated/. Run \
+         `backends/rust/mesh/generate.sh` and commit the result. \
+         stderr:\n{stderr}"
+    );
+}
+
 // ── §synth-6.2.6 source-set coverage guard ──────────────────────────
 //
 // The `source-hash` fold is total over whatever the walk collected, so a

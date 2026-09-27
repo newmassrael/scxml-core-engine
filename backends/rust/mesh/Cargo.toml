@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-mesh"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "SCE Mesh for Rust hosts: the standard envelope and delivery rules generated from sce:std/mesh, and the router core that applies them."
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# The generated modules gate their heap-backed facades (`encode_to_vec`, the
+# growable sink) on the feature of the crate that holds them, spelled
+# `alloc`. This crate cannot work without them — the router core keeps a
+# map of held envelopes — so the feature is on by default, and turning it
+# off is refused in src/lib.rs rather than left to fail inside a module.
+default = ["alloc"]
+alloc = ["sce-forge-runtime/alloc", "sce-portable-bytes/alloc"]
+
+[dependencies]
+sce-forge-runtime = { path = "../forge-runtime", default-features = false }
+sce-portable-bytes = { path = "../portable-bytes", default-features = false }
