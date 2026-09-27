@@ -46,8 +46,12 @@ PY
 # The wire the other half of the pair writes. C11 assembles the params in its
 # own engine and ships the serialisation; shipping the CALL instead is what
 # forced the receiving side to evaluate.
-mutation_case "the c11 sender ships the Lua call as the wire again" <<'PY'
+# ⚠ Re-aimed 2026-09-27: the sender's payload is gathered as Lua pairs and
+# serialised once by `send_payload_json`; the defect this case restores is
+# the same one — Lua source on the wire where JSON belongs — at that site.
+mutation_case "the c11 sender ships Lua source as the wire again" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     '''                    (void)snprintf(_edj, sizeof(_edj), "return JSON.stringify(%s)", _ed);''',
-     '''                    (void)snprintf(_edj, sizeof(_edj), "return [==[%s]==]", _ed);''')
+     '''                    "return JSON.stringify(_scxml_params(table.unpack(_p)))") != 0) {''',
+     '''                    "local _t = {}; for _, p in ipairs(_p) do _t[#_t + 1] = string.format('[%q] = %q', p[1], tostring(p[2])) end; "
+                    "return '{' .. table.concat(_t, ', ') .. '}'") != 0) {''')
 PY

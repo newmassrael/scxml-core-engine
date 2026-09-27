@@ -48,8 +48,10 @@ edit("sce/src/runtime/ActionExecutorImpl.cpp",
                             eventRaiser_->raiseEvent("error.execution", "<send> <param name='" + param.name +
                                                                             "'> expr failed to evaluate");
                         }
+                        aParamFailed = true;
                         continue;""",
-     """                        continue;""")
+     """                        aParamFailed = true;
+                        continue;""")
 PY
 
 # ── C++ Interpreter: ignoring the name ─────────────────────────────
@@ -78,7 +80,7 @@ mutation_case "the cpp aot template logs the failed param instead of reporting i
 edit("tools/codegen/templates/actions/send.jinja2",
      """{{ indent }}engine.raise(typename Engine::EventWithMetadata(
 {{ indent }}    Event::Error_execution,
-{{ indent }}    "<send> <param name='{{ param.name | escape_cpp }}'> expr failed to evaluate"));""",
+{{ indent }}    "<send> <param name='{{ param.name | escape_cpp }}'> could not be read"));""",
      """{{ indent }}(void)0;""")
 PY
 
@@ -107,56 +109,49 @@ edit("tools/codegen/templates/actions/send.jinja2",
     }""")
 PY
 
+# ⚠ Re-aimed 2026-09-27: C11 no longer assembles the payload as Lua source in
+# a C buffer. `send_payload_json` gathers each pair in Lua with one
+# `table.insert` that either happens whole or not at all, and serialises the
+# list once. The half-written-pair rewind and the separator decision these
+# cases used to break no longer exist to break; the two below are the defects
+# the gatherer can have instead.
+
 # ── C11: the report ────────────────────────────────────────────────
 
-mutation_case "the c11 template rewinds the failed param without reporting it" <<'PY'
+mutation_case "the c11 template drops the failed param without reporting it" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """                        {{ csym_prefix }}{{ machine }}_raise_platform_error(
-                            sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                            "<send> <param name='{{ param.name | escape_c }}'> expr failed to evaluate");""",
-     """                        (void)sm;""")
+     """                    {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                        "<send> <param name='{{ param.name | escape_c }}'> expr failed to evaluate");""",
+     """                    (void)sm;""")
 PY
 
-# ── C11: the rewind ────────────────────────────────────────────────
+# ── C11: ignoring the name ─────────────────────────────────────────
 #
-# Without it the buffer keeps `{"broken", ` with no value and no closing
-# brace, so the assembled `_scxml_params(...)` call does not parse and the
-# whole payload comes back empty — `kept` included. `failSiblingParamLost`
-# is what names that: one param that will not evaluate must cost its own
-# pair and nothing else.
+# The shipped behaviour before this axis: the failed reading goes out under
+# the param's name. `error.execution` is still raised, so `failNoParamError`
+# stays quiet and `failBrokenParamDelivered` is the only witness.
 
-# The rewind is replaced rather than deleted. `_pstart` is read here and
-# nowhere else, so dropping the line leaves it set-and-unused and every
-# generated machine fails `-Werror=unused-variable` — INCONCLUSIVE, and a case
-# that never runs measures nothing. `(void)_pstart;` keeps the variable used
-# and still does not rewind, which is the defect this case is about.
-mutation_case "the c11 template leaves the half-written pair in the buffer" <<'PY'
+mutation_case "the c11 template carries the failed param under its name" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """                        _ed_len = _pstart;
-                        {{ csym_prefix }}{{ machine }}_raise_platform_error(""",
-     """                        (void)_pstart;
-                        {{ csym_prefix }}{{ machine }}_raise_platform_error(""")
+     """                        "<send> <param name='{{ param.name | escape_c }}'> expr failed to evaluate");
+                    _param_failed = true;""",
+     """                        "<send> <param name='{{ param.name | escape_c }}'> expr failed to evaluate");
+                    (void)luaL_dostring(sm->L,
+                        "table.insert(_sce_send_pairs, {\\"{{ param.name | escape_lua | escape_c }}\\", ''})");
+                    _param_failed = true;""")
 PY
 
-# ── C11: the separator ─────────────────────────────────────────────
+# ── C11: the send's own pairs ──────────────────────────────────────
 #
-# `_ed_any` exists because the rewind made "is a comma due?" a runtime
-# question rather than a document-position one. Answering it before the
-# pair is known to have been written puts a separator in front of the
-# FIRST pair too, so the assembled `_scxml_params(,{...})` does not parse
-# and the whole payload comes back empty — `failSiblingParamLost` again,
-# from the opposite end of the same buffer.
+# Each send starts a fresh pair list, and the serialiser clears it. Without
+# the start, the first `table.insert` of every send reaches a list that is
+# not there, so every param of every send fails: `error.execution` for each,
+# and payloads that arrive empty — `failSiblingParamLost`, and the typed
+# phase before it.
 
-# The flag is SET early and left in the condition. Taking `_ed_any` out of the
-# condition instead removes its only read, and `-Werror=unused-but-set-variable`
-# then refuses every generated machine — INCONCLUSIVE. Setting it beforehand
-# makes the condition true at the first pair, which is exactly the defect, and
-# the read stays where it was.
-mutation_case "the c11 template decides the separator before the pair is written" <<'PY'
+mutation_case "the c11 template gathers without starting the send's pair list" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """                    int _pstart = _ed_len;
-                    if (_ed_any && _ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }""",
-     """                    int _pstart = _ed_len;
-                    _ed_any = 1;
-                    if (_ed_any && _ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }""")
+     """                (void)luaL_dostring(sm->L, "_sce_send_pairs = {}");""",
+     """                (void)0;""")
 PY
