@@ -39,6 +39,7 @@ use crate::generated::ordering_gap_end::ordering_gap_end;
 use crate::generated::ordering_hold::ordering_hold;
 use crate::generated::ordering_prune::ordering_prune;
 use crate::generated::ordering_slot::OrderingSlotPayload;
+use crate::signal::Signal;
 
 /// What one binding asks of the envelopes it receives. Deployment decides
 /// both, per binding: dedup only where the transport does not already
@@ -71,22 +72,6 @@ impl Received {
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
-}
-
-/// Something the engine is told about besides the envelopes themselves:
-/// the `error.communication` rows of §mesh-16.7 the receive side raises.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Signal {
-    /// ORDERING_GAP: `source`'s sequences `lost_lo..=lost_hi` waited out the
-    /// gap timeout and will not be delivered.
-    OrderingGap {
-        source: String,
-        lost_lo: u64,
-        lost_hi: u64,
-    },
-    /// DEDUP_WINDOW_OVERFLOW (row 7): a novel id from `source` was admitted
-    /// to a full window, so its oldest id is no longer remembered.
-    DedupWindowOverflow { source: String },
 }
 
 /// What one call released, in the order the engine must see it, and what
