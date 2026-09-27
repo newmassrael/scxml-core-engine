@@ -335,6 +335,17 @@ component: fourteen cases had no time at all and could not be judged, and a
 single number chosen for them would have judged them against a moment no run
 is known to have reached.
 
+⚠ A computation reads a `clock` only on a host that runs it as time passes
+(`activation: periodic`). On `on-change` the host runs it at the moment an
+input changed — where the situation is 0 ms old, every time — so what it
+answers later is computed in no round, and `check` and `verify` both refuse
+the clock (`check.clock_refusals`); with no activation stated they refuse it
+too. `verify` used to read the clock at each case's observation, a host that
+computes again as time passes, and passed a document ("255 means 105% after
+500 ms") the platform had no round to run that way (2026-09-28). Time on an
+`on-change` platform is a statechart's delayed `<send>`, which the host
+schedules.
+
 ⚠ **It also says what the cases never looked at.** "Every case passed" is a
 statement about the cases, and a run that judged two of nine written positions
 prints the same count as one that judged nine of nine. So the positions no

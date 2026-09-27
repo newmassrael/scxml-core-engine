@@ -41,7 +41,8 @@ from types import SimpleNamespace
 
 from . import delivery, landing
 from .check import (STATECHART_KINDS, activation_in_force, activation_unsaid,
-                    addresses_of, driving_refusals, imports_of, read_binding)
+                    addresses_of, clock_refusals, driving_refusals, imports_of,
+                    read_binding)
 from .errors import AuthoringError
 from .pack import Pack
 
@@ -2620,6 +2621,12 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
     activation, disagreement = activation_in_force(binding, pack.conventions)
     if disagreement:
         return Verification(refusal=disagreement)
+    # In `check`'s words: a clock no round of this host can read is a
+    # verdict about a host that does not exist (`check.clock_refusals`).
+    clocks = clock_refusals(binding, activation, declared.kind)
+    if clocks:
+        name, why = clocks[0]
+        return Verification(refusal=f"input {name!r}: {why}")
     rounds_are_known = (activation == "on-change"
                         and bool(pack.conventions.host.get("writes")))
     read_addresses = set().union(*(addresses_of(r) for r in inputs.values()))

@@ -733,6 +733,48 @@ def stale_when_fields(rule: dict) -> str:
             f"marked `assumed` if the specification does not give it")
 
 
+def clock_refusals(binding: dict, activation: str | None, kind: str) -> list:
+    """[(input, why)] for every clock input a computation's host cannot feed.
+
+    A clock input hands the document how long the situation has held. A
+    computation runs only when its host runs it, and a host that runs it on
+    `on-change` runs it at the moment an input changed -- where the situation
+    is 0 ms old, every time. What it answers "500 ms later" is never computed
+    by anything, so it is never announced.
+
+    ⚠ `verify` read the clock at the moment each case was observed, a host
+    that computes again when time passes -- which is not the host the pack
+    declared. Measured 2026-09-28: a document reading "255 means 105% after
+    500 ms" through a clock input was verified, and the platform had no round
+    in which that could happen. Time a computation cannot see is a statechart's
+    delayed `<send>`, which the host schedules; or the host must run the
+    document periodically (`activation: periodic`).
+    """
+    if kind in STATECHART_KINDS:
+        # A statechart's time is its own delayed sends, which the host
+        # schedules; it has no clock input to refuse here.
+        return []
+    out = []
+    for name, rule in sorted((binding.get("inputs") or {}).items()):
+        if not (rule or {}).get("clock"):
+            continue
+        if activation == "on-change":
+            out.append((name, (
+                "reads the clock, and the host runs this computation only when "
+                "an input changes -- at which moment the situation is 0 ms old, "
+                "every time. What it answers later is computed in no round. "
+                "Write the time as a statechart's delayed `<send>`, or run the "
+                "document `activation: periodic`")))
+        elif activation is None:
+            out.append((name, (
+                "reads the clock, and neither the binding nor the pack's `host` "
+                "says when the host runs this computation -- a clock is only "
+                "read when something runs the document as time passes, so say "
+                "`activation: periodic`, or write the time as a statechart's "
+                "delayed `<send>`")))
+    return out
+
+
 def activation_in_force(binding: dict, conventions) -> tuple[str | None, str]:
     """When the host runs this document, and why that cannot be answered.
 
@@ -1287,6 +1329,9 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
     # What a document that keeps values needs somebody to say.
     elif document.keeps and not activation:
         out.append(Finding("binding", activation_unsaid(document.path.name)))
+    if not disagreement:
+        for name, why in clock_refusals(binding, activation, document.kind):
+            out.append(Finding(f"input {name}", why))
 
     # A statechart replayed from records that restate a value is judged on
     # the host's delivery rule; `verify` refuses in these words when the

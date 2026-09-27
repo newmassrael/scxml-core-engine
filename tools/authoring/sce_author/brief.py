@@ -229,7 +229,10 @@ _ACTIVATIONS = {
         "The host runs the document once each time one of its inputs CHANGES "
         "value. A write of the value an input already holds reaches the "
         "document not at all, so an input's event means it changed. Each such "
-        "run is one round."),
+        "run is one round. Nothing runs the document as time passes, so a "
+        "computation cannot read a clock here (`check` refuses one): whatever "
+        "the specification says happens LATER is a statechart's delayed "
+        "`<send>`, which the host schedules."),
     "periodic": (
         "The host runs the document once per period, whatever changed. Each "
         "such run is one round."),

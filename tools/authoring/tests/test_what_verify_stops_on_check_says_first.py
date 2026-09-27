@@ -266,6 +266,32 @@ class AnInputTheDocumentTakes(Both):
         binding["inputs"]["ghost"] = {"address": "Plant.Input.Count"}
         self.assertSaidByBoth(binding, "the document declares no input 'ghost'")
 
+    def clocked(self, activation):
+        document = DOCUMENT.replace(
+            '<data id="mode" sce:type="bool" sce:direction="in"/>',
+            '<data id="mode" sce:type="bool" sce:direction="in"/>'
+            '<data id="since" sce:type="int32" sce:direction="in"/>').replace(
+            'expr="mode ? 1 : 0"', 'expr="(since &gt;= 500 &amp;&amp; mode) ? 1 : 0"')
+        self.use(document)
+        binding = copy.deepcopy(BINDING)
+        if activation:
+            binding["activation"] = activation
+        binding["inputs"]["since"] = {"clock": True, "when_absent": 0}
+        return binding
+
+    def test_a_computation_on_an_on_change_host_cannot_read_a_clock(self):
+        """⚠ The discriminator. The host runs the document when an input
+        changes, where the situation is 0 ms old: "500 ms later" is computed
+        in no round. `verify` read the clock at each case's observation and
+        passed a document the platform could never run that way."""
+        self.assertSaidByBoth(self.clocked("on-change"), "the situation is 0 ms old")
+
+    def test_a_clock_with_no_schedule_stated_is_refused(self):
+        self.assertSaidByBoth(self.clocked(None), "a clock is only read when something")
+
+    def test_a_clock_on_a_periodic_host_is_not_refused(self):
+        self.assertFalse([f for f in self.found(self.clocked("periodic")) if "clock" in f])
+
     def test_the_clock_and_the_variant_name_no_address(self):
         """Read off the case, as the schema says of both. `check` refused
         them as having "no address and no protocol" while `verify` ran them."""
@@ -282,6 +308,9 @@ class AnInputTheDocumentTakes(Both):
         self.assertIn("since &gt;= 0", document)
         self.use(document)
         binding = copy.deepcopy(BINDING)
+        # A clock is read only by a host that runs the document as time
+        # passes (`check.clock_refusals`).
+        binding["activation"] = "periodic"
         binding["inputs"]["since"] = {"clock": True, "when_absent": 0}
         binding["inputs"]["branch"] = {"variant_is": ["BRANCH"]}
         self.assertEqual([], self.found(binding))

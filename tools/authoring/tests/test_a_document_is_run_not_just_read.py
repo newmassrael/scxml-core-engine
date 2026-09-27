@@ -282,6 +282,7 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         ever happened.
         """
         def watch_the_clock(binding):
+            binding["activation"] = "periodic"  # a clock needs time to run it
             binding["inputs"]["barrierDown"] = {"clock": True}
 
         pack, path = self.staged(watch_the_clock)
@@ -304,6 +305,7 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         refuses the case; a statechart can still judge through the window,
         because it asks only whether a deadline falls inside it."""
         def watch_the_clock(binding):
+            binding["activation"] = "periodic"  # a clock needs time to run it
             binding["inputs"]["barrierDown"] = {"clock": True, "when_absent": 0}
 
         pack, path = self.staged(
@@ -327,6 +329,7 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         this case is why.
         """
         def watch_the_clock(binding):
+            binding["activation"] = "periodic"  # a clock needs time to run it
             binding["inputs"]["barrierDown"] = {"clock": True}
 
         def a_duration_that_restarts(examples):
