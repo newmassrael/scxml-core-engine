@@ -383,10 +383,11 @@ deployment decides are shown too, each marked with a leading `!` -- strike
 those and what is left is the undeployed page, byte for byte.
 
 `--shape` picks how lines and nesting are written -- `indent`, the default,
-nests by two spaces a level; `endmark` closes each block with the word that
-opened it. `--lexicon` picks what the grammar's own words are called: `en`,
-the default, or `ko`. ⚠ Neither changes a thing the document says. A shape
-may surround a value and may never alter one, and a lexicon renames only the
+nests by two spaces a level; `endmark` keeps that indentation and also closes
+each block with the word that opened it. `--lexicon` picks what the grammar's
+own words are called: `en`, the default, or `ko`. ⚠ Neither changes a thing
+the document says. A shape may surround a value and may never alter one,
+and a lexicon renames only the
 words the grammar itself spends -- so a reviewer can read the page in their
 own language and their approval is still an approval of the document.
 

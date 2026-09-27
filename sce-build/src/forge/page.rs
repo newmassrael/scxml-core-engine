@@ -651,11 +651,11 @@ impl Shape for Indent {
     }
 }
 
-/// Nesting by an explicit close, and no indentation.
+/// Nesting by indentation and an explicit close.
 ///
 /// ```text
-/// state s0 begin:
-/// on e -> t [external]
+/// state begin s0:
+///   on e -> t [external]
 /// state end
 /// ```
 ///
@@ -681,13 +681,20 @@ impl Shape for Endmark {
         // is the depth those lines sit at, which is how a line says
         // which blocks it has left.
         let mut open: Vec<Word> = Vec::new();
-        let close = |out: &mut String, w: Word| {
-            let _ = writeln!(out, "{} {}", (lexicon.word)(w), (lexicon.word)(Word::End));
+        let close = |out: &mut String, w: Word, depth: usize| {
+            let _ = writeln!(
+                out,
+                "{}{} {}",
+                "  ".repeat(depth),
+                (lexicon.word)(w),
+                (lexicon.word)(Word::End)
+            );
         };
 
         for (i, node) in nodes.iter().enumerate() {
             while open.len() > node.depth {
-                close(&mut out, open.pop().expect("len checked"));
+                let w = open.pop().expect("len checked");
+                close(&mut out, w, open.len());
             }
             if opens_a_block(nodes, i) {
                 let Some(Part::Word(w)) = node.parts.first() else {
@@ -710,21 +717,31 @@ impl Shape for Endmark {
                 let spelling = (lexicon.word)(*w);
                 let full = join_parts(node, lexicon, false);
                 let rest = &full[spelling.len()..];
-                let _ = writeln!(out, "{spelling} {}{rest}", (lexicon.word)(Word::Begin));
+                let _ = writeln!(
+                    out,
+                    "{}{spelling} {}{rest}",
+                    "  ".repeat(node.depth),
+                    (lexicon.word)(Word::Begin)
+                );
                 open.push(*w);
             } else {
-                let _ = writeln!(out, "{}", join_parts(node, lexicon, false));
+                let _ = writeln!(
+                    out,
+                    "{}{}",
+                    "  ".repeat(node.depth),
+                    join_parts(node, lexicon, false)
+                );
             }
         }
         while let Some(w) = open.pop() {
-            close(&mut out, w);
+            close(&mut out, w, open.len());
         }
         Ok(out)
     }
 
     /// ⚠ The depth is rebuilt from the markers, which is the whole
-    /// point of them: this shape threw the indentation away, so the
-    /// close lines are the only record of where a block ended. A close
+    /// point of them: indentation makes the page easier to scan, while
+    /// the close lines remain the record of where a block ended. A close
     /// that names a word no open is waiting for is a page this shape
     /// did not write, and it is refused rather than guessed at.
     fn normalise(&self, page: &str, lexicon: &Lexicon) -> Result<String, Refusal> {
@@ -745,14 +762,19 @@ impl Shape for Endmark {
         let mut depth = 0usize;
 
         for line in page.lines() {
+            // Close markers sit at the parent's depth. Inspect them
+            // without indentation, then remove exactly the current
+            // depth from content lines so any spaces in a value survive.
+            let marker = line.trim_start_matches(' ');
+            let content = line.strip_prefix(&"  ".repeat(depth)).unwrap_or(line);
             let opened = words
                 .iter()
                 .copied()
-                .find(|&w| line.starts_with(&format!("{} {begin}", (lexicon.word)(w))));
+                .find(|&w| content.starts_with(&format!("{} {begin}", (lexicon.word)(w))));
             let closed = words
                 .iter()
                 .copied()
-                .find(|&w| line == format!("{} {end}", (lexicon.word)(w)));
+                .find(|&w| marker == format!("{} {end}", (lexicon.word)(w)));
 
             if let Some(w) = closed {
                 let _ = w;
@@ -773,13 +795,13 @@ impl Shape for Endmark {
                 // removed — the rest travelled verbatim, so putting it
                 // back needs no separator decision.
                 let spelling = (lexicon.word)(w);
-                let rest = line
+                let rest = content
                     .strip_prefix(&format!("{spelling} {begin}"))
                     .unwrap_or_default();
                 let _ = writeln!(out, "{}{}", (EN.word)(w), to_canonical_words(rest, lexicon));
                 depth += 1;
             } else {
-                let _ = writeln!(out, "{}", to_canonical_words(line, lexicon));
+                let _ = writeln!(out, "{}", to_canonical_words(content, lexicon));
             }
         }
         if depth != 0 {
@@ -861,8 +883,8 @@ fn ko_word(w: Word) -> &'static str {
         Word::Algorithm => "알고리즘",
         Word::ReturnsMax => "반환최대",
         Word::MayFail => "실패가능",
-        Word::On => "사건",
-        Word::When => "일때",
+        Word::On => "이벤트",
+        Word::When => "조건이면",
         Word::BufferPool => "버퍼풀",
         Word::Slots => "슬롯수",
         Word::Size => "크기",
@@ -908,7 +930,7 @@ fn ko_word(w: Word) -> &'static str {
         Word::TagField => "태그필드",
         Word::TagFlag => "태그플래그",
         Word::PeekByte => "미리보기바이트",
-        Word::Machine => "기계",
+        Word::Machine => "상태기계",
         Word::EventSchema => "사건스키마",
         Word::Event => "사건이름",
         Word::Child => "자식",
@@ -1216,8 +1238,7 @@ mod tests {
         assert_eq!("strict:\n", Indent.write(&nodes, &EN).unwrap());
     }
 
-    /// The shape the second one exists for: blocks closed by name,
-    /// and no indentation carrying the structure.
+    /// Blocks stay indented and are also closed by name.
     #[test]
     fn endmark_closes_each_block_with_the_word_that_opened_it() {
         let nodes = vec![
@@ -1237,8 +1258,17 @@ mod tests {
             },
         ];
         assert_eq!(
-            "foreach begin a in 0..9:\nlog a * b\nforeach end\n",
+            "foreach begin a in 0..9:\n  log a * b\nforeach end\n",
             Endmark.write(&nodes, &EN).unwrap()
+        );
+    }
+
+    #[test]
+    fn endmark_still_reads_pages_written_without_indentation() {
+        let old = "foreach begin a in 0..9:\nlog a * b\nforeach end\n";
+        assert_eq!(
+            "foreach a in 0..9:\n  log a * b\n",
+            Endmark.normalise(old, &EN).unwrap()
         );
     }
 
@@ -1259,7 +1289,7 @@ mod tests {
             },
         ];
         let page = Endmark.write(&nodes, &EN).unwrap();
-        assert_eq!("log begin:\nexpr x\nlog end\n", page);
+        assert_eq!("log begin:\n  expr x\nlog end\n", page);
         assert_eq!(canonical(&nodes), Endmark.normalise(&page, &EN).unwrap());
     }
 
@@ -1283,9 +1313,45 @@ mod tests {
             },
         ];
         assert_eq!(
-            "반복문 시작 a 범위 2..9:\n출력 a * b\n반복문 종료\n",
+            "반복문 시작 a 범위 2..9:\n  출력 a * b\n반복문 종료\n",
             Endmark.write(&nodes, &KO).unwrap()
         );
+    }
+
+    #[test]
+    fn korean_statechart_keeps_nesting_and_uses_software_terms() {
+        let nodes = vec![
+            Node {
+                depth: 0,
+                parts: vec![
+                    Part::Word(Word::Machine),
+                    Part::Text("someip_client".into()),
+                ],
+            },
+            Node {
+                depth: 1,
+                parts: vec![Part::Word(Word::State), Part::Text("Idle:".into())],
+            },
+            Node {
+                depth: 2,
+                parts: vec![
+                    Part::Word(Word::On),
+                    Part::Text("RequestNeeded -> WaitingForResponse [external]".into()),
+                    Part::Word(Word::When),
+                    Part::Text("TimeoutCounter < n".into()),
+                ],
+            },
+            Node {
+                depth: 3,
+                parts: vec![Part::Word(Word::Send), Part::Text("SendRequest".into())],
+            },
+        ];
+        let page = Endmark.write(&nodes, &KO).unwrap();
+        assert_eq!(
+            "상태기계 시작 someip_client\n  상태 시작 Idle:\n    이벤트 시작 RequestNeeded -> WaitingForResponse [external] 조건이면 TimeoutCounter < n\n      전송 SendRequest\n    이벤트 종료\n  상태 종료\n상태기계 종료\n",
+            page
+        );
+        assert_eq!(canonical(&nodes), Endmark.normalise(&page, &KO).unwrap());
     }
 
     /// ⚠ The dependency, stated as a case. A raw opener cannot be

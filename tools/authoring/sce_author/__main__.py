@@ -382,7 +382,8 @@ def main(argv=None) -> int:
     # as the product's own refusal, which names the real set.
     s.add_argument("--shape",
                    help="how lines and nesting are written: 'indent' (the "
-                        "default) or 'endmark'; layout only, never content")
+                        "default) or 'endmark' (indentation plus closing "
+                        "markers); layout only, never content")
     s.add_argument("--lexicon",
                    help="what the grammar's own words are called: 'en' (the "
                         "default) or 'ko'; what the document wrote is never "

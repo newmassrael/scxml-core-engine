@@ -191,7 +191,8 @@ TOOLS = [
                     "description": (
                         "How lines and nesting are written -- 'indent' (the "
                         "default) nests by two spaces a level, 'endmark' "
-                        "closes each block with the word that opened it. A "
+                        "keeps that indentation and also closes each block "
+                        "with the word that opened it. A "
                         "choice of layout and never of content: a value "
                         "still appears as the author spelled it, so the same "
                         "document says the same thing in every shape. An "

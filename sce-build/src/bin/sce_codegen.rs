@@ -2077,8 +2077,8 @@ enum Commands {
         #[arg(long, value_name = "PATH")]
         deploy: Option<String>,
         /// How lines and nesting are written — `indent` nests by two
-        /// spaces a level, `endmark` closes each block with the word
-        /// that opened it.
+        /// spaces a level, `endmark` keeps that indentation and also
+        /// closes each block with the word that opened it.
         ///
         /// ⚠ A choice of layout, never of content: a shape may
         /// surround a value and may never alter one, so the same
