@@ -32,12 +32,16 @@ function JSON.stringify(v, indent)
         --
         -- C0 controls are escaped as `\uXXXX` rather than passed through:
         -- RFC 8259 forbids them raw, so emitting one produced JSON that no
-        -- parser had to accept -- including this file's own.
+        -- parser had to accept -- including this file's own. The five with
+        -- a short form take it: SCE writes a string one way on every engine
+        -- (ARCHITECTURE.md, "JSON Text (Single Source of Truth)").
         local out = {'"'}
         for i = 1, #v do
             local c = string.sub(v, i, i)
             if c == '\\' then out[#out+1] = '\\\\'
             elseif c == '"' then out[#out+1] = '\\"'
+            elseif c == '\b' then out[#out+1] = '\\b'
+            elseif c == '\f' then out[#out+1] = '\\f'
             elseif c == '\n' then out[#out+1] = '\\n'
             elseif c == '\r' then out[#out+1] = '\\r'
             elseif c == '\t' then out[#out+1] = '\\t'

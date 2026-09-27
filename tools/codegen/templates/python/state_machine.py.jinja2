@@ -216,7 +216,12 @@ def _coerce_event_data_str(data: Any) -> str:
     if isinstance(data, (dict, list)):
         import json
         try:
-            return json.dumps(data)
+            # Compact and UTF-8, the form every engine writes JSON text in
+            # (ARCHITECTURE.md, "JSON Text (Single Source of Truth)"):
+            # `json.dumps`'s defaults space the separators and escape every
+            # non-ASCII character, so the same payload differed byte for
+            # byte from the one another backend sent.
+            return json.dumps(data, separators=(",", ":"), ensure_ascii=False)
         except (TypeError, ValueError):
             return str(data)
     return str(data)

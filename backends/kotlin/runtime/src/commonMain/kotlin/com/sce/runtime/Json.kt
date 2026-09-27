@@ -86,7 +86,12 @@ object Json {
         }
     }
 
-    /** The JSON spelling of one text. */
+    /**
+     * The JSON spelling of one text, in the one form every engine writes
+     * (ARCHITECTURE.md, "JSON Text (Single Source of Truth)"): `"` and `\`
+     * escaped, the five short forms, every other U+0000-U+001F as `\u00xx`
+     * in lowercase hex, everything else as it is.
+     */
     fun quote(text: String): String {
         val sb = StringBuilder(text.length + 2)
         sb.append('"')
@@ -94,6 +99,8 @@ object Json {
             when (c) {
                 '"' -> sb.append("\\\"")
                 '\\' -> sb.append("\\\\")
+                '\b' -> sb.append("\\b")
+                '\u000C' -> sb.append("\\f")
                 '\n' -> sb.append("\\n")
                 '\r' -> sb.append("\\r")
                 '\t' -> sb.append("\\t")

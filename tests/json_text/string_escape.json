@@ -1,0 +1,35 @@
+{
+  "about": [
+    "How every SCE engine writes a string into JSON text, written out by hand.",
+    "",
+    "One form, the one the C++ core's nlohmann writer already produces for",
+    "`error.communication` data and for script values: `\"` and `\\` escaped,",
+    "the five short forms `\\b \\f \\n \\r \\t`, every other U+0000-U+001F as",
+    "`\\u00xx` with lowercase hex, and everything else - U+007F and all",
+    "non-ASCII - written as it is, in UTF-8. RFC 8259 permits other spellings;",
+    "SCE allows exactly one, so the same value is the same bytes whichever",
+    "engine wrote it, and a document or a peer cannot tell them apart.",
+    "",
+    "Why a shared table: measured 2026-09-28, eleven hand-written escapers",
+    "across six engines agreed on none of the control characters - five",
+    "passed U+0001 through raw, which is not JSON at all - and no test pinned",
+    "any of them, because each engine's tests were written against that",
+    "engine. A table read by all of them is the only thing that holds them",
+    "together.",
+    "",
+    "Each case gives `text` (read with the reading engine's own JSON parser)",
+    "and `escaped`, the body its writer must produce, without the quotes.",
+    "The rule is stated once, in ARCHITECTURE.md, 'JSON Text (Single Source",
+    "of Truth)', which lists the readers."
+  ],
+  "cases": [
+    { "name": "plain text", "text": "hello", "escaped": "hello" },
+    { "name": "quotation mark and reverse solidus", "text": "q\"b\\s", "escaped": "q\\\"b\\\\s" },
+    { "name": "the five short forms", "text": "\b\f\n\r\t", "escaped": "\\b\\f\\n\\r\\t" },
+    { "name": "every other C0 control, lowercase hex", "text": "\u0000\u0001\u000b\u001f", "escaped": "\\u0000\\u0001\\u000b\\u001f" },
+    { "name": "solidus is not escaped", "text": "a/b", "escaped": "a/b" },
+    { "name": "DEL is not a C0 control", "text": "\u007f", "escaped": "\u007f" },
+    { "name": "non-ASCII is written as UTF-8", "text": "é漢😀", "escaped": "é漢😀" },
+    { "name": "mixed", "text": "k=\"v\"\n\u0002", "escaped": "k=\\\"v\\\"\\n\\u0002" }
+  ]
+}

@@ -1685,23 +1685,41 @@ pub fn escape_lua(text: String) -> String {
         .replace('\t', "\\t")
 }
 
-/// Escape characters for embedding inside a JSON string literal (RFC 8259 §7).
-/// SSoT mirror of cpp `DoneDataHelper::escapeJsonString`
-/// (sce/include/common/DoneDataHelper.h:260-291). Only the inner escapes
-/// are produced — surrounding `"..."` quotes are added by the template.
-/// Composed with `escape_c` when emitted into a C string literal so the
-/// runtime bytes match cpp's `EventDataHelper::scriptValueToJsonString`
-/// for a string ScriptValue (`"text"` JSON-quoted form, mesh §9.6.2
-/// wire-18 canonical wire). The replace order is fixed: backslash first
-/// so the `\` introduced by subsequent escapes is not double-escaped.
+/// Escape characters for embedding inside a JSON string literal (RFC 8259 §7),
+/// in the one form every engine writes a string in (ARCHITECTURE.md, "JSON
+/// Text (Single Source of Truth)"): `"` and `\` escaped, the five short forms
+/// `\b \f \n \r \t`, every other U+0000-U+001F as `\u00xx` in lowercase hex,
+/// everything else as it is. Only the inner escapes are produced — surrounding
+/// `"..."` quotes are added by the template. Composed with `escape_c` when
+/// emitted into a C string literal so the runtime bytes match cpp's
+/// `EventDataHelper::scriptValueToJsonString` for a string ScriptValue
+/// (`"text"` JSON-quoted form, mesh §9.6.2 wire-18 canonical wire).
+///
+/// A generation-time twin of the runtimes' escapers, not a call into one:
+/// this crate does not link a runtime. tests/json_text/string_escape.json
+/// holds both to the same cases.
 pub fn escape_json_string(text: String) -> String {
-    text.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
-        .replace('\u{08}', "\\b")
-        .replace('\u{0c}', "\\f")
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{08}' => out.push_str("\\b"),
+            '\u{0c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => {
+                let byte = c as u32 as usize;
+                out.push_str("\\u00");
+                out.push(char::from(HEX[byte >> 4]));
+                out.push(char::from(HEX[byte & 0x0F]));
+            }
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// §scxml-5.9.2: rewrite pure In('xxx') predicate text to a C11 native
@@ -2112,5 +2130,40 @@ mod literal_escaper_census {
              {missing:?} — add each with its function so the census can ask \
              what it does"
         );
+    }
+}
+
+#[cfg(test)]
+mod json_text_table {
+    use super::escape_json_string;
+
+    /// tests/json_text/string_escape.json: the cases every engine's writer is
+    /// measured against. The generation-time escaper writes the text a
+    /// generated `_event.data` carries, so it is held to them too.
+    #[test]
+    fn the_generation_time_escaper_writes_the_one_form() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/json_text/string_escape.json"
+        );
+        let table: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).expect("the shared escape table"))
+                .expect("the table is JSON");
+        let cases = table["cases"].as_array().expect("the table has cases");
+        assert!(cases.len() >= 8, "the table lost cases: {}", cases.len());
+        for case in cases {
+            let text = |name: &str| {
+                case[name]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("a case's {name} is a string"))
+                    .to_string()
+            };
+            assert_eq!(
+                escape_json_string(text("text")),
+                text("escaped"),
+                "{}",
+                text("name")
+            );
+        }
     }
 }

@@ -656,6 +656,41 @@ fail. Do NOT reintroduce per-engine copies of these operators.
 
 Do NOT duplicate JSON logic in backend-specific code. All five backends load the same file.
 
+### JSON Text (Single Source of Truth)
+
+A string written into JSON text is written one way on every engine, so the
+same value is the same bytes whichever engine — or which peer over Mesh —
+wrote it:
+
+| Character | Written as |
+|-----------|-----------|
+| `"` `\` | `\"` `\\` |
+| U+0008 U+000C U+000A U+000D U+0009 | `\b` `\f` `\n` `\r` `\t` |
+| every other U+0000–U+001F | `\u00xx`, lowercase hex |
+| everything else (U+007F, all non-ASCII) | as it is, in UTF-8 |
+
+It is the form nlohmann's writer produces, which the C++ core already used for
+script values and `error.communication` data. RFC 8259 allows other spellings;
+SCE allows this one. Measured 2026-09-28, eleven hand-written escapers across
+six engines agreed on none of the control characters, five passed U+0001 raw —
+which is not JSON — and no test pinned any of them.
+
+`tests/json_text/string_escape.json` holds the cases, and every writer reads it
+with its own engine's JSON parser:
+
+| Engine | Writer | Reader of the table |
+|--------|--------|---------------------|
+| C++ | `SCE::JsonText` (`sce/include/common/JsonText.h`) — `DoneDataHelper`, `HttpEventTarget`, `EventPayloadFields` | `tests/common/JsonTextTest.cpp` |
+| Lua (all engines) | `JSON.stringify` in `json_builtins.lua` | `tests/common/JsonTextTest.cpp`, through the engine this build selected |
+| Rust | `json::push_escaped` / `json::quote`; `escape_json_string` delegates | `backends/rust/runtime/src/json.rs` |
+| Go | `EscapeJSONString`; `PayloadJSON` writes its strings with it | `backends/go/runtime/json_text_test.go` |
+| Python | `_json_string`; `json.dumps(..., separators=(",", ":"), ensure_ascii=False)` | `backends/python/tests/json_text/test_string_escape.py` |
+| C11 | `sce_payload_quote_span` | `backends/c/tests/unit/json_text_test.c` |
+| Kotlin | `Json.quote` | `backends/kotlin/tests/.../runtime/JsonTextTest.kt` |
+| codegen | the `escape_json_string` filter | `sce-build/src/filters.rs` |
+
+Do NOT write a new escaper; call the engine's writer above.
+
 ### LuaDOMBinding
 
 Provides JavaScript-compatible DOM API over shared `XMLDOMWrapper`:

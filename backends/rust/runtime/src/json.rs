@@ -116,25 +116,42 @@ fn write_into(value: &Value, out: &mut String) {
     }
 }
 
-/// The JSON spelling of one text.
+/// The JSON spelling of one text: escaped and quoted.
 pub fn quote(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     out.push('"');
+    push_escaped(&mut out, text);
+    out.push('"');
+    out
+}
+
+/// Append `text` to `out` as the body of a JSON string: escaped, unquoted.
+///
+/// The one form SCE writes on every engine (ARCHITECTURE.md, "JSON Text
+/// (Single Source of Truth)"): `"` and `\` escaped, the five short forms
+/// `\b \f \n \r \t`, every other U+0000-U+001F as `\u00xx` in lowercase hex,
+/// everything else as it is. tests/json_text/string_escape.json holds the
+/// cases.
+pub fn push_escaped(out: &mut String, text: &str) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
     for c in text.chars() {
         match c {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
+            '\u{0008}' => out.push_str("\\b"),
+            '\u{000C}' => out.push_str("\\f"),
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
             c if (c as u32) < 0x20 => {
-                out.push_str(&format!("\\u{:04x}", c as u32));
+                let byte = c as u32 as usize;
+                out.push_str("\\u00");
+                out.push(char::from(HEX[byte >> 4]));
+                out.push(char::from(HEX[byte & 0x0F]));
             }
             c => out.push(c),
         }
     }
-    out.push('"');
-    out
 }
 
 struct Reader<'a> {
@@ -309,6 +326,38 @@ impl Reader<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// tests/json_text/string_escape.json: the cases every engine's writer
+    /// is measured against, read with this module's own parser.
+    #[test]
+    fn a_string_is_written_in_the_one_form_every_engine_writes() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/json_text/string_escape.json"
+        );
+        let table = std::fs::read_to_string(path).expect("the shared escape table");
+        let Value::Object(members) = parse(&table).expect("the table is JSON") else {
+            panic!("the table is an object");
+        };
+        let Some((_, Value::Array(cases))) = members.iter().find(|(key, _)| key == "cases") else {
+            panic!("the table has cases");
+        };
+        assert!(cases.len() >= 8, "the table lost cases: {}", cases.len());
+        for case in cases {
+            let Value::Object(fields) = case else {
+                panic!("a case is an object");
+            };
+            let text = |name: &str| match fields.iter().find(|(key, _)| key == name) {
+                Some((_, Value::Text(text))) => text.clone(),
+                other => panic!("a case's {name} is a string, got {other:?}"),
+            };
+            let (name, input, expected) = (text("name"), text("text"), text("escaped"));
+            let mut escaped = String::new();
+            push_escaped(&mut escaped, &input);
+            assert_eq!(escaped, expected, "{name}");
+            assert_eq!(quote(&input), format!("\"{expected}\""), "{name}");
+        }
+    }
 
     #[test]
     fn a_value_written_is_read_back_unchanged() {

@@ -585,7 +585,7 @@ pub fn render_python(model: &SCXMLModel) -> String {
                 format!(
                     "\n    def wire(self) -> str:\n        \
 \"\"\"The JSON `done.invoke.{id}` carries this record as.\"\"\"\n        \
-return _json.dumps({{{}}}, separators=(\",\", \":\"))\n",
+return _json.dumps({{{}}}, separators=(\",\", \":\"), ensure_ascii=False)\n",
                     items.join(", "),
                     id = invoke.invoke_id,
                 )

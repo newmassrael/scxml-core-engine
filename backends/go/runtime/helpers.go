@@ -217,17 +217,46 @@ func ScriptValueToJSON(value interface{}) string {
 	}
 }
 
-// EscapeJSONString escapes a string for a JSON string literal.
-// Ports C++ `DoneDataHelper::escapeJsonString`.
+// EscapeJSONString writes s as the body of a JSON string: escaped, unquoted.
+//
+// The one form SCE writes on every engine (ARCHITECTURE.md, "JSON Text
+// (Single Source of Truth)"): `"` and `\` escaped, the five short forms
+// \b \f \n \r \t, every other U+0000-U+001F as \u00xx in lowercase hex, and
+// every other byte as it is. tests/json_text/string_escape.json holds the
+// cases. Walked byte by byte, as the C++ core walks it, so a byte that is not
+// UTF-8 passes as it came rather than as a replacement character.
 func EscapeJSONString(s string) string {
-	escaped := strings.ReplaceAll(s, `\`, `\\`)
-	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
-	escaped = strings.ReplaceAll(escaped, "\n", `\n`)
-	escaped = strings.ReplaceAll(escaped, "\r", `\r`)
-	escaped = strings.ReplaceAll(escaped, "\t", `\t`)
-	escaped = strings.ReplaceAll(escaped, "\b", `\b`)
-	escaped = strings.ReplaceAll(escaped, "\f", `\f`)
-	return escaped
+	const hex = "0123456789abcdef"
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch c {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			if c < 0x20 {
+				b.WriteString(`\u00`)
+				b.WriteByte(hex[c>>4])
+				b.WriteByte(hex[c&0x0F])
+			} else {
+				b.WriteByte(c)
+			}
+		}
+	}
+	return b.String()
 }
 
 // EventDataParam is one evaluated `<send>` param, in document order.

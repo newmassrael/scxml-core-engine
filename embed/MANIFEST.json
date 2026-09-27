@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "e5c8e6e11c",
+  "embed_version": "a918df18b2",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 279,
+  "symbol_count": 283,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -289,6 +289,24 @@
       "kind": "function",
       "name": "SCE::InPredicateHelper::isStateActive<T>",
       "signature": "bool SCE::InPredicateHelper::isStateActive<T>(const std::vector<StateType> &, StateGetter, const std::string &)"
+    },
+    {
+      "header": "common/JsonText.h",
+      "kind": "function",
+      "name": "SCE::JsonText::appendEscaped",
+      "signature": "void SCE::JsonText::appendEscaped(std::string &, std::string_view)"
+    },
+    {
+      "header": "common/JsonText.h",
+      "kind": "function",
+      "name": "SCE::JsonText::escaped",
+      "signature": "std::string SCE::JsonText::escaped(std::string_view)"
+    },
+    {
+      "header": "common/JsonText.h",
+      "kind": "function",
+      "name": "SCE::JsonText::quoted",
+      "signature": "std::string SCE::JsonText::quoted(std::string_view)"
     },
     {
       "header": "common/Logger.h",
@@ -653,6 +671,16 @@
       "name": "SCE::Core::ForeachHelper"
     },
     {
+      "header": "core/ForeachHelper.h",
+      "kind": "enum",
+      "name": "SCE::Core::ForeachOutcome",
+      "values": [
+        "Completed",
+        "CollectionRejected",
+        "BodyFailed"
+      ]
+    },
+    {
       "header": "core/HierarchicalStateHelper.h",
       "kind": "class",
       "members": [],
@@ -721,6 +749,7 @@
       "members": [
         "field std::map<std::string, std::vector<std::string>> params",
         "field std::string content",
+        "field std::string eventData",
         "field std::string eventName",
         "field std::string processorType",
         "field std::string sendId",

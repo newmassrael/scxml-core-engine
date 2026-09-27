@@ -141,14 +141,6 @@ private:
     SendResult convertHttpResponse(const httplib::Result &result, const EventDescriptor &event) const;
 #endif
 
-    /**
-     * @brief Escape JSON string values
-     *
-     * @param input Raw string
-     * @return JSON-escaped string
-     */
-    std::string escapeJsonString(const std::string &input) const;
-
 private:
     std::string targetUri_;
     std::string scheme_;  // "http" or "https"

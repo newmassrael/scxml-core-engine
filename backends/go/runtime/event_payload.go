@@ -6,6 +6,7 @@ package sce
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -187,14 +188,43 @@ func PayloadBytes(obj PayloadFields, name string) ([]byte, error) {
 // that the script engine binds `_event.data` to the same values the typed
 // carrier holds. A byte string is written as its Latin-1 text (see
 // PayloadBytes).
+//
+// Names and texts are written with EscapeJSONString, the form every engine
+// writes a string in; encoding/json would escape `<`, `>`, `&` and U+2028 as
+// well and replace a byte that is not UTF-8, which no other engine does. The
+// fields are written in name order, as encoding/json wrote a map.
 func PayloadJSON(fields map[string]any) string {
-	encoded, err := json.Marshal(fields)
-	if err != nil {
-		// Every value here comes from a schema's own field types, all of which
-		// marshal; there is no input the caller could give that lands here.
-		return ""
+	names := make([]string, 0, len(fields))
+	for name := range fields {
+		names = append(names, name)
 	}
-	return string(encoded)
+	sort.Strings(names)
+	var b strings.Builder
+	b.WriteByte('{')
+	for i, name := range names {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteByte('"')
+		b.WriteString(EscapeJSONString(name))
+		b.WriteString(`":`)
+		if text, ok := fields[name].(string); ok {
+			b.WriteByte('"')
+			b.WriteString(EscapeJSONString(text))
+			b.WriteByte('"')
+			continue
+		}
+		encoded, err := json.Marshal(fields[name])
+		if err != nil {
+			// Every value here comes from a schema's own field types, all of
+			// which marshal; there is no input the caller could give that
+			// lands here.
+			return ""
+		}
+		b.Write(encoded)
+	}
+	b.WriteByte('}')
+	return b.String()
 }
 
 // BytesAsPayloadText is the Latin-1 spelling of a byte string, for the inject

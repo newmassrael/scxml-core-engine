@@ -17,6 +17,7 @@
 #pragma once
 
 #include "common/EventDataHelper.h"
+#include "common/JsonText.h"
 #include "scripting/IScriptEngine.h"
 #include <functional>
 #include <optional>
@@ -228,8 +229,7 @@ public:
                 // §scxml-5.5 + B.2: Use canonical JSON serializer so nested
                 // ScriptObject/ScriptArray param values round-trip through the
                 // wire / local JSON-fallback paths identically to typedData.
-                jsonBuilder << "\"" << escapeJsonString(paramName)
-                            << "\":" << EventDataHelper::scriptValueToJsonString(value);
+                jsonBuilder << JsonText::quoted(paramName) << ":" << EventDataHelper::scriptValueToJsonString(value);
 
                 // Preserve typed value for engine-agnostic pipeline
                 if (typedObj) {
@@ -252,45 +252,6 @@ public:
         if (outTypedData && typedObj) {
             *outTypedData = typedObj;
         }
-    }
-
-    /**
-     * @brief Escape special characters for JSON string
-     *
-     * @param str Input string
-     * @return Escaped JSON string (without surrounding quotes)
-     */
-    static std::string escapeJsonString(const std::string &str) {
-        std::ostringstream escaped;
-        for (char c : str) {
-            switch (c) {
-            case '"':
-                escaped << "\\\"";
-                break;
-            case '\\':
-                escaped << "\\\\";
-                break;
-            case '\n':
-                escaped << "\\n";
-                break;
-            case '\r':
-                escaped << "\\r";
-                break;
-            case '\t':
-                escaped << "\\t";
-                break;
-            case '\b':
-                escaped << "\\b";
-                break;
-            case '\f':
-                escaped << "\\f";
-                break;
-            default:
-                escaped << c;
-                break;
-            }
-        }
-        return escaped.str();
     }
 };
 

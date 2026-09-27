@@ -438,6 +438,61 @@ SCE_C_UNUSED static inline bool sce_payload_emit(sce_payload_sink_t *sink, unsig
     return true;
 }
 
+/* A code point a `\u` escape named, into a text sink as UTF-8 — a text field
+   holds UTF-8, and a code point above U+007F is more than one byte of it. A
+   byte-string sink takes it as the one byte it must be. */
+SCE_C_UNUSED static inline bool sce_payload_emit_code_point(sce_payload_sink_t *sink, unsigned long code) {
+    if (sink->bytes != NULL || code < 0x80u) {
+        return sce_payload_emit(sink, code);
+    }
+    unsigned char utf8[4];
+    size_t n;
+    if (code < 0x800u) {
+        utf8[0] = (unsigned char)(0xC0u | (code >> 6));
+        utf8[1] = (unsigned char)(0x80u | (code & 0x3Fu));
+        n = 2u;
+    } else if (code < 0x10000u) {
+        utf8[0] = (unsigned char)(0xE0u | (code >> 12));
+        utf8[1] = (unsigned char)(0x80u | ((code >> 6) & 0x3Fu));
+        utf8[2] = (unsigned char)(0x80u | (code & 0x3Fu));
+        n = 3u;
+    } else {
+        utf8[0] = (unsigned char)(0xF0u | (code >> 18));
+        utf8[1] = (unsigned char)(0x80u | ((code >> 12) & 0x3Fu));
+        utf8[2] = (unsigned char)(0x80u | ((code >> 6) & 0x3Fu));
+        utf8[3] = (unsigned char)(0x80u | (code & 0x3Fu));
+        n = 4u;
+    }
+    for (size_t i = 0u; i < n; ++i) {
+        if (!sce_payload_emit(sink, utf8[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The four hex digits after a `\u`, at `p`, or -1 when they are not four hex
+   digits. Read digit by digit: `strtoul` would also take a sign or a leading
+   space, which JSON does not. */
+SCE_C_UNUSED static inline long sce_payload_hex4(const char *p) {
+    long code = 0;
+    for (int i = 0; i < 4; i++) {
+        const char c = p[i];
+        int digit;
+        if (c >= '0' && c <= '9') {
+            digit = c - '0';
+        } else if (c >= 'a' && c <= 'f') {
+            digit = c - 'a' + 10;
+        } else if (c >= 'A' && c <= 'F') {
+            digit = c - 'A' + 10;
+        } else {
+            return -1;
+        }
+        code = code * 16 + digit;
+    }
+    return code;
+}
+
 /* One JSON string's characters, unescaped, into `sink`. */
 SCE_C_UNUSED static inline const char *sce_payload_walk_text(const char *p, sce_payload_sink_t *sink) {
     if (*p != '"') {
@@ -446,6 +501,9 @@ SCE_C_UNUSED static inline const char *sce_payload_walk_text(const char *p, sce_
     p++;
     while (*p != '\0' && *p != '"') {
         unsigned long code;
+        /* Whether `code` is a code point a `\u` escape named, rather than one
+           byte of the text as it came. */
+        bool named = false;
         if (*p == '\\') {
             p++;
             switch (*p) {
@@ -474,21 +532,27 @@ SCE_C_UNUSED static inline const char *sce_payload_walk_text(const char *p, sce_
                 code = '\t';
                 break;
             case 'u': {
-                char hex[5];
-                int i;
-                for (i = 0; i < 4; i++) {
-                    if (p[1 + i] == '\0') {
-                        return SCE_PAYLOAD_REFUSE_NOT_TEXT;
-                    }
-                    hex[i] = p[1 + i];
-                }
-                hex[4] = '\0';
-                char *end = NULL;
-                code = strtoul(hex, &end, 16);
-                if (end != hex + 4) {
+                const long unit = sce_payload_hex4(p + 1);
+                if (unit < 0) {
                     return SCE_PAYLOAD_REFUSE_NOT_TEXT;
                 }
                 p += 4;
+                code = (unsigned long)unit;
+                /* RFC 8259 §7: a character outside the Basic Multilingual
+                   Plane is written as its UTF-16 surrogate pair, two escapes
+                   that name one code point together. A half without its
+                   other half names no character at all. */
+                if (code >= 0xD800u && code <= 0xDBFFu) {
+                    const long low = (p[1] == '\\' && p[2] == 'u') ? sce_payload_hex4(p + 3) : -1;
+                    if (low < 0xDC00 || low > 0xDFFF) {
+                        return SCE_PAYLOAD_REFUSE_NOT_TEXT;
+                    }
+                    code = 0x10000u + ((code - 0xD800u) << 10) + ((unsigned long)low - 0xDC00u);
+                    p += 6;
+                } else if (code >= 0xDC00u && code <= 0xDFFFu) {
+                    return SCE_PAYLOAD_REFUSE_NOT_TEXT;
+                }
+                named = true;
                 break;
             }
             default:
@@ -499,7 +563,7 @@ SCE_C_UNUSED static inline const char *sce_payload_walk_text(const char *p, sce_
             code = (unsigned char)*p;
             p++;
         }
-        if (!sce_payload_emit(sink, code)) {
+        if (!(named ? sce_payload_emit_code_point(sink, code) : sce_payload_emit(sink, code))) {
             return sink->above_one_byte ? SCE_PAYLOAD_REFUSE_NOT_ONE_BYTE : SCE_PAYLOAD_REFUSE_TOO_LONG;
         }
     }
@@ -558,9 +622,35 @@ SCE_C_UNUSED static inline const char *sce_payload_read_bytes(const sce_payload_
     return NULL;
 }
 
-/* Quote an explicit span. A byte payload uses Latin-1 code points, so NUL
-   and high bytes must be escaped rather than passed through a C string. Text
-   keeps its UTF-8 bytes. Failure never exposes a partial JSON string. */
+/* The short form JSON gives a control character, or 0 when it has none. */
+SCE_C_UNUSED static inline char sce_payload_short_escape(unsigned char c) {
+    switch (c) {
+    case '"':
+        return '"';
+    case '\\':
+        return '\\';
+    case '\b':
+        return 'b';
+    case '\f':
+        return 'f';
+    case '\n':
+        return 'n';
+    case '\r':
+        return 'r';
+    case '\t':
+        return 't';
+    default:
+        return 0;
+    }
+}
+
+/* Quote an explicit span. Text is written in the one form every engine writes
+   a string in (ARCHITECTURE.md, "JSON Text (Single Source of Truth)"): `"`
+   and `\` escaped, the five short forms, every other U+0000-U+001F as \u00xx
+   in lowercase hex, everything else as it is, keeping its UTF-8 bytes. A byte
+   payload uses Latin-1 code points, so a high byte is escaped as \u00xx
+   rather than passed through a C string, which the reader above decodes back
+   to that byte. Failure never exposes a partial JSON string. */
 SCE_C_UNUSED static inline bool sce_payload_quote_span(const unsigned char *text, size_t len, bool latin1, char *out,
                                                        size_t cap) {
     static const char HEX[] = "0123456789abcdef";
@@ -574,9 +664,9 @@ SCE_C_UNUSED static inline bool sce_payload_quote_span(const unsigned char *text
     out[0] = '"';
     for (size_t i = 0u; i < len; ++i) {
         const unsigned char c = text[i];
-        const bool unicode = c < 0x20u || (latin1 && c >= 0x80u);
-        const bool escaped = c == '"' || c == '\\';
-        const size_t needed = unicode ? 6u : (escaped ? 2u : 1u);
+        const char short_form = sce_payload_short_escape(c);
+        const bool unicode = short_form == 0 && (c < 0x20u || (latin1 && c >= 0x80u));
+        const size_t needed = unicode ? 6u : (short_form != 0 ? 2u : 1u);
         /* Reserve both the closing quote and the terminator. Subtraction
            avoids overflow even when the caller passes a very large span. */
         if (needed > cap - at - 2u) {
@@ -590,10 +680,10 @@ SCE_C_UNUSED static inline bool sce_payload_quote_span(const unsigned char *text
             out[at++] = '0';
             out[at++] = HEX[c >> 4];
             out[at++] = HEX[c & 0xFu];
+        } else if (short_form != 0) {
+            out[at++] = '\\';
+            out[at++] = short_form;
         } else {
-            if (escaped) {
-                out[at++] = '\\';
-            }
             out[at++] = (char)c;
         }
     }

@@ -2113,7 +2113,7 @@ void StateMachine::executePendingInvokes() {
 }
 
 // §scxml-5.5: Helper functions moved to DoneDataHelper (Zero Duplication)
-// - escapeJsonString() -> DoneDataHelper::escapeJsonString()
+// - a string written into JSON text goes through SCE::JsonText (common/JsonText.h)
 // ScriptValue -> JSON conversion goes through EventDataHelper::scriptValueToJsonString
 // (canonical JSON pipeline; see DoneDataHelper::evaluateContent/evaluateParams).
 

@@ -2,12 +2,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/HttpEventTarget.h"
+#include "common/JsonText.h"
 #include "common/SendHelper.h"
 #include "common/UrlEncodingHelper.h"
 #include "core/LogMacros.h"
 #include <algorithm>
 #include <chrono>
-#include <iomanip>
 #include <regex>
 #include <sstream>
 #include <thread>
@@ -330,11 +330,10 @@ std::string HttpEventTarget::createJsonPayload(const EventDescriptor &event) con
 
     std::ostringstream json;
     json << "{"
-         << "\"event\":\"" << escapeJsonString(event.eventName) << "\""
-         << ",\"source\":\"scxml\"";
+         << "\"event\":" << JsonText::quoted(event.eventName) << ",\"source\":\"scxml\"";
 
     if (!event.sendId.empty()) {
-        json << ",\"sendid\":\"" << escapeJsonString(event.sendId) << "\"";
+        json << ",\"sendid\":" << JsonText::quoted(event.sendId);
     }
 
     if (!event.data.empty()) {
@@ -346,53 +345,16 @@ std::string HttpEventTarget::createJsonPayload(const EventDescriptor &event) con
             json << ",\"data\":" << event.data;
         } else {
             // Treat as string literal
-            json << ",\"data\":\"" << escapeJsonString(event.data) << "\"";
+            json << ",\"data\":" << JsonText::quoted(event.data);
         }
     }
 
     if (!event.target.empty() && event.target != targetUri_) {
-        json << ",\"target\":\"" << escapeJsonString(event.target) << "\"";
+        json << ",\"target\":" << JsonText::quoted(event.target);
     }
 
     json << "}";
     return json.str();
-}
-
-std::string HttpEventTarget::escapeJsonString(const std::string &input) const {
-    std::ostringstream escaped;
-    for (char c : input) {
-        switch (c) {
-        case '"':
-            escaped << "\\\"";
-            break;
-        case '\\':
-            escaped << "\\\\";
-            break;
-        case '\b':
-            escaped << "\\b";
-            break;
-        case '\f':
-            escaped << "\\f";
-            break;
-        case '\n':
-            escaped << "\\n";
-            break;
-        case '\r':
-            escaped << "\\r";
-            break;
-        case '\t':
-            escaped << "\\t";
-            break;
-        default:
-            if (c < 0x20) {
-                escaped << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(c);
-            } else {
-                escaped << c;
-            }
-            break;
-        }
-    }
-    return escaped.str();
 }
 
 #ifndef __EMSCRIPTEN__

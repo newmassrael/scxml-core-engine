@@ -284,6 +284,39 @@ apply_sce_test_policies(ecmascript_semantics_test)
 add_test(NAME ECMAScriptSemantics COMMAND ecmascript_semantics_test)
 
 # ============================================================================
+# How a string is written into JSON text (ARCHITECTURE.md, "JSON Text (Single
+# Source of Truth)"): SCE::JsonText, nlohmann and the script engines'
+# JSON.stringify, each held to tests/json_text/string_escape.json — the table
+# every engine's writer reads.
+# ============================================================================
+add_executable(json_text_test
+    common/JsonTextTest.cpp
+)
+
+target_include_directories(json_text_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(json_text_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+target_compile_definitions(json_text_test
+    PRIVATE
+        SCE_JSON_TEXT_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/string_escape.json"
+)
+
+apply_sce_test_policies(json_text_test)
+
+add_test(NAME JsonText COMMAND json_text_test)
+
+# ============================================================================
 # Which entry point a host must drive a machine with (§scxml-6.2)
 #
 # `step()` never consults the delayed-send scheduler, so a host that only ever

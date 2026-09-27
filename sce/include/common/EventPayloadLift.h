@@ -2,6 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #pragma once
 
+#include "common/JsonText.h"
+
 #include <cstdint>
 #include <cstdio>
 #include <limits>
@@ -457,38 +459,7 @@ private:
     }
 
     static std::string quote(const std::string &text) {
-        std::string out;
-        out.reserve(text.size() + 2);
-        out += '"';
-        for (const char c : text) {
-            switch (c) {
-            case '"':
-                out += "\\\"";
-                break;
-            case '\\':
-                out += "\\\\";
-                break;
-            case '\n':
-                out += "\\n";
-                break;
-            case '\r':
-                out += "\\r";
-                break;
-            case '\t':
-                out += "\\t";
-                break;
-            default:
-                if (static_cast<unsigned char>(c) < 0x20u) {
-                    char buffer[7];
-                    std::snprintf(buffer, sizeof(buffer), "\\u%04x", static_cast<unsigned>(c) & 0xFFu);
-                    out += buffer;
-                } else {
-                    out += c;
-                }
-            }
-        }
-        out += '"';
-        return out;
+        return JsonText::quoted(text);
     }
 
     /** At the '{' of the payload object, inside the event record's own data. */

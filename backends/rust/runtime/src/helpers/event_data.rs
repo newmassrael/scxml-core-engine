@@ -284,23 +284,11 @@ pub fn build_json_from_params(params: &BTreeMap<String, Vec<String>>) -> String 
     json
 }
 
-/// Escape special characters for JSON string values.
-///
-/// Ports C++ `DoneDataHelper::escapeJsonString`.
+/// `s` as the body of a JSON string value: escaped, unquoted, in the one
+/// form every engine writes ([`crate::json::push_escaped`]).
 pub fn escape_json_string(s: &str) -> String {
     let mut escaped = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '"' => escaped.push_str("\\\""),
-            '\\' => escaped.push_str("\\\\"),
-            '\n' => escaped.push_str("\\n"),
-            '\r' => escaped.push_str("\\r"),
-            '\t' => escaped.push_str("\\t"),
-            '\u{0008}' => escaped.push_str("\\b"), // backspace
-            '\u{000C}' => escaped.push_str("\\f"), // form feed
-            other => escaped.push(other),
-        }
-    }
+    crate::json::push_escaped(&mut escaped, s);
     escaped
 }
 

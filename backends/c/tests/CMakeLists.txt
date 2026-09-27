@@ -2784,6 +2784,27 @@ else()
         "do not build in this configuration.")
 endif()
 
+# ─── JSON text unit test ────────────────────────────────────────────
+#
+# The event payload's JSON string reader and writer, measured against
+# tests/json_text/string_escape.json — the table every engine's writer reads
+# (ARCHITECTURE.md, "JSON Text (Single Source of Truth)"). Header-only code,
+# so the test needs nothing a configuration can leave out.
+add_executable(sce_c_json_text_unit_test unit/json_text_test.c)
+target_link_libraries(sce_c_json_text_unit_test PRIVATE sce_c_runtime)
+target_compile_definitions(sce_c_json_text_unit_test PRIVATE
+    SCE_JSON_TEXT_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/string_escape.json")
+set_target_properties(sce_c_json_text_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_json_text COMMAND sce_c_json_text_unit_test)
+set_tests_properties(c11_unit_json_text PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+
 # ─── C++ consumption gate ───────────────────────────────────────────
 #
 # Every header the C11 backend publishes (`backends/c/runtime/include/sce`,
