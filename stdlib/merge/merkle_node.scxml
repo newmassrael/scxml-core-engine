@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/merkle_node.scxml — one node of a merkle digest over a set
+  of timestamped changes (after Actual Budget's trinary trie,
+  packages/crdt/src/crdt/merkle.ts): the node at `depth` whose key is
+  `prefix`, and the XOR of the hashes of every change under it.
+
+  A change's key is its minute, `floor(millis / 60000)`, written as 16
+  base-3 digits. The node at depth d (1 ≤ d ≤ 16) holds the changes whose
+  minute divided by 3^(16-d) is `prefix`; the root is depth 0, prefix 0,
+  and holds them all. The leading digit is not held to 0..2: a minute from
+  3^16 on (2051-11-05T13:21Z) keeps a larger depth-1 prefix, where the
+  reference's string key grows a 17th digit and fails.
+
+  A digest is a list of nodes in ascending (depth, prefix) — the one order
+  a set of nodes has, so two digests of the same changes are equal lists
+  whatever order the changes were inserted in. merkle_insert, merkle_prune
+  and merkle_diff take and return it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="merkle_node"
+       sce:event-name="merge.merkle_node">
+  <datamodel>
+    <data id="depth" sce:type="uint8" sce:direction="in"/>
+    <data id="prefix" sce:type="uint64" sce:direction="in"/>
+    <data id="hash" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/merkle_diff.scxml — where two digests part (the reference's
+  `diff`, merkle.ts): equal root hashes mean the same changes, and
+  otherwise the search walks down from the root. At each node it looks at
+  the children of both sides in ascending prefix and descends into the
+  first whose hashes differ; it stops, and answers the minute the path so
+  far begins at, when there is none — or when the next child is missing on
+  one side, since pruning may have dropped it there and descending past it
+  could answer a time after the change. The answer is never later than the
+  earliest change one side holds and the other lacks, which is what makes
+  "exchange everything since `millis`" enough.
+
+  The reference's earlier form (jlongster/crdt-example-app) descended into
+  a child missing on one side; the stop is Actual's correction of it, kept
+  here. One difference from the reference, which is a fix: an absent root
+  is hash 0 here, where the reference compares `undefined` with 0 and calls
+  an empty digest different from an emptied one.
+
+  `millis` is the path's minute times 60000; a minute too large for that
+  fails `overflow`. Both digests are read as merkle_insert writes them.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="merkle_diff" version="1.0">
+  <sce:import kind="event-schema" src="merkle_node.scxml" as="Node"/>
+  <sce:import kind="event-schema" src="merkle_divergence.scxml" as="Divergence"/>
+  <sce:signature>
+    <sce:param name="a" type="list&lt;record:Node&gt;"/>
+    <sce:param name="b" type="list&lt;record:Node&gt;"/>
+    <sce:return type="record:Divergence" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="rootA" type="uint32" init="0"/>
+    <sce:foreach item="rootOfA" in="a">
+      <sce:if cond="rootOfA.depth === 0">
+        <sce:assign target="rootA" expr="rootOfA.hash"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:var name="rootB" type="uint32" init="0"/>
+    <sce:foreach item="rootOfB" in="b">
+      <sce:if cond="rootOfB.depth === 0">
+        <sce:assign target="rootB" expr="rootOfB.hash"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:var name="result" type="record:Divergence">
+      <sce:set name="differs" expr="rootA !== rootB"/>
+      <sce:set name="millis" expr="0"/>
+    </sce:var>
+    <sce:if cond="!result.differs">
+      <sce:return expr="result"/>
+    </sce:if>
+    <!-- The node the search stands at: its depth, its prefix, and
+         3^(16-depth), the minutes one of its prefixes spans. -->
+    <sce:var name="d" type="uint32" init="0"/>
+    <sce:var name="k" type="uint64" init="0"/>
+    <sce:var name="span" type="uint64" init="43046721"/>
+    <sce:var name="descending" type="bool" init="true"/>
+    <sce:while cond="descending &amp;&amp; d &lt; 16">
+      <sce:assign target="descending" expr="false"/>
+      <sce:var name="started" type="bool" init="false"/>
+      <sce:var name="last" type="uint64" init="0"/>
+      <sce:var name="scanning" type="bool" init="true"/>
+      <sce:while cond="scanning">
+        <!-- The smallest child prefix of (d, k) on either side after `last`. -->
+        <sce:var name="found" type="bool" init="false"/>
+        <sce:var name="next" type="uint64" init="0"/>
+        <sce:foreach item="childOfA" in="a">
+          <sce:if cond="childOfA.depth === d + 1 &amp;&amp; (d === 0 || childOfA.prefix / 3 === k) &amp;&amp; (!started || childOfA.prefix &gt; last) &amp;&amp; (!found || childOfA.prefix &lt; next)">
+            <sce:assign target="found" expr="true"/>
+            <sce:assign target="next" expr="childOfA.prefix"/>
+          </sce:if>
+        </sce:foreach>
+        <sce:foreach item="childOfB" in="b">
+          <sce:if cond="childOfB.depth === d + 1 &amp;&amp; (d === 0 || childOfB.prefix / 3 === k) &amp;&amp; (!started || childOfB.prefix &gt; last) &amp;&amp; (!found || childOfB.prefix &lt; next)">
+            <sce:assign target="found" expr="true"/>
+            <sce:assign target="next" expr="childOfB.prefix"/>
+          </sce:if>
+        </sce:foreach>
+        <sce:assign target="scanning" expr="found"/>
+        <sce:if cond="found">
+          <sce:var name="inA" type="bool" init="false"/>
+          <sce:var name="hashA" type="uint32" init="0"/>
+          <sce:foreach item="matchInA" in="a">
+            <sce:if cond="matchInA.depth === d + 1 &amp;&amp; matchInA.prefix === next">
+              <sce:assign target="inA" expr="true"/>
+              <sce:assign target="hashA" expr="matchInA.hash"/>
+            </sce:if>
+          </sce:foreach>
+          <sce:var name="inB" type="bool" init="false"/>
+          <sce:var name="hashB" type="uint32" init="0"/>
+          <sce:foreach item="matchInB" in="b">
+            <sce:if cond="matchInB.depth === d + 1 &amp;&amp; matchInB.prefix === next">
+              <sce:assign target="inB" expr="true"/>
+              <sce:assign target="hashB" expr="matchInB.hash"/>
+            </sce:if>
+          </sce:foreach>
+          <sce:if cond="!inA || !inB">
+            <sce:assign target="scanning" expr="false"/>
+            <sce:else>
+              <sce:if cond="hashA !== hashB">
+                <sce:assign target="scanning" expr="false"/>
+                <sce:assign target="descending" expr="true"/>
+                <sce:assign target="k" expr="next"/>
+                <sce:else>
+                  <sce:assign target="started" expr="true"/>
+                  <sce:assign target="last" expr="next"/>
+                </sce:else>
+              </sce:if>
+            </sce:else>
+          </sce:if>
+        </sce:if>
+      </sce:while>
+      <sce:if cond="descending">
+        <sce:assign target="d" expr="d + 1"/>
+        <sce:assign target="span" expr="span / 3"/>
+      </sce:if>
+    </sce:while>
+    <sce:var name="minute" type="int64" init="k * span"/>
+    <sce:assign target="result.millis" expr="minute * 60000"/>
+    <sce:return expr="result"/>
+  </sce:body>
+</scxml>

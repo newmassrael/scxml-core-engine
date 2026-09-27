@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/rate/gcra_admit.scxml — a rate limiter's decision on a request of
+  `cost` permits at `now` (ms), by the generic cell rate algorithm (ITU-T
+  I.371): one permit regenerates every `interval` ms, at most `burst`
+  permits are held, and the limiter's whole state is `tat`, the theoretical
+  arrival time — when the permits spent so far would all have regenerated.
+
+  The request is admitted when `max(tat, now) + cost · interval` is at most
+  `now + burst · interval`, and the new `tat` is that sum; otherwise it is
+  refused, `tat` stays, and it may be admitted after the difference. A
+  fresh limiter's `tat` is any time at or before `now` (0 will do). A
+  limiter that only asks and does not spend discards the returned `tat`.
+
+  This is the token bucket of Signal-Server
+  (LeakyBucketRateLimiter.java, lua/validate_rate_limit.lua) held in one
+  integer instead of a (tokens, last) pair, and it agrees with it wherever
+  the bucket loses nothing — including a clock that reads earlier than the
+  stored time, where the bucket's negative elapsed time takes permits away
+  but also moves `last` back, to the same outcome. One difference, a fix:
+  the bucket floors the regenerated permits and then sets `last = now`, so
+  the fraction of a permit regenerated since the last whole one is lost at
+  every call and the bucket refills slower than configured; the arrival
+  time keeps it.
+  A request larger than `burst` could never be admitted — the bucket still
+  answers it with a finite wait — and fails `precondition` here, as do a
+  `cost` of 0, an `interval` below 1 and a `burst` of 0.
+
+  tat 0, now 1000, cost 1, interval 100, burst 3 → admitted, tat 1100 ·
+  then tat 1100, now 1000 → admitted, tat 1200 · tat 1300, now 1000 →
+  refused, wait 100.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="gcra_admit" version="1.0">
+  <sce:import kind="event-schema" src="gcra_decision.scxml" as="Decision"/>
+  <sce:signature>
+    <sce:param name="tat" type="int64"/>
+    <sce:param name="now" type="int64"/>
+    <sce:param name="cost" type="uint32"/>
+    <sce:param name="interval" type="int64"/>
+    <sce:param name="burst" type="uint32"/>
+    <sce:return type="record:Decision" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="cost &gt;= 1 &amp;&amp; interval &gt;= 1 &amp;&amp; burst &gt;= 1 &amp;&amp; cost &lt;= burst"/>
+    <sce:var name="start" type="int64" init="tat &gt; now ? tat : now"/>
+    <sce:var name="arrival" type="int64" init="start + cost * interval"/>
+    <sce:var name="limit" type="int64" init="now + burst * interval"/>
+    <sce:var name="decision" type="record:Decision">
+      <sce:set name="admitted" expr="arrival &lt;= limit"/>
+      <sce:set name="tat" expr="arrival &lt;= limit ? arrival : tat"/>
+      <sce:set name="retryAfter" expr="arrival &lt;= limit ? 0 : arrival - limit"/>
+    </sce:var>
+    <sce:return expr="decision"/>
+  </sce:body>
+</scxml>

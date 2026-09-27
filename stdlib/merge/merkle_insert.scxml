@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/merkle_insert.scxml — the digest `nodes` with one change
+  added: the change at `minute` whose hash is `hash` XORed into every node
+  on its path — the root and, for each depth 1 to 16, the node whose prefix
+  is `minute / 3^(16-depth)` — a missing node on the path created with the
+  hash alone (the reference's `insert`, merkle.ts).
+
+  `nodes` must be a digest this family produced: ascending (depth, prefix),
+  no depth past 16. Anything else fails `precondition` rather than being
+  merged into a list whose order no longer says what it holds. The result
+  is in the same order, so inserting the same changes in any order yields
+  the same list. XOR makes a change inserted twice cancel itself: the host
+  inserts a change once, when it first stores it.
+
+  The digest holds at most 1024 nodes here (SCE_FORGE.md §4.12); a larger
+  one grows on the heap backends and fails `capacity-exceeded` on the
+  bounded ones. merkle_prune keeps it small.
+
+  {} , minute 5, hash 7 → root(0,0)=7 and one node per depth 1..16 on the
+  path of minute 5, each 7 · the same change again → every hash 0.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="merkle_insert" version="1.0">
+  <sce:import kind="event-schema" src="merkle_node.scxml" as="Node"/>
+  <sce:signature>
+    <sce:param name="nodes" type="list&lt;record:Node&gt;"/>
+    <sce:param name="minute" type="int64"/>
+    <sce:param name="hash" type="uint32"/>
+    <sce:return type="list&lt;record:Node&gt;" returns-max-size="1024" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="minute &gt;= 0"/>
+    <sce:var name="out" type="list&lt;record:Node&gt;" capacity="1024"/>
+    <!-- The next path node to place: its depth, its prefix, and 3^(16-depth)
+         for the depth after it. -->
+    <sce:var name="pd" type="uint32" init="0"/>
+    <sce:var name="pp" type="uint64" init="0"/>
+    <sce:var name="div" type="int64" init="14348907"/>
+    <sce:var name="prevDepth" type="int32" init="-1"/>
+    <sce:var name="prevPrefix" type="uint64" init="0"/>
+    <sce:foreach item="x" in="nodes">
+      <sce:require cond="x.depth &lt;= 16 &amp;&amp; (x.depth &gt; prevDepth || (x.depth === prevDepth &amp;&amp; x.prefix &gt; prevPrefix))"/>
+      <sce:assign target="prevDepth" expr="x.depth"/>
+      <sce:assign target="prevPrefix" expr="x.prefix"/>
+      <sce:while cond="pd &lt;= 16 &amp;&amp; (pd &lt; x.depth || (pd === x.depth &amp;&amp; pp &lt; x.prefix))">
+        <sce:var name="created" type="record:Node">
+          <sce:set name="depth" expr="pd"/>
+          <sce:set name="prefix" expr="pp"/>
+          <sce:set name="hash" expr="hash"/>
+        </sce:var>
+        <sce:append target="out" expr="created"/>
+        <sce:assign target="pd" expr="pd + 1"/>
+        <sce:assign target="pp" expr="minute / div"/>
+        <sce:if cond="div &gt; 1">
+          <sce:assign target="div" expr="div / 3"/>
+        </sce:if>
+      </sce:while>
+      <sce:if cond="pd &lt;= 16 &amp;&amp; pd === x.depth &amp;&amp; pp === x.prefix">
+        <sce:var name="merged" type="record:Node">
+          <sce:set name="depth" expr="x.depth"/>
+          <sce:set name="prefix" expr="x.prefix"/>
+          <sce:set name="hash" expr="x.hash ^ hash"/>
+        </sce:var>
+        <sce:append target="out" expr="merged"/>
+        <sce:assign target="pd" expr="pd + 1"/>
+        <sce:assign target="pp" expr="minute / div"/>
+        <sce:if cond="div &gt; 1">
+          <sce:assign target="div" expr="div / 3"/>
+        </sce:if>
+        <sce:else>
+          <sce:append target="out" expr="x"/>
+        </sce:else>
+      </sce:if>
+    </sce:foreach>
+    <sce:while cond="pd &lt;= 16">
+      <sce:var name="tail" type="record:Node">
+        <sce:set name="depth" expr="pd"/>
+        <sce:set name="prefix" expr="pp"/>
+        <sce:set name="hash" expr="hash"/>
+      </sce:var>
+      <sce:append target="out" expr="tail"/>
+      <sce:assign target="pd" expr="pd + 1"/>
+      <sce:assign target="pp" expr="minute / div"/>
+      <sce:if cond="div &gt; 1">
+        <sce:assign target="div" expr="div / 3"/>
+      </sce:if>
+    </sce:while>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

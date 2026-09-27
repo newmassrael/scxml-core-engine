@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/change_entry.scxml — one row of a collection's change log
+  (RFC 6578 §3.2, as sabre/dav's calendarchanges table keeps it): the item
+  that changed, how, and the collection's sync token when it did. `op` is
+  1 added, 2 modified, 3 deleted. A collection's token is one more than the
+  token of its last change, so a client holding token T has seen every
+  change below T.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="change_entry"
+       sce:event-name="sync.change_entry">
+  <datamodel>
+    <data id="item" sce:type="uint64" sce:direction="in"/>
+    <data id="op" sce:type="uint8" sce:direction="in"/>
+    <data id="token" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

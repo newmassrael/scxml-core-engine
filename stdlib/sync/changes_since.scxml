@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/changes_since.scxml — what a client holding sync token
+  `since` has not seen (RFC 6578 §3.2): of the log rows at or after
+  `since`, each item's last one, in token order, at most `limit` of them.
+
+  The client's next token is one more than the last row's token, or
+  `since` when there is none; it asks again until the answer is empty.
+  Asking for `limit + 1` and receiving that many tells it the answer was
+  truncated (RFC 6578 §3.6).
+
+  Two differences from the references, both fixes:
+  - An item's rows are merged BEFORE the answer is cut at `limit`, and the
+    answer is ordered by each item's last token. sabre/dav
+    (CalDAV/Backend/PDO.php getChangesForCalendar) fetches `limit + 1` raw
+    rows and then merges, so an item seen twice among them hides the
+    truncation. Nextcloud (CalDavBackend::getChangesForCalendar) merges by
+    the largest op code, so an item deleted and then added again is
+    reported deleted; here its last row decides.
+  - A log compacted below `lowWater` no longer holds what a token under it
+    has not seen: such a token fails `precondition`, which the host answers
+    as RFC 6578 §3.2's DAV:valid-sync-token failure and the client repairs
+    with a full listing. Neither reference refuses it; both answer from
+    what is left. A token past `current`, one the collection never issued,
+    fails the same way.
+
+  `log` must be in non-decreasing token order, `op` 1 to 3, and `limit`
+  1 to 256 (SCE_FORGE.md §4.12); anything else fails `precondition`. The
+  merge is O(n²), which a page of a log affords.
+
+  log {a@1 add, b@2 add, a@3 modify}, since 1 → {b@2 add, a@3 modify} ·
+  limit 1 → {b@2 add} · since 3 → {a@3 modify} · lowWater 2, since 1 →
+  fails.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="changes_since" version="1.0">
+  <sce:import kind="event-schema" src="change_entry.scxml" as="Change"/>
+  <sce:signature>
+    <sce:param name="log" type="list&lt;record:Change&gt;"/>
+    <sce:param name="since" type="uint64"/>
+    <sce:param name="current" type="uint64"/>
+    <sce:param name="lowWater" type="uint64"/>
+    <sce:param name="limit" type="uint32"/>
+    <sce:return type="list&lt;record:Change&gt;" returns-max-size="256" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="since &gt;= lowWater &amp;&amp; since &lt;= current"/>
+    <sce:require cond="limit &gt;= 1 &amp;&amp; limit &lt;= 256"/>
+    <sce:var name="out" type="list&lt;record:Change&gt;" capacity="256"/>
+    <sce:var name="taken" type="uint32" init="0"/>
+    <sce:var name="prevToken" type="uint64" init="0"/>
+    <sce:var name="i" type="uint32" init="0"/>
+    <sce:foreach item="e" in="log">
+      <sce:require cond="e.token &gt;= prevToken &amp;&amp; e.op &gt;= 1 &amp;&amp; e.op &lt;= 3"/>
+      <sce:assign target="prevToken" expr="e.token"/>
+      <sce:if cond="e.token &gt;= since &amp;&amp; taken &lt; limit">
+        <!-- An item's row is its last when no row after it names it. -->
+        <sce:var name="superseded" type="bool" init="false"/>
+        <sce:var name="j" type="uint32" init="0"/>
+        <sce:foreach item="f" in="log">
+          <sce:if cond="j &gt; i &amp;&amp; f.item === e.item">
+            <sce:assign target="superseded" expr="true"/>
+          </sce:if>
+          <sce:assign target="j" expr="j + 1"/>
+        </sce:foreach>
+        <sce:if cond="!superseded">
+          <sce:append target="out" expr="e"/>
+          <sce:assign target="taken" expr="taken + 1"/>
+        </sce:if>
+      </sce:if>
+      <sce:assign target="i" expr="i + 1"/>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

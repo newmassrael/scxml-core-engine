@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/http/precondition.scxml — the outcome of a request's conditional
+  headers (RFC 9110 §13.2.2, evaluated in its order): 0 to go on with the
+  request, 304 Not Modified, or 412 Precondition Failed. This is the
+  decision; comparing entity tags and dates is the host's, and it hands
+  each header over as the code below says.
+
+  - `ifMatch`: 0 absent, 1 `*`, 2 a listed tag matches the current one by
+    STRONG comparison (§8.8.3.2), 3 none does.
+  - `ifUnmodifiedSince`: 0 absent or not a valid date, 1 the resource is
+    unmodified since it, 2 modified since.
+  - `ifNoneMatch`: 0 absent, 1 `*`, 2 a listed tag matches by WEAK
+    comparison, 3 none does.
+  - `ifModifiedSince`: 0 absent or not a valid date, 1 modified since it,
+    2 not modified since.
+  - `exists`: the target has a current representation. `readOnly`: the
+    method is GET or HEAD.
+
+  Order (§13.2.2): If-Match, else If-Unmodified-Since; then If-None-Match,
+  else — for GET and HEAD only — If-Modified-Since. A `*` in If-Match is
+  false without a current representation, and in If-None-Match true.
+
+  Differences from the reference (sabre/dav DAV/Server.php
+  checkPreconditions), all fixes:
+  - it evaluates If-Unmodified-Since last and even beside If-Match, so a
+    GET whose If-None-Match matches gets 304 where §13.2.2 answers 412;
+  - it compares If-None-Match tags as strings, strongly, so a weak tag it
+    issued never yields 304;
+  - it answers a matching If-None-Match with 304 for GET only, 412 for HEAD;
+  - it applies If-Modified-Since to every method, so a PUT can get 304,
+    where §13.1.3 has a recipient ignore it outside GET and HEAD.
+
+  ifMatch 2, exists → 0 · ifMatch 3 → 412 · ifMatch 1, !exists → 412 ·
+  ifNoneMatch 2, readOnly → 304 · ifNoneMatch 2, !readOnly → 412 ·
+  ifNoneMatch 1, !exists → 0 · ifModifiedSince 2, readOnly → 304.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="precondition" version="1.0">
+  <sce:signature>
+    <sce:param name="exists" type="bool"/>
+    <sce:param name="readOnly" type="bool"/>
+    <sce:param name="ifMatch" type="uint8"/>
+    <sce:param name="ifUnmodifiedSince" type="uint8"/>
+    <sce:param name="ifNoneMatch" type="uint8"/>
+    <sce:param name="ifModifiedSince" type="uint8"/>
+    <sce:return type="uint16" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="ifMatch &lt;= 3 &amp;&amp; ifUnmodifiedSince &lt;= 2 &amp;&amp; ifNoneMatch &lt;= 3 &amp;&amp; ifModifiedSince &lt;= 2"/>
+    <sce:if cond="ifMatch !== 0">
+      <sce:if cond="!exists || ifMatch === 3">
+        <sce:return expr="412"/>
+      </sce:if>
+      <sce:else>
+        <sce:if cond="ifUnmodifiedSince === 2">
+          <sce:return expr="412"/>
+        </sce:if>
+      </sce:else>
+    </sce:if>
+    <sce:if cond="ifNoneMatch !== 0">
+      <sce:if cond="(ifNoneMatch === 1 &amp;&amp; exists) || ifNoneMatch === 2">
+        <sce:return expr="readOnly ? 304 : 412"/>
+      </sce:if>
+      <sce:else>
+        <sce:if cond="readOnly &amp;&amp; ifModifiedSince === 2">
+          <sce:return expr="304"/>
+        </sce:if>
+      </sce:else>
+    </sce:if>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>

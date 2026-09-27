@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/hlc_within_drift.scxml — whether a hybrid logical clock wall
+  time `wallTime` is at most `maxDrift` milliseconds ahead of this node's
+  wall clock `now` (Kulkarni et al. 2014 bound the logical clock's lead over
+  physical time by ε; this is that bound, checked).
+
+  A node applies it twice around hlc_receive: to the message's wall time
+  before merging it, and to the result after — a message stamped too far in
+  the future is refused rather than dragging the clock after it, and so is
+  a merge whose result would run ahead. It applies it once after hlc_send.
+  hlc_send and hlc_receive themselves do not check it: the bound is a policy
+  of the deployment (`maxDrift`), the clock arithmetic is not.
+
+  A wall time behind the clock is always within bound. The difference of
+  two int64 readings can overflow, so it is checked (may-fail).
+
+  wallTime 1000, now 700, maxDrift 300 → true · maxDrift 299 → false ·
+  wallTime 500, now 700, maxDrift 0 → true.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="hlc_within_drift" version="1.0">
+  <sce:signature>
+    <sce:param name="wallTime" type="int64"/>
+    <sce:param name="now" type="int64"/>
+    <sce:param name="maxDrift" type="int64"/>
+    <sce:return type="bool" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="maxDrift &gt;= 0"/>
+    <sce:if cond="wallTime &lt;= now">
+      <sce:return expr="true"/>
+    </sce:if>
+    <sce:return expr="wallTime - now &lt;= maxDrift"/>
+  </sce:body>
+</scxml>

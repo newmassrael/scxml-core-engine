@@ -1202,6 +1202,24 @@
       }
     },
     {
+      "name": "changes_since",
+      "document": "sce:std/sync/changes_since.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "changes_since",
+      "args": [
+        { "list_of": { "record": "change_entry" } },
+        "u64",
+        "u64",
+        "u64",
+        "u32"
+      ],
+      "output": {
+        "list_of": { "record": "change_entry" },
+        "compare": "equality"
+      }
+    },
+    {
       "name": "civil_from_days",
       "document": "sce:std/time/civil_from_days.scxml",
       "kind": "algorithm",
@@ -1291,6 +1309,23 @@
       }
     },
     {
+      "name": "gcra_admit",
+      "document": "sce:std/rate/gcra_admit.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "gcra_admit",
+      "args": [
+        "i64",
+        "i64",
+        "u32",
+        "i64",
+        "u32"
+      ],
+      "output": {
+        "record": "gcra_decision"
+      }
+    },
+    {
       "name": "hlc_compare",
       "document": "sce:std/merge/hlc_compare.scxml",
       "kind": "algorithm",
@@ -1337,6 +1372,22 @@
       }
     },
     {
+      "name": "hlc_within_drift",
+      "document": "sce:std/merge/hlc_within_drift.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "hlc_within_drift",
+      "args": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "output": {
+        "type": "bool",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "is_leap_year",
       "document": "sce:std/time/is_leap_year.scxml",
       "kind": "algorithm",
@@ -1347,6 +1398,66 @@
       ],
       "output": {
         "type": "bool",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "merkle_diff",
+      "document": "sce:std/merge/merkle_diff.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "merkle_diff",
+      "args": [
+        { "list_of": { "record": "merkle_node" } },
+        { "list_of": { "record": "merkle_node" } }
+      ],
+      "output": {
+        "record": "merkle_divergence"
+      }
+    },
+    {
+      "name": "merkle_insert",
+      "document": "sce:std/merge/merkle_insert.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "merkle_insert",
+      "args": [
+        { "list_of": { "record": "merkle_node" } },
+        "i64",
+        "u32"
+      ],
+      "output": {
+        "list_of": { "record": "merkle_node" },
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "merkle_prune",
+      "document": "sce:std/merge/merkle_prune.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "merkle_prune",
+      "args": [
+        { "list_of": { "record": "merkle_node" } },
+        "u32"
+      ],
+      "output": {
+        "list_of": { "record": "merkle_node" },
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "murmur3_32",
+      "document": "sce:std/hash/murmur3_32.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "murmur3_32",
+      "args": [
+        "bytes",
+        "u32"
+      ],
+      "output": {
+        "type": "u32",
         "compare": "equality"
       }
     },
@@ -1516,6 +1627,25 @@
       ],
       "output": {
         "type": "bool",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "precondition",
+      "document": "sce:std/http/precondition.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "precondition",
+      "args": [
+        "bool",
+        "bool",
+        "u8",
+        "u8",
+        "u8",
+        "u8"
+      ],
+      "output": {
+        "type": "u16",
         "compare": "equality"
       }
     },
@@ -2302,6 +2432,53 @@
         { "name": "year", "value": 2026, "sce_type": "int32" },
         { "name": "month", "value": 9, "sce_type": "uint8" },
         { "name": "day", "value": 23, "sce_type": "uint8" }
+      ]
+    },
+    {
+      "name": "merkle_node",
+      "document": "sce:std/merge/merkle_node.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "merge.merkle_node",
+      "fields": [
+        { "name": "depth", "value": 16, "sce_type": "uint8" },
+        { "name": "prefix", "value": 29841780, "sce_type": "uint64" },
+        { "name": "hash", "value": 3902511862, "sce_type": "uint32" }
+      ]
+    },
+    {
+      "name": "merkle_divergence",
+      "document": "sce:std/merge/merkle_divergence.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "merge.merkle_divergence",
+      "fields": [
+        { "name": "differs", "value": true, "sce_type": "bool" },
+        { "name": "millis", "value": 1790409420000, "sce_type": "int64" }
+      ]
+    },
+    {
+      "name": "change_entry",
+      "document": "sce:std/sync/change_entry.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "sync.change_entry",
+      "fields": [
+        { "name": "item", "value": 42, "sce_type": "uint64" },
+        { "name": "op", "value": 2, "sce_type": "uint8" },
+        { "name": "token", "value": 17, "sce_type": "uint64" }
+      ]
+    },
+    {
+      "name": "gcra_decision",
+      "document": "sce:std/rate/gcra_decision.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "rate.gcra_decision",
+      "fields": [
+        { "name": "admitted", "value": false, "sce_type": "bool" },
+        { "name": "tat", "value": 1703936, "sce_type": "int64" },
+        { "name": "retryAfter", "value": 131072, "sce_type": "int64" }
       ]
     },
     {

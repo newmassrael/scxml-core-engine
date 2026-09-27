@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/hash/murmur3_32.scxml — MurmurHash3 x86_32 of `data` with `seed`
+  (Austin Appleby, SMHasher, MurmurHash3.cpp `MurmurHash3_x86_32`): the
+  bytes in little-endian 4-byte blocks, each mixed by c1 = 0xcc9e2d51,
+  a 15-bit rotation and c2 = 0x1b873593 into the state, which is rotated
+  by 13 and advanced by h * 5 + 0xe6546b64; the 1 to 3 trailing bytes are
+  mixed without the state rotation; then the length is folded in and
+  fmix32 (0x85ebca6b, 0xc2b2ae35) finishes. Not a cryptographic hash.
+
+  The algorithm is defined modulo 2^32. Every product and sum below is
+  taken in uint64 from operands first masked to 32 bits, where it cannot
+  overflow (a 32-bit value times a 32-bit constant is below 2^64), and
+  masked back — the integer contract (SCE_FORGE.md §3.4.1) is met by
+  proof, not by wrapping.
+
+  A byte is widened into a uint64 local before it is shifted: a shift wraps
+  at its operand's width, and a uint8 shifted by 8, 16 or 24 would lose
+  the byte.
+
+  Vectors of the reference (SMHasher; npm murmurhash 2.0.1 `v3`):
+  "" seed 0 → 0 · "" seed 1 → 0x514E28B7 · "hello" seed 0 → 0x248BFA47 ·
+  "The quick brown fox jumps over the lazy dog" seed 0 → 0x2E4FF723.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="murmur3_32" version="1.0">
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:param name="seed" type="uint32"/>
+    <sce:return type="uint32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="n" type="uint32" init="len(data)"/>
+    <sce:var name="h" type="uint64" init="seed"/>
+    <sce:var name="k" type="uint64" init="0"/>
+    <sce:var name="j" type="uint32" init="0"/>
+    <sce:while cond="j &lt; n">
+      <sce:var name="b" type="uint64" init="data[j]"/>
+      <sce:assign target="k" expr="(k | (b &lt;&lt; (8 * (j &amp; 3)))) &amp; 0xFFFFFFFF"/>
+      <sce:if cond="(j &amp; 3) === 3">
+        <sce:assign target="k" expr="((k &amp; 0xFFFFFFFF) * 0xcc9e2d51) &amp; 0xFFFFFFFF"/>
+        <sce:assign target="k" expr="((k &lt;&lt; 15) | (k &gt;&gt; 17)) &amp; 0xFFFFFFFF"/>
+        <sce:assign target="k" expr="((k &amp; 0xFFFFFFFF) * 0x1b873593) &amp; 0xFFFFFFFF"/>
+        <sce:assign target="h" expr="(h ^ k) &amp; 0xFFFFFFFF"/>
+        <sce:assign target="h" expr="((h &lt;&lt; 13) | (h &gt;&gt; 19)) &amp; 0xFFFFFFFF"/>
+        <sce:assign target="h" expr="((h &amp; 0xFFFFFFFF) * 5 + 0xe6546b64) &amp; 0xFFFFFFFF"/>
+        <sce:assign target="k" expr="0"/>
+      </sce:if>
+      <sce:assign target="j" expr="j + 1"/>
+    </sce:while>
+    <sce:if cond="(n &amp; 3) !== 0">
+      <sce:assign target="k" expr="((k &amp; 0xFFFFFFFF) * 0xcc9e2d51) &amp; 0xFFFFFFFF"/>
+      <sce:assign target="k" expr="((k &lt;&lt; 15) | (k &gt;&gt; 17)) &amp; 0xFFFFFFFF"/>
+      <sce:assign target="k" expr="((k &amp; 0xFFFFFFFF) * 0x1b873593) &amp; 0xFFFFFFFF"/>
+      <sce:assign target="h" expr="(h ^ k) &amp; 0xFFFFFFFF"/>
+    </sce:if>
+    <sce:assign target="h" expr="(h ^ n) &amp; 0xFFFFFFFF"/>
+    <sce:assign target="h" expr="(h ^ (h &gt;&gt; 16)) &amp; 0xFFFFFFFF"/>
+    <sce:assign target="h" expr="((h &amp; 0xFFFFFFFF) * 0x85ebca6b) &amp; 0xFFFFFFFF"/>
+    <sce:assign target="h" expr="(h ^ (h &gt;&gt; 13)) &amp; 0xFFFFFFFF"/>
+    <sce:assign target="h" expr="((h &amp; 0xFFFFFFFF) * 0xc2b2ae35) &amp; 0xFFFFFFFF"/>
+    <sce:assign target="h" expr="(h ^ (h &gt;&gt; 16)) &amp; 0xFFFFFFFF"/>
+    <sce:return expr="h &amp; 0xFFFFFFFF"/>
+  </sce:body>
+</scxml>

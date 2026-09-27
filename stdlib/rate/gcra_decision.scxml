@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/rate/gcra_decision.scxml — what gcra_admit decides: whether the
+  request is admitted, the limiter's theoretical arrival time to keep
+  afterwards (unchanged when refused), and how many milliseconds a refused
+  request must wait before the same request would be admitted (0 when
+  admitted).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="gcra_decision"
+       sce:event-name="rate.gcra_decision">
+  <datamodel>
+    <data id="admitted" sce:type="bool" sce:direction="in"/>
+    <data id="tat" sce:type="int64" sce:direction="in"/>
+    <data id="retryAfter" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>
