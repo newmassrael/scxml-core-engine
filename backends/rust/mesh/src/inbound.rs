@@ -209,6 +209,7 @@ impl Inbound {
             if full {
                 out.signals.push(Signal::DedupWindowOverflow {
                     source: source.clone(),
+                    window_size: self.dedup_window,
                 });
             }
         }
@@ -375,7 +376,8 @@ mod tests {
         assert_eq!(
             out.signals,
             vec![Signal::DedupWindowOverflow {
-                source: "a".to_string()
+                source: "a".to_string(),
+                window_size: 2,
             }]
         );
         // The oldest id left the window, so it is novel again.

@@ -23,18 +23,21 @@ use alloc::vec::Vec;
 
 use sce_forge_runtime::algorithm::AlgorithmError;
 use sce_forge_runtime::codec::CodecError;
-use sce_rust_runtime::HostSendRequest;
+use sce_rust_runtime::{HostSendRequest, HostSendResponse};
 
 use crate::generated::envelope::Envelope;
 use crate::generated::pattern_kind::PatternKind;
 use crate::generated::payload_codec::PayloadCodec;
 use crate::inbound::{AdmitError, ConfigError, Delivery, Inbound, Outcome};
 use crate::outbound::{Admitted, Outbound, RetryPolicy};
-use crate::signal::Signal;
+use crate::signal::{Binding, Signal};
 
 /// What deployment says about one peer this machine talks to.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PeerConfig {
+    /// The binding's transport kind (`"wss"`, `"custom_tcp"`, ...): the
+    /// `transport` column of the §16.7 rows observed on it.
+    pub transport: &'static str,
     /// deploy.yaml's `max_pending_per_target` (§10.10).
     pub max_pending: u32,
     /// deploy.yaml's `max_age_ms`, 0 for no bound (§10.10).
@@ -55,8 +58,12 @@ pub enum Effect {
     /// Hand `bytes` to the transport bound to `peer`.
     Transmit { peer: String, bytes: Vec<u8> },
     /// Raise `event` on the engine's external queue with `data` as
-    /// `_event.data`.
-    Deliver { event: String, data: String },
+    /// `_event.data`; `source` is the machine that sent it.
+    Deliver {
+        event: String,
+        data: String,
+        source: String,
+    },
     /// Raise `error.communication` with this §16.7 row. `peer` names the
     /// binding the row is about, when there is one.
     Raise {
@@ -209,6 +216,25 @@ impl Router {
         self.peers.get(peer).and_then(|bound| bound.config.retry)
     }
 
+    /// The `error.communication` a raised row is, as the engine receives it:
+    /// the row rendered with the binding it was observed on, so its
+    /// `target` and `transport` columns are the deployment's.
+    ///
+    /// A [`HostSendResponse`] because that is the engine's own shape for an
+    /// event a host produces — and the one a send handler answers with, so
+    /// a row [`Router::send`] observed reaches the document the way any
+    /// other host-served send reports back.
+    pub fn error_event(&self, peer: Option<&str>, signal: &Signal) -> HostSendResponse {
+        let binding = peer.map(|peer| Binding {
+            peer,
+            transport: self.peers.get(peer).map(|bound| bound.config.transport),
+        });
+        HostSendResponse {
+            event_name: "error.communication".to_string(),
+            event_data: signal.event_data(binding),
+        }
+    }
+
     /// Envelope `bytes` a transport received from `peer`, at `now_ms`.
     ///
     /// What the document is told about is an effect; what only the host can
@@ -237,7 +263,12 @@ impl Router {
         };
         match self.inbound.admit(bytes, delivery, now_ms) {
             Ok(outcome) => Ok(effects_of(outcome, Some(peer))),
-            Err(AdmitError::Malformed(_)) => raise(Signal::EnvelopeCorrupt { codec: "cbor" }),
+            // The bytes are the envelope's CBOR (§mesh-7.5); nothing in
+            // them can be trusted to name a source.
+            Err(AdmitError::Malformed(_)) => raise(Signal::EnvelopeCorrupt {
+                source: None,
+                codec: "cbor",
+            }),
             Err(AdmitError::Unstamped) => raise(Signal::MissingSequence {
                 source: peer.to_string(),
             }),
@@ -302,7 +333,7 @@ fn effects_of(outcome: Outcome, peer: Option<&str>) -> Vec<Effect> {
     let mut effects: Vec<Effect> = outcome
         .released
         .iter()
-        .map(|received| deliver(&received.envelope()))
+        .map(|received| deliver(&received.envelope(), peer))
         .collect();
     effects.extend(outcome.signals.into_iter().map(|signal| Effect::Raise {
         peer: peer.map(str::to_string),
@@ -315,7 +346,9 @@ fn effects_of(outcome: Outcome, peer: Option<&str>) -> Vec<Effect> {
 /// `_event.data` text the sender's engine wrote. A payload in another codec
 /// is bytes the engine's text surface cannot be handed, so it is §16.7 row 4
 /// naming that codec rather than a string made from bytes that are not one.
-fn deliver(envelope: &Envelope<'_>) -> Effect {
+/// `peer` is the binding it arrived on, when a receipt rather than a tick
+/// released it.
+fn deliver(envelope: &Envelope<'_>, peer: Option<&str>) -> Effect {
     let text = match envelope.datacontenttype {
         PayloadCodec::None => Ok(String::new()),
         PayloadCodec::Json => core::str::from_utf8(envelope.data)
@@ -329,10 +362,14 @@ fn deliver(envelope: &Envelope<'_>) -> Effect {
         Ok(data) => Effect::Deliver {
             event: envelope.event_type.to_string(),
             data,
+            source: envelope.source.to_string(),
         },
         Err(codec) => Effect::Raise {
-            peer: Some(envelope.source.to_string()),
-            signal: Signal::EnvelopeCorrupt { codec },
+            peer: peer.map(str::to_string),
+            signal: Signal::EnvelopeCorrupt {
+                source: Some(envelope.source.to_string()),
+                codec,
+            },
         },
     }
 }
@@ -344,6 +381,7 @@ mod tests {
     /// A binding with ordering required on a transport that does not order:
     /// the sender stamps and the receiver orders.
     const ORDERED: PeerConfig = PeerConfig {
+        transport: "wss",
         max_pending: 4,
         max_age_ms: 0,
         retry: None,
@@ -414,6 +452,7 @@ mod tests {
             alloc::vec![Effect::Deliver {
                 event: "speed.changed".to_string(),
                 data: r#"{"kph":42}"#.to_string(),
+                source: "ecu".to_string(),
             }]
         );
     }
@@ -430,6 +469,7 @@ mod tests {
             alloc::vec![Effect::Deliver {
                 event: "ping".to_string(),
                 data: String::new(),
+                source: "ecu".to_string(),
             }]
         );
     }
@@ -555,7 +595,10 @@ mod tests {
             hmi.receive("ecu", alloc::vec![0xFF], 0).unwrap(),
             alloc::vec![Effect::Raise {
                 peer: Some("ecu".to_string()),
-                signal: Signal::EnvelopeCorrupt { codec: "cbor" },
+                signal: Signal::EnvelopeCorrupt {
+                    source: None,
+                    codec: "cbor",
+                },
             }]
         );
     }
@@ -584,10 +627,41 @@ mod tests {
                 hmi.receive("ecu", bytes, 0).unwrap(),
                 alloc::vec![Effect::Raise {
                     peer: Some("ecu".to_string()),
-                    signal: Signal::EnvelopeCorrupt { codec: name },
+                    signal: Signal::EnvelopeCorrupt {
+                        source: Some("ecu".to_string()),
+                        codec: name,
+                    },
                 }]
             );
         }
+    }
+
+    #[test]
+    fn a_raised_row_carries_the_binding_it_was_observed_on() {
+        let mut ecu = Router::new("ecu", 8, 50).unwrap();
+        ecu.add_peer("hmi", ORDERED);
+        let raised = ecu.send(&request("#nowhere", "a", ""), [1; 16], 0).unwrap();
+        let [Effect::Raise { peer, signal }] = raised.as_slice() else {
+            panic!("expected one raised row, got {raised:?}");
+        };
+        // An unbound target has no transport to name: its row says which
+        // peer it was, and nothing a deployment did not declare.
+        let event = ecu.error_event(peer.as_deref(), signal);
+        assert_eq!(event.event_name, "error.communication");
+        assert_eq!(
+            event.event_data,
+            r#"{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"nowhere"}"#
+        );
+
+        ecu.peer_ready("hmi", 0).unwrap();
+        let lost = ecu.peer_not_ready("hmi").unwrap();
+        let [Effect::Raise { peer, signal }] = lost.as_slice() else {
+            panic!("expected one raised row, got {lost:?}");
+        };
+        assert_eq!(
+            ecu.error_event(peer.as_deref(), signal).event_data,
+            r#"{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"hmi","transport":"wss"}"#
+        );
     }
 
     #[test]

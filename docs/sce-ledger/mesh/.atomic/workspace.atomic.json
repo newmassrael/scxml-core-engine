@@ -632,6 +632,10 @@
         {
           "file": "tests/mesh/CommunicationErrorTest.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/rust/mesh/src/signal.rs",
+          "kind": "references"
         }
       ]
     },
@@ -2900,6 +2904,10 @@
         {
           "file": "tests/mesh/MeshEnvelopeCodecTest.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/rust/mesh/src/router.rs",
+          "kind": "references"
         }
       ]
     },
@@ -3870,6 +3878,12 @@
       "target_kind": "section",
       "target_id": "mesh-9.6.2",
       "reason": "A generated header carries no citation to back a binding; the hand-written enum that declares these wire values does"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-10.7.1",
+      "reason": "match the file-level references bindings the Rust Mesh core's other citations carry"
     }
   ],
   "frames": {},
