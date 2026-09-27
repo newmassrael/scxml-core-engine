@@ -47,6 +47,7 @@ from .brief import assemble
 # refused by the client that asked for it.
 BRIEF_LIMIT = 60_000
 from .check import check
+from .counterfactual import MAX_RUNS, explore
 from .coverage import coverage as run_coverage
 from .errors import AuthoringError
 from .gaps import ORDER as GAP_ORDER
@@ -373,6 +374,21 @@ TOOLS = [
                 "backend": {
                     "type": "string",
                     "description": "As for verify: the lowering to drive, default python.",
+                },
+                "counterfactual": {
+                    "type": "boolean",
+                    "description": (
+                        "Change each binding guess a failure implicates to every "
+                        "alternative it has and run the cases again: a guess "
+                        "whose every alternative leaves the failures as they "
+                        "were comes back `cleared`, one whose alternative "
+                        "repairs them cleanly comes back refuted with that "
+                        "value. One run per alternative."),
+                },
+                "max_runs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Runs `counterfactual` may spend (default 64); what it could not try is reported.",
                 },
             },
         },
@@ -703,7 +719,17 @@ def call_tool(name: str, args: dict) -> dict:
                 return _failure(result.refusal)
             questions = (ask(prose, pack.model, pack.conventions, pack.examples)
                          if prose is not None else ())
-            found = gap_report(result, pack, prose, questions)
+            wanted = args.get("counterfactual", False)
+            if not isinstance(wanted, bool):
+                raise ToolArgumentError("'counterfactual' is true or false")
+            max_runs = args.get("max_runs", MAX_RUNS)
+            if not isinstance(max_runs, int) or isinstance(max_runs, bool) or max_runs < 0:
+                raise ToolArgumentError("'max_runs' is a count of runs, 0 or more")
+            counterfactuals = (explore(
+                pack, pathlib.Path(binding), result,
+                lambda variant: run_verify(pack, variant, None, backend), max_runs)
+                if wanted else None)
+            found = gap_report(result, pack, prose, questions, counterfactuals)
             # The prose's own questions are counted, not carried: `questions`
             # is the tool that lists them, and there can be hundreds.
             counts = {kind: sum(1 for g in found if g.kind == kind) for kind in GAP_ORDER}

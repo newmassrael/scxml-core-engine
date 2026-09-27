@@ -12,6 +12,9 @@ very different things is true:
                at least one of them is wrong, the cases do not say which
     held       the tests agree with the guess -- the text should still say so
     untested   nothing compares it -- neither the text nor the tests decide it
+    cleared    implicated, and every alternative it could take was run without
+               moving those failures -- they do not rest on it
+               (`counterfactual`, when the caller asks for it)
 
 ⚠ WHY THIS IS A REPORT OF ITS OWN. `verify` already named a refuted guess
 beside the failure it caused. What it did not say is the other two, and they
@@ -35,7 +38,7 @@ from dataclasses import dataclass, field
 # is an unknown one, which is worse than an open question only because nobody
 # is asking it.
 ORDER = ("refuted", "implicated", "untested", "open", "question", "untestable",
-         "held")
+         "held", "cleared")
 
 FIX = {
     "refuted": ("The product's tests answer this, and not as guessed. The "
@@ -53,6 +56,9 @@ FIX = {
                    "specification should state what this condition means."),
     "held": ("The tests agree with the guess. The specification should still "
              "say it, so the next reader does not have to guess again."),
+    "cleared": ("Every alternative this guess could have taken was run, and "
+                "none changed the failures it was implicated in: they do not "
+                "rest on it. The specification should still say it."),
 }
 
 
@@ -72,6 +78,11 @@ class Gap:
     # every status: an implicated guess that also agreed in forty cases is a
     # weaker suspect than one that agreed in none, and the reader ranks them.
     agreed: int = 0
+    # What changing the guess did (`counterfactual.explore`), when it was run.
+    counterfactual: dict | None = None
+    # (case, address) failures at which every other recorded guess beside
+    # this one was cleared: it is the only recorded guess left standing there.
+    sole: list = field(default_factory=list)
 
     @property
     def fix(self) -> str:
@@ -85,6 +96,8 @@ class Gap:
                 "evidence": [list(e) if isinstance(e, tuple) else e
                              for e in self.evidence],
                 "agreed": self.agreed,
+                "counterfactual": self.counterfactual,
+                "sole": [list(s) for s in self.sole],
                 "fix": self.fix}
 
 
@@ -103,21 +116,39 @@ def _where(positions, model, prose) -> list:
     return found
 
 
-def report(verification, pack, prose=None, questions=()) -> list[Gap]:
+def report(verification, pack, prose=None, questions=(), counterfactuals=None) -> list[Gap]:
     """Every gap the run and the prose expose, most urgent first.
 
     `questions` are `questions.ask`'s answers for the same prose, when the
     caller asked for them: what the text leaves open before anything is run.
+    `counterfactuals` are `counterfactual.explore`'s, when the caller ran
+    them: a guess every alternative of which left its failures as they were
+    is `cleared`, and one whose alternative repairs them cleanly is refuted
+    with that alternative as the answer.
     """
+    from .counterfactual import sole_suspects
+
+    found = counterfactuals or {}
+    sole = sole_suspects(verification, found) if counterfactuals is not None else {}
     gaps = []
-    for a in verification.assumptions.values():
+    for key, a in verification.assumptions.items():
+        cf = found.get(key)
+        kind = a.status
+        if cf is not None and kind in ("refuted", "implicated"):
+            if cf.verdict == "cleared":
+                kind = "cleared"
+            elif cf.verdict == "witness":
+                kind = "refuted"
         gaps.append(Gap(
-            kind=a.status, subject=a.subject, reason=a.reason, marker=a.marker,
+            kind=kind, subject=a.subject, reason=a.reason, marker=a.marker,
             positions=list(a.positions),
             where=_where(a.positions, pack.model, prose),
-            evidence={"refuted": a.refuted_by,
-                      "implicated": a.implicated_by}.get(a.status, a.held_in)[:],
-            agreed=len(a.held_in)))
+            evidence={"refuted": a.refuted_by or [e[:4] for e in a.implicated_by],
+                      "implicated": a.implicated_by,
+                      "cleared": a.implicated_by}.get(kind, a.held_in)[:],
+            agreed=len(a.held_in),
+            counterfactual=cf.as_dict() if cf is not None else None,
+            sole=sole.get(key, [])))
     for name, why in sorted(verification.unresolved.items()):
         gaps.append(Gap(kind="open", subject=f"input {name}", reason=why))
     for name, why in sorted(verification.unresolved_outputs.items()):

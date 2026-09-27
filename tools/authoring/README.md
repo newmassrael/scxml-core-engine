@@ -177,6 +177,28 @@ guesses decide together says at least one of them is wrong, not each, so each
 is **implicated** (naming the others) and only a guess that decides a failing
 position alone is refuted. Blaming all of them turned one component's report
 into thirteen refutations and nothing held.
+
+`--counterfactual` then settles which of them the failures rest on, by
+changing each binding guess a failure implicates and running the cases again:
+every decision its rule makes that has a known set of alternatives
+(`when_absent`, `equals`, `map` entries, `also` and `when` fields) is set to
+each other value in turn. A guess no alternative moves — and every one was
+tried — is **cleared**: the failures do not rest on it. One alternative that
+repairs every failure the guess was blamed in and breaks nothing is the answer,
+and the guess is reported refuted with it; two failures repaired by two
+different values are not an answer — the document hands one value to two
+situations the tests tell apart. A recorded guess left alone at a failure once
+every other beside it is cleared is marked the only one left. ⚠ Why a run and
+not a reading of the record: a guess about a missing input looks decidable by
+whether the input was missing, and measured on thirteen components it never was
+in the failing cases — but was in earlier rounds of the same run, in documents
+that keep values between rounds, so only running the alternative says whether
+that still matters. ⚠ A number has no complete list of alternatives: the values
+tried are a sample, reported as such, and never clear a guess. A document's
+`sce:assumed` is not changed — nobody wrote its alternatives down — so "the
+only one left" is elimination among RECORDED guesses, not proof. `--max-runs`
+bounds the runs (one per alternative), and what it did not try is listed.
+
 With `--prose` each gap is located in the text by file and line (never
 quoted, so the report can travel further than the specification may) and the
 text's own open questions are counted; `--out` writes every gap as NDJSON. A

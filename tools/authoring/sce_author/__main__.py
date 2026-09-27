@@ -15,6 +15,8 @@ import sys
 
 from .brief import write as write_brief
 from .check import check
+from .counterfactual import MAX_RUNS, explore
+from .counterfactual import lines as counterfactual_lines
 from .coverage import coverage as run_coverage
 from .errors import AuthoringError
 from .gaps import ORDER as GAP_ORDER
@@ -100,7 +102,14 @@ def cmd_gaps(args) -> int:
         return 1
     questions = (ask(prose, pack.model, pack.conventions, pack.examples)
                  if prose is not None else ())
-    gaps = gap_report(result, pack, prose, questions)
+    counterfactuals = None
+    if args.counterfactual:
+        codegen = pathlib.Path(args.codegen) if args.codegen else None
+        counterfactuals = explore(
+            pack, pathlib.Path(args.binding), result,
+            lambda variant: run_verify(pack, variant, codegen, args.backend),
+            args.max_runs)
+    gaps = gap_report(result, pack, prose, questions, counterfactuals)
     if args.out:
         with open(args.out, "w", encoding="utf-8") as fh:
             for gap in gaps:
@@ -124,6 +133,8 @@ def cmd_gaps(args) -> int:
             print(f"             agreed in {gap.agreed} other case(s)")
         elif gap.kind == "held":
             print(f"             agreed in {len(gap.evidence)} case(s)")
+        for line in counterfactual_lines(gap):
+            print(f"             {line}")
         print(f"             -> {gap.fix}")
     # The prose's own questions are counted, not listed: there can be hundreds,
     # and `questions` is the command that lists them.
@@ -399,6 +410,13 @@ def main(argv=None) -> int:
                    help="the specification: say where each gap sits in it, and "
                         "add what it leaves open before anything is run")
     g.add_argument("--out", help="write every gap as NDJSON as well")
+    g.add_argument("--counterfactual", action="store_true",
+                   help="change each binding guess a failure implicates to every "
+                        "alternative it has and run the cases again, to find "
+                        "which guesses the failures actually rest on")
+    g.add_argument("--max-runs", type=int, default=MAX_RUNS,
+                   help=f"runs --counterfactual may spend (default {MAX_RUNS}); "
+                        f"what it could not try is reported")
     g.set_defaults(fn=cmd_gaps)
 
     o = with_pack(sub.add_parser(
