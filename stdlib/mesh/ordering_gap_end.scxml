@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/ordering_gap_end.scxml — where a receiver resumes when a gap
+  in its sender's sequence times out (SCE_MESH.md §mesh-10.6.4): the
+  sequence of its oldest held envelope once that one has waited
+  `timeoutMs` or longer, and otherwise `next` unchanged.
+
+  When the result differs from `next`, the sequences [next, result - 1]
+  are lost — the ORDERING_GAP of §mesh-16.7 — and the receiver drains from
+  the result (ordering_drain from result, releasing the held envelopes in
+  [result, drained)). A held envelope at `next` is not a gap: ordering_hold
+  never holds one, since an envelope at `next` is released on arrival.
+
+  `timeoutMs` is deploy.yaml's `gap_timeout_ms`. A clock reading that
+  cannot be subtracted within int64 fails `overflow`.
+
+  pending {8@100}, next 5, now 150, timeout 50 → 8 · now 149 → 5.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="ordering_gap_end" version="1.0">
+  <sce:import kind="event-schema" src="ordering_slot.scxml" as="Slot"/>
+  <sce:signature>
+    <sce:param name="pending" type="list&lt;record:Slot&gt;"/>
+    <sce:param name="next" type="uint64"/>
+    <sce:param name="now" type="int64"/>
+    <sce:param name="timeoutMs" type="int64"/>
+    <sce:return type="uint64" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="resume" type="uint64" init="next"/>
+    <sce:var name="first" type="bool" init="true"/>
+    <sce:foreach item="slot" in="pending">
+      <sce:if cond="first &amp;&amp; slot.seq !== next &amp;&amp; now - slot.arrivedAtMs &gt;= timeoutMs">
+        <sce:assign target="resume" expr="slot.seq"/>
+      </sce:if>
+      <sce:assign target="first" expr="false"/>
+    </sce:foreach>
+    <sce:return expr="resume"/>
+  </sce:body>
+</scxml>

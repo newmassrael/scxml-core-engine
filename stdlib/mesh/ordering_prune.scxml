@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/ordering_prune.scxml — a receiver's held envelopes once it
+  expects `next` (SCE_MESH.md §mesh-10.6.4): every held slot below `next`
+  has been released, so what stays is the slots at or after it, in order.
+
+  pending {5, 6, 8}, next 7 → {8} · next 5 → {5, 6, 8} · next 9 → {}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="ordering_prune" version="1.0">
+  <sce:import kind="event-schema" src="ordering_slot.scxml" as="Slot"/>
+  <sce:signature>
+    <sce:param name="pending" type="list&lt;record:Slot&gt;"/>
+    <sce:param name="next" type="uint64"/>
+    <sce:return type="list&lt;record:Slot&gt;" returns-max-size="256"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Slot&gt;" capacity="256"/>
+    <sce:foreach item="slot" in="pending">
+      <sce:if cond="slot.seq &gt;= next">
+        <sce:append target="out" expr="slot"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

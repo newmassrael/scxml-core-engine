@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/ordering_hold.scxml — a receiver's held envelopes after one
+  more arrives ahead of sequence (SCE_MESH.md §mesh-10.6.4): `pending` with
+  {seq, now} in its place, ascending by `seq`. A sequence already held is
+  kept as it was, with its first arrival time — a re-delivery does not
+  restart its gap timeout.
+
+  At most 256 held envelopes (SCE_FORGE.md §4.12): past that the bounded
+  backends fail `capacity-exceeded` and the heap backends grow.
+
+  pending {5, 8}, seq 6, now 40 → {5, 6@40, 8} · seq 8 → {5, 8}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="ordering_hold" version="1.0">
+  <sce:import kind="event-schema" src="ordering_slot.scxml" as="Slot"/>
+  <sce:signature>
+    <sce:param name="pending" type="list&lt;record:Slot&gt;"/>
+    <sce:param name="seq" type="uint64"/>
+    <sce:param name="now" type="int64"/>
+    <sce:return type="list&lt;record:Slot&gt;" returns-max-size="256"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="arrived" type="record:Slot">
+      <sce:set name="seq" expr="seq"/>
+      <sce:set name="arrivedAtMs" expr="now"/>
+    </sce:var>
+    <sce:var name="out" type="list&lt;record:Slot&gt;" capacity="256"/>
+    <sce:var name="placed" type="bool" init="false"/>
+    <sce:foreach item="slot" in="pending">
+      <sce:if cond="slot.seq === seq">
+        <sce:assign target="placed" expr="true"/>
+      </sce:if>
+      <sce:if cond="!placed &amp;&amp; seq &lt; slot.seq">
+        <sce:append target="out" expr="arrived"/>
+        <sce:assign target="placed" expr="true"/>
+      </sce:if>
+      <sce:append target="out" expr="slot"/>
+    </sce:foreach>
+    <sce:if cond="!placed">
+      <sce:append target="out" expr="arrived"/>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

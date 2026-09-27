@@ -1351,6 +1351,69 @@
       }
     },
     {
+      "name": "ordering_drain",
+      "document": "sce:std/mesh/ordering_drain.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "ordering_drain",
+      "args": [
+        { "list_of": { "record": "ordering_slot" } },
+        "u64"
+      ],
+      "output": {
+        "type": "u64",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "ordering_gap_end",
+      "document": "sce:std/mesh/ordering_gap_end.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "ordering_gap_end",
+      "args": [
+        { "list_of": { "record": "ordering_slot" } },
+        "u64",
+        "i64",
+        "i64"
+      ],
+      "output": {
+        "type": "u64",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "ordering_hold",
+      "document": "sce:std/mesh/ordering_hold.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "ordering_hold",
+      "args": [
+        { "list_of": { "record": "ordering_slot" } },
+        "u64",
+        "i64"
+      ],
+      "output": {
+        "list_of": { "record": "ordering_slot" },
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "ordering_prune",
+      "document": "sce:std/mesh/ordering_prune.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "ordering_prune",
+      "args": [
+        { "list_of": { "record": "ordering_slot" } },
+        "u64"
+      ],
+      "output": {
+        "list_of": { "record": "ordering_slot" },
+        "compare": "equality"
+      }
+    },
+    {
       "name": "orset_contains",
       "document": "sce:std/merge/orset_contains.scxml",
       "kind": "algorithm",
@@ -2115,6 +2178,17 @@
       "fields": [
         { "name": "hi", "value": 283686952306183, "sce_type": "uint64" },
         { "name": "lo", "value": 579005069656919567, "sce_type": "uint64" }
+      ]
+    },
+    {
+      "name": "ordering_slot",
+      "document": "sce:std/mesh/ordering_slot.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "mesh.ordering_slot",
+      "fields": [
+        { "name": "seq", "value": 7, "sce_type": "uint64" },
+        { "name": "arrivedAtMs", "value": 1727000000400, "sce_type": "int64" }
       ]
     },
     {

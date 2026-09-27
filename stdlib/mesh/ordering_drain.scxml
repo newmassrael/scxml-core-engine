@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/ordering_drain.scxml — the sequence a receiver expects next
+  once it has released `start - 1` (SCE_MESH.md §mesh-10.6.4): `start`,
+  moved past every held envelope that now follows on without a gap. The
+  envelopes released are those held with a sequence in [start, result).
+
+  `pending` is the list ordering_hold keeps, ascending by `seq`. A sequence
+  at the uint64 maximum has no successor and fails `overflow`.
+
+  pending {5, 6, 8}, start 5 → 7 · start 4 → 4 · pending {}, start 9 → 9.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="ordering_drain" version="1.0">
+  <sce:import kind="event-schema" src="ordering_slot.scxml" as="Slot"/>
+  <sce:signature>
+    <sce:param name="pending" type="list&lt;record:Slot&gt;"/>
+    <sce:param name="start" type="uint64"/>
+    <sce:return type="uint64" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="next" type="uint64" init="start"/>
+    <sce:foreach item="slot" in="pending">
+      <sce:if cond="slot.seq === next">
+        <sce:assign target="next" expr="next + 1"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="next"/>
+  </sce:body>
+</scxml>

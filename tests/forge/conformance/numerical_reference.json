@@ -1725,6 +1725,53 @@
         { "args": [-4], "expected": true }
       ]
     },
+    "ordering_drain": {
+      "fixture": "ordering_drain",
+      "signature": "(pending: list<record:Slot>, start: u64) -> u64 may-fail",
+      "formula": "start, moved past every held sequence that follows on without a gap; a sequence at the uint64 maximum has no successor and fails 'overflow' (SCE_MESH.md §mesh-10.6.4; the standard document sce:std/mesh/ordering_drain.scxml)",
+      "cases": [
+        { "args": [[{ "seq": 5, "arrivedAtMs": 0 }, { "seq": 6, "arrivedAtMs": 0 }, { "seq": 8, "arrivedAtMs": 0 }], 5], "expected": 7, "note": "stops at the gap before 8" },
+        { "args": [[{ "seq": 5, "arrivedAtMs": 0 }, { "seq": 6, "arrivedAtMs": 0 }, { "seq": 7, "arrivedAtMs": 0 }], 5], "expected": 8, "note": "a gap filled releases every held envelope" },
+        { "args": [[{ "seq": 6, "arrivedAtMs": 0 }, { "seq": 7, "arrivedAtMs": 0 }], 5], "expected": 5, "note": "5 is still missing" },
+        { "args": [[], 9], "expected": 9 },
+        { "args": [[{ "seq": 18446744073709551615, "arrivedAtMs": 0 }], 18446744073709551615], "fails": "overflow", "note": "the last sequence has no successor" }
+      ]
+    },
+    "ordering_gap_end": {
+      "fixture": "ordering_gap_end",
+      "signature": "(pending: list<record:Slot>, next: u64, now: i64, timeoutMs: i64) -> u64 may-fail",
+      "formula": "the oldest held sequence once it has waited timeoutMs or longer, else next; [next, result - 1] are then lost (SCE_MESH.md §mesh-10.6.4; the standard document sce:std/mesh/ordering_gap_end.scxml)",
+      "cases": [
+        { "args": [[{ "seq": 8, "arrivedAtMs": 100 }], 5, 150, 50], "expected": 8, "note": "waited exactly the timeout: 5..7 are lost" },
+        { "args": [[{ "seq": 8, "arrivedAtMs": 100 }], 5, 149, 50], "expected": 5, "note": "one millisecond short" },
+        { "args": [[], 5, 1000, 50], "expected": 5, "note": "nothing held, no gap" },
+        { "args": [[{ "seq": 8, "arrivedAtMs": 100 }, { "seq": 9, "arrivedAtMs": 0 }], 5, 120, 50], "expected": 5, "note": "only the lowest held sequence decides, not the longest-waiting" },
+        { "args": [[{ "seq": 8, "arrivedAtMs": 100 }], 5, 100, 0], "expected": 8, "note": "a zero timeout gives up at once" }
+      ]
+    },
+    "ordering_hold": {
+      "fixture": "ordering_hold",
+      "signature": "(pending: list<record:Slot>, seq: u64, now: i64) -> list<record:Slot>",
+      "formula": "pending with {seq, now} in its place, ascending by seq; a sequence already held keeps its first arrival (SCE_MESH.md §mesh-10.6.4; the standard document sce:std/mesh/ordering_hold.scxml)",
+      "cases": [
+        { "args": [[{ "seq": 5, "arrivedAtMs": 10 }, { "seq": 8, "arrivedAtMs": 20 }], 6, 40], "expected": [{ "seq": 5, "arrivedAtMs": 10 }, { "seq": 6, "arrivedAtMs": 40 }, { "seq": 8, "arrivedAtMs": 20 }] },
+        { "args": [[{ "seq": 5, "arrivedAtMs": 10 }, { "seq": 8, "arrivedAtMs": 20 }], 8, 40], "expected": [{ "seq": 5, "arrivedAtMs": 10 }, { "seq": 8, "arrivedAtMs": 20 }], "note": "a re-delivery does not restart its gap timeout" },
+        { "args": [[{ "seq": 5, "arrivedAtMs": 10 }], 2, 3], "expected": [{ "seq": 2, "arrivedAtMs": 3 }, { "seq": 5, "arrivedAtMs": 10 }], "note": "before every held one" },
+        { "args": [[{ "seq": 5, "arrivedAtMs": 10 }], 9, 2], "expected": [{ "seq": 5, "arrivedAtMs": 10 }, { "seq": 9, "arrivedAtMs": 2 }], "note": "after every held one" },
+        { "args": [[], 3, 1], "expected": [{ "seq": 3, "arrivedAtMs": 1 }] }
+      ]
+    },
+    "ordering_prune": {
+      "fixture": "ordering_prune",
+      "signature": "(pending: list<record:Slot>, next: u64) -> list<record:Slot>",
+      "formula": "the held slots at or after next, in order — the ones below it have been released (SCE_MESH.md §mesh-10.6.4; the standard document sce:std/mesh/ordering_prune.scxml)",
+      "cases": [
+        { "args": [[{ "seq": 5, "arrivedAtMs": 1 }, { "seq": 6, "arrivedAtMs": 2 }, { "seq": 8, "arrivedAtMs": 3 }], 7], "expected": [{ "seq": 8, "arrivedAtMs": 3 }] },
+        { "args": [[{ "seq": 5, "arrivedAtMs": 1 }, { "seq": 6, "arrivedAtMs": 2 }, { "seq": 8, "arrivedAtMs": 3 }], 5], "expected": [{ "seq": 5, "arrivedAtMs": 1 }, { "seq": 6, "arrivedAtMs": 2 }, { "seq": 8, "arrivedAtMs": 3 }] },
+        { "args": [[{ "seq": 5, "arrivedAtMs": 1 }], 9], "expected": [] },
+        { "args": [[], 0], "expected": [] }
+      ]
+    },
     "orset_contains": {
       "fixture": "orset_contains",
       "signature": "(live: list<record:Entry>, element: u64) -> bool",
@@ -4316,6 +4363,16 @@
       "fields": [
         { "name": "hi", "value": 283686952306183, "sce_type": "uint64" },
         { "name": "lo", "value": 579005069656919567, "sce_type": "uint64" }
+      ]
+    },
+    "ordering_slot": {
+      "fixture": "OrderingSlot",
+      "signature": "struct OrderingSlotPayload { uint64 seq; int64 arrivedAtMs; }",
+      "description": "One envelope a Mesh receiver holds back until its sender's sequence reaches it, as its sequence and arrival time, the element type of the lists the standard documents sce:std/mesh/ordering_* take and return (SCE_FORGE.md §4.12). A SHAPE claim like every event-schema fixture: names, order, and that a value reads back.",
+      "event_name": "mesh.ordering_slot",
+      "fields": [
+        { "name": "seq", "value": 7, "sce_type": "uint64" },
+        { "name": "arrivedAtMs", "value": 1727000000400, "sce_type": "int64" }
       ]
     },
     "civil_date": {

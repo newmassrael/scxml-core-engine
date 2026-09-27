@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/ordering_slot.scxml — one envelope a receiver holds back
+  because it arrived ahead of its sender's sequence (SCE_MESH.md §mesh-10.6):
+  its `sequence_no`, and when it arrived, in milliseconds of the receiver's
+  monotonic clock. The envelope itself stays with the host, keyed by `seq`;
+  the ordering rules need only these two numbers.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="ordering_slot"
+       sce:event-name="mesh.ordering_slot">
+  <datamodel>
+    <data id="seq" sce:type="uint64" sce:direction="in"/>
+    <data id="arrivedAtMs" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>
