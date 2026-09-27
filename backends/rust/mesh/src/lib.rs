@@ -12,7 +12,8 @@
 //!   they are the same documents.
 //! * [`inbound`] — the router core's receive half: the state those rules are
 //!   applied to, one sender at a time. It decides nothing itself; every
-//!   decision is a call into [`generated`].
+//!   decision is a call into [`generated`]. [`outbound`] is the send half,
+//!   and [`router`] joins both to the engine's host-processor surface.
 //!
 //! Transport-free by design (SCE_MESH.md §mesh-6.4): bytes come in from
 //! whichever transport the host wires, and the clock is an argument, so the
@@ -31,4 +32,5 @@ extern crate alloc;
 pub mod generated;
 pub mod inbound;
 pub mod outbound;
+pub mod router;
 pub mod signal;

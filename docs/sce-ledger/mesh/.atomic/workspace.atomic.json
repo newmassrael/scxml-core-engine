@@ -505,6 +505,10 @@
         {
           "file": "backends/rust/mesh/src/inbound.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/router.rs",
+          "kind": "references"
         }
       ]
     },
@@ -2411,6 +2415,10 @@
         {
           "file": "backends/rust/mesh/src/signal.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/router.rs",
+          "kind": "references"
         }
       ]
     },
@@ -2807,6 +2815,10 @@
         },
         {
           "file": "backends/rust/mesh/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/router.rs",
           "kind": "references"
         }
       ],

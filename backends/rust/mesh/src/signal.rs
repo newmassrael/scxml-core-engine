@@ -25,6 +25,14 @@ pub enum Signal {
     /// DEDUP_WINDOW_OVERFLOW (row 7): a novel id from `source` was admitted
     /// to a full window, so its oldest id is no longer remembered.
     DedupWindowOverflow { source: String },
+    /// ENVELOPE_CORRUPT (row 4): what arrived could not be read. `codec` is
+    /// the row's field: `"cbor"` when the bytes are not an envelope the
+    /// standard document accepts, or the payload's own codec when the
+    /// envelope decoded but its payload is not one the engine can be handed.
+    EnvelopeCorrupt { codec: &'static str },
+    /// MISSING_SEQUENCE (row 11): an envelope reached an ordered binding
+    /// without a `sequence_no`, so it cannot be placed (§10.6.3).
+    MissingSequence { source: String },
     /// BACKPRESSURE_DROP: an envelope that could not be sent at once found
     /// its target's queue already holding `depth` envelopes, and was dropped.
     BackpressureDrop { depth: u32 },

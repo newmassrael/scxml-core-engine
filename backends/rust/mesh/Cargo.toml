@@ -27,3 +27,8 @@ alloc = ["sce-forge-runtime/alloc", "sce-portable-bytes/alloc"]
 [dependencies]
 sce-forge-runtime = { path = "../forge-runtime", default-features = false }
 sce-portable-bytes = { path = "../portable-bytes", default-features = false }
+# The engine's host-processor surface: a `<send target="#peer">` reaches the
+# router as the runtime's `HostSendRequest`, so the router reads the one
+# shape every generated send site fills rather than a second copy of it.
+# Without `http-send`, which is the runtime's own transport and not Mesh's.
+sce-rust-runtime = { path = "../runtime", default-features = false }
