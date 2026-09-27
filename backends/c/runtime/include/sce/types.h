@@ -161,76 +161,101 @@ SCE_C_UNUSED static inline void sce_copy_bounded_id(char *dst, const char *src) 
     sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_ID_LEN);
 }
 
-/* §scxml-6.2.2: read a CSS2 time duration — "5s", "100ms", "2min",
-   "0.5s", or a bare number meaning seconds — as milliseconds.
+/* The largest delay any engine can hold, in milliseconds: the positive
+   range of a signed 64-bit count, because Kotlin's `Long` is signed and
+   every engine answers the same text the same way. */
+#define SCE_MAX_DELAY_MS ((uint64_t)INT64_MAX)
 
-   The C11 twin of cpp `SendSchedulingHelper::parseDelayString`, Rust
-   `helpers::send::parse_delay_to_ms` and their Go / Python / Kotlin
-   siblings. It exists here because a `delayexpr` names its wait with a
-   value the document computes at run time: a literal `delay` is
-   converted once at generation time (`action.delay_ms`), and until this
-   parser there was nothing on this backend that could convert the other
-   kind at all.
+/* §scxml-6.2: a `<send>` delay, read as the CSS2 time the clause names.
 
-   Ill-formed input answers 0, which schedules an immediately-ready
-   entry — the same observable every sibling parser gives it, and the
-   same one the generation-time conversion gives an ill-formed literal.
-   Integer arithmetic throughout: `frac` accumulates the fractional part
-   in thousandths, so "0.5s" is exact without the freestanding profile
-   needing a floating-point unit. */
-SCE_C_UNUSED static inline uint64_t sce_parse_delay_ms(const char *text) {
-    const char *p = text;
-    uint64_t whole = 0u;
-    uint64_t frac = 0u; /* thousandths of one unit */
-    bool saw_digit = false;
-    uint64_t unit_ms;
+   The grammar is ARCHITECTURE.md's "Durations (Single Source of Truth)":
+   surrounding ASCII whitespace aside, a non-negative number (digits with an
+   optional fraction of at least one digit, or a leading '.' and digits; no
+   sign, no exponent) followed directly by "ms" or "s", either case. The
+   milliseconds are computed in exact decimal and truncated — integer
+   arithmetic throughout, so the freestanding profile needs no
+   floating-point unit. tests/durations/css2_time.json holds the cases every
+   engine is measured against.
 
-    if (p == NULL) {
-        return 0u;
+   Answers false when the text is not a time — a bare number included — so
+   the caller raises the argument error rather than choosing a wait. */
+SCE_C_UNUSED static inline bool sce_parse_delay_ms(const char *text, uint64_t *out_ms) {
+    size_t begin = 0u;
+    size_t end;
+    size_t whole_end;
+    size_t i;
+    uint64_t scale;
+    uint64_t place;
+    uint64_t ms = 0u;
+    bool has_fraction;
+
+    if (text == NULL || out_ms == NULL) {
+        return false;
     }
-    while (*p == ' ' || *p == '\t') {
-        p++;
+    end = strlen(text);
+    while (begin < end && (text[begin] == ' ' || text[begin] == '\t' || text[begin] == '\n' || text[begin] == '\r' ||
+                           text[begin] == '\f' || text[begin] == '\v')) {
+        begin++;
     }
-    while (*p >= '0' && *p <= '9') {
-        whole = whole * 10u + (uint64_t)(*p - '0');
-        saw_digit = true;
-        p++;
+    while (end > begin && (text[end - 1u] == ' ' || text[end - 1u] == '\t' || text[end - 1u] == '\n' ||
+                           text[end - 1u] == '\r' || text[end - 1u] == '\f' || text[end - 1u] == '\v')) {
+        end--;
     }
-    if (*p == '.') {
-        uint64_t scale = 100u;
-        p++;
-        while (*p >= '0' && *p <= '9') {
-            if (scale > 0u) {
-                frac += (uint64_t)(*p - '0') * scale;
-                scale /= 10u;
-            }
-            saw_digit = true;
-            p++;
+    if (end - begin >= 2u && (text[end - 2u] == 'm' || text[end - 2u] == 'M') &&
+        (text[end - 1u] == 's' || text[end - 1u] == 'S')) {
+        scale = 1u;
+        end -= 2u;
+    } else if (end - begin >= 1u && (text[end - 1u] == 's' || text[end - 1u] == 'S')) {
+        scale = 1000u;
+        end -= 1u;
+    } else {
+        return false;
+    }
+    whole_end = begin;
+    while (whole_end < end && text[whole_end] != '.') {
+        whole_end++;
+    }
+    has_fraction = whole_end < end;
+    /* A number is digits, digits "." digits, or "." digits: the fraction is
+       never empty, and there is at least one digit somewhere. */
+    for (i = begin; i < end; i++) {
+        if (i == whole_end) {
+            continue;
+        }
+        if (text[i] < '0' || text[i] > '9') {
+            return false;
         }
     }
-    if (!saw_digit) {
-        return 0u;
+    if (has_fraction && whole_end + 1u == end) {
+        return false;
     }
-    while (*p == ' ' || *p == '\t') {
-        p++;
+    if (whole_end == begin && !has_fraction) {
+        return false;
     }
-
-    if (*p == '\0' || strcmp(p, "s") == 0 || strcmp(p, "sec") == 0 || strcmp(p, "second") == 0 ||
-        strcmp(p, "seconds") == 0) {
-        unit_ms = 1000u;
-    } else if (strcmp(p, "ms") == 0) {
-        unit_ms = 1u;
-    } else if (strcmp(p, "min") == 0 || strcmp(p, "minute") == 0 || strcmp(p, "minutes") == 0) {
-        unit_ms = 60000u;
-    } else if (strcmp(p, "h") == 0 || strcmp(p, "hour") == 0 || strcmp(p, "hours") == 0) {
-        unit_ms = 3600000u;
-    } else {
-        /* A unit this processor does not implement is not a wait it can
-           honour, and guessing one would dispatch at a time the document
-           never asked for. */
-        return 0u;
+    for (i = begin; i < whole_end; i++) {
+        const uint64_t digit = (uint64_t)(text[i] - '0');
+        if (ms > (SCE_MAX_DELAY_MS - digit) / 10u) {
+            return false;
+        }
+        ms = ms * 10u + digit;
     }
-    return whole * unit_ms + (frac * unit_ms) / 1000u;
+    if (ms > SCE_MAX_DELAY_MS / scale) {
+        return false;
+    }
+    ms *= scale;
+    /* Only the fraction digits that name whole milliseconds count; the rest
+       truncate. */
+    place = scale / 10u;
+    for (i = whole_end + 1u; has_fraction && i < end && place > 0u; i++) {
+        const uint64_t add = (uint64_t)(text[i] - '0') * place;
+        if (ms > SCE_MAX_DELAY_MS - add) {
+            return false;
+        }
+        ms += add;
+        place /= 10u;
+    }
+    *out_ms = ms;
+    return true;
 }
 
 /* §scxml-5.10 `_event.data` payload buffer (SCE_MAX_DATA_LEN). Separate

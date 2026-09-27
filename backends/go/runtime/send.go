@@ -6,7 +6,6 @@ package sce
 import (
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 )
 
@@ -117,46 +116,74 @@ func ValidateBasicHTTPSend(sendType, target, targetExpr string) error {
 	return nil
 }
 
-// ParseDelayToMs parses a CSS2-style time duration into milliseconds
-// (§scxml-6.2).
+// MaxDelayMs is the largest delay any engine can hold, in milliseconds: the
+// positive range of a signed 64-bit count, because Kotlin's Long is signed and
+// every engine answers the same text the same way.
+const MaxDelayMs uint64 = math.MaxInt64
+
+// ParseDelayToMs reads a <send> delay as the CSS2 time §scxml-6.2 names.
 //
-// Accepts the same surface syntax as the Rust parse_delay_to_ms:
-//   - "1s", "1.5s" -> seconds (converted to ms)
-//   - "250ms" -> milliseconds
-//   - bare number "500" -> milliseconds
+// The grammar is ARCHITECTURE.md's "Durations (Single Source of Truth)":
+// surrounding ASCII whitespace aside, a non-negative number (digits with an
+// optional fraction of at least one digit, or a leading "." and digits; no
+// sign, no exponent) followed directly by "ms" or "s", either case. The
+// milliseconds are computed in exact decimal and truncated, never through a
+// float. tests/durations/css2_time.json holds the cases every engine is
+// measured against.
 //
-// Returns (milliseconds, true) on success or (0, false) on unparseable input.
-//
-// Ports Rust send::parse_delay_to_ms.
+// Returns (0, false) when the text is not a time — a bare number included —
+// so the caller raises the argument error rather than choosing a wait.
 func ParseDelayToMs(s string) (uint64, bool) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0, true
-	}
-
-	// Check suffix (order matters: "ms" before "s")
-	if strings.HasSuffix(s, "ms") {
-		num := strings.TrimSpace(s[:len(s)-2])
-		f, err := strconv.ParseFloat(num, 64)
-		if err != nil {
-			return 0, false
-		}
-		return uint64(math.Max(0, f)), true
-	}
-
-	if strings.HasSuffix(s, "s") {
-		num := strings.TrimSpace(s[:len(s)-1])
-		f, err := strconv.ParseFloat(num, 64)
-		if err != nil {
-			return 0, false
-		}
-		return uint64(math.Max(0, f) * 1000), true
-	}
-
-	// Bare number: interpret as milliseconds (matches Rust fallback)
-	f, err := strconv.ParseFloat(s, 64)
-	if err != nil {
+	s = strings.Trim(s, " \t\n\r\f\v")
+	var number string
+	var scale uint64
+	switch {
+	case len(s) >= 2 && strings.EqualFold(s[len(s)-2:], "ms"):
+		number, scale = s[:len(s)-2], 1
+	case len(s) >= 1 && strings.EqualFold(s[len(s)-1:], "s"):
+		number, scale = s[:len(s)-1], 1000
+	default:
 		return 0, false
 	}
-	return uint64(math.Max(0, f)), true
+	whole, fraction, hasPoint := strings.Cut(number, ".")
+	allDigits := func(part string) bool {
+		for i := 0; i < len(part); i++ {
+			if part[i] < '0' || part[i] > '9' {
+				return false
+			}
+		}
+		return true
+	}
+	// A number is digits, digits "." digits, or "." digits: the fraction is
+	// never empty, and there is at least one digit somewhere.
+	if !allDigits(whole) || (hasPoint && (fraction == "" || !allDigits(fraction))) {
+		return 0, false
+	}
+	if whole == "" && !hasPoint {
+		return 0, false
+	}
+	var ms uint64
+	for i := 0; i < len(whole); i++ {
+		digit := uint64(whole[i] - '0')
+		if ms > (MaxDelayMs-digit)/10 {
+			return 0, false
+		}
+		ms = ms*10 + digit
+	}
+	if ms > MaxDelayMs/scale {
+		return 0, false
+	}
+	ms *= scale
+	// Only the fraction digits that name whole milliseconds count; the rest
+	// truncate.
+	place := scale / 10
+	for i := 0; i < len(fraction) && place > 0; i++ {
+		add := uint64(fraction[i]-'0') * place
+		if ms > MaxDelayMs-add {
+			return 0, false
+		}
+		ms += add
+		place /= 10
+	}
+	return ms, true
 }

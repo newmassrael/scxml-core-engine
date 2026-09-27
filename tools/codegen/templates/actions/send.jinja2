@@ -240,6 +240,13 @@ std::string sendId = ::SCE::SendHelper::generateSendId();
 // `<send>` or the script engine reached it first.
 ensureSessionId();
 {% endif %}
+{% if action.delay_invalid and not action.delayexpr %}
+// W3C SCXML 6.2: the written delay is not a CSS2 time (ARCHITECTURE.md,
+// "Durations"; the build decided it once). It is known before anything is
+// evaluated, so the send ends here with the argument error, as it does on
+// every engine — and nothing after it is emitted.
+{{ send_arg_error("<send> delay is not a CSS2 time", block_end, '') }}
+{% else %}
 {# ── The element's own arguments, evaluated once ── W3C SCXML 6.2: "The
    Processor MUST evaluate all arguments to <send> when the <send> element is
    evaluated". #}
@@ -359,9 +366,9 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
 {% endif %}
 {% if action.delayexpr %}
 // W3C SCXML 6.2: the wait is named by an expression evaluated now, at send
-// time. The expression failing is the argument error; the message is not
-// scheduled under some default wait. A value that does not read as a duration
-// is sent at once, as the Interpreter reads it.
+// time. The expression failing is the argument error, and so is a value that
+// is not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"): the
+// message is not scheduled under some default wait.
 [[maybe_unused]] std::chrono::milliseconds delayMs{0};
 {% if has_script %}
 {
@@ -371,13 +378,18 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
     if (!::SCE::ScriptResultUtils::isSuccess(delayResult)) {
 {{ send_arg_error("<send> delayexpr could not be evaluated", block_end, '        ') }}
     }
-    delayMs = ::SCE::SendSchedulingHelper::parseDelayString(::SCE::ScriptResultUtils::resultToString(delayResult));
+    const auto parsedDelay = ::SCE::SendSchedulingHelper::parseDelayString(::SCE::ScriptResultUtils::resultToString(delayResult));
+    if (!parsedDelay) {
+{{ send_arg_error("<send> delayexpr is not a CSS2 time", block_end, '        ') }}
+    }
+    delayMs = *parsedDelay;
 }
 {% else %}
 #error "SCE codegen drift: `<send delayexpr=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
 {% endif %}
 {% elif action.delay %}
-[[maybe_unused]] const auto delayMs = ::SCE::SendSchedulingHelper::parseDelayString("{{ action.delay }}");
+// The build read the static delay once, by the grammar every engine shares.
+[[maybe_unused]] const std::chrono::milliseconds delayMs{ {{ action.delay_ms }} };
 {% endif %}
 {% set has_delay = action.delay or action.delayexpr %}
 {% if is_http and action.targetexpr %}
@@ -607,4 +619,5 @@ if (paramFailed) {
     {{ block_end }}
 }
 {% endif %}
+{% endif %}{# end of the static-delay refusal #}
 {{ '}' }}

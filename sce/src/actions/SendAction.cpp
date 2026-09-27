@@ -208,12 +208,9 @@ std::vector<std::string> SendAction::validateSpecific() const {
         errors.push_back("Send action cannot have both 'content' and 'contentexpr' attributes");
     }
 
-    // Validate delay format if provided
-    if (!delay_.empty()) {
-        auto delayMs = SendSchedulingHelper::parseDelayString(delay_);
-        if (delayMs.count() < 0) {
-            errors.push_back("Invalid delay format: " + delay_);
-        }
+    // §scxml-6.2: a delay must be a CSS2 time (ARCHITECTURE.md, "Durations").
+    if (!delay_.empty() && !SendSchedulingHelper::parseDelayString(delay_)) {
+        errors.push_back("Invalid delay format: " + delay_);
     }
 
     // §scxml-C-2: Validate content size to prevent DoS attacks

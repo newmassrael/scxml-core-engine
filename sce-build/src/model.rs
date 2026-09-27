@@ -267,6 +267,13 @@ pub struct Action {
     pub delayexpr: String,
     pub delay_ms: i64,
 
+    /// `true` when the document wrote a `delay` that is not the CSS2 time
+    /// §scxml-6.2 names (ARCHITECTURE.md, "Durations"). [`Self::delay_ms`] is
+    /// then 0 and means nothing: every backend's send raises the argument
+    /// error instead of scheduling, as the Interpreter does at run time.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub delay_invalid: bool,
+
     pub id: String,
 
     pub auto_send_id: String,
@@ -698,6 +705,7 @@ impl Action {
             "send" => &[
                 "auto_send_id",
                 "delay_ms",
+                "delay_invalid",
                 "send_type_host_served",
                 "send_type_unsupported",
                 "is_static_literal",

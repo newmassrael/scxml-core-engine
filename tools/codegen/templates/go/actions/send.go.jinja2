@@ -16,6 +16,20 @@
 	// W3C SCXML 6.2: send id="{{ send_id }}"
 {% endif %}
 	{
+{% if action.delay_invalid and not action.delayexpr %}
+	// W3C SCXML 6.2: the written delay is not a CSS2 time (ARCHITECTURE.md,
+	// "Durations"; the build decided it once). It is known before anything is
+	// evaluated, so the send ends here with the argument error, as it does on
+	// every engine.
+{% if 'error.execution' in model.events %}
+	errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> delay is not a CSS2 time")
+	errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+	engine.Raise(errEvt)
+{% endif %}
+{% if in_block %}
+	return  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+{% else %}
 {# ── The element's own arguments, evaluated once ──
    W3C SCXML 6.2: "The Processor MUST evaluate all arguments to <send> when the
    <send> element is evaluated", and "if the evaluation of <send>'s arguments
@@ -92,13 +106,15 @@
 {% if action.delayexpr %}
 	sendDelayMs := uint64(0)
 	if sendArgError == "" {
-		// The expression failing is the argument error; the message is not
-		// scheduled under some default wait. A value that does not read as a
-		// duration is sent at once, as the Interpreter reads it.
+		// The expression failing is the argument error, and so is a value that
+		// is not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"):
+		// the message is not scheduled under some default wait.
 		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.delayexpr | to_lua_expr }}`); err != nil {
 			sendArgError = "<send> delayexpr could not be evaluated"
 		} else if ms, ok := sce.ParseDelayToMs(sce.ToWireString(v)); ok {
 			sendDelayMs = ms
+		} else {
+			sendArgError = "<send> delayexpr is not a CSS2 time"
 		}
 	}
 	_ = sendDelayMs
@@ -412,7 +428,9 @@
 {% if action.delayexpr and model.needs_script_engine %}
 		delayDur := time.Duration(sendDelayMs) * time.Millisecond
 {% elif action.delay %}
-		delayDur := sce.ParseDelay("{{ action.delay }}")
+		// The build read the static delay once, by the grammar every engine
+		// shares (ARCHITECTURE.md, "Durations").
+		delayDur := time.Duration({{ action.delay_ms }}) * time.Millisecond
 {% else %}
 		delayDur := time.Duration(0)
 {% endif %}
@@ -505,4 +523,5 @@
 {% if wraps_rest %}
 	}
 {% endif %}
+{% endif %}{# end of the static-delay refusal #}
 	}

@@ -101,8 +101,11 @@ const std::regex TXMLConverter::CONF_BASIC_HTTP_TARGET_ATTR{R"ghi(conf:basicHTTP
 const std::regex TXMLConverter::CONF_EVENT_RAW_ATTR{R"jkl(conf:eventRaw="")jkl", std::regex::optimize};
 
 // Timing and delay patterns
-// conf:delay="1" -> delay="1s" (numeric values with CSS2 spec suffix)
-const std::regex TXMLConverter::CONF_DELAY_NUMERIC_ATTR{R"hjk(conf:delay="([0-9]+(?:\.[0-9]+)?)")hjk",
+// conf:delay="1" -> delay="1s" (numeric values with CSS2 spec suffix). The
+// IRP writes a delay in seconds, and a leading point (".5") is a number too:
+// without it the value fell to the general rule below and came out as a bare
+// number, which is not a CSS2 time (ARCHITECTURE.md, "Durations").
+const std::regex TXMLConverter::CONF_DELAY_NUMERIC_ATTR{R"hjk(conf:delay="([0-9]+(?:\.[0-9]+)?|\.[0-9]+)")hjk",
                                                         std::regex::optimize};
 // conf:delay="varname" -> delay="varname" (general)
 const std::regex TXMLConverter::CONF_DELAY_ATTR{R"ghi(conf:delay="([^"]*)")ghi", std::regex::optimize};

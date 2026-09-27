@@ -17,7 +17,7 @@ parent session, should not receive childToParent. If it does, we fail.  Otherwis
          <scxml initial="sub0" version="1.0" datamodel="ecmascript"  xmlns="http://www.w3.org/2005/07/scxml">
            <state id="sub0">
               <onentry>
-                <send event="childToParent" target="#_parent" delay=".5"/>
+                <send event="childToParent" target="#_parent" delay=".5s"/>
             </onentry>
           <transition  target="subFinal"/>
           </state>

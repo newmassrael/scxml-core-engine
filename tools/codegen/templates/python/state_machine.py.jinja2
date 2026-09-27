@@ -49,6 +49,7 @@ from sce_runtime import (
     create_done_invoke_event_name,
     is_invalid_target as _is_invalid_target,
     is_supported_send_type as _is_supported_send_type,
+    parse_delay_ms as _parse_delay_ms,
     published_origin as _published_origin,
     session_id_from_scxml_location as _session_id_from_scxml_location,
 )
@@ -225,32 +226,6 @@ def _coerce_event_data_str(data: Any) -> str:
         except (TypeError, ValueError):
             return str(data)
     return str(data)
-
-
-def _parse_delay_text(text: str) -> int:
-    """W3C SCXML 6.2 — convert a `delayexpr` string ("5s", "500ms", "0",
-    bare-number) into milliseconds. Used by the policy's `_delay_ms_from_value`
-    helper; lifted to module scope so an empty / invalid string returns
-    0 without needing a class instance.
-
-    Recognised suffixes are `ms` and `s` (case-insensitive); a bare
-    integer is interpreted as milliseconds, matching the most common
-    fixture convention. Unparseable values map to 0 so a broken
-    `delayexpr` never traps the engine (a corresponding error.execution
-    would belong on the calling site)."""
-    if not text:
-        return 0
-    s = text.strip().lower()
-    if not s:
-        return 0
-    try:
-        if s.endswith("ms"):
-            return max(0, int(float(s[:-2])))
-        if s.endswith("s"):
-            return max(0, int(float(s[:-1]) * 1000))
-        return max(0, int(float(s)))
-    except (ValueError, TypeError):
-        return 0
 
 
 {% if event_payload_active %}

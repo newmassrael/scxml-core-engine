@@ -36,4 +36,57 @@ object SendHelper {
      * raises error.communication.
      */
     fun isUnreachableTarget(target: String): Boolean = target.isEmpty() || target == "undefined"
+
+    /**
+     * A `<send>` delay, read as the CSS2 time §scxml-6.2 names, in
+     * milliseconds — or `null` when the text is not a time, a bare number
+     * included, so the caller raises the argument error rather than choosing
+     * a wait.
+     *
+     * The grammar is ARCHITECTURE.md's "Durations (Single Source of Truth)":
+     * surrounding ASCII whitespace aside, a non-negative number (digits with
+     * an optional fraction of at least one digit, or a leading `.` and
+     * digits; no sign, no exponent) followed directly by `ms` or `s`, either
+     * case. The milliseconds are computed in exact decimal and truncated,
+     * never through a `Double`, and never exceed [Long.MAX_VALUE].
+     * `tests/durations/css2_time.json` holds the cases every engine is
+     * measured against.
+     */
+    fun parseDelayMs(text: String): Long? {
+        val s = text.trim { it == ' ' || it == '\t' || it == '\n' || it == '\r' || it == '\u000C' || it == '\u000B' }
+        val number: String
+        val scale: Long
+        when {
+            s.length >= 2 && s.endsWith("ms", ignoreCase = true) -> { number = s.dropLast(2); scale = 1L }
+            s.length >= 1 && s.endsWith("s", ignoreCase = true) -> { number = s.dropLast(1); scale = 1000L }
+            else -> return null
+        }
+        val point = number.indexOf('.')
+        val whole = if (point < 0) number else number.substring(0, point)
+        val fraction = if (point < 0) null else number.substring(point + 1)
+        val allDigits = { part: String -> part.all { it in '0'..'9' } }
+        // A number is digits, digits "." digits, or "." digits: the fraction is
+        // never empty, and there is at least one digit somewhere.
+        if (!allDigits(whole) || (fraction != null && (fraction.isEmpty() || !allDigits(fraction)))) return null
+        if (whole.isEmpty() && fraction == null) return null
+        var ms = 0L
+        for (c in whole) {
+            val digit = (c - '0').toLong()
+            if (ms > (Long.MAX_VALUE - digit) / 10) return null
+            ms = ms * 10 + digit
+        }
+        if (ms > Long.MAX_VALUE / scale) return null
+        ms *= scale
+        // Only the fraction digits that name whole milliseconds count; the
+        // rest truncate.
+        var place = scale / 10
+        for (c in fraction.orEmpty()) {
+            if (place == 0L) break
+            val add = (c - '0').toLong() * place
+            if (ms > Long.MAX_VALUE - add) return null
+            ms += add
+            place /= 10
+        }
+        return ms
+    }
 }

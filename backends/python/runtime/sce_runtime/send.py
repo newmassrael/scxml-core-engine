@@ -12,7 +12,17 @@ send reads these rather than spelling the rules inline, so a ``typeexpr`` or a
 
 from __future__ import annotations
 
+from typing import Optional
+
 from .io_processors import BASIC_HTTP_EVENT_PROCESSOR_URI, SCXML_EVENT_PROCESSOR_URI
+
+MAX_DELAY_MS = (1 << 63) - 1
+"""The largest delay any engine can hold, in milliseconds: the positive range
+of a signed 64-bit count, because Kotlin's ``Long`` is signed and every engine
+answers the same text the same way."""
+
+_ASCII_WHITESPACE = " \t\n\r\f\v"
+_DIGITS = frozenset("0123456789")
 
 
 def is_supported_send_type(send_type: str) -> bool:
@@ -29,3 +39,42 @@ def is_invalid_target(target: str) -> bool:
     # §scxml-6.2 — a target the processor cannot address is refused with
     # error.execution before anything is delivered.
     return target.startswith("!")
+
+
+def parse_delay_ms(text: str) -> Optional[int]:
+    """A ``<send>`` delay in milliseconds, or ``None`` when the text is not a
+    time — a bare number included — so the caller raises the argument error
+    rather than choosing a wait.
+
+    The grammar is ARCHITECTURE.md's "Durations (Single Source of Truth)":
+    surrounding ASCII whitespace aside, a non-negative number (digits with an
+    optional fraction of at least one digit, or a leading ``.`` and digits; no
+    sign, no exponent) followed directly by ``ms`` or ``s``, either case. The
+    milliseconds are computed in exact decimal and truncated, never through a
+    float. ``tests/durations/css2_time.json`` holds the cases every engine is
+    measured against."""
+    # §scxml-6.2 — 'delay' and the value of 'delayexpr' must be a valid CSS2
+    # time; anything else is not one.
+    s = text.strip(_ASCII_WHITESPACE)
+    lowered = s.lower()
+    if lowered.endswith("ms"):
+        number, scale = s[:-2], 1
+    elif lowered.endswith("s"):
+        number, scale = s[:-1], 1000
+    else:
+        return None
+    whole, point, fraction = number.partition(".")
+    if not set(whole) <= _DIGITS or (point and (not fraction or not set(fraction) <= _DIGITS)):
+        return None
+    if not whole and not point:
+        return None
+    ms = int(whole or "0") * scale
+    # Only the fraction digits that name whole milliseconds count; the rest
+    # truncate.
+    place = scale // 10
+    for digit in fraction:
+        if place == 0:
+            break
+        ms += int(digit) * place
+        place //= 10
+    return ms if ms <= MAX_DELAY_MS else None

@@ -175,30 +175,112 @@ pub fn generate_send_id() -> SceString {
     unique_id_generator::generate_send_id()
 }
 
-/// §scxml-6.2: Parse a CSS2-style time duration into milliseconds.
+/// The largest delay any engine can hold, in milliseconds: the positive range
+/// of a signed 64-bit count, because Kotlin's `Long` is signed and every
+/// engine answers the same text the same way.
+pub const MAX_DELAY_MS: u64 = i64::MAX as u64;
+
+/// §scxml-6.2: a `<send>` delay, read as the CSS2 time the clause names.
 ///
-/// Accepts the same surface syntax as C++ `parseDelayToMs`:
-/// - `"1s"`, `"1.5s"` → seconds (converted to ms)
-/// - `"250ms"` → milliseconds
-/// - bare number `"500"` → milliseconds
+/// The grammar is ARCHITECTURE.md's "Durations (Single Source of Truth)":
+/// surrounding ASCII whitespace aside, a non-negative number (digits with an
+/// optional fraction of at least one digit, or a leading `.` and digits; no
+/// sign, no exponent) followed directly by `ms` or `s`, either case. The
+/// milliseconds are computed in exact decimal and truncated, never through a
+/// float. `tests/durations/css2_time.json` holds the cases every engine is
+/// measured against.
 ///
-/// Returns `None` on unparseable input; callers typically default to `0` and
-/// may raise `error.execution` (matches C++ behavior).
+/// Returns `None` when the text is not a time — a bare number included — so
+/// the caller raises the argument error rather than choosing a wait.
 pub fn parse_delay_to_ms(s: &str) -> Option<u64> {
-    let s = s.trim();
-    if s.is_empty() {
-        return Some(0);
+    let s = s.trim_matches(|c: char| c.is_ascii_whitespace()).as_bytes();
+    let (number, scale) = match strip_suffix_ignore_case(s, b"ms") {
+        Some(n) => (n, 1u64),
+        None => (strip_suffix_ignore_case(s, b"s")?, 1000u64),
+    };
+    let (whole, fraction) = match number.iter().position(|&b| b == b'.') {
+        Some(dot) => (&number[..dot], Some(&number[dot + 1..])),
+        None => (number, None),
+    };
+    // A number is digits, digits "." digits, or "." digits: at least one digit
+    // on the side that exists, and the fraction never empty.
+    let all_digits = |part: &[u8]| part.iter().all(u8::is_ascii_digit);
+    if !all_digits(whole) || fraction.is_some_and(|f| f.is_empty() || !all_digits(f)) {
+        return None;
     }
-    // Check suffix (order matters: "ms" before "s").
-    if let Some(num) = s.strip_suffix("ms") {
-        num.trim().parse::<f64>().ok().map(|n| n.max(0.0) as u64)
-    } else if let Some(num) = s.strip_suffix('s') {
-        num.trim()
-            .parse::<f64>()
-            .ok()
-            .map(|n| (n.max(0.0) * 1000.0) as u64)
-    } else {
-        // Bare number: interpret as milliseconds (matches C++ fallback).
-        s.parse::<f64>().ok().map(|n| n.max(0.0) as u64)
+    if whole.is_empty() && fraction.is_none() {
+        return None;
+    }
+    let mut ms: u64 = 0;
+    for &digit in whole {
+        ms = ms.checked_mul(10)?.checked_add(u64::from(digit - b'0'))?;
+    }
+    ms = ms.checked_mul(scale)?;
+    // Only the fraction digits that name whole milliseconds count; the rest
+    // truncate.
+    let mut place = scale / 10;
+    for &digit in fraction.unwrap_or(&[]) {
+        if place == 0 {
+            break;
+        }
+        ms = ms.checked_add(u64::from(digit - b'0') * place)?;
+        place /= 10;
+    }
+    (ms <= MAX_DELAY_MS).then_some(ms)
+}
+
+fn strip_suffix_ignore_case<'a>(text: &'a [u8], suffix: &[u8]) -> Option<&'a [u8]> {
+    let split = text.len().checked_sub(suffix.len())?;
+    text[split..]
+        .eq_ignore_ascii_case(suffix)
+        .then(|| &text[..split])
+}
+
+#[cfg(all(test, not(feature = "no_std")))]
+mod duration_table {
+    use super::parse_delay_to_ms;
+    use crate::json::{parse, Value};
+
+    fn member<'a>(fields: &'a [(String, Value)], key: &str) -> &'a Value {
+        &fields
+            .iter()
+            .find(|(k, _)| k == key)
+            .unwrap_or_else(|| panic!("a case has `{key}`"))
+            .1
+    }
+
+    /// tests/durations/css2_time.json: the cases every engine's delay reader
+    /// is measured against, read with this crate's own JSON parser.
+    #[test]
+    fn a_delay_is_read_as_the_one_css2_time_every_engine_reads() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/durations/css2_time.json"
+        );
+        let table = std::fs::read_to_string(path).expect("the shared duration table");
+        let Value::Object(members) = parse(&table).expect("the table is JSON") else {
+            panic!("the table is an object");
+        };
+        let Some((_, Value::Array(cases))) = members.iter().find(|(key, _)| key == "cases") else {
+            panic!("the table has cases");
+        };
+        assert!(cases.len() >= 20, "the table lost cases: {}", cases.len());
+        for case in cases {
+            let Value::Object(fields) = case else {
+                panic!("a case is an object");
+            };
+            let Value::Text(name) = member(fields, "name") else {
+                panic!("a case's name is text");
+            };
+            let Value::Text(text) = member(fields, "text") else {
+                panic!("{name}: text is text");
+            };
+            let want = match member(fields, "ms") {
+                Value::Null => None,
+                Value::Number(n) => Some(n.parse::<u64>().expect("ms is a count")),
+                other => panic!("{name}: ms is a count or null, got {other:?}"),
+            };
+            assert_eq!(parse_delay_to_ms(text), want, "{name}: {text:?}");
+        }
     }
 }

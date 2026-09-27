@@ -46,6 +46,7 @@ TEST_F(TXMLConverterTest, ConvertsNumericDelayToCSS2TimeFormat) {
           <onentry>
            <send event="event1" id="foo" conf:delay="1"/>
             <send event="event2" conf:delay="1.5"/>
+            <send event="event3" conf:delay=".5"/>
             <send target="#_parent" event="childToParent"/>
           </onentry>
           <transition event="event1" target="subFinal">
@@ -89,6 +90,12 @@ TEST_F(TXMLConverterTest, ConvertsNumericDelayToCSS2TimeFormat) {
 
     EXPECT_EQ(result.find(R"(delay="1.5")"), std::string::npos)
         << "Should NOT generate delay=\"1.5\" (violates SCXML CSS2 time specification)";
+
+    // A leading point is a number too (tests 175, 187, 252 write conf:delay=".5").
+    EXPECT_NE(result.find(R"(delay=".5s")"), std::string::npos)
+        << "conf:delay=\".5\" should convert to delay=\".5s\" (CSS2 time specification)";
+    EXPECT_EQ(result.find(R"(delay=".5")"), std::string::npos)
+        << "Should NOT generate delay=\".5\" (violates SCXML CSS2 time specification)";
 
     // Verify other conversions work correctly
     EXPECT_NE(result.find(R"(datamodel="ecmascript")"), std::string::npos);

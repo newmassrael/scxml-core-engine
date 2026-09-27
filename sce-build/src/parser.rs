@@ -3346,7 +3346,16 @@ impl SCXMLParser {
             && !crate::host_processor_analyzer::is_supported_send_type(&action.send_type);
         action.delay = elem.attribute("delay").unwrap_or("").to_string();
         action.delayexpr = elem.attribute("delayexpr").unwrap_or("").to_string();
-        action.delay_ms = parse_delay_to_ms(&action.delay);
+        // §scxml-6.2: a `delay` written but not a CSS2 time is not read as
+        // some default wait. The fact is decided here, once, and every
+        // backend raises the argument error at the send — where the
+        // Interpreter, which has no build step, raises it too.
+        if elem.attribute("delay").is_some() {
+            match parse_delay_to_ms(&action.delay) {
+                Some(ms) => action.delay_ms = ms,
+                None => action.delay_invalid = true,
+            }
+        }
         action.id = elem.attribute("id").unwrap_or("").to_string();
         action.idlocation = elem.attribute("idlocation").unwrap_or("").to_string();
         action.namelist = elem.attribute("namelist").unwrap_or("").to_string();
@@ -6816,25 +6825,54 @@ pub(crate) fn check_expression_needs(cond: &str) -> (bool, bool) {
     )
 }
 
-fn parse_delay_to_ms(delay: &str) -> i64 {
-    let trimmed = delay.trim();
-    if trimmed.is_empty() {
-        return 0;
+/// §scxml-6.2: a static `delay`, read as the CSS2 time the clause names, in
+/// milliseconds — or `None` when it is not a time, a bare number included.
+///
+/// The grammar is ARCHITECTURE.md's "Durations (Single Source of Truth)",
+/// the one every engine's run-time reader shares: surrounding ASCII
+/// whitespace aside, a non-negative number (digits with an optional fraction
+/// of at least one digit, or a leading `.` and digits; no sign, no exponent)
+/// followed directly by `ms` or `s`, either case, computed in exact decimal
+/// and truncated. This crate links no runtime, so the reader is its own; it
+/// is held to `tests/durations/css2_time.json` like every other.
+pub(crate) fn parse_delay_to_ms(delay: &str) -> Option<i64> {
+    let s = delay
+        .trim_matches(|c: char| c.is_ascii_whitespace())
+        .as_bytes();
+    let strip = |suffix: &[u8]| {
+        let split = s.len().checked_sub(suffix.len())?;
+        s[split..].eq_ignore_ascii_case(suffix).then(|| &s[..split])
+    };
+    let (number, scale) = match (strip(b"ms"), strip(b"s")) {
+        (Some(n), _) => (n, 1i64),
+        (None, Some(n)) => (n, 1000i64),
+        (None, None) => return None,
+    };
+    let (whole, fraction) = match number.iter().position(|&b| b == b'.') {
+        Some(dot) => (&number[..dot], Some(&number[dot + 1..])),
+        None => (number, None),
+    };
+    let all_digits = |part: &[u8]| part.iter().all(u8::is_ascii_digit);
+    if !all_digits(whole) || fraction.is_some_and(|f| f.is_empty() || !all_digits(f)) {
+        return None;
     }
-    if let Some(s) = trimmed.strip_suffix("ms") {
-        s.trim().parse().unwrap_or(0)
-    } else if let Some(s) = trimmed.strip_suffix('s') {
-        s.trim()
-            .parse::<f64>()
-            .map(|v| (v * 1000.0) as i64)
-            .unwrap_or(0)
-    } else {
-        // Bare number: default to seconds (common in W3C test suite)
-        trimmed
-            .parse::<f64>()
-            .map(|v| (v * 1000.0) as i64)
-            .unwrap_or(0)
+    if whole.is_empty() && fraction.is_none() {
+        return None;
     }
+    let mut ms: i64 = 0;
+    for &digit in whole {
+        ms = ms.checked_mul(10)?.checked_add(i64::from(digit - b'0'))?;
+    }
+    ms = ms.checked_mul(scale)?;
+    let mut place = scale / 10;
+    for &digit in fraction.unwrap_or(&[]) {
+        if place == 0 {
+            break;
+        }
+        ms = ms.checked_add(i64::from(digit - b'0') * place)?;
+        place /= 10;
+    }
+    Some(ms)
 }
 
 fn is_static_string_literal(expr: &str) -> bool {
@@ -7132,69 +7170,27 @@ mod tests {
 
     // ── parse_delay_to_ms ────────────────────────────────────
 
+    /// tests/durations/css2_time.json: the cases every engine's delay reader
+    /// is measured against. The build reads a static `delay` once for the
+    /// channels that schedule from `delay_ms`, so it is held to them too.
     #[test]
-    fn delay_empty_string() {
-        assert_eq!(parse_delay_to_ms(""), 0);
-    }
-
-    #[test]
-    fn delay_whitespace_only() {
-        assert_eq!(parse_delay_to_ms("   "), 0);
-    }
-
-    #[test]
-    fn delay_milliseconds() {
-        assert_eq!(parse_delay_to_ms("500ms"), 500);
-    }
-
-    #[test]
-    fn delay_milliseconds_with_whitespace() {
-        assert_eq!(parse_delay_to_ms("  100 ms"), 100);
-    }
-
-    #[test]
-    fn delay_zero_ms() {
-        assert_eq!(parse_delay_to_ms("0ms"), 0);
-    }
-
-    #[test]
-    fn delay_seconds_integer() {
-        assert_eq!(parse_delay_to_ms("2s"), 2000);
-    }
-
-    #[test]
-    fn delay_seconds_fractional() {
-        assert_eq!(parse_delay_to_ms("1.5s"), 1500);
-    }
-
-    #[test]
-    fn delay_seconds_with_whitespace() {
-        assert_eq!(parse_delay_to_ms("  3 s"), 3000);
-    }
-
-    #[test]
-    fn delay_bare_number_treated_as_seconds() {
-        assert_eq!(parse_delay_to_ms("5"), 5000);
-    }
-
-    #[test]
-    fn delay_bare_fractional_as_seconds() {
-        assert_eq!(parse_delay_to_ms("0.5"), 500);
-    }
-
-    #[test]
-    fn delay_invalid_numeric_returns_zero() {
-        assert_eq!(parse_delay_to_ms("abc"), 0);
-    }
-
-    #[test]
-    fn delay_invalid_ms_suffix_returns_zero() {
-        assert_eq!(parse_delay_to_ms("xyzms"), 0);
-    }
-
-    #[test]
-    fn delay_negative_ms() {
-        assert_eq!(parse_delay_to_ms("-100ms"), -100);
+    fn a_static_delay_is_read_as_the_one_css2_time() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/durations/css2_time.json"
+        );
+        let table: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(path).expect("the shared duration table"),
+        )
+        .expect("the table is JSON");
+        let cases = table["cases"].as_array().expect("the table has cases");
+        assert!(cases.len() >= 20, "the table lost cases: {}", cases.len());
+        for case in cases {
+            let name = case["name"].as_str().expect("a case's name is a string");
+            let text = case["text"].as_str().expect("a case's text is a string");
+            let want = case["ms"].as_i64();
+            assert_eq!(parse_delay_to_ms(text), want, "{name}: {text:?}");
+        }
     }
 
     // ── is_pure_in_predicate ─────────────────────────────────

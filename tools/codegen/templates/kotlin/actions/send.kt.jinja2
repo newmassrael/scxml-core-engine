@@ -69,6 +69,14 @@
    processed — the block ends (W3C SCXML 4.9): `return@send true`. #}
 {% set send_prologue = model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation) %}
             if (run send@{
+{% if action.delay_invalid and not action.delayexpr %}
+            // W3C SCXML 6.2: the written delay is not a CSS2 time
+            // (ARCHITECTURE.md, "Durations"; the build decided it once). It is
+            // known before anything is evaluated, so the send ends here with
+            // the argument error, as it does on every engine.
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delay is not a CSS2 time", "{{ send_id_kt }}")
+            true
+{% else %}
 {% if param_ns.can_fail %}
             var paramFailed = false
 {% endif %}
@@ -127,13 +135,17 @@
             }
 {% endif %}
 {% if action.delayexpr %}
-            // The expression failing is the argument error; the message is not
-            // scheduled under some default wait. A value that does not read as
-            // a duration is sent at once, as the Interpreter reads it.
-            val sendDelayMs = try {
-                parseDelay(valueToWireString(argEngine.evaluateExpr(argSid, {{ action.delayexpr | to_script_source_expr }})))
+            // The expression failing is the argument error, and so is a value
+            // that is not the CSS2 time the clause names (ARCHITECTURE.md,
+            // "Durations"): the message is not scheduled under some default wait.
+            val sendDelayText = try {
+                valueToWireString(argEngine.evaluateExpr(argSid, {{ action.delayexpr | to_script_source_expr }}))
             } catch (_: Exception) {
                 raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr could not be evaluated", "{{ send_id_kt }}")
+                return@send true
+            }
+            val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr is not a CSS2 time", "{{ send_id_kt }}")
                 return@send true
             }
 {% endif %}
@@ -371,6 +383,7 @@
 {% else %}
             false
 {% endif %}
+{% endif %}{# end of the static-delay refusal #}
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.

@@ -56,6 +56,10 @@
         "delay": {
           "type": "string"
         },
+        "delay_invalid": {
+          "description": "`true` when the document wrote a `delay` that is not the CSS2 time §scxml-6.2 names (ARCHITECTURE.md, \"Durations\"). [`Self::delay_ms`] is then 0 and means nothing: every backend's send raises the argument error instead of scheduling, as the Interpreter does at run time.",
+          "type": "boolean"
+        },
         "delay_ms": {
           "format": "int64",
           "type": "integer"

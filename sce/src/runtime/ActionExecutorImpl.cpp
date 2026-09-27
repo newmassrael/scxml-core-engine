@@ -698,6 +698,21 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             sendId = generateUniqueSendId();
         }
 
+        // §scxml-6.2: a written delay must be the CSS2 time the clause names
+        // (ARCHITECTURE.md, "Durations"). It is known before anything is
+        // evaluated, so a send whose delay is not one ends here with the
+        // argument error — error.execution with the send id, nothing stored,
+        // nothing delivered, and the block ends (§scxml-4.9) — as on every
+        // generated engine, where the build decided the same fact.
+        if (!action.getDelay().empty() && !SendSchedulingHelper::parseDelayString(action.getDelay())) {
+            SCE_LOG_ERROR("ActionExecutorImpl: <send> delay '{}' is not a CSS2 time", action.getDelay());
+            if (eventRaiser_) {
+                eventRaiser_->raiseEvent("error.execution", "<send> delay is not a CSS2 time", sendId,
+                                         false /* overload discriminator for sendId variant */);
+            }
+            return false;
+        }
+
         // §scxml-6.2.4: Store sendid in idlocation variable if specified
         // This happens BEFORE validation so the variable is set even if send fails.
         // It is the assignment <assign> makes, so a member path lands; a location
@@ -940,15 +955,27 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             SCE_LOG_DEBUG("ActionExecutorImpl: Param evaluation complete: {} params processed", paramCount);
         }
 
-        // Parse delay (evaluate delay expression if needed)
+        // §scxml-6.2: the value of delayexpr must be the CSS2 time the clause
+        // names too. One that is not — a bare number included — is an
+        // argument that cannot be evaluated: error.execution with the send
+        // id, the message discarded rather than scheduled under some default
+        // wait, and the block ends (§scxml-4.9). An expression that throws
+        // reaches the catch below. A static delay was judged above.
         std::chrono::milliseconds delay{0};
         if (!action.getDelay().empty()) {
-            delay = SendSchedulingHelper::parseDelayString(action.getDelay());
+            delay = *SendSchedulingHelper::parseDelayString(action.getDelay());
         } else if (!action.getDelayExpr().empty()) {
-            std::string delayStr = evaluateExpression(action.getDelayExpr());
-            if (!delayStr.empty()) {
-                delay = SendSchedulingHelper::parseDelayString(delayStr);
+            const std::string delayStr = evaluateExpression(action.getDelayExpr());
+            const auto parsed = SendSchedulingHelper::parseDelayString(delayStr);
+            if (!parsed) {
+                SCE_LOG_ERROR("ActionExecutorImpl: <send> delayexpr value '{}' is not a CSS2 time", delayStr);
+                if (eventRaiser_) {
+                    eventRaiser_->raiseEvent("error.execution", "<send> delayexpr is not a CSS2 time", sendId,
+                                             false /* overload discriminator for sendId variant */);
+                }
+                return false;
             }
+            delay = *parsed;
         }
 
         // ALL script engine operations complete - now safe to call EventDispatcher

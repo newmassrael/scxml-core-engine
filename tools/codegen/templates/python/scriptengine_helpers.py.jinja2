@@ -348,20 +348,19 @@
                 )
         return values
 
-    def _delay_ms_from_value(self, value) -> int:
-        """W3C SCXML 6.2 `<send delayexpr>` — the milliseconds an evaluated
-        delay names. Accepts:
-          * `int` / `float` — interpreted as milliseconds directly;
-          * `str` — parsed via `_parse_delay_text` ("5s", "500ms", "0");
-          * anything else — treated as `0`, sent at once, as the Interpreter
-            reads a value that is not a duration."""
-        if isinstance(value, bool):
-            return 0
-        if isinstance(value, (int, float)):
-            return max(0, int(value))
-        if isinstance(value, str):
-            return _parse_delay_text(value)
-        return 0
+    def _eval_send_delay(self, engine, send_id: str, lua_delay_expr: str) -> int:
+        """W3C SCXML 6.2 `<send delayexpr>` — the milliseconds the evaluated
+        value names, read as its text by the one duration grammar every engine
+        shares (ARCHITECTURE.md, "Durations"). An expression that fails, and a
+        value that is not a CSS2 time — a bare number included — are both the
+        argument error: the message is not scheduled under some default wait."""
+        text = self._eval_send_argument(
+            engine, send_id, lua_delay_expr, "<send> delayexpr could not be evaluated"
+        ).to_wire_string()
+        ms = _parse_delay_ms(text)
+        if ms is None:
+            self._send_argument_error(engine, send_id, "<send> delayexpr is not a CSS2 time")
+        return ms
 
     def _build_http_params(
         self, engine, params_specs, namelist: str, element: str, failures=None

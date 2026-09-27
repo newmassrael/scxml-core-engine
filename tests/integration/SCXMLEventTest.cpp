@@ -375,21 +375,6 @@ TEST_F(SCXMLEventTest, ActionCloning) {
 }
 
 /**
- * @brief Test delay parsing functionality using SendSchedulingHelper
- */
-TEST_F(SCXMLEventTest, SendActionDelayParsing) {
-    // Test various delay formats using SendSchedulingHelper (Single Source of Truth)
-    EXPECT_EQ(SendSchedulingHelper::parseDelayString("100ms").count(), 100);
-    EXPECT_EQ(SendSchedulingHelper::parseDelayString("5s").count(), 5000);
-    EXPECT_EQ(SendSchedulingHelper::parseDelayString("2min").count(), 120000);
-    EXPECT_EQ(SendSchedulingHelper::parseDelayString("1h").count(), 3600000);
-
-    // Test invalid formats
-    EXPECT_EQ(SendSchedulingHelper::parseDelayString("invalid").count(), 0);
-    EXPECT_EQ(SendSchedulingHelper::parseDelayString("").count(), 0);
-}
-
-/**
  * @brief Test SCXML event system integration with existing action system
  */
 TEST_F(SCXMLEventTest, IntegrationWithExistingActions) {

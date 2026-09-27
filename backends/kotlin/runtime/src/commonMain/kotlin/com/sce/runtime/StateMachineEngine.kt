@@ -3744,27 +3744,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
         }
     }
 
-    // --- Delay Parsing Helper ---
-
-    /**
-     * §scxml-6.2: Parse delay string (e.g., "500ms", "1s", "2.5s") to milliseconds.
-     * Matches C++ SendSchedulingHelper::parseDelayString behavior.
-     */
-    protected fun parseDelay(delay: String): Long {
-        val trimmed = delay.trim()
-        if (trimmed.isEmpty()) return 0L
-        return when {
-            trimmed.endsWith("ms") -> {
-                trimmed.dropLast(2).trim().toDoubleOrNull()?.toLong() ?: 0L
-            }
-            trimmed.endsWith("s") -> {
-                val seconds = trimmed.dropLast(1).trim().toDoubleOrNull() ?: 0.0
-                (seconds * 1000).toLong()
-            }
-            else -> trimmed.toDoubleOrNull()?.toLong() ?: 0L
-        }
-    }
-
     /**
      * Monotonic sequence counter for transition ordering.
      *

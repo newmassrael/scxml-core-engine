@@ -14,7 +14,7 @@
 {% set has_delay = action.delayexpr or action.delay_ms > 0 %}
 {% set dyn_event = action.eventexpr and not action.event %}
 {% set is_http = action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' %}
-{% set has_dynamic = action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or action.idlocation
+{% set has_dynamic = action.delay_invalid or action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or action.idlocation
                      or has_payload or action.send_type_host_served or action.send_type_unsupported
                      or is_http or action.target.startswith('!') or action.target.startswith('#_')
                      or action.target.startswith('http://') or action.target.startswith('https://') %}
@@ -25,6 +25,16 @@
 {% else -%}
 {{ indent }}engine.send_external({{ machine_name }}Event.{{ action.event | to_python_const }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {% endif -%}
+{% elif action.delay_invalid and not action.delayexpr %}
+{# W3C SCXML 6.2: the written delay is not a CSS2 time (ARCHITECTURE.md,
+   "Durations"; the build decided it once). It is known before anything is
+   evaluated, so the send ends here with the argument error, as it does on
+   every engine. #}
+{{ indent }}_sid = {{ (action.id | py_string_literal) if action.id else 'engine._next_auto_sendid()' }}
+{% if 'error.execution' in model.events %}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(data="<send> delay is not a CSS2 time", send_id=_sid, event_type="platform"))
+{% endif %}
+{{ indent }}raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
 {% else %}
 {# W3C SCXML 5.7.1 + 4.9: a `<param>` that cannot be read is reported and its
    pair left out, and the message still goes; the error ends the block once
@@ -67,7 +77,7 @@
 {% if action.delayexpr %}
 {# The expression failing is the argument error; the message is not scheduled
    under some default wait. #}
-{{ indent }}_delay_ms = self._delay_ms_from_value(self._eval_send_argument(engine, _sid, {{ action.delayexpr | to_lua_expr | py_string_literal }}, "<send> delayexpr could not be evaluated").to_python())
+{{ indent }}_delay_ms = self._eval_send_delay(engine, _sid, {{ action.delayexpr | to_lua_expr | py_string_literal }})
 {% endif %}
 {% if has_namelist %}
 {{ indent }}_namelist_values = self._eval_send_namelist(engine, _sid, {{ action.namelist | py_string_literal }})

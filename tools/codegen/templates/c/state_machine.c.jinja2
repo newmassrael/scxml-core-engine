@@ -675,7 +675,17 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                param, read at the end of this element. */
             bool _param_failed = false;
 {% endif %}
-{% if action.send_type_host_served %}
+{% if action.delay_invalid and not action.delayexpr %}
+            /* W3C SCXML 6.2: the written delay is not a CSS2 time
+               (ARCHITECTURE.md, "Durations"; the build decided it once). It
+               is known before anything is evaluated, so the send ends here
+               with the argument error, as it does on every engine. */
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<send> delay is not a CSS2 time",
+                "{{ action.auto_send_id | escape_c }}");
+            return;
+{% elif action.send_type_host_served %}
             /* §scxml-6.2.5: "{{ action.send_type }}" is served by the HOST,
                which declared it to this build. Dispatch rather than refuse.
 
@@ -776,11 +786,22 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                    this send's id, so a `<cancel>` reaches it and the host
                    never sees the act. */
 {% if action.delayexpr %}
-                char _host_delay_text[SCE_MAX_ID_LEN];
-                bool _host_delay_ok = false;
-{{ se.lua_eval_to_string(action.delayexpr, '_host_delay_text', 'sizeof(_host_delay_text)', '_host_delay_ok') }}
-                const uint64_t _host_delay_ms =
-                    _host_delay_ok ? sce_parse_delay_ms(_host_delay_text) : 0u;
+                /* The wait is read by the one duration reader every engine
+                   shares (ARCHITECTURE.md, "Durations"); an expression that
+                   fails, or a value that is not a CSS2 time, is the W3C
+                   SCXML 6.2 argument error and nothing is scheduled. */
+                uint64_t _host_delay_ms;
+                bool _host_delay_evaluated;
+                bool _host_delay_is_time;
+{{ se.lua_eval_delayexpr(action.delayexpr, '_host_delay_ms', '_host_delay_evaluated', '_host_delay_is_time') }}
+                if (!_host_delay_evaluated || !_host_delay_is_time) {
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        _host_delay_evaluated ? "<send> delayexpr is not a CSS2 time"
+                                              : "<send> delayexpr could not be evaluated",
+                        _host_req.send_id);
+                    return;
+                }
 {% else %}
                 const uint64_t _host_delay_ms = {{ host_delay_ms }}u;
 {% endif %}
@@ -1405,25 +1426,23 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
             }
 {% elif action.event and action.delayexpr and not action.target and not action.eventexpr and not action.delay and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 6.2 (test175): runtime `delayexpr` evaluation —
-               the delay string is computed at send time from the
-               datamodel and parsed by the lua chunk in
-               `lua_eval_delayexpr` (mirrors cpp
-               `SendSchedulingHelper::parseDelayString`). On parse failure
-               cpp raises `error.execution` and stops subsequent content
-               (W3C 5.10); the C11 path follows the same shape. The send
-               id is the parser-generated `auto_send_id` so a future
-               `<cancel>` arm can target it. Send is always queued onto
-               the scheduled queue with a non-zero delay — even a parse
-               result of 0 ms is preserved verbatim to mirror cpp's
-               `parseDelayString("0ms") == 0` ready-now behaviour. */
+            /* W3C SCXML 6.2 (test175): runtime `delayexpr` evaluation — the
+               value is computed at send time from the datamodel and read by
+               the one duration reader every engine shares (ARCHITECTURE.md,
+               "Durations"). An expression that fails, and a value that is not
+               a CSS2 time, are both the argument error: error.execution with
+               the send id, nothing scheduled, and the block ends (W3C 4.9).
+               A 0 ms result is kept verbatim, a ready-now entry. */
             uint64_t _send_delay_ms;
-            bool _send_delay_ok;
-{{ se.lua_eval_delayexpr(action.delayexpr, '_send_delay_ms', '_send_delay_ok') }}
-            if (!_send_delay_ok) {
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            bool _send_delay_evaluated;
+            bool _send_delay_is_time;
+{{ se.lua_eval_delayexpr(action.delayexpr, '_send_delay_ms', '_send_delay_evaluated', '_send_delay_is_time') }}
+            if (!_send_delay_evaluated || !_send_delay_is_time) {
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<send> delayexpr failed to evaluate");
+                    _send_delay_evaluated ? "<send> delayexpr is not a CSS2 time"
+                                          : "<send> delayexpr could not be evaluated",
+                    "{{ action.auto_send_id | escape_c }}");
                 return;
             }
             scheduled_push(sm,

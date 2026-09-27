@@ -62,39 +62,87 @@ struct HostInvokeDeadline;
 class SendSchedulingHelper {
 public:
     /**
-     * @brief Parse W3C SCXML delay string to milliseconds
+     * @brief A `<send>` delay, read as the CSS2 time §scxml-6.2 names
      *
-     * §scxml-6.2: Delay formats - "5s", "100ms", "2min", ".5s", "0.5s"
+     * The grammar is ARCHITECTURE.md's "Durations (Single Source of Truth)":
+     * surrounding ASCII whitespace aside, a non-negative number (digits with
+     * an optional fraction of at least one digit, or a leading '.' and digits;
+     * no sign, no exponent) followed directly by "ms" or "s", either case. The
+     * milliseconds are computed in exact decimal and truncated, never through
+     * a double, and never exceed INT64_MAX. tests/durations/css2_time.json
+     * holds the cases every engine is measured against.
      *
-     * @param delayStr Delay specification (e.g., "5s", "100ms", "2min")
-     * @return Delay in milliseconds, 0 if invalid or empty
+     * @return the delay, or std::nullopt when the text is not a time — a bare
+     *         number included — so the caller raises the argument error rather
+     *         than choosing a wait
      */
-    static std::chrono::milliseconds parseDelayString(const std::string &delayStr) {
-        if (delayStr.empty()) {
-            return std::chrono::milliseconds{0};
+    static std::optional<std::chrono::milliseconds> parseDelayString(const std::string &delayStr) {
+        const auto isSpace = [](char c) {
+            return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+        };
+        size_t begin = 0;
+        size_t end = delayStr.size();
+        while (begin < end && isSpace(delayStr[begin])) {
+            ++begin;
         }
-
-        std::regex delayPattern(R"((\d*\.?\d+)\s*(ms|s|min|h|sec|seconds?|minutes?|hours?)?)");
-        std::smatch match;
-
-        if (!std::regex_match(delayStr, match, delayPattern)) {
-            return std::chrono::milliseconds{0};
+        while (end > begin && isSpace(delayStr[end - 1])) {
+            --end;
         }
-
-        double value = std::stod(match[1].str());
-        std::string unit = match[2].str();
-
-        if (unit.empty() || unit == "s" || unit == "sec" || unit == "second" || unit == "seconds") {
-            return std::chrono::milliseconds(static_cast<long long>(value * 1000));
-        } else if (unit == "ms") {
-            return std::chrono::milliseconds(static_cast<long long>(value));
-        } else if (unit == "min" || unit == "minute" || unit == "minutes") {
-            return std::chrono::milliseconds(static_cast<long long>(value * 60000));
-        } else if (unit == "h" || unit == "hour" || unit == "hours") {
-            return std::chrono::milliseconds(static_cast<long long>(value * 3600000));
+        const auto lower = [](char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; };
+        int64_t scale = 0;
+        if (end - begin >= 2 && lower(delayStr[end - 2]) == 'm' && lower(delayStr[end - 1]) == 's') {
+            scale = 1;
+            end -= 2;
+        } else if (end - begin >= 1 && lower(delayStr[end - 1]) == 's') {
+            scale = 1000;
+            end -= 1;
+        } else {
+            return std::nullopt;
         }
-
-        return std::chrono::milliseconds{0};
+        const size_t point = delayStr.find('.', begin);
+        const size_t wholeEnd = (point != std::string::npos && point < end) ? point : end;
+        const bool hasFraction = wholeEnd < end;
+        const auto allDigits = [&](size_t from, size_t to) {
+            for (size_t i = from; i < to; ++i) {
+                if (delayStr[i] < '0' || delayStr[i] > '9') {
+                    return false;
+                }
+            }
+            return true;
+        };
+        // A number is digits, digits "." digits, or "." digits: the fraction
+        // is never empty, and there is at least one digit somewhere.
+        if (!allDigits(begin, wholeEnd) || (hasFraction && (wholeEnd + 1 == end || !allDigits(wholeEnd + 1, end)))) {
+            return std::nullopt;
+        }
+        if (wholeEnd == begin && !hasFraction) {
+            return std::nullopt;
+        }
+        constexpr int64_t kMax = std::numeric_limits<int64_t>::max();
+        int64_t ms = 0;
+        for (size_t i = begin; i < wholeEnd; ++i) {
+            const int64_t digit = delayStr[i] - '0';
+            if (ms > (kMax - digit) / 10) {
+                return std::nullopt;
+            }
+            ms = ms * 10 + digit;
+        }
+        if (ms > kMax / scale) {
+            return std::nullopt;
+        }
+        ms *= scale;
+        // Only the fraction digits that name whole milliseconds count; the
+        // rest truncate.
+        int64_t place = scale / 10;
+        for (size_t i = wholeEnd + 1; hasFraction && i < end && place > 0; ++i) {
+            const int64_t add = (delayStr[i] - '0') * place;
+            if (ms > kMax - add) {
+                return std::nullopt;
+            }
+            ms += add;
+            place /= 10;
+        }
+        return std::chrono::milliseconds{ms};
     }
 };
 

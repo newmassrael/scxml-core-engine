@@ -691,6 +691,45 @@ with its own engine's JSON parser:
 
 Do NOT write a new escaper; call the engine's writer above.
 
+### Durations (Single Source of Truth)
+
+A `<send>` delay is read one way on every engine. W3C SCXML 6.2 names the
+grammar — `delay` and the value of `delayexpr` must be a valid CSS2 time — and
+SCE reads exactly that:
+
+| Part | Rule |
+|------|------|
+| surroundings | ASCII whitespace before and after is ignored |
+| number | digits with an optional fraction of at least one digit (`2`, `2.5`), or a leading `.` and digits (`.5`); no sign, no exponent |
+| unit | `ms` or `s`, either case, directly after the number |
+| value | exact decimal, truncated to whole milliseconds, at most 2^63−1 |
+
+Anything else is not a time: a bare number (`5`), a space before the unit
+(`2 s`), `min`/`h`, a negative. A static `delay` that is not one, and a
+`delayexpr` value that is not one, are the argument error of W3C SCXML 6.2 —
+`error.execution` with the send id, nothing scheduled, and the block ends —
+on the Interpreter at run time and on every generated engine, where the build
+decides the static case once (`Action::delay_invalid`) and the send refuses it
+before evaluating anything. Measured 2026-09-28, nine readers across seven
+channels disagreed on eleven of fifteen inputs: a bare `5` was 5000 ms on
+three and 5 ms on four, `1min` was a minute on two and 0 elsewhere, `-1s` went
+negative on three, and only the C++ reader had a test.
+
+`tests/durations/css2_time.json` holds the cases, and every reader is held to
+it:
+
+| Engine | Reader | Reader of the table |
+|--------|--------|---------------------|
+| C++ (Interpreter and AOT) | `SendSchedulingHelper::parseDelayString` | `tests/common/DurationTest.cpp` |
+| Rust | `helpers::send::parse_delay_to_ms` | `backends/rust/runtime/src/helpers/send.rs` |
+| Go | `ParseDelayToMs` | `backends/go/runtime/duration_test.go` |
+| Python | `sce_runtime.parse_delay_ms` | `backends/python/tests/durations/test_css2_time.py` |
+| C11 | `sce_parse_delay_ms` | `backends/c/tests/unit/duration_test.c` |
+| Kotlin | `SendHelper.parseDelayMs` | `backends/kotlin/tests/.../runtime/DurationTest.kt` |
+| codegen (static `delay`) | `parser::parse_delay_to_ms` | `sce-build/src/parser.rs` |
+
+Do NOT write a new delay parser; call the engine's reader above.
+
 ### LuaDOMBinding
 
 Provides JavaScript-compatible DOM API over shared `XMLDOMWrapper`:

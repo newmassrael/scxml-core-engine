@@ -21,6 +21,23 @@
 {% else %}
     let send_id = ::sce_rust_runtime::SceString::new();
 {% endif %}
+{% if action.delay_invalid and not action.delayexpr %}
+    // W3C SCXML 6.2: the written delay is not a CSS2 time (ARCHITECTURE.md,
+    // "Durations"; the build decided it once). It is known before anything is
+    // evaluated, so the send ends here with the argument error, as it does on
+    // every engine.
+{% if 'error.execution' in model.events %}
+    {
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> delay is not a CSS2 time");
+        err_meta.metadata.send_id = send_id.clone();
+        engine.raise(err_meta);
+    }
+{% endif %}
+    let _ = send_id;  // the refusal may carry no error event to name it
+{% if in_block %}
+    break 'action_block;  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+{% else %}
 
 {% set has_namelist = action.namelist and action.namelist | trim %}
 {% set has_params = action.params and action.params | length > 0 %}
@@ -124,14 +141,17 @@
     }
 {% endif %}
 {% if action.delayexpr %}
-    // The expression failing is the argument error; the message is not
-    // scheduled under some default wait. A value that does not read as a
-    // duration is sent at once, as the Interpreter reads it.
+    // The expression failing is the argument error, and so is a value that is
+    // not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"): the
+    // message is not scheduled under some default wait.
     let _send_delay_ms: u64 = if _send_arg_error.is_none() {
         match __sce_arg_se.evaluate_expression(&__sce_arg_sid, "{{ action.delayexpr | to_lua_expr | escape_rust }}") {
             Ok(val) => {
                 let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
-                sce_rust_runtime::helpers::send::parse_delay_to_ms(&s).unwrap_or(0)
+                sce_rust_runtime::helpers::send::parse_delay_to_ms(&s).unwrap_or_else(|| {
+                    _send_arg_error = Some("<send> delayexpr is not a CSS2 time");
+                    0
+                })
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("delayexpr eval failed: {}", e);
@@ -684,4 +704,5 @@
     } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
 {% endif %}
     let _ = send_id;  // suppress unused warning when no send operation
+{% endif %}{# end of the static-delay refusal #}
 }

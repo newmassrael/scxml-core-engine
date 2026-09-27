@@ -8,51 +8,9 @@ import (
 	"math"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
-
-// ── Delay parsing ──────────────────────────────────────────────────
-
-// ParseDelay parses a CSS2-style delay string into a time.Duration.
-//
-// Accepts:
-//   - "1s", "1.5s" -> seconds
-//   - "250ms" -> milliseconds
-//   - bare number "500" -> milliseconds
-//
-// Returns 0 for empty or unparseable input.
-func ParseDelay(s string) time.Duration {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0
-	}
-
-	// Try "Xs" format (check before "ms" to avoid matching "ms" suffix)
-	if strings.HasSuffix(s, "s") && !strings.HasSuffix(s, "ms") {
-		numStr := strings.TrimSuffix(s, "s")
-		if f, err := strconv.ParseFloat(numStr, 64); err == nil {
-			return time.Duration(f * float64(time.Second))
-		}
-	}
-
-	// Try "Xms" format
-	if strings.HasSuffix(s, "ms") {
-		numStr := strings.TrimSuffix(s, "ms")
-		if f, err := strconv.ParseFloat(numStr, 64); err == nil {
-			return time.Duration(f * float64(time.Millisecond))
-		}
-	}
-
-	// Bare number = milliseconds
-	if f, err := strconv.ParseFloat(s, 64); err == nil {
-		return time.Duration(f * float64(time.Millisecond))
-	}
-
-	return 0
-}
 
 // ── Script engine helpers ──────────────────────────────────────────
 

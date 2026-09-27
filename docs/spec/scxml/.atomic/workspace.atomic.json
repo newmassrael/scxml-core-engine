@@ -8247,6 +8247,16 @@
           "file": "backends/python/runtime/sce_runtime/send.py",
           "symbol": "is_invalid_target",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
+          "symbol": "parseDelayMs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/send.py",
+          "symbol": "parse_delay_ms",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
