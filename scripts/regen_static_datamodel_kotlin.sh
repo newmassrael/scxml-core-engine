@@ -40,7 +40,9 @@ PACKAGE_PREFIX="com.sce.integration"
 # static_overflow:  an integer operation that overflows — the statement is
 #                   skipped, the condition is false, and error.execution
 #                   says so (SCE_FORGE.md §3.4.1).
-MACHINES=(static_counter static_host_call static_record static_list static_overflow)
+# sync_client:      a sync run composed of the standard sync rules, driven
+#                   by scenarios/sync_client.json.
+MACHINES=(static_counter static_host_call static_record static_list static_overflow sync_client)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -73,5 +75,16 @@ for algorithm in "${ALGORITHMS[@]}"; do
     find "$dir" -maxdepth 1 -name '*.kt' -delete
     cp "$TMP/algorithm_$algorithm"/*.kt "$dir/"
 done
+# The standard algorithms sync_client imports, by their library names, each
+# in the package its name gives, as a local one is.
+STD_ALGORITHMS=(sync/sync_failure sync/sync_retry_at sync/sync_delete_outcome sync/sync_upload_outcome)
+for algorithm in "${STD_ALGORITHMS[@]}"; do
+    name="${algorithm##*/}"
+    "$CODEGEN" generate "sce:std/$algorithm.scxml" -l kotlin -o "$TMP/std_$name/"
+    dir="$ALGORITHM_ROOT/$name"
+    mkdir -p "$dir"
+    find "$dir" -maxdepth 1 -name '*.kt' -delete
+    cp "$TMP/std_$name"/*.kt "$dir/"
+done
 
-echo "Regenerated: ${MACHINES[*]} under $GENERATED_ROOT/ and ${ALGORITHMS[*]} under $ALGORITHM_ROOT/ from $INPUT_ROOT"
+echo "Regenerated: ${MACHINES[*]} under $GENERATED_ROOT/ and ${ALGORITHMS[*]} ${STD_ALGORITHMS[*]} under $ALGORITHM_ROOT/ from $INPUT_ROOT"

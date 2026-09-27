@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 8b60b0c1cc0dee4b65cbed006e000ec1e1c1bf550f9b966886409e936488dff6
+// source-hash: 0927eff6973cd55ae798b6a8108a8f69e3c219a339f22cc8bc3e594b2bdd4c1c
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_call.scxml

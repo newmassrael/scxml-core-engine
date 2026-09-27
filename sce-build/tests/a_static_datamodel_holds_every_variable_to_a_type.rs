@@ -1091,3 +1091,83 @@ fn an_algorithm_import_under_another_data_model_is_refused() {
     assert!(!ok, "only sce-static lowers an algorithm call:\n{out}");
     assert_refused_at(&out, "scxml/static-datamodel-rule", 4);
 }
+
+// ── Every scenario is replayed on every backend that lowers the model ────
+
+/// The driver that replays scenarios on a backend, and the text it names a
+/// scenario's machine by (`{m}`). A backend that lowers sce-static and is
+/// not listed here fails the test below until it has one.
+const SCENARIO_DRIVERS: &[(&str, &str, &str)] = &[
+    (
+        "rust",
+        "backends/rust/tests/tests/static_scenarios.rs",
+        "static_datamodel/scenarios/{m}.json",
+    ),
+    (
+        "kotlin",
+        "backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt",
+        "scenario(\"{m}\")",
+    ),
+];
+
+/// A scenario (`fixtures/static_datamodel/scenarios/<machine>.json`) is
+/// the behaviour of a sce-static machine, stated once and replayed by every
+/// backend that lowers the model. Which backends those are is ASKED of the
+/// generator — each scenario's machine is checked in every language — not
+/// written here, so a backend that starts lowering the model is held to
+/// every scenario at once. The machine must also be one both regen scripts
+/// commit, or the driver would replay a machine nobody regenerates.
+#[test]
+fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
+    let root = repo_root();
+    let fixtures = root.join("sce-build/tests/fixtures/static_datamodel");
+    let mut scenarios: Vec<PathBuf> = std::fs::read_dir(fixtures.join("scenarios"))
+        .expect("the scenarios directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "json"))
+        .collect();
+    scenarios.sort();
+    assert!(!scenarios.is_empty(), "no scenario to judge");
+    let regen: Vec<String> = ["rust", "kotlin"]
+        .iter()
+        .map(|lang| {
+            std::fs::read_to_string(root.join(format!("scripts/regen_static_datamodel_{lang}.sh")))
+                .expect("a regen script")
+        })
+        .collect();
+    for scenario in &scenarios {
+        let text = std::fs::read_to_string(scenario).expect("a scenario");
+        let value: serde_json::Value = serde_json::from_str(&text).expect("a scenario is JSON");
+        let machine = value["machine"]
+            .as_str()
+            .expect("a scenario names its machine");
+        let document = std::fs::read_to_string(fixtures.join(format!("{machine}.scxml")))
+            .unwrap_or_else(|_| panic!("{}: no fixture {machine}.scxml", scenario.display()));
+        for script in &regen {
+            let listed = script
+                .lines()
+                .find(|l| l.starts_with("MACHINES=("))
+                .is_some_and(|l| l.split(['(', ')', ' ']).any(|m| m == machine));
+            assert!(listed, "{machine}: a regen script does not commit it");
+        }
+        let lowering: Vec<&str> = ["cpp", "c11", "go", "python", "kotlin", "rust"]
+            .into_iter()
+            .filter(|lang| run(&["check", "-l", lang], &document).0)
+            .collect();
+        assert!(
+            !lowering.is_empty(),
+            "{machine}: no backend lowers it, so no scenario runs it"
+        );
+        for lang in lowering {
+            let (_, driver, marker) = SCENARIO_DRIVERS
+                .iter()
+                .find(|(l, _, _)| *l == lang)
+                .unwrap_or_else(|| panic!("{lang} lowers sce-static but has no scenario driver"));
+            let source = std::fs::read_to_string(root.join(driver)).expect("a driver");
+            assert!(
+                source.contains(&marker.replace("{m}", machine)),
+                "{lang}: {driver} does not replay {machine}'s scenario"
+            );
+        }
+    }
+}

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/sync_response.scxml — how one request of a collection sync
+  run ended, as its host reports it to a sync-client statechart (one built
+  on the sce:std/sync rules, e.g. the sce-static fixture sync_client):
+
+  - `kind` — what failed, sync_failure's numbering; 4 for any HTTP
+    response, a success included;
+  - `status` — the HTTP status, 0 for a failure that was not a response;
+  - `create`, `davError` — an upload's qualifiers (sync_upload_outcome),
+    and `davError` also marks a listing refused for its sync token
+    (RFC 6578 §3.2 DAV:valid-sync-token); false otherwise;
+  - `now`, `retryAfter` — the host's clock in seconds, and a 503's
+    Retry-After in seconds (0 when none), for sync_retry_at.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sync_response"
+       sce:event-name="sync.response">
+  <datamodel>
+    <data id="kind" sce:type="uint8" sce:direction="in"/>
+    <data id="status" sce:type="int32" sce:direction="in"/>
+    <data id="create" sce:type="bool" sce:direction="in"/>
+    <data id="davError" sce:type="bool" sce:direction="in"/>
+    <data id="now" sce:type="int64" sce:direction="in"/>
+    <data id="retryAfter" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

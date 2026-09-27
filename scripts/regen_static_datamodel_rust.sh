@@ -35,10 +35,15 @@ GENERATED_DIR="backends/rust/tests/src/integration/static_datamodel"
 # reasons: variables, typed guards and assignments; a host action with typed
 # datamodel arguments; a record variable; a bounded list; an integer
 # operation that overflows into error.execution.
-MACHINES=(static_counter static_host_call static_record static_list static_overflow)
+# sync_client: a sync run composed of the standard sync rules, driven by
+# scenarios/sync_client.json.
+MACHINES=(static_counter static_host_call static_record static_list static_overflow sync_client)
 # algorithm_days_in_month: called from static_record's guard. A machine's
 # import names it `super::<name>`, so it is generated beside the machines.
 ALGORITHMS=(days_in_month)
+# The standard algorithms sync_client imports, by their library names; each
+# is generated beside the machines under its own name, as a local one is.
+STD_ALGORITHMS=(sync/sync_failure sync/sync_retry_at sync/sync_delete_outcome sync/sync_upload_outcome)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -48,6 +53,9 @@ for machine in "${MACHINES[@]}"; do
 done
 for algorithm in "${ALGORITHMS[@]}"; do
     "$CODEGEN" generate "$INPUT_ROOT/algorithm_$algorithm.scxml" -l rust -o "$TMP/"
+done
+for algorithm in "${STD_ALGORITHMS[@]}"; do
+    "$CODEGEN" generate "sce:std/$algorithm.scxml" -l rust -o "$TMP/"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -61,6 +69,9 @@ MODRS="$GENERATED_DIR/mod.rs"
     for algorithm in "${ALGORITHMS[@]}"; do
         echo "pub mod $algorithm;"
     done
+    for algorithm in "${STD_ALGORITHMS[@]}"; do
+        echo "pub mod ${algorithm##*/};"
+    done
     for machine in "${MACHINES[@]}"; do
         echo "pub mod ${machine}_sm;"
     done
@@ -69,4 +80,4 @@ MODRS="$GENERATED_DIR/mod.rs"
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
-echo "Regenerated: ${MACHINES[*]} and ${ALGORITHMS[*]} under $GENERATED_DIR/ from $INPUT_ROOT"
+echo "Regenerated: ${MACHINES[*]}, ${ALGORITHMS[*]} and ${STD_ALGORITHMS[*]} under $GENERATED_DIR/ from $INPUT_ROOT"

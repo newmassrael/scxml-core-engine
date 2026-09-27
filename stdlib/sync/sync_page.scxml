@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/sync_page.scxml — one page of a collection's changes read
+  and applied by the host of a sync-client statechart (one built on the
+  sce:std/sync rules, e.g. the sce-static fixture sync_client): whether the
+  server said there is more (RFC 6578 §3.6, a truncated sync-collection
+  answer; always false for a full listing, which is one page).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sync_page"
+       sce:event-name="sync.page">
+  <datamodel>
+    <data id="more" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

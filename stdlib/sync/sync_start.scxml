@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/sync_start.scxml — a sync run of one collection begins, as
+  its host reports it to a sync-client statechart (one built on the
+  sce:std/sync rules, e.g. the sce-static fixture sync_client): whether the server
+  offers changes by sync token (RFC 6578 sync-collection) and the host
+  holds one from an earlier run.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sync_start"
+       sce:event-name="sync.start">
+  <datamodel>
+    <data id="byToken" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>
