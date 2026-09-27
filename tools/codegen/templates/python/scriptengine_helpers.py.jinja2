@@ -331,7 +331,9 @@
             return _parse_delay_text(value)
         return 0
 
-    def _build_http_params(self, engine, params_specs, namelist: str, element: str):
+    def _build_http_params(
+        self, engine, params_specs, namelist: str, element: str, failures=None
+    ):
         """W3C SCXML C.2 — the form-encoded multi-map handed to
         `engine.perform_http_send`, RENDERED from the one evaluation
         `_eval_send_payload` performs.
@@ -355,9 +357,12 @@
         An `<invoke>` the host runs (W3C SCXML 6.4.1) hands its `<param>`
         and namelist values over the same way, as text under a name that
         may repeat, so it is the other caller. `element` is how a refusal
-        names the element it is about."""
+        names the element it is about, and `failures` is passed through to
+        `_eval_send_payload`."""
         return self._wire_params_from_payload(
-            self._eval_send_payload(engine, params_specs, "", "", namelist, element)
+            self._eval_send_payload(
+                engine, params_specs, "", "", namelist, element, failures
+            )
         )
 
     def _wire_params_from_payload(self, marshalled):
@@ -391,6 +396,7 @@
         lua_content_expr: str,
         namelist: str,
         element: str,
+        failures=None,
     ):
         """W3C SCXML 5.10 — marshal `<send>` payload into `_event.data`.
         `element` is how a refusal names the element (`<send>`, or the
@@ -422,7 +428,15 @@
         then no message left for the name to be absent from. W3C test343
         is the fixture that settles it: an illegal `<param>` raises
         `error.execution` AND the `done.state` event still arrives, with
-        empty data. The message goes; the offending pair does not."""
+        empty data. The message goes; the offending pair does not.
+
+        The error was still raised while the element was processed, so
+        the block stops once the message has gone (W3C SCXML 4.9). That
+        is the caller's to do, after the act: `failures`, when given, is a
+        list each failed `<param>`'s name is appended to. A `<send>` passes
+        one, and also has an empty `lua_expr` — a `location=""`, which
+        names no location — reported the same way; the host-run
+        `<invoke>` passes none and its reading is left as it was."""
         if lua_content_expr:
             try:
                 return engine._script_engine.evaluate_expression(
@@ -487,6 +501,12 @@
         # silently dropped every value but the last.
         _repeats: dict = {}
         for name, lua_expr in params:
+            if failures is not None and not lua_expr:
+                self._raise_error_execution(
+                    engine, f"{element} <param name='{name}'> names no location"
+                )
+                failures.append(name)
+                continue
             try:
                 _value = engine._script_engine.evaluate_expression(
                     self._session_id, lua_expr
@@ -507,6 +527,8 @@
                 self._raise_error_execution(
                     engine, f"{element} <param name='{name}'> expr failed to evaluate"
                 )
+                if failures is not None:
+                    failures.append(name)
                 continue
         return marshalled
 

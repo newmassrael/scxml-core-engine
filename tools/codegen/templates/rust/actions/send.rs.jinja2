@@ -29,6 +29,14 @@
 {% if can_abort %}
     let mut _send_aborted = false;
 {% endif %}
+{# W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
+   pair left out, and the message still goes; the error ends the block once
+   it has. `_param_failed` is what the check after the dispatch reads. #}
+{% set _param_can_fail = namespace(any=false) %}
+{% for param in action.params %}{% if not param.is_static_literal %}{% set _param_can_fail.any = true %}{% endif %}{% endfor %}
+{% if _param_can_fail.any %}
+    let mut _param_failed = false;
+{% endif %}
 {% if action.idlocation %}
     // W3C SCXML 6.2.4: Store sendid in idlocation
 {% if model.needs_script_engine %}
@@ -114,22 +122,36 @@
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("send param '{{ param.name | escape_rust }}' eval failed: {}", e);
 {% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_rust }}'> could not be read"));
 {% endif %}
+                // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                _param_failed = true;
             }
         }
 {% elif param.location %}
-        match se.evaluate_expression(&sid, "{{ param.location }}") {
+        {# W3C SCXML B.2: the location is authored ECMAScript, read through
+           the same frontend as any other read. #}
+        match se.evaluate_expression(&sid, "{{ param.location | to_lua_expr | escape_rust }}") {
             Ok(val) => {
                 wire_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(val);
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("send param '{{ param.name | escape_rust }}' location read failed: {}", e);
 {% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_rust }}'> location could not be read"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_rust }}'> could not be read"));
 {% endif %}
+                // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                _param_failed = true;
             }
         }
+{% else %}
+        // W3C SCXML 5.7.1: an empty location names no location in the data
+        // model — reported, and the pair left out.
+        ::sce_rust_runtime::sce_log_error!("send param '{{ param.name | escape_rust }}' names no location");
+{% if 'error.execution' in model.events %}
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_rust }}'> could not be read"));
+{% endif %}
+        _param_failed = true;
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -665,6 +687,24 @@
 
 {% if can_abort %}
     } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on an argument error)
+{% endif %}
+{% if _param_can_fail.any %}
+{% if in_foreach is defined and in_foreach %}
+    // W3C SCXML 4.9: a <param> that could not be read raised an error while
+    // this element was processed, so the rest of the foreach body does not run.
+    if _param_failed {
+        iteration_success = false;
+        break 'foreach_body;
+    }
+{% elif in_entry_exit is defined and in_entry_exit %}
+    // W3C SCXML 4.9: a <param> that could not be read raised an error while
+    // this element was processed, so the rest of the block does not run.
+    if _param_failed {
+        break 'action_block;
+    }
+{% else %}
+    let _ = _param_failed;  // transition content has no block exit to take
+{% endif %}
 {% endif %}
     let _ = send_id;  // suppress unused warning when no send operation
     let _ = event_data;  // suppress unused warning in branches that skip dispatch

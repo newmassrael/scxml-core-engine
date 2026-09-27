@@ -53,7 +53,8 @@
    lands when a fixture forces it.                                        #}
 {# `csym_prefix` and `machine` are parameters rather than globals because a
    macro body does not see the render context, and W3C SCXML 5.7.1 needs
-   the machine's own `_raise_platform_error` symbol here. #}
+   the machine's own `_raise_platform_error` symbol here. A pair that fails
+   sets the `_param_failed` its `<send>` declared (W3C SCXML 4.9). #}
 {% macro lua_table_from_params(params, csym_prefix, machine) %}
 {% if params | rejectattr("is_static_literal") | list | length == 0 %}
                 /* W3C SCXML 6.2 + B-2-9: every value is a literal, so the
@@ -120,9 +121,17 @@
                     if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = '}'; }
                     _ed_any = 1;
                     (void)_pstart;
+{% elif not (param.expr or param.location) %}
+                    /* W3C SCXML 5.7.1: an empty location names no location in
+                       the data model — reported, and the pair left out. */
+                    _ed_len = _pstart;
+                    {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                        "<send> <param name='{{ param.name | escape_c }}'> names no location");
+                    _param_failed = true;
 {% else %}
                     if (luaL_dostring(sm->L,
-                        "local _v = ({{ param.expr | to_lua_expr | escape_c }}); "
+                        "local _v = ({{ (param.expr if param.expr else param.location) | to_lua_expr | escape_c }}); "
                         "if type(_v) == 'string' then return string.format('%q', _v) "
                         "elseif type(_v) == 'number' or type(_v) == 'boolean' then return tostring(_v) "
                         "else return 'nil' end") == 0) {
@@ -147,6 +156,7 @@
                         {{ csym_prefix }}{{ machine }}_raise_platform_error(
                             sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
                             "<send> <param name='{{ param.name | escape_c }}'> expr failed to evaluate");
+                        _param_failed = true;
                     }
 {% endif %}
                 }
@@ -665,8 +675,18 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% endif %}
         }
 {% elif action.type == 'send' %}
+{# Declared for any `<param>`, a literal included: some arms evaluate a
+   literal through Lua too, and their failure branch names the flag. #}
+{% set send_param_ns = namespace(can_fail=(action.params | default([]) | length > 0)) %}
         {
             /* W3C SCXML 6.2: <send{% if action.event %} event="{{ action.event }}"{% endif %}{% if action.eventexpr %} eventexpr="{{ action.eventexpr }}"{% endif %}{% if action.target %} target="{{ action.target }}"{% endif %}{% if action.delay %} delay="{{ action.delay }}"{% endif %}> */
+{% if send_param_ns.can_fail %}
+            /* W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+               and its pair left out, and the message still goes; the error
+               ends the block once it has. Set by every arm that evaluates a
+               param, read at the end of this element. */
+            bool _param_failed = false;
+{% endif %}
 {% if action.send_type_host_served %}
             /* §scxml-6.2.5: "{{ action.send_type }}" is served by the HOST,
                which declared it to this build. Dispatch rather than refuse.
@@ -700,7 +720,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% if action.params %}
                 sce_host_send_param_t _host_params[{{ action.params | length }}];
                 int _host_param_count = 0;
-{{ param_macros.collect_host_params_into(action.params, model, csym_prefix, '_host_params', '_host_param_count', '_host_param', '<send>', '                ') -}}
+{{ param_macros.collect_host_params_into(action.params, model, csym_prefix, '_host_params', '_host_param_count', '_host_param', '<send>', '                ', '_param_failed') -}}
 {% endif %}
                 sce_host_send_request_t _host_req;
                 _host_req.processor_type = "{{ action.send_type | escape_c }}";
@@ -796,7 +816,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                Lua 5.4 is the backend's only engine. */
             (void)luaL_dostring(sm->L, "_pending_donedata = {}");
 {% for param in action.params %}
-{{ se.lua_eval_send_param_expr(param.name, param.expr) }}
+{{ se.lua_eval_send_param_expr(param.name, param.expr if param.expr else param.location) }}
 {% endfor %}
             lua_getglobal(sm->L, "_pending_donedata");
             int _payload_ref = luaL_ref(sm->L, LUA_REGISTRYINDEX);
@@ -1102,7 +1122,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             (void)luaL_dostring(sm->L,
                 "_pending_donedata = {}; _sce_send_data_pairs = {}");
             {% for param in action.params %}
-            {{ se.lua_eval_send_param_expr(param.name, param.expr) }}
+            {{ se.lua_eval_send_param_expr(param.name, param.expr if param.expr else param.location) }}
             {% endfor %}
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
@@ -1143,7 +1163,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             {{ se.lua_eval_namelist_var(var_name) }}
             {% endfor %}
             {% for param in action.params %}
-            {{ se.lua_eval_send_param_expr(param.name, param.expr) }}
+            {{ se.lua_eval_send_param_expr(param.name, param.expr if param.expr else param.location) }}
             {% endfor %}
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
@@ -1703,14 +1723,28 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% if param.is_static_literal %}
                     (void)sce_test_http_form_append(_http_body, sizeof(_http_body), &_http_body_len,
                                                     "{{ param.name | escape_c }}", "{{ param.static_value | escape_c }}");
+{% elif not (param.expr or param.location) %}
+                    /* W3C SCXML 5.7.1: an empty location names no location in
+                       the data model — reported, and the pair left out. */
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        "<send> <param name='{{ param.name | escape_c }}'> names no location");
+                    _param_failed = true;
 {% else %}
                     {
                         char _param_buf[256];
                         bool _param_ok = false;
-                        {{ se.lua_eval_to_wire_string(param.expr, "_param_buf", "256", "_param_ok") }}
+                        {{ se.lua_eval_to_wire_string(param.expr if param.expr else param.location, "_param_buf", "256", "_param_ok") }}
                         if (_param_ok) {
                             (void)sce_test_http_form_append(_http_body, sizeof(_http_body), &_http_body_len,
                                                             "{{ param.name | escape_c }}", _param_buf);
+                        } else {
+                            /* W3C SCXML 5.7.1: report the failure and leave the
+                               pair out. It used to leave it out in silence. */
+                            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                                "<send> <param name='{{ param.name | escape_c }}'> could not be read");
+                            _param_failed = true;
                         }
                     }
 {% endif %}
@@ -1863,6 +1897,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                     "<send> uses a combination of attributes this backend cannot emit");
+                return;
+            }
+{% endif %}
+{% if send_param_ns.can_fail %}
+            /* W3C SCXML 4.9: the <param> error ends the block. */
+            if (_param_failed) {
                 return;
             }
 {% endif %}

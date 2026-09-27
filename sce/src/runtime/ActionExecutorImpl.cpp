@@ -858,6 +858,10 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // Step 2: Evaluate param elements (W3C SCXML Test 186, 354)
         // Note: params can override namelist values (evaluated after namelist)
         const auto &params = action.getParamsWithExpr();
+        // §scxml-4.9: a <param> that could not be read raised an error while
+        // this element was processed, so once the message has gone the block
+        // stops — the `false` this is returned as below.
+        bool aParamFailed = false;
         if (!params.empty()) {
             SCE_LOG_DEBUG("ActionExecutorImpl: Evaluating {} param elements", params.size());
 
@@ -868,6 +872,18 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                 // value of the named location is what the send carries, so
                 // SendParam::valueExpr() picks whichever the document wrote.
                 const std::string &paramValueExpr = param.valueExpr();
+                // §scxml-5.7.1: an empty location names no location in the
+                // data model, so it is the same failure as one that names a
+                // missing one — reported, and the pair left out.
+                if (paramValueExpr.empty()) {
+                    SCE_LOG_ERROR("ActionExecutorImpl: <send> <param name='{}'> names no location", param.name);
+                    if (eventRaiser_) {
+                        eventRaiser_->raiseEvent("error.execution",
+                                                 "<send> <param name='" + param.name + "'> names no location");
+                    }
+                    aParamFailed = true;
+                    continue;
+                }
                 try {
                     // Evaluate and preserve both string (for JSON serialization) and ScriptValue (for typed pipeline)
                     auto evalResult = scriptEngine_.evaluateExpression(sessionId_, paramValueExpr).get();
@@ -889,6 +905,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                             eventRaiser_->raiseEvent("error.execution", "<send> <param name='" + param.name +
                                                                             "'> expr failed to evaluate");
                         }
+                        aParamFailed = true;
                         continue;
                     }
                     std::string paramValue =
@@ -908,6 +925,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                         eventRaiser_->raiseEvent("error.execution",
                                                  "<send> <param name='" + param.name + "'> expr failed to evaluate");
                     }
+                    aParamFailed = true;
                 }
             }
 
@@ -994,7 +1012,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             }
 
             // SCXML 6.2.4: "Fire and forget" semantics - event is queued regardless of delivery status
-            return true;
+            return !aParamFailed;
         } else {
             // SCXML 3.12.1: Generate error.execution event instead of throwing
             SCE_LOG_ERROR("ActionExecutorImpl: EventDispatcher not available for send action - generating error event");
@@ -1006,7 +1024,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             }
 
             // SCXML send actions should follow fire-and-forget - infrastructure failures don't affect action success
-            return true;  // Fire and forget semantics
+            return !aParamFailed;  // Fire and forget semantics
         }
 
     } catch (const std::exception &e) {

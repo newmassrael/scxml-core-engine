@@ -1147,18 +1147,21 @@
         }
 {% endmacro %}
 
-{# W3C SCXML 5.10 + 6.2: evaluate one `<send><param name=N expr=X/></send>`
-   and store the value as `_pending_donedata.{name} = (X)`. The caller emits
+{# W3C SCXML 5.10 + 6.2: evaluate one `<send><param name=N .../></send>` —
+   `value` is its `expr` or, failing that, its `location` — and store the
+   value as `_pending_donedata.{name} = (X)`. The caller emits
    `_pending_donedata = {}` once before iterating so the table exists, and
    the next dequeue's `set_current_event` promotes the table onto
    `_event.data`.
 
-   Error semantics (W3C 6.2 ≠ 5.7): cpp `actions/send.jinja2` (lines 220-228,
-   488-505) on param-expr eval failure logs and pushes empty string — it does
-   NOT raise `error.execution`. This is the opposite of donedata's W3C 5.7
-   path (`lua_eval_donedata_param_expr`) which raises on failure. The C11
-   macro mirrors cpp send: silent-drop on chunk failure, set the slot to
-   empty string so subsequent reader code sees a defined-but-empty value.
+   Error semantics (W3C SCXML 5.7.1): a param that cannot be read raises
+   error.execution and its name and value are ignored — nothing is stored
+   under the name, and the message still goes. The error was raised while
+   the `<send>` was processed, so the block stops once it has (W3C SCXML
+   4.9): this sets the `_param_failed` the `<send>` declared. An empty value
+   is a `location=""`, which names no location. This macro used to store ''
+   under the name and raise nothing, justified by what cpp send did at the
+   time — cpp raises now, and so does every other backend.
 
    Slot reuse: `_pending_donedata` is shared with the donedata path. Within
    the same microstep, a state's `<send>` with params and that state's
@@ -1175,16 +1178,24 @@
    answers with error.execution);
    the macro stays free of that lookup so fixtures without `<donedata>` do
    not need to declare `_scxml_declared`. #}
-{% macro lua_eval_send_param_expr(param_name, expr) %}
+{% macro lua_eval_send_param_expr(param_name, value) %}
+{% if value %}
     if (luaL_dostring(sm->L,
-        "do local _v = ({{ expr | to_lua_expr | escape_c }}); "
+        "do local _v = ({{ value | to_lua_expr | escape_c }}); "
         "_pending_donedata[\"{{ param_name | escape_lua | escape_c }}\"] = _v; "
         "table.insert(_sce_send_data_pairs, {\"{{ param_name | escape_lua | escape_c }}\", _v}) end") != 0) {
         lua_pop(sm->L, 1);
-        (void)luaL_dostring(sm->L,
-            "_pending_donedata[\"{{ param_name | escape_lua | escape_c }}\"] = ''; "
-            "table.insert(_sce_send_data_pairs, {\"{{ param_name | escape_lua | escape_c }}\", ''})");
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "<send> <param name='{{ param_name | escape_c }}'> could not be read");
+        _param_failed = true;
     }
+{% else %}
+    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+        "<send> <param name='{{ param_name | escape_c }}'> names no location");
+    _param_failed = true;
+{% endif %}
 {% endmacro %}
 
 {# W3C SCXML 6.2 + 5.10.1 (.raw): marshal the param/namelist eval pairs

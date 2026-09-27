@@ -4258,6 +4258,11 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::executeActionNodes",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeSendAction",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -6746,6 +6751,11 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::evaluateDoneData",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeSendAction",
           "kind": "implements"
         }
       ],

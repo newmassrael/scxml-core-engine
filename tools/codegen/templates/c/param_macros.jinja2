@@ -19,14 +19,29 @@
    `prefix` names the locals each pair needs, so two callers in one function
    cannot collide. `element` is how a refusal names the element (`<send>`,
    `<invoke>`). `model` and `csym_prefix` are parameters because a macro body
-   does not see the render context. #}
-{% macro collect_host_params_into(params, model, csym_prefix, arr, count, prefix, element, indent) %}
+   does not see the render context.
+
+   `failed_flag`, when given, names the `bool` a `<send>` declared: the error
+   was raised while the element was processed, so the block stops once the
+   message has gone (W3C SCXML 4.9). A `<send>` also refuses an empty
+   `location=""`, which names no location. The host-run `<invoke>` passes
+   none, and its reading of a failed `<param>` is left as it was. #}
+{% macro collect_host_params_into(params, model, csym_prefix, arr, count, prefix, element, indent, failed_flag='') %}
 {% for param in params %}
 {% if param.is_static_literal %}
 {{ indent }}static const char {{ prefix }}_value_{{ loop.index0 }}[] = "{{ param.static_value | escape_c }}";
 {{ indent }}{{ arr }}[{{ count }}].name = "{{ param.name | escape_c }}";
 {{ indent }}{{ arr }}[{{ count }}].value = {{ prefix }}_value_{{ loop.index0 }};
 {{ indent }}{{ count }}++;
+{% elif failed_flag and not (param.expr or param.location) %}
+{{ indent }}/* W3C SCXML 5.7.1: an empty location names no location in the data
+{{ indent }}   model — reported, and the pair left out. */
+{% if 'error.execution' in model.events %}
+{{ indent }}{{ csym_prefix }}{{ model.name }}_raise_platform_error(
+{{ indent }}    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+{{ indent }}    "{{ element }} <param name='{{ param.name | escape_c }}'> names no location");
+{% endif %}
+{{ indent }}{{ failed_flag }} = true;
 {% else %}
 {{ indent }}char {{ prefix }}_value_{{ loop.index0 }}[SCE_MAX_DATA_LEN];
 {{ indent }}bool {{ prefix }}_ok_{{ loop.index0 }} = false;
@@ -44,6 +59,9 @@
 {{ indent }}    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
 {{ indent }}        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
 {{ indent }}        "{{ element }} <param name='{{ param.name | escape_c }}'> {% if param.expr %}expr failed to evaluate{% else %}location could not be read{% endif %}");
+{% endif %}
+{% if failed_flag %}
+{{ indent }}    {{ failed_flag }} = true;
 {% endif %}
 {{ indent }}}
 {% endif %}

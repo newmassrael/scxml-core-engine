@@ -56,7 +56,8 @@ pub enum ScriptEngineCauseKind {
     /// identifiers that must be resolved at runtime.
     SendNamelist { state_id: String },
     /// §scxml-6.2.4 — `<send><param expr="..."/>` whose expression is
-    /// not a static string literal. Static literals are folded at build time.
+    /// not a static string literal, or `<send><param location="..."/>`
+    /// naming a location to read. Static literals are folded at build time.
     SendParamExpr {
         state_id: String,
         param_name: String,
@@ -490,7 +491,13 @@ fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScr
                 ));
             }
             for param in &action.params {
-                if !param.expr.is_empty() && !param.is_static_literal {
+                // A `location` is read from the data model as surely as an
+                // `expr` is evaluated in it (§scxml-5.7), so either needs the
+                // engine. An empty one names nothing and is refused where it
+                // is emitted, without one.
+                let reads_the_datamodel = (!param.expr.is_empty() && !param.is_static_literal)
+                    || (param.expr.is_empty() && !param.location.is_empty());
+                if reads_the_datamodel {
                     out.push(NeedsScriptEngineCause::new(
                         ScriptEngineCauseKind::SendParamExpr {
                             state_id: state_id.to_string(),

@@ -6,35 +6,57 @@
    Uses action.auto_send_id for unique delayed send identification (C++ UniqueIdGenerator pattern).
    Target resolution follows C++ "resolve once, use everywhere" pattern. #}
 {% import 'param_macros.kt.jinja2' as param_macros %}
-{# W3C SCXML 5.7.1: one `<param expr>` arm for the four maps this template
-   fills (internal, parent, typed/external, engine-served), written once so
-   they cannot drift apart.
+{# W3C SCXML 5.7.1: one `<param>` arm for the four maps this template fills
+   (internal, parent, typed/external, engine-served), written once so they
+   cannot drift apart.
 
-   The clause asks for two things and this arm used to do neither: it
-   swallowed the exception, which no document can observe, and then wrote
-   the name with an empty value, which is the opposite of "MUST ignore the
-   name and value" — a receiver testing `typeof _event.data.x ===
-   'undefined'` was told the field is present. W3C test343 gives the
-   reading: `error.execution` goes on the internal queue AND the event
-   still arrives with the offending pair absent. #}
+   The param names its value through `expr` or, failing that, `location` —
+   each routed through the pair filter where it is emitted; the arms used to
+   read no `location` at all, so a valid one vanished from the event. One
+   that cannot be read — an empty `location=""` included, which names
+   nothing — raises error.execution and its pair is left out; the message
+   still goes, because §6.2's "discard the message" governs `<send>`'s own
+   arguments, not its `<param>` children (W3C test343 reads the clause the
+   same way under `<donedata>`). `paramFailed` records it for the block exit
+   below. #}
 {% macro param_expr_arm(param, map, eng, sid, machine_name, indent) %}
+{% if param.expr or param.location %}
 {{ indent }}try {
-{{ indent }}    putParam({{ map }}, "{{ param.name | escape_kotlin }}", {{ eng }}.evaluateExpr({{ sid }}, {{ param.expr | to_script_source_expr }}))
+{{ indent }}    putParam({{ map }}, "{{ param.name | escape_kotlin }}", {{ eng }}.evaluateExpr({{ sid }}, {{ (param.expr if param.expr else param.location) | to_script_source_expr }}))
 {{ indent }}} catch (_: Exception) {
-{{ indent }}    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> <param name='{{ param.name | escape_kotlin }}'> could not be read")
+{{ indent }}    paramFailed = true
 {{ indent }}}
+{% else %}
+{{ indent }}raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> <param name='{{ param.name | escape_kotlin }}'> names no location")
+{{ indent }}paramFailed = true
+{% endif %}
 {% endmacro %}
+{# The whole send is one labelled scope whose value says whether the block
+   stops after it. A refusal that discards the message (W3C SCXML 6.2: an
+   idlocation, a namelist entry, an expression attribute) leaves with
+   `return@send false`, as each arm's own `run {}` used to; the refusals that
+   always stopped the block leave with `true`. A `<param>` that could not be
+   read does not stop the send, but its error still ends the block once the
+   message has gone (W3C SCXML 4.9) — `paramFailed` is the scope's value. #}
+{% set param_ns = namespace(can_fail=false) %}
+{% for param in action.params %}
+{% if not param.is_static_literal %}
+{% set param_ns.can_fail = true %}
+{% endif %}
+{% endfor %}
+            if (run send@{
+{% if param_ns.can_fail %}
+            var paramFailed = false
+{% endif %}
 {% set idloc_guard = action.idlocation and model.needs_script_engine %}
 {% if idloc_guard %}
             // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332),
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
             // argument that cannot be evaluated, so the message is discarded
-            // (W3C SCXML 6.2, 5.9.2); the whole send is the labelled block
-            // returned from.
-            run send@{
-            if (!storeIdInLocation({{ action.idlocation | to_script_source_location }}, "{{ action.auto_send_id | escape_kotlin }}", "<send>")) return@send
+            // (W3C SCXML 6.2, 5.9.2).
+            if (!storeIdInLocation({{ action.idlocation | to_script_source_location }}, "{{ action.auto_send_id | escape_kotlin }}", "<send>")) return@send false
 {% endif %}
 {# W3C SCXML 6.2: Target resolution — resolve once, use everywhere (C++ pattern).
    Evaluates targetexpr once, validates (invalid/unreachable), stores in nullable var.
@@ -82,7 +104,7 @@
                 val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
 {% endif %}
                 val hostParams = mutableMapOf<String, List<String>>()
-{{ param_macros.collect_wire_params_into(action.params, model, 'hostParams', 'hostEngine', 'hostSid', machine_name, '<send>', '                ') -}}
+{{ param_macros.collect_wire_params_into(action.params, model, 'hostParams', 'hostEngine', 'hostSid', machine_name, '<send>', '                ', 'paramFailed') -}}
 {% if action.eventexpr and model.needs_script_engine %}
                 val hostEventName = try {
                     hostEngine.evaluateExpr(hostSid, {{ action.eventexpr | to_script_source_expr }})?.toString() ?: ""
@@ -137,27 +159,15 @@
 {% elif action.send_type_unsupported %}
             // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
             raisePlatformError({{ machine_name }}Event.Error.Execution, "<send type='{{ action.send_type }}'> names a processor this platform does not support", "{{ action.auto_send_id }}")
-{% if in_run_block is defined and in_run_block %}
-            return@run  // W3C SCXML 5.10: Stop subsequent executable content in this block
-{% else %}
-            return  // W3C SCXML 5.10: Stop subsequent executable content
-{% endif %}
+            return@send true  // W3C SCXML 5.10: discarded; the block stops below
 {% elif not action.targetexpr and action.target and action.target.startswith('!') %}
             // W3C SCXML 6.2 (test194): Invalid target raises error.execution
             raisePlatformError({{ machine_name }}Event.Error.Execution, "<send target='{{ action.target }}'> is not a target this processor can address", "{{ action.auto_send_id }}")
-{% if in_run_block is defined and in_run_block %}
-            return@run  // W3C SCXML 5.10: Stop subsequent executable content in this block
-{% else %}
-            return  // W3C SCXML 5.10: Stop subsequent executable content
-{% endif %}
+            return@send true  // W3C SCXML 5.10: discarded; the block stops below
 {% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.target and not action.targetexpr %}
             // W3C SCXML C.2 (test577): BasicHTTP requires target, missing raises error.communication
             raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> over BasicHTTPEventProcessor has no target to post to")
-{% if in_run_block is defined and in_run_block %}
-            return@run  // W3C SCXML 5.10: Stop subsequent executable content in this block
-{% else %}
-            return  // W3C SCXML 5.10: Stop subsequent executable content
-{% endif %}
+            return@send true  // W3C SCXML 5.10: discarded; the block stops below
 {% elif action.eventexpr and model.needs_script_engine %}
             // W3C SCXML 6.2: Dynamic event name evaluation (test172)
             run {
@@ -170,7 +180,7 @@
                     dynamicEventName = v?.toString() ?: ""
                 } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> eventexpr failed to evaluate")
-                    return@run
+                    return@send false
                 }
                 val resolvedEvent = resolveEventByName(dynamicEventName)
                 if (resolvedEvent != null) {
@@ -197,7 +207,7 @@
 {% for param in action.params %}
 {% if param.is_static_literal %}
                 putParam(paramsI, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
-{% elif param.expr %}
+{% else %}
 {{ param_expr_arm(param, 'paramsI', 'engineI', 'sidI', machine_name, '                ') }}
 {% endif %}
 {% endfor %}
@@ -206,11 +216,11 @@
 {% for var_name in action.namelist.split() %}
                 if (!engineI.hasVariable(sidI, "{{ var_name }}")) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name }}', which is not declared")
-                    return@run
+                    return@send false
                 }
                 try { paramsI["{{ var_name }}"] = engineI.getVariable(sidI, "{{ var_name }}") } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
-                    return@run
+                    return@send false
                 }
 {% endfor %}
 {% endif %}
@@ -243,7 +253,7 @@
 {% for param in action.params %}
 {% if param.is_static_literal %}
                 putParam(paramsP, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
-{% elif param.expr %}
+{% else %}
 {{ param_expr_arm(param, 'paramsP', 'engineP', 'sidP', machine_name, '                ') }}
 {% endif %}
 {% endfor %}
@@ -252,11 +262,11 @@
 {% for var_name in action.namelist.split() %}
                 if (!engineP.hasVariable(sidP, "{{ var_name }}")) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name }}', which is not declared")
-                    return@run
+                    return@send false
                 }
                 try { paramsP["{{ var_name }}"] = engineP.getVariable(sidP, "{{ var_name }}") } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
-                    return@run
+                    return@send false
                 }
 {% endfor %}
 {% endif %}
@@ -313,7 +323,7 @@
 {% for param in action.params %}
 {% if param.is_static_literal %}
                 putParam(paramsT, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
-{% elif param.expr %}
+{% else %}
 {{ param_expr_arm(param, 'paramsT', 'engineT', 'sidT', machine_name, '                ') }}
 {% endif %}
 {% endfor %}
@@ -322,11 +332,11 @@
 {% for var_name in action.namelist.split() %}
                 if (!engineT.hasVariable(sidT, "{{ var_name }}")) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name }}', which is not declared")
-                    return@run
+                    return@send false
                 }
                 try { paramsT["{{ var_name }}"] = engineT.getVariable(sidT, "{{ var_name }}") } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
-                    return@run
+                    return@send false
                 }
 {% endfor %}
 {% endif %}
@@ -340,7 +350,7 @@
                     delayStrT = v?.toString() ?: "0s"
                 } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr failed to evaluate")
-                    return@run
+                    return@send false
                 }
                 val delayMsT = parseDelay(delayStrT)
                 scheduleSend("{{ action.auto_send_id }}", delayMsT, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ action.auto_send_id }}", origin = scriptSessionId ?: "", data = eventDataT))
@@ -381,7 +391,7 @@
                     delayStrT = v?.toString() ?: "0s"
                 } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr failed to evaluate")
-                    return@run
+                    return@send false
                 }
                 val delayMsT = parseDelay(delayStrT)
                 scheduleSend("{{ action.auto_send_id }}", delayMsT, {{ machine_name }}Event.{{ action.event | to_event_ref }})
@@ -425,7 +435,7 @@
 {% for param in action.params %}
 {% if param.is_static_literal %}
                 putParam(paramsE, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
-{% elif param.expr %}
+{% else %}
 {{ param_expr_arm(param, 'paramsE', 'engineE', 'sidE', machine_name, '                ') }}
 {% endif %}
 {% endfor %}
@@ -434,11 +444,11 @@
 {% for var_name in action.namelist.split() %}
                 if (!engineE.hasVariable(sidE, "{{ var_name }}")) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name }}', which is not declared")
-                    return@run  // W3C SCXML 6.2: Abort send if namelist variable not found
+                    return@send false  // W3C SCXML 6.2: Abort send if namelist variable not found
                 }
                 try { paramsE["{{ var_name }}"] = engineE.getVariable(sidE, "{{ var_name }}") } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
-                    return@run
+                    return@send false
                 }
 {% endfor %}
 {% endif %}
@@ -483,7 +493,7 @@
                     contentData = if (v != null) valueToJson(v) else ""
                 } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> contentexpr failed to evaluate")
-                    return@run
+                    return@send false
                 }
 {% if action.delay or action.delayexpr %}
                 scheduleSend("{{ action.auto_send_id }}", {{ action.delay_ms | default(0) }}L, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ action.auto_send_id }}", origin = scriptSessionId ?: "", data = contentData))
@@ -505,7 +515,7 @@
                     delayStrE = v?.toString() ?: "0s"
                 } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr failed to evaluate")
-                    return@run
+                    return@send false
                 }
                 val delayMsE = parseDelay(delayStrE)
                 scheduleSend("{{ action.auto_send_id }}", delayMsE, {{ machine_name }}Event.{{ action.event | to_event_ref }})
@@ -521,6 +531,22 @@
 {% if action.targetexpr and model.needs_script_engine %}
             } // end of _resolvedTarget?.let
 {% endif %}
-{% if idloc_guard %}
+{% if param_ns.can_fail %}
+            paramFailed
+{% else %}
+            false
+{% endif %}
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+{# The closing line sits in both arms so this partial ends on a block tag,
+   as every partial `_render` includes does: a render drops its one trailing
+   newline, and a partial ending on text glues the includer's next line onto
+   its last. #}
+{% if in_run_block is defined and in_run_block %}
+                return@run
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+{% else %}
+                return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 {% endif %}

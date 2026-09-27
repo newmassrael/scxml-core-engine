@@ -19,8 +19,14 @@
    caller; they are only read for a param that is not a literal. `element` is
    how a refusal names the element (`<send>`, `<invoke>`). `machine_name` is a
    parameter rather than a global because a macro body does not see the render
-   context. #}
-{% macro collect_wire_params_into(params, model, map, eng, sid, machine_name, element, indent) %}
+   context.
+
+   `failed_flag`, when given, names the `Boolean` a `<send>` declared: the
+   error was raised while the element was processed, so the block stops once
+   the message has gone (W3C SCXML 4.9). A `<send>` also refuses an empty
+   `location=""`, which names no location. The host-run `<invoke>` passes
+   none, and its reading of a failed `<param>` is left as it was. #}
+{% macro collect_wire_params_into(params, model, map, eng, sid, machine_name, element, indent, failed_flag='') %}
 {% for param in params %}
 {% if param.is_static_literal %}
 {{ indent }}{{ map }}["{{ param.name | escape_kotlin }}"] =
@@ -37,7 +43,15 @@
 {{ indent }}    // value — the act still happens, without a field the document
 {{ indent }}    // could not produce.
 {{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "{{ element }} <param name='{{ param.name | escape_kotlin }}'> {% if param.expr %}expr failed to evaluate{% else %}location could not be read{% endif %}")
+{% if failed_flag %}
+{{ indent }}    {{ failed_flag }} = true
+{% endif %}
 {{ indent }}}
+{% elif failed_flag and not (param.expr or param.location) %}
+{{ indent }}// W3C SCXML 5.7.1: an empty location names no location in the data
+{{ indent }}// model — reported, and the pair left out.
+{{ indent }}raisePlatformError({{ machine_name }}Event.Error.Execution, "{{ element }} <param name='{{ param.name | escape_kotlin }}'> names no location")
+{{ indent }}{{ failed_flag }} = true
 {% endif %}
 {% endfor %}
 {% endmacro %}

@@ -1,33 +1,46 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# W3C SCXML 5.7.1: what a `<param>` whose expression will not evaluate
-   does, written once for the five arms of this template that evaluate one
-   (mesh parent, local parent, BasicHTTP, delayed, immediate).
+{# W3C SCXML 5.7.1: what a `<param>` that cannot be read does, written once
+   for the arms of this template that evaluate one (mesh parent, local parent,
+   host-served, BasicHTTP, delayed, immediate).
 
-   The clause has two halves and this file used to keep neither: it logged,
-   which no document can read, and then pushed an empty string under the
-   param's name, which is the opposite of "MUST ignore the name and value" —
-   a receiver testing `typeof _event.data.x === 'undefined'` was told the
-   field is there. W3C test343 fixes the reading: an illegal `<param>` puts
-   `error.execution` on the internal queue AND the event still arrives, with
-   the offending pair absent. The message is not discarded; §6.2.3's
-   "discard the message" governs `<send>`'s own arguments, not its children.
+   The clause has two halves: `error.execution` goes on the internal queue,
+   and the name and value are ignored — the message itself still goes, with
+   the pair absent. §6.2's "discard the message" governs `<send>`'s own
+   arguments (a namelist entry, an idlocation), not its `<param>` children;
+   W3C test343 reads the same clause the same way under `<donedata>`.
 
-   `indent` is the caller's leading whitespace, because these five arms sit
-   at three different depths. #}
+   The error was still raised while this element was processed, so the block
+   stops after it (§scxml-4.9): `paramFailed` is what the check after the
+   message has gone reads.
+
+   A param names its value through `expr` or, failing that, `location`; the
+   parser admits exactly one, so an empty value is a `location=""` — a
+   location that names nothing, which is the same failure.
+
+   `indent` is the caller's leading whitespace, because these arms sit at
+   three different depths. #}
 {% macro param_eval_failed(param, indent) %}
 {{ indent }}// W3C SCXML 5.7.1: report the failure and omit the name and value.
-{{ indent }}SCE_LOG_ERROR("Failed to evaluate param expr: {}", "{{ param.expr | escape_cpp }}");
+{{ indent }}SCE_LOG_ERROR("<send> <param name='{{ param.name | escape_cpp }}'> could not be read");
 {{ indent }}engine.raise(typename Engine::EventWithMetadata(
 {{ indent }}    Event::Error_execution,
-{{ indent }}    "<send> <param name='{{ param.name | escape_cpp }}'> expr failed to evaluate"));
+{{ indent }}    "<send> <param name='{{ param.name | escape_cpp }}'> could not be read"));
+{{ indent }}paramFailed = true;
 {% endmacro %}
+{# Declared for any `<param>`, a literal included: the delayed and immediate
+   arms evaluate a literal through the engine too, and their failure branch
+   names the flag. #}
+{% set param_ns = namespace(can_fail=(action.params | default([]) | length > 0)) %}
 {# W3C SCXML 6.2: a send whose `idlocation` cannot take the id is discarded, so
    its body is a block the store can leave; `break` is the one exit, and this
    template writes no loop of its own for it to be confused with. #}
 {% set idloc_guard = action.idlocation and (model.needs_script_engine or model.needs_event_origin) %}
 {% if idloc_guard %}do {{ '{' }}{% else %}{{ '{' }}{% endif %}
+{% if param_ns.can_fail %}
+[[maybe_unused]] bool paramFailed = false;  // W3C SCXML 5.7.1 + 4.9: read after the message has gone
+{% endif %}
 {% if action.id %}
 std::string sendId = "{{ action.id }}";
 {% else %}
@@ -188,9 +201,11 @@ return;
 {% for param in action.params %}
 {% if param.is_static_literal %}
     params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
+{% elif not (param.expr or param.location) %}
+{{ param_eval_failed(param, '    ') }}
 {% else %}
     {
-        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ param.expr | to_script_source_expr }}).get();
+        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ (param.expr if param.expr else param.location) | to_script_source_expr }}).get();
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
             params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
             typedParams["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
@@ -269,10 +284,12 @@ engine.performMeshSend("#_parent", "{{ action.event }}", "", sendId, "");
 {% if param.is_static_literal %}
     // W3C SCXML Appendix B.2: Static string literal (Pure Static optimization)
     params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
+{% elif not (param.expr or param.location) %}
+{{ param_eval_failed(param, '    ') }}
 {% else %}
     // W3C SCXML 5.10: Dynamic param expr evaluation
     {
-        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ param.expr | to_script_source_expr }}).get();
+        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ (param.expr if param.expr else param.location) | to_script_source_expr }}).get();
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
             params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
             typedParams["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
@@ -440,9 +457,11 @@ if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
 {% for param in action.params %}
 {% if param.is_static_literal %}
     hostRequest.params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
+{% elif not (param.expr or param.location) %}
+{{ param_eval_failed(param, '    ') }}
 {% else %}
     {
-        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ param.expr | to_script_source_expr }}).get();
+        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ (param.expr if param.expr else param.location) | to_script_source_expr }}).get();
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
             hostRequest.params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
         } else {
@@ -509,9 +528,11 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
 {% for param in action.params %}
 {% if param.is_static_literal %}
     httpParams["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
+{% elif not (param.expr or param.location) %}
+{{ param_eval_failed(param, '    ') }}
 {% else %}
     {
-        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ param.expr | to_script_source_expr }}).get();
+        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ (param.expr if param.expr else param.location) | to_script_source_expr }}).get();
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
             httpParams["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
         } else {
@@ -634,11 +655,13 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
 {% if action.params %}
     // W3C SCXML 5.10: Evaluate params at send time (test186, test354)
 {% for param in action.params %}
-{% if model.needs_script_engine or model.needs_event_origin %}
+{% if not (param.expr or param.location) %}
+{{ param_eval_failed(param, '    ') }}
+{% elif model.needs_script_engine or model.needs_event_origin %}
     {
         this->ensureScriptEngine();
         auto& scriptEngine = getScriptEngine();
-        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ param.expr | to_script_source_expr }}).get();
+        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ (param.expr if param.expr else param.location) | to_script_source_expr }}).get();
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
             params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
             typedParams["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
@@ -712,11 +735,13 @@ std::map<std::string, std::vector<ScriptValue>> typedParams;
 {% if action.params %}
 // W3C SCXML 5.10: Evaluate params at send time (test186, test354)
 {% for param in action.params %}
-{% if model.needs_script_engine or model.needs_event_origin %}
+{% if not (param.expr or param.location) %}
+{{ param_eval_failed(param, '') }}
+{% elif model.needs_script_engine or model.needs_event_origin %}
 {
     this->ensureScriptEngine();
     auto& scriptEngine = getScriptEngine();
-    auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ param.expr | to_script_source_expr }}).get();
+    auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ (param.expr if param.expr else param.location) | to_script_source_expr }}).get();
     if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
         params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
         typedParams["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
@@ -1013,5 +1038,12 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
 {% endif %}
 {% endif %}
 {% endif %}
+{% endif %}
+{% if param_ns.can_fail and in_entry_exit is defined and in_entry_exit %}
+// W3C SCXML 4.9: a <param> that could not be read raised an error while this
+// element was processed, so the rest of the block does not run.
+if (paramFailed) {
+    return;
+}
 {% endif %}
 {{ '}' }}{% if idloc_guard %} while (false);{% endif %}

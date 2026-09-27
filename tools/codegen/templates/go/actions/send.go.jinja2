@@ -32,8 +32,25 @@
 {% if has_namelist %}
 		sendAborted := false
 {% endif %}
+{% if has_dynamic_params %}
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+{% endif %}
 		p.ensureScriptEngine()
+{# Bound only when something is read through it: a send whose one dynamic
+   `<param>` is an empty `location=""` evaluates nothing, and Go refuses a
+   variable nobody reads. #}
+{% set reads_ns = namespace(any=has_namelist) %}
+{% for param in action.params %}
+{% if not param.is_static_literal and (param.expr or param.location) %}
+{% set reads_ns.any = true %}
+{% endif %}
+{% endfor %}
+{% if reads_ns.any %}
 		se := p.ScriptEngine
+{% endif %}
 		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
 		// delivered, so this is an ordered list rather than a map. The typed
 		// value is kept rather than its text — a receiver reading
@@ -50,15 +67,26 @@
 {% if 'error.execution' in model.events %}
 			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_go }}'> expr failed to evaluate"))
 {% endif %}
+			paramFailed = true
 		}
 {% elif param.location %}
-		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `{{ param.location }}`); paramErr == nil {
+		{# W3C SCXML B.2: the location is authored ECMAScript, read through
+		   the same frontend as any other read. #}
+		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `{{ param.location | to_lua_expr }}`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: paramVal})
 		} else {
 {% if 'error.execution' in model.events %}
 			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_go }}'> location could not be read"))
 {% endif %}
+			paramFailed = true
 		}
+{% else %}
+		// W3C SCXML 5.7.1: an empty location names no location in the data
+		// model — reported, and the pair left out.
+{% if 'error.execution' in model.events %}
+		engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_go }}'> names no location"))
+{% endif %}
+		paramFailed = true
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -436,6 +464,16 @@
 {% endif %}
 {% if has_namelist %}
 		}
+{% endif %}
+{% if has_dynamic_params %}
+{% if in_entry_exit is defined and in_entry_exit %}
+		// W3C SCXML 4.9: the <param> error ends the block.
+		if paramFailed {
+			break
+		}
+{% else %}
+		_ = paramFailed  // transition content has no block exit to take
+{% endif %}
 {% endif %}
 	}
 {% if action.idlocation and model.needs_script_engine %}

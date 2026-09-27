@@ -13,6 +13,13 @@
    silently dropped, matching the W3C 6.2 "if the sending session
    terminates first" clause. #}
 {%- macro emit_send(action, indent, machine_name, model) -%}
+{# W3C SCXML 5.7.1 + 4.9: a `<param>` that cannot be read is reported and its
+   pair left out, and the message still goes; the error ends the block once
+   it has. The payload helpers append each failed name here, and the check
+   at the end of this macro reads it after the act. #}
+{% if action.params %}
+{{ indent }}_param_failures = []
+{% endif %}
 {% if action.send_type_host_served %}
 {# §scxml-6.2.5 — the `type` is served by the HOST, which declared it to
    this build. Dispatch rather than refuse, and take the whole send: a
@@ -28,9 +35,9 @@
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {{ indent }}_host_params = self._build_http_params(engine, [
 {%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
+({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.namelist | py_string_literal }}, "<send>")
+], {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})
 {% if action.eventexpr -%}
 {{ indent }}try:
 {{ indent }}    _host_evt_name = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.eventexpr | to_lua_expr | py_string_literal }}).to_python())
@@ -99,9 +106,9 @@
    would silently no-op. #}
 {{ indent }}_parent_data = self._eval_send_payload(engine, [
 {%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
+({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }}, "<send>")
+], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})
 {{ indent }}self._parent_queue.append(({{ action.event | py_string_literal }}, _parent_data))
 {% endif %}
 {% elif action.target.startswith('!') %}
@@ -136,9 +143,9 @@
 {% if _int_has_payload -%}
 {{ indent }}_int_data = self._eval_send_payload(engine, [
 {%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
+({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }}, "<send>")
+], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }}, EventMetadata(data=_int_data))
 {% else -%}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }})
@@ -186,9 +193,9 @@
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {{ indent }}_http_params = self._build_http_params(engine, [
 {%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
+({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.namelist | py_string_literal }}, "<send>")
+], {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})
 {% if action.contentexpr -%}
 {{ indent }}try:
 {{ indent }}    _http_content = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.contentexpr | to_lua_expr | py_string_literal }}).to_python())
@@ -233,9 +240,9 @@
 {{ indent }}_target_str = "" if _resolved_target is None else str(_resolved_target)
 {{ indent }}_data = self._eval_send_payload(engine, [
 {%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
+({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }}, "<send>")
+], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})
 {% if action.eventexpr -%}
 {{ indent }}try:
 {{ indent }}    _dyn_evt_name = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.eventexpr | to_lua_expr | py_string_literal }}).to_python())
@@ -338,9 +345,9 @@
 {% endif -%}
 {{ send_indent }}_data = self._eval_send_payload(engine, [
 {%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
+({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }}, "<send>")
+], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }}, "<send>"{% if action.params %}, _param_failures{% endif %})
 {% if action.delayexpr -%}
 {{ send_indent }}engine.schedule_send(_evt, self._eval_delay_ms(engine, {{ action.delayexpr | to_lua_expr | py_string_literal }}), _sid, _data)
 {% elif action.delay_ms > 0 -%}
@@ -357,4 +364,8 @@
 {% endif -%}
 {% endif -%}
 {% endif -%}
+{% if action.params %}
+{{ indent }}if _param_failures:
+{{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the <param> error ends the block
+{% endif %}
 {% endmacro -%}
