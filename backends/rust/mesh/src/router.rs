@@ -580,16 +580,36 @@ mod tests {
     }
 
     #[test]
-    fn the_mesh_target_predicate_is_the_cpp_cores() {
-        // Every row of SendHelper::isMeshTarget's contract.
-        assert_eq!(mesh_peer("#hmi"), Some("hmi"));
-        assert_eq!(mesh_peer("#h"), Some("h"));
-        assert_eq!(mesh_peer("#h_1"), Some("h_1"));
-        assert_eq!(mesh_peer("#"), None);
-        assert_eq!(mesh_peer("#_internal"), None);
-        assert_eq!(mesh_peer("#_scxml_session"), None);
-        assert_eq!(mesh_peer("hmi"), None);
-        assert_eq!(mesh_peer(""), None);
+    fn the_mesh_target_predicate_is_read_by_the_shared_table() {
+        // tests/mesh/mesh_target_cases.json: the table the C++ core's
+        // SendHelper::isMeshTarget, the build and the Kotlin core read too.
+        use sce_rust_runtime::json::{parse, Value};
+        let table = parse(include_str!(
+            "../../../../tests/mesh/mesh_target_cases.json"
+        ))
+        .expect("the table is JSON");
+        let Value::Object(members) = table else {
+            panic!("the table is an object");
+        };
+        let Some((_, Value::Array(cases))) = members.iter().find(|(key, _)| key == "cases") else {
+            panic!("the table has cases");
+        };
+        assert!(cases.len() >= 10, "the table lost cases: {}", cases.len());
+        for case in cases {
+            let Value::Object(fields) = case else {
+                panic!("a case is an object");
+            };
+            let field = |name: &str| fields.iter().find(|(key, _)| key == name).map(|(_, v)| v);
+            let Some(Value::Text(target)) = field("target") else {
+                panic!("a case's target is a string");
+            };
+            let expected = match field("peer") {
+                Some(Value::Text(peer)) => Some(peer.as_str()),
+                Some(Value::Null) => None,
+                other => panic!("a case's peer is a string or null, got {other:?}"),
+            };
+            assert_eq!(mesh_peer(target), expected, "{target:?}");
+        }
     }
 
     #[test]

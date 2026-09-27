@@ -1,0 +1,34 @@
+{
+  "about": [
+    "Which <send target> values name a Mesh peer, written out by hand.",
+    "",
+    "A target is a Mesh peer when it is `#` followed by at least one character",
+    "and that character is not `_`: `#_` stays reserved for the targets",
+    "§scxml-6.2.4 defines (`#_internal`, `#_parent`, `#_<invokeid>`,",
+    "`#_scxml_<sessionid>`).",
+    "",
+    "The same answer is computed in four places - the C++ core's",
+    "SendHelper::isMeshTarget, the build's host_processor_analyzer::mesh_peer",
+    "(which decides at code-generation time which sends to lower to the Mesh",
+    "router), and the Rust and Kotlin routers' mesh_peer / meshPeer (which",
+    "refuse a request that is not one). A target one of them routes over Mesh",
+    "and another does not would be the same document meaning two things, so",
+    "every copy reads this table.",
+    "",
+    "`peer` is the name the router is addressed by, or null when the target",
+    "names no peer."
+  ],
+  "cases": [
+    { "target": "#hmi", "peer": "hmi" },
+    { "target": "#h", "peer": "h" },
+    { "target": "#h_1", "peer": "h_1" },
+    { "target": "#motor.left", "peer": "motor.left" },
+    { "target": "#", "peer": null },
+    { "target": "#_internal", "peer": null },
+    { "target": "#_parent", "peer": null },
+    { "target": "#_scxml_session", "peer": null },
+    { "target": "hmi", "peer": null },
+    { "target": "", "peer": null },
+    { "target": "http://example.org/#hmi", "peer": null }
+  ]
+}

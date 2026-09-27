@@ -2252,6 +2252,8 @@ pub fn generate_with_options(
     template_dir: &Path,
     options: &StatechartCodegenOptions,
 ) -> Result<String, GenerateError> {
+    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Rust);
+    let model = lowered.as_ref();
     reject_mesh_rpc_in_unsupported_lang(model, Language::Rust)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
@@ -2344,6 +2346,8 @@ pub fn generate_with_templates(
     templates: &[(&str, &str)],
     no_std: bool,
 ) -> Result<String, GenerateError> {
+    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Rust);
+    let model = lowered.as_ref();
     reject_mesh_rpc_in_unsupported_lang(model, Language::Rust)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
@@ -2890,6 +2894,8 @@ fn render_c11(
     input_stem: &str,
     c_symbol_prefix: Option<&str>,
 ) -> Result<GeneratedOutput, GenerateError> {
+    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::C11);
+    let model = lowered.as_ref();
     reject_mesh_rpc_in_unsupported_lang(model, Language::C11)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::C11)?;
     // Neither host refusal here: the C11 backend carries
@@ -3050,6 +3056,8 @@ pub fn generate_kotlin_for_engine(
     package_prefix: Option<&str>,
     script_engine: ScriptEngineTarget,
 ) -> Result<String, GenerateError> {
+    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Kotlin);
+    let model = lowered.as_ref();
     reject_mesh_rpc_in_unsupported_lang(model, Language::Kotlin)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Kotlin)?;
     // Neither host refusal here: the Kotlin runtime carries
@@ -3074,6 +3082,8 @@ pub fn generate_kotlin_with_templates(
     templates: &[(&str, &str)],
     package_prefix: Option<&str>,
 ) -> Result<String, GenerateError> {
+    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Kotlin);
+    let model = lowered.as_ref();
     reject_mesh_rpc_in_unsupported_lang(model, Language::Kotlin)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Kotlin)?;
     // See `generate_kotlin` above: the Kotlin backend carries both host
@@ -3241,6 +3251,8 @@ fn render_kotlin(
 
 /// Generate Go code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
+    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Go);
+    let model = lowered.as_ref();
     reject_mesh_rpc_in_unsupported_lang(model, Language::Go)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Go)?;
     // Neither host refusal here any more: the Go runtime carries
@@ -3262,6 +3274,8 @@ pub fn generate_go_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
+    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Go);
+    let model = lowered.as_ref();
     reject_mesh_rpc_in_unsupported_lang(model, Language::Go)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Go)?;
     // See `generate_go` above: the Go backend carries both host registries.
@@ -3287,6 +3301,8 @@ pub fn generate_go_with_templates(
 
 /// Generate Python code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
+    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Python);
+    let model = lowered.as_ref();
     reject_mesh_rpc_in_unsupported_lang(model, Language::Python)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Python)?;
     // Neither host refusal here: the Python runtime carries
@@ -3307,6 +3323,8 @@ pub fn generate_python_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
+    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Python);
+    let model = lowered.as_ref();
     reject_mesh_rpc_in_unsupported_lang(model, Language::Python)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Python)?;
     // See `generate_python` above: the Python backend carries both host
@@ -3398,7 +3416,14 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
                 // `targetexpr` (runtime URL resolution) +
                 // `send_type="BasicHTTPEventProcessor"` (W3C C.2). All
                 // three lower through `engine.perform_http_send`.
-                if !action.target.is_empty()
+                //
+                // A host-served send is outside this list: §scxml-6.2.4
+                // leaves a target's meaning to the processor that serves
+                // the send, and the generated code hands it to that
+                // processor uninterpreted — a Mesh send's `#peer` among
+                // them (`host_processor_analyzer::lower_mesh_sends`).
+                if !action.send_type_host_served
+                    && !action.target.is_empty()
                     && !action.target.starts_with("#_")
                     && !action.target.starts_with('!')
                     && !action.target.starts_with("http://")

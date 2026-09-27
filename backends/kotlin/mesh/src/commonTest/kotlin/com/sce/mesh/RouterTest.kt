@@ -159,19 +159,6 @@ class RouterTest {
     }
 
     @Test
-    fun theMeshTargetPredicateIsTheCppCores() {
-        // Every row of SendHelper::isMeshTarget's contract, as the Rust core's test states it.
-        assertEquals("hmi", meshPeer("#hmi"))
-        assertEquals("h", meshPeer("#h"))
-        assertEquals("h_1", meshPeer("#h_1"))
-        assertNull(meshPeer("#"))
-        assertNull(meshPeer("#_internal"))
-        assertNull(meshPeer("#_scxml_session"))
-        assertNull(meshPeer("hmi"))
-        assertNull(meshPeer(""))
-    }
-
-    @Test
     fun bytesThatAreNotAnEnvelopeAreReportedAsCorruptCbor() {
         val hmi = Router("hmi", 8u, 50)
         hmi.addPeer("ecu", ordered)

@@ -351,6 +351,38 @@ apply_sce_test_policies(duration_test)
 add_test(NAME Durations COMMAND duration_test)
 
 # ============================================================================
+# Which <send target> values name a Mesh peer: SendHelper::isMeshTarget held
+# to tests/mesh/mesh_target_cases.json, the table the build and the Rust and
+# Kotlin routers read too.
+# ============================================================================
+add_executable(mesh_target_test
+    common/MeshTargetTest.cpp
+)
+
+target_include_directories(mesh_target_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(mesh_target_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+target_compile_definitions(mesh_target_test
+    PRIVATE
+        SCE_MESH_TARGET_TABLE="${CMAKE_SOURCE_DIR}/tests/mesh/mesh_target_cases.json"
+)
+
+apply_sce_test_policies(mesh_target_test)
+
+add_test(NAME MeshTarget COMMAND mesh_target_test)
+
+# ============================================================================
 # Which entry point a host must drive a machine with (§scxml-6.2)
 #
 # `step()` never consults the delayed-send scheduler, so a host that only ever

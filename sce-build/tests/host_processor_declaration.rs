@@ -932,3 +932,33 @@ fn the_c11_header_holds_the_started_set_to_the_machines_peak() {
         "the header does not hold the started set to the machine's peak of 3"
     );
 }
+
+/// A machine that sends to a Mesh peer tells its host, through the manifest,
+/// that it needs a Mesh router — on every backend whose router the host
+/// supplies, and not on C++, which generates its own.
+#[test]
+fn the_manifest_says_when_the_host_must_register_a_mesh_router() {
+    let mesh = repo_root().join("tests/mesh/brake.scxml");
+    let needs = |doc: &PathBuf, lang: &str| {
+        let out = out_dir(&format!(
+            "mesh-router-{lang}-{}",
+            doc.file_stem().unwrap().to_string_lossy()
+        ));
+        let r = run(&[
+            "generate",
+            doc.to_str().unwrap(),
+            "-l",
+            lang,
+            "-o",
+            out.to_str().unwrap(),
+        ]);
+        assert_eq!(r.exit, Some(0), "{lang}: {}", r.stderr);
+        manifest(&r)["needs_mesh_router"].clone()
+    };
+    for lang in ["rust", "kotlin", "go", "python", "c11"] {
+        assert_eq!(needs(&mesh, lang), serde_json::json!(true), "{lang}");
+    }
+    assert_eq!(needs(&mesh, "cpp"), serde_json::json!(false));
+    // A document with no peer send answers false, not an absent field.
+    assert_eq!(needs(&fixture(), "rust"), serde_json::json!(false));
+}

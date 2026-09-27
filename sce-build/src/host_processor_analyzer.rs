@@ -39,7 +39,10 @@
 //! such a site is absent from the cause list and is refused by the
 //! generated code's own dynamic check.
 
+use std::borrow::Cow;
+
 use crate::forge::error::SourceLocation;
+use crate::generator::Language;
 use crate::model::{Action, Invoke, SCXMLModel, State};
 
 /// SCXML Event I/O Processor URI (§scxml-C-1) — the default when
@@ -338,28 +341,7 @@ pub fn declare_host_surfaces(
         return;
     }
     let types = send_types;
-    for state in model.states.values_mut() {
-        for trans in &mut state.transitions {
-            for action in &mut trans.actions {
-                claim_action(action, types);
-            }
-        }
-        for block in state
-            .on_entry_blocks
-            .iter_mut()
-            .chain(state.on_exit_blocks.iter_mut())
-        {
-            for action in block {
-                claim_action(action, types);
-            }
-        }
-        for action in &mut state.initial_transition_actions {
-            claim_action(action, types);
-        }
-        for action in &mut state.initial_history_default_actions {
-            claim_action(action, types);
-        }
-    }
+    visit_actions_mut(model, &mut |action| claim_action(action, types));
     // Re-derived rather than filtered: the causes are the projection of
     // the flags, and recomputing them from the flags just changed is what
     // keeps `needs_host_processor` and the emitted code the same answer.
@@ -473,22 +455,147 @@ fn walk_actions(actions: &[Action], visit: &mut impl FnMut(&Action)) {
     }
 }
 
+/// The `<send type>` a Mesh send is lowered to on every backend whose Mesh
+/// router is a host processor (SCE_MESH.md §mesh-18.4) — every backend but
+/// C++, whose generated `TransportRouter` takes the send through its own
+/// mesh-send hook.
+pub const MESH_PROCESSOR_TYPE: &str = "sce:mesh";
+
+/// The peer a `<send target>` names, when it names one: `#` followed by at
+/// least one character, where `#_` stays reserved for the targets
+/// §scxml-6.2.4 defines (`#_internal`, `#_parent`, `#_<invokeid>`, ...).
+///
+/// The build's copy of the predicate the C++ core's `SendHelper::isMeshTarget`
+/// and the Rust and Kotlin cores' `mesh_peer` apply at run time. Every copy
+/// reads `tests/mesh/mesh_target_cases.json`, so a target one of them routes
+/// over Mesh is one they all do.
+pub fn mesh_peer(target: &str) -> Option<&str> {
+    target
+        .strip_prefix('#')
+        .filter(|peer| !peer.is_empty() && !peer.starts_with('_'))
+}
+
+/// Whether `action` is a `<send>` to a Mesh peer that the build can see as
+/// one: a literal `target` naming a peer, through the SCXML Event I/O
+/// Processor (written or defaulted), with no `typeexpr` or `targetexpr` that
+/// could make it something else at run time.
+fn is_static_mesh_send(action: &Action) -> bool {
+    action.action_type == "send"
+        && action.targetexpr.is_empty()
+        && action.typeexpr.is_empty()
+        && (action.send_type.is_empty() || action.send_type == SCXML_EVENT_PROCESSOR_TYPE)
+        && mesh_peer(&action.target).is_some()
+}
+
+/// Whether `language` delivers a Mesh send through a host-registered router
+/// rather than a generated one.
+pub fn routes_mesh_through_host(language: Language) -> bool {
+    !matches!(language, Language::Cpp)
+}
+
+/// Whether a machine generated for `language` needs its host to register a
+/// Mesh router: it sends to a peer, and the peer is reached through the host.
+///
+/// Published on the manifest beside `needs_host_processor`, so a host learns
+/// from the build — not from a first `error.execution` — that this machine
+/// talks to other machines.
+pub fn needs_mesh_router(model: &SCXMLModel, language: Language) -> bool {
+    routes_mesh_through_host(language) && sends_to_a_mesh_peer(model)
+}
+
+/// Whether any `<send>` in `model` names a Mesh peer the build can see — the
+/// document fact [`needs_mesh_router`] qualifies by language.
+pub fn sends_to_a_mesh_peer(model: &SCXMLModel) -> bool {
+    any_action(model, &mut is_static_mesh_send)
+}
+
+/// `model` as `language` renders it: on a backend whose Mesh router is a host
+/// processor, every `<send target="#peer">` becomes a host-served
+/// `sce:mesh` send.
+///
+/// The send templates already carry a host-served send the whole way — its
+/// arguments evaluated once, its `_event.data` as a local delivery would have
+/// had it, its delay honoured and its `<cancel>` reached — so a Mesh send
+/// is one more of them rather than a second path. Lowered per language
+/// rather than once after the parse because C++ keeps its own route; the
+/// model is borrowed untouched when there is nothing to lower.
+pub fn lower_mesh_sends(model: &SCXMLModel, language: Language) -> Cow<'_, SCXMLModel> {
+    if !needs_mesh_router(model, language) {
+        return Cow::Borrowed(model);
+    }
+    let mut lowered = model.clone();
+    visit_actions_mut(&mut lowered, &mut |action| {
+        if is_static_mesh_send(action) {
+            action.send_type = MESH_PROCESSOR_TYPE.to_string();
+            action.send_type_unsupported = false;
+            action.send_type_host_served = true;
+        }
+    });
+    // A delayed Mesh send waits on the delayed-send queue as any delayed
+    // host-served send does, so the queue's storage is sized with it.
+    record_delayed_host_sends(&mut lowered);
+    Cow::Owned(lowered)
+}
+
+/// Whether `pred` holds for any action in `model`, nested ones included.
+fn any_action(model: &SCXMLModel, pred: &mut impl FnMut(&Action) -> bool) -> bool {
+    let mut found = false;
+    let mut visit = |action: &Action| found |= pred(action);
+    for state in model.states.values() {
+        for trans in &state.transitions {
+            walk_actions(&trans.actions, &mut visit);
+        }
+        for block in state
+            .on_entry_blocks
+            .iter()
+            .chain(state.on_exit_blocks.iter())
+        {
+            walk_actions(block, &mut visit);
+        }
+        walk_actions(&state.initial_transition_actions, &mut visit);
+        walk_actions(&state.initial_history_default_actions, &mut visit);
+    }
+    found
+}
+
+/// Apply `visit` to every action in `model` and everything nested inside it.
+fn visit_actions_mut(model: &mut SCXMLModel, visit: &mut impl FnMut(&mut Action)) {
+    fn walk(actions: &mut [Action], visit: &mut impl FnMut(&mut Action)) {
+        for action in actions {
+            visit(action);
+            for block in action.nested_blocks_mut() {
+                walk(block, visit);
+            }
+        }
+    }
+    for state in model.states.values_mut() {
+        for trans in &mut state.transitions {
+            walk(&mut trans.actions, visit);
+        }
+        for block in state
+            .on_entry_blocks
+            .iter_mut()
+            .chain(state.on_exit_blocks.iter_mut())
+        {
+            walk(block, visit);
+        }
+        walk(&mut state.initial_transition_actions, visit);
+        walk(&mut state.initial_history_default_actions, visit);
+    }
+}
+
 /// Move one `<send>` from "refused" to "dispatched to the host", if the
 /// declaration names its type.
 ///
-/// Mirrors [`collect_action_causes`]'s recursion for the same reason: a
-/// `<send>` nested in `<if>` / `<foreach>` must be claimed by a
-/// declaration exactly as a top-level one is, or the same document
-/// delivers in one position and refuses in the other.
+/// Reached through [`visit_actions_mut`], which recurses for the reason
+/// [`collect_action_causes`] does: a `<send>` nested in `<if>` /
+/// `<foreach>` must be claimed by a declaration exactly as a top-level one
+/// is, or the same document delivers in one position and refuses in the
+/// other.
 fn claim_action(action: &mut Action, types: &[String]) {
     if action.send_type_unsupported && types.iter().any(|t| t == &action.send_type) {
         action.send_type_unsupported = false;
         action.send_type_host_served = true;
-    }
-    for block in action.nested_blocks_mut() {
-        for nested in block {
-            claim_action(nested, types);
-        }
     }
 }
 
@@ -576,6 +683,114 @@ mod tests {
 
     fn parse(scxml: &str) -> SCXMLModel {
         SCXMLParser::new().parse_string(scxml, "test").unwrap()
+    }
+
+    /// tests/mesh/mesh_target_cases.json: the table every copy of the
+    /// mesh-target predicate reads.
+    #[test]
+    fn a_mesh_peer_is_read_by_the_shared_table() {
+        let table: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/mesh/mesh_target_cases.json"))
+                .expect("the table is JSON");
+        let cases = table["cases"].as_array().expect("the table has cases");
+        assert!(cases.len() >= 10, "the table lost cases: {}", cases.len());
+        for case in cases {
+            let target = case["target"].as_str().expect("a target is a string");
+            assert_eq!(mesh_peer(target), case["peer"].as_str(), "{target:?}");
+        }
+    }
+
+    /// Every send the lowering must reach and every one it must leave.
+    const MESH_SENDS: &str = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+        datamodel="ecmascript" initial="s">
+      <datamodel><data id="t" expr="'#hmi'"/></datamodel>
+      <state id="s">
+        <onentry>
+          <send event="plain" target="#hmi"/>
+          <send event="typed" target="#hmi" type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor"/>
+          <if cond="true"><send event="nested" target="#hmi"/></if>
+          <send event="parent" target="#_parent"/>
+          <send event="dynamic" targetexpr="t"/>
+          <send event="typedexpr" target="#hmi" typeexpr="'x'"/>
+          <send event="http" target="#hmi" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
+        </onentry>
+      </state>
+    </scxml>"##;
+
+    fn sends(model: &SCXMLModel) -> Vec<(String, String, bool)> {
+        let mut out = Vec::new();
+        any_action(model, &mut |a: &Action| {
+            if a.action_type == "send" {
+                out.push((
+                    a.event.clone(),
+                    a.send_type.clone(),
+                    a.send_type_host_served,
+                ));
+            }
+            false
+        });
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn a_static_peer_send_is_lowered_to_the_mesh_router_and_nothing_else_is() {
+        let model = parse(MESH_SENDS);
+        assert!(needs_mesh_router(&model, Language::Rust));
+        let lowered = lower_mesh_sends(&model, Language::Rust);
+        let mesh: Vec<_> = sends(&lowered)
+            .into_iter()
+            .filter(|(_, ty, served)| ty == MESH_PROCESSOR_TYPE && *served)
+            .map(|(event, _, _)| event)
+            .collect();
+        assert_eq!(mesh, ["nested", "plain", "typed"]);
+        // Every other send is exactly what the parse made of it.
+        let untouched = |m: &SCXMLModel| {
+            sends(m)
+                .into_iter()
+                .filter(|(event, _, _)| !["nested", "plain", "typed"].contains(&event.as_str()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(untouched(&lowered), untouched(&model));
+    }
+
+    #[test]
+    fn cpp_keeps_its_own_route_and_is_left_unlowered() {
+        let model = parse(MESH_SENDS);
+        assert!(!needs_mesh_router(&model, Language::Cpp));
+        assert!(matches!(
+            lower_mesh_sends(&model, Language::Cpp),
+            Cow::Borrowed(_)
+        ));
+    }
+
+    #[test]
+    fn a_document_without_a_peer_send_is_borrowed_as_it_is() {
+        let model = parse(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+                 <state id="s"><onentry><send event="e" target="#_internal"/></onentry></state>
+               </scxml>"##,
+        );
+        assert!(!needs_mesh_router(&model, Language::Kotlin));
+        assert!(matches!(
+            lower_mesh_sends(&model, Language::Kotlin),
+            Cow::Borrowed(_)
+        ));
+    }
+
+    #[test]
+    fn a_delayed_peer_send_waits_on_the_delayed_send_queue() {
+        let model = parse(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+                 <state id="s"><onentry>
+                   <send event="later" target="#hmi" delay="1s" namelist="x"/>
+                 </onentry></state>
+               </scxml>"##,
+        );
+        assert!(!model.has_delayed_host_send);
+        let lowered = lower_mesh_sends(&model, Language::C11);
+        assert!(lowered.has_delayed_host_send);
+        assert_eq!(lowered.delayed_host_send_max_params, 1);
     }
 
     /// The build reads a deadline by the grammar every runtime reads it by,

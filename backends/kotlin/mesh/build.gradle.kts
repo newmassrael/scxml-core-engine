@@ -85,4 +85,6 @@ kotlin {
 tasks.named<Test>("jvmTest") {
     dependsOn(buildWssPeer)
     systemProperty("sce.mesh.wssPeer", wssPeer.absolutePath)
+    // The shared tables under tests/ are named from the repository root.
+    systemProperty("sce.repo.root", rootProject.projectDir.absolutePath)
 }

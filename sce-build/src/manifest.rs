@@ -309,6 +309,19 @@ pub struct Manifest<'a> {
     /// Always present, so a consumer reads `false` as an answer rather
     /// than as a field it has to guess the absence of.
     pub needs_host_processor: bool,
+    /// Whether the host must register a Mesh router — the Event I/O
+    /// Processor `sce:mesh` — for this machine: it sends to a Mesh peer
+    /// (`<send target="#peer">`), and on this run's target language the peer
+    /// is reached through a router the host supplies. `false` on C++, whose
+    /// generated `TransportRouter` carries the send itself.
+    ///
+    /// The same kind of answer as [`Self::needs_host_processor`], and
+    /// published for the same reason: without it a host learns that the
+    /// machine talks to other machines from the first `error.execution`.
+    /// Present exactly when the run has one target language; a run that
+    /// spans backends has no single answer and reports none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub needs_mesh_router: Option<bool>,
     /// Which sites made [`Self::needs_host_processor`] true. Omitted
     /// (not `[]`) when there are none, matching
     /// [`Self::script_engine_causes`].
@@ -563,6 +576,7 @@ mod tests {
             script_engine_language: None,
             needs_event_scheduler: false,
             needs_host_processor: false,
+            needs_mesh_router: None,
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -590,6 +604,7 @@ mod tests {
             script_engine_language: None,
             needs_event_scheduler: false,
             needs_host_processor: false,
+            needs_mesh_router: None,
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -623,6 +638,7 @@ mod tests {
             script_engine_language: None,
             needs_event_scheduler: false,
             needs_host_processor: false,
+            needs_mesh_router: None,
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -677,6 +693,7 @@ mod tests {
             script_engine_language: None,
             needs_event_scheduler: false,
             needs_host_processor: true,
+            needs_mesh_router: None,
             host_processor_causes: &causes,
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -716,6 +733,7 @@ mod tests {
             script_engine_language: Some(SCRIPT_ENGINE_LANGUAGE_LUA),
             needs_event_scheduler: false,
             needs_host_processor: false,
+            needs_mesh_router: None,
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -763,6 +781,7 @@ mod tests {
             script_engine_language: None,
             needs_event_scheduler: false,
             needs_host_processor: false,
+            needs_mesh_router: None,
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -794,6 +813,7 @@ mod tests {
             script_engine_language: None,
             needs_event_scheduler: false,
             needs_host_processor: false,
+            needs_mesh_router: None,
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -832,6 +852,7 @@ mod tests {
             // showed a type in both would be reporting a refusal the
             // build just arranged not to emit.
             needs_host_processor: false,
+            needs_mesh_router: None,
             host_processor_causes: &[],
             host_processor_types: &declared,
             // The invoke half declared beside it, because the two travel
@@ -872,6 +893,7 @@ mod tests {
             script_engine_language: None,
             needs_event_scheduler: false,
             needs_host_processor: false,
+            needs_mesh_router: None,
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
