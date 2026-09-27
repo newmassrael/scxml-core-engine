@@ -13,9 +13,11 @@ Asserted here, against a signal that starts flashing 500 ms after a train is
 detected:
 
     a window wholly past the deadline sees it fired; wholly before, not
-    a window the deadline falls inside gives up the run from there
+    an answer arriving INSIDE the window is met at its first moment
                                                         (the discriminator)
-    uncertainty CARRIES: a setup step's window widens every later reading
+    an answer never met in the window fails, read at its end
+    uncertainty CARRIES: a setup step's window widens every later reading,
+    and a deadline the slack may put inside a window is not guessed at
     nothing pending, nothing carried: the slack resets
     a clock input is not handed one end of a window
     a window whose min is above its max is refused where it is read
@@ -87,20 +89,40 @@ class ATimeKnownOnlyAsAWindow(unittest.TestCase):
         self.assertEqual((1, 0, 0), (result.passed, result.failed, result.unjudged),
                          details(result))
 
-    def test_a_deadline_inside_the_window_gives_up_the_run_from_there(self):
-        """⚠ The discriminator. Read at its earliest end the window says
-        DARK and at its latest FLASHING; neither is the record's, so the case
-        is withheld -- and the next one too, whose machine is one of two."""
+    def test_an_answer_that_arrives_inside_the_window_is_met(self):
+        """⚠ The discriminator. The window opens at 400 ms, when the signal is
+        still dark, and the flashing it expects arrives at 500 -- inside. A
+        harness that waits UP TO a timeout returns at that notification, so
+        the record says FLASHING held at some moment in the window, and it
+        did. Read as one unknown instant, the case could only be withheld."""
+        result = self.run_cases([detected("FLASHING", {"min": 400, "max": 700})])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((1, 0, 0), (result.passed, result.failed, result.unjudged),
+                         details(result))
+
+    def test_an_answer_never_met_in_the_window_fails_at_its_end(self):
+        """Nothing fires before 400 ms, so FLASHING is never met: the harness
+        waited the whole window, and what it read at the end is the verdict."""
+        result = self.run_cases([detected("FLASHING", {"min": 100, "max": 400})])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((0, 1, 0), (result.passed, result.failed, result.unjudged),
+                         details(result))
+
+    def test_a_deadline_the_slack_may_put_inside_the_window_is_not_guessed(self):
+        """The setup step leaves up to 300 ms of slack; the reading's window
+        closes 100 ms before the deadline the engine sees. Whether it fell
+        inside the window the record read in is not known."""
         result = self.run_cases([
-            detected("DARK", {"min": 400, "max": 700}),
-            {"name": "then it clears", "given": {APPROACH: "CLEAR"},
-             "drove": [APPROACH], "elapsed_ms": 50,
-             "expect": {SIGNAL: "DARK"}},
+            {"name": "detected, then occupied and read",
+             "given": {APPROACH: "OCCUPIED"}, "drove": [APPROACH],
+             "elapsed_ms": {"min": 100, "max": 200}, "expect": {SIGNAL: "FLASHING"},
+             "before": [{"given": {APPROACH: "APPROACHING"}, "drove": [APPROACH],
+                         "elapsed_ms": {"min": 0, "max": 300}}]},
         ])
         self.assertTrue(result.ran, result.refusal)
-        self.assertEqual((0, 0, 2), (result.passed, result.failed, result.unjudged),
+        self.assertEqual((0, 0, 1), (result.passed, result.failed, result.unjudged),
                          details(result))
-        self.assertIn("whether it fired is not known", result.results[0].refusal)
+        self.assertIn("whether it fell inside is not known", result.results[0].refusal)
 
     def test_a_setup_windows_uncertainty_carries_into_the_reading(self):
         """The setup step says only that 0 to 300 ms passed; the reading is
@@ -108,8 +130,8 @@ class ATimeKnownOnlyAsAWindow(unittest.TestCase):
         ms on -- but real time may already be 600 ms in. An exact-number
         reading of the same record would have passed DARK."""
         result = self.run_cases([
-            {"name": "detected, then read",
-             "given": {APPROACH: "APPROACHING"}, "drove": [APPROACH],
+            {"name": "detected, then occupied and read",
+             "given": {APPROACH: "OCCUPIED"}, "drove": [APPROACH],
              "elapsed_ms": 300, "expect": {SIGNAL: "DARK"},
              "before": [{"given": {APPROACH: "APPROACHING"}, "drove": [APPROACH],
                          "elapsed_ms": {"min": 0, "max": 300}}]},
@@ -117,6 +139,7 @@ class ATimeKnownOnlyAsAWindow(unittest.TestCase):
         self.assertTrue(result.ran, result.refusal)
         self.assertEqual((0, 0, 1), (result.passed, result.failed, result.unjudged),
                          details(result))
+        self.assertIn("not known", result.results[0].refusal)
 
     def test_with_nothing_pending_the_slack_resets(self):
         """A wide window over a machine waiting on nothing moves nothing, and

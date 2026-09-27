@@ -37,6 +37,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
 from . import delivery, landing
 from .check import (STATECHART_KINDS, activation_unsaid, driving_refusals,
@@ -1086,6 +1087,12 @@ class Planted:
         for address in positions:
             self.values.pop(address, None)
 
+    def surviving(self, positions) -> dict:
+        """What would still stand if the document wrote `positions` now --
+        read without committing, for a reading taken at a moment that may
+        not be the one judged (`StatechartRun.moments`)."""
+        return {a: v for a, v in self.values.items() if a not in positions}
+
     def stand_in(self, produced: dict, undetermined=frozenset()) -> set:
         """Fill in what the slot holds where this round wrote nothing.
 
@@ -1891,6 +1898,11 @@ class StatechartRun:
         # given up rather than judged on one of two machines.
         self.slack_ms += hi - lo
         self.engine.advance_time(int(lo))
+        self.settle()
+
+    def settle(self) -> None:
+        """After a step: forget the slack if nothing is pending, give the run
+        up if a pending deadline lies within it."""
         due = self.engine.time_until_next_scheduled_ms()
         if due is None:
             # Nothing pending: the uncertainty had nothing left to move.
@@ -1901,6 +1913,51 @@ class StatechartRun:
                 f"this record can have reached, and the record may have run "
                 f"up to {self.slack_ms:g} ms past it -- whether it fired is "
                 f"not known, so no configuration from here on is")
+
+    def moments(self, case):
+        """The instants a JUDGED step's reading may be taken at, earliest first.
+
+        ⚠ A judged reading is not "the state at the window's end". A harness
+        that waits UP TO a timeout returns at the first notification that
+        satisfies it -- so the record says the expectation held at SOME moment
+        in the window, and the verdict is about the first one. Measured
+        2026-09-27: a case asserting that an event arrives 2 s after the drive
+        (within 1990..2020 ms) could only be withheld while its window was
+        read as one unknown instant -- the deadline it asserts falls inside
+        the window by design. So the engine visits the window's earliest end
+        and then each deadline inside it; the caller reads the machine at each
+        and stops at the first that meets the case, else at the window's end.
+
+        The slack a setup step left still holds: a deadline beyond the window
+        but within the slack may or may not have been inside it, and is not
+        guessed at (`ClockLost`). The slack is unchanged by the reading -- the
+        harness returned when the machine answered, not at a moment of its
+        own choosing.
+        """
+        lo, hi = case.elapsed_window
+        if lo < 0:
+            raise VerifyError(f"records `elapsed_ms` of {lo:g}, and an age cannot be negative")
+        span = hi - lo
+        self.engine.advance_time(int(lo))
+        yield
+        elapsed = 0
+        while True:
+            due = self.engine.time_until_next_scheduled_ms()
+            if due is None or elapsed + due > span + self.slack_ms:
+                break
+            if elapsed + due > span:
+                raise ClockLost(
+                    f"a delayed act is due {elapsed + due - span:g} ms after "
+                    f"the window this case was read in closes, and earlier "
+                    f"steps may have run up to {self.slack_ms:g} ms past the "
+                    f"engine's clock -- whether it fell inside is not known")
+            self.engine.advance_time(int(due))
+            elapsed += due
+            yield
+        if elapsed < span:
+            # Nothing answered inside: the harness read at the window's end.
+            self.engine.advance_time(int(span - elapsed))
+            yield
 
 
 def verify_statechart(pack: Pack, binding: dict, module, build: Build,
@@ -2010,6 +2067,67 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     # ours is being judged.
     last_given: dict = {}
     planted = Planted(bound)
+
+    def read_round(requests, judged: bool) -> SimpleNamespace:
+        """What the machine's sends say every output is, read WITHOUT
+        committing anything -- a judged step may be read at several moments
+        and only the one chosen moves the slots (`hold_last`, `Planted`).
+
+        ⚠ A `hold_last` position is the SLOT's memory, and a slot does not
+        know which rounds a record calls setup: a value written while the
+        machine was being set up is what it holds when the judged round
+        writes nothing. So these are landed on EVERY round, through the rule
+        the computation path applies (`_held`). This path used to skip it --
+        `check` accepted a statechart binding with `hold_last`, and `verify`
+        then reported each case whose round sent nothing as a value "the map
+        has no entry for".
+
+        A setup round is not failed on what it read, so an output that cannot
+        be read there is taken as having written everywhere it may -- a
+        planted value there is then not trusted to have survived, which is
+        the side that claims less.
+        """
+        now, unreadable = {}, set()
+        for name, rule in outputs.items():
+            if rule.get("unresolved") or rule.get("internal"):
+                continue
+            try:
+                now[name] = reading(name, rule, requests)
+            except VerifyError:
+                if judged or rule.get("hold_last"):
+                    raise
+                unreadable.update(written_positions({name: rule})[0])
+        held_now = {name: _held(name, rule, now[name], history)
+                    for name, rule in outputs.items() if name in now
+                    and rule.get("hold_last")}
+        fresh = unreadable.union(
+            *(positions_written_now(outputs[n], v) for n, v in now.items()))
+        produced: dict = {}
+        stood_in: set = set()
+        if judged:
+            for name, rule in outputs.items():
+                if rule.get("unresolved") or rule.get("internal"):
+                    continue
+                if name in held_now:
+                    if held_now[name] is _NOT_WRITTEN:
+                        # Nothing held yet: the slot is not written at all.
+                        continue
+                    value = held_now[name]
+                else:
+                    value = now[name]
+                produced.update(output_values(name, rule, value))
+            surviving = planted.surviving(fresh)
+            produced.update(surviving)
+            stood_in = set(surviving)
+        return SimpleNamespace(held_now=held_now, fresh=fresh,
+                               produced=produced, stood_in=stood_in)
+
+    def meets(case, read) -> bool:
+        """Whether every position the case expects reads as it expects."""
+        return all(address in read.produced
+                   and _same(want, read.produced[address], _field_at(pack.model, address))
+                   for address, want in case.expect.items())
+
     for case, owner, judged in rounds_of(examples.cases):
         # Under `on-change` the host runs the component only for an input
         # that changed; a record restating a value delivers nothing.
@@ -2092,55 +2210,33 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             # starts the situation whose age `elapsed_ms` states, and the
             # reading is what that age dates -- so a delayed act reaches the
             # machine in between, which is the whole point of it having one.
-            run.observe(case)
-            requests = run.recorder.take()
-            # ⚠ A `hold_last` position is the SLOT's memory, and a slot does
-            # not know which rounds a record calls setup: a value written
-            # while the machine was being set up is what it holds when the
-            # judged round writes nothing. So these are landed on EVERY round,
-            # through the rule the computation path applies (`_held`). This
-            # path used to skip it -- `check` accepted a statechart binding
-            # with `hold_last`, and `verify` then reported each case whose
-            # round sent nothing as a value "the map has no entry for".
-            # What each output read this round. A setup round is not failed on
-            # what it read, so an output that cannot be read there is taken as
-            # having written everywhere it may -- a planted value there is then
-            # not trusted to have survived, which is the side that claims less.
-            now, unreadable = {}, set()
-            for name, rule in outputs.items():
-                if rule.get("unresolved") or rule.get("internal"):
-                    continue
-                try:
-                    now[name] = reading(name, rule, requests)
-                except VerifyError:
-                    if judged or rule.get("hold_last"):
-                        raise
-                    unreadable.update(written_positions({name: rule})[0])
-            held_now = {name: _held(name, rule, now[name], history)
-                        for name, rule in outputs.items() if name in now
-                        and rule.get("hold_last")}
-            for name, value in held_now.items():
+            if judged and case.elapsed_window is not None:
+                # The first moment in the window that meets the case is the
+                # one the record read (`StatechartRun.moments`); failing
+                # every one, the window's end.
+                taken: list = []
+                read = None
+                for _ in run.moments(case):
+                    taken += run.recorder.take()
+                    read = read_round(taken, judged)
+                    if meets(case, read):
+                        break
+                run.settle()
+            else:
+                run.observe(case)
+                read = read_round(run.recorder.take(), judged)
+            # Only the moment chosen is committed: what a slot holds and what
+            # the record planted move once, as they do in the one run the
+            # record describes.
+            for name, value in read.held_now.items():
                 if value is not _NOT_WRITTEN:
                     history.held[name] = value
-            planted.overwritten(unreadable.union(
-                *(positions_written_now(outputs[n], v) for n, v in now.items())))
+            planted.overwritten(read.fresh)
             if not judged:
                 # What the machine sent while being set up is not what the
                 # case is judged on: the case's own round starts clean.
                 continue
-            produced: dict = {}
-            for name, rule in outputs.items():
-                if rule.get("unresolved") or rule.get("internal"):
-                    continue
-                if name in held_now:
-                    if held_now[name] is _NOT_WRITTEN:
-                        # Nothing held yet: the slot is not written at all.
-                        continue
-                    value = held_now[name]
-                else:
-                    value = now[name]
-                produced.update(output_values(name, rule, value))
-            stood_in = planted.stand_in(produced)
+            produced, stood_in = read.produced, read.stood_in
         except ClockLost as exc:
             # Not this case's failure to be driven: the run itself stopped
             # being knowable, as it does for an open event (`lost`).
