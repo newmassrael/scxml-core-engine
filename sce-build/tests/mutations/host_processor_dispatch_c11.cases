@@ -47,8 +47,8 @@ mutation_oracles backends/c/tests/integration/test_host_processor.c
 # fixture on that branch would fail to link rather than fail its assertions.
 mutation_case "the template emits no host dispatch" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "{% if action.send_type_host_served %}\n            /* §scxml-6.2.5:",
-     "{% if false and action.send_type_host_served %}\n            /* §scxml-6.2.5:")
+     "{% elif action.send_type_host_served %}\n            /* §scxml-6.2.5:",
+     "{% elif false and action.send_type_host_served %}\n            /* §scxml-6.2.5:")
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send(",
      "SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_perform_host_send(")
