@@ -679,6 +679,29 @@ fn verify_passes_on_real_committed_mesh_rust_tree() {
     );
 }
 
+#[test]
+fn verify_passes_on_real_committed_mesh_kotlin_tree() {
+    let workspace = workspace_root();
+    let target = workspace
+        .join("backends")
+        .join("kotlin")
+        .join("mesh")
+        .join("src")
+        .join("commonMain")
+        .join("kotlin")
+        .join("generated");
+    let input_root = workspace.join("stdlib").join("mesh");
+    let (code, stderr) = run_verify_real_tree(&target, &input_root);
+    assert_eq!(
+        code, 0,
+        "verify must pass on the committed Kotlin Mesh tree. A failure here \
+         means a stdlib/mesh/*.scxml or a Kotlin forge template changed \
+         without refreshing backends/kotlin/mesh/src/commonMain/kotlin/generated/. \
+         Run `backends/kotlin/mesh/generate.sh` and commit the result. \
+         stderr:\n{stderr}"
+    );
+}
+
 // ── §synth-6.2.6 source-set coverage guard ──────────────────────────
 //
 // The `source-hash` fold is total over whatever the walk collected, so a

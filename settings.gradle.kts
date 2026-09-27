@@ -36,6 +36,8 @@ include(":sce-kotlin-quickjs")
 project(":sce-kotlin-quickjs").projectDir = file("backends/kotlin/quickjs")
 include(":sce-kotlin-tests")
 project(":sce-kotlin-tests").projectDir = file("backends/kotlin/tests")
+include(":sce-kotlin-mesh")
+project(":sce-kotlin-mesh").projectDir = file("backends/kotlin/mesh")
 // ECMA-262 through a Lua-lowered Kotlin artifact. Separate from
 // `:sce-kotlin-tests` because it compiles two artifacts generated from one
 // document with two `--script-engine` selections, which is a different subject

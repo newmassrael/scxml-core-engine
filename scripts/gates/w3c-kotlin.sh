@@ -895,3 +895,41 @@ if (( suite_cases < 1 || suite_failures != 0 || suite_errors != 0 )); then
 fi
 
 sce_gate_step "the emitted Kotlin suite built and passed $suite_cases case(s)"
+
+# ── The Kotlin Mesh core ────────────────────────────────────────────
+#
+# `:sce-kotlin-mesh` is the router core a Kotlin host runs Mesh through, and
+# `backends/kotlin/**` is what selects this gate, so this is where it is run.
+# Its tests are the ones that hold the core to the Rust core's bytes.
+#
+# The count is DERIVED from the module's own `@Test` declarations and held as
+# an equality, for the reason the suite rows above read JUnit XML: Gradle says
+# BUILD SUCCESSFUL for a test task that ran nothing, and a floor typed here
+# would go on passing when a test stopped running.
+sce_gate_step "running the Kotlin Mesh core's own tests"
+MESH_TESTS="backends/kotlin/mesh/src/commonTest"
+mesh_declared="$(grep -rh '^\s*@Test' "$MESH_TESTS" | grep -c . || true)"
+mesh_status=0
+./gradlew --console=plain :sce-kotlin-mesh:jvmTest >"$LOG/kotlin-mesh.log" 2>&1 || mesh_status=$?
+if (( mesh_status != 0 )); then
+    tail -n 40 "$LOG/kotlin-mesh.log" >&2
+    sce_gate_fail "the Kotlin Mesh core's tests failed"
+fi
+MESH_REPORTS="backends/kotlin/mesh/build/test-results/jvmTest"
+[ -d "$MESH_REPORTS" ] \
+    || sce_gate_fail "the Kotlin Mesh core reported success without producing a result file"
+read -r mesh_cases mesh_failures mesh_errors < <(
+    python3 - "$MESH_REPORTS" <<'PY'
+import glob, sys, xml.etree.ElementTree as ET
+t = f = e = 0
+for p in glob.glob(sys.argv[1] + "/*.xml"):
+    r = ET.parse(p).getroot()
+    t += int(r.get("tests", 0)); f += int(r.get("failures", 0)); e += int(r.get("errors", 0))
+print(t, f, e)
+PY
+)
+if (( mesh_declared < 1 || mesh_cases != mesh_declared || mesh_failures != 0 || mesh_errors != 0 )); then
+    sce_gate_fail "the Kotlin Mesh core ran $mesh_cases case(s) of the $mesh_declared its sources declare, with $mesh_failures failure(s) and $mesh_errors error(s)"
+fi
+
+sce_gate_step "the Kotlin Mesh core passed all $mesh_cases case(s) its sources declare"
