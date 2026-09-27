@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 6.4: every event an invoked child sends to `#_parent` is placed
+  on the parent's external event queue. The clause sets no limit on how
+  many a child may send before the parent next takes one, so a platform's
+  only bound is its own resources, and reaching it must not stop the
+  machine.
+
+  The child's <onentry> sends `tick` to the parent 110 times in one
+  <foreach>, while the child is being started inside the parent's own
+  macrostep — more than a queue of 100 holds, all before the parent has a
+  chance to take one.
+
+    ticks  110 — every event the child sent arrives, in one piece, before
+                 the host's `finish` ends the run in `done`.
+
+  C11 bounds every event queue at `SCE_MAX_EVENTS` (32 by default), which
+  is that backend's documented resource limit; its test target is built
+  with the bound raised above this fixture's count, so what is measured
+  there is the delivery, not the configuration.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="a_child_may_send_many_events_in_one_tick" datamodel="ecmascript"
+       initial="s0">
+
+  <datamodel>
+    <data id="ticks" expr="0"/>
+  </datamodel>
+
+  <state id="s0">
+    <invoke type="scxml" id="chatty">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+               datamodel="ecmascript" initial="c0">
+          <datamodel>
+            <data id="items" expr="[1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1]"/>
+            <data id="item" expr="0"/>
+          </datamodel>
+          <state id="c0">
+            <onentry>
+              <foreach array="items" item="item">
+                <send target="#_parent" event="tick"/>
+              </foreach>
+            </onentry>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+
+    <transition event="tick">
+      <assign location="ticks" expr="ticks + 1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>

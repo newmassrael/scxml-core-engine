@@ -1047,6 +1047,8 @@ add_executable(integration_tests
     integration/APayloadRidesOnItsOwnEventAotTest.cpp
     integration/AChildReplyArrivesWithoutATickTest.cpp
     integration/AChildReplyArrivesWithoutATickAotTest.cpp
+    integration/AChildMaySendManyEventsInOneTickTest.cpp
+    integration/AChildMaySendManyEventsInOneTickAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
     integration/EventDataArrivesAsSentAotTest.cpp
     integration/XmlDataIsADomTreeTest.cpp
@@ -1600,6 +1602,10 @@ sce_generate_static_integration_test(a_payload_rides_on_its_own_event ${STATIC_I
 # W3C SCXML 6.4: an invoked child's replies reach the parent's external queue
 # when sent, ahead of the host's later events, with no clock advanced.
 sce_generate_static_integration_test(a_child_reply_arrives_without_a_tick ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 6.4: every event an invoked child sends to `#_parent` reaches the
+# parent, however many it sends before the parent next takes one.
+sce_generate_static_integration_test(a_child_may_send_many_events_in_one_tick ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach the
 # datamodel as a value. `raiseExternalEvent(name, data)` and

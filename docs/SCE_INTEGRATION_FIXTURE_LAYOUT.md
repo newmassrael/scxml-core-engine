@@ -1266,6 +1266,23 @@ Python, which runs a forwarded event synchronously, answers it one way
 while Rust, Go and Kotlin, which run the child on its own tick, answer it
 the other.
 
+`a_child_may_send_many_events_in_one_tick` covers the same clause from the
+other side: it sets no limit on how many events a child may send before the
+parent next takes one, so a platform's only bound is its own resources. The
+child sends `tick` to its parent 110 times in one `<foreach>` while it is
+being started, and all 110 must arrive before the host's `finish` ends the
+run.
+
+Measured 2026-09-27, Go wrote a child's parent-bound events into a channel
+buffered at 100 with a blocking send, on the parent's own goroutine — the
+one that drains it — so the 101st event of one tick blocked forever. The
+queue is now the runtime's `ParentEventQueue`, a mutex-guarded slice that
+never blocks its sender and hands the drain everything queued so far. C11
+bounds every event queue at `SCE_MAX_EVENTS` (32 by default), which is that
+backend's documented resource limit and is read only by generated code; its
+test target raises the bound to 256, so what it measures there is the
+delivery rather than the configuration.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

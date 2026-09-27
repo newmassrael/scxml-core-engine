@@ -1542,6 +1542,42 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 6.4: every event an invoked child sends to `#_parent` reaches the
+    # parent, however many it sends in one tick. This backend bounds every event
+    # queue at SCE_MAX_EVENTS (sce/types.h, 32 by default), its documented
+    # resource limit, and only generated code reads it — so this one target
+    # raises it above the fixture's 110 events, and what is measured is the
+    # delivery rather than the default bound.
+    sce_generate_static_integration_c_test(a_child_may_send_many_events_in_one_tick "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN chatty
+    )
+
+    add_executable(sce_c_integration_a_child_may_send_many_events_in_one_tick
+        integration/test_a_child_may_send_many_events_in_one_tick.c
+        ${INTEGRATION_C_TEST_a_child_may_send_many_events_in_one_tick_SOURCES}
+    )
+    target_compile_definitions(sce_c_integration_a_child_may_send_many_events_in_one_tick PRIVATE
+        SCE_MAX_EVENTS=256
+    )
+    target_link_libraries(sce_c_integration_a_child_may_send_many_events_in_one_tick PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_a_child_may_send_many_events_in_one_tick PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_child_may_send_many_events_in_one_tick PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_child_may_send_many_events_in_one_tick
+        COMMAND sce_c_integration_a_child_may_send_many_events_in_one_tick
+    )
+    set_tests_properties(c11_integration_a_child_may_send_many_events_in_one_tick PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach
     # the datamodel as a value. Every other fixture here leaves the carrier's
     # `data` field zeroed, so this edge — the one a downstream MCU consumer
