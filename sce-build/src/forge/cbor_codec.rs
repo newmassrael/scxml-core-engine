@@ -29,7 +29,7 @@ use crate::generator::Language;
 /// is run exactly where the generator admits it (the `lowers_may_fail`
 /// pattern).
 pub fn lowers(lang: Language) -> bool {
-    matches!(lang, Language::Rust | Language::Kotlin)
+    matches!(lang, Language::Rust | Language::Kotlin | Language::Cpp)
 }
 
 /// Render a CBOR codec for `lang`.
@@ -55,7 +55,8 @@ pub fn render(
     match lang {
         Language::Rust => render_rust(env, m, imports),
         Language::Kotlin => render_kotlin(env, m, imports),
-        _ => unreachable!("`lowers` admits Rust and Kotlin alone"),
+        Language::Cpp => render_cpp(env, m, imports),
+        _ => unreachable!("`lowers` admits Rust, Kotlin and C++ alone"),
     }
 }
 
@@ -153,6 +154,50 @@ fn render_kotlin(
                 "null".to_string()
             }
             .into();
+        }
+    }
+    l.render(env, "codec_cbor", ctx)
+}
+
+fn render_cpp(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let l = LangCtx::new(Language::Cpp, imports);
+    // Owned values, as every C++ codec holds them: a text string is a
+    // `std::string` and a byte string a `std::vector<uint8_t>`.
+    let mut ctx = common_context(&l, m, imports, |e| l.type_name(&e.sce_type).into_owned())?;
+    // A value-initialized member holds its type's zero, which is the right
+    // start for every entry but an enum's: a closed set need not declare the
+    // carrier's zero, so an enum starts at its first declared variant — the
+    // one default C++ codecs spell (`LangCtx::default_expr`). An optional
+    // entry starts absent.
+    if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
+        for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
+            let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
+            entry["field_type"] = if e.required {
+                value_type
+            } else {
+                format!("std::optional<{value_type}>")
+            }
+            .into();
+            entry["init"] = match &e.sce_type {
+                SceType::Enum(r) if e.required => l.enum_default_expr(&r.alias),
+                _ => String::new(),
+            }
+            .into();
+            // A signed carrier can hold a number no CBOR unsigned integer
+            // carries, which encode refuses; an unsigned one cannot, and the
+            // check is not written for it (a comparison that is always false
+            // is a compile warning, not a guard).
+            if let SceType::Enum(r) = &e.sce_type {
+                entry["carrier_signed"] = matches!(
+                    enum_carrier(imports, &r.alias),
+                    Some(SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64)
+                )
+                .into();
+            }
         }
     }
     l.render(env, "codec_cbor", ctx)

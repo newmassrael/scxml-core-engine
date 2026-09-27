@@ -54,6 +54,15 @@ enum class CodecError : std::uint8_t {
     /// on `SpanSink` and surface overflow as a typed error rather
     /// than aborting.
     BufferOverflow = 3,
+    /// An `sce:encoding="cbor"` codec's value past its entry's declared
+    /// bound — a text or byte string longer than `sce:max-size`, an enum
+    /// whose number does not fit the wire (SCE_FORGE.md §4.6.1). Encode
+    /// refuses it rather than writing it; decode refuses the same wire with
+    /// `std::nullopt`, the C++ decode convention.
+    CborOutOfRange = 4,
+    /// An `sce:encoding="cbor"` codec's byte string that is not its entry's
+    /// exact `sce:length`, refused on encode as `CborOutOfRange` is.
+    CborWrongLength = 5,
 };
 
 /// Read-only cursor over a borrowed input buffer. Decode bodies use

@@ -34,7 +34,15 @@
 {% if f.fields %}
         const auto &decoded_json = case_entry["decoded"];
 {% for field in f.fields %}
+{% if field.optional %}
+        {# An absent entry is JSON `null` in the case and empty in the struct. #}
+        std::optional<{{ field.type | cpp_type }}> input_{{ field.name }};
+        if (!decoded_json["{{ field.name }}"].is_null()) {
+            input_{{ field.name }} = decoded_json["{{ field.name }}"].get<{{ field.type | cpp_type }}>();
+        }
+{% else %}
         auto input_{{ field.name }} = decoded_json["{{ field.name }}"].get<{{ field.type | cpp_type }}>();
+{% endif %}
 {% endfor %}
 {% endif %}
         std::vector<std::uint8_t> expected_bytes;
@@ -46,7 +54,15 @@
 {% for field in f.fields %}
         _codec_val.{{ field.name }} = input_{{ field.name }};
 {% endfor %}
+{% if f.cbor %}
+        {# A CBOR encode refuses a value past its declared bound with
+           `std::nullopt` (SCE_FORGE.md §4.6.1); every case is in bounds. #}
+        auto encoded_or = _codec_val.encode_to_vec();
+        CHECK(encoded_or.has_value(), "{{ f.name }} case %d encode refused", i);
+        auto encoded = encoded_or.value_or(std::vector<std::uint8_t>{});
+{% else %}
         auto encoded = _codec_val.encode_to_vec();
+{% endif %}
         CHECK(encoded == expected_bytes,
               "{{ f.name }} case %d encode: size actual=%zu expected=%zu",
               i, encoded.size(), expected_bytes.size());
@@ -57,7 +73,12 @@
               "{{ f.name }} case %d decode returned nullopt", i);
         if (round_tripped.has_value()) {
 {% for field in f.fields %}
-{% if field.type == "bool" %}
+{% if field.optional %}
+            CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
+                  "{{ f.name }} case %d decode {{ field.name }}: present actual=%d expected=%d, or the values differ",
+                  i, static_cast<int>(round_tripped->{{ field.name }}.has_value()),
+                  static_cast<int>(input_{{ field.name }}.has_value()));
+{% elif field.type == "bool" %}
             CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
                   "{{ f.name }} case %d decode {{ field.name }}: actual=%d expected=%d",
                   i, static_cast<int>(round_tripped->{{ field.name }}), static_cast<int>(input_{{ field.name }}));

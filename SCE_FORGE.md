@@ -1006,8 +1006,20 @@ optional entry nullable, `bytes` a `ByteArray`), `encode(SceSink):
 CodecError?`, `encodeToByteArray(): ByteArray?` and `decode(SceCursor)`,
 which answers `null` for every refusal — Kotlin's codec convention — and
 leaves the cursor where it was; `com.sce.forge.runtime.Cbor` holds its items.
-Both backends are held to the same bytes (the Rust `forge_cbor_codec` and
-Kotlin `CborCodecTest` suites over `codec_cbor_map`). Every other backend refuses the document by name
+C++ generates a struct of owned values (an optional entry `std::optional<T>`,
+`string` a `std::string`, `bytes` a `std::vector<uint8_t>`), a static
+`decode(SceCursor&)` that reads a copy of the cursor and assigns it back only
+when the whole map decoded, `encode(SceSink&)` and `encode_to_vec()`, which
+answers `std::nullopt` when encode refuses; a refused decode is `std::nullopt`,
+the C++ codec convention, and encode's refusals are `CodecError::CborOutOfRange`
+and `CborWrongLength`. `sce/forge/cbor.h` holds its items, rule for rule the
+Rust runtime's (`cbor_runtime_test`).
+The backends are held to the same bytes and the same refusals by one oracle —
+the conformance harness's `codec_cbor_map` round-trip cases, whose absent
+optional entries are JSON `null`, and its reject vectors. Rust and Kotlin are
+also held to the hand-written C++ Mesh codec's golden envelope
+(`forge_cbor_codec`, `CborCodecTest`); the generated C++ codec's own hold to
+it arrives with the commit that replaces the hand-written one. Every other backend refuses the document by name
 (`generate/unsupported-feature`) until its generation lands, rather than
 emitting a type with no fields; the conformance harness schedules a CBOR
 fixture exactly where the generator admits it (`cbor_codec::lowers`).

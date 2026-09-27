@@ -20350,7 +20350,7 @@ impl LangCtx {
     /// the decode path. Default construction exists so a holder can be
     /// initialized before a decode fills it, so any declared value
     /// serves and the first one is the one the document leads with.
-    fn enum_default_expr(&self, alias: &str) -> String {
+    pub(crate) fn enum_default_expr(&self, alias: &str) -> String {
         let imported = self.enum_import(alias);
         assert!(
             !imported.first_variant.is_empty(),

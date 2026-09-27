@@ -1,0 +1,187 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- The read of one entry's value into its holder `e.name`, which the
+    caller has checked is still empty; a refusal returns `std::nullopt` from
+    `decode_at`, this backend's decode convention. Every CBOR item is the
+    runtime's (`SCE::Forge::Cbor`). #}
+{% macro decode_value(e) %}
+{% if e.kind == "bool" %}
+                auto v = cbor::read_bool(c);
+{% elif e.kind == "text" %}
+                auto v = cbor::read_text(c, {{ e.max_size if e.max_size is not none else "std::nullopt" }});
+{% elif e.kind == "bytes" %}
+                auto v = cbor::read_bytes(c, {{ e.max_size if e.max_size is not none else "std::nullopt" }});
+{% elif e.kind == "bytes_exact" %}
+                auto v = cbor::read_bytes_exact(c, {{ e.length }});
+{% elif e.kind == "enum" %}
+                const auto raw = cbor::read_uint_upto(
+                    c, static_cast<std::uint64_t>(std::numeric_limits<{{ e.carrier_type }}>::max()));
+                if (!raw) return std::nullopt;
+{% if e.enum_is_open %}
+                std::optional<{{ e.value_type }}> v = {{ e.enum_from_underlying }}(static_cast<{{ e.carrier_type }}>(*raw));
+{% else %}
+                auto v = {{ e.enum_from_underlying }}(static_cast<{{ e.carrier_type }}>(*raw));
+{% endif %}
+{% elif e.value_type == "uint64_t" %}
+                auto v = cbor::read_uint(c);
+{% else %}
+                const auto raw = cbor::read_uint_upto(
+                    c, static_cast<std::uint64_t>(std::numeric_limits<{{ e.value_type }}>::max()));
+                if (!raw) return std::nullopt;
+                std::optional<{{ e.value_type }}> v = static_cast<{{ e.value_type }}>(*raw);
+{% endif %}
+                if (!v) return std::nullopt;
+                {{ e.name }} = std::move(*v);
+{% endmacro %}
+{#- The write of one entry's value `v`, key already written. #}
+{% macro encode_value(e) %}
+{% if e.kind == "bool" %}
+            if (auto e = cbor::write_bool(w, v)) return e;
+{% elif e.kind == "text" %}
+{% if e.max_size is not none %}
+            if (v.size() > {{ e.max_size }}) return ::SCE::Forge::CodecError::CborOutOfRange;
+{% endif %}
+            if (auto e = cbor::write_text(w, v)) return e;
+{% elif e.kind == "bytes" %}
+{% if e.max_size is not none %}
+            if (v.size() > {{ e.max_size }}) return ::SCE::Forge::CodecError::CborOutOfRange;
+{% endif %}
+            if (auto e = cbor::write_bytes(w, v)) return e;
+{% elif e.kind == "bytes_exact" %}
+            if (v.size() != {{ e.length }}) return ::SCE::Forge::CodecError::CborWrongLength;
+            if (auto e = cbor::write_bytes(w, v)) return e;
+{% elif e.kind == "enum" %}
+            {# A signed carrier's negative number is no CBOR unsigned integer;
+               refused as the Rust backend refuses it. #}
+            const auto u = {{ e.enum_to_underlying }};
+{% if e.carrier_signed %}
+            if (u < 0) return ::SCE::Forge::CodecError::CborOutOfRange;
+{% endif %}
+            if (auto e = cbor::write_uint(w, static_cast<std::uint64_t>(u))) return e;
+{% else %}
+            if (auto e = cbor::write_uint(w, static_cast<std::uint64_t>(v))) return e;
+{% endif %}
+{% endmacro %}
+{{ sce_map.source_marker(source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <cstdint>
+#include <limits>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "sce/forge/cbor.h"
+#include "sce/forge/codec.h"
+{% for imp in all_imports %}
+{% if imp.include_stmt %}
+{{ imp.include_stmt }}
+{% endif %}
+{% endfor %}
+
+namespace SCE::Generated::{{ namespace }} {
+
+/// One CBOR map (SCE_FORGE.md §4.6.1). Decode takes the keys in any order and
+/// skips one this codec does not declare; encode writes the entries present in
+/// ascending key order, every head in its shortest form. A required entry
+/// starts at its type's default and an optional one absent, so
+/// `{{ struct_name }}{}` is the infallible constructor every codec offers.
+struct {{ struct_name }} {
+{% for e in entries %}
+    /// Map key {{ e.key }}{% if e.required %}, required{% endif %}.
+    {{ e.field_type }} {{ e.name }}{% if e.init %}{ {{ e.init }} }{% else %}{}{% endif %};
+{% endfor %}
+
+    /// Decode one map from `cursor`. On success the cursor advances past it;
+    /// `std::nullopt` on any refusal, with the cursor left where it was.
+    static std::optional<{{ struct_name }}> decode(::SCE::Forge::SceCursor &cursor) {
+        ::SCE::Forge::SceCursor c = cursor;
+        auto value = decode_at(c);
+        if (value) {
+            cursor = c;
+        }
+        return value;
+    }
+
+    /// Encode this map into `w`; `std::nullopt` on success. An entry whose
+    /// value breaks its declared bound — an exact length, a maximum size — is
+    /// refused, not written.
+    [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink &w) const noexcept {
+        namespace cbor = ::SCE::Forge::Cbor;
+        std::uint64_t count = {{ required_count }};
+{% for e in entries if not e.required %}
+        if ({{ e.name }}.has_value()) ++count;
+{% endfor %}
+        if (auto e = cbor::write_map_head(w, count)) return e;
+{% for e in entries_by_key %}
+{% if e.required %}
+        {
+            const auto &v = {{ e.name }};
+{% else %}
+        if ({{ e.name }}.has_value()) {
+            const auto &v = *{{ e.name }};
+{% endif %}
+            if (auto e = cbor::write_uint(w, {{ e.key }})) return e;
+{{ encode_value(e) }}        }
+{% endfor %}
+        return std::nullopt;
+    }
+
+    /// `encode` into a new vector; `std::nullopt` when encode refuses the value.
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec() const {
+        std::vector<std::uint8_t> out;
+        ::SCE::Forge::VectorSink sink(out);
+        if (encode(sink)) {
+            return std::nullopt;
+        }
+        return out;
+    }
+
+private:
+    static std::optional<{{ struct_name }}> decode_at(::SCE::Forge::SceCursor &c) {
+        namespace cbor = ::SCE::Forge::Cbor;
+        const auto count = cbor::read_map_len(c);
+        if (!count) return std::nullopt;
+{% for e in entries %}
+        std::optional<{{ e.value_type }}> {{ e.name }};
+{% endfor %}
+        for (std::uint64_t i = 0; i < *count; ++i) {
+            const auto key = cbor::read_uint(c);
+            if (!key) return std::nullopt;
+            switch (*key) {
+{% for e in entries_by_key %}
+            case {{ e.key }}: {
+                // A key given twice is not one map entry.
+                if ({{ e.name }}.has_value()) return std::nullopt;
+{{ decode_value(e) }}                break;
+            }
+{% endfor %}
+            default:
+                if (!cbor::skip(c)) return std::nullopt;
+                break;
+            }
+        }
+{% for e in entries if e.required %}
+        if (!{{ e.name }}.has_value()) return std::nullopt;
+{% endfor %}
+        {{ struct_name }} out;
+{% for e in entries %}
+        out.{{ e.name }} = {% if e.required %}std::move(*{{ e.name }}){% else %}std::move({{ e.name }}){% endif %};
+{% endfor %}
+        return out;
+    }
+};
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}
