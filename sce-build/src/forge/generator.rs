@@ -23134,6 +23134,40 @@ fn lower_algorithm_stmt(
                     }
                     channel.value(pad, &l.local_id(name), false)
                 }
+                // A `bytes` return (byte-buffer-build, §4.12): the returned
+                // value is the bytes buffer local, by name — the buffer is the
+                // algorithm's own storage, not a `bytes` value an expression
+                // yields — in the backend's return shape: Rust the fallible
+                // `Ok(..)`; C11 the by-value result struct (returned verbatim,
+                // its `ok` flag already set); Python/Kotlin a conversion from
+                // the working buffer to the immutable byte type; Cpp/Go the
+                // buffer directly.
+                Some(rhs) if matches!(return_ty, InferredType::Bytes) => {
+                    let site = ExpressionSite::new(rhs, expr_spelling.as_ref());
+                    let name = rhs.trim();
+                    let is_the_buffer = append_buffers
+                        .get(name)
+                        .is_some_and(|decl| decl.ty.scalar() == Some(&SceType::Bytes));
+                    if !is_the_buffer {
+                        let at = site.locate(Some(0..name.len()));
+                        let refusal: ForgeError =
+                            crate::forge::error::ExprError::UnsupportedConstruct {
+                                construct: "a bytes return that is not the bytes buffer local \
+                                            (v1 returns the buffer an algorithm builds, by name)"
+                                    .to_string(),
+                                observed: at.observed(),
+                            }
+                            .into();
+                        return Err(at.place(refusal));
+                    }
+                    let buffer = l.local_id(name);
+                    let value = match lang {
+                        Language::Python => format!("bytes({buffer})"),
+                        Language::Kotlin => format!("{buffer}.toByteArray()"),
+                        Language::Rust | Language::Cpp | Language::C11 | Language::Go => buffer,
+                    };
+                    channel.value(pad, &value, true)
+                }
                 Some(rhs) => {
                     // Coerce to the function's declared return type so
                     // strict-typing targets (Kotlin's `UShort`,
@@ -23146,24 +23180,7 @@ fn lower_algorithm_stmt(
                     let lowered =
                         expr::transpile_into(rhs, l.expr_target(), type_ctx, renames, return_ty)
                             .map_err(|refusal| site.place(refusal))?;
-                    if matches!(return_ty, InferredType::Bytes) {
-                        // SCE byte-buffer-build (§4.12): the finished buffer in
-                        // the backend's return shape — Rust the fallible
-                        // `Ok(..)`; C11 the by-value result struct (returned
-                        // verbatim, its `ok` flag already set); Python/Kotlin a
-                        // conversion from the working buffer to the immutable
-                        // byte type; Cpp/Go the buffer directly.
-                        let value = match lang {
-                            Language::Python => format!("bytes({lowered})"),
-                            Language::Kotlin => format!("{lowered}.toByteArray()"),
-                            Language::Rust | Language::Cpp | Language::C11 | Language::Go => {
-                                lowered
-                            }
-                        };
-                        channel.value(pad, &value, true)
-                    } else {
-                        channel.value(pad, &lowered, false)
-                    }
+                    channel.value(pad, &lowered, false)
                 }
                 None => match lang {
                     Language::Python | Language::Kotlin => format!("{pad}return\n"),
@@ -24089,6 +24106,9 @@ pub(crate) struct AlgorithmTypes<'a> {
     /// by `<sce:append>` and may read back by `len(xs)` and `xs[i]`, e.g. a
     /// breadth-first walk's queue (SCE_FORGE.md §4.12) — with its element.
     list_buffers: Vec<(String, SceType)>,
+    /// Every `bytes` local — the one output buffer a byte-buffer-build body
+    /// builds, read back by `len(out)` and `out[i]` (SCE_FORGE.md §4.12).
+    bytes_buffers: Vec<String>,
     /// Foreach items over a bounded collection, and whether their element
     /// schema was threaded (closed) or not (open).
     record_items: Vec<(&'a str, crate::forge::types::RecordShape)>,
@@ -24146,6 +24166,7 @@ impl<'a> AlgorithmTypes<'a> {
         // wherever the element schema is not threaded (measured 2026-09-21).
         let mut record_items: Vec<(&str, RecordShape)> = Vec::new();
         let mut list_buffers: Vec<(String, SceType)> = Vec::new();
+        let mut bytes_buffers: Vec<String> = Vec::new();
         for binding in m.body_bindings() {
             let ty = match binding {
                 // A `list<T>` local of a scalar element is a buffer: it is
@@ -24154,9 +24175,14 @@ impl<'a> AlgorithmTypes<'a> {
                 // an operand as a whole. A list of records is read by name
                 // only (an item of a foreach over it), so it is left out of
                 // the expression type context and any other use is refused
-                // as an unknown name.
+                // as an unknown name. A `bytes` local is a buffer too, held
+                // in the algorithm's own storage and not a `bytes` value.
                 crate::forge::model::AlgorithmBinding::Local { name, sce_type } => {
                     match sce_type.scalar() {
+                        Some(SceType::Bytes) => {
+                            bytes_buffers.push(name.to_string());
+                            continue;
+                        }
                         Some(t) => t.clone(),
                         None => {
                             if let Some(ListElemType::Scalar(elem)) = sce_type.list_elem() {
@@ -24273,6 +24299,7 @@ impl<'a> AlgorithmTypes<'a> {
             env,
             list_params,
             list_buffers,
+            bytes_buffers,
             record_items,
             records,
             members,
@@ -24309,6 +24336,9 @@ impl<'a> AlgorithmTypes<'a> {
                 type_ctx.insert_var(name.as_str(), InferredType::ListBuffer(list_elem));
                 type_ctx.insert_array_elem(name.as_str(), InferredType::from_sce_type(elem));
             }
+        }
+        for name in &self.bytes_buffers {
+            type_ctx.insert_var(name.as_str(), InferredType::BytesBuffer);
         }
         for &(name, shape) in &self.record_items {
             type_ctx.insert_record(name, shape);

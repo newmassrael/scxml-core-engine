@@ -1412,6 +1412,8 @@ Some transforms are runtime, data-dependent `bytes -> bytes` functions whose out
 - **`<sce:append target="out" expr="..."/>`** — append to a bytes buffer. The expression's **static type** selects the operation: a `uint8` value pushes one byte, a `bytes` value extends the buffer. A wider integer is rejected rather than silently truncated — narrow it to a `uint8` first.
 - **`<sce:return type="bytes" returns-max-size="N"/>`** — a `bytes` return requires `returns-max-size`, the output buffer's fixed capacity on the no-alloc profile (mirrors `<sce:helper returns-max-size>`).
 
+**Reading it back.** The body may read what it has appended so far — `len(out)` and `out[i]`, a byte, checked as a `bytes` parameter's index is (`algorithm_bytes_squeeze` compares each input byte with `out[len(out) - 1]`). The buffer is the algorithm's own storage, not a `bytes` value: C11 reads the result struct's `bytes`, Kotlin `SceByteBuf.getUByte`, and anything else that would take it as a value — comparing it, passing it, iterating it — is refused (`expression/unsupported-construct`). It is returned by name.
+
 **v1 scope.** An algorithm declares exactly one bytes buffer, which is the returned value, with `capacity == returns-max-size`. The validator rejects multiple bytes buffers, a bytes buffer with a non-`bytes` return, and a capacity that disagrees with `returns-max-size`. Intermediate (non-returned) bytes buffers are not supported until a consumer needs them.
 
 **Overflow is fallible**, never silent truncation and never a panic. On the bounded backends a full buffer surfaces as an error; the heap backends grow on demand:

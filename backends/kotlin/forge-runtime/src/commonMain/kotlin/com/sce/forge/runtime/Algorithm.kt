@@ -49,6 +49,17 @@ public class SceByteBuf(initialCapacity: Int = 0) {
         len += bytes.size
     }
 
+    /**
+     * The byte at [i], unsigned as every SCE byte is — for a body that reads
+     * back what it has appended. An index outside the bytes appended so far
+     * is an error even inside the allocated array; a `may-fail` body checks
+     * it first (`SceChecked.index`), so there it never throws.
+     */
+    public fun getUByte(i: Int): UByte {
+        if (i < 0 || i >= len) throw IndexOutOfBoundsException("index $i, size $len")
+        return buf[i].toUByte()
+    }
+
     /** The appended bytes, as an independent array. */
     public fun toByteArray(): ByteArray = buf.copyOf(len)
 

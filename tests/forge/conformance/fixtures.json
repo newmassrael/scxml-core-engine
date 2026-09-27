@@ -1088,6 +1088,19 @@
       }
     },
     {
+      "name": "algorithm_bytes_squeeze",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_bytes_squeeze",
+      "args": [
+        "bytes"
+      ],
+      "output": {
+        "type": "bytes",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "algorithm_checked_narrow",
       "kind": "algorithm",
       "ref_section": "pure_functions",

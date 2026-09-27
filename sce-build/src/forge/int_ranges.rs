@@ -98,7 +98,10 @@ pub fn hazards(
         .filter(|(_, ty)| {
             matches!(
                 ty,
-                InferredType::Bytes | InferredType::List(_) | InferredType::ListBuffer(_)
+                InferredType::Bytes
+                    | InferredType::BytesBuffer
+                    | InferredType::List(_)
+                    | InferredType::ListBuffer(_)
             )
         })
         .map(|(name, _)| name.to_string())

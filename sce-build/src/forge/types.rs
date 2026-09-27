@@ -90,7 +90,15 @@ pub enum InferredType {
     /// elements are read by name only, so it is not registered as a value.
     ListBuffer(ListElem),
 
-    /// A record —a value of the event-schema document `RecordId` names
+    /// The `bytes` local an algorithm is building — its own output buffer
+    /// (SCE_FORGE.md §4.12, byte-buffer-build). Read back by `len(…)` and
+    /// `out[i]`, a byte each, like a `bytes` parameter; but held in the
+    /// algorithm's own storage rather than a caller's view, so it is not a
+    /// `bytes` value anything else can take: C11 reads the result struct's
+    /// `bytes`, Kotlin the buffer's own reader.
+    BytesBuffer,
+
+    /// A record — a value of the event-schema document `RecordId` names
     /// (SCE_FORGE.md §4.12). It is passed whole by name, as an argument to
     /// an algorithm whose parameter is that record or as the value a record
     /// local is initialised from; it is never an operand, and its fields
@@ -309,6 +317,7 @@ impl InferredType {
             Self::List(elem) | Self::ListBuffer(elem) => {
                 format!("list<{}>", elem.element_type().describe())
             }
+            Self::BytesBuffer => "bytes".into(),
             // By the schema document itself: two records of one `name` in
             // different places are different types, and the diagnostic
             // that refuses one for the other must say which is which.
@@ -425,7 +434,9 @@ impl InferredType {
             | Self::Quantity { .. } => return None,
             // Spelled from its element or its schema, so not one of the
             // fixed spellings this returns — [`Self::describe`] names it.
-            Self::List(_) | Self::ListBuffer(_) | Self::Record(_) => return None,
+            Self::List(_) | Self::ListBuffer(_) | Self::BytesBuffer | Self::Record(_) => {
+                return None
+            }
         })
     }
 
@@ -470,9 +481,12 @@ impl InferredType {
             },
             // A list or a record is not a scalar a host method or a field
             // declares.
-            Self::Null | Self::Unknown | Self::List(_) | Self::ListBuffer(_) | Self::Record(_) => {
-                None
-            }
+            Self::Null
+            | Self::Unknown
+            | Self::List(_)
+            | Self::ListBuffer(_)
+            | Self::BytesBuffer
+            | Self::Record(_) => None,
         }
     }
 

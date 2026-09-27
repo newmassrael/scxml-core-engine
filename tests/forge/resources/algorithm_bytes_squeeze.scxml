@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  algorithm_bytes_squeeze — `data` with every run of one repeated byte
+  written once, as `tr -s` squeezes it: a byte is appended only when it
+  differs from the byte the buffer ended with.
+
+  It reads its own output buffer back — `len(out)` and `out[len(out) - 1]`
+  — which is what this fixture exercises (SCE_FORGE.md §4.12,
+  byte-buffer-build): on every backend the buffer is the algorithm's own
+  storage, not a `bytes` view, so the read reaches it where it lives (C11's
+  result struct, Kotlin's SceByteBuf).
+
+  [] → [] · [7, 7, 7] → [7] · [1, 1, 2, 1] → [1, 2, 1].
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="algorithm_bytes_squeeze" version="1.0">
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:return type="bytes" returns-max-size="16" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="bytes" capacity="16"/>
+    <sce:foreach item="b" in="data">
+      <sce:var name="n" type="uint32" init="len(out)"/>
+      <sce:if cond="n === 0 || out[n - 1] !== b">
+        <sce:append target="out" expr="b"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

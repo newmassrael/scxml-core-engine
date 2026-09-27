@@ -1344,6 +1344,19 @@
         { "args": [46341, 0, 7], "fails": "overflow", "note": "the condition's failure, before its branch" }
       ]
     },
+    "algorithm_bytes_squeeze": {
+      "fixture": "algorithm_bytes_squeeze",
+      "signature": "(data: bytes) -> bytes may-fail",
+      "formula": "data with every run of one repeated byte written once (tr -s), each byte compared with the last byte of the output buffer read back as out[len(out) - 1] (SCE_FORGE.md §4.12)",
+      "cases": [
+        { "args": [[]], "expected": [], "note": "nothing to squeeze" },
+        { "args": [[7, 7, 7]], "expected": [7], "note": "one run" },
+        { "args": [[1, 1, 2, 1]], "expected": [1, 2, 1], "note": "a byte seen again after another is kept" },
+        { "args": [[0, 0, 1, 1, 0]], "expected": [0, 1, 0], "note": "zero bytes squeeze like any other" },
+        { "args": [[255, 254, 254, 255]], "expected": [255, 254, 255], "note": "the high bytes read back unsigned" },
+        { "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]], "expected": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], "note": "sixteen distinct bytes fill the buffer to its capacity" }
+      ]
+    },
     "algorithm_checked_index": {
       "fixture": "algorithm_checked_index",
       "signature": "(data: bytes, i: i32, u: u32) -> u8 may-fail",

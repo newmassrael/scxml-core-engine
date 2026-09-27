@@ -46,11 +46,8 @@
 {% elif arg_ty.list_of is defined %}
 {# A `list<T>` argument is the element's primitive array, the type the
    algorithm's parameter declares; an unsigned array is still experimental,
-   hence the opt-in on the one local that holds it. #}
+   which the harness opts into for the whole file. #}
 {% set to_array = {"i8": "toByteArray", "u8": "toUByteArray", "i16": "toShortArray", "u16": "toUShortArray", "i32": "toIntArray", "u32": "toUIntArray", "i64": "toLongArray", "u64": "toULongArray", "f32": "toFloatArray", "f64": "toDoubleArray", "bool": "toBooleanArray"} %}
-{% if arg_ty.list_of in ["u8", "u16", "u32", "u64"] %}
-            @OptIn(ExperimentalUnsignedTypes::class)
-{% endif %}
             val arg{{ i }} = args[{{ i }}].jsonArray.map { {{ "it" | kt_unmarshal(arg_ty.list_of) }} }.{{ to_array[arg_ty.list_of] }}()
 {% else %}
             val arg{{ i }} = {{ ("args[" ~ i ~ "]") | kt_unmarshal(arg_ty) }}
@@ -98,11 +95,8 @@
 {# A `list<T>` return (SCE_FORGE.md §4.12) is the element's primitive array
    (`LongArray`, `UIntArray`, ...). Both sides compare as `List<T>`, so
    one spelling serves every element type; an unsigned array is still an
-   experimental type, hence the opt-in on the one local that holds it. #}
+   experimental type, which the harness opts into for the whole file. #}
             val expected = case.jsonObject["expected"]!!.jsonArray.map { {{ "it" | kt_unmarshal(f.output.list_of) }} }
-{% if f.output.list_of in ["u8", "u16", "u32", "u64"] %}
-            @OptIn(ExperimentalUnsignedTypes::class)
-{% endif %}
             val actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %}.toList()
 {% if f.output.compare == "tolerance" %}
             assertEquals(expected.size, actual.size, "{{ f.name }} length")

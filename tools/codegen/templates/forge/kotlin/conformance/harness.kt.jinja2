@@ -14,6 +14,13 @@
 // This scaffold is kind-agnostic; the body of each test method comes from
 // kinds/<kind>.kt.jinja2 via a dynamic include. Adding a new fixture kind
 // means one new kind fragment, zero edits to this scaffold.
+//
+// The unsigned arrays (`UIntArray`, `ULongArray`, ...) a `list<T>` argument or
+// return is on Kotlin are still experimental in its stdlib, and a harness
+// reads them in more places than one local: a `may-fail` algorithm's
+// `AlgorithmResult<UIntArray>` is matched on and unwrapped too. So the whole
+// file opts in, rather than each use that happens to touch one.
+@file:OptIn(ExperimentalUnsignedTypes::class)
 
 import com.sce.forge.runtime.EventQueue
 {% if has_timer %}

@@ -591,6 +591,25 @@ const BUFFER_FOREACH: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+/// The bytes buffer the body is building, compared as a value — refused at
+/// the buffer: it is the algorithm's own storage (C11's result struct,
+/// Kotlin's SceByteBuf), read back only by `len` and an index, not a `bytes`
+/// value an operator can take (SCE_FORGE.md §4.12).
+const BUFFER_AS_VALUE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_buffer_as_value" version="1.0">
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:return type="bytes" returns-max-size="4"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="bytes" capacity="4"/>
+    <sce:var name="same" type="bool"
+             init="out === data"/>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
+"#;
+
 /// The record callee called from a validator — refused at the call: only an
 /// algorithm's body calls a record algorithm besides a host.
 const RECORD_CALL_FROM_VALIDATOR: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -870,6 +889,14 @@ const CASES: &[Case] = &[
         line: 7,
         col: 29,
         actual: Some("wall"),
+    },
+    Case {
+        file: "probe_buffer_as_value.scxml",
+        document: BUFFER_AS_VALUE,
+        code: "expression/unsupported-construct",
+        line: 10,
+        col: 20,
+        actual: Some("out"),
     },
     Case {
         file: "probe_buffer_foreach.scxml",

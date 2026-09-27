@@ -541,6 +541,7 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_unknown_names(ast, ctx)?;
     reject_unnamed_record_elements(ast, source)?;
     reject_records_as_operands(ast, source, RecordPlace::Whole)?;
+    reject_buffers_as_values(ast, source)?;
     reject_call_argument_mismatches(ast, ctx, source)?;
     lower_bytes_eq(ast, ctx);
     Ok(())
@@ -625,6 +626,45 @@ fn reject_records_as_operands(
             .children()
             .into_iter()
             .try_for_each(|child| reject_records_as_operands(child, source, RecordPlace::Operand)),
+    }
+}
+
+/// Refuse a buffer the body is building anywhere but where it is read back:
+/// as the collection of `len(out)` and of `out[i]` (SCE_FORGE.md §4.12). It
+/// is the algorithm's own storage — a result struct in C11, a growable
+/// buffer class in Kotlin — not the view a `bytes` or `list<T>` value is,
+/// so no backend can pass, compare or combine it as one.
+fn reject_buffers_as_values(expr: &TypedExpr, source: &str) -> Result<(), Refusal> {
+    let is_buffer = |node: &TypedExpr| {
+        matches!(
+            node.ty,
+            InferredType::BytesBuffer | InferredType::ListBuffer(_)
+        ) && matches!(node.kind, ExprKind::Ident(_))
+    };
+    match &expr.kind {
+        ExprKind::Index { object, index } if is_buffer(object) => {
+            reject_buffers_as_values(index, source)
+        }
+        ExprKind::Call { callee, args, .. }
+            if is_len_builtin(callee, args) && is_buffer(&args[0]) =>
+        {
+            Ok(())
+        }
+        _ if is_buffer(expr) => Err(ExprError::UnsupportedConstruct {
+            construct: "a buffer the body is building, used as a value (it is read back \
+                        by len(out) and out[i], and returned by name)"
+                .to_string(),
+            observed: expr
+                .span
+                .clone()
+                .and_then(|span| source.get(span))
+                .map(str::to_string),
+        }
+        .at(expr.span.clone())),
+        _ => expr
+            .children()
+            .into_iter()
+            .try_for_each(|child| reject_buffers_as_values(child, source)),
     }
 }
 
@@ -3419,7 +3459,7 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             infer_types(object, ctx);
             infer_types(index, ctx);
             match object.ty {
-                InferredType::Bytes => InferredType::Int {
+                InferredType::Bytes | InferredType::BytesBuffer => InferredType::Int {
                     signed: false,
                     bits: 8,
                 },
@@ -3845,6 +3885,7 @@ fn is_len_builtin(callee: &TypedExpr, args: &[TypedExpr]) -> bool {
         && matches!(
             args[0].ty,
             InferredType::Bytes
+                | InferredType::BytesBuffer
                 | InferredType::Str
                 | InferredType::List(_)
                 | InferredType::ListBuffer(_)
@@ -4922,8 +4963,20 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             }
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let equality = matches!(op, BinOp::StrictEq | BinOp::StrictNeq);
+            // A shift count is an `Int` whatever is shifted: `UInt.shl`,
+            // `ULong.shr` and the rest all take `bitCount: Int`, so a count
+            // converted to the shifted type (`k shl 15.toULong()`) does not
+            // compile. The narrow-unsigned path above already does this.
+            let count_ty = if matches!(op, BinOp::Shl | BinOp::Shr | BinOp::UShr) {
+                InferredType::Int {
+                    signed: true,
+                    bits: 32,
+                }
+            } else {
+                operand_ty
+            };
             let mut l_raw = emit_kotlin(left, operand_ty)?;
-            let mut r_raw = emit_kotlin(right, operand_ty)?;
+            let mut r_raw = emit_kotlin(right, count_ty)?;
             if equality {
                 l_raw = kotlin_equality_operand(l_raw, left, operand_ty);
                 r_raw = kotlin_equality_operand(r_raw, right, operand_ty);
@@ -5007,12 +5060,16 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 _ => idx_raw,
             };
             // A list buffer is a `SceListBuf`, read by the element's own
-            // typed reader.
-            if let InferredType::ListBuffer(elem) = object.ty {
+            // typed reader; a bytes buffer a `SceByteBuf`, read as a byte.
+            let reader = match object.ty {
+                InferredType::ListBuffer(elem) => Some(kotlin_buffer_reader(elem)?),
+                InferredType::BytesBuffer => Some("getUByte"),
+                _ => None,
+            };
+            if let Some(reader) = reader {
                 return Ok(format!(
-                    "{}.{}({idx_emit})",
+                    "{}.{reader}({idx_emit})",
                     wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)?),
-                    kotlin_buffer_reader(elem)?,
                 ));
             }
             // A `bytes` operand is a `ByteArray`; `[i]` yields a signed
@@ -5097,13 +5154,17 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             left,
             right: Some(index),
         } => {
-            // A list buffer checks the index against its size, then reads
-            // with the element's reader.
-            if let InferredType::ListBuffer(elem) = left.ty {
+            // A buffer checks the index against its size, then reads with
+            // its reader.
+            let reader = match left.ty {
+                InferredType::ListBuffer(elem) => Some(kotlin_buffer_reader(elem)?),
+                InferredType::BytesBuffer => Some("getUByte"),
+                _ => None,
+            };
+            if let Some(reader) = reader {
                 let buffer = wrap_postfix(left, emit_kotlin(left, InferredType::Unknown)?);
                 return Ok(format!(
-                    "{buffer}.{}(com.sce.forge.runtime.SceChecked.index(({}).toLong(), {buffer}.size))",
-                    kotlin_buffer_reader(elem)?,
+                    "{buffer}.{reader}(com.sce.forge.runtime.SceChecked.index(({}).toLong(), {buffer}.size))",
                     emit_kotlin(index, InferredType::Unknown)?,
                 ));
             }
@@ -6717,13 +6778,15 @@ fn python_binop(op: BinOp) -> &'static str {
 
 /// The member a C11 index reads a collection's elements through: a `bytes`
 /// value or a `list<T>` parameter is a view (`{const T *data; size_t len}`),
-/// a list buffer the algorithm is building is its own result struct
-/// (`{T items[N]; size_t len; …}`), and a build-time array is indexed as
-/// it is. Both named members carry the length as `len`.
+/// a buffer the algorithm is building is its own result struct
+/// (`{T items[N]; size_t len; …}` for a list, `{uint8_t bytes[N]; size_t
+/// len; …}` for bytes), and a build-time array is indexed as it is. Every
+/// named member carries the length as `len`.
 fn c_element_accessor(collection: InferredType) -> &'static str {
     match collection {
         InferredType::Bytes | InferredType::List(_) => ".data",
         InferredType::ListBuffer(_) => ".items",
+        InferredType::BytesBuffer => ".bytes",
         _ => "",
     }
 }
@@ -7646,6 +7709,28 @@ mod tests {
     #[test]
     fn kotlin_unsigned_shift() {
         assert_eq!(tp("x >>> 4", ExprTarget::Kotlin), "x ushr 4");
+    }
+
+    /// Kotlin's `shl`/`shr`/`ushr` take `bitCount: Int` on every receiver,
+    /// so a count is an `Int` whatever it shifts — a 64-bit or 32-bit
+    /// unsigned value included, where the count used to be converted to the
+    /// shifted type and kotlinc refused it (`k shl 15.toULong()`, in
+    /// sce:std/hash/murmur3_32 and sce:std/merge/hlc_text).
+    #[test]
+    fn kotlin_shift_count_is_an_int_whatever_it_shifts() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("k", int(false, 64));
+        ctx.insert_var("c", int(false, 32));
+        ctx.insert_var("s", int(false, 32));
+        assert_eq!(tp_with("k << 15", ExprTarget::Kotlin, &ctx), "k shl 15");
+        assert_eq!(
+            tp_with("k >> s", ExprTarget::Kotlin, &ctx),
+            "k shr s.toInt()"
+        );
+        assert_eq!(
+            tp_with("c >>> s", ExprTarget::Kotlin, &ctx),
+            "c ushr s.toInt()"
+        );
     }
 
     /// `==` gives a Kotlin literal no type to adapt to, so an untyped operand
