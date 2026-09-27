@@ -869,14 +869,15 @@ fn a_declared_type_emits_a_dispatch_for_kotlin() {
     // The request has to carry what the author wrote, or the document can
     // name an act but not parameterise it. The fixture's `<param>` is the
     // one field that proves the crossing rather than the call. It is
-    // collected with `putParam`, which keeps every value of a repeated
-    // `<param>` name, and the request carries that collection.
+    // collected with `putParam` into the one map every send fills, which
+    // keeps every value of a repeated `<param>` name, and the request carries
+    // that collection's wire form.
     assert!(
-        emitted.contains(r#"putParam(hostPayload, "within", "2500")"#),
+        emitted.contains(r#"putParam(sendPayload, "within", "2500")"#),
         "the emitted dispatch dropped the <param> the fixture declares",
     );
     assert!(
-        emitted.contains("params = hostParams,"),
+        emitted.contains("params = sendWireParams,"),
         "the request does not carry the collected params",
     );
 }
