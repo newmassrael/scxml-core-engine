@@ -3527,6 +3527,17 @@ fn project_str_as_bytes_view(node: &mut TypedExpr, ctx: &TypeCtx<'_>) {
 
 /// True if a numeric literal's text shape is float-like (has `.`, `e`, `E`).
 fn is_float_literal_text(n: &str) -> bool {
+    // A hex literal's digits include `e`/`E` (`0xFE`, `0xcc9e2d51`), which
+    // are digits there and not an exponent; `0x`, `0o` and `0b` literals are
+    // integers whatever digits they hold. Reading the `e` of `0xcc9e2d51` as
+    // an exponent typed a uint64 product as a real, and Go then refused
+    // `&` on the float64 it emitted (sce:std/hash/murmur3_32).
+    if n.len() > 1
+        && n.starts_with('0')
+        && matches!(n.as_bytes()[1], b'x' | b'X' | b'o' | b'O' | b'b' | b'B')
+    {
+        return false;
+    }
     n.contains('.') || n.contains('e') || n.contains('E')
 }
 
@@ -7932,6 +7943,31 @@ mod tests {
         .unwrap();
         // Go untyped literal auto-converts, concrete ident needs wrap.
         assert_eq!(out, "float64(raw) * 0.1");
+    }
+
+    #[test]
+    fn a_hex_digit_e_is_not_an_exponent() {
+        // `0xcc9e2d51` holds the digit `e`; read as an exponent it typed the
+        // product a real, and Go refused `&` on the float64 it emitted.
+        let ctx = ctx_with_uint("k", 64);
+        let uint64 = InferredType::Int {
+            signed: false,
+            bits: 64,
+        };
+        for target in [ExprTarget::Go, ExprTarget::Rust, ExprTarget::Cpp] {
+            let out = transpile_typed(
+                "(k * 0xcc9e2d51) & 0xFFFFFFFE",
+                target,
+                &ctx,
+                &empty_renames(),
+                uint64,
+            )
+            .unwrap();
+            assert!(
+                !out.contains("float") && !out.contains("f64") && !out.contains(".0"),
+                "{out}"
+            );
+        }
     }
 
     // ── Language-conditional literal promotion ─────────────────
