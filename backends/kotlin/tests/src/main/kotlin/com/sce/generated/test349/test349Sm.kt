@@ -394,13 +394,27 @@ class Test349StateMachine(
                 // SCE-MAP: test349.scxml:10 :: s0 :: _state_body
 
 
+            if (run send@{
             send(Test349Event.S0Event, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test349State.S2 -> {
                 // SCE-MAP: test349.scxml:22 :: s2 :: _state_body
 
 
+            if (run send@{
             send(Test349Event.S0Event2, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

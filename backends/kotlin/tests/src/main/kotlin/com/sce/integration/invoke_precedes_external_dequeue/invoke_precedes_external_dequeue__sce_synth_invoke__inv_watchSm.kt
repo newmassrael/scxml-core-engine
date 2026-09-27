@@ -187,8 +187,15 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
                 // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:5 :: waiting :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("ready", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }
@@ -222,8 +229,15 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
                 // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:15 :: saw :: _transition_0
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("sawKick", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }
@@ -232,8 +246,15 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
                 // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:10 :: waiting :: _transition_1
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("sawNoKick", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

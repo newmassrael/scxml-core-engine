@@ -370,6 +370,8 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
                 // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_absent.scxml:9 :: answer :: _transition_0
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 5.10: Evaluate params for parent send (test233)
             run {
                 ensureScriptEngine()
@@ -379,13 +381,19 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
                 try {
                     putParam(paramsP, "guard", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("9", "9")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Execution, "<send> <param name='guard'> expr failed to evaluate")
+                    raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Execution, "<send> <param name='guard'> could not be read")
+                    paramFailed = true
                 }
 
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("fromAbsentChild", eventDataP)
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

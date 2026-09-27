@@ -1473,6 +1473,10 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	// W3C SCXML 6.2: send id="__send_7"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
 	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
 		p.ensureScriptEngine()
 		se := p.ScriptEngine
 		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -1484,6 +1488,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 			parts = append(parts, sce.EventDataParam{Name: "text", Value: paramVal})
 		} else {
 			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<send> <param name='text'> expr failed to evaluate"))
+			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
@@ -1513,6 +1518,10 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 			engine.Raise(errEvt)
 		}
 	}
+		// W3C SCXML 4.9: the <param> error ends the block.
+		if paramFailed {
+			break
+		}
 	}
 
 		}
@@ -1525,6 +1534,10 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	// W3C SCXML 6.2: send id="__send_3"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
 	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
 		p.ensureScriptEngine()
 		se := p.ScriptEngine
 		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -1536,6 +1549,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 			parts = append(parts, sce.EventDataParam{Name: "marker", Value: paramVal})
 		} else {
 			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<send> <param name='marker'> expr failed to evaluate"))
+			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
@@ -1565,6 +1579,10 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 			engine.Raise(errEvt)
 		}
 	}
+		// W3C SCXML 4.9: the <param> error ends the block.
+		if paramFailed {
+			break
+		}
 	}
 
 		}
@@ -1616,6 +1634,10 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	// W3C SCXML 6.2: send id="__send_0"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
 	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
 		p.ensureScriptEngine()
 		se := p.ScriptEngine
 		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -1627,6 +1649,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 			parts = append(parts, sce.EventDataParam{Name: "text", Value: paramVal})
 		} else {
 			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<send> <param name='text'> expr failed to evaluate"))
+			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
@@ -1656,6 +1679,10 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 			engine.Raise(errEvt)
 		}
 	}
+		// W3C SCXML 4.9: the <param> error ends the block.
+		if paramFailed {
+			break
+		}
 	}
 
 		}
@@ -2262,6 +2289,10 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 	// W3C SCXML 6.2: send id="__send_2"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
 	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
 		p.ensureScriptEngine()
 		se := p.ScriptEngine
 		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -2273,6 +2304,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 			parts = append(parts, sce.EventDataParam{Name: "text", Value: paramVal})
 		} else {
 			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<send> <param name='text'> expr failed to evaluate"))
+			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
@@ -2302,6 +2334,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 			engine.Raise(errEvt)
 		}
 	}
+		_ = paramFailed  // transition content has no block exit to take
 	}
 
 		}
@@ -2344,6 +2377,10 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 	// W3C SCXML 6.2: send id="__send_4"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
 	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
 		p.ensureScriptEngine()
 		se := p.ScriptEngine
 		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -2355,6 +2392,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 			parts = append(parts, sce.EventDataParam{Name: "text", Value: paramVal})
 		} else {
 			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<send> <param name='text'> expr failed to evaluate"))
+			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
@@ -2384,6 +2422,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 			engine.Raise(errEvt)
 		}
 	}
+		_ = paramFailed  // transition content has no block exit to take
 	}
 
 		}

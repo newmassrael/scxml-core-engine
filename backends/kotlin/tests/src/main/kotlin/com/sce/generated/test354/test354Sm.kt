@@ -477,9 +477,18 @@ class Test354StateMachine(
                 // SCE-MAP: test354.scxml:13 :: s0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 5000L, Test354Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 5.10: Evaluate params/namelist for event data
             run {
                 ensureScriptEngine()
@@ -489,22 +498,28 @@ class Test354StateMachine(
                 try {
                     putParam(paramsE, "param1", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.lua("2", "2")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(Test354Event.Error.Execution, "<send> <param name='param1'> expr failed to evaluate")
+                    raisePlatformError(Test354Event.Error.Execution, "<send> <param name='param1'> could not be read")
+                    paramFailed = true
                 }
 
                 // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
                 if (!engineE.hasVariable(sidE, "Var1")) {
                     raisePlatformError(Test354Event.Error.Execution, "<send> namelist names 'Var1', which is not declared")
-                    return@run  // W3C SCXML 6.2: Abort send if namelist variable not found
+                    return@send false  // W3C SCXML 6.2: Abort send if namelist variable not found
                 }
                 try { paramsE["Var1"] = engineE.getVariable(sidE, "Var1") } catch (_: Exception) {
                     raisePlatformError(Test354Event.Error.Execution, "<send> namelist entry 'Var1' failed to evaluate")
-                    return@run
+                    return@send false
                 }
                 val eventDataE = buildJsonFromParams(paramsE)
                 send(Test354Event.Event1, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = eventDataE))
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test354State.S1 -> {
                 // SCE-MAP: test354.scxml:29 :: s1 :: _state_body
@@ -516,10 +531,24 @@ class Test354StateMachine(
                 // SCE-MAP: test354.scxml:40 :: s3 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_2", 5000L, Test354Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             send(Test354Event.Event2, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

@@ -215,7 +215,14 @@ class Test239StateMachine(
                 // SCE-MAP: test239.scxml:8 :: s0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 2000L, Test239Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test239State.S01 -> {
                 // SCE-MAP: test239.scxml:14 :: s01 :: _state_body

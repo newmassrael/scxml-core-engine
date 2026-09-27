@@ -380,9 +380,16 @@ class Test159StateMachine(
                 // SCE-MAP: test159.scxml:11 :: s0 :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.2 (test194): Invalid target raises error.execution
             raisePlatformError(Test159Event.Error.Execution, "<send target='!invalid'> is not a target this processor can address", "__send_0")
-            return  // W3C SCXML 5.10: Stop subsequent executable content
+            return@send true  // W3C SCXML 5.10: discarded; the block stops below
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))

@@ -385,7 +385,14 @@ class Test216StateMachine(
                 // SCE-MAP: test216.scxml:13 :: s0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 5000L, Test216Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"file:test216sub1.scxml\"", "'file:test216sub1.scxml'"))

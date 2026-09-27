@@ -413,9 +413,18 @@ class Test567StateMachine(
                 // SCE-MAP: test567.scxml:9 :: s0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 3000L, Test567Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
             var _resolvedTarget: String? = null
             run resolveTarget@{
@@ -468,6 +477,12 @@ class Test567StateMachine(
             }
             }
             } // end of _resolvedTarget?.let
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test567State.S1 -> {
                 // SCE-MAP: test567.scxml:26 :: s1 :: _state_body

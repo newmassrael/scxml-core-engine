@@ -165,7 +165,14 @@ class LateTickHonoursCancelStateMachine(
             cancelSend("s1")
 
 
+            if (run send@{
             scheduleSend("__send_1", 100L, LateTickHonoursCancelEvent.Finish)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is LateTickHonoursCancelState.CancelLost -> {
                 // SCE-MAP: late_tick_honours_cancel.scxml:59 :: cancelLost :: _state_body
@@ -181,10 +188,24 @@ class LateTickHonoursCancelStateMachine(
                 // SCE-MAP: late_tick_honours_cancel.scxml:42 :: waiting :: _state_body
 
 
+            if (run send@{
             scheduleSend("s1", 200L, LateTickHonoursCancelEvent.Settle)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             scheduleSend("__send_0", 100L, LateTickHonoursCancelEvent.Poke)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

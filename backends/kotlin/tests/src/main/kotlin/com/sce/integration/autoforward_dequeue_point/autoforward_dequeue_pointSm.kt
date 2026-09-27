@@ -237,17 +237,38 @@ class AutoforwardDequeuePointStateMachine(
                 // SCE-MAP: autoforward_dequeue_point.scxml:97 :: phase :: _transition_0
 
 
+            if (run send@{
             send(AutoforwardDequeuePointEvent.First, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             send(AutoforwardDequeuePointEvent.Second, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             1 -> {
                 // SCE-MAP: autoforward_dequeue_point.scxml:101 :: phase :: _transition_1
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test192): Send event to invoked child
             sendToChild("inv_probe", "mark")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

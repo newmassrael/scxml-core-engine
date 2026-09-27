@@ -401,15 +401,29 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole.scxml:9 :: report :: _transition_0
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("seed.ok", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             1 -> {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole.scxml:12 :: report :: _transition_1
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("seed.missing", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

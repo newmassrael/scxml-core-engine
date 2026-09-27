@@ -171,10 +171,24 @@ class Test495StateMachine(
                 // SCE-MAP: test495.scxml:7 :: s0 :: _state_body
 
 
+            if (run send@{
             send(Test495Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             raiseInternal(Test495Event.Event2)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test495State.S1 -> {
                 // SCE-MAP: test495.scxml:18 :: s1 :: _state_body

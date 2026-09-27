@@ -474,7 +474,14 @@ class Test234StateMachine(
                 // SCE-MAP: test234.scxml:13 :: p0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 3000L, Test234Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test234State.P01 -> {
                 // SCE-MAP: test234.scxml:19 :: p01 :: _state_body

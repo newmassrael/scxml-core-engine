@@ -399,15 +399,29 @@ class Test276sub1StateMachine(
                 // SCE-MAP: test276sub1.scxml:9 :: s0 :: _transition_0
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("event1", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             1 -> {
                 // SCE-MAP: test276sub1.scxml:13 :: s0 :: _transition_1
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("event0", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

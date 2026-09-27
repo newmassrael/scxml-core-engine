@@ -312,6 +312,8 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
                 // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_b.scxml:5 :: emit :: _state_body
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 5.10: Evaluate params for parent send (test233)
             run {
                 ensureScriptEngine()
@@ -321,13 +323,19 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
                 try {
                     putParam(paramsP, "sid", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("_sessionid", "_sessionid")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Execution, "<send> <param name='sid'> expr failed to evaluate")
+                    raisePlatformError(SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Execution, "<send> <param name='sid'> could not be read")
+                    paramFailed = true
                 }
 
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("fromChild", eventDataP)
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

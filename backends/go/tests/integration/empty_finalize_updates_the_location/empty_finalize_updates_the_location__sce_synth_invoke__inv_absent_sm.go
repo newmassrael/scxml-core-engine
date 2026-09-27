@@ -658,6 +658,10 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy) ExecuteTr
 	// W3C SCXML 6.2: send id="__send_0"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
 	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
 		p.ensureScriptEngine()
 		se := p.ScriptEngine
 		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -669,6 +673,7 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy) ExecuteTr
 			parts = append(parts, sce.EventDataParam{Name: "guard", Value: paramVal})
 		} else {
 			engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEventErrorExecution, "<send> <param name='guard'> expr failed to evaluate"))
+			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
@@ -676,6 +681,7 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy) ExecuteTr
 	if p.ParentExternalQueue != nil {
 		p.ParentExternalQueue <- sce.ParentEvent{Name: "fromAbsentChild", Data: eventDataStr}
 	}
+		_ = paramFailed  // transition content has no block exit to take
 	}
 
 		}

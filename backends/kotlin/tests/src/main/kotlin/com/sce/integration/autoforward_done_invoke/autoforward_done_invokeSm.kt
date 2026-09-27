@@ -245,7 +245,14 @@ class AutoforwardDoneInvokeStateMachine(
                 // SCE-MAP: autoforward_done_invoke.scxml:84 :: phase :: _transition_0
 
 
+            if (run send@{
             send(AutoforwardDoneInvokeEvent.Probe, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

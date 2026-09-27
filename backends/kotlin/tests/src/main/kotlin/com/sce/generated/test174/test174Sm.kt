@@ -367,7 +367,14 @@ class Test174StateMachine(
             executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"http://www.w3.org/TR/scxml/#SCXMLEventProcessor\"", "'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"))
 
 
+            if (run send@{
             send(Test174Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

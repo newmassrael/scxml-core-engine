@@ -386,8 +386,15 @@ class Test253SceSynthInvokeFooStateMachine(
                 // SCE-MAP: test253__sce_synth_invoke__foo.scxml:7 :: sub0 :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("childRunning", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test253SceSynthInvokeFooState.Sub1 -> {
                 // SCE-MAP: test253__sce_synth_invoke__foo.scxml:16 :: sub1 :: _state_body
@@ -435,22 +442,43 @@ class Test253SceSynthInvokeFooStateMachine(
                 // SCE-MAP: test253__sce_synth_invoke__foo.scxml:17 :: sub1 :: _transition_0
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("success", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             1 -> {
                 // SCE-MAP: test253__sce_synth_invoke__foo.scxml:20 :: sub1 :: _transition_1
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("success", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             2 -> {
                 // SCE-MAP: test253__sce_synth_invoke__foo.scxml:23 :: sub1 :: _transition_2
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("failure", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

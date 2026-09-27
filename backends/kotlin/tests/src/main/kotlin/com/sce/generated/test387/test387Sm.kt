@@ -412,7 +412,14 @@ class Test387StateMachine(
                 // SCE-MAP: test387.scxml:87 :: s3 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 1000L, Test387Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test387State.S4 -> {
                 // SCE-MAP: test387.scxml:94 :: s4 :: _state_body

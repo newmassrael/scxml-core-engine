@@ -383,6 +383,7 @@ class Test172StateMachine(
             executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"event2\"", "'event2'"))
 
 
+            if (run send@{
             // W3C SCXML 6.2: Dynamic event name evaluation (test172)
             run {
                 ensureScriptEngine()
@@ -394,13 +395,19 @@ class Test172StateMachine(
                     dynamicEventName = v?.toString() ?: ""
                 } catch (_: Exception) {
                     raisePlatformError(Test172Event.Error.Execution, "<send> eventexpr failed to evaluate")
-                    return@run
+                    return@send false
                 }
                 val resolvedEvent = resolveEventByName(dynamicEventName)
                 if (resolvedEvent != null) {
                     send(resolvedEvent, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
                 }
             }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

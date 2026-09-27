@@ -317,6 +317,8 @@ class Test234SceSynthInvokeInvoke0StateMachine(
                 // SCE-MAP: test234__sce_synth_invoke__invoke_0.scxml:4 :: subFinal1 :: _state_body
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 5.10: Evaluate params for parent send (test233)
             run {
                 ensureScriptEngine()
@@ -326,13 +328,19 @@ class Test234SceSynthInvokeInvoke0StateMachine(
                 try {
                     putParam(paramsP, "aParam", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("2", "2")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(Test234SceSynthInvokeInvoke0Event.Error.Execution, "<send> <param name='aParam'> expr failed to evaluate")
+                    raisePlatformError(Test234SceSynthInvokeInvoke0Event.Error.Execution, "<send> <param name='aParam'> could not be read")
+                    paramFailed = true
                 }
 
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("childToParent", eventDataP)
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }

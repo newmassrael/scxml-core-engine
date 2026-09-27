@@ -366,8 +366,15 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
                 // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:5 :: waiting :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("ready", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

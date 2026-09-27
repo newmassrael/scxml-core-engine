@@ -520,7 +520,14 @@ class Test331StateMachine(
                 // SCE-MAP: test331.scxml:42 :: s4 :: _state_body
 
 
+            if (run send@{
             send(Test331Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test331State.S5 -> {
                 // SCE-MAP: test331.scxml:53 :: s5 :: _state_body

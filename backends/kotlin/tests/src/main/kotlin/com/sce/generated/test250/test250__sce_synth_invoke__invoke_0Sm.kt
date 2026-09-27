@@ -369,7 +369,14 @@ class Test250SceSynthInvokeInvoke0StateMachine(
                 // SCE-MAP: test250__sce_synth_invoke__invoke_0.scxml:4 :: sub0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 2000L, Test250SceSynthInvokeInvoke0Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test250SceSynthInvokeInvoke0State.Sub01 -> {
                 // SCE-MAP: test250__sce_synth_invoke__invoke_0.scxml:12 :: sub01 :: _state_body

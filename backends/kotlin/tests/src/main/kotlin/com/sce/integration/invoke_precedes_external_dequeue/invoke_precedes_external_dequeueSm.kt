@@ -192,7 +192,14 @@ class InvokePrecedesExternalDequeueStateMachine(
                 // SCE-MAP: invoke_precedes_external_dequeue.scxml:55 :: phase :: _state_body
 
 
+            if (run send@{
             send(InvokePrecedesExternalDequeueEvent.Kick, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
@@ -237,8 +244,15 @@ class InvokePrecedesExternalDequeueStateMachine(
                 // SCE-MAP: invoke_precedes_external_dequeue.scxml:85 :: phase :: _transition_1
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test192): Send event to invoked child
             sendToChild("inv_watch", "probe")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

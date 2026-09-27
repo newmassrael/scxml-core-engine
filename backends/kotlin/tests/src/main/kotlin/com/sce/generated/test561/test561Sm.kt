@@ -359,9 +359,16 @@ class Test561StateMachine(
                 // SCE-MAP: test561.scxml:8 :: s0 :: _state_body
 
 
+            if (run send@{
             // W3C SCXML B.2: the reading is decided at build time; a value
             // is evaluated here and serialized, XML is handed on as source.
             send(Test561Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = "<books xmlns=\"\">\n<book title=\"title1\"/>\n<book title=\"title2\"/>\n</books>"))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

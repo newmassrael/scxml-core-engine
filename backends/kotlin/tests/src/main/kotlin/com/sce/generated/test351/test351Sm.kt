@@ -455,10 +455,24 @@ class Test351StateMachine(
                 // SCE-MAP: test351.scxml:12 :: s0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 5000L, Test351Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             send(Test351Event.S0Event, EventMetadata.external(sendId = "send1", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test351State.S1 -> {
                 // SCE-MAP: test351.scxml:26 :: s1 :: _state_body
@@ -467,10 +481,24 @@ class Test351StateMachine(
                 // SCE-MAP: test351.scxml:31 :: s2 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_1", 5000L, Test351Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             send(Test351Event.S0Event2, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test351State.S3 -> {
                 // SCE-MAP: test351.scxml:43 :: s3 :: _state_body

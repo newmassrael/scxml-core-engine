@@ -608,6 +608,8 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
 
+                        let mut _param_failed = false;
+
                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                         // delivered, so each name carries a vector. The typed value is kept
                         // rather than its text — a receiver reading `_event.data.value === 42`
@@ -643,7 +645,9 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
                                         "send param 'value' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorExecution, "<send> <param name='value'> expr failed to evaluate"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorExecution, "<send> <param name='value'> could not be read"));
+                                    // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                                    _param_failed = true;
                                 }
                             }
                             ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
@@ -660,6 +664,11 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
                         } else {
                         }
 
+                        // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                        // this element was processed, so the rest of the block does not run.
+                        if _param_failed {
+                            break 'action_block;
+                        }
                         let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }

@@ -359,9 +359,16 @@ class Test179StateMachine(
                 // SCE-MAP: test179.scxml:7 :: s0 :: _state_body
 
 
+            if (run send@{
             // W3C SCXML B.2: the reading is decided at build time; a value
             // is evaluated here and serialized, XML is handed on as source.
             send(Test179Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = evaluateSendContent(com.sce.runtime.ScriptSource.lua("123", "123"))))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

@@ -415,9 +415,17 @@ class StatechartHostProcessorStateMachine(
                 // SCE-MAP: statechart_host_processor.scxml:36 :: dispatching :: _state_body
 
 
+            if (run send@{
             send(StatechartHostProcessorEvent.Plain.Arrived, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
@@ -446,6 +454,12 @@ class StatechartHostProcessorStateMachine(
                     raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_1")
                 }
             }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

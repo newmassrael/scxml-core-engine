@@ -145,7 +145,14 @@ class Test419StateMachine(
             raiseInternal(Test419Event.InternalEvent)
 
 
+            if (run send@{
             send(Test419Event.ExternalEvent, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

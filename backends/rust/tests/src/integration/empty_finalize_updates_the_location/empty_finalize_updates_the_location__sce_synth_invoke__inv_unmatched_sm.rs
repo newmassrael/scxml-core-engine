@@ -715,6 +715,8 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPo
                         {
                             let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
+                            let mut _param_failed = false;
+
                             // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                             // delivered, so each name carries a vector. The typed value is kept
                             // rather than its text — a receiver reading `_event.data.value === 42`
@@ -750,7 +752,9 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPo
                                             "send param 'unrelated' eval failed: {}",
                                             e
                                         );
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent::ErrorExecution, "<send> <param name='unrelated'> expr failed to evaluate"));
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent::ErrorExecution, "<send> <param name='unrelated'> could not be read"));
+                                        // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                                        _param_failed = true;
                                     }
                                 }
                                 ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
@@ -768,6 +772,7 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPo
                             } else {
                             }
 
+                            let _ = _param_failed; // transition content has no block exit to take
                             let _ = send_id; // suppress unused warning when no send operation
                             let _ = event_data; // suppress unused warning in branches that skip dispatch
                         }

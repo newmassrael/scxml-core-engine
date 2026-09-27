@@ -1591,6 +1591,8 @@ impl StatePolicy for AiLoopPolicy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_7");
 
+                        let mut _param_failed = false;
+
                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                         // delivered, so each name carries a vector. The typed value is kept
                         // rather than its text — a receiver reading `_event.data.value === 42`
@@ -1626,9 +1628,11 @@ impl StatePolicy for AiLoopPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             AiLoopEvent::ErrorExecution,
-                                            "<send> <param name='text'> expr failed to evaluate",
+                                            "<send> <param name='text'> could not be read",
                                         ),
                                     );
+                                    // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                                    _param_failed = true;
                                 }
                             }
                             ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
@@ -1661,6 +1665,11 @@ impl StatePolicy for AiLoopPolicy {
                             }
                         }
 
+                        // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                        // this element was processed, so the rest of the block does not run.
+                        if _param_failed {
+                            break 'action_block;
+                        }
                         let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }
@@ -1673,6 +1682,8 @@ impl StatePolicy for AiLoopPolicy {
                 'action_block: {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+
+                        let mut _param_failed = false;
 
                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                         // delivered, so each name carries a vector. The typed value is kept
@@ -1712,9 +1723,11 @@ impl StatePolicy for AiLoopPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             AiLoopEvent::ErrorExecution,
-                                            "<send> <param name='marker'> expr failed to evaluate",
+                                            "<send> <param name='marker'> could not be read",
                                         ),
                                     );
+                                    // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                                    _param_failed = true;
                                 }
                             }
                             ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
@@ -1747,6 +1760,11 @@ impl StatePolicy for AiLoopPolicy {
                             }
                         }
 
+                        // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                        // this element was processed, so the rest of the block does not run.
+                        if _param_failed {
+                            break 'action_block;
+                        }
                         let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }
@@ -1800,6 +1818,8 @@ impl StatePolicy for AiLoopPolicy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
+                        let mut _param_failed = false;
+
                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                         // delivered, so each name carries a vector. The typed value is kept
                         // rather than its text — a receiver reading `_event.data.value === 42`
@@ -1835,9 +1855,11 @@ impl StatePolicy for AiLoopPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             AiLoopEvent::ErrorExecution,
-                                            "<send> <param name='text'> expr failed to evaluate",
+                                            "<send> <param name='text'> could not be read",
                                         ),
                                     );
+                                    // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                                    _param_failed = true;
                                 }
                             }
                             ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
@@ -1870,6 +1892,11 @@ impl StatePolicy for AiLoopPolicy {
                             }
                         }
 
+                        // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                        // this element was processed, so the rest of the block does not run.
+                        if _param_failed {
+                            break 'action_block;
+                        }
                         let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }
@@ -2648,6 +2675,8 @@ impl StatePolicy for AiLoopPolicy {
                         {
                             let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
 
+                            let mut _param_failed = false;
+
                             // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                             // delivered, so each name carries a vector. The typed value is kept
                             // rather than its text — a receiver reading `_event.data.value === 42`
@@ -2683,7 +2712,14 @@ impl StatePolicy for AiLoopPolicy {
                                             "send param 'text' eval failed: {}",
                                             e
                                         );
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send> <param name='text'> expr failed to evaluate"));
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                AiLoopEvent::ErrorExecution,
+                                                "<send> <param name='text'> could not be read",
+                                            ),
+                                        );
+                                        // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                                        _param_failed = true;
                                     }
                                 }
                                 ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
@@ -2716,6 +2752,7 @@ impl StatePolicy for AiLoopPolicy {
                                 }
                             }
 
+                            let _ = _param_failed; // transition content has no block exit to take
                             let _ = send_id; // suppress unused warning when no send operation
                             let _ = event_data; // suppress unused warning in branches that skip dispatch
                         }
@@ -2841,6 +2878,8 @@ impl StatePolicy for AiLoopPolicy {
                         {
                             let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
 
+                            let mut _param_failed = false;
+
                             // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                             // delivered, so each name carries a vector. The typed value is kept
                             // rather than its text — a receiver reading `_event.data.value === 42`
@@ -2876,7 +2915,14 @@ impl StatePolicy for AiLoopPolicy {
                                             "send param 'text' eval failed: {}",
                                             e
                                         );
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send> <param name='text'> expr failed to evaluate"));
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                AiLoopEvent::ErrorExecution,
+                                                "<send> <param name='text'> could not be read",
+                                            ),
+                                        );
+                                        // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                                        _param_failed = true;
                                     }
                                 }
                                 ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
@@ -2909,6 +2955,7 @@ impl StatePolicy for AiLoopPolicy {
                                 }
                             }
 
+                            let _ = _param_failed; // transition content has no block exit to take
                             let _ = send_id; // suppress unused warning when no send operation
                             let _ = event_data; // suppress unused warning in branches that skip dispatch
                         }

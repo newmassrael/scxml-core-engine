@@ -394,10 +394,24 @@ class Test352StateMachine(
                 // SCE-MAP: test352.scxml:10 :: s0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 5000L, Test352Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             send(Test352Event.S0Event, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test352State.S1 -> {
                 // SCE-MAP: test352.scxml:23 :: s1 :: _state_body

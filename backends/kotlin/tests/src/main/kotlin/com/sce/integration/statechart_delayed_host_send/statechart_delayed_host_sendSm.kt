@@ -253,6 +253,7 @@ class StatechartDelayedHostSendStateMachine(
                 // SCE-MAP: statechart_delayed_host_send.scxml:81 :: cancelling :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
@@ -272,9 +273,22 @@ class StatechartDelayedHostSendStateMachine(
                 val hostDelayMs = 200L
                 scheduleHostSend("h2", hostDelayMs, hostRequest)
             }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             scheduleSend("__send_2", 100L, StatechartDelayedHostSendEvent.Settle)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is StatechartDelayedHostSendState.CancelLost -> {
                 // SCE-MAP: statechart_delayed_host_send.scxml:101 :: cancelLost :: _state_body
@@ -288,7 +302,14 @@ class StatechartDelayedHostSendStateMachine(
             cancelSend("h2")
 
 
+            if (run send@{
             scheduleSend("__send_3", 200L, StatechartDelayedHostSendEvent.Finish)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is StatechartDelayedHostSendState.Pass -> {
                 // SCE-MAP: statechart_delayed_host_send.scxml:99 :: pass :: _state_body
@@ -309,6 +330,7 @@ class StatechartDelayedHostSendStateMachine(
                 // SCE-MAP: statechart_delayed_host_send.scxml:59 :: waiting :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
@@ -328,9 +350,22 @@ class StatechartDelayedHostSendStateMachine(
                 val hostDelayMs = 200L
                 scheduleHostSend("__send_0", hostDelayMs, hostRequest)
             }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             scheduleSend("__send_1", 100L, StatechartDelayedHostSendEvent.Probe)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

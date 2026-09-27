@@ -202,7 +202,14 @@ class InvokePrecedesDequeueMidrunStateMachine(
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:45 :: arm :: _state_body
 
 
+            if (run send@{
             send(InvokePrecedesDequeueMidrunEvent.Go, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is InvokePrecedesDequeueMidrunState.Fail -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:89 :: fail :: _state_body
@@ -218,7 +225,14 @@ class InvokePrecedesDequeueMidrunStateMachine(
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:54 :: phase :: _state_body
 
 
+            if (run send@{
             send(InvokePrecedesDequeueMidrunEvent.Kick, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
@@ -266,8 +280,15 @@ class InvokePrecedesDequeueMidrunStateMachine(
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:82 :: phase :: _transition_1
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test192): Send event to invoked child
             sendToChild("inv_watch", "probe")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

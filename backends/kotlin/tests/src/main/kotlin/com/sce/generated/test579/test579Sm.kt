@@ -571,7 +571,14 @@ class Test579StateMachine(
                 // SCE-MAP: test579.scxml:11 :: s0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 1000L, Test579Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
             raiseInternal(Test579Event.Event1)
                 // W3C SCXML 3.3: the <initial> transition's content runs when,

@@ -653,7 +653,14 @@ class Test388StateMachine(
                 // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
+            if (run send@{
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

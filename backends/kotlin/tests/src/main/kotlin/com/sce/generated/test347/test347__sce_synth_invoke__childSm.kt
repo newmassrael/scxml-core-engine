@@ -134,8 +134,15 @@ class Test347SceSynthInvokeChildStateMachine(
                 // SCE-MAP: test347__sce_synth_invoke__child.scxml:4 :: sub0 :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("childToParent", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test347SceSynthInvokeChildState.SubFinal -> {
                 // SCE-MAP: test347__sce_synth_invoke__child.scxml:10 :: subFinal :: _state_body

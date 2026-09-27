@@ -592,6 +592,10 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteEntryActions(
 	// W3C SCXML 6.2: send id="__send_2"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
 	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
 		p.ensureScriptEngine()
 		se := p.ScriptEngine
 		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -603,6 +607,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteEntryActions(
 			parts = append(parts, sce.EventDataParam{Name: "value", Value: paramVal})
 		} else {
 			engine.Raise(sce.NewPlatformError(AutoforwardEventFieldsSceSynthInvokeInvEchoEventErrorExecution, "<send> <param name='value'> expr failed to evaluate"))
+			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
@@ -610,6 +615,10 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteEntryActions(
 	if p.ParentExternalQueue != nil {
 		p.ParentExternalQueue <- sce.ParentEvent{Name: "childToParent", Data: eventDataStr}
 	}
+		// W3C SCXML 4.9: the <param> error ends the block.
+		if paramFailed {
+			break
+		}
 	}
 
 		}

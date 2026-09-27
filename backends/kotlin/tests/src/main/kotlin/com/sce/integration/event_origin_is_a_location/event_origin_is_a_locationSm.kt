@@ -479,6 +479,7 @@ class EventOriginIsALocationStateMachine(
                 // SCE-MAP: event_origin_is_a_location.scxml:75 :: waiting :: _transition_0
 
 
+            if (run send@{
             // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_event.origin")
             var _resolvedTarget: String? = null
             run resolveTarget@{
@@ -519,6 +520,12 @@ class EventOriginIsALocationStateMachine(
                 send(EventOriginIsALocationEvent.Reply, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             } // end of _resolvedTarget?.let
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

@@ -423,6 +423,7 @@ class Test190StateMachine(
                 // SCE-MAP: test190.scxml:13 :: s0 :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.2: Resolve dynamic target (targetexpr="Var1")
             var _resolvedTarget: String? = null
             run resolveTarget@{
@@ -463,11 +464,24 @@ class Test190StateMachine(
                 send(Test190Event.Event2, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             } // end of _resolvedTarget?.let
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
             raiseInternal(Test190Event.Event1)
 
 
+            if (run send@{
             send(Test190Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test190State.S1 -> {
                 // SCE-MAP: test190.scxml:30 :: s1 :: _state_body

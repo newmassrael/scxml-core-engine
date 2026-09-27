@@ -413,6 +413,7 @@ class Test175StateMachine(
             executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"1s\"", "'1s'"))
 
 
+            if (run send@{
             // W3C SCXML 6.2: Dynamic delay evaluation
             run {
                 ensureScriptEngine()
@@ -424,14 +425,27 @@ class Test175StateMachine(
                     delayStrE = v?.toString() ?: "0s"
                 } catch (_: Exception) {
                     raisePlatformError(Test175Event.Error.Execution, "<send> delayexpr failed to evaluate")
-                    return@run
+                    return@send false
                 }
                 val delayMsE = parseDelay(delayStrE)
                 scheduleSend("__send_0", delayMsE, Test175Event.Event2)
             }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             scheduleSend("__send_1", 500L, Test175Event.Event1)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test175State.S1 -> {
                 // SCE-MAP: test175.scxml:22 :: s1 :: _state_body

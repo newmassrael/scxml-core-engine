@@ -667,6 +667,7 @@ impl StatePolicy for Test354Policy {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
 
                         let mut _send_aborted = false;
+                        let mut _param_failed = false;
 
                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                         // delivered, so each name carries a vector. The typed value is kept
@@ -706,9 +707,11 @@ impl StatePolicy for Test354Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test354Event::ErrorExecution,
-                                            "<send> <param name='param1'> expr failed to evaluate",
+                                            "<send> <param name='param1'> could not be read",
                                         ),
                                     );
+                                    // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                                    _param_failed = true;
                                 }
                             }
                             // W3C SCXML C.1: namelist variables become top-level keys in the data table
@@ -772,6 +775,11 @@ impl StatePolicy for Test354Policy {
                                 engine.raise_external_with_meta(meta);
                             }
                         } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on an argument error)
+                          // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                          // this element was processed, so the rest of the block does not run.
+                        if _param_failed {
+                            break 'action_block;
+                        }
                         let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }

@@ -365,6 +365,7 @@ class Test521StateMachine(
                 // SCE-MAP: test521.scxml:10 :: s0 :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.2: Resolve dynamic target (targetexpr="undefined")
             var _resolvedTarget: String? = null
             run resolveTarget@{
@@ -405,9 +406,22 @@ class Test521StateMachine(
                 send(Test521Event.Event2, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             } // end of _resolvedTarget?.let
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             send(Test521Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

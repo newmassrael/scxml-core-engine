@@ -412,6 +412,7 @@ class Test342StateMachine(
                 // SCE-MAP: test342.scxml:10 :: s0 :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.2: Dynamic event name evaluation (test172)
             run {
                 ensureScriptEngine()
@@ -423,13 +424,19 @@ class Test342StateMachine(
                     dynamicEventName = v?.toString() ?: ""
                 } catch (_: Exception) {
                     raisePlatformError(Test342Event.Error.Execution, "<send> eventexpr failed to evaluate")
-                    return@run
+                    return@send false
                 }
                 val resolvedEvent = resolveEventByName(dynamicEventName)
                 if (resolvedEvent != null) {
                     send(resolvedEvent, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
                 }
             }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test342State.S1 -> {
                 // SCE-MAP: test342.scxml:20 :: s1 :: _state_body

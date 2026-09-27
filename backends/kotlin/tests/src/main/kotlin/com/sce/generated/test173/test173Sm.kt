@@ -386,6 +386,7 @@ class Test173StateMachine(
             executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"#_internal\"", "'#_internal'"))
 
 
+            if (run send@{
             // W3C SCXML 6.2: Resolve dynamic target (targetexpr="Var1")
             var _resolvedTarget: String? = null
             run resolveTarget@{
@@ -426,6 +427,12 @@ class Test173StateMachine(
                 send(Test173Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             } // end of _resolvedTarget?.let
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

@@ -189,7 +189,14 @@ class Test411StateMachine(
                 // SCE-MAP: test411.scxml:11 :: s0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 1000L, Test411Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (isStateActive("s01")) {

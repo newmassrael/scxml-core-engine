@@ -359,9 +359,16 @@ class Test578StateMachine(
                 // SCE-MAP: test578.scxml:8 :: s0 :: _state_body
 
 
+            if (run send@{
             // W3C SCXML B.2: the reading is decided at build time; a value
             // is evaluated here and serialized, XML is handed on as source.
             send(Test578Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = evaluateSendContent(com.sce.runtime.ScriptSource.lua("{[\"productName\"] = \"bar\", [\"size\"] = 27}", "{ \"productName\" : \"bar\", \"size\" : 27 }"))))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

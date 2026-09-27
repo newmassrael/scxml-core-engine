@@ -375,6 +375,8 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
                 // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:26 :: report :: _transition_0
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 5.10: Evaluate params for parent send (test233)
             run {
                 ensureScriptEngine()
@@ -384,20 +386,26 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
                 try {
                     putParam(paramsP, "kept", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("kept", "kept")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Execution, "<send> <param name='kept'> expr failed to evaluate")
+                    raisePlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Execution, "<send> <param name='kept'> could not be read")
+                    paramFailed = true
                 }
 
                 try {
                     putParam(paramsP, "brokenPlaceholder", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("(broken == \"\")", "broken === ''")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Execution, "<send> <param name='brokenPlaceholder'> expr failed to evaluate")
+                    raisePlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Execution, "<send> <param name='brokenPlaceholder'> could not be read")
+                    paramFailed = true
                 }
 
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("childUp", eventDataP)
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

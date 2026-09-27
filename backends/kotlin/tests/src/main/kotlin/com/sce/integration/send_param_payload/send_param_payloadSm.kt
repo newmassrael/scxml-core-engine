@@ -623,6 +623,7 @@ class SendParamPayloadStateMachine(
                 // SCE-MAP: send_param_payload.scxml:125 :: internalPhase :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 5.10: An internal send carries `_event.data` just as
             // an external one does. Before this the payload was dropped
             // silently — the event was queued with no data at all.
@@ -631,11 +632,19 @@ class SendParamPayloadStateMachine(
                 putParam(paramsI, "carried", "kept")
                 raiseInternal(SendParamPayloadEvent.Loopback, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is SendParamPayloadState.ParamErrorPhase -> {
                 // SCE-MAP: send_param_payload.scxml:192 :: paramErrorPhase :: _state_body
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 5.10: An internal send carries `_event.data` just as
             // an external one does. Before this the payload was dropped
             // silently — the event was queued with no data at all.
@@ -648,12 +657,18 @@ class SendParamPayloadStateMachine(
                 try {
                     putParam(paramsI, "broken", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("nothing.deep", "nothing.deep")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='broken'> expr failed to evaluate")
+                    raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='broken'> could not be read")
+                    paramFailed = true
                 }
 
                 raiseInternal(SendParamPayloadEvent.WithBadParam, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is SendParamPayloadState.Pass -> {
                 // SCE-MAP: send_param_payload.scxml:219 :: pass :: _state_body
@@ -664,6 +679,8 @@ class SendParamPayloadStateMachine(
                 // SCE-MAP: send_param_payload.scxml:141 :: typedPhase :: _state_body
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 5.10: An internal send carries `_event.data` just as
             // an external one does. Before this the payload was dropped
             // silently — the event was queued with no data at all.
@@ -675,33 +692,39 @@ class SendParamPayloadStateMachine(
                 try {
                     putParam(paramsI, "n", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("7", "7")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='n'> expr failed to evaluate")
+                    raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='n'> could not be read")
+                    paramFailed = true
                 }
 
                 try {
                     putParam(paramsI, "s", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("tag", "tag")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='s'> expr failed to evaluate")
+                    raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='s'> could not be read")
+                    paramFailed = true
                 }
 
                 try {
                     putParam(paramsI, "d", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("1", "1")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='d'> expr failed to evaluate")
+                    raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='d'> could not be read")
+                    paramFailed = true
                 }
 
                 try {
                     putParam(paramsI, "d", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("2", "2")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='d'> expr failed to evaluate")
+                    raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='d'> could not be read")
+                    paramFailed = true
                 }
 
                 raiseInternal(SendParamPayloadEvent.Typed, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

@@ -395,9 +395,17 @@ class Test510StateMachine(
                 // SCE-MAP: test510.scxml:7 :: s0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 30000L, Test510Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
             var _resolvedTarget: String? = null
             run resolveTarget@{
@@ -431,6 +439,12 @@ class Test510StateMachine(
             performHttpSend(_rt, "test", "", emptyMap(), "__send_1")
             }
             } // end of _resolvedTarget?.let
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
             raiseInternal(Test510Event.Internal)
             }

@@ -362,7 +362,14 @@ class Test401StateMachine(
                 // SCE-MAP: test401.scxml:10 :: s0 :: _state_body
 
 
+            if (run send@{
             send(Test401Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)

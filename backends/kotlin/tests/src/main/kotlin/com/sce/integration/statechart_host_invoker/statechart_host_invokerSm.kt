@@ -1576,27 +1576,35 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:205 :: locating :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332),
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
             // argument that cannot be evaluated, so the message is discarded
-            // (W3C SCXML 6.2, 5.9.2); the whole send is the labelled block
-            // returned from.
-            run send@{
-            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("slot.sid", "slot.sid"), "__send_0", "<send>")) return@send
+            // (W3C SCXML 6.2, 5.9.2).
+            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("slot.sid", "slot.sid"), "__send_0", "<send>")) return@send false
             send(StatechartHostInvokerEvent.Ping, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332),
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
             // argument that cannot be evaluated, so the message is discarded
-            // (W3C SCXML 6.2, 5.9.2); the whole send is the labelled block
-            // returned from.
-            run send@{
-            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper"), "__send_1", "<send>")) return@send
+            // (W3C SCXML 6.2, 5.9.2).
+            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper"), "__send_1", "<send>")) return@send false
             send(StatechartHostInvokerEvent.Leak, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing

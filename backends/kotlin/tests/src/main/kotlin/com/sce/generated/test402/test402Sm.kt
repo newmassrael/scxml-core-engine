@@ -471,7 +471,14 @@ class Test402StateMachine(
                 // SCE-MAP: test402.scxml:9 :: s0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 1000L, Test402Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test402State.S01 -> {
                 // SCE-MAP: test402.scxml:16 :: s01 :: _state_body

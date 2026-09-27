@@ -415,6 +415,8 @@ class Test176StateMachine(
             executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("2", "2"))
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 5.10: Evaluate params/namelist for event data
             run {
                 ensureScriptEngine()
@@ -424,13 +426,19 @@ class Test176StateMachine(
                 try {
                     putParam(paramsE, "aParam", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.lua("Var1", "Var1")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(Test176Event.Error.Execution, "<send> <param name='aParam'> expr failed to evaluate")
+                    raisePlatformError(Test176Event.Error.Execution, "<send> <param name='aParam'> could not be read")
+                    paramFailed = true
                 }
 
                 val eventDataE = buildJsonFromParams(paramsE)
                 send(Test176Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = eventDataE))
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test176State.S1 -> {
                 // SCE-MAP: test176.scxml:25 :: s1 :: _state_body

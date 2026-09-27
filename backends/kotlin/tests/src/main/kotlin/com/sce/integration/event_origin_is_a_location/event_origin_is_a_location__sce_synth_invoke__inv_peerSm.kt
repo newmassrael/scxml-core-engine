@@ -346,6 +346,8 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
                 // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:5 :: emit :: _state_body
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 5.10: Evaluate params for parent send (test233)
             run {
                 ensureScriptEngine()
@@ -355,13 +357,19 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
                 try {
                     putParam(paramsP, "myLocation", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("_ioprocessors.scxml.location", "_ioprocessors['scxml'].location")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, "<send> <param name='myLocation'> expr failed to evaluate")
+                    raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, "<send> <param name='myLocation'> could not be read")
+                    paramFailed = true
                 }
 
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("fromChild", eventDataP)
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }
@@ -389,8 +397,15 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
                 // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:12 :: emit :: _transition_0
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("replyArrived", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

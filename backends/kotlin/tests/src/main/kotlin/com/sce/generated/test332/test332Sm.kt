@@ -419,17 +419,21 @@ class Test332StateMachine(
                 // SCE-MAP: test332.scxml:12 :: s0 :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332),
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
             // argument that cannot be evaluated, so the message is discarded
-            // (W3C SCXML 6.2, 5.9.2); the whole send is the labelled block
-            // returned from.
-            run send@{
-            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), "__send_0", "<send>")) return@send
+            // (W3C SCXML 6.2, 5.9.2).
+            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), "__send_0", "<send>")) return@send false
             // W3C SCXML 6.2 (test194): Invalid target raises error.execution
             raisePlatformError(Test332Event.Error.Execution, "<send target='!invalid'> is not a target this processor can address", "__send_0")
-            return  // W3C SCXML 5.10: Stop subsequent executable content
+            return@send true  // W3C SCXML 5.10: discarded; the block stops below
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test332State.S1 -> {

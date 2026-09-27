@@ -506,9 +506,17 @@ class SendNamelistOverHttpStateMachine(
                 // SCE-MAP: send_namelist_over_http.scxml:95 :: discardPhase :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_2", 2000L, SendNamelistOverHttpEvent.TimeoutDiscard)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
             var _resolvedTarget: String? = null
             run resolveTarget@{
@@ -562,6 +570,12 @@ class SendNamelistOverHttpStateMachine(
             }
             }
             } // end of _resolvedTarget?.let
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is SendNamelistOverHttpState.FailMessageNotDiscarded -> {
                 // SCE-MAP: send_namelist_over_http.scxml:118 :: failMessageNotDiscarded :: _state_body
@@ -587,9 +601,17 @@ class SendNamelistOverHttpStateMachine(
                 // SCE-MAP: send_namelist_over_http.scxml:71 :: mapPhase :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 3000L, SendNamelistOverHttpEvent.TimeoutMap)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
             var _resolvedTarget: String? = null
             run resolveTarget@{
@@ -643,6 +665,12 @@ class SendNamelistOverHttpStateMachine(
             }
             }
             } // end of _resolvedTarget?.let
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is SendNamelistOverHttpState.MapVerdict -> {
                 // SCE-MAP: send_namelist_over_http.scxml:88 :: mapVerdict :: _state_body

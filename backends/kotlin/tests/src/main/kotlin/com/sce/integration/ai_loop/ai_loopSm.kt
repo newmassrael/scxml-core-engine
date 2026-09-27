@@ -1289,6 +1289,8 @@ class AiLoopStateMachine(
                 // SCE-MAP: ai_loop.scxml:405 :: closing :: _state_body
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
@@ -1310,6 +1312,7 @@ class AiLoopStateMachine(
                     // value — the act still happens, without a field the document
                     // could not produce.
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> expr failed to evaluate")
+                    paramFailed = true
                 }
                 val hostEventName = "prompt.end"
                 val hostRequest = HostSendRequest(
@@ -1330,6 +1333,12 @@ class AiLoopStateMachine(
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_7")
                 }
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is AiLoopState.Converged -> {
                 // SCE-MAP: ai_loop.scxml:544 :: converged :: _state_body
@@ -1353,6 +1362,8 @@ class AiLoopStateMachine(
                 // SCE-MAP: ai_loop.scxml:344 :: judging :: _state_body
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
@@ -1374,6 +1385,7 @@ class AiLoopStateMachine(
                     // value — the act still happens, without a field the document
                     // could not produce.
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='marker'> expr failed to evaluate")
+                    paramFailed = true
                 }
                 val hostEventName = "judge.begin"
                 val hostRequest = HostSendRequest(
@@ -1394,11 +1406,18 @@ class AiLoopStateMachine(
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_3")
                 }
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is AiLoopState.Paused -> {
                 // SCE-MAP: ai_loop.scxml:451 :: paused :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
@@ -1425,11 +1444,19 @@ class AiLoopStateMachine(
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_8")
                 }
             }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is AiLoopState.Priming -> {
                 // SCE-MAP: ai_loop.scxml:291 :: priming :: _state_body
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
@@ -1451,6 +1478,7 @@ class AiLoopStateMachine(
                     // value — the act still happens, without a field the document
                     // could not produce.
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> expr failed to evaluate")
+                    paramFailed = true
                 }
                 val hostEventName = "prompt.start"
                 val hostRequest = HostSendRequest(
@@ -1471,6 +1499,12 @@ class AiLoopStateMachine(
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_0")
                 }
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is AiLoopState.Rebuilding -> {
                 // SCE-MAP: ai_loop.scxml:509 :: rebuilding :: _state_body
@@ -1482,6 +1516,7 @@ class AiLoopStateMachine(
             executeAssign(com.sce.runtime.ScriptSource.lua("turns_since_reflect", "turns_since_reflect"), com.sce.runtime.ScriptSource.lua("0", "0"))
 
 
+            if (run send@{
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
@@ -1508,6 +1543,12 @@ class AiLoopStateMachine(
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_5")
                 }
             }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is AiLoopState.Reported -> {
                 // SCE-MAP: ai_loop.scxml:426 :: reported :: _state_body
@@ -1523,6 +1564,7 @@ class AiLoopStateMachine(
             executeAssign(com.sce.runtime.ScriptSource.lua("restarts", "restarts"), com.sce.runtime.ScriptSource.lua("_scxml_add(restarts, 1)", "restarts + 1"))
 
 
+            if (run send@{
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
@@ -1549,6 +1591,12 @@ class AiLoopStateMachine(
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_6")
                 }
             }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is AiLoopState.Run -> {
                 // SCE-MAP: ai_loop.scxml:233 :: run :: _state_body
@@ -1563,6 +1611,7 @@ class AiLoopStateMachine(
             executeAssign(com.sce.runtime.ScriptSource.lua("screened", "screened"), com.sce.runtime.ScriptSource.lua("_scxml_add(screened, 1)", "screened + 1"))
 
 
+            if (run send@{
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
@@ -1589,6 +1638,12 @@ class AiLoopStateMachine(
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_1")
                 }
             }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is AiLoopState.Spent -> {
                 // SCE-MAP: ai_loop.scxml:529 :: spent :: _state_body
@@ -1706,6 +1761,8 @@ class AiLoopStateMachine(
                 // SCE-MAP: ai_loop.scxml:362 :: judging :: _transition_2
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
@@ -1727,6 +1784,7 @@ class AiLoopStateMachine(
                     // value — the act still happens, without a field the document
                     // could not produce.
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> expr failed to evaluate")
+                    paramFailed = true
                 }
                 val hostEventName = "prompt.turn"
                 val hostRequest = HostSendRequest(
@@ -1747,6 +1805,12 @@ class AiLoopStateMachine(
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_2")
                 }
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }
@@ -1776,6 +1840,8 @@ class AiLoopStateMachine(
                 // SCE-MAP: ai_loop.scxml:385 :: reflecting :: _transition_1
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
@@ -1797,6 +1863,7 @@ class AiLoopStateMachine(
                     // value — the act still happens, without a field the document
                     // could not produce.
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> expr failed to evaluate")
+                    paramFailed = true
                 }
                 val hostEventName = "prompt.turn"
                 val hostRequest = HostSendRequest(
@@ -1817,6 +1884,12 @@ class AiLoopStateMachine(
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_4")
                 }
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

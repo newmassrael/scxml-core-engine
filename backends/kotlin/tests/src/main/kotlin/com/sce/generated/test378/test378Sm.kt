@@ -420,9 +420,16 @@ class Test378StateMachine(
                 run {
 
 
+            if (run send@{
             // W3C SCXML 6.2 (test194): Invalid target raises error.execution
             raisePlatformError(Test378Event.Error.Execution, "<send target='!invalid'> is not a target this processor can address", "__send_0")
-            return@run  // W3C SCXML 5.10: Stop subsequent executable content in this block
+            return@send true  // W3C SCXML 5.10: discarded; the block stops below
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return@run
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
                 // W3C SCXML 3.9: Onexit block 2/2
                 // C++ EntryExitHelper pattern: each block executes independently

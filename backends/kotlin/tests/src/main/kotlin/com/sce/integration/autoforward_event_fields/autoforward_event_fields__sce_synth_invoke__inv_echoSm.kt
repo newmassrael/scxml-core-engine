@@ -351,6 +351,8 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
                 // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5 :: emit :: _state_body
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 5.10: Evaluate params for parent send (test233)
             run {
                 ensureScriptEngine()
@@ -360,13 +362,19 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
                 try {
                     putParam(paramsP, "value", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("42", "42")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.Error.Execution, "<send> <param name='value'> expr failed to evaluate")
+                    raisePlatformError(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.Error.Execution, "<send> <param name='value'> could not be read")
+                    paramFailed = true
                 }
 
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("childToParent", eventDataP)
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported -> {
                 // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:22 :: reported :: _state_body
@@ -399,15 +407,29 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
                 // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:11 :: emit :: _transition_0
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("fieldsPreserved", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             1 -> {
                 // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:18 :: emit :: _transition_1
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("fieldsStripped", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

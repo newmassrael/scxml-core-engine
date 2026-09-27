@@ -395,13 +395,27 @@ class Test336StateMachine(
                 // SCE-MAP: test336.scxml:8 :: s0 :: _state_body
 
 
+            if (run send@{
             send(Test336Event.Foo, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test336State.S1 -> {
                 // SCE-MAP: test336.scxml:18 :: s1 :: _state_body
 
 
+            if (run send@{
             send(Test336Event.Baz, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }
@@ -435,6 +449,7 @@ class Test336StateMachine(
                 // SCE-MAP: test336.scxml:12 :: s0 :: _transition_0
 
 
+            if (run send@{
             // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_event.origin")
             var _resolvedTarget: String? = null
             run resolveTarget@{
@@ -475,6 +490,12 @@ class Test336StateMachine(
                 send(Test336Event.Bar, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             } // end of _resolvedTarget?.let
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

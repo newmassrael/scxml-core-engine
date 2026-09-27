@@ -425,11 +425,20 @@ class EventTypeNamesItsQueueStateMachine(
                 // SCE-MAP: event_type_names_its_queue.scxml:39 :: s0 :: _state_body
 
 
+            if (run send@{
             send(EventTypeNamesItsQueueEvent.Ext, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
             raiseInternal(EventTypeNamesItsQueueEvent.Int)
 
 
+            if (run send@{
+            var paramFailed = false
             // W3C SCXML 5.10: An internal send carries `_event.data` just as
             // an external one does. Before this the payload was dropped
             // silently — the event was queued with no data at all.
@@ -441,12 +450,18 @@ class EventTypeNamesItsQueueStateMachine(
                 try {
                     putParam(paramsI, "a", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("1", "1")))
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and value.
-                    raisePlatformError(EventTypeNamesItsQueueEvent.Error.Execution, "<send> <param name='a'> expr failed to evaluate")
+                    raisePlatformError(EventTypeNamesItsQueueEvent.Error.Execution, "<send> <param name='a'> could not be read")
+                    paramFailed = true
                 }
 
                 raiseInternal(EventTypeNamesItsQueueEvent.ViaInternalSend, EventMetadata.internal(buildJsonFromParams(paramsI)))
             }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }

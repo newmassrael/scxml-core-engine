@@ -516,7 +516,14 @@ class Test580StateMachine(
                 // SCE-MAP: test580.scxml:10 :: p1 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 2000L, Test580Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test580State.Pass -> {
                 // SCE-MAP: test580.scxml:49 :: pass :: _state_body

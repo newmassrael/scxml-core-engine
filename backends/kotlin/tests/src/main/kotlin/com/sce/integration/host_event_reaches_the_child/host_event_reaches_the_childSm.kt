@@ -291,8 +291,15 @@ class HostEventReachesTheChildStateMachine(
                 // SCE-MAP: host_event_reaches_the_child.scxml:95 :: armed :: _transition_0
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test192): Send event to invoked child
             sendToChild("inv_probe", "marker")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

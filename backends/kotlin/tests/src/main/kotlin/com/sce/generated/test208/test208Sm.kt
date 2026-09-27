@@ -144,10 +144,24 @@ class Test208StateMachine(
                 // SCE-MAP: test208.scxml:9 :: s0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("foo", 1000L, Test208Event.Event1)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             scheduleSend("__send_0", 1500L, Test208Event.Event2)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             cancelSend("foo")

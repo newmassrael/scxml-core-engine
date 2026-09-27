@@ -348,11 +348,25 @@ class Test230SceSynthInvokeInvoke0StateMachine(
                 // SCE-MAP: test230__sce_synth_invoke__invoke_0.scxml:4 :: sub0 :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("childToParent", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             scheduleSend("__send_1", 2000L, Test230SceSynthInvokeInvoke0Event.Timeout)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test230SceSynthInvokeInvoke0State.SubFinal -> {
                 // SCE-MAP: test230__sce_synth_invoke__invoke_0.scxml:20 :: subFinal :: _state_body

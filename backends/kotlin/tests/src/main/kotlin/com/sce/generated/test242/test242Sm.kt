@@ -233,7 +233,14 @@ class Test242StateMachine(
                 // SCE-MAP: test242.scxml:9 :: s0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 1000L, Test242Event.Timeout1)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
@@ -249,7 +256,14 @@ class Test242StateMachine(
                 // SCE-MAP: test242.scxml:20 :: s02 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_1", 1000L, Test242Event.Timeout2)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
@@ -265,7 +279,14 @@ class Test242StateMachine(
                 // SCE-MAP: test242.scxml:37 :: s03 :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_2", 1000L, Test242Event.Timeout3)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format

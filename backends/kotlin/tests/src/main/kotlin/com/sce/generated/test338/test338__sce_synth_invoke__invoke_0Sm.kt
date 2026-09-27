@@ -113,8 +113,15 @@ class Test338SceSynthInvokeInvoke0StateMachine(
                 // SCE-MAP: test338__sce_synth_invoke__invoke_0.scxml:4 :: sub0 :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("event1", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }

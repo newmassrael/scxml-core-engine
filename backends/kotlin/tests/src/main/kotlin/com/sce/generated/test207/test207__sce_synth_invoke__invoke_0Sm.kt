@@ -153,14 +153,35 @@ class Test207SceSynthInvokeInvoke0StateMachine(
                 // SCE-MAP: test207__sce_synth_invoke__invoke_0.scxml:4 :: sub0 :: _state_body
 
 
+            if (run send@{
             scheduleSend("foo", 1000L, Test207SceSynthInvokeInvoke0Event.Event1)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             scheduleSend("__send_2", 1500L, Test207SceSynthInvokeInvoke0Event.Event2)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("childToParent", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test207SceSynthInvokeInvoke0State.SubFinal -> {
                 // SCE-MAP: test207__sce_synth_invoke__invoke_0.scxml:19 :: subFinal :: _state_body
@@ -193,15 +214,29 @@ class Test207SceSynthInvokeInvoke0StateMachine(
                 // SCE-MAP: test207__sce_synth_invoke__invoke_0.scxml:11 :: sub0 :: _transition_0
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("pass", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             1 -> {
                 // SCE-MAP: test207__sce_synth_invoke__invoke_0.scxml:14 :: sub0 :: _transition_1
 
 
+            if (run send@{
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("fail", "")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

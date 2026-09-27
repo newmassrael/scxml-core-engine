@@ -202,7 +202,14 @@ class Test421StateMachine(
                 // SCE-MAP: test421.scxml:9 :: s1 :: _state_body
 
 
+            if (run send@{
             send(Test421Event.ExternalEvent, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
             raiseInternal(Test421Event.InternalEvent1)
 

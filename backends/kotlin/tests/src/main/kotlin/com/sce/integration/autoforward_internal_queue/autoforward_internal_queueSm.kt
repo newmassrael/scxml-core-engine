@@ -234,15 +234,29 @@ class AutoforwardInternalQueueStateMachine(
                 // SCE-MAP: autoforward_internal_queue.scxml:75 :: phase :: _transition_0
 
 
+            if (run send@{
             // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
             raisePlatformError(AutoforwardInternalQueueEvent.Error.Execution, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support", "__send_0")
-            return  // W3C SCXML 5.10: Stop subsequent executable content
+            return@send true  // W3C SCXML 5.10: discarded; the block stops below
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             1 -> {
                 // SCE-MAP: autoforward_internal_queue.scxml:78 :: phase :: _transition_1
 
 
+            if (run send@{
             send(AutoforwardInternalQueueEvent.Probe, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

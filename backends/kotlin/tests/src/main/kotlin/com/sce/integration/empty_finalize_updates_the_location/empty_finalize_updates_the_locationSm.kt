@@ -532,7 +532,14 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:105 :: absentPhase :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_1", 3000L, EmptyFinalizeUpdatesTheLocationEvent.TimeoutAbsent)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
@@ -560,7 +567,14 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:71 :: emptyPhase :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_0", 3000L, EmptyFinalizeUpdatesTheLocationEvent.TimeoutEmpty)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
@@ -623,7 +637,14 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:144 :: unmatchedPhase :: _state_body
 
 
+            if (run send@{
             scheduleSend("__send_2", 3000L, EmptyFinalizeUpdatesTheLocationEvent.TimeoutUnmatched)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format

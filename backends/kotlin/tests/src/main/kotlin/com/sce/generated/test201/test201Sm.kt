@@ -365,6 +365,7 @@ class Test201StateMachine(
                 // SCE-MAP: test201.scxml:8 :: s0 :: _state_body
 
 
+            if (run send@{
             // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
             var _resolvedTarget: String? = null
             run resolveTarget@{
@@ -398,9 +399,22 @@ class Test201StateMachine(
             performHttpSend(_rt, "event1", "", emptyMap(), "__send_0")
             }
             } // end of _resolvedTarget?.let
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
+            if (run send@{
             send(Test201Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
         }
     }
