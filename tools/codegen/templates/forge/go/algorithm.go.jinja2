@@ -13,9 +13,16 @@
 // parameters lower to `[]byte` (RFC §synth-5-J-5 emitter table).
 
 package {{ package }}
-{% if all_imports or may_fail %}
+{# `round(x)` and `floor(x)` lower to `math.Round` / `math.Floor`. The test is
+   the one transform.go.jinja2 uses — any `math.` in the emitted code is the
+   math package — so it cannot fall behind the builtin vocabulary. #}
+{% set needs_math = 'math.' in (consts_prelude ~ ' ' ~ body) %}
+{% if all_imports or may_fail or needs_math %}
 
 import (
+{% if needs_math %}
+	"math"
+{% endif %}
 {% if may_fail %}
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 {% endif %}
