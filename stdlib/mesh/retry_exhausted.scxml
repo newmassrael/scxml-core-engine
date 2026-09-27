@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/retry_exhausted.scxml — whether a failed send is given up
+  rather than retried (SCE_MESH.md §mesh-10.10): the transport called the
+  failure terminal, or `attempts` — the sends already made, this one
+  included — has passed `maxRetries`. Giving up is the DELIVERY_EXHAUSTED of
+  §mesh-16.7 row 3, raised with `attempts`.
+
+  `maxRetries` is deploy.yaml's `max_retries`, which is at least 1; 0 fails
+  `precondition`.
+
+  attempts 1, maxRetries 3, retryable → false · attempts 4 → true ·
+  attempts 1, not retryable → true.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="retry_exhausted" version="1.0">
+  <sce:signature>
+    <sce:param name="attempts" type="uint32"/>
+    <sce:param name="maxRetries" type="uint32"/>
+    <sce:param name="retryable" type="bool"/>
+    <sce:return type="bool" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="maxRetries &gt; 0"/>
+    <sce:return expr="!retryable || attempts &gt; maxRetries"/>
+  </sce:body>
+</scxml>

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/retry_jittered.scxml — a retry wait spread by jitter
+  (SCE_MESH.md §mesh-10.10): `baseMs` moved by up to `jitterPct` percent of
+  itself either way, and never below 1 ms, so a retry storm from many
+  senders does not arrive in step.
+
+  The randomness is the host's: `draw` is any non-negative int64 it drew
+  uniformly, and this maps it onto the 2·delta + 1 whole milliseconds of the
+  band, delta = baseMs · jitterPct / 100 rounded down. Two backends given the
+  same draw therefore wait the same time. At a `jitterPct` of 0, or a base
+  too small for its percentage to reach a millisecond, the wait is `baseMs`.
+
+  `jitterPct` is deploy.yaml's `backoff_jitter_pct`, at most 100, and
+  `baseMs` is at least 1; anything else, or a negative `draw`, fails
+  `precondition`. The percentage is taken without multiplying `baseMs` by
+  it first, so only a band whose top passes int64 fails `overflow`.
+
+  base 100, pct 10, draw 0 → 90 · draw 10 → 100 · draw 20 → 110 · draw 21 → 90.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="retry_jittered" version="1.0">
+  <sce:signature>
+    <sce:param name="baseMs" type="int64"/>
+    <sce:param name="jitterPct" type="int64"/>
+    <sce:param name="draw" type="int64"/>
+    <sce:return type="int64" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="baseMs &gt; 0 &amp;&amp; jitterPct &gt;= 0 &amp;&amp; jitterPct &lt;= 100 &amp;&amp; draw &gt;= 0"/>
+    <sce:var name="delta" type="int64" init="baseMs / 100 * jitterPct + baseMs % 100 * jitterPct / 100"/>
+    <sce:var name="waited" type="int64" init="baseMs - delta + draw % (2 * delta + 1)"/>
+    <sce:return expr="waited &lt; 1 ? 1 : waited"/>
+  </sce:body>
+</scxml>

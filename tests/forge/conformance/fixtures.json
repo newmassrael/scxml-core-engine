@@ -1520,6 +1520,54 @@
       }
     },
     {
+      "name": "retry_exhausted",
+      "document": "sce:std/mesh/retry_exhausted.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "retry_exhausted",
+      "args": [
+        "u32",
+        "u32",
+        "bool"
+      ],
+      "output": {
+        "type": "bool",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "retry_jittered",
+      "document": "sce:std/mesh/retry_jittered.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "retry_jittered",
+      "args": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "output": {
+        "type": "i64",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "retry_next_backoff",
+      "document": "sce:std/mesh/retry_next_backoff.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "retry_next_backoff",
+      "args": [
+        "i64",
+        "f64",
+        "i64"
+      ],
+      "output": {
+        "type": "i64",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "second_of_day",
       "document": "sce:std/time/second_of_day.scxml",
       "kind": "algorithm",

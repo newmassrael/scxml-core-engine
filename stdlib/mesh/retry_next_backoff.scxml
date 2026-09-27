@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/retry_next_backoff.scxml — the wait before the next retry of
+  a failed send, before jitter (SCE_MESH.md §mesh-10.10): the previous wait
+  times `multiplier`, rounded down to a whole millisecond, and never past
+  `maxMs`. The first wait is deploy.yaml's `initial_backoff_ms`.
+
+  The product is compared with the cap before it is made an integer, so a
+  wait that has grown past int64 — or a multiplier of +infinity — is the
+  cap rather than an out-of-range conversion. `multiplier` is at least 1.0
+  (NaN is not), `prevMs` at least 1 and `maxMs` at least `prevMs`, as
+  deploy validation holds them; anything else fails `precondition`.
+
+  prev 100, multiplier 2.0, max 1000 → 200 · prev 600 → 1000 ·
+  prev 100, multiplier 1.5 → 150 · prev 3, multiplier 1.5 → 4.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="retry_next_backoff" version="1.0">
+  <sce:signature>
+    <sce:param name="prevMs" type="int64"/>
+    <sce:param name="multiplier" type="float64"/>
+    <sce:param name="maxMs" type="int64"/>
+    <sce:return type="int64" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="multiplier &gt;= 1.0 &amp;&amp; prevMs &gt; 0 &amp;&amp; maxMs &gt;= prevMs"/>
+    <sce:var name="grown" type="float64" init="prevMs * multiplier"/>
+    <sce:var name="next" type="int64" init="maxMs"/>
+    <sce:if cond="grown &lt; maxMs">
+      <sce:assign target="next" expr="floor(grown)"/>
+    </sce:if>
+    <sce:return expr="next"/>
+  </sce:body>
+</scxml>

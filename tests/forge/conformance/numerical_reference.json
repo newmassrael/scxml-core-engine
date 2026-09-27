@@ -1852,6 +1852,55 @@
         { "args": [-9223372036854775808, 9223372036854775807, 1], "fails": "overflow", "note": "an age past int64" }
       ]
     },
+    "retry_exhausted": {
+      "fixture": "retry_exhausted",
+      "signature": "(attempts: u32, maxRetries: u32, retryable: bool) -> bool may-fail",
+      "formula": "!retryable or attempts > maxRetries: a failed send is given up rather than retried; maxRetries 0 fails 'precondition' (SCE_MESH.md §mesh-10.10; the standard document sce:std/mesh/retry_exhausted.scxml)",
+      "cases": [
+        { "args": [1, 3, true], "expected": false, "note": "the first failure is retried" },
+        { "args": [3, 3, true], "expected": false, "note": "the last retry is still made" },
+        { "args": [4, 3, true], "expected": true },
+        { "args": [1, 3, false], "expected": true, "note": "a terminal failure fails fast with attempts 1" },
+        { "args": [1, 0, true], "fails": "precondition", "note": "deploy validation refuses max_retries 0" }
+      ]
+    },
+    "retry_jittered": {
+      "fixture": "retry_jittered",
+      "signature": "(baseMs: i64, jitterPct: i64, draw: i64) -> i64 may-fail",
+      "formula": "max(1, baseMs - delta + draw mod (2·delta + 1)), delta = floor(baseMs · jitterPct / 100): the host's uniform draw mapped onto the jitter band (SCE_MESH.md §mesh-10.10; the standard document sce:std/mesh/retry_jittered.scxml)",
+      "cases": [
+        { "args": [100, 10, 0], "expected": 90, "note": "the bottom of the band" },
+        { "args": [100, 10, 10], "expected": 100 },
+        { "args": [100, 10, 20], "expected": 110, "note": "the top of the band" },
+        { "args": [100, 10, 21], "expected": 90, "note": "the draw wraps" },
+        { "args": [100, 0, 12345], "expected": 100, "note": "no jitter" },
+        { "args": [5, 10, 7], "expected": 5, "note": "10% of 5 ms is no whole millisecond" },
+        { "args": [1, 100, 0], "expected": 1, "note": "never below 1 ms" },
+        { "args": [1, 100, 2], "expected": 2 },
+        { "args": [4611686018427387904, 50, 0], "expected": 2305843009213693952, "note": "delta computed without overflowing base times percent" },
+        { "args": [9223372036854775807, 1, 9223372036854775807], "fails": "overflow", "note": "the top of the band is past int64" },
+        { "args": [100, 101, 0], "fails": "precondition" },
+        { "args": [100, 10, -1], "fails": "precondition", "note": "a negative draw" },
+        { "args": [0, 10, 0], "fails": "precondition" }
+      ]
+    },
+    "retry_next_backoff": {
+      "fixture": "retry_next_backoff",
+      "signature": "(prevMs: i64, multiplier: f64, maxMs: i64) -> i64 may-fail",
+      "formula": "maxMs if prevMs · multiplier >= maxMs, else floor(prevMs · multiplier), compared before it is made an integer; multiplier < 1.0 or NaN, prevMs < 1 or maxMs < prevMs fail 'precondition' (SCE_MESH.md §mesh-10.10; the standard document sce:std/mesh/retry_next_backoff.scxml)",
+      "cases": [
+        { "args": [100, 2.0, 1000], "expected": 200 },
+        { "args": [600, 2.0, 1000], "expected": 1000, "note": "capped" },
+        { "args": [500, 2.0, 1000], "expected": 1000, "note": "exactly the cap" },
+        { "args": [100, 1.5, 1000], "expected": 150 },
+        { "args": [3, 1.5, 1000], "expected": 4, "note": "4.5 rounds down" },
+        { "args": [100, 1.0, 1000], "expected": 100, "note": "a constant backoff" },
+        { "args": [9223372036854775807, 2.0, 9223372036854775807], "expected": 9223372036854775807, "note": "a product past int64 is the cap, not a conversion" },
+        { "args": [100, 0.5, 1000], "fails": "precondition", "note": "a shrinking backoff" },
+        { "args": [0, 2.0, 10], "fails": "precondition" },
+        { "args": [100, 2.0, 50], "fails": "precondition", "note": "a cap below the wait" }
+      ]
+    },
     "second_of_day": {
       "fixture": "second_of_day",
       "signature": "(seconds: i64) -> i32",
