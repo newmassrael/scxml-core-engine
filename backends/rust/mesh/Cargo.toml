@@ -23,6 +23,11 @@ path = "src/lib.rs"
 # off is refused in src/lib.rs rather than left to fail inside a module.
 default = ["alloc"]
 alloc = ["sce-forge-runtime/alloc", "sce-portable-bytes/alloc"]
+# The WebSocket binding (SCE_MESH.md §mesh-18): a server that accepts and a
+# client that dials, moving bytes and readiness between a socket and the
+# core. Off by default: the core is transport-free, and a host that brings
+# its own transport should not link an async runtime for it.
+wss = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
 
 [dependencies]
 sce-forge-runtime = { path = "../forge-runtime", default-features = false }
@@ -32,3 +37,12 @@ sce-portable-bytes = { path = "../portable-bytes", default-features = false }
 # shape every generated send site fills rather than a second copy of it.
 # Without `http-send`, which is the runtime's own transport and not Mesh's.
 sce-rust-runtime = { path = "../runtime", default-features = false }
+# The `wss` feature's socket plumbing: the client and server the owner chose
+# for this binding (claudedocs/shared-calendar/README.md, 2026-09-25).
+# rustls with webpki roots, so a `wss://` client needs no system TLS library.
+tokio = { version = "1", optional = true, default-features = false, features = ["net", "rt", "sync", "time", "macros"] }
+tokio-tungstenite = { version = "0.30", optional = true, default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", optional = true, default-features = false, features = ["sink", "std"] }
+
+[dev-dependencies]
+tokio = { version = "1", default-features = false, features = ["net", "rt", "sync", "time", "macros"] }

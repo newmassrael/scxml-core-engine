@@ -2699,25 +2699,53 @@
     "mesh-18": {
       "title": "WebSocket Binding",
       "parent_doc": "mesh",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/wss.rs",
+          "kind": "references"
+        }
+      ]
     },
     "mesh-18.1": {
       "title": "Connection and Peer Identity",
       "parent_doc": "mesh",
       "parent_section": "mesh-18",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/wss.rs",
+          "kind": "references"
+        }
+      ]
     },
     "mesh-18.2": {
       "title": "Framing",
       "parent_doc": "mesh",
       "parent_section": "mesh-18",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/wss.rs",
+          "kind": "references"
+        }
+      ]
     },
     "mesh-18.3": {
       "title": "Readiness and Faults",
       "parent_doc": "mesh",
       "parent_section": "mesh-18",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/wss.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/endpoint.rs",
+          "kind": "references"
+        }
+      ]
     },
     "mesh-18.4": {
       "title": "Implementations",

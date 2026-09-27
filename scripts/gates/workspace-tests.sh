@@ -48,5 +48,7 @@ case "${SCE_GATE_NO_FAIL_FAST:-}" in
     *) FAIL_FAST=(--no-fail-fast); sce_gate_step "reporting every failure (--no-fail-fast)" ;;
 esac
 
-cargo test --workspace --features cli ${FAIL_FAST+"${FAIL_FAST[@]}"} \
-    || sce_gate_fail "cargo test --workspace --features cli"
+# `sce-rust-mesh/wss`: the WebSocket binding's tests open real sockets on
+# loopback, and they sit behind a non-default feature the sweep must ask for.
+cargo test --workspace --features cli,sce-rust-mesh/wss ${FAIL_FAST+"${FAIL_FAST[@]}"} \
+    || sce_gate_fail "cargo test --workspace --features cli,sce-rust-mesh/wss"

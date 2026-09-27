@@ -296,8 +296,8 @@ fn cargo_test_commands(text: &str) -> Vec<String> {
 /// answers for the command it describes: `scripts/gates/clippy.sh` reads
 ///
 /// ```sh
-/// cargo clippy --workspace --all-targets --features cli -- -D warnings \
-///     || sce_gate_fail "cargo clippy --workspace --all-targets --features cli"
+/// cargo clippy --workspace --all-targets --features cli,sce-rust-mesh/wss -- -D warnings \
+///     || sce_gate_fail "cargo clippy --workspace --all-targets --features cli,sce-rust-mesh/wss"
 /// ```
 ///
 /// and the continuation backslash makes those one string, so deleting the

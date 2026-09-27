@@ -27,5 +27,9 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-cargo clippy --workspace --all-targets --features cli -- -D warnings \
-    || sce_gate_fail "cargo clippy --workspace --all-targets --features cli"
+#
+# `sce-rust-mesh/wss` for the same reason: the WebSocket binding is a
+# non-default feature, and a module behind one is not compiled — let alone
+# linted — by a sweep that does not ask for it.
+cargo clippy --workspace --all-targets --features cli,sce-rust-mesh/wss -- -D warnings \
+    || sce_gate_fail "cargo clippy --workspace --all-targets --features cli,sce-rust-mesh/wss"

@@ -728,7 +728,7 @@ GATES: dict[str, dict] = {
                    "broken contract now reaches main and is answered a round "
                    "later.",
         "cost_s": 1363,
-        "summary": "cargo test --workspace --features cli",
+        "summary": "cargo test --workspace --features cli,sce-rust-mesh/wss",
     },
     # The one reader of the content axis. The header's `source-hash` covers
     # the INPUT documents, so an edit to the templates or to the emit code

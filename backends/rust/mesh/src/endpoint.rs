@@ -145,6 +145,14 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         }
     }
 
+    /// A transmission the transport accepted and then could not complete —
+    /// an envelope still queued on a link that closed (SCE_MESH.md
+    /// §mesh-18.3). It is that envelope's first failed send: sent again on
+    /// the binding's schedule, or given up as its row.
+    pub fn transmit_failed(&mut self, peer: &str, bytes: Vec<u8>, failure: TransportFailure) {
+        self.after_failure(peer.to_string(), bytes, Attempts::default(), failure);
+    }
+
     /// The events the engine must now raise, in the order they arose.
     pub fn take_events(&mut self) -> Vec<EngineEvent> {
         core::mem::take(&mut self.to_engine)
@@ -182,10 +190,21 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     /// Transmit `bytes` to `peer`, the attempts before this one being
     /// `attempts`. A failure waits out the binding's backoff or is given up
     /// as its row.
-    fn transmit(&mut self, peer: String, bytes: Vec<u8>, mut attempts: Attempts) {
-        let Err(failure) = self.transport.transmit(&peer, &bytes) else {
-            return;
-        };
+    fn transmit(&mut self, peer: String, bytes: Vec<u8>, attempts: Attempts) {
+        if let Err(failure) = self.transport.transmit(&peer, &bytes) {
+            self.after_failure(peer, bytes, attempts, failure);
+        }
+    }
+
+    /// A send to `peer` failed after `attempts`: wait out the binding's
+    /// backoff, or give it up as its row.
+    fn after_failure(
+        &mut self,
+        peer: String,
+        bytes: Vec<u8>,
+        mut attempts: Attempts,
+        failure: TransportFailure,
+    ) {
         let policy = self.router.retry_policy(&peer);
         let draw = self.environment.jitter_draw();
         match attempts.after_failure(policy.as_ref(), failure.retryable, failure.message, draw) {
