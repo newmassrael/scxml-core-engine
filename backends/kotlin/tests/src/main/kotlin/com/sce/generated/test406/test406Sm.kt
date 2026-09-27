@@ -301,29 +301,40 @@ class Test406StateMachine(
             }
             is Test406State.S0 -> {
                 // SCE-MAP: test406.scxml:8 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 1000L, Test406Event.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 1000L, Test406Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test406State.S01 -> {
                 // SCE-MAP: test406.scxml:14 :: s01 :: _state_body
             }
             is Test406State.S01p21 -> {
                 // SCE-MAP: test406.scxml:25 :: s01p21 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test406Event.Event3)
+                }
             }
             is Test406State.S01p22 -> {
                 // SCE-MAP: test406.scxml:32 :: s01p22 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test406Event.Event4)
+                }
             }
             is Test406State.S03 -> {
                 // SCE-MAP: test406.scxml:46 :: s03 :: _state_body
@@ -336,8 +347,11 @@ class Test406StateMachine(
             }
             is Test406State.S0p2 -> {
                 // SCE-MAP: test406.scxml:21 :: s0p2 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test406Event.Event2)
+                }
             }
         }
     }

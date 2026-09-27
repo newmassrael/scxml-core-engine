@@ -710,6 +710,7 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteTransitionContent(source Autoforw
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: External send
@@ -720,9 +721,10 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteTransitionContent(source Autoforw
 		engine.RaiseExternalWithMeta(meta)
 	}
 	}
-
+	}
 
 	// W3C SCXML 6.2: send id="__send_1"
+	{
 	{
 		eventDataStr := ""
 		_ = eventDataStr
@@ -734,7 +736,7 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteTransitionContent(source Autoforw
 		engine.RaiseExternalWithMeta(meta)
 	}
 	}
-
+	}
 			}()
 		case 1:
 			//line autoforward_dequeue_point.scxml:101
@@ -743,6 +745,7 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteTransitionContent(source Autoforw
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.4: Send to invoked child "inv_probe"
@@ -750,7 +753,7 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteTransitionContent(source Autoforw
 		p.childInvProbe.RaiseExternalByName("mark", eventDataStr)
 	}
 	}
-
+	}
 			}()
 		}
 	}

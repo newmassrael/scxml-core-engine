@@ -381,26 +381,34 @@ class SendNamelistOverHttpStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -504,78 +512,84 @@ class SendNamelistOverHttpStateMachine(
         when (state) {
             is SendNamelistOverHttpState.DiscardPhase -> {
                 // SCE-MAP: send_namelist_over_http.scxml:95 :: discardPhase :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_2", 2000L, SendNamelistOverHttpEvent.TimeoutDiscard)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_2", 2000L, SendNamelistOverHttpEvent.TimeoutDiscard, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
-            // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
-            var _resolvedTarget: String? = null
-            run resolveTarget@{
-                ensureScriptEngine()
-                val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                try {
-                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location"))
-                    val target = v?.toString() ?: ""
-                    // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
-                    if (target.startsWith("!")) {
-                        raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_3")
-                        return@resolveTarget
-                    }
-                    // W3C SCXML C.1 (test496): Unreachable target (C++ SendHelper::isUnreachableTarget)
-                    if (target.isEmpty() || target == "undefined") {
-                        raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
-                        return@resolveTarget
-                    }
-                    _resolvedTarget = target
-                } catch (_: Exception) {
-                    raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> targetexpr failed to evaluate")
-                }
+            ensureScriptEngine()
+            val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            // §scxml-C-1: a target expression's value is read as text — the
+            // same reading C++ `resultToString` gives it.
+            val _rt = try {
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location")))
+            } catch (_: Exception) {
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_3")
+                return@send true
             }
-            _resolvedTarget?.let { _rt ->
-            // W3C SCXML C.2: Validate dynamic target is HTTP URL
+            if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
+                // W3C SCXML 6.2 (test194): refused as a static one is.
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_3")
+                return@send true
+            }
+            // W3C SCXML 6.2 + B.2 (test553): a namelist names locations, and one
+            // that is not declared is an argument that cannot be evaluated —
+            // one error however many of its names are bad.
+            val sendNamelist = mutableListOf<Pair<String, Any?>>()
+            if (!argEngine.hasVariable(argSid, "__sce_not_declared__")) {
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> namelist names '__sce_not_declared__', which is not declared", "__send_3")
+                return@send true
+            }
+            try {
+                sendNamelist.add("__sce_not_declared__" to argEngine.getVariable(argSid, "__sce_not_declared__"))
+            } catch (_: Exception) {
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> namelist entry '__sce_not_declared__' could not be read", "__send_3")
+                return@send true
+            }
+            if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
+                // W3C SCXML C.1 (test496): a target that names nothing is not
+                // reachable — error.communication, nothing delivered, and the
+                // error ends the block as any other would (W3C SCXML 4.9).
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_3")
+                return@send true
+            }
+            val sendPayload = mutableMapOf<String, Any?>()
+            // W3C SCXML C.1: namelist variables become top-level keys in the
+            // data table — the values the prologue read, after the params.
+            for ((name, value) in sendNamelist) sendPayload[name] = value
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML C.2: BasicHTTP send — one arm for a static and a dynamic target
             if (!_rt.startsWith("http://") && !_rt.startsWith("https://")) {
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL")
-            } else {
-
-            // W3C SCXML C.2: BasicHTTP send with script engine evaluation
-            run {
-                ensureScriptEngine()
-                val engineH = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sidH = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val httpParams = mutableMapOf<String, List<String>>()
-                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern)
-                if (!engineH.hasVariable(sidH, "__sce_not_declared__")) {
-                    raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> namelist names '__sce_not_declared__', which is not declared")
-                    return@run
-                }
-                try {
-                    val v = engineH.getVariable(sidH, "__sce_not_declared__")
-                    httpParams["__sce_not_declared__"] = listOf(valueToWireString(v))
-                } catch (_: Exception) {
-                    raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> namelist entry '__sce_not_declared__' failed to evaluate")
-                    return@run
-                }
-                val httpContent = ""
-                performHttpSend(_rt, "shouldNotArrive", httpContent, httpParams, "__send_3")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", "__send_3")
+                return@send true
             }
-            }
-            } // end of _resolvedTarget?.let
+            val httpContent = ""
+            performHttpSend(_rt, "shouldNotArrive", httpContent, sendWireParams, "__send_3")
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is SendNamelistOverHttpState.FailMessageNotDiscarded -> {
                 // SCE-MAP: send_namelist_over_http.scxml:118 :: failMessageNotDiscarded :: _state_body
@@ -599,78 +613,84 @@ class SendNamelistOverHttpStateMachine(
             }
             is SendNamelistOverHttpState.MapPhase -> {
                 // SCE-MAP: send_namelist_over_http.scxml:71 :: mapPhase :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 3000L, SendNamelistOverHttpEvent.TimeoutMap)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 3000L, SendNamelistOverHttpEvent.TimeoutMap, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
-            // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
-            var _resolvedTarget: String? = null
-            run resolveTarget@{
-                ensureScriptEngine()
-                val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                try {
-                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location"))
-                    val target = v?.toString() ?: ""
-                    // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
-                    if (target.startsWith("!")) {
-                        raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_1")
-                        return@resolveTarget
-                    }
-                    // W3C SCXML C.1 (test496): Unreachable target (C++ SendHelper::isUnreachableTarget)
-                    if (target.isEmpty() || target == "undefined") {
-                        raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
-                        return@resolveTarget
-                    }
-                    _resolvedTarget = target
-                } catch (_: Exception) {
-                    raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> targetexpr failed to evaluate")
-                }
+            ensureScriptEngine()
+            val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            // §scxml-C-1: a target expression's value is read as text — the
+            // same reading C++ `resultToString` gives it.
+            val _rt = try {
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location")))
+            } catch (_: Exception) {
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_1")
+                return@send true
             }
-            _resolvedTarget?.let { _rt ->
-            // W3C SCXML C.2: Validate dynamic target is HTTP URL
+            if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
+                // W3C SCXML 6.2 (test194): refused as a static one is.
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_1")
+                return@send true
+            }
+            // W3C SCXML 6.2 + B.2 (test553): a namelist names locations, and one
+            // that is not declared is an argument that cannot be evaluated —
+            // one error however many of its names are bad.
+            val sendNamelist = mutableListOf<Pair<String, Any?>>()
+            if (!argEngine.hasVariable(argSid, "Var1")) {
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> namelist names 'Var1', which is not declared", "__send_1")
+                return@send true
+            }
+            try {
+                sendNamelist.add("Var1" to argEngine.getVariable(argSid, "Var1"))
+            } catch (_: Exception) {
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> namelist entry 'Var1' could not be read", "__send_1")
+                return@send true
+            }
+            if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
+                // W3C SCXML C.1 (test496): a target that names nothing is not
+                // reachable — error.communication, nothing delivered, and the
+                // error ends the block as any other would (W3C SCXML 4.9).
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_1")
+                return@send true
+            }
+            val sendPayload = mutableMapOf<String, Any?>()
+            // W3C SCXML C.1: namelist variables become top-level keys in the
+            // data table — the values the prologue read, after the params.
+            for ((name, value) in sendNamelist) sendPayload[name] = value
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML C.2: BasicHTTP send — one arm for a static and a dynamic target
             if (!_rt.startsWith("http://") && !_rt.startsWith("https://")) {
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL")
-            } else {
-
-            // W3C SCXML C.2: BasicHTTP send with script engine evaluation
-            run {
-                ensureScriptEngine()
-                val engineH = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sidH = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val httpParams = mutableMapOf<String, List<String>>()
-                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern)
-                if (!engineH.hasVariable(sidH, "Var1")) {
-                    raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> namelist names 'Var1', which is not declared")
-                    return@run
-                }
-                try {
-                    val v = engineH.getVariable(sidH, "Var1")
-                    httpParams["Var1"] = listOf(valueToWireString(v))
-                } catch (_: Exception) {
-                    raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> namelist entry 'Var1' failed to evaluate")
-                    return@run
-                }
-                val httpContent = ""
-                performHttpSend(_rt, "mapped", httpContent, httpParams, "__send_1")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", "__send_1")
+                return@send true
             }
-            }
-            } // end of _resolvedTarget?.let
+            val httpContent = ""
+            performHttpSend(_rt, "mapped", httpContent, sendWireParams, "__send_1")
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is SendNamelistOverHttpState.MapVerdict -> {
                 // SCE-MAP: send_namelist_over_http.scxml:88 :: mapVerdict :: _state_body
@@ -724,7 +744,9 @@ class SendNamelistOverHttpStateMachine(
                 // SCE-MAP: send_namelist_over_http.scxml:106 :: discardPhase :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("sawNamelistError", "sawNamelistError"), com.sce.runtime.ScriptSource.lua("1", "1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sawNamelistError", "sawNamelistError"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -733,7 +755,9 @@ class SendNamelistOverHttpStateMachine(
                 // SCE-MAP: send_namelist_over_http.scxml:82 :: mapPhase :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("echoed", "echoed"), com.sce.runtime.ScriptSource.lua("_event.data.Var1", "_event.data.Var1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("echoed", "echoed"), com.sce.runtime.ScriptSource.lua("_event.data.Var1", "_event.data.Var1"))) {
+                return
+            }
             }
             else -> {}
         }

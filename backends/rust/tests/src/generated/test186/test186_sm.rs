@@ -639,14 +639,11 @@ impl StatePolicy for Test186Policy {
                         // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
                         // below are renderings of that one evaluation: the BasicHTTP and
                         // host-served arms read this map instead of asking the data model again.
-                        // While it was block-scoped they had to, and what they re-read was
-                        // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
-                        // posted zero form parameters, against §scxml-C-2.
                         let mut _send_wire_params: ::std::collections::BTreeMap<
                             String,
                             Vec<::sce_rust_runtime::ScriptValue>,
                         > = ::std::collections::BTreeMap::new();
-                        // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
                         let event_data_string: String = {
                             self.ensure_script_engine();
                             let sid = self.session_id.as_ref().unwrap().clone();
@@ -681,13 +678,19 @@ impl StatePolicy for Test186Policy {
                         };
                         let event_data: &str = &event_data_string;
 
-                        // W3C SCXML 6.2: Delayed send (1000ms)
-                        engine.schedule_event(
-                            Test186Event::Event1,
-                            core::time::Duration::from_millis(1000),
-                            &send_id,
-                            event_data,
-                        );
+                        // W3C SCXML 6.2: Delayed send (1s)
+                        {
+                            let delay_ms = 1000_u64;
+                            let __sce_delayed_event = Some(Test186Event::Event1);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
                         // W3C SCXML 4.9: a <param> that could not be read raised an error while
                         // this element was processed, so the rest of the block does not run —
@@ -695,8 +698,8 @@ impl StatePolicy for Test186Policy {
                         if _param_failed {
                             break 'action_block;
                         }
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
 
                     {

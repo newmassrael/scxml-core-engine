@@ -284,26 +284,34 @@ class Test342StateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test342Event.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test342Event.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -410,33 +418,36 @@ class Test342StateMachine(
             }
             is Test342State.S0 -> {
                 // SCE-MAP: test342.scxml:10 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            // W3C SCXML 6.2: Dynamic event name evaluation (test172)
-            run {
-                ensureScriptEngine()
-                val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val dynamicEventName: String
-                try {
-                    val v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))
-                    dynamicEventName = v?.toString() ?: ""
-                } catch (_: Exception) {
-                    raisePlatformError(Test342Event.Error.Execution, "<send> eventexpr failed to evaluate")
-                    return@send false
-                }
-                val resolvedEvent = resolveEventByName(dynamicEventName)
-                if (resolvedEvent != null) {
-                    send(resolvedEvent, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
-                }
+            ensureScriptEngine()
+            val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            // An event name that evaluates to nothing names no event: the same
+            // failure as one that does not evaluate (test172).
+            val sendEventName = try {
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("Var1", "Var1")))
+            } catch (_: Exception) {
+                ""
             }
+            if (sendEventName.isEmpty()) {
+                raisePlatformError(Test342Event.Error.Execution, "<send> eventexpr could not be evaluated to an event name", "__send_0")
+                return@send true
+            }
+            val sendData = ""
+            val sendEvent = resolveEventByName(sendEventName)
+            // W3C SCXML 6.2: send to this session's external queue
+            if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test342State.S1 -> {
                 // SCE-MAP: test342.scxml:20 :: s1 :: _state_body
@@ -473,7 +484,9 @@ class Test342StateMachine(
                 // SCE-MAP: test342.scxml:14 :: s0 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.name", "_event.name"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.name", "_event.name"))) {
+                return
+            }
             }
             else -> {}
         }

@@ -333,16 +333,21 @@ class Test405StateMachine(
             }
             is Test405State.S0 -> {
                 // SCE-MAP: test405.scxml:8 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 1000L, Test405Event.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 1000L, Test405Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test405State.S01p -> {
                 // SCE-MAP: test405.scxml:14 :: s01p :: _state_body
@@ -398,8 +403,11 @@ class Test405StateMachine(
             }
             is Test405State.S01p11 -> {
                 // SCE-MAP: test405.scxml:19 :: s01p11 :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
             raiseInternal(Test405Event.Event2)
+                }
             }
             is Test405State.S01p12 -> {
                 // SCE-MAP: test405.scxml:29 :: s01p12 :: _state_body
@@ -409,8 +417,11 @@ class Test405StateMachine(
             }
             is Test405State.S01p21 -> {
                 // SCE-MAP: test405.scxml:33 :: s01p21 :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
             raiseInternal(Test405Event.Event1)
+                }
             }
             is Test405State.S01p22 -> {
                 // SCE-MAP: test405.scxml:43 :: s01p22 :: _state_body

@@ -239,26 +239,34 @@ class Test401StateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test401Event.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test401Event.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -360,20 +368,32 @@ class Test401StateMachine(
             }
             is Test401State.S0 -> {
                 // SCE-MAP: test401.scxml:10 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            send(Test401Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(Test401Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
-            raisePlatformError(Test401Event.Error.Execution, "<assign> has an invalid or read-only location")
+            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern).
+            // The same `if (run name@{ ... })` shape <send> refuses through, so
+            // the block exit is not an unconditional jump the compiler reports.
+            if (run assign@{
+                raisePlatformError(Test401Event.Error.Execution, "<assign> has an invalid or read-only location")
+                true
+            }) {
+                return@run
+            }
+                }
             }
         }
     }

@@ -354,26 +354,34 @@ class Test331StateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test331Event.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test331Event.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -500,34 +508,52 @@ class Test331StateMachine(
             }
             is Test331State.S0 -> {
                 // SCE-MAP: test331.scxml:10 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test331Event.Foo)
+                }
             }
             is Test331State.S1 -> {
                 // SCE-MAP: test331.scxml:21 :: s1 :: _state_body
             }
             is Test331State.S2 -> {
                 // SCE-MAP: test331.scxml:26 :: s2 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
-            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
-            raisePlatformError(Test331Event.Error.Execution, "<assign> has an invalid or read-only location")
+            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern).
+            // The same `if (run name@{ ... })` shape <send> refuses through, so
+            // the block exit is not an unconditional jump the compiler reports.
+            if (run assign@{
+                raisePlatformError(Test331Event.Error.Execution, "<assign> has an invalid or read-only location")
+                true
+            }) {
+                return@run
+            }
+                }
             }
             is Test331State.S3 -> {
                 // SCE-MAP: test331.scxml:37 :: s3 :: _state_body
             }
             is Test331State.S4 -> {
                 // SCE-MAP: test331.scxml:42 :: s4 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            send(Test331Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(Test331Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test331State.S5 -> {
                 // SCE-MAP: test331.scxml:53 :: s5 :: _state_body
@@ -576,7 +602,9 @@ class Test331StateMachine(
                 // SCE-MAP: test331.scxml:15 :: s0 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -585,7 +613,9 @@ class Test331StateMachine(
                 // SCE-MAP: test331.scxml:31 :: s2 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -594,7 +624,9 @@ class Test331StateMachine(
                 // SCE-MAP: test331.scxml:47 :: s4 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))) {
+                return
+            }
             }
             else -> {}
         }

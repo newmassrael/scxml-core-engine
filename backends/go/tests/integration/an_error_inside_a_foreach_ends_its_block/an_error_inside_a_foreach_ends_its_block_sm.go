@@ -894,7 +894,8 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteEntryActions(state AnEr
 
 
 	// W3C SCXML 6.2: send id="__send_1"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -927,7 +928,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteEntryActions(state AnEr
 			return
 		}
 	}
-
+	}
 				}
 				if !foreachSuccess {
 					engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach> could not set its loop variable"))
@@ -1186,7 +1187,8 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteTransitionContent(sourc
 
 
 	// W3C SCXML 6.2: send id="__send_0"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -1219,7 +1221,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteTransitionContent(sourc
 			return
 		}
 	}
-
+	}
 				}
 				if !foreachSuccess {
 					engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach> could not set its loop variable"))

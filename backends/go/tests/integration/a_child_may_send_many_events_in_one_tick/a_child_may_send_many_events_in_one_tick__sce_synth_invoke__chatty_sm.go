@@ -634,6 +634,7 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) ExecuteEntr
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -641,7 +642,7 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) ExecuteEntr
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "tick", Data: eventDataStr})
 	}
 	}
-
+	}
 				}
 				if !foreachSuccess {
 					engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, "<foreach> could not set its loop variable"))

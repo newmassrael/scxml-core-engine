@@ -246,7 +246,9 @@ class AutoforwardDoneInvokeStateMachine(
 
 
             if (run send@{
-            send(AutoforwardDoneInvokeEvent.Probe, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(AutoforwardDoneInvokeEvent.Probe, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

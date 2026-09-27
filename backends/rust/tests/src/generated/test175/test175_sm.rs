@@ -649,15 +649,16 @@ impl StatePolicy for Test175Policy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        let event_data: &str = "";
-
-                        // W3C SCXML 6.2: Delayed send via runtime expression "Var1"
-                        {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let delay_ms = match se.evaluate_expression(&sid, "Var1") {
+                        self.ensure_script_engine();
+                        let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
+                        let __sce_arg_se = self.script_engine.clone();
+                        let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
+                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The expression failing is the argument error; the message is not
+                        // scheduled under some default wait. A value that does not read as a
+                        // duration is sent at once, as the Interpreter reads it.
+                        let _send_delay_ms: u64 = if _send_arg_error.is_none() {
+                            match __sce_arg_se.evaluate_expression(&__sce_arg_sid, "Var1") {
                                 Ok(val) => {
                                     let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
                                     sce_rust_runtime::helpers::send::parse_delay_to_ms(&s)
@@ -668,25 +669,43 @@ impl StatePolicy for Test175Policy {
                                         "delayexpr eval failed: {}",
                                         e
                                     );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            Test175Event::ErrorExecution,
-                                            "<send> delayexpr failed to evaluate",
-                                        ),
-                                    );
+                                    _send_arg_error =
+                                        Some("<send> delayexpr could not be evaluated");
                                     0
                                 }
-                            };
-                            engine.schedule_event(
-                                Test175Event::Event2,
-                                core::time::Duration::from_millis(delay_ms),
-                                &send_id,
-                                event_data,
+                            }
+                        } else {
+                            0
+                        };
+                        if let Some(__sce_why) = _send_arg_error {
+                            ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                Test175Event::ErrorExecution,
+                                __sce_why,
                             );
-                        }
+                            err_meta.metadata.send_id = send_id.clone();
+                            engine.raise(err_meta);
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        } else {
+                            let event_data: &str = "";
 
+                            // W3C SCXML 6.2: Delayed send via runtime expression "Var1"
+                            {
+                                let delay_ms = _send_delay_ms;
+                                let __sce_delayed_event = Some(Test175Event::Event2);
+                                if let Some(evt) = __sce_delayed_event {
+                                    engine.schedule_event(
+                                        evt,
+                                        core::time::Duration::from_millis(delay_ms),
+                                        &send_id,
+                                        event_data,
+                                    );
+                                }
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }
 
                     {
@@ -694,16 +713,22 @@ impl StatePolicy for Test175Policy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (500ms)
-                        engine.schedule_event(
-                            Test175Event::Event1,
-                            core::time::Duration::from_millis(500),
-                            &send_id,
-                            event_data,
-                        );
+                        // W3C SCXML 6.2: Delayed send (.5)
+                        {
+                            let delay_ms = 500_u64;
+                            let __sce_delayed_event = Some(Test175Event::Event1);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
             }

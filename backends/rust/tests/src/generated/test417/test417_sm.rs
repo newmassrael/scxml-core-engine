@@ -481,16 +481,22 @@ impl StatePolicy for Test417Policy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (1000ms)
-                        engine.schedule_event(
-                            Test417Event::Timeout,
-                            core::time::Duration::from_millis(1000),
-                            &send_id,
-                            event_data,
-                        );
+                        // W3C SCXML 6.2: Delayed send (1s)
+                        {
+                            let delay_ms = 1000_u64;
+                            let __sce_delayed_event = Some(Test417Event::Timeout);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
             }

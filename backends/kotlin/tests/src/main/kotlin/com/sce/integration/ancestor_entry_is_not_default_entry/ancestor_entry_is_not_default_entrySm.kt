@@ -470,26 +470,34 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -596,15 +604,25 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
             }
             is AncestorEntryIsNotDefaultEntryState.ByDefault -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:116 :: by_default :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("defaulted", "defaulted"), com.sce.runtime.ScriptSource.lua("_scxml_add(defaulted, 1)", "defaulted + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("defaulted", "defaulted"), com.sce.runtime.ScriptSource.lua("_scxml_add(defaulted, 1)", "defaulted + 1"))) {
+                return@run
+            }
+                }
             }
             is AncestorEntryIsNotDefaultEntryState.Chosen -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:127 :: chosen :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("targeted", "targeted"), com.sce.runtime.ScriptSource.lua("_scxml_add(targeted, 1)", "targeted + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("targeted", "targeted"), com.sce.runtime.ScriptSource.lua("_scxml_add(targeted, 1)", "targeted + 1"))) {
+                return@run
+            }
+                }
             }
             is AncestorEntryIsNotDefaultEntryState.Drive -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:95 :: drive :: _state_body
@@ -631,15 +649,25 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
             }
             is AncestorEntryIsNotDefaultEntryState.Idle -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:150 :: idle :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("idled", "idled"), com.sce.runtime.ScriptSource.lua("_scxml_add(idled, 1)", "idled + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("idled", "idled"), com.sce.runtime.ScriptSource.lua("_scxml_add(idled, 1)", "idled + 1"))) {
+                return@run
+            }
+                }
             }
             is AncestorEntryIsNotDefaultEntryState.Lobby -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:102 :: lobby :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("lobbied", "lobbied"), com.sce.runtime.ScriptSource.lua("_scxml_add(lobbied, 1)", "lobbied + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("lobbied", "lobbied"), com.sce.runtime.ScriptSource.lua("_scxml_add(lobbied, 1)", "lobbied + 1"))) {
+                return@run
+            }
+                }
             }
             is AncestorEntryIsNotDefaultEntryState.Outer -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:109 :: outer :: _state_body

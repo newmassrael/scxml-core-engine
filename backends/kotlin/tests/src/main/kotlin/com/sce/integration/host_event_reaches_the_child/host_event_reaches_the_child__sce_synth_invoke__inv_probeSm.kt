@@ -165,17 +165,21 @@ class HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(
             }
             is HostEventReachesTheChildSceSynthInvokeInvProbeState.Watch -> {
                 // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:5 :: watch :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("ready", "")
+            onSendToParent?.invoke("ready", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
         }
     }
@@ -207,8 +211,9 @@ class HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("sawHostPing", "")
+            onSendToParent?.invoke("sawHostPing", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -221,8 +226,9 @@ class HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("sawMarkerOnly", "")
+            onSendToParent?.invoke("sawMarkerOnly", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

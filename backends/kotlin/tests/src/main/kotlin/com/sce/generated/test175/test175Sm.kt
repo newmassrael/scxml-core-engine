@@ -282,26 +282,34 @@ class Test175StateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test175Event.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test175Event.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -408,44 +416,50 @@ class Test175StateMachine(
             }
             is Test175State.S0 -> {
                 // SCE-MAP: test175.scxml:11 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"1s\"", "'1s'"))
-
-
-            if (run send@{
-            // W3C SCXML 6.2: Dynamic delay evaluation
-            run {
-                ensureScriptEngine()
-                val engineDly = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sidDly = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val delayStrE: String
-                try {
-                    val v = engineDly.evaluateExpr(sidDly, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))
-                    delayStrE = v?.toString() ?: "0s"
-                } catch (_: Exception) {
-                    raisePlatformError(Test175Event.Error.Execution, "<send> delayexpr failed to evaluate")
-                    return@send false
-                }
-                val delayMsE = parseDelay(delayStrE)
-                scheduleSend("__send_0", delayMsE, Test175Event.Event2)
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("\"1s\"", "'1s'"))) {
+                return@run
             }
+
+
+            if (run send@{
+            ensureScriptEngine()
+            val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            // The expression failing is the argument error; the message is not
+            // scheduled under some default wait. A value that does not read as
+            // a duration is sent at once, as the Interpreter reads it.
+            val sendDelayMs = try {
+                parseDelay(valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))))
+            } catch (_: Exception) {
+                raisePlatformError(Test175Event.Error.Execution, "<send> delayexpr could not be evaluated", "__send_0")
+                return@send true
+            }
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", sendDelayMs, Test175Event.Event2, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
-            scheduleSend("__send_1", 500L, Test175Event.Event1)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_1", 500L, Test175Event.Event1, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test175State.S1 -> {
                 // SCE-MAP: test175.scxml:22 :: s1 :: _state_body

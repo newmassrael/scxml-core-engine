@@ -374,26 +374,34 @@ class TypedReaderNamesStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -517,16 +525,24 @@ class TypedReaderNamesStateMachine(
                 // SCE-MAP: typed_reader_names.scxml:49 :: idle :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("box", "box"), com.sce.runtime.ScriptSource.lua("_scxml_add(box, 10)", "box + 10"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("box", "box"), com.sce.runtime.ScriptSource.lua("_scxml_add(box, 10)", "box + 10"))) {
+                return
+            }
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("object", "object"), com.sce.runtime.ScriptSource.lua("_scxml_add(object, 10)", "object + 10"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("object", "object"), com.sce.runtime.ScriptSource.lua("_scxml_add(object, 10)", "object + 10"))) {
+                return
+            }
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("pass", "pass"), com.sce.runtime.ScriptSource.lua("_scxml_add(pass, 10)", "pass + 10"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pass", "pass"), com.sce.runtime.ScriptSource.lua("_scxml_add(pass, 10)", "pass + 10"))) {
+                return
+            }
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("a_b", "a_b"), com.sce.runtime.ScriptSource.lua("_scxml_add(a_b, 10)", "a_b + 10"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("a_b", "a_b"), com.sce.runtime.ScriptSource.lua("_scxml_add(a_b, 10)", "a_b + 10"))) {
+                return
+            }
             }
             else -> {}
         }

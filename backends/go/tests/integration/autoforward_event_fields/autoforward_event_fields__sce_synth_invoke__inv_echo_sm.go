@@ -590,7 +590,8 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteEntryActions(
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -621,7 +622,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteEntryActions(
 			return
 		}
 	}
-
+	}
 		}()
 	default:
 		// No entry actions
@@ -719,6 +720,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteTransitionCon
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -726,7 +728,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteTransitionCon
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "fieldsPreserved", Data: eventDataStr})
 	}
 	}
-
+	}
 			}()
 		case 1:
 			//line autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:18
@@ -735,6 +737,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteTransitionCon
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -742,7 +745,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteTransitionCon
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "fieldsStripped", Data: eventDataStr})
 	}
 	}
-
+	}
 			}()
 		}
 	}

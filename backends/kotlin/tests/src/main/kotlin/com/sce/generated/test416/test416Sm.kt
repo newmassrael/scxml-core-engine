@@ -208,16 +208,21 @@ class Test416StateMachine(
             }
             is Test416State.S1 -> {
                 // SCE-MAP: test416.scxml:7 :: s1 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 1000L, Test416Event.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 1000L, Test416Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test416State.S11 -> {
                 // SCE-MAP: test416.scxml:13 :: s11 :: _state_body

@@ -404,26 +404,34 @@ class ErrorCascadeIsBoundedStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -532,17 +540,37 @@ class ErrorCascadeIsBoundedStateMachine(
             }
             is ErrorCascadeIsBoundedState.Runaway -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:103 :: runaway :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
-            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
-            raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern).
+            // The same `if (run name@{ ... })` shape <send> refuses through, so
+            // the block exit is not an unconditional jump the compiler reports.
+            if (run assign@{
+                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+                true
+            }) {
+                return@run
+            }
+                }
             }
             is ErrorCascadeIsBoundedState.Settling -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:85 :: settling :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
-            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
-            raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern).
+            // The same `if (run name@{ ... })` shape <send> refuses through, so
+            // the block exit is not an unconditional jump the compiler reports.
+            if (run assign@{
+                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+                true
+            }) {
+                return@run
+            }
+                }
             }
         }
     }
@@ -573,14 +601,23 @@ class ErrorCascadeIsBoundedStateMachine(
                 // SCE-MAP: error_cascade_is_bounded.scxml:68 :: idle :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:74 :: idle :: _transition_1
 
 
-            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
-            raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern).
+            // The same `if (run name@{ ... })` shape <send> refuses through, so
+            // the block exit is not an unconditional jump the compiler reports.
+            if (run assign@{
+                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+                true
+            }) {
+                return
+            }
             }
             else -> {}
         }
@@ -589,25 +626,38 @@ class ErrorCascadeIsBoundedStateMachine(
                 // SCE-MAP: error_cascade_is_bounded.scxml:107 :: runaway :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("runs", "runs"), com.sce.runtime.ScriptSource.lua("_scxml_add(runs, 1)", "runs + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("runs", "runs"), com.sce.runtime.ScriptSource.lua("_scxml_add(runs, 1)", "runs + 1"))) {
+                return
+            }
 
             raiseInternal(ErrorCascadeIsBoundedEvent.Tick)
 
 
-            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
-            raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern).
+            // The same `if (run name@{ ... })` shape <send> refuses through, so
+            // the block exit is not an unconditional jump the compiler reports.
+            if (run assign@{
+                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+                true
+            }) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:120 :: runaway :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("ticks", "ticks"), com.sce.runtime.ScriptSource.lua("_scxml_add(ticks, 1)", "ticks + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("ticks", "ticks"), com.sce.runtime.ScriptSource.lua("_scxml_add(ticks, 1)", "ticks + 1"))) {
+                return
+            }
             }
             2 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:123 :: runaway :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -616,17 +666,28 @@ class ErrorCascadeIsBoundedStateMachine(
                 // SCE-MAP: error_cascade_is_bounded.scxml:89 :: settling :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("repairs", "repairs"), com.sce.runtime.ScriptSource.lua("_scxml_add(repairs, 1)", "repairs + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("repairs", "repairs"), com.sce.runtime.ScriptSource.lua("_scxml_add(repairs, 1)", "repairs + 1"))) {
+                return
+            }
 
 
-            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
-            raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern).
+            // The same `if (run name@{ ... })` shape <send> refuses through, so
+            // the block exit is not an unconditional jump the compiler reports.
+            if (run assign@{
+                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+                true
+            }) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:93 :: settling :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
+                return
+            }
             }
             else -> {}
         }

@@ -268,26 +268,34 @@ class Test253SceSynthInvokeFooStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -384,17 +392,21 @@ class Test253SceSynthInvokeFooStateMachine(
         when (state) {
             is Test253SceSynthInvokeFooState.Sub0 -> {
                 // SCE-MAP: test253__sce_synth_invoke__foo.scxml:7 :: sub0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("childRunning", "")
+            onSendToParent?.invoke("childRunning", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test253SceSynthInvokeFooState.Sub1 -> {
                 // SCE-MAP: test253__sce_synth_invoke__foo.scxml:16 :: sub1 :: _state_body
@@ -433,7 +445,9 @@ class Test253SceSynthInvokeFooStateMachine(
                 // SCE-MAP: test253__sce_synth_invoke__foo.scxml:12 :: sub0 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.origintype", "_event.origintype"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.origintype", "_event.origintype"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -443,8 +457,9 @@ class Test253SceSynthInvokeFooStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("success", "")
+            onSendToParent?.invoke("success", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -457,8 +472,9 @@ class Test253SceSynthInvokeFooStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("success", "")
+            onSendToParent?.invoke("success", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -471,8 +487,9 @@ class Test253SceSynthInvokeFooStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("failure", "")
+            onSendToParent?.invoke("failure", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

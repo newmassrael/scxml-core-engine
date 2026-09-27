@@ -603,16 +603,23 @@ impl StatePolicy for Test250SceSynthInvokeInvoke0Policy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (2000ms)
-                        engine.schedule_event(
-                            Test250SceSynthInvokeInvoke0Event::Timeout,
-                            core::time::Duration::from_millis(2000),
-                            &send_id,
-                            event_data,
-                        );
+                        // W3C SCXML 6.2: Delayed send (2s)
+                        {
+                            let delay_ms = 2000_u64;
+                            let __sce_delayed_event =
+                                Some(Test250SceSynthInvokeInvoke0Event::Timeout);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
             }
@@ -632,10 +639,19 @@ impl StatePolicy for Test250SceSynthInvokeInvoke0Policy {
                             "\"entering final state, invocation was not cancelled\"",
                         ) {
                             Ok(val) => ::sce_rust_runtime::sce_log_info!("{:?}", val),
-                            Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                "Log expression eval failed: {}",
-                                e
-                            ),
+                            Err(e) => {
+                                // W3C SCXML 5.9: an expression that fails raises error.execution,
+                                // and (W3C SCXML 4.9) the error ends the block.
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Log expression eval failed: {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    Test250SceSynthInvokeInvoke0Event::ErrorExecution,
+                                    "<log> expr failed to evaluate",
+                                ));
+                                break 'action_block;
+                            }
                         }
                     }
                 }
@@ -676,10 +692,19 @@ impl StatePolicy for Test250SceSynthInvokeInvoke0Policy {
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                         match se.evaluate_expression(&sid, "\"Exiting sub0\"") {
                             Ok(val) => ::sce_rust_runtime::sce_log_info!("{:?}", val),
-                            Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                "Log expression eval failed: {}",
-                                e
-                            ),
+                            Err(e) => {
+                                // W3C SCXML 5.9: an expression that fails raises error.execution,
+                                // and (W3C SCXML 4.9) the error ends the block.
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Log expression eval failed: {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    Test250SceSynthInvokeInvoke0Event::ErrorExecution,
+                                    "<log> expr failed to evaluate",
+                                ));
+                                break 'action_block;
+                            }
                         }
                     }
                 }
@@ -697,10 +722,19 @@ impl StatePolicy for Test250SceSynthInvokeInvoke0Policy {
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                         match se.evaluate_expression(&sid, "\"Exiting sub01\"") {
                             Ok(val) => ::sce_rust_runtime::sce_log_info!("{:?}", val),
-                            Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                "Log expression eval failed: {}",
-                                e
-                            ),
+                            Err(e) => {
+                                // W3C SCXML 5.9: an expression that fails raises error.execution,
+                                // and (W3C SCXML 4.9) the error ends the block.
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Log expression eval failed: {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    Test250SceSynthInvokeInvoke0Event::ErrorExecution,
+                                    "<log> expr failed to evaluate",
+                                ));
+                                break 'action_block;
+                            }
                         }
                     }
                 }

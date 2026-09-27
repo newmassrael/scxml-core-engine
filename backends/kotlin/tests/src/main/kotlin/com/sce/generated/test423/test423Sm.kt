@@ -170,28 +170,35 @@ class Test423StateMachine(
             }
             is Test423State.S0 -> {
                 // SCE-MAP: test423.scxml:7 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            send(Test423Event.ExternalEvent1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(Test423Event.ExternalEvent1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
-            scheduleSend("__send_1", 1000L, Test423Event.ExternalEvent2)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_1", 1000L, Test423Event.ExternalEvent2, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
             raiseInternal(Test423Event.InternalEvent)
+                }
             }
             is Test423State.S1 -> {
                 // SCE-MAP: test423.scxml:18 :: s1 :: _state_body

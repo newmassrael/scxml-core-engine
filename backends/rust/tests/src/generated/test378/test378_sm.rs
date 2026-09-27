@@ -653,8 +653,8 @@ impl StatePolicy for Test378Policy {
                         }
                         break 'action_block;
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
                 // W3C SCXML 3.9: onexit block 2/2

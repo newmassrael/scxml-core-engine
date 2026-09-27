@@ -358,26 +358,38 @@ class Test387StateMachine(
             }
             is Test387State.S011 -> {
                 // SCE-MAP: test387.scxml:22 :: s011 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test387Event.EnteringS011)
+                }
             }
             is Test387State.S012 -> {
                 // SCE-MAP: test387.scxml:27 :: s012 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test387Event.EnteringS012)
+                }
             }
             is Test387State.S02 -> {
                 // SCE-MAP: test387.scxml:33 :: s02 :: _state_body
             }
             is Test387State.S021 -> {
                 // SCE-MAP: test387.scxml:34 :: s021 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test387Event.EnteringS021)
+                }
             }
             is Test387State.S022 -> {
                 // SCE-MAP: test387.scxml:39 :: s022 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test387Event.EnteringS022)
+                }
             }
             is Test387State.S1 -> {
                 // SCE-MAP: test387.scxml:48 :: s1 :: _state_body
@@ -387,39 +399,56 @@ class Test387StateMachine(
             }
             is Test387State.S111 -> {
                 // SCE-MAP: test387.scxml:60 :: s111 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test387Event.EnteringS111)
+                }
             }
             is Test387State.S112 -> {
                 // SCE-MAP: test387.scxml:65 :: s112 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test387Event.EnteringS112)
+                }
             }
             is Test387State.S12 -> {
                 // SCE-MAP: test387.scxml:71 :: s12 :: _state_body
             }
             is Test387State.S121 -> {
                 // SCE-MAP: test387.scxml:72 :: s121 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test387Event.EnteringS121)
+                }
             }
             is Test387State.S122 -> {
                 // SCE-MAP: test387.scxml:77 :: s122 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test387Event.EnteringS122)
+                }
             }
             is Test387State.S3 -> {
                 // SCE-MAP: test387.scxml:87 :: s3 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 1000L, Test387Event.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 1000L, Test387Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test387State.S4 -> {
                 // SCE-MAP: test387.scxml:94 :: s4 :: _state_body

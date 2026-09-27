@@ -585,7 +585,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
-                                "<invoke> <param name='seen'> expr failed to evaluate",
+                                "<invoke> <param name='seen'> could not be read",
                             ));
                         }
                     }
@@ -661,23 +661,33 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
                 // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
                 {
+                    // §scxml-6.4: "if the evaluation of its arguments produces an
+                    // error, the SCXML Processor MUST terminate the processing of
+                    // the element without further action". A name that is not a
+                    // readable location is such an error: ONE error.execution for
+                    // the element, however many names are bad, no child, and its
+                    // <param>s are not evaluated. A name is read only once it is
+                    // known to be declared, so the name itself is never lowered as
+                    // an expression — an undeclared one would be refused at build
+                    // time instead of raising here.
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    let mut namelist_valid = true;
-                    if !se.has_variable(&sid, "token") {
+                    let mut namelist_bad: Option<&'static str> = None;
+                    if namelist_bad.is_none() && !se.has_variable(&sid, "token") {
+                        namelist_bad = Some("token");
+                    }
+                    if let Some(bad) = namelist_bad {
                         ::sce_rust_runtime::sce_log_error!(
-                            "Namelist validation failed: 'token' not declared in parent"
+                            "Namelist validation failed: '{}' is not a readable location",
+                            bad
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
-                            "<invoke> namelist names 'token', which the parent does not declare",
+                            "<invoke> namelist names a location that cannot be read",
                         ));
-                        namelist_valid = false;
-                    }
-                    if !namelist_valid {
-                        continue; // W3C SCXML 6.4.1: Skip invoke on namelist error
+                        continue; // W3C SCXML 6.4: the element is terminated; no child
                     }
                 }
 
@@ -856,7 +866,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
-                                "<invoke> <param name='seen'> expr failed to evaluate",
+                                "<invoke> <param name='seen'> could not be read",
                             ));
                         }
                     }
@@ -992,7 +1002,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
-                                "<invoke> <param name='seen'> expr failed to evaluate",
+                                "<invoke> <param name='seen'> could not be read",
                             ));
                         }
                     }
@@ -1126,14 +1136,44 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
-                                "<invoke> <param name='declared'> expr failed to evaluate",
+                                "<invoke> <param name='declared'> could not be read",
                             ));
                         }
                     }
-                    // §scxml-6.4.3: `nowhere` matches no top-level `<data>` of
-                    // the child, so the Processor MUST NOT add it to the invoked
-                    // session's data model. Decided here because both the param
-                    // names and the child's declarations are static.
+                    match se.evaluate_expression(&sid, "\"leaked\"") {
+                        Ok(val) => {
+                            // §scxml-6.4.3: `nowhere` matches no top-level
+                            // `<data>` of the child, so the Processor MUST NOT add it
+                            // to the invoked session's data model.
+                            let _ = val;
+                        }
+                        Err(e) => {
+                            // §scxml-5.7.1: BOTH halves — `error.execution` on the
+                            // internal queue AND the name and value ignored. Only
+                            // the silent half was here: an `if let Ok` dropped the
+                            // failure, so a document that miscomputed one `<param>`
+                            // of an `<invoke>` got a child with a `<data>` nothing
+                            // explained and no event to act on.
+                            //
+                            // The clause delegates only the SUCCESSFUL name and
+                            // value to the context — "Otherwise the use of the name
+                            // and value depends on the context in which the <param>
+                            // element occurs. See 5.5 <donedata>, 6.2 <send> and 6.4
+                            // <invoke>" — so §scxml-6.4.2's "terminate the
+                            // processing of the element" is not what a failing
+                            // `<param>` costs: the child still starts, one pair
+                            // short. W3C test343 settles the same clause from the
+                            // `<donedata>` side.
+                            ::sce_rust_runtime::sce_log_error!(
+                                "invoke param 'nowhere' eval failed: {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                                "<invoke> <param name='nowhere'> could not be read",
+                            ));
+                        }
+                    }
                 }
 
                 // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize

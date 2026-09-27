@@ -530,23 +530,33 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
                 // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
                 {
+                    // §scxml-6.4: "if the evaluation of its arguments produces an
+                    // error, the SCXML Processor MUST terminate the processing of
+                    // the element without further action". A name that is not a
+                    // readable location is such an error: ONE error.execution for
+                    // the element, however many names are bad, no child, and its
+                    // <param>s are not evaluated. A name is read only once it is
+                    // known to be declared, so the name itself is never lowered as
+                    // an expression — an undeclared one would be refused at build
+                    // time instead of raising here.
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    let mut namelist_valid = true;
-                    if !se.has_variable(&sid, "guard") {
+                    let mut namelist_bad: Option<&'static str> = None;
+                    if namelist_bad.is_none() && !se.has_variable(&sid, "guard") {
+                        namelist_bad = Some("guard");
+                    }
+                    if let Some(bad) = namelist_bad {
                         ::sce_rust_runtime::sce_log_error!(
-                            "Namelist validation failed: 'guard' not declared in parent"
+                            "Namelist validation failed: '{}' is not a readable location",
+                            bad
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
-                            "<invoke> namelist names 'guard', which the parent does not declare",
+                            "<invoke> namelist names a location that cannot be read",
                         ));
-                        namelist_valid = false;
-                    }
-                    if !namelist_valid {
-                        continue; // W3C SCXML 6.4.1: Skip invoke on namelist error
+                        continue; // W3C SCXML 6.4: the element is terminated; no child
                     }
                 }
 
@@ -665,23 +675,33 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
                 // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
                 {
+                    // §scxml-6.4: "if the evaluation of its arguments produces an
+                    // error, the SCXML Processor MUST terminate the processing of
+                    // the element without further action". A name that is not a
+                    // readable location is such an error: ONE error.execution for
+                    // the element, however many names are bad, no child, and its
+                    // <param>s are not evaluated. A name is read only once it is
+                    // known to be declared, so the name itself is never lowered as
+                    // an expression — an undeclared one would be refused at build
+                    // time instead of raising here.
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    let mut namelist_valid = true;
-                    if !se.has_variable(&sid, "tally") {
+                    let mut namelist_bad: Option<&'static str> = None;
+                    if namelist_bad.is_none() && !se.has_variable(&sid, "tally") {
+                        namelist_bad = Some("tally");
+                    }
+                    if let Some(bad) = namelist_bad {
                         ::sce_rust_runtime::sce_log_error!(
-                            "Namelist validation failed: 'tally' not declared in parent"
+                            "Namelist validation failed: '{}' is not a readable location",
+                            bad
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
-                            "<invoke> namelist names 'tally', which the parent does not declare",
+                            "<invoke> namelist names a location that cannot be read",
                         ));
-                        namelist_valid = false;
-                    }
-                    if !namelist_valid {
-                        continue; // W3C SCXML 6.4.1: Skip invoke on namelist error
+                        continue; // W3C SCXML 6.4: the element is terminated; no child
                     }
                 }
 
@@ -799,23 +819,33 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
                 // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
                 {
+                    // §scxml-6.4: "if the evaluation of its arguments produces an
+                    // error, the SCXML Processor MUST terminate the processing of
+                    // the element without further action". A name that is not a
+                    // readable location is such an error: ONE error.execution for
+                    // the element, however many names are bad, no child, and its
+                    // <param>s are not evaluated. A name is read only once it is
+                    // known to be declared, so the name itself is never lowered as
+                    // an expression — an undeclared one would be refused at build
+                    // time instead of raising here.
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    let mut namelist_valid = true;
-                    if !se.has_variable(&sid, "keeper") {
+                    let mut namelist_bad: Option<&'static str> = None;
+                    if namelist_bad.is_none() && !se.has_variable(&sid, "keeper") {
+                        namelist_bad = Some("keeper");
+                    }
+                    if let Some(bad) = namelist_bad {
                         ::sce_rust_runtime::sce_log_error!(
-                            "Namelist validation failed: 'keeper' not declared in parent"
+                            "Namelist validation failed: '{}' is not a readable location",
+                            bad
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
-                            "<invoke> namelist names 'keeper', which the parent does not declare",
+                            "<invoke> namelist names a location that cannot be read",
                         ));
-                        namelist_valid = false;
-                    }
-                    if !namelist_valid {
-                        continue; // W3C SCXML 6.4.1: Skip invoke on namelist error
+                        continue; // W3C SCXML 6.4: the element is terminated; no child
                     }
                 }
 
@@ -1448,16 +1478,23 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (3000ms)
-                        engine.schedule_event(
-                            EmptyFinalizeUpdatesTheLocationEvent::TimeoutAbsent,
-                            core::time::Duration::from_millis(3000),
-                            &send_id,
-                            event_data,
-                        );
+                        // W3C SCXML 6.2: Delayed send (3s)
+                        {
+                            let delay_ms = 3000_u64;
+                            let __sce_delayed_event =
+                                Some(EmptyFinalizeUpdatesTheLocationEvent::TimeoutAbsent);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
@@ -1487,16 +1524,23 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (3000ms)
-                        engine.schedule_event(
-                            EmptyFinalizeUpdatesTheLocationEvent::TimeoutEmpty,
-                            core::time::Duration::from_millis(3000),
-                            &send_id,
-                            event_data,
-                        );
+                        // W3C SCXML 6.2: Delayed send (3s)
+                        {
+                            let delay_ms = 3000_u64;
+                            let __sce_delayed_event =
+                                Some(EmptyFinalizeUpdatesTheLocationEvent::TimeoutEmpty);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
@@ -1526,16 +1570,23 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (3000ms)
-                        engine.schedule_event(
-                            EmptyFinalizeUpdatesTheLocationEvent::TimeoutUnmatched,
-                            core::time::Duration::from_millis(3000),
-                            &send_id,
-                            event_data,
-                        );
+                        // W3C SCXML 6.2: Delayed send (3s)
+                        {
+                            let delay_ms = 3000_u64;
+                            let __sce_delayed_event =
+                                Some(EmptyFinalizeUpdatesTheLocationEvent::TimeoutUnmatched);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end

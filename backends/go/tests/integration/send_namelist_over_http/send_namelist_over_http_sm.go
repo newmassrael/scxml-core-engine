@@ -732,75 +732,104 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
 		delayDur := sce.ParseDelay("2s")
-		delayEvtName := "timeoutDiscard"
-		if delayEvt, delayOk := p.GetEventFromName(delayEvtName); delayOk {
+		if delayEvt, delayOk := p.GetEventFromName("timeoutDiscard"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr)
 		}
 	}
 	}
-
+	}
 
 	// W3C SCXML 6.2: send id="__send_3"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
 	{
-		sendAborted := false
-		p.ensureScriptEngine()
-		se := p.ScriptEngine
+	p.ensureScriptEngine()
+	sendArgError := ""
+	// A target that evaluates to nothing is not an evaluation error: it is
+	// an address nobody answers at, which the arm reports as
+	// error.communication (W3C SCXML 6.2.4).
+	var sendTargetVal any
+	sendTarget := ""
+	if sendArgError == "" {
+		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `_ioprocessors.basichttp.location`); err == nil {
+			sendTargetVal = v
+			sendTarget = sce.ToWireString(v)
+		} else {
+			sendArgError = "<send> targetexpr could not be evaluated"
+		}
+	}
+	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
+		// W3C SCXML 6.2: a target this processor cannot address is refused
+		// as a static one is, before anything is delivered.
+		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+	}
+	_ = sendTargetVal
+	_ = sendTarget
+	// W3C SCXML 6.2 + B.2: a namelist names locations, and one that is not
+	// declared is an argument that cannot be evaluated — one error however
+	// many of its names are bad.
+	namelistParts := make([]sce.EventDataParam, 0)
+	if sendArgError == "" {
+		if !p.ScriptEngine.HasVariable(p.SessionID, "__sce_not_declared__") {
+			sendArgError = "<send> namelist names '__sce_not_declared__', which is not declared"
+		} else if nlVal, nlErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `__sce_not_declared__`); nlErr == nil {
+			namelistParts = append(namelistParts, sce.EventDataParam{Name: "__sce_not_declared__", Value: nlVal})
+		} else {
+			sendArgError = "<send> namelist entry '__sce_not_declared__' could not be read"
+		}
+	}
+	if sendArgError != "" {
+		errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, sendArgError)
+		errEvt.Metadata.SendID = "__send_3"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+	if sendArgError == "" && sendTargetVal == nil {
+		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value
+		// is not reachable — error.communication, nothing delivered, and the
+		// error ends the block as any other would (W3C SCXML 4.9). An empty
+		// STRING is not this case here: a self-sent event carries no origin
+		// on this backend, so `targetexpr="_event.origin"` reads "" and must
+		// reach this session (test336).
+		errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt.Metadata.SendID = "__send_3"
+		engine.Raise(errEvt)
+		return
+	}
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
 		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
 		// delivered, so this is an ordered list rather than a map. The typed
 		// value is kept rather than its text — a receiver reading
 		// `_event.data.value === 42` finds the string "42" unequal.
 		parts := make([]sce.EventDataParam, 0)
-		// W3C SCXML B.2: Check variable existence before evaluation
-		if !se.HasVariable(p.SessionID, "__sce_not_declared__") {
-			engine.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, "<send> namelist names '__sce_not_declared__', which is not declared"))
-			sendAborted = true
-		} else if nlVal, nlErr := se.EvaluateExpression(p.SessionID, `__sce_not_declared__`); nlErr == nil {
-			parts = append(parts, sce.EventDataParam{Name: "__sce_not_declared__", Value: nlVal})
-		} else {
-			engine.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, "<send> namelist entry '__sce_not_declared__' failed to evaluate"))
-			sendAborted = true
-		}
-		eventDataStr := ""
-		if !sendAborted {
-			eventDataStr = sce.BuildJSONFromTypedParams(parts)
-		}
+		// The namelist values the prologue read, after the params.
+		parts = append(parts, namelistParts...)
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
-		if !sendAborted {
 	// W3C SCXML C.2: BasicHTTP send
 	{
-		httpTargetVal, httpTargetErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `_ioprocessors.basichttp.location`)
-		httpTarget := ""
-		if httpTargetErr == nil && httpTargetVal != nil {
-			httpTarget = fmt.Sprintf("%v", httpTargetVal)
-		}
-		httpEvtName := "shouldNotArrive"
+		httpTarget := sendTarget
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
-			{
-				errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
-				errEvt.Metadata.SendID = "__send_3"
-				engine.Raise(errEvt)
-			}
+			errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
+			errEvt.Metadata.SendID = "__send_3"
+			engine.Raise(errEvt)
+			return  // W3C SCXML 4.9: the error ends the block
 		} else {
 			// W3C SCXML C.2 + 6.2.3: the arguments were evaluated once, above.
-			// The form is a rendering of that payload — this arm used to read
-			// the data model again, and its second reading of the namelist had
-			// no error arm at all, so the two could only agree while nothing
-			// failed. It also mapped `<param>` alone, which is the shape that
-			// left a namelist out of the POST entirely.
+			// The form is a rendering of that payload, so a second reading of
+			// the data model cannot disagree with the first.
 			httpParams := sce.WireParamsFromTypedParams(parts)
-			engine.PerformHTTPSend(httpTarget, httpEvtName, "", httpParams, "__send_3")
+			engine.PerformHTTPSend(httpTarget, "shouldNotArrive", "", httpParams, "__send_3")
 		}
 	}
-		}
 	}
-
+	}
 		}()
 	case SendNamelistOverHttpStateMapPhase:
 		//line send_namelist_over_http.scxml:71
@@ -810,75 +839,104 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
 		delayDur := sce.ParseDelay("3s")
-		delayEvtName := "timeoutMap"
-		if delayEvt, delayOk := p.GetEventFromName(delayEvtName); delayOk {
+		if delayEvt, delayOk := p.GetEventFromName("timeoutMap"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr)
 		}
 	}
 	}
-
+	}
 
 	// W3C SCXML 6.2: send id="__send_1"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
 	{
-		sendAborted := false
-		p.ensureScriptEngine()
-		se := p.ScriptEngine
+	p.ensureScriptEngine()
+	sendArgError := ""
+	// A target that evaluates to nothing is not an evaluation error: it is
+	// an address nobody answers at, which the arm reports as
+	// error.communication (W3C SCXML 6.2.4).
+	var sendTargetVal any
+	sendTarget := ""
+	if sendArgError == "" {
+		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `_ioprocessors.basichttp.location`); err == nil {
+			sendTargetVal = v
+			sendTarget = sce.ToWireString(v)
+		} else {
+			sendArgError = "<send> targetexpr could not be evaluated"
+		}
+	}
+	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
+		// W3C SCXML 6.2: a target this processor cannot address is refused
+		// as a static one is, before anything is delivered.
+		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+	}
+	_ = sendTargetVal
+	_ = sendTarget
+	// W3C SCXML 6.2 + B.2: a namelist names locations, and one that is not
+	// declared is an argument that cannot be evaluated — one error however
+	// many of its names are bad.
+	namelistParts := make([]sce.EventDataParam, 0)
+	if sendArgError == "" {
+		if !p.ScriptEngine.HasVariable(p.SessionID, "Var1") {
+			sendArgError = "<send> namelist names 'Var1', which is not declared"
+		} else if nlVal, nlErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `Var1`); nlErr == nil {
+			namelistParts = append(namelistParts, sce.EventDataParam{Name: "Var1", Value: nlVal})
+		} else {
+			sendArgError = "<send> namelist entry 'Var1' could not be read"
+		}
+	}
+	if sendArgError != "" {
+		errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, sendArgError)
+		errEvt.Metadata.SendID = "__send_1"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+	if sendArgError == "" && sendTargetVal == nil {
+		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value
+		// is not reachable — error.communication, nothing delivered, and the
+		// error ends the block as any other would (W3C SCXML 4.9). An empty
+		// STRING is not this case here: a self-sent event carries no origin
+		// on this backend, so `targetexpr="_event.origin"` reads "" and must
+		// reach this session (test336).
+		errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt.Metadata.SendID = "__send_1"
+		engine.Raise(errEvt)
+		return
+	}
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
 		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
 		// delivered, so this is an ordered list rather than a map. The typed
 		// value is kept rather than its text — a receiver reading
 		// `_event.data.value === 42` finds the string "42" unequal.
 		parts := make([]sce.EventDataParam, 0)
-		// W3C SCXML B.2: Check variable existence before evaluation
-		if !se.HasVariable(p.SessionID, "Var1") {
-			engine.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, "<send> namelist names 'Var1', which is not declared"))
-			sendAborted = true
-		} else if nlVal, nlErr := se.EvaluateExpression(p.SessionID, `Var1`); nlErr == nil {
-			parts = append(parts, sce.EventDataParam{Name: "Var1", Value: nlVal})
-		} else {
-			engine.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, "<send> namelist entry 'Var1' failed to evaluate"))
-			sendAborted = true
-		}
-		eventDataStr := ""
-		if !sendAborted {
-			eventDataStr = sce.BuildJSONFromTypedParams(parts)
-		}
+		// The namelist values the prologue read, after the params.
+		parts = append(parts, namelistParts...)
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
-		if !sendAborted {
 	// W3C SCXML C.2: BasicHTTP send
 	{
-		httpTargetVal, httpTargetErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `_ioprocessors.basichttp.location`)
-		httpTarget := ""
-		if httpTargetErr == nil && httpTargetVal != nil {
-			httpTarget = fmt.Sprintf("%v", httpTargetVal)
-		}
-		httpEvtName := "mapped"
+		httpTarget := sendTarget
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
-			{
-				errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
-				errEvt.Metadata.SendID = "__send_1"
-				engine.Raise(errEvt)
-			}
+			errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
+			errEvt.Metadata.SendID = "__send_1"
+			engine.Raise(errEvt)
+			return  // W3C SCXML 4.9: the error ends the block
 		} else {
 			// W3C SCXML C.2 + 6.2.3: the arguments were evaluated once, above.
-			// The form is a rendering of that payload — this arm used to read
-			// the data model again, and its second reading of the namelist had
-			// no error arm at all, so the two could only agree while nothing
-			// failed. It also mapped `<param>` alone, which is the shape that
-			// left a namelist out of the POST entirely.
+			// The form is a rendering of that payload, so a second reading of
+			// the data model cannot disagree with the first.
 			httpParams := sce.WireParamsFromTypedParams(parts)
-			engine.PerformHTTPSend(httpTarget, httpEvtName, "", httpParams, "__send_1")
+			engine.PerformHTTPSend(httpTarget, "mapped", "", httpParams, "__send_1")
 		}
 	}
-		}
 	}
-
+	}
 		}()
 	default:
 		// No entry actions

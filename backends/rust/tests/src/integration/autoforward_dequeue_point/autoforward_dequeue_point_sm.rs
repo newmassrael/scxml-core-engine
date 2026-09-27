@@ -796,8 +796,8 @@ impl StatePolicy for AutoforwardDequeuePointPolicy {
                                     engine.raise_external_with_meta(meta);
                                 }
 
-                                let _ = send_id; // suppress unused warning when no send operation
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
                             }
 
                             {
@@ -819,8 +819,8 @@ impl StatePolicy for AutoforwardDequeuePointPolicy {
                                     engine.raise_external_with_meta(meta);
                                 }
 
-                                let _ = send_id; // suppress unused warning when no send operation
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
                             }
                         }
                     }
@@ -839,8 +839,8 @@ impl StatePolicy for AutoforwardDequeuePointPolicy {
                                     child.raise_external_by_name("mark", &event_data);
                                 }
 
-                                let _ = send_id; // suppress unused warning when no send operation
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
                             }
                         }
                     }

@@ -208,17 +208,21 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Probe -> {
                 // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:5 :: probe :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("ready", "")
+            onSendToParent?.invoke("ready", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
         }
     }
@@ -256,8 +260,9 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("sawSecondEarly", "")
+            onSendToParent?.invoke("sawSecondEarly", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -273,8 +278,9 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("sawMarkFirst", "")
+            onSendToParent?.invoke("sawMarkFirst", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

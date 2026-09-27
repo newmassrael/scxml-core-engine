@@ -1,0 +1,10 @@
+// GENERATED -- DO NOT EDIT (scripts/regen_a_bad_invoke_argument_is_reported_once.sh)
+
+mod a_bad_invoke_argument_is_reported_once_sm;
+pub use a_bad_invoke_argument_is_reported_once_sm::*;
+mod a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1_sm;
+pub use a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1_sm::*;
+mod a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv2_sm;
+pub use a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv2_sm::*;
+mod a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3_sm;
+pub use a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3_sm::*;

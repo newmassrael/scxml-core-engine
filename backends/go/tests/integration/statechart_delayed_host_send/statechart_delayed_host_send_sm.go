@@ -475,6 +475,7 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 
 	// W3C SCXML 6.2: send id="h2"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// §scxml-6.2.5: "x-sce-host" is served by the host, which
@@ -504,22 +505,22 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 		engine.ScheduleHostSend(hostRequest, time.Duration(hostDelayMs)*time.Millisecond, "h2")
 	}
 	}
-
+	}
 
 	// W3C SCXML 6.2: send id="__send_2"
+	{
 	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
 		delayDur := sce.ParseDelay("100ms")
-		delayEvtName := "settle"
-		if delayEvt, delayOk := p.GetEventFromName(delayEvtName); delayOk {
+		if delayEvt, delayOk := p.GetEventFromName("settle"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr)
 		}
 	}
 	}
-
+	}
 		}()
 	case StatechartDelayedHostSendStateCancelPending:
 		//line statechart_delayed_host_send.scxml:90
@@ -532,18 +533,18 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 
 	// W3C SCXML 6.2: send id="__send_3"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
 		delayDur := sce.ParseDelay("200ms")
-		delayEvtName := "finish"
-		if delayEvt, delayOk := p.GetEventFromName(delayEvtName); delayOk {
+		if delayEvt, delayOk := p.GetEventFromName("finish"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_3", eventDataStr)
 		}
 	}
 	}
-
+	}
 		}()
 	case StatechartDelayedHostSendStateWaiting:
 		//line statechart_delayed_host_send.scxml:59
@@ -552,6 +553,7 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
+	{
 	{
 		eventDataStr := ""
 		_ = eventDataStr
@@ -582,22 +584,22 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 		engine.ScheduleHostSend(hostRequest, time.Duration(hostDelayMs)*time.Millisecond, "__send_0")
 	}
 	}
-
+	}
 
 	// W3C SCXML 6.2: send id="__send_1"
+	{
 	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
 		delayDur := sce.ParseDelay("100ms")
-		delayEvtName := "probe"
-		if delayEvt, delayOk := p.GetEventFromName(delayEvtName); delayOk {
+		if delayEvt, delayOk := p.GetEventFromName("probe"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr)
 		}
 	}
 	}
-
+	}
 		}()
 	default:
 		// No entry actions

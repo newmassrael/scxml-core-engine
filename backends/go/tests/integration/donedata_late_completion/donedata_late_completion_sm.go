@@ -879,6 +879,7 @@ func (p *DonedataLateCompletionPolicy) ExecuteTransitionContent(source DonedataL
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.4: Send to invoked child "inv_late"
@@ -886,7 +887,7 @@ func (p *DonedataLateCompletionPolicy) ExecuteTransitionContent(source DonedataL
 		p.childInvLate.RaiseExternalByName("finish", eventDataStr)
 	}
 	}
-
+	}
 			}()
 		}
 	}

@@ -538,14 +538,20 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 		if pending.DocumentID == "inv_absent" {
 			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 			{
+				// W3C SCXML 6.4: "if the evaluation of its arguments produces an
+				// error, the SCXML Processor MUST terminate the processing of the
+				// element without further action". A name that is not a readable
+				// location is such an error: ONE error.execution for the element,
+				// however many names are bad, no child, and its <param>s are not
+				// evaluated.
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 				namelistValid := true
-				if !se.HasVariable(p.SessionID, "guard") {
-					engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, "<invoke> namelist names 'guard', which the parent does not declare"))
+				if namelistValid && !se.HasVariable(p.SessionID, "guard") {
 					namelistValid = false
 				}
 				if !namelistValid {
+					engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, "<invoke> namelist names a location that cannot be read"))
 					continue
 				}
 			}
@@ -621,14 +627,20 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 		if pending.DocumentID == "inv_empty" {
 			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 			{
+				// W3C SCXML 6.4: "if the evaluation of its arguments produces an
+				// error, the SCXML Processor MUST terminate the processing of the
+				// element without further action". A name that is not a readable
+				// location is such an error: ONE error.execution for the element,
+				// however many names are bad, no child, and its <param>s are not
+				// evaluated.
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 				namelistValid := true
-				if !se.HasVariable(p.SessionID, "tally") {
-					engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, "<invoke> namelist names 'tally', which the parent does not declare"))
+				if namelistValid && !se.HasVariable(p.SessionID, "tally") {
 					namelistValid = false
 				}
 				if !namelistValid {
+					engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, "<invoke> namelist names a location that cannot be read"))
 					continue
 				}
 			}
@@ -704,14 +716,20 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 		if pending.DocumentID == "inv_unmatched" {
 			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 			{
+				// W3C SCXML 6.4: "if the evaluation of its arguments produces an
+				// error, the SCXML Processor MUST terminate the processing of the
+				// element without further action". A name that is not a readable
+				// location is such an error: ONE error.execution for the element,
+				// however many names are bad, no child, and its <param>s are not
+				// evaluated.
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 				namelistValid := true
-				if !se.HasVariable(p.SessionID, "keeper") {
-					engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, "<invoke> namelist names 'keeper', which the parent does not declare"))
+				if namelistValid && !se.HasVariable(p.SessionID, "keeper") {
 					namelistValid = false
 				}
 				if !namelistValid {
+					engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, "<invoke> namelist names a location that cannot be read"))
 					continue
 				}
 			}
@@ -1196,18 +1214,18 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
 		delayDur := sce.ParseDelay("3s")
-		delayEvtName := "timeoutAbsent"
-		if delayEvt, delayOk := p.GetEventFromName(delayEvtName); delayOk {
+		if delayEvt, delayOk := p.GetEventFromName("timeoutAbsent"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr)
 		}
 	}
 	}
-
+	}
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
@@ -1226,18 +1244,18 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
 		delayDur := sce.ParseDelay("3s")
-		delayEvtName := "timeoutEmpty"
-		if delayEvt, delayOk := p.GetEventFromName(delayEvtName); delayOk {
+		if delayEvt, delayOk := p.GetEventFromName("timeoutEmpty"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr)
 		}
 	}
 	}
-
+	}
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
@@ -1256,18 +1274,18 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
 		delayDur := sce.ParseDelay("3s")
-		delayEvtName := "timeoutUnmatched"
-		if delayEvt, delayOk := p.GetEventFromName(delayEvtName); delayOk {
+		if delayEvt, delayOk := p.GetEventFromName("timeoutUnmatched"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr)
 		}
 	}
 	}
-
+	}
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{

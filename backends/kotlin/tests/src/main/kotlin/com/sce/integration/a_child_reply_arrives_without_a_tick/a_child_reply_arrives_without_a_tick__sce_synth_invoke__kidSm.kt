@@ -106,17 +106,21 @@ class AChildReplyArrivesWithoutATickSceSynthInvokeKidStateMachine(
         when (state) {
             is AChildReplyArrivesWithoutATickSceSynthInvokeKidState.C0 -> {
                 // SCE-MAP: a_child_reply_arrives_without_a_tick__sce_synth_invoke__kid.scxml:5 :: c0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("hello", "")
+            onSendToParent?.invoke("hello", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
         }
     }

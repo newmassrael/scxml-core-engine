@@ -142,9 +142,12 @@ class Test199StateMachine(
             }
             is Test199State.S0 -> {
                 // SCE-MAP: test199.scxml:7 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
             raisePlatformError(Test199Event.Error.Execution, "<send type='unsupported_type'> names a processor this platform does not support", "__send_0")
             return@send true  // W3C SCXML 5.10: discarded; the block stops below
@@ -152,18 +155,21 @@ class Test199StateMachine(
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
-            send(Test199Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(Test199Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
         }
     }

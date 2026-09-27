@@ -1979,13 +1979,22 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
-	// W3C SCXML 6.2.4: the send id goes to `idlocation`, through the
-	// assignment `<assign>` makes. A location that cannot take it is an
-	// argument that cannot be evaluated, so the message is discarded and
-	// error.execution raised (W3C SCXML 6.2, 5.9.2).
+	{
+	p.ensureScriptEngine()
+	sendArgError := ""
+	// W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
+	// there even when a later argument fails, through the assignment
+	// `<assign>` makes; a location that cannot take it is an argument that
+	// cannot be evaluated too (W3C SCXML 5.9.2).
 	if err := p.storeIDInLocation(`slot.sid`, "__send_0"); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<send idlocation='slot.sid'> could not take the send id"))
-	} else {
+		sendArgError = "<send idlocation='slot.sid'> could not take the send id"
+	}
+	if sendArgError != "" {
+		errEvt := sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sendArgError)
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	}
 	{
 		eventDataStr := ""
 		_ = eventDataStr
@@ -1999,15 +2008,23 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 	}
 	}
 
-
 	// W3C SCXML 6.2: send id="__send_1"
-	// W3C SCXML 6.2.4: the send id goes to `idlocation`, through the
-	// assignment `<assign>` makes. A location that cannot take it is an
-	// argument that cannot be evaluated, so the message is discarded and
-	// error.execution raised (W3C SCXML 6.2, 5.9.2).
+	{
+	p.ensureScriptEngine()
+	sendArgError := ""
+	// W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
+	// there even when a later argument fails, through the assignment
+	// `<assign>` makes; a location that cannot take it is an argument that
+	// cannot be evaluated too (W3C SCXML 5.9.2).
 	if err := p.storeIDInLocation(`n.nope.deeper`, "__send_1"); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<send idlocation='n.nope.deeper'> could not take the send id"))
-	} else {
+		sendArgError = "<send idlocation='n.nope.deeper'> could not take the send id"
+	}
+	if sendArgError != "" {
+		errEvt := sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sendArgError)
+		errEvt.Metadata.SendID = "__send_1"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	}
 	{
 		eventDataStr := ""
 		_ = eventDataStr
@@ -2020,7 +2037,6 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 	}
 	}
 	}
-
 		}()
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
@@ -2658,7 +2674,12 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	{
 		cancelSendIDVal, cancelErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `""`)
-		if cancelErr == nil && cancelSendIDVal != nil {
+		if cancelErr != nil {
+			// W3C SCXML 5.9: a sendidexpr that fails raises error.execution,
+			// and (W3C SCXML 4.9) the error ends the block.
+			engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<cancel> sendidexpr failed to evaluate"))
+			return
+		} else if cancelSendIDVal != nil {
 			engine.CancelEvent(fmt.Sprintf("%v", cancelSendIDVal))
 		}
 	}

@@ -136,17 +136,21 @@ class OtherStateMachine(
             }
             is OtherState.Speak -> {
                 // SCE-MAP: other.scxml:8 :: speak :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("from.other", "")
+            onSendToParent?.invoke("from.other", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
         }
     }

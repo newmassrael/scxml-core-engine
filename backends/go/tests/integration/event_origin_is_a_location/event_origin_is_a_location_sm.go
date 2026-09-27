@@ -899,39 +899,68 @@ func (p *EventOriginIsALocationPolicy) ExecuteTransitionContent(source EventOrig
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	p.ensureScriptEngine()
+	sendArgError := ""
+	// A target that evaluates to nothing is not an evaluation error: it is
+	// an address nobody answers at, which the arm reports as
+	// error.communication (W3C SCXML 6.2.4).
+	var sendTargetVal any
+	sendTarget := ""
+	if sendArgError == "" {
+		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `_event.origin`); err == nil {
+			sendTargetVal = v
+			sendTarget = sce.ToWireString(v)
+		} else {
+			sendArgError = "<send> targetexpr could not be evaluated"
+		}
+	}
+	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
+		// W3C SCXML 6.2: a target this processor cannot address is refused
+		// as a static one is, before anything is delivered.
+		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+	}
+	_ = sendTargetVal
+	_ = sendTarget
+	if sendArgError != "" {
+		errEvt := sce.NewPlatformError(EventOriginIsALocationEventErrorExecution, sendArgError)
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+	if sendArgError == "" && sendTargetVal == nil {
+		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value
+		// is not reachable — error.communication, nothing delivered, and the
+		// error ends the block as any other would (W3C SCXML 4.9). An empty
+		// STRING is not this case here: a self-sent event carries no origin
+		// on this backend, so `targetexpr="_event.origin"` reads "" and must
+		// reach this session (test336).
+		errEvt := sce.NewPlatformError(EventOriginIsALocationEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return
+	}
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: External send
 	{
-		// W3C SCXML 6.2: Evaluate targetexpr at runtime
-		sendTargetVal, sendTargetErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `_event.origin`)
-		if sendTargetErr != nil || sendTargetVal == nil || fmt.Sprintf("%v", sendTargetVal) == "<nil>" {
-			// W3C SCXML 6.2.4: If target is not valid, raise error.communication
-			{
-				errEvt := sce.NewPlatformError(EventOriginIsALocationEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
-				errEvt.Metadata.SendID = "__send_0"
-				engine.Raise(errEvt)
-			}
-		} else {
-			sendEvtName := "reply"
-			// W3C SCXML C.1: a target that decodes to one of our children's
-			// published locations is addressed to that child. Without this the
-			// address a peer was told to answer at routes back into the
-			// sender's own queue, so the location compares equal and still
-			// reaches nobody.
-			addressedChild := sce.SessionIDFromScxmlLocation(fmt.Sprintf("%v", sendTargetVal))
-			if !p.DeliverToChildSession(addressedChild, sendEvtName, eventDataStr) {
-			if sendEvt, sendOk := p.GetEventFromName(sendEvtName); sendOk {
-				meta := sce.NewEventWithMetadata(sendEvt)
-				meta.Metadata = sce.ExternalMetadata("__send_0", "")
-				meta.Metadata.Data = eventDataStr
-				engine.RaiseExternalWithMeta(meta)
-			}
-			}
+		// W3C SCXML C.1: a target that decodes to one of our children's
+		// published locations is addressed to that child. Without this the
+		// address a peer was told to answer at routes back into the
+		// sender's own queue, so the location compares equal and still
+		// reaches nobody.
+		addressedChild := sce.SessionIDFromScxmlLocation(sendTarget)
+		if !p.DeliverToChildSession(addressedChild, "reply", eventDataStr) {
+		if sendEvt, sendOk := p.GetEventFromName("reply"); sendOk {
+			meta := sce.NewEventWithMetadata(sendEvt)
+			meta.Metadata = sce.ExternalMetadata("__send_0", "")
+			meta.Metadata.Data = eventDataStr
+			engine.RaiseExternalWithMeta(meta)
+		}
 		}
 	}
 	}
-
+	}
 			}()
 		}
 	}

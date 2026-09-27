@@ -310,9 +310,12 @@ class StatechartNativeActionStateMachine(
             }
             is StatechartNativeActionState.Idle -> {
                 // SCE-MAP: statechart_native_action.scxml:38 :: idle :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             // W3C SCXML G.7: <sce:action name="on_idle_entry">
             actions.onIdleEntry()
+                }
             }
         }
     }
@@ -323,9 +326,12 @@ class StatechartNativeActionStateMachine(
         when (state) {
             is StatechartNativeActionState.Assembling -> {
                 // SCE-MAP: statechart_native_action.scxml:59 :: assembling :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
             // W3C SCXML G.7: <sce:action name="on_assembling_exit">
             actions.onAssemblingExit()
+                }
             }
             is StatechartNativeActionState.Faulted -> {
                 // SCE-MAP: statechart_native_action.scxml:71 :: faulted :: _state_body

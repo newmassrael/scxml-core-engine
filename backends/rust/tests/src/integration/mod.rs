@@ -31,11 +31,14 @@
 //! under `integration_resources/` when those engines are repaired.
 
 pub mod a_bad_donedata_pair_is_ignored;
+pub mod a_bad_invoke_argument_is_reported_once;
+pub mod a_bad_send_argument_discards_its_message;
 pub mod a_bad_send_param_ends_its_block;
 pub mod a_child_may_send_many_events_in_one_tick;
 pub mod a_child_reply_arrives_without_a_tick;
 pub mod a_payload_rides_on_its_own_event;
 pub mod ai_loop;
+pub mod an_error_ends_the_block_it_was_raised_in;
 pub mod an_error_inside_a_foreach_ends_its_block;
 pub mod an_invoke_left_before_it_starts_raises_nothing;
 pub mod ancestor_entry_is_not_default_entry;

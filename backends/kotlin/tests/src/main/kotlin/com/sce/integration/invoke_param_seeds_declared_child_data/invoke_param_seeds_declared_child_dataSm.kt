@@ -483,26 +483,34 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -666,33 +674,23 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "infinite.${System.identityHashCode(this)}.inv_infinite"
-                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
-                    ensureScriptEngine()
-                    val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                    val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                    val invokeParams = mutableMapOf<String, Any?>()
-                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
-                    // `error.execution` on the internal queue AND the name and
-                    // value — and nothing else. The clause delegates only the
-                    // SUCCESSFUL name and value to the context ("Otherwise the use
-                    // of the name and value depends on the context in which the
-                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
-                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
-                    // of the element" is not reached by a failing `<param>`.
-                    //
-                    // This arm used to `return@run`, cancelling the whole invoke
-                    // and raising nothing — the strictest reading of 6.4.2 with
-                    // 5.7.1's reporting half dropped, so a document lost the child
-                    // AND the event that would have explained why. The comment
-                    // called that "the C++ pattern"; C++ does not cancel. The map
-                    // insert is inside the `try`, so a failure leaves the name
-                    // absent, which is the clause's other half.
-                    try {
-                        invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("(1 / 0)", "1/0"))
-                    } catch (_: Exception) {
-                        raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> expr failed to evaluate")
-                    }
                     deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
+                        // is executed — at macrostep end, where this deferred body
+                        // runs — not when the state was entered.
+                        ensureScriptEngine()
+                        val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val invokeParams = mutableMapOf<String, Any?>()
+                        // §scxml-5.7.1: a `<param>` that will not evaluate costs
+                        // `error.execution` AND the name and value — nothing else: the
+                        // child still starts. The map insert is inside the `try`, so a
+                        // failure leaves the name absent.
+                        try {
+                            invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("(1 / 0)", "1/0"))
+                        } catch (_: Exception) {
+                            raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> could not be read")
+                        }
                         val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
@@ -706,18 +704,25 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "namelistPhase.${System.identityHashCode(this)}.inv_namelist"
-                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
-                    ensureScriptEngine()
-                    val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                    val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                    val invokeParams = mutableMapOf<String, Any?>()
-                    // W3C SCXML 6.4.1: Namelist variable must exist in parent (C++ NamelistHelper pattern)
-                    if (!engineInv.hasVariable(sidInv, "token")) {
-                        raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> namelist names 'token', which the parent does not declare")
-                        return@run  // C++ pattern: invoke cancelled on namelist error
-                    }
-                    invokeParams["token"] = engineInv.getVariable(sidInv, "token")
                     deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
+                        // is executed — at macrostep end, where this deferred body
+                        // runs — not when the state was entered.
+                        ensureScriptEngine()
+                        val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val invokeParams = mutableMapOf<String, Any?>()
+                        // W3C SCXML 6.4: "if the evaluation of its arguments produces an
+                        // error, the SCXML Processor MUST terminate the processing of the
+                        // element without further action". A name that is not a readable
+                        // location is such an error: ONE error.execution for the element,
+                        // however many names are bad, no child, and its <param>s are not
+                        // evaluated.
+                        if (!(engineInv.hasVariable(sidInv, "token"))) {
+                            raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            return@deferInvoke
+                        }
+                        invokeParams["token"] = engineInv.getVariable(sidInv, "token")
                         val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
@@ -736,33 +741,23 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "shadowed.${System.identityHashCode(this)}.inv_shadow"
-                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
-                    ensureScriptEngine()
-                    val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                    val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                    val invokeParams = mutableMapOf<String, Any?>()
-                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
-                    // `error.execution` on the internal queue AND the name and
-                    // value — and nothing else. The clause delegates only the
-                    // SUCCESSFUL name and value to the context ("Otherwise the use
-                    // of the name and value depends on the context in which the
-                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
-                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
-                    // of the element" is not reached by a failing `<param>`.
-                    //
-                    // This arm used to `return@run`, cancelling the whole invoke
-                    // and raising nothing — the strictest reading of 6.4.2 with
-                    // 5.7.1's reporting half dropped, so a document lost the child
-                    // AND the event that would have explained why. The comment
-                    // called that "the C++ pattern"; C++ does not cancel. The map
-                    // insert is inside the `try`, so a failure leaves the name
-                    // absent, which is the clause's other half.
-                    try {
-                        invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("token", "token"))
-                    } catch (_: Exception) {
-                        raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> expr failed to evaluate")
-                    }
                     deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
+                        // is executed — at macrostep end, where this deferred body
+                        // runs — not when the state was entered.
+                        ensureScriptEngine()
+                        val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val invokeParams = mutableMapOf<String, Any?>()
+                        // §scxml-5.7.1: a `<param>` that will not evaluate costs
+                        // `error.execution` AND the name and value — nothing else: the
+                        // child still starts. The map insert is inside the `try`, so a
+                        // failure leaves the name absent.
+                        try {
+                            invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("token", "token"))
+                        } catch (_: Exception) {
+                            raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> could not be read")
+                        }
                         val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
@@ -776,33 +771,23 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "soleName.${System.identityHashCode(this)}.inv_sole"
-                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
-                    ensureScriptEngine()
-                    val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                    val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                    val invokeParams = mutableMapOf<String, Any?>()
-                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
-                    // `error.execution` on the internal queue AND the name and
-                    // value — and nothing else. The clause delegates only the
-                    // SUCCESSFUL name and value to the context ("Otherwise the use
-                    // of the name and value depends on the context in which the
-                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
-                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
-                    // of the element" is not reached by a failing `<param>`.
-                    //
-                    // This arm used to `return@run`, cancelling the whole invoke
-                    // and raising nothing — the strictest reading of 6.4.2 with
-                    // 5.7.1's reporting half dropped, so a document lost the child
-                    // AND the event that would have explained why. The comment
-                    // called that "the C++ pattern"; C++ does not cancel. The map
-                    // insert is inside the `try`, so a failure leaves the name
-                    // absent, which is the clause's other half.
-                    try {
-                        invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("only_here", "only_here"))
-                    } catch (_: Exception) {
-                        raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> expr failed to evaluate")
-                    }
                     deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
+                        // is executed — at macrostep end, where this deferred body
+                        // runs — not when the state was entered.
+                        ensureScriptEngine()
+                        val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val invokeParams = mutableMapOf<String, Any?>()
+                        // §scxml-5.7.1: a `<param>` that will not evaluate costs
+                        // `error.execution` AND the name and value — nothing else: the
+                        // child still starts. The map insert is inside the `try`, so a
+                        // failure leaves the name absent.
+                        try {
+                            invokeParams["seen"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("only_here", "only_here"))
+                        } catch (_: Exception) {
+                            raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> could not be read")
+                        }
                         val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
@@ -816,54 +801,32 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "unmatched.${System.identityHashCode(this)}.inv_unmatched"
-                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
-                    ensureScriptEngine()
-                    val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                    val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                    val invokeParams = mutableMapOf<String, Any?>()
-                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
-                    // `error.execution` on the internal queue AND the name and
-                    // value — and nothing else. The clause delegates only the
-                    // SUCCESSFUL name and value to the context ("Otherwise the use
-                    // of the name and value depends on the context in which the
-                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
-                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
-                    // of the element" is not reached by a failing `<param>`.
-                    //
-                    // This arm used to `return@run`, cancelling the whole invoke
-                    // and raising nothing — the strictest reading of 6.4.2 with
-                    // 5.7.1's reporting half dropped, so a document lost the child
-                    // AND the event that would have explained why. The comment
-                    // called that "the C++ pattern"; C++ does not cancel. The map
-                    // insert is inside the `try`, so a failure leaves the name
-                    // absent, which is the clause's other half.
-                    try {
-                        invokeParams["declared"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"carried\"", "'carried'"))
-                    } catch (_: Exception) {
-                        raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='declared'> expr failed to evaluate")
-                    }
-                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
-                    // `error.execution` on the internal queue AND the name and
-                    // value — and nothing else. The clause delegates only the
-                    // SUCCESSFUL name and value to the context ("Otherwise the use
-                    // of the name and value depends on the context in which the
-                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
-                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
-                    // of the element" is not reached by a failing `<param>`.
-                    //
-                    // This arm used to `return@run`, cancelling the whole invoke
-                    // and raising nothing — the strictest reading of 6.4.2 with
-                    // 5.7.1's reporting half dropped, so a document lost the child
-                    // AND the event that would have explained why. The comment
-                    // called that "the C++ pattern"; C++ does not cancel. The map
-                    // insert is inside the `try`, so a failure leaves the name
-                    // absent, which is the clause's other half.
-                    try {
-                        invokeParams["nowhere"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"leaked\"", "'leaked'"))
-                    } catch (_: Exception) {
-                        raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='nowhere'> expr failed to evaluate")
-                    }
                     deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
+                        // is executed — at macrostep end, where this deferred body
+                        // runs — not when the state was entered.
+                        ensureScriptEngine()
+                        val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val invokeParams = mutableMapOf<String, Any?>()
+                        // §scxml-5.7.1: a `<param>` that will not evaluate costs
+                        // `error.execution` AND the name and value — nothing else: the
+                        // child still starts. The map insert is inside the `try`, so a
+                        // failure leaves the name absent.
+                        try {
+                            invokeParams["declared"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"carried\"", "'carried'"))
+                        } catch (_: Exception) {
+                            raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='declared'> could not be read")
+                        }
+                        // §scxml-5.7.1: a `<param>` that will not evaluate costs
+                        // `error.execution` AND the name and value — nothing else: the
+                        // child still starts. The map insert is inside the `try`, so a
+                        // failure leaves the name absent.
+                        try {
+                            invokeParams["nowhere"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"leaked\"", "'leaked'"))
+                        } catch (_: Exception) {
+                            raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='nowhere'> could not be read")
+                        }
                         val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events

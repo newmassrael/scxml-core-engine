@@ -591,30 +591,37 @@ impl StatePolicy for Test183Policy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        let mut _send_aborted = false;
-                        // W3C SCXML 6.2.4: Store sendid in idlocation
-                        {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            if !::sce_rust_runtime::helpers::idlocation::store_id_in_location(
-                                se,
-                                &sid,
-                                "Var1",
-                                send_id.as_str(),
-                            ) {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    Test183Event::ErrorExecution,
-                                    "<send idlocation='Var1'> could not take the send id",
-                                ));
-                                _send_aborted = true;
-                            }
+                        self.ensure_script_engine();
+                        let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
+                        let __sce_arg_se = self.script_engine.clone();
+                        let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
+                        let mut _send_arg_error: Option<&'static str> = None;
+                        // W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is there
+                        // even when a later argument fails. W3C SCXML B.2: a write target is
+                        // lowered by the frontend, so the id lands where a read of the same text
+                        // finds it; the write is the assignment `<assign>` makes, so a location
+                        // it cannot take is an argument that cannot be evaluated (W3C SCXML 5.9.2).
+                        if !::sce_rust_runtime::helpers::idlocation::store_id_in_location(
+                            __sce_arg_se,
+                            &__sce_arg_sid,
+                            "Var1",
+                            send_id.as_str(),
+                        ) {
+                            _send_arg_error =
+                                Some("<send idlocation='Var1'> could not take the send id");
                         }
+                        if let Some(__sce_why) = _send_arg_error {
+                            ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                Test183Event::ErrorExecution,
+                                __sce_why,
+                            );
+                            err_meta.metadata.send_id = send_id.clone();
+                            engine.raise(err_meta);
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        } else {
+                            let event_data: &str = "";
 
-                        let event_data: &str = "";
-
-                        if !_send_aborted {
                             // W3C SCXML 6.2: Default send (no target = external event)
                             {
                                 let mut meta =
@@ -627,9 +634,10 @@ impl StatePolicy for Test183Policy {
                                 meta.set_event_data(event_data);
                                 engine.raise_external_with_meta(meta);
                             }
-                        } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on an argument error)
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }
                 }
             }

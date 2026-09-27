@@ -434,26 +434,34 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -617,43 +625,61 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             }
             is OnexitRunsBeforeTheStateLeavesState.Inner -> {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:56 :: inner :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("exits", "exits"), com.sce.runtime.ScriptSource.lua("_scxml_add(exits, 1)", "exits + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("exits", "exits"), com.sce.runtime.ScriptSource.lua("_scxml_add(exits, 1)", "exits + 1"))) {
+                return@run
+            }
 
 
             if (isStateActive("inner")) {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("selfInInner", "selfInInner"), com.sce.runtime.ScriptSource.lua("1", "1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("selfInInner", "selfInInner"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
+            }
             }
 
 
             if (isStateActive("outer")) {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("parentInInner", "parentInInner"), com.sce.runtime.ScriptSource.lua("1", "1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("parentInInner", "parentInInner"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
             }
+            }
+                }
             }
             is OnexitRunsBeforeTheStateLeavesState.Outer -> {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:45 :: outer :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("exits", "exits"), com.sce.runtime.ScriptSource.lua("_scxml_add(exits, 1)", "exits + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("exits", "exits"), com.sce.runtime.ScriptSource.lua("_scxml_add(exits, 1)", "exits + 1"))) {
+                return@run
+            }
 
 
             if (isStateActive("outer")) {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("selfInOuter", "selfInOuter"), com.sce.runtime.ScriptSource.lua("1", "1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("selfInOuter", "selfInOuter"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
+            }
             }
 
 
             if (isStateActive("inner")) {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("childInOuter", "childInOuter"), com.sce.runtime.ScriptSource.lua("1", "1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("childInOuter", "childInOuter"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
             }
+            }
+                }
             }
             is OnexitRunsBeforeTheStateLeavesState.Settled -> {
                 // SCE-MAP: onexit_runs_before_the_state_leaves.scxml:81 :: settled :: _state_body

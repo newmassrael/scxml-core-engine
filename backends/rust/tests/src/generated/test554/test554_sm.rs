@@ -406,20 +406,35 @@ impl Test554Policy {
                 // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
                 // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
                 {
+                    // §scxml-6.4: "if the evaluation of its arguments produces an
+                    // error, the SCXML Processor MUST terminate the processing of
+                    // the element without further action". A name that is not a
+                    // readable location is such an error: ONE error.execution for
+                    // the element, however many names are bad, no child, and its
+                    // <param>s are not evaluated. A name is read only once it is
+                    // known to be declared, so the name itself is never lowered as
+                    // an expression — an undeclared one would be refused at build
+                    // time instead of raising here.
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    let mut namelist_valid = true;
-                    if !se.has_variable(&sid, "__undefined_variable_for_error__") {
-                        ::sce_rust_runtime::sce_log_error!("Namelist validation failed: '__undefined_variable_for_error__' not declared in parent");
+                    let mut namelist_bad: Option<&'static str> = None;
+                    if namelist_bad.is_none()
+                        && !se.has_variable(&sid, "__undefined_variable_for_error__")
+                    {
+                        namelist_bad = Some("__undefined_variable_for_error__");
+                    }
+                    if let Some(bad) = namelist_bad {
+                        ::sce_rust_runtime::sce_log_error!(
+                            "Namelist validation failed: '{}' is not a readable location",
+                            bad
+                        );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             Test554Event::ErrorExecution,
-                            "<invoke> namelist names '__undefined_variable_for_error__', which the parent does not declare"));
-                        namelist_valid = false;
-                    }
-                    if !namelist_valid {
-                        continue; // W3C SCXML 6.4.1: Skip invoke on namelist error
+                            "<invoke> namelist names a location that cannot be read",
+                        ));
+                        continue; // W3C SCXML 6.4: the element is terminated; no child
                     }
                 }
 
@@ -831,16 +846,22 @@ impl StatePolicy for Test554Policy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (1000ms)
-                        engine.schedule_event(
-                            Test554Event::Timer,
-                            core::time::Duration::from_millis(1000),
-                            &send_id,
-                            event_data,
-                        );
+                        // W3C SCXML 6.2: Delayed send (1s)
+                        {
+                            let delay_ms = 1000_u64;
+                            let __sce_delayed_event = Some(Test554Event::Timer);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end

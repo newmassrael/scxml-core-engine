@@ -383,15 +383,21 @@ impl StatePolicy for LateTickHonoursCancelPolicy {
                         let event_data: &str = "";
 
                         // W3C SCXML 6.2: Delayed send (100ms)
-                        engine.schedule_event(
-                            LateTickHonoursCancelEvent::Finish,
-                            core::time::Duration::from_millis(100),
-                            &send_id,
-                            event_data,
-                        );
+                        {
+                            let delay_ms = 100_u64;
+                            let __sce_delayed_event = Some(LateTickHonoursCancelEvent::Finish);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
             }
@@ -406,15 +412,21 @@ impl StatePolicy for LateTickHonoursCancelPolicy {
                         let event_data: &str = "";
 
                         // W3C SCXML 6.2: Delayed send (200ms)
-                        engine.schedule_event(
-                            LateTickHonoursCancelEvent::Settle,
-                            core::time::Duration::from_millis(200),
-                            &send_id,
-                            event_data,
-                        );
+                        {
+                            let delay_ms = 200_u64;
+                            let __sce_delayed_event = Some(LateTickHonoursCancelEvent::Settle);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
 
                     {
@@ -423,15 +435,21 @@ impl StatePolicy for LateTickHonoursCancelPolicy {
                         let event_data: &str = "";
 
                         // W3C SCXML 6.2: Delayed send (100ms)
-                        engine.schedule_event(
-                            LateTickHonoursCancelEvent::Poke,
-                            core::time::Duration::from_millis(100),
-                            &send_id,
-                            event_data,
-                        );
+                        {
+                            let delay_ms = 100_u64;
+                            let __sce_delayed_event = Some(LateTickHonoursCancelEvent::Poke);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
             }

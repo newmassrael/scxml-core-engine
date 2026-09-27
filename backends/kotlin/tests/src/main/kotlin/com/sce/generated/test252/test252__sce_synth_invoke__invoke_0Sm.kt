@@ -132,16 +132,21 @@ class Test252SceSynthInvokeInvoke0StateMachine(
         when (state) {
             is Test252SceSynthInvokeInvoke0State.Sub0 -> {
                 // SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:4 :: sub0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 500L, Test252SceSynthInvokeInvoke0Event.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 500L, Test252SceSynthInvokeInvoke0Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test252SceSynthInvokeInvoke0State.SubFinal -> {
                 // SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:13 :: subFinal :: _state_body
@@ -157,17 +162,21 @@ class Test252SceSynthInvokeInvoke0StateMachine(
         when (state) {
             is Test252SceSynthInvokeInvoke0State.Sub0 -> {
                 // SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:4 :: sub0 :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("childToParent", "")
+            onSendToParent?.invoke("childToParent", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test252SceSynthInvokeInvoke0State.SubFinal -> {
                 // SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:13 :: subFinal :: _state_body

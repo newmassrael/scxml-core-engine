@@ -117,16 +117,21 @@ class Test234SceSynthInvokeInvoke1StateMachine(
         when (state) {
             is Test234SceSynthInvokeInvoke1State.Sub0 -> {
                 // SCE-MAP: test234__sce_synth_invoke__invoke_1.scxml:4 :: sub0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 2000L, Test234SceSynthInvokeInvoke1Event.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 2000L, Test234SceSynthInvokeInvoke1Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test234SceSynthInvokeInvoke1State.SubFinal2 -> {
                 // SCE-MAP: test234__sce_synth_invoke__invoke_1.scxml:10 :: subFinal2 :: _state_body

@@ -236,26 +236,34 @@ class Test560StateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test560Event.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test560Event.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -357,33 +365,33 @@ class Test560StateMachine(
             }
             is Test560State.S0 -> {
                 // SCE-MAP: test560.scxml:8 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
             var paramFailed = false
-            // W3C SCXML 5.10: Evaluate params/namelist for event data
-            run {
-                ensureScriptEngine()
-                val engineE = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sidE = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val paramsE = mutableMapOf<String, Any?>()
-                try {
-                    putParam(paramsE, "aParam", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.lua("1", "1")))
-                } catch (_: Exception) {
-                    raisePlatformError(Test560Event.Error.Execution, "<send> <param name='aParam'> could not be read")
-                    paramFailed = true
-                }
-
-
-                val eventDataE = buildJsonFromParams(paramsE)
-                send(Test560Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = eventDataE))
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "aParam", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("1", "1")))
+            } catch (_: Exception) {
+                raisePlatformError(Test560Event.Error.Execution, "<send> <param name='aParam'> could not be read")
+                paramFailed = true
             }
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 6.2: send to this session's external queue
+            send(Test560Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
         }
     }

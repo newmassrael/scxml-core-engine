@@ -285,26 +285,34 @@ class Test567StateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test567Event.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test567Event.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -411,78 +419,78 @@ class Test567StateMachine(
             }
             is Test567State.S0 -> {
                 // SCE-MAP: test567.scxml:9 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 3000L, Test567Event.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 3000L, Test567Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
             var paramFailed = false
-            // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
-            var _resolvedTarget: String? = null
-            run resolveTarget@{
-                ensureScriptEngine()
-                val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                try {
-                    val v = eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location"))
-                    val target = v?.toString() ?: ""
-                    // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
-                    if (target.startsWith("!")) {
-                        raisePlatformError(Test567Event.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_1")
-                        return@resolveTarget
-                    }
-                    // W3C SCXML C.1 (test496): Unreachable target (C++ SendHelper::isUnreachableTarget)
-                    if (target.isEmpty() || target == "undefined") {
-                        raisePlatformError(Test567Event.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
-                        return@resolveTarget
-                    }
-                    _resolvedTarget = target
-                } catch (_: Exception) {
-                    raisePlatformError(Test567Event.Error.Execution, "<send> targetexpr failed to evaluate")
-                }
+            ensureScriptEngine()
+            val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            // §scxml-C-1: a target expression's value is read as text — the
+            // same reading C++ `resultToString` gives it.
+            val _rt = try {
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location")))
+            } catch (_: Exception) {
+                raisePlatformError(Test567Event.Error.Execution, "<send> targetexpr could not be evaluated", "__send_1")
+                return@send true
             }
-            _resolvedTarget?.let { _rt ->
-            // W3C SCXML C.2: Validate dynamic target is HTTP URL
-            if (!_rt.startsWith("http://") && !_rt.startsWith("https://")) {
-                raisePlatformError(Test567Event.Error.Communication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL")
-            } else {
+            if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
+                // W3C SCXML 6.2 (test194): refused as a static one is.
+                raisePlatformError(Test567Event.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_1")
+                return@send true
+            }
+            if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
+                // W3C SCXML C.1 (test496): a target that names nothing is not
+                // reachable — error.communication, nothing delivered, and the
+                // error ends the block as any other would (W3C SCXML 4.9).
+                raisePlatformError(Test567Event.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_1")
+                return@send true
+            }
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "param1", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("2", "2")))
+            } catch (_: Exception) {
+                raisePlatformError(Test567Event.Error.Execution, "<send> <param name='param1'> could not be read")
+                paramFailed = true
+            }
 
-            // W3C SCXML C.2: BasicHTTP send with script engine evaluation
-            run {
-                ensureScriptEngine()
-                val engineH = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sidH = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val httpParams = mutableMapOf<String, List<String>>()
-                try {
-                    val v = engineH.evaluateExpr(sidH, com.sce.runtime.ScriptSource.lua("2", "2"))
-                    // W3C SCXML C.2: the param crosses as text. `toString()` is
-                    // the platform's spelling of the value; this is the document's.
-                    httpParams["param1"] = listOf(valueToWireString(v))
-                } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and
-                    // value. The clause names no processor, so a document must
-                    // not go quiet just because this send crosses HTTP.
-                    raisePlatformError(Test567Event.Error.Execution, "<send> <param name='param1'> expr failed to evaluate")
-                }
-                val httpContent = ""
-                performHttpSend(_rt, "test", httpContent, httpParams, "__send_1")
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
             }
+            // W3C SCXML C.2: BasicHTTP send — one arm for a static and a dynamic target
+            if (!_rt.startsWith("http://") && !_rt.startsWith("https://")) {
+                raisePlatformError(Test567Event.Error.Communication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", "__send_1")
+                return@send true
             }
-            } // end of _resolvedTarget?.let
+            val httpContent = ""
+            performHttpSend(_rt, "test", httpContent, sendWireParams, "__send_1")
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test567State.S1 -> {
                 // SCE-MAP: test567.scxml:26 :: s1 :: _state_body
@@ -519,7 +527,9 @@ class Test567StateMachine(
                 // SCE-MAP: test567.scxml:20 :: s0 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.data.param1", "_event.data.param1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_event.data.param1", "_event.data.param1"))) {
+                return
+            }
             }
             else -> {}
         }

@@ -696,6 +696,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) ExecuteTr
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -703,7 +704,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) ExecuteTr
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "seed.ok", Data: eventDataStr})
 	}
 	}
-
+	}
 			}()
 		case 1:
 			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole.scxml:12
@@ -712,6 +713,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) ExecuteTr
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -719,7 +721,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) ExecuteTr
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "seed.missing", Data: eventDataStr})
 	}
 	}
-
+	}
 			}()
 		}
 	}

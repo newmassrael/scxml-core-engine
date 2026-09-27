@@ -143,28 +143,35 @@ class Test577StateMachine(
             }
             is Test577State.S0 -> {
                 // SCE-MAP: test577.scxml:8 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            send(Test577Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(Test577Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
+            val sendData = ""
+            val sendWireParams = emptyMap<String, List<String>>()
             // W3C SCXML C.2 (test577): BasicHTTP requires target, missing raises error.communication
-            raisePlatformError(Test577Event.Error.Communication, "<send> over BasicHTTPEventProcessor has no target to post to")
+            raisePlatformError(Test577Event.Error.Communication, "<send> over BasicHTTPEventProcessor has no target to post to", "__send_1")
             return@send true  // W3C SCXML 5.10: discarded; the block stops below
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
         }
     }

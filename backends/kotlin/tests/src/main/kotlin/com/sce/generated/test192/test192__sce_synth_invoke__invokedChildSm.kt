@@ -148,27 +148,33 @@ class Test192SceSynthInvokeInvokedChildStateMachine(
         when (state) {
             is Test192SceSynthInvokeInvokedChildState.Sub0 -> {
                 // SCE-MAP: test192__sce_synth_invoke__invokedChild.scxml:5 :: sub0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("childToParent", "")
+            onSendToParent?.invoke("childToParent", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
-            scheduleSend("__send_2", 3000L, Test192SceSynthInvokeInvokedChildEvent.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_2", 3000L, Test192SceSynthInvokeInvokedChildEvent.Timeout, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test192SceSynthInvokeInvokedChildState.SubFinal -> {
                 // SCE-MAP: test192__sce_synth_invoke__invokedChild.scxml:18 :: subFinal :: _state_body
@@ -202,8 +208,9 @@ class Test192SceSynthInvokeInvokedChildStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("eventReceived", "")
+            onSendToParent?.invoke("eventReceived", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

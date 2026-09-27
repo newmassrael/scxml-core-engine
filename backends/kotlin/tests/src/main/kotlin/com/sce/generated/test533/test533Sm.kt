@@ -437,26 +437,34 @@ class Test533StateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test533Event.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test533Event.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -587,10 +595,13 @@ class Test533StateMachine(
             }
             is Test533State.S1 -> {
                 // SCE-MAP: test533.scxml:13 :: s1 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test533Event.Foo)
 
             raiseInternal(Test533Event.Bar)
+                }
             }
             is Test533State.S2 -> {
                 // SCE-MAP: test533.scxml:45 :: s2 :: _state_body
@@ -613,24 +624,39 @@ class Test533StateMachine(
             }
             is Test533State.P -> {
                 // SCE-MAP: test533.scxml:21 :: p :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
+                return@run
+            }
+                }
             }
             is Test533State.Pass -> {
                 // SCE-MAP: test533.scxml:63 :: pass :: _state_body
             }
             is Test533State.Ps1 -> {
                 // SCE-MAP: test533.scxml:33 :: ps1 :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var2, 1)", "Var2 + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var2, 1)", "Var2 + 1"))) {
+                return@run
+            }
+                }
             }
             is Test533State.Ps2 -> {
                 // SCE-MAP: test533.scxml:38 :: ps2 :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("Var3", "Var3"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var3, 1)", "Var3 + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var3", "Var3"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var3, 1)", "Var3 + 1"))) {
+                return@run
+            }
+                }
             }
             is Test533State.S1 -> {
                 // SCE-MAP: test533.scxml:13 :: s1 :: _state_body
@@ -657,7 +683,9 @@ class Test533StateMachine(
                 // SCE-MAP: test533.scxml:25 :: p :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("Var4", "Var4"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var4, 1)", "Var4 + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var4", "Var4"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var4, 1)", "Var4 + 1"))) {
+                return
+            }
             }
             else -> {}
         }

@@ -197,8 +197,9 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("sawPlatform", "")
+            onSendToParent?.invoke("sawPlatform", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -211,8 +212,9 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("sawProbeOnly", "")
+            onSendToParent?.invoke("sawProbeOnly", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

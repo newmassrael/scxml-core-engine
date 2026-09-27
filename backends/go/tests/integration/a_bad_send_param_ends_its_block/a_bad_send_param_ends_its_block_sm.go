@@ -751,7 +751,8 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -790,7 +791,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 			return
 		}
 	}
-
+	}
 
 	// W3C SCXML 5.3: <assign location="after" expr="after + 1">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 1)`); err != nil {
@@ -804,7 +805,8 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -843,7 +845,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 			return
 		}
 	}
-
+	}
 
 	// W3C SCXML 5.3: <assign location="after" expr="after + 100">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 100)`); err != nil {
@@ -857,7 +859,8 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -888,7 +891,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 			return
 		}
 	}
-
+	}
 
 	// W3C SCXML 5.3: <assign location="after" expr="after + 10">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 10)`); err != nil {
@@ -902,7 +905,8 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_3"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -935,7 +939,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 			return
 		}
 	}
-
+	}
 		}()
 	default:
 		// No entry actions

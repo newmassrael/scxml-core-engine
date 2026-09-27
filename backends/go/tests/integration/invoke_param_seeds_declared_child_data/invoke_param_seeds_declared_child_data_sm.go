@@ -593,7 +593,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
 					// element" is not what a failing `<param>` costs: the child
 					// still starts, one pair short.
-					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='seen'> expr failed to evaluate"))
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='seen'> could not be read"))
 				}
 			}
 
@@ -638,14 +638,20 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 		if pending.DocumentID == "inv_namelist" {
 			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 			{
+				// W3C SCXML 6.4: "if the evaluation of its arguments produces an
+				// error, the SCXML Processor MUST terminate the processing of the
+				// element without further action". A name that is not a readable
+				// location is such an error: ONE error.execution for the element,
+				// however many names are bad, no child, and its <param>s are not
+				// evaluated.
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 				namelistValid := true
-				if !se.HasVariable(p.SessionID, "token") {
-					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> namelist names 'token', which the parent does not declare"))
+				if namelistValid && !se.HasVariable(p.SessionID, "token") {
 					namelistValid = false
 				}
 				if !namelistValid {
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> namelist names a location that cannot be read"))
 					continue
 				}
 			}
@@ -760,7 +766,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
 					// element" is not what a failing `<param>` costs: the child
 					// still starts, one pair short.
-					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='seen'> expr failed to evaluate"))
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='seen'> could not be read"))
 				}
 			}
 
@@ -844,7 +850,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
 					// element" is not what a failing `<param>` costs: the child
 					// still starts, one pair short.
-					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='seen'> expr failed to evaluate"))
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='seen'> could not be read"))
 				}
 			}
 
@@ -928,7 +934,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
 					// element" is not what a failing `<param>` costs: the child
 					// still starts, one pair short.
-					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='declared'> expr failed to evaluate"))
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='declared'> could not be read"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `"leaked"`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
@@ -946,7 +952,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
 					// element" is not what a failing `<param>` costs: the child
 					// still starts, one pair short.
-					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='nowhere'> expr failed to evaluate"))
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='nowhere'> could not be read"))
 				}
 			}
 

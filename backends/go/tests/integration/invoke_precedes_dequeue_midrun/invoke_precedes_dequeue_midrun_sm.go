@@ -594,6 +594,7 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteEntryActions(state InvokePrec
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: External send
@@ -604,7 +605,7 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteEntryActions(state InvokePrec
 		engine.RaiseExternalWithMeta(meta)
 	}
 	}
-
+	}
 		}()
 	case InvokePrecedesDequeueMidrunStatePhase:
 		//line invoke_precedes_dequeue_midrun.scxml:54
@@ -613,6 +614,7 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteEntryActions(state InvokePrec
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
+	{
 	{
 		eventDataStr := ""
 		_ = eventDataStr
@@ -624,7 +626,7 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteEntryActions(state InvokePrec
 		engine.RaiseExternalWithMeta(meta)
 	}
 	}
-
+	}
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
@@ -771,6 +773,7 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteTransitionContent(source Invo
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.4: Send to invoked child "inv_watch"
@@ -778,7 +781,7 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteTransitionContent(source Invo
 		p.childInvWatch.RaiseExternalByName("probe", eventDataStr)
 	}
 	}
-
+	}
 			}()
 		}
 	}

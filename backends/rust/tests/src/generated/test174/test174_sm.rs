@@ -614,23 +614,56 @@ impl StatePolicy for Test174Policy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        let event_data: &str = "";
-
-                        // W3C SCXML 6.2: Default send (no target = external event)
-                        {
-                            let mut meta =
-                                sce_rust_runtime::EventWithMetadata::new(Test174Event::Event1);
-                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                            meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::SceString::new(),
-                            );
-                            meta.set_event_data(event_data);
-                            engine.raise_external_with_meta(meta);
+                        self.ensure_script_engine();
+                        let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
+                        let __sce_arg_se = self.script_engine.clone();
+                        let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
+                        let mut _send_arg_error: Option<&'static str> = None;
+                        if _send_arg_error.is_none() {
+                            // W3C SCXML 6.2: a type the platform does not support is the same
+                            // error as one that cannot be evaluated.
+                            match __sce_arg_se.evaluate_expression(&__sce_arg_sid, "Var1") {
+            Ok(val) => {
+                if !sce_rust_runtime::helpers::send::is_supported_send_type(
+                    &::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val),
+                ) {
+                    _send_arg_error = Some("<send> typeexpr names a processor this platform does not support");
+                }
+            }
+            Err(e) => {
+                ::sce_rust_runtime::sce_log_error!("typeexpr eval failed: {}", e);
+                _send_arg_error = Some("<send> typeexpr could not be evaluated");
+            }
+        }
                         }
+                        if let Some(__sce_why) = _send_arg_error {
+                            ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                Test174Event::ErrorExecution,
+                                __sce_why,
+                            );
+                            err_meta.metadata.send_id = send_id.clone();
+                            engine.raise(err_meta);
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        } else {
+                            let event_data: &str = "";
 
+                            // W3C SCXML 6.2: Default send (no target = external event)
+                            {
+                                let mut meta =
+                                    sce_rust_runtime::EventWithMetadata::new(Test174Event::Event1);
+                                // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+                                meta.metadata = sce_rust_runtime::EventMetadata::external(
+                                    send_id.clone(),
+                                    ::sce_rust_runtime::SceString::new(),
+                                );
+                                meta.set_event_data(event_data);
+                                engine.raise_external_with_meta(meta);
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }
                 }
             }

@@ -166,10 +166,13 @@ class Test144StateMachine(
             }
             is Test144State.S0 -> {
                 // SCE-MAP: test144.scxml:9 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test144Event.Foo)
 
             raiseInternal(Test144Event.Bar)
+                }
             }
             is Test144State.S1 -> {
                 // SCE-MAP: test144.scxml:19 :: s1 :: _state_body

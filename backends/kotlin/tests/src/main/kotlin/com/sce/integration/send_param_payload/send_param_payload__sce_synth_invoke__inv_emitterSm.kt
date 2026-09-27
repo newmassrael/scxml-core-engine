@@ -129,23 +129,23 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
         when (state) {
             is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> {
                 // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:5 :: emit :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            // W3C SCXML 5.10: Evaluate params for parent send (test233)
-            run {
-                val paramsP = mutableMapOf<String, Any?>()
-                putParam(paramsP, "value", "42")
-
-                val eventDataP = buildJsonFromParams(paramsP)
-                onSendToParent?.invoke("fromChild", eventDataP)
-            }
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "value", "42")
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
+            onSendToParent?.invoke("fromChild", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is SendParamPayloadSceSynthInvokeInvEmitterState.Sent -> {
                 // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:13 :: sent :: _state_body

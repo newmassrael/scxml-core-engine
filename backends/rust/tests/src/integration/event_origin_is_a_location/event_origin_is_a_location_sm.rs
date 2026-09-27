@@ -1031,100 +1031,113 @@ impl StatePolicy for EventOriginIsALocationPolicy {
                             {
                                 let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                                let event_data: &str = "";
-
-                                // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_event.origin")
-                                let _resolved_target: Option<String> = {
-                                    self.ensure_script_engine();
-                                    let sid = self.session_id.as_ref().unwrap().clone();
-                                    let se = self.script_engine.clone();
-                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                    match se.evaluate_expression(&sid, "_event.origin") {
-                                        Ok(ref val)
-                                            if matches!(
-                                                val,
-                                                sce_rust_runtime::ScriptValue::Null
-                                                    | sce_rust_runtime::ScriptValue::Undefined
-                                            ) =>
+                                self.ensure_script_engine();
+                                let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
+                                let __sce_arg_se = self.script_engine.clone();
+                                let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine =
+                                    &*__sce_arg_se;
+                                let mut _send_arg_error: Option<&'static str> = None;
+                                // A target that evaluates to nothing is not an evaluation error: it is an
+                                // address nobody answers at, which the resolution below reports as
+                                // error.communication (W3C SCXML C.1).
+                                let _send_target_value: Option<sce_rust_runtime::ScriptValue> =
+                                    if _send_arg_error.is_none() {
+                                        match __sce_arg_se
+                                            .evaluate_expression(&__sce_arg_sid, "_event.origin")
                                         {
-                                            // W3C SCXML C.1 (test 496, 521): nil/undefined target raises error.communication
-                                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(EventOriginIsALocationEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach"));
-                                            None
-                                        }
-                                        Ok(val) => {
-                                            // §scxml-C-1: a target expression's value is read as text —
-                                            // the same reading C++ `resultToString` gives it.
-                                            let trimmed = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
-                                            if trimmed.starts_with("!") {
-                                                // W3C SCXML 6.2: Invalid target raises error.execution
-                                                {
-                                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(EventOriginIsALocationEvent::ErrorExecution, "<send> targetexpr produced a target this processor cannot address");
-                                                    err_meta.metadata.send_id = send_id.clone();
-                                                    engine.raise(err_meta);
-                                                }
+                                            Ok(val) => Some(val),
+                                            Err(e) => {
+                                                ::sce_rust_runtime::sce_log_error!(
+                                                    "targetexpr eval failed: {}",
+                                                    e
+                                                );
+                                                _send_arg_error = Some(
+                                                    "<send> targetexpr could not be evaluated",
+                                                );
                                                 None
-                                            } else {
-                                                Some(trimmed)
                                             }
                                         }
-                                        Err(e) => {
-                                            ::sce_rust_runtime::sce_log_error!(
-                                                "targetexpr eval failed: {}",
-                                                e
-                                            );
-                                            engine.raise(
-                                                sce_rust_runtime::EventWithMetadata::platform_error(
-                                                    EventOriginIsALocationEvent::ErrorExecution,
-                                                    "<send> targetexpr failed to evaluate",
-                                                ),
-                                            );
-                                            None
-                                        }
-                                    }
-                                };
-
-                                if let Some(ref _rt) = _resolved_target {
-                                    // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
-                                    if _rt == "#_internal" {
-                                        {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                                EventOriginIsALocationEvent::Reply,
-                                            );
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
-                                        }
                                     } else {
-                                        {
-                                            // W3C SCXML C.1: a target that decodes to one of our children's
-                                            // published locations is addressed to that child. Without this the
-                                            // address a peer was told to answer at routes back into the
-                                            // sender's own queue, so the location compares equal and still
-                                            // reaches nobody.
-                                            let __sce_addressed_child =
-                sce_rust_runtime::helpers::io_processors::session_id_from_scxml_location(&_rt);
-                                            if !self.deliver_to_child_session(
-                                                &__sce_addressed_child,
-                                                "reply",
-                                                &event_data,
-                                            ) {
+                                        None
+                                    };
+                                if let Some(ref val) = _send_target_value {
+                                    // W3C SCXML 6.2: a target this processor cannot address is refused as
+                                    // a static one is, before anything is delivered.
+                                    if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
+            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+        }
+                                }
+                                if let Some(__sce_why) = _send_arg_error {
+                                    ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                                    let mut err_meta =
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            EventOriginIsALocationEvent::ErrorExecution,
+                                            __sce_why,
+                                        );
+                                    err_meta.metadata.send_id = send_id.clone();
+                                    engine.raise(err_meta);
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                } else {
+                                    // §scxml-C-1: a target expression's value is read as text — the same
+                                    // reading C++ `resultToString` gives it. A value that is not there names
+                                    // no target; an empty STRING is not that case here, because a self-sent
+                                    // event carries no origin on this backend, so `targetexpr="_event.origin"`
+                                    // reads "" and must reach this session (test336).
+                                    let _resolved_target: Option<String> = match _send_target_value {
+        Some(sce_rust_runtime::ScriptValue::Null) | Some(sce_rust_runtime::ScriptValue::Undefined) | None => None,
+        Some(ref val) => Some(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)),
+    };
+                                    if _resolved_target.is_none() {
+                                        // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
+                                        // error.communication.
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(EventOriginIsALocationEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                        err_meta.metadata.send_id = send_id.clone();
+                                        engine.raise(err_meta);
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+                                    if let Some(ref _rt) = _resolved_target {
+                                        let event_data: &str = "";
+
+                                        // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
+                                        if _rt == "#_internal" {
+                                            {
                                                 let mut meta =
                                                     sce_rust_runtime::EventWithMetadata::new(
                                                         EventOriginIsALocationEvent::Reply,
                                                     );
-                                                meta.metadata =
-                                                    sce_rust_runtime::EventMetadata::external(
-                                                        send_id.clone(),
-                                                        ::sce_rust_runtime::SceString::new(),
-                                                    );
                                                 meta.set_event_data(event_data);
-                                                engine.raise_external_with_meta(meta);
+                                                engine.raise(meta);
+                                            }
+                                        } else {
+                                            {
+                                                // W3C SCXML C.1: a target that decodes to one of our children's
+                                                // published locations is addressed to that child. Without this the
+                                                // address a peer was told to answer at routes back into the
+                                                // sender's own queue, so the location compares equal and still
+                                                // reaches nobody.
+                                                let __sce_addressed_child =
+                sce_rust_runtime::helpers::io_processors::session_id_from_scxml_location(&_rt);
+                                                if !self.deliver_to_child_session(
+                                                    &__sce_addressed_child,
+                                                    "reply",
+                                                    &event_data,
+                                                ) {
+                                                    let __sce_external_event =
+                                                        Some(EventOriginIsALocationEvent::Reply);
+                                                    if let Some(evt) = __sce_external_event {
+                                                        let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
+                                                        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::SceString::new());
+                                                        meta.set_event_data(event_data);
+                                                        engine.raise_external_with_meta(meta);
+                                                    }
+                                                }
                                             }
                                         }
-                                    }
-                                } // end of if let Some(ref _rt) = _resolved_target
 
+                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                    } // end of if let Some(ref _rt) = _resolved_target
+                                } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                                 let _ = send_id; // suppress unused warning when no send operation
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
                             }
                         }
                     }

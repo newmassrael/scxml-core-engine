@@ -388,6 +388,7 @@ func (p *SendParamPayloadSceSynthInvokeInvEmitterPolicy) ExecuteEntryActions(sta
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		// W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
 		// finished at codegen time. It has to be — this arm is what a machine
 		// with no script engine emits, and the wire it used to write (a
@@ -404,7 +405,7 @@ func (p *SendParamPayloadSceSynthInvokeInvEmitterPolicy) ExecuteEntryActions(sta
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "fromChild", Data: eventDataStr})
 	}
 	}
-
+	}
 		}()
 	default:
 		// No entry actions

@@ -1099,14 +1099,18 @@ class StatechartHostInvokerStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
@@ -1131,14 +1135,18 @@ class StatechartHostInvokerStateMachine(
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -1271,9 +1279,14 @@ class StatechartHostInvokerStateMachine(
         when (state) {
             is StatechartHostInvokerState.Done -> {
                 // SCE-MAP: statechart_host_invoker.scxml:194 :: done :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("ended", "ended"), com.sce.runtime.ScriptSource.lua("_scxml_add(ended, 1)", "ended + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("ended", "ended"), com.sce.runtime.ScriptSource.lua("_scxml_add(ended, 1)", "ended + 1"))) {
+                return@run
+            }
+                }
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
                 // it. Deferred like its sibling so §scxml-6.4 ordering holds —
@@ -1502,9 +1515,14 @@ class StatechartHostInvokerStateMachine(
             }
             is StatechartHostInvokerState.Invoking -> {
                 // SCE-MAP: statechart_host_invoker.scxml:149 :: invoking :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("entered", "entered"), com.sce.runtime.ScriptSource.lua("_scxml_add(entered, 1)", "entered + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("entered", "entered"), com.sce.runtime.ScriptSource.lua("_scxml_add(entered, 1)", "entered + 1"))) {
+                return@run
+            }
+                }
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
                 // it. Deferred like its sibling so §scxml-6.4 ordering holds —
@@ -1574,38 +1592,51 @@ class StatechartHostInvokerStateMachine(
             }
             is StatechartHostInvokerState.Locating -> {
                 // SCE-MAP: statechart_host_invoker.scxml:205 :: locating :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332),
+            ensureScriptEngine()
+            val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            // W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
+            // there even when a later argument fails (test183, test332),
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
-            // argument that cannot be evaluated, so the message is discarded
-            // (W3C SCXML 6.2, 5.9.2).
-            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("slot.sid", "slot.sid"), "__send_0", "<send>")) return@send false
-            send(StatechartHostInvokerEvent.Ping, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            // argument that cannot be evaluated (W3C SCXML 5.9.2).
+            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("slot.sid", "slot.sid"), "__send_0", "<send>")) return@send true
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(StatechartHostInvokerEvent.Ping, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
-            // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332),
+            ensureScriptEngine()
+            val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            // W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
+            // there even when a later argument fails (test183, test332),
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
-            // argument that cannot be evaluated, so the message is discarded
-            // (W3C SCXML 6.2, 5.9.2).
-            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper"), "__send_1", "<send>")) return@send false
-            send(StatechartHostInvokerEvent.Leak, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            // argument that cannot be evaluated (W3C SCXML 5.9.2).
+            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper"), "__send_1", "<send>")) return@send true
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(StatechartHostInvokerEvent.Leak, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
                 // it. Deferred like its sibling so §scxml-6.4 ordering holds —
@@ -2005,7 +2036,9 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:199 :: done :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("matched", "matched"), com.sce.runtime.ScriptSource.lua("_scxml_add(matched, 1)", "matched + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("matched", "matched"), com.sce.runtime.ScriptSource.lua("_scxml_add(matched, 1)", "matched + 1"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -2014,7 +2047,9 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:189 :: evaluating :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("dropped", "dropped"), com.sce.runtime.ScriptSource.lua("_scxml_add(dropped, 1)", "dropped + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("dropped", "dropped"), com.sce.runtime.ScriptSource.lua("_scxml_add(dropped, 1)", "dropped + 1"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -2023,19 +2058,25 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:159 :: invoking :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("started", "started"), com.sce.runtime.ScriptSource.lua("_scxml_add(started, 1)", "started + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("started", "started"), com.sce.runtime.ScriptSource.lua("_scxml_add(started, 1)", "started + 1"))) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: statechart_host_invoker.scxml:162 :: invoking :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("started2", "started2"), com.sce.runtime.ScriptSource.lua("_scxml_add(started2, 1)", "started2 + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("started2", "started2"), com.sce.runtime.ScriptSource.lua("_scxml_add(started2, 1)", "started2 + 1"))) {
+                return
+            }
             }
             2 -> {
                 // SCE-MAP: statechart_host_invoker.scxml:165 :: invoking :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("refused", "refused"), com.sce.runtime.ScriptSource.lua("_scxml_add(refused, 1)", "refused + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("refused", "refused"), com.sce.runtime.ScriptSource.lua("_scxml_add(refused, 1)", "refused + 1"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -2044,25 +2085,33 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:213 :: locating :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("slotted", "slotted"), com.sce.runtime.ScriptSource.lua("_scxml_add(slotted, 1)", "slotted + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("slotted", "slotted"), com.sce.runtime.ScriptSource.lua("_scxml_add(slotted, 1)", "slotted + 1"))) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: statechart_host_invoker.scxml:216 :: locating :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("pinged", "pinged"), com.sce.runtime.ScriptSource.lua("_scxml_add(pinged, 1)", "pinged + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pinged", "pinged"), com.sce.runtime.ScriptSource.lua("_scxml_add(pinged, 1)", "pinged + 1"))) {
+                return
+            }
             }
             2 -> {
                 // SCE-MAP: statechart_host_invoker.scxml:219 :: locating :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("leaked", "leaked"), com.sce.runtime.ScriptSource.lua("_scxml_add(leaked, 1)", "leaked + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("leaked", "leaked"), com.sce.runtime.ScriptSource.lua("_scxml_add(leaked, 1)", "leaked + 1"))) {
+                return
+            }
             }
             3 -> {
                 // SCE-MAP: statechart_host_invoker.scxml:222 :: locating :: _transition_3
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("lost", "lost"), com.sce.runtime.ScriptSource.lua("_scxml_add(lost, 1)", "lost + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("lost", "lost"), com.sce.runtime.ScriptSource.lua("_scxml_add(lost, 1)", "lost + 1"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -2071,14 +2120,18 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:234 :: timed :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("misdated", "misdated"), com.sce.runtime.ScriptSource.lua("_scxml_add(misdated, 1)", "misdated + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("misdated", "misdated"), com.sce.runtime.ScriptSource.lua("_scxml_add(misdated, 1)", "misdated + 1"))) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: statechart_host_invoker.scxml:240 :: timed :: _transition_1
 
 
-            // W3C SCXML 6.3: Dynamic sendid evaluation (test210)
-            run {
+            // W3C SCXML 6.3: Dynamic sendid evaluation (test210). A sendidexpr
+            // that fails raises error.execution (W3C SCXML 5.9), and the error
+            // ends the block (W3C SCXML 4.9).
+            if (run cancel@{
                 ensureScriptEngine()
                 val engineCancel = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidCancel = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -2086,20 +2139,30 @@ class StatechartHostInvokerStateMachine(
                     val v = engineCancel.evaluateExpr(sidCancel, com.sce.runtime.ScriptSource.lua("\"\"", "''"))
                     val sendidToCancel = v?.toString() ?: ""
                     if (sendidToCancel.isNotEmpty()) cancelSend(sendidToCancel)
-                } catch (_: Exception) {}
+                    false
+                } catch (_: Exception) {
+                    raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<cancel> sendidexpr failed to evaluate")
+                    true
+                }
+            }) {
+                return
             }
             }
             3 -> {
                 // SCE-MAP: statechart_host_invoker.scxml:247 :: timed :: _transition_3
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("expired", "expired"), com.sce.runtime.ScriptSource.lua("_scxml_add(expired, 1)", "expired + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("expired", "expired"), com.sce.runtime.ScriptSource.lua("_scxml_add(expired, 1)", "expired + 1"))) {
+                return
+            }
             }
             4 -> {
                 // SCE-MAP: statechart_host_invoker.scxml:251 :: timed :: _transition_4
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("finished", "finished"), com.sce.runtime.ScriptSource.lua("_scxml_add(finished, 1)", "finished + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("finished", "finished"), com.sce.runtime.ScriptSource.lua("_scxml_add(finished, 1)", "finished + 1"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -2108,25 +2171,33 @@ class StatechartHostInvokerStateMachine(
                 // SCE-MAP: statechart_host_invoker.scxml:266 :: typed :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("granted", "granted"), com.sce.runtime.ScriptSource.lua("_scxml_add(granted, 1)", "granted + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("granted", "granted"), com.sce.runtime.ScriptSource.lua("_scxml_add(granted, 1)", "granted + 1"))) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: statechart_host_invoker.scxml:269 :: typed :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("denied", "denied"), com.sce.runtime.ScriptSource.lua("_scxml_add(denied, 1)", "denied + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("denied", "denied"), com.sce.runtime.ScriptSource.lua("_scxml_add(denied, 1)", "denied + 1"))) {
+                return
+            }
             }
             2 -> {
                 // SCE-MAP: statechart_host_invoker.scxml:272 :: typed :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("unreadable", "unreadable"), com.sce.runtime.ScriptSource.lua("_scxml_add(unreadable, 1)", "unreadable + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("unreadable", "unreadable"), com.sce.runtime.ScriptSource.lua("_scxml_add(unreadable, 1)", "unreadable + 1"))) {
+                return
+            }
             }
             3 -> {
                 // SCE-MAP: statechart_host_invoker.scxml:275 :: typed :: _transition_3
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("level", "level"), com.sce.runtime.ScriptSource.lua("\"high\"", "'high'"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("level", "level"), com.sce.runtime.ScriptSource.lua("\"high\"", "'high'"))) {
+                return
+            }
             }
             else -> {}
         }

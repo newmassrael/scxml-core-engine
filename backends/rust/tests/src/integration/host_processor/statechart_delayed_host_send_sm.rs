@@ -433,8 +433,8 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                             );
                         }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
 
                     {
@@ -443,15 +443,21 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                         let event_data: &str = "";
 
                         // W3C SCXML 6.2: Delayed send (100ms)
-                        engine.schedule_event(
-                            StatechartDelayedHostSendEvent::Settle,
-                            core::time::Duration::from_millis(100),
-                            &send_id,
-                            event_data,
-                        );
+                        {
+                            let delay_ms = 100_u64;
+                            let __sce_delayed_event = Some(StatechartDelayedHostSendEvent::Settle);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
             }
@@ -469,15 +475,21 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                         let event_data: &str = "";
 
                         // W3C SCXML 6.2: Delayed send (200ms)
-                        engine.schedule_event(
-                            StatechartDelayedHostSendEvent::Finish,
-                            core::time::Duration::from_millis(200),
-                            &send_id,
-                            event_data,
-                        );
+                        {
+                            let delay_ms = 200_u64;
+                            let __sce_delayed_event = Some(StatechartDelayedHostSendEvent::Finish);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
             }
@@ -520,8 +532,8 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                             );
                         }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
 
                     {
@@ -530,15 +542,21 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                         let event_data: &str = "";
 
                         // W3C SCXML 6.2: Delayed send (100ms)
-                        engine.schedule_event(
-                            StatechartDelayedHostSendEvent::Probe,
-                            core::time::Duration::from_millis(100),
-                            &send_id,
-                            event_data,
-                        );
+                        {
+                            let delay_ms = 100_u64;
+                            let __sce_delayed_event = Some(StatechartDelayedHostSendEvent::Probe);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
             }

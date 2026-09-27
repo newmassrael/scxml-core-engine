@@ -257,26 +257,34 @@ class Test250SceSynthInvokeInvoke0StateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test250SceSynthInvokeInvoke0Event.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test250SceSynthInvokeInvoke0Event.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -367,27 +375,45 @@ class Test250SceSynthInvokeInvoke0StateMachine(
         when (state) {
             is Test250SceSynthInvokeInvoke0State.Sub0 -> {
                 // SCE-MAP: test250__sce_synth_invoke__invoke_0.scxml:4 :: sub0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 2000L, Test250SceSynthInvokeInvoke0Event.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 2000L, Test250SceSynthInvokeInvoke0Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test250SceSynthInvokeInvoke0State.Sub01 -> {
                 // SCE-MAP: test250__sce_synth_invoke__invoke_0.scxml:12 :: sub01 :: _state_body
             }
             is Test250SceSynthInvokeInvoke0State.SubFinal -> {
                 // SCE-MAP: test250__sce_synth_invoke__invoke_0.scxml:18 :: subFinal :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
-            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
-            try {
-                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"entering final state, invocation was not cancelled\"", "'entering final state, invocation was not cancelled'"))?.toString() ?: ""))
-            } catch (_: Exception) {}
+            // W3C SCXML 4.7: Log expression evaluation. An expression that fails
+            // raises error.execution (W3C SCXML 5.9), and the error ends the
+            // block (W3C SCXML 4.9).
+            if (run log@{
+                try {
+                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"entering final state, invocation was not cancelled\"", "'entering final state, invocation was not cancelled'"))?.toString() ?: ""))
+                    false
+                } catch (_: Exception) {
+                    raisePlatformError(Test250SceSynthInvokeInvoke0Event.Error.Execution, "<log> expr failed to evaluate")
+                    true
+                }
+            }) {
+                return@run
+            }
+                }
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -400,19 +426,45 @@ class Test250SceSynthInvokeInvoke0StateMachine(
         when (state) {
             is Test250SceSynthInvokeInvoke0State.Sub0 -> {
                 // SCE-MAP: test250__sce_synth_invoke__invoke_0.scxml:4 :: sub0 :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
-            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
-            try {
-                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Exiting sub0\"", "'Exiting sub0'"))?.toString() ?: ""))
-            } catch (_: Exception) {}
+            // W3C SCXML 4.7: Log expression evaluation. An expression that fails
+            // raises error.execution (W3C SCXML 5.9), and the error ends the
+            // block (W3C SCXML 4.9).
+            if (run log@{
+                try {
+                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Exiting sub0\"", "'Exiting sub0'"))?.toString() ?: ""))
+                    false
+                } catch (_: Exception) {
+                    raisePlatformError(Test250SceSynthInvokeInvoke0Event.Error.Execution, "<log> expr failed to evaluate")
+                    true
+                }
+            }) {
+                return@run
+            }
+                }
             }
             is Test250SceSynthInvokeInvoke0State.Sub01 -> {
                 // SCE-MAP: test250__sce_synth_invoke__invoke_0.scxml:12 :: sub01 :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
-            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
-            try {
-                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Exiting sub01\"", "'Exiting sub01'"))?.toString() ?: ""))
-            } catch (_: Exception) {}
+            // W3C SCXML 4.7: Log expression evaluation. An expression that fails
+            // raises error.execution (W3C SCXML 5.9), and the error ends the
+            // block (W3C SCXML 4.9).
+            if (run log@{
+                try {
+                    println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"Exiting sub01\"", "'Exiting sub01'"))?.toString() ?: ""))
+                    false
+                } catch (_: Exception) {
+                    raisePlatformError(Test250SceSynthInvokeInvoke0Event.Error.Execution, "<log> expr failed to evaluate")
+                    true
+                }
+            }) {
+                return@run
+            }
+                }
             }
             is Test250SceSynthInvokeInvoke0State.SubFinal -> {
                 // SCE-MAP: test250__sce_synth_invoke__invoke_0.scxml:18 :: subFinal :: _state_body

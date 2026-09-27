@@ -816,8 +816,8 @@ impl StatePolicy for Test250Policy {
                             engine.raise_external_with_meta(meta);
                         }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end

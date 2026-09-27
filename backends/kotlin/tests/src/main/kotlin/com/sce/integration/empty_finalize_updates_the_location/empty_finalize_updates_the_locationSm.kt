@@ -406,26 +406,34 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -530,32 +538,44 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
         when (state) {
             is EmptyFinalizeUpdatesTheLocationState.AbsentPhase -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:105 :: absentPhase :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_1", 3000L, EmptyFinalizeUpdatesTheLocationEvent.TimeoutAbsent)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_1", 3000L, EmptyFinalizeUpdatesTheLocationEvent.TimeoutAbsent, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "absentPhase.${System.identityHashCode(this)}.inv_absent"
-                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
-                    ensureScriptEngine()
-                    val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                    val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                    val invokeParams = mutableMapOf<String, Any?>()
-                    // W3C SCXML 6.4.1: Namelist variable must exist in parent (C++ NamelistHelper pattern)
-                    if (!engineInv.hasVariable(sidInv, "guard")) {
-                        raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<invoke> namelist names 'guard', which the parent does not declare")
-                        return@run  // C++ pattern: invoke cancelled on namelist error
-                    }
-                    invokeParams["guard"] = engineInv.getVariable(sidInv, "guard")
                     deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
+                        // is executed — at macrostep end, where this deferred body
+                        // runs — not when the state was entered.
+                        ensureScriptEngine()
+                        val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val invokeParams = mutableMapOf<String, Any?>()
+                        // W3C SCXML 6.4: "if the evaluation of its arguments produces an
+                        // error, the SCXML Processor MUST terminate the processing of the
+                        // element without further action". A name that is not a readable
+                        // location is such an error: ONE error.execution for the element,
+                        // however many names are bad, no child, and its <param>s are not
+                        // evaluated.
+                        if (!(engineInv.hasVariable(sidInv, "guard"))) {
+                            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            return@deferInvoke
+                        }
+                        invokeParams["guard"] = engineInv.getVariable(sidInv, "guard")
                         val childSM = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
@@ -565,32 +585,44 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
             }
             is EmptyFinalizeUpdatesTheLocationState.EmptyPhase -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:71 :: emptyPhase :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 3000L, EmptyFinalizeUpdatesTheLocationEvent.TimeoutEmpty)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 3000L, EmptyFinalizeUpdatesTheLocationEvent.TimeoutEmpty, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "emptyPhase.${System.identityHashCode(this)}.inv_empty"
-                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
-                    ensureScriptEngine()
-                    val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                    val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                    val invokeParams = mutableMapOf<String, Any?>()
-                    // W3C SCXML 6.4.1: Namelist variable must exist in parent (C++ NamelistHelper pattern)
-                    if (!engineInv.hasVariable(sidInv, "tally")) {
-                        raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<invoke> namelist names 'tally', which the parent does not declare")
-                        return@run  // C++ pattern: invoke cancelled on namelist error
-                    }
-                    invokeParams["tally"] = engineInv.getVariable(sidInv, "tally")
                     deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
+                        // is executed — at macrostep end, where this deferred body
+                        // runs — not when the state was entered.
+                        ensureScriptEngine()
+                        val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val invokeParams = mutableMapOf<String, Any?>()
+                        // W3C SCXML 6.4: "if the evaluation of its arguments produces an
+                        // error, the SCXML Processor MUST terminate the processing of the
+                        // element without further action". A name that is not a readable
+                        // location is such an error: ONE error.execution for the element,
+                        // however many names are bad, no child, and its <param>s are not
+                        // evaluated.
+                        if (!(engineInv.hasVariable(sidInv, "tally"))) {
+                            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            return@deferInvoke
+                        }
+                        invokeParams["tally"] = engineInv.getVariable(sidInv, "tally")
                         val childSM = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
@@ -635,32 +667,44 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
             }
             is EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:144 :: unmatchedPhase :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_2", 3000L, EmptyFinalizeUpdatesTheLocationEvent.TimeoutUnmatched)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_2", 3000L, EmptyFinalizeUpdatesTheLocationEvent.TimeoutUnmatched, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "unmatchedPhase.${System.identityHashCode(this)}.inv_unmatched"
-                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
-                    ensureScriptEngine()
-                    val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                    val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                    val invokeParams = mutableMapOf<String, Any?>()
-                    // W3C SCXML 6.4.1: Namelist variable must exist in parent (C++ NamelistHelper pattern)
-                    if (!engineInv.hasVariable(sidInv, "keeper")) {
-                        raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<invoke> namelist names 'keeper', which the parent does not declare")
-                        return@run  // C++ pattern: invoke cancelled on namelist error
-                    }
-                    invokeParams["keeper"] = engineInv.getVariable(sidInv, "keeper")
                     deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
+                        // is executed — at macrostep end, where this deferred body
+                        // runs — not when the state was entered.
+                        ensureScriptEngine()
+                        val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val invokeParams = mutableMapOf<String, Any?>()
+                        // W3C SCXML 6.4: "if the evaluation of its arguments produces an
+                        // error, the SCXML Processor MUST terminate the processing of the
+                        // element without further action". A name that is not a readable
+                        // location is such an error: ONE error.execution for the element,
+                        // however many names are bad, no child, and its <param>s are not
+                        // evaluated.
+                        if (!(engineInv.hasVariable(sidInv, "keeper"))) {
+                            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            return@deferInvoke
+                        }
+                        invokeParams["keeper"] = engineInv.getVariable(sidInv, "keeper")
                         val childSM = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events

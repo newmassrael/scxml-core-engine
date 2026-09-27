@@ -339,26 +339,34 @@ class Test354StateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test354Event.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test354Event.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -475,52 +483,65 @@ class Test354StateMachine(
             }
             is Test354State.S0 -> {
                 // SCE-MAP: test354.scxml:13 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 5000L, Test354Event.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 5000L, Test354Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
             var paramFailed = false
-            // W3C SCXML 5.10: Evaluate params/namelist for event data
-            run {
-                ensureScriptEngine()
-                val engineE = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sidE = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val paramsE = mutableMapOf<String, Any?>()
-                try {
-                    putParam(paramsE, "param1", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.lua("2", "2")))
-                } catch (_: Exception) {
-                    raisePlatformError(Test354Event.Error.Execution, "<send> <param name='param1'> could not be read")
-                    paramFailed = true
-                }
-
-                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
-                if (!engineE.hasVariable(sidE, "Var1")) {
-                    raisePlatformError(Test354Event.Error.Execution, "<send> namelist names 'Var1', which is not declared")
-                    return@send false
-                }
-                try { paramsE["Var1"] = engineE.getVariable(sidE, "Var1") } catch (_: Exception) {
-                    raisePlatformError(Test354Event.Error.Execution, "<send> namelist entry 'Var1' failed to evaluate")
-                    return@send false
-                }
-
-                val eventDataE = buildJsonFromParams(paramsE)
-                send(Test354Event.Event1, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = eventDataE))
+            ensureScriptEngine()
+            val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            // W3C SCXML 6.2 + B.2 (test553): a namelist names locations, and one
+            // that is not declared is an argument that cannot be evaluated —
+            // one error however many of its names are bad.
+            val sendNamelist = mutableListOf<Pair<String, Any?>>()
+            if (!argEngine.hasVariable(argSid, "Var1")) {
+                raisePlatformError(Test354Event.Error.Execution, "<send> namelist names 'Var1', which is not declared", "__send_1")
+                return@send true
             }
+            try {
+                sendNamelist.add("Var1" to argEngine.getVariable(argSid, "Var1"))
+            } catch (_: Exception) {
+                raisePlatformError(Test354Event.Error.Execution, "<send> namelist entry 'Var1' could not be read", "__send_1")
+                return@send true
+            }
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "param1", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("2", "2")))
+            } catch (_: Exception) {
+                raisePlatformError(Test354Event.Error.Execution, "<send> <param name='param1'> could not be read")
+                paramFailed = true
+            }
+
+            // W3C SCXML C.1: namelist variables become top-level keys in the
+            // data table — the values the prologue read, after the params.
+            for ((name, value) in sendNamelist) sendPayload[name] = value
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 6.2: send to this session's external queue
+            send(Test354Event.Event1, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test354State.S1 -> {
                 // SCE-MAP: test354.scxml:29 :: s1 :: _state_body
@@ -530,26 +551,33 @@ class Test354StateMachine(
             }
             is Test354State.S3 -> {
                 // SCE-MAP: test354.scxml:40 :: s3 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_2", 5000L, Test354Event.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_2", 5000L, Test354Event.Timeout, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
-            send(Test354Event.Event2, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(Test354Event.Event2, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
         }
     }
@@ -589,10 +617,14 @@ class Test354StateMachine(
                 // SCE-MAP: test354.scxml:20 :: s0 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.data.Var1", "_event.data.Var1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), com.sce.runtime.ScriptSource.lua("_event.data.Var1", "_event.data.Var1"))) {
+                return
+            }
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("Var3", "Var3"), com.sce.runtime.ScriptSource.lua("_event.data.param1", "_event.data.param1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var3", "Var3"), com.sce.runtime.ScriptSource.lua("_event.data.param1", "_event.data.param1"))) {
+                return
+            }
             }
             else -> {}
         }

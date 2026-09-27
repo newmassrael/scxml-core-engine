@@ -390,26 +390,34 @@ class UnhandledErrorIsObservableStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -538,20 +546,33 @@ class UnhandledErrorIsObservableStateMachine(
                 // SCE-MAP: unhandled_error_is_observable.scxml:90 :: guarded :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("booms", "booms"), com.sce.runtime.ScriptSource.lua("_scxml_add(booms, 1)", "booms + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("booms", "booms"), com.sce.runtime.ScriptSource.lua("_scxml_add(booms, 1)", "booms + 1"))) {
+                return
+            }
 
 
-            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
-            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<assign> has an invalid or read-only location")
+            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern).
+            // The same `if (run name@{ ... })` shape <send> refuses through, so
+            // the block exit is not an unconditional jump the compiler reports.
+            if (run assign@{
+                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<assign> has an invalid or read-only location")
+                true
+            }) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: unhandled_error_is_observable.scxml:94 :: guarded :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("caught", "caught"), com.sce.runtime.ScriptSource.lua("_scxml_add(caught, 1)", "caught + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("caught", "caught"), com.sce.runtime.ScriptSource.lua("_scxml_add(caught, 1)", "caught + 1"))) {
+                return
+            }
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("detail", "detail"), com.sce.runtime.ScriptSource.lua("_event.name", "_event.name"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("detail", "detail"), com.sce.runtime.ScriptSource.lua("_event.name", "_event.name"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -560,7 +581,9 @@ class UnhandledErrorIsObservableStateMachine(
                 // SCE-MAP: unhandled_error_is_observable.scxml:55 :: idle :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: unhandled_error_is_observable.scxml:58 :: idle :: _transition_1
@@ -575,17 +598,28 @@ class UnhandledErrorIsObservableStateMachine(
                 // SCE-MAP: unhandled_error_is_observable.scxml:80 :: idle :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("heards", "heards"), com.sce.runtime.ScriptSource.lua("_scxml_add(heards, 1)", "heards + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("heards", "heards"), com.sce.runtime.ScriptSource.lua("_scxml_add(heards, 1)", "heards + 1"))) {
+                return
+            }
             }
             3 -> {
                 // SCE-MAP: unhandled_error_is_observable.scxml:83 :: idle :: _transition_3
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("booms", "booms"), com.sce.runtime.ScriptSource.lua("_scxml_add(booms, 1)", "booms + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("booms", "booms"), com.sce.runtime.ScriptSource.lua("_scxml_add(booms, 1)", "booms + 1"))) {
+                return
+            }
 
 
-            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
-            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<assign> has an invalid or read-only location")
+            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern).
+            // The same `if (run name@{ ... })` shape <send> refuses through, so
+            // the block exit is not an unconditional jump the compiler reports.
+            if (run assign@{
+                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<assign> has an invalid or read-only location")
+                true
+            }) {
+                return
+            }
             }
             else -> {}
         }

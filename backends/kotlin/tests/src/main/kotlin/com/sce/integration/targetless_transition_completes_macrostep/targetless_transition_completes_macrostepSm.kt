@@ -412,26 +412,34 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -537,9 +545,14 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
             }
             is TargetlessTransitionCompletesMacrostepState.Recycled -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:147 :: recycled :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("entries", "entries"), com.sce.runtime.ScriptSource.lua("_scxml_add(entries, 1)", "entries + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("entries", "entries"), com.sce.runtime.ScriptSource.lua("_scxml_add(entries, 1)", "entries + 1"))) {
+                return@run
+            }
+                }
             }
             is TargetlessTransitionCompletesMacrostepState.Settled -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:125 :: settled :: _state_body
@@ -573,19 +586,25 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:86 :: idle :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("chained", "chained"), com.sce.runtime.ScriptSource.lua("_scxml_add(chained, 1)", "chained + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("chained", "chained"), com.sce.runtime.ScriptSource.lua("_scxml_add(chained, 1)", "chained + 1"))) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:93 :: idle :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("quiet", "quiet"), com.sce.runtime.ScriptSource.lua("_scxml_add(quiet, 1)", "quiet + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("quiet", "quiet"), com.sce.runtime.ScriptSource.lua("_scxml_add(quiet, 1)", "quiet + 1"))) {
+                return
+            }
             }
             2 -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:100 :: idle :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("armed", "armed"), com.sce.runtime.ScriptSource.lua("1", "1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("armed", "armed"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return
+            }
             }
             3 -> {
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:107 :: idle :: _transition_3
@@ -596,7 +615,9 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:111 :: idle :: _transition_4
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("answered", "answered"), com.sce.runtime.ScriptSource.lua("_scxml_add(answered, 1)", "answered + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("answered", "answered"), com.sce.runtime.ScriptSource.lua("_scxml_add(answered, 1)", "answered + 1"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -605,7 +626,9 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
                 // SCE-MAP: targetless_transition_completes_macrostep.scxml:126 :: settled :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("polished", "polished"), com.sce.runtime.ScriptSource.lua("_scxml_add(polished, 1)", "polished + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("polished", "polished"), com.sce.runtime.ScriptSource.lua("_scxml_add(polished, 1)", "polished + 1"))) {
+                return
+            }
             }
             else -> {}
         }

@@ -463,7 +463,7 @@ impl Test276Policy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test276Event::ErrorExecution,
-                                "<invoke> <param name='Var1'> expr failed to evaluate",
+                                "<invoke> <param name='Var1'> could not be read",
                             ));
                         }
                     }

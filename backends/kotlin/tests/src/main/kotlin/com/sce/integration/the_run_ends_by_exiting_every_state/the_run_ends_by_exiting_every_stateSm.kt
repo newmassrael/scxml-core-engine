@@ -318,26 +318,34 @@ class TheRunEndsByExitingEveryStateStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(TheRunEndsByExitingEveryStateEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(TheRunEndsByExitingEveryStateEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -446,28 +454,45 @@ class TheRunEndsByExitingEveryStateStateMachine(
         when (state) {
             is TheRunEndsByExitingEveryStateState.Done -> {
                 // SCE-MAP: the_run_ends_by_exiting_every_state.scxml:60 :: done :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("finalExits", "finalExits"), com.sce.runtime.ScriptSource.lua("_scxml_add(finalExits, 1)", "finalExits + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("finalExits", "finalExits"), com.sce.runtime.ScriptSource.lua("_scxml_add(finalExits, 1)", "finalExits + 1"))) {
+                return@run
+            }
 
 
             if (isStateActive("done")) {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("selfInFinal", "selfInFinal"), com.sce.runtime.ScriptSource.lua("1", "1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("selfInFinal", "selfInFinal"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
             }
+            }
+                }
             }
             is TheRunEndsByExitingEveryStateState.Inner -> {
                 // SCE-MAP: the_run_ends_by_exiting_every_state.scxml:52 :: inner :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("order", "order"), com.sce.runtime.ScriptSource.lua("_scxml_add((order * 10), 1)", "order * 10 + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("order", "order"), com.sce.runtime.ScriptSource.lua("_scxml_add((order * 10), 1)", "order * 10 + 1"))) {
+                return@run
+            }
+                }
             }
             is TheRunEndsByExitingEveryStateState.Outer -> {
                 // SCE-MAP: the_run_ends_by_exiting_every_state.scxml:47 :: outer :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("order", "order"), com.sce.runtime.ScriptSource.lua("_scxml_add((order * 10), 2)", "order * 10 + 2"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("order", "order"), com.sce.runtime.ScriptSource.lua("_scxml_add((order * 10), 2)", "order * 10 + 2"))) {
+                return@run
+            }
+                }
             }
         }
     }

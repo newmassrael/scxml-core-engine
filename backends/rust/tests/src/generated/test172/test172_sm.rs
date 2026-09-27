@@ -647,26 +647,54 @@ impl StatePolicy for Test172Policy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        let event_data: &str = "";
-
-                        // W3C SCXML 6.2: Default send (no target = external event)
-                        {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se.evaluate_expression(&sid, "Var1") {
-                                Ok(sce_rust_runtime::ScriptValue::String(event_name)) => {
-                                    if let Some(evt) = Self::get_event_from_name(&event_name) {
-                                        engine.raise_external(evt, event_data, "");
-                                    }
-                                }
-                                _ => {}
-                            }
+                        self.ensure_script_engine();
+                        let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
+                        let __sce_arg_se = self.script_engine.clone();
+                        let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
+                        let mut _send_arg_error: Option<&'static str> = None;
+                        // An event name that evaluates to nothing names no event: the same
+                        // failure as one that does not evaluate.
+                        let _send_event_name: String = if _send_arg_error.is_none() {
+                            match __sce_arg_se.evaluate_expression(&__sce_arg_sid, "Var1") {
+            Ok(val) => ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val),
+            Err(e) => {
+                ::sce_rust_runtime::sce_log_error!("eventexpr eval failed: {}", e);
+                String::new()
+            }
+        }
+                        } else {
+                            String::new()
+                        };
+                        if _send_arg_error.is_none() && _send_event_name.is_empty() {
+                            _send_arg_error =
+                                Some("<send> eventexpr could not be evaluated to an event name");
                         }
+                        if let Some(__sce_why) = _send_arg_error {
+                            ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                Test172Event::ErrorExecution,
+                                __sce_why,
+                            );
+                            err_meta.metadata.send_id = send_id.clone();
+                            engine.raise(err_meta);
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        } else {
+                            let event_data: &str = "";
 
+                            // W3C SCXML 6.2: Default send (no target = external event)
+                            if let Some(evt) = Self::get_event_from_name(&_send_event_name) {
+                                let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
+                                meta.metadata = sce_rust_runtime::EventMetadata::external(
+                                    send_id.clone(),
+                                    ::sce_rust_runtime::SceString::new(),
+                                );
+                                meta.set_event_data(event_data);
+                                engine.raise_external_with_meta(meta);
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }
                 }
             }

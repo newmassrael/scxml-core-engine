@@ -200,15 +200,19 @@ class Test421StateMachine(
             }
             is Test421State.S1 -> {
                 // SCE-MAP: test421.scxml:9 :: s1 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            send(Test421Event.ExternalEvent, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(Test421Event.ExternalEvent, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
             raiseInternal(Test421Event.InternalEvent1)
@@ -218,6 +222,7 @@ class Test421StateMachine(
             raiseInternal(Test421Event.InternalEvent3)
 
             raiseInternal(Test421Event.InternalEvent4)
+                }
             }
             is Test421State.S11 -> {
                 // SCE-MAP: test421.scxml:20 :: s11 :: _state_body

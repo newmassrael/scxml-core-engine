@@ -306,26 +306,34 @@ class EventTypeNamesItsQueueStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(EventTypeNamesItsQueueEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(EventTypeNamesItsQueueEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -423,15 +431,19 @@ class EventTypeNamesItsQueueStateMachine(
             }
             is EventTypeNamesItsQueueState.S0 -> {
                 // SCE-MAP: event_type_names_its_queue.scxml:39 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            send(EventTypeNamesItsQueueEvent.Ext, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(EventTypeNamesItsQueueEvent.Ext, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
             raiseInternal(EventTypeNamesItsQueueEvent.Int)
@@ -439,30 +451,28 @@ class EventTypeNamesItsQueueStateMachine(
 
             if (run send@{
             var paramFailed = false
-            // W3C SCXML 5.10: An internal send carries `_event.data` just as
-            // an external one does. Before this the payload was dropped
-            // silently — the event was queued with no data at all.
-            run {
-                ensureScriptEngine()
-                val engineI = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sidI = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val paramsI = mutableMapOf<String, Any?>()
-                try {
-                    putParam(paramsI, "a", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("1", "1")))
-                } catch (_: Exception) {
-                    raisePlatformError(EventTypeNamesItsQueueEvent.Error.Execution, "<send> <param name='a'> could not be read")
-                    paramFailed = true
-                }
-
-
-                raiseInternal(EventTypeNamesItsQueueEvent.ViaInternalSend, EventMetadata.internal(buildJsonFromParams(paramsI)))
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "a", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("1", "1")))
+            } catch (_: Exception) {
+                raisePlatformError(EventTypeNamesItsQueueEvent.Error.Execution, "<send> <param name='a'> could not be read")
+                paramFailed = true
             }
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(EventTypeNamesItsQueueEvent.ViaInternalSend, EventMetadata.internal(sendData))
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
         }
     }
@@ -493,15 +503,21 @@ class EventTypeNamesItsQueueStateMachine(
             if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.type, \"internal\")", "_event.type == 'internal'"))) {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("intCode", "intCode"), com.sce.runtime.ScriptSource.lua("1", "1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("intCode", "intCode"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return
+            }
             } else if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.type, \"external\")", "_event.type == 'external'"))) {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("intCode", "intCode"), com.sce.runtime.ScriptSource.lua("2", "2"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("intCode", "intCode"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
+                return
+            }
             } else {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("intCode", "intCode"), com.sce.runtime.ScriptSource.lua("3", "3"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("intCode", "intCode"), com.sce.runtime.ScriptSource.lua("3", "3"))) {
+                return
+            }
             }
             }
             1 -> {
@@ -511,15 +527,21 @@ class EventTypeNamesItsQueueStateMachine(
             if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.type, \"internal\")", "_event.type == 'internal'"))) {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("sendCode", "sendCode"), com.sce.runtime.ScriptSource.lua("1", "1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sendCode", "sendCode"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return
+            }
             } else if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.type, \"external\")", "_event.type == 'external'"))) {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("sendCode", "sendCode"), com.sce.runtime.ScriptSource.lua("2", "2"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sendCode", "sendCode"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
+                return
+            }
             } else {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("sendCode", "sendCode"), com.sce.runtime.ScriptSource.lua("3", "3"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sendCode", "sendCode"), com.sce.runtime.ScriptSource.lua("3", "3"))) {
+                return
+            }
             }
             }
             2 -> {
@@ -529,15 +551,21 @@ class EventTypeNamesItsQueueStateMachine(
             if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.type, \"internal\")", "_event.type == 'internal'"))) {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("extCode", "extCode"), com.sce.runtime.ScriptSource.lua("1", "1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("extCode", "extCode"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return
+            }
             } else if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(_event.type, \"external\")", "_event.type == 'external'"))) {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("extCode", "extCode"), com.sce.runtime.ScriptSource.lua("2", "2"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("extCode", "extCode"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
+                return
+            }
             } else {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("extCode", "extCode"), com.sce.runtime.ScriptSource.lua("3", "3"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("extCode", "extCode"), com.sce.runtime.ScriptSource.lua("3", "3"))) {
+                return
+            }
             }
             }
             else -> {}

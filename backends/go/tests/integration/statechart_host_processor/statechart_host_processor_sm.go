@@ -718,6 +718,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: External send
@@ -728,9 +729,10 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 		engine.RaiseExternalWithMeta(meta)
 	}
 	}
-
+	}
 
 	// W3C SCXML 6.2: send id="__send_1"
+	{
 	{
 		// W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
 		// finished at codegen time. It has to be — this arm is what a machine
@@ -774,9 +776,10 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 		}
 	}
 	}
-
+	}
 
 	// W3C SCXML 6.2: send id="__send_2"
+	{
 	{
 		eventDataStr := ""
 		_ = eventDataStr
@@ -788,7 +791,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 		engine.RaiseExternalWithMeta(meta)
 	}
 	}
-
+	}
 		}()
 	case StatechartHostProcessorStatePairs:
 		//line statechart_host_processor.scxml:81
@@ -797,9 +800,30 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_3"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
 	{
-		sendAborted := false
+	p.ensureScriptEngine()
+	sendArgError := ""
+	// W3C SCXML 6.2 + B.2: a namelist names locations, and one that is not
+	// declared is an argument that cannot be evaluated — one error however
+	// many of its names are bad.
+	namelistParts := make([]sce.EventDataParam, 0)
+	if sendArgError == "" {
+		if !p.ScriptEngine.HasVariable(p.SessionID, "mode") {
+			sendArgError = "<send> namelist names 'mode', which is not declared"
+		} else if nlVal, nlErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `mode`); nlErr == nil {
+			namelistParts = append(namelistParts, sce.EventDataParam{Name: "mode", Value: nlVal})
+		} else {
+			sendArgError = "<send> namelist entry 'mode' could not be read"
+		}
+	}
+	if sendArgError != "" {
+		errEvt := sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sendArgError)
+		errEvt.Metadata.SendID = "__send_3"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
 		// the block once it has. Read at the end of this element.
@@ -818,22 +842,10 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 			engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<send> <param name='broken'> expr failed to evaluate"))
 			paramFailed = true
 		}
-		// W3C SCXML B.2: Check variable existence before evaluation
-		if !se.HasVariable(p.SessionID, "mode") {
-			engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<send> namelist names 'mode', which is not declared"))
-			sendAborted = true
-		} else if nlVal, nlErr := se.EvaluateExpression(p.SessionID, `mode`); nlErr == nil {
-			parts = append(parts, sce.EventDataParam{Name: "mode", Value: nlVal})
-		} else {
-			engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<send> namelist entry 'mode' failed to evaluate"))
-			sendAborted = true
-		}
-		eventDataStr := ""
-		if !sendAborted {
-			eventDataStr = sce.BuildJSONFromTypedParams(parts)
-		}
+		// The namelist values the prologue read, after the params.
+		parts = append(parts, namelistParts...)
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
-		if !sendAborted {
 	// §scxml-6.2.5: "x-sce-host" is served by the host, which
 	// declared it to this build. Dispatch rather than refuse — and take the
 	// whole send, because a processor the host serves owns delivery; falling
@@ -862,14 +874,13 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 			engine.Raise(errEvt)
 		}
 	}
-		}
 		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
 		// <foreach> it came — the block is its own function.
 		if paramFailed {
 			return
 		}
 	}
-
+	}
 		}()
 	default:
 		// No entry actions

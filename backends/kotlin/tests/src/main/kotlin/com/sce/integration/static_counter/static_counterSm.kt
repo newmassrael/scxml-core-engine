@@ -235,8 +235,11 @@ class StaticCounterStateMachine(
         when (state) {
             is StaticCounterState.Counting -> {
                 // SCE-MAP: static_counter.scxml:20 :: counting :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             println("count: " + count)
+                }
             }
             is StaticCounterState.Done -> {
                 // SCE-MAP: static_counter.scxml:32 :: done :: _state_body

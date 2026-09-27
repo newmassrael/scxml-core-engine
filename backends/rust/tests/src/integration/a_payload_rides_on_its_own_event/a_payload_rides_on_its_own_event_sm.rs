@@ -764,14 +764,11 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                         // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
                         // below are renderings of that one evaluation: the BasicHTTP and
                         // host-served arms read this map instead of asking the data model again.
-                        // While it was block-scoped they had to, and what they re-read was
-                        // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
-                        // posted zero form parameters, against §scxml-C-2.
                         let mut _send_wire_params: ::std::collections::BTreeMap<
                             String,
                             Vec<::sce_rust_runtime::ScriptValue>,
                         > = ::std::collections::BTreeMap::new();
-                        // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
                         let event_data_string: String = {
                             self.ensure_script_engine();
                             let sid = self.session_id.as_ref().unwrap().clone();
@@ -818,8 +815,8 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                         if _param_failed {
                             break 'action_block;
                         }
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
                 // W3C SCXML 3.8: onentry block 2/4
@@ -839,14 +836,11 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                         // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
                         // below are renderings of that one evaluation: the BasicHTTP and
                         // host-served arms read this map instead of asking the data model again.
-                        // While it was block-scoped they had to, and what they re-read was
-                        // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
-                        // posted zero form parameters, against §scxml-C-2.
                         let mut _send_wire_params: ::std::collections::BTreeMap<
                             String,
                             Vec<::sce_rust_runtime::ScriptValue>,
                         > = ::std::collections::BTreeMap::new();
-                        // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
                         let event_data_string: String = {
                             self.ensure_script_engine();
                             let sid = self.session_id.as_ref().unwrap().clone();
@@ -898,8 +892,8 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                         if _param_failed {
                             break 'action_block;
                         }
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
 
                     // W3C SCXML 3.8.1: <raise event="plain2">
@@ -913,76 +907,69 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
 
-                        let mut _send_aborted = false;
-
-                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                        // delivered, so each name carries a vector. The typed value is kept
-                        // rather than its text — a receiver reading `_event.data.value === 42`
-                        // finds the string "42" unequal.
-                        //
-                        // Declared out here rather than inside the payload block because
-                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                        // below are renderings of that one evaluation: the BasicHTTP and
-                        // host-served arms read this map instead of asking the data model again.
-                        // While it was block-scoped they had to, and what they re-read was
-                        // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
-                        // posted zero form parameters, against §scxml-C-2.
-                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                            String,
-                            Vec<::sce_rust_runtime::ScriptValue>,
-                        > = ::std::collections::BTreeMap::new();
-                        // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
-                        let event_data_string: String = {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let wire_params = &mut _send_wire_params;
-                            // W3C SCXML C.1: namelist variables become top-level keys in the data table
-                            // W3C SCXML B.2 (test 553): Check variable existence before evaluation
-                            if !se.has_variable(&sid, "v9") {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "send namelist 'v9': variable not declared"
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    APayloadRidesOnItsOwnEventEvent::ErrorExecution,
-                                    "<send> namelist names 'v9', which is not declared",
-                                ));
-                                _send_aborted = true;
+                        self.ensure_script_engine();
+                        let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
+                        let __sce_arg_se = self.script_engine.clone();
+                        let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
+                        let mut _send_arg_error: Option<&'static str> = None;
+                        // W3C SCXML 6.2 + B.2 (test 553): a namelist names locations, and one that
+                        // is not declared is an argument that cannot be evaluated — one error
+                        // however many of its names are bad.
+                        let mut _send_namelist: Vec<(&'static str, sce_rust_runtime::ScriptValue)> =
+                            Vec::new();
+                        if _send_arg_error.is_none() {
+                            if !__sce_arg_se.has_variable(&__sce_arg_sid, "v9") {
+                                _send_arg_error =
+                                    Some("<send> namelist names 'v9', which is not declared");
                             } else {
-                                match se.evaluate_expression(&sid, "v9") {
-                                    Ok(val) => {
-                                        wire_params.entry("v9".to_string()).or_default().push(val);
-                                    }
+                                match __sce_arg_se.evaluate_expression(&__sce_arg_sid, "v9") {
+                                    Ok(val) => _send_namelist.push(("v9", val)),
                                     Err(e) => {
                                         ::sce_rust_runtime::sce_log_error!(
                                             "send namelist 'v9' eval failed: {}",
                                             e
                                         );
-                                        engine.raise(
-                                            sce_rust_runtime::EventWithMetadata::platform_error(
-                                                APayloadRidesOnItsOwnEventEvent::ErrorExecution,
-                                                "<send> namelist entry 'v9' failed to evaluate",
-                                            ),
-                                        );
-                                        _send_aborted = true;
+                                        _send_arg_error =
+                                            Some("<send> namelist entry 'v9' could not be read");
                                     }
                                 }
                             }
-                            if _send_aborted {
-                                String::new()
-                            } else {
-                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                            }
-                        };
-                        // W3C SCXML 6.2: event_data defaults to empty if namelist failed
-                        let event_data: &str = if _send_aborted {
-                            ""
+                        }
+                        if let Some(__sce_why) = _send_arg_error {
+                            ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                                __sce_why,
+                            );
+                            err_meta.metadata.send_id = send_id.clone();
+                            engine.raise(err_meta);
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
-                            &event_data_string
-                        };
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // W3C SCXML C.1: namelist variables become top-level keys in the data
+                                // table — the values the prologue read, after the params.
+                                for (name, val) in _send_namelist.drain(..) {
+                                    wire_params.entry(name.to_string()).or_default().push(val);
+                                }
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
 
-                        if !_send_aborted {
                             // W3C SCXML 6.2: Default send (no target = external event)
                             {
                                 let mut meta = sce_rust_runtime::EventWithMetadata::new(
@@ -996,9 +983,10 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                                 meta.set_event_data(event_data);
                                 engine.raise_external_with_meta(meta);
                             }
-                        } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on an argument error)
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }
 
                     // W3C SCXML 3.8.1: <raise event="plain3">
@@ -1053,8 +1041,8 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                             engine.raise_external_with_meta(meta);
                         }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
 
                     // W3C SCXML 3.8.1: <raise event="plain4">

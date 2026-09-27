@@ -293,26 +293,34 @@ class CancellingAnInvokeRaisesNothingStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(CancellingAnInvokeRaisesNothingEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(CancellingAnInvokeRaisesNothingEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -461,13 +469,17 @@ class CancellingAnInvokeRaisesNothingStateMachine(
                 // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:33 :: s2 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("spurious", "spurious"), com.sce.runtime.ScriptSource.lua("_scxml_add(spurious, 1)", "spurious + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("spurious", "spurious"), com.sce.runtime.ScriptSource.lua("_scxml_add(spurious, 1)", "spurious + 1"))) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:36 :: s2 :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("spurious", "spurious"), com.sce.runtime.ScriptSource.lua("_scxml_add(spurious, 1)", "spurious + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("spurious", "spurious"), com.sce.runtime.ScriptSource.lua("_scxml_add(spurious, 1)", "spurious + 1"))) {
+                return
+            }
             }
             else -> {}
         }

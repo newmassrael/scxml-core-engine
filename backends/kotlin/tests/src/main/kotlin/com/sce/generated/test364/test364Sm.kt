@@ -383,16 +383,21 @@ class Test364StateMachine(
             }
             is Test364State.S1 -> {
                 // SCE-MAP: test364.scxml:9 :: s1 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 1000L, Test364Event.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 1000L, Test364Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test364State.S11 -> {
                 // SCE-MAP: test364.scxml:14 :: s11 :: _state_body
@@ -411,8 +416,11 @@ class Test364StateMachine(
             }
             is Test364State.S11p112 -> {
                 // SCE-MAP: test364.scxml:19 :: s11p112 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test364Event.InS11p112)
+                }
             }
             is Test364State.S11p12 -> {
                 // SCE-MAP: test364.scxml:25 :: s11p12 :: _state_body
@@ -443,8 +451,11 @@ class Test364StateMachine(
             }
             is Test364State.S21p112 -> {
                 // SCE-MAP: test364.scxml:45 :: s21p112 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test364Event.InS21p112)
+                }
             }
             is Test364State.S21p12 -> {
                 // SCE-MAP: test364.scxml:51 :: s21p12 :: _state_body

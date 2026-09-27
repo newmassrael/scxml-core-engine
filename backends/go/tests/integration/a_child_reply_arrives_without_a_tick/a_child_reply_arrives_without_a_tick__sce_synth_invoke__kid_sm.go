@@ -375,6 +375,7 @@ func (p *AChildReplyArrivesWithoutATickSceSynthInvokeKidPolicy) ExecuteEntryActi
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -382,7 +383,7 @@ func (p *AChildReplyArrivesWithoutATickSceSynthInvokeKidPolicy) ExecuteEntryActi
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "hello", Data: eventDataStr})
 	}
 	}
-
+	}
 		}()
 	default:
 		// No entry actions

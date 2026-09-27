@@ -129,17 +129,21 @@ class Test422SceSynthInvokeInvoke1StateMachine(
         when (state) {
             is Test422SceSynthInvokeInvoke1State.Sub1 -> {
                 // SCE-MAP: test422__sce_synth_invoke__invoke_1.scxml:4 :: sub1 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("invokeS11", "")
+            onSendToParent?.invoke("invokeS11", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test422SceSynthInvokeInvoke1State.SubFinal1 -> {
                 // SCE-MAP: test422__sce_synth_invoke__invoke_1.scxml:10 :: subFinal1 :: _state_body

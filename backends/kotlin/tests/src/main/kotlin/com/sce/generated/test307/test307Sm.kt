@@ -274,26 +274,34 @@ class Test307StateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test307Event.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test307Event.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -395,13 +403,26 @@ class Test307StateMachine(
             }
             is Test307State.S0 -> {
                 // SCE-MAP: test307.scxml:8 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
-            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
-            try {
-                println("entering s0 value of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("Var1", "Var1"))?.toString() ?: ""))
-            } catch (_: Exception) {}
+            // W3C SCXML 4.7: Log expression evaluation. An expression that fails
+            // raises error.execution (W3C SCXML 5.9), and the error ends the
+            // block (W3C SCXML 4.9).
+            if (run log@{
+                try {
+                    println("entering s0 value of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("Var1", "Var1"))?.toString() ?: ""))
+                    false
+                } catch (_: Exception) {
+                    raisePlatformError(Test307Event.Error.Execution, "<log> expr failed to evaluate")
+                    true
+                }
+            }) {
+                return@run
+            }
 
             raiseInternal(Test307Event.Foo)
+                }
             }
             is Test307State.S1 -> {
                 // SCE-MAP: test307.scxml:21 :: s1 :: _state_body
@@ -420,13 +441,26 @@ class Test307StateMachine(
                         raisePlatformError(Test307Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
                     }
                 }
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
-            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
-            try {
-                println("entering s1, value of non-existent substructure of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("Var1.foo", "Var1.foo"))?.toString() ?: ""))
-            } catch (_: Exception) {}
+            // W3C SCXML 4.7: Log expression evaluation. An expression that fails
+            // raises error.execution (W3C SCXML 5.9), and the error ends the
+            // block (W3C SCXML 4.9).
+            if (run log@{
+                try {
+                    println("entering s1, value of non-existent substructure of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("Var1.foo", "Var1.foo"))?.toString() ?: ""))
+                    false
+                } catch (_: Exception) {
+                    raisePlatformError(Test307Event.Error.Execution, "<log> expr failed to evaluate")
+                    true
+                }
+            }) {
+                return@run
+            }
 
             raiseInternal(Test307Event.Bar)
+                }
             }
         }
     }
@@ -456,10 +490,20 @@ class Test307StateMachine(
             0 -> {
                 // SCE-MAP: test307.scxml:13 :: s0 :: _transition_0
 
-            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
-            try {
-                println("error in state s0: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event", "_event"))?.toString() ?: ""))
-            } catch (_: Exception) {}
+            // W3C SCXML 4.7: Log expression evaluation. An expression that fails
+            // raises error.execution (W3C SCXML 5.9), and the error ends the
+            // block (W3C SCXML 4.9).
+            if (run log@{
+                try {
+                    println("error in state s0: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event", "_event"))?.toString() ?: ""))
+                    false
+                } catch (_: Exception) {
+                    raisePlatformError(Test307Event.Error.Execution, "<log> expr failed to evaluate")
+                    true
+                }
+            }) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: test307.scxml:16 :: s0 :: _transition_1
@@ -472,10 +516,20 @@ class Test307StateMachine(
             0 -> {
                 // SCE-MAP: test307.scxml:31 :: s1 :: _transition_0
 
-            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
-            try {
-                println("error in state s1: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event", "_event"))?.toString() ?: ""))
-            } catch (_: Exception) {}
+            // W3C SCXML 4.7: Log expression evaluation. An expression that fails
+            // raises error.execution (W3C SCXML 5.9), and the error ends the
+            // block (W3C SCXML 4.9).
+            if (run log@{
+                try {
+                    println("error in state s1: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event", "_event"))?.toString() ?: ""))
+                    false
+                } catch (_: Exception) {
+                    raisePlatformError(Test307Event.Error.Execution, "<log> expr failed to evaluate")
+                    true
+                }
+            }) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: test307.scxml:34 :: s1 :: _transition_1

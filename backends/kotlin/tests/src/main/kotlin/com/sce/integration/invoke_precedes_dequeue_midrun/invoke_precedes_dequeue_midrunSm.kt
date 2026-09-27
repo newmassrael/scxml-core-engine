@@ -200,16 +200,21 @@ class InvokePrecedesDequeueMidrunStateMachine(
         when (state) {
             is InvokePrecedesDequeueMidrunState.Arm -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:45 :: arm :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            send(InvokePrecedesDequeueMidrunEvent.Go, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(InvokePrecedesDequeueMidrunEvent.Go, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is InvokePrecedesDequeueMidrunState.Fail -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:89 :: fail :: _state_body
@@ -223,16 +228,21 @@ class InvokePrecedesDequeueMidrunStateMachine(
             }
             is InvokePrecedesDequeueMidrunState.Phase -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:54 :: phase :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            send(InvokePrecedesDequeueMidrunEvent.Kick, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(InvokePrecedesDequeueMidrunEvent.Kick, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
@@ -281,8 +291,9 @@ class InvokePrecedesDequeueMidrunStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test192): Send event to invoked child
-            sendToChild("inv_watch", "probe")
+            sendToChild("inv_watch", "probe", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

@@ -292,8 +292,9 @@ class HostEventReachesTheChildStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test192): Send event to invoked child
-            sendToChild("inv_probe", "marker")
+            sendToChild("inv_probe", "marker", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

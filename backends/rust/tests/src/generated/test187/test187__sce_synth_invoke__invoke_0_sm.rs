@@ -360,16 +360,23 @@ impl StatePolicy for Test187SceSynthInvokeInvoke0Policy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (500ms)
-                        engine.schedule_event(
-                            Test187SceSynthInvokeInvoke0Event::ChildToParent,
-                            core::time::Duration::from_millis(500),
-                            &send_id,
-                            event_data,
-                        );
+                        // W3C SCXML 6.2: Delayed send (.5)
+                        {
+                            let delay_ms = 500_u64;
+                            let __sce_delayed_event =
+                                Some(Test187SceSynthInvokeInvoke0Event::ChildToParent);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
             }

@@ -185,17 +185,21 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
             }
             is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting -> {
                 // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:5 :: waiting :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("ready", "")
+            onSendToParent?.invoke("ready", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
         }
     }
@@ -230,8 +234,9 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("sawKick", "")
+            onSendToParent?.invoke("sawKick", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -247,8 +252,9 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("sawNoKick", "")
+            onSendToParent?.invoke("sawNoKick", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

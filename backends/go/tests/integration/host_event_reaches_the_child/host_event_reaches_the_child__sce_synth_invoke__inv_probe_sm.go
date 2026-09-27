@@ -419,6 +419,7 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteEntryActio
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -426,7 +427,7 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteEntryActio
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "ready", Data: eventDataStr})
 	}
 	}
-
+	}
 		}()
 	default:
 		// No entry actions
@@ -517,6 +518,7 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteTransition
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -524,7 +526,7 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteTransition
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "sawHostPing", Data: eventDataStr})
 	}
 	}
-
+	}
 			}()
 		case 1:
 			//line host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:12
@@ -533,6 +535,7 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteTransition
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -540,7 +543,7 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteTransition
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "sawMarkerOnly", Data: eventDataStr})
 	}
 	}
-
+	}
 			}()
 		}
 	}

@@ -251,46 +251,53 @@ class StatechartDelayedHostSendStateMachine(
             }
             is StatechartDelayedHostSendState.Cancelling -> {
                 // SCE-MAP: statechart_delayed_host_send.scxml:81 :: cancelling :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
+            val sendData = ""
+            val sendWireParams = emptyMap<String, List<String>>()
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
-            run {
-                val hostParams = emptyMap<String, List<String>>()
-                val hostEventData = ""
-                val hostEventName = "watch.turn"
-                val hostRequest = HostSendRequest(
-                    processorType = "x-sce-host",
-                    eventName = hostEventName,
-                    target = "",
-                    content = "",
-                    params = hostParams,
-                    sendId = "h2",
-                    eventData = hostEventData
-                )
-                val hostDelayMs = 200L
-                scheduleHostSend("h2", hostDelayMs, hostRequest)
-            }
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "watch.turn",
+                target = "",
+                content = "",
+                params = sendWireParams,
+                sendId = "h2",
+                eventData = sendData
+            )
+            // W3C SCXML 6.2.4: a `delay` is a property of the SEND, not of the
+            // processor it named. The engine performs the act from its
+            // scheduler drain at the deadline, including the W3C SCXML 6.2
+            // report for an act nobody performed. W3C SCXML 6.3: it lands in
+            // the delayed-send queue under the send id, so a `<cancel>`
+            // reaches it and the host never sees the act.
+            scheduleHostSend("h2", 200L, hostRequest)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
-            scheduleSend("__send_2", 100L, StatechartDelayedHostSendEvent.Settle)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_2", 100L, StatechartDelayedHostSendEvent.Settle, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is StatechartDelayedHostSendState.CancelLost -> {
                 // SCE-MAP: statechart_delayed_host_send.scxml:101 :: cancelLost :: _state_body
@@ -299,19 +306,24 @@ class StatechartDelayedHostSendStateMachine(
             }
             is StatechartDelayedHostSendState.CancelPending -> {
                 // SCE-MAP: statechart_delayed_host_send.scxml:90 :: cancelPending :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             cancelSend("h2")
 
 
             if (run send@{
-            scheduleSend("__send_3", 200L, StatechartDelayedHostSendEvent.Finish)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_3", 200L, StatechartDelayedHostSendEvent.Finish, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is StatechartDelayedHostSendState.Pass -> {
                 // SCE-MAP: statechart_delayed_host_send.scxml:99 :: pass :: _state_body
@@ -330,46 +342,53 @@ class StatechartDelayedHostSendStateMachine(
             }
             is StatechartDelayedHostSendState.Waiting -> {
                 // SCE-MAP: statechart_delayed_host_send.scxml:59 :: waiting :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
+            val sendData = ""
+            val sendWireParams = emptyMap<String, List<String>>()
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
-            run {
-                val hostParams = emptyMap<String, List<String>>()
-                val hostEventData = ""
-                val hostEventName = "watch.turn"
-                val hostRequest = HostSendRequest(
-                    processorType = "x-sce-host",
-                    eventName = hostEventName,
-                    target = "",
-                    content = "",
-                    params = hostParams,
-                    sendId = "__send_0",
-                    eventData = hostEventData
-                )
-                val hostDelayMs = 200L
-                scheduleHostSend("__send_0", hostDelayMs, hostRequest)
-            }
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "watch.turn",
+                target = "",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_0",
+                eventData = sendData
+            )
+            // W3C SCXML 6.2.4: a `delay` is a property of the SEND, not of the
+            // processor it named. The engine performs the act from its
+            // scheduler drain at the deadline, including the W3C SCXML 6.2
+            // report for an act nobody performed. W3C SCXML 6.3: it lands in
+            // the delayed-send queue under the send id, so a `<cancel>`
+            // reaches it and the host never sees the act.
+            scheduleHostSend("__send_0", 200L, hostRequest)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
-            scheduleSend("__send_1", 100L, StatechartDelayedHostSendEvent.Probe)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_1", 100L, StatechartDelayedHostSendEvent.Probe, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
         }
     }

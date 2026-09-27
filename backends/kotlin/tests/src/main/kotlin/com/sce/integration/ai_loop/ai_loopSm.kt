@@ -1082,26 +1082,34 @@ class AiLoopStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(AiLoopEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -1257,8 +1265,11 @@ class AiLoopStateMachine(
         when (state) {
             is AiLoopState.Abandoned -> {
                 // SCE-MAP: ai_loop.scxml:493 :: abandoned :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(AiLoopEvent.Run.Blocked)
+                }
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(AiLoopEvent.Done.State.Drive, EventMetadata.platform())
                 // W3C SCXML 3.7.1: this <final> may have completed the
@@ -1287,58 +1298,59 @@ class AiLoopStateMachine(
             }
             is AiLoopState.Closing -> {
                 // SCE-MAP: ai_loop.scxml:405 :: closing :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
             var paramFailed = false
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("end_prompt", "end_prompt")))
+            } catch (_: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
+                paramFailed = true
+            }
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
-            run {
-                ensureScriptEngine()
-                val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val hostPayload = mutableMapOf<String, Any?>()
-                try {
-                    putParam(hostPayload, "text", hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("end_prompt", "end_prompt")))
-                } catch (_: Exception) {
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
-                    paramFailed = true
-                }
-
-
-                val hostParams = hostPayload.mapValues { (_, v) ->
-                    if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
-                }
-                val hostEventData = buildJsonFromParams(hostPayload)
-                val hostEventName = "prompt.end"
-                val hostRequest = HostSendRequest(
-                    processorType = "x-sce-host",
-                    eventName = hostEventName,
-                    target = "",
-                    content = "",
-                    params = hostParams,
-                    sendId = "__send_7",
-                    eventData = hostEventData
-                )
-                val hostServed = performHostSend(hostRequest)
-                // W3C SCXML 6.2: a declared type with no handler registered is,
-                // from the document's side, a processor the platform does not
-                // support — the act it asked for was performed by nobody. Same
-                // event as an undeclared type, so a wiring mistake cannot read
-                // as success.
-                if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_7")
-                }
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "prompt.end",
+                target = "",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_7",
+                eventData = sendData
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_7")
             }
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is AiLoopState.Converged -> {
                 // SCE-MAP: ai_loop.scxml:544 :: converged :: _state_body
@@ -1360,249 +1372,258 @@ class AiLoopStateMachine(
             }
             is AiLoopState.Judging -> {
                 // SCE-MAP: ai_loop.scxml:344 :: judging :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
             var paramFailed = false
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "marker", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("done_marker", "done_marker")))
+            } catch (_: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='marker'> could not be read")
+                paramFailed = true
+            }
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
-            run {
-                ensureScriptEngine()
-                val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val hostPayload = mutableMapOf<String, Any?>()
-                try {
-                    putParam(hostPayload, "marker", hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("done_marker", "done_marker")))
-                } catch (_: Exception) {
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='marker'> could not be read")
-                    paramFailed = true
-                }
-
-
-                val hostParams = hostPayload.mapValues { (_, v) ->
-                    if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
-                }
-                val hostEventData = buildJsonFromParams(hostPayload)
-                val hostEventName = "judge.begin"
-                val hostRequest = HostSendRequest(
-                    processorType = "x-sce-host",
-                    eventName = hostEventName,
-                    target = "",
-                    content = "",
-                    params = hostParams,
-                    sendId = "__send_3",
-                    eventData = hostEventData
-                )
-                val hostServed = performHostSend(hostRequest)
-                // W3C SCXML 6.2: a declared type with no handler registered is,
-                // from the document's side, a processor the platform does not
-                // support — the act it asked for was performed by nobody. Same
-                // event as an undeclared type, so a wiring mistake cannot read
-                // as success.
-                if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_3")
-                }
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "judge.begin",
+                target = "",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_3",
+                eventData = sendData
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_3")
             }
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is AiLoopState.Paused -> {
                 // SCE-MAP: ai_loop.scxml:451 :: paused :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
+            val sendData = ""
+            val sendWireParams = emptyMap<String, List<String>>()
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
-            run {
-                val hostParams = emptyMap<String, List<String>>()
-                val hostEventData = ""
-                val hostEventName = "notify.human"
-                val hostRequest = HostSendRequest(
-                    processorType = "x-sce-host",
-                    eventName = hostEventName,
-                    target = "",
-                    content = "",
-                    params = hostParams,
-                    sendId = "__send_8",
-                    eventData = hostEventData
-                )
-                val hostServed = performHostSend(hostRequest)
-                // W3C SCXML 6.2: a declared type with no handler registered is,
-                // from the document's side, a processor the platform does not
-                // support — the act it asked for was performed by nobody. Same
-                // event as an undeclared type, so a wiring mistake cannot read
-                // as success.
-                if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_8")
-                }
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "notify.human",
+                target = "",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_8",
+                eventData = sendData
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_8")
             }
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is AiLoopState.Priming -> {
                 // SCE-MAP: ai_loop.scxml:291 :: priming :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
             var paramFailed = false
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("start_prompt", "start_prompt")))
+            } catch (_: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
+                paramFailed = true
+            }
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
-            run {
-                ensureScriptEngine()
-                val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val hostPayload = mutableMapOf<String, Any?>()
-                try {
-                    putParam(hostPayload, "text", hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("start_prompt", "start_prompt")))
-                } catch (_: Exception) {
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
-                    paramFailed = true
-                }
-
-
-                val hostParams = hostPayload.mapValues { (_, v) ->
-                    if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
-                }
-                val hostEventData = buildJsonFromParams(hostPayload)
-                val hostEventName = "prompt.start"
-                val hostRequest = HostSendRequest(
-                    processorType = "x-sce-host",
-                    eventName = hostEventName,
-                    target = "",
-                    content = "",
-                    params = hostParams,
-                    sendId = "__send_0",
-                    eventData = hostEventData
-                )
-                val hostServed = performHostSend(hostRequest)
-                // W3C SCXML 6.2: a declared type with no handler registered is,
-                // from the document's side, a processor the platform does not
-                // support — the act it asked for was performed by nobody. Same
-                // event as an undeclared type, so a wiring mistake cannot read
-                // as success.
-                if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_0")
-                }
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "prompt.start",
+                target = "",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_0",
+                eventData = sendData
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_0")
             }
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is AiLoopState.Rebuilding -> {
                 // SCE-MAP: ai_loop.scxml:509 :: rebuilding :: _state_body
             }
             is AiLoopState.Reflecting -> {
                 // SCE-MAP: ai_loop.scxml:374 :: reflecting :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("turns_since_reflect", "turns_since_reflect"), com.sce.runtime.ScriptSource.lua("0", "0"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("turns_since_reflect", "turns_since_reflect"), com.sce.runtime.ScriptSource.lua("0", "0"))) {
+                return@run
+            }
 
 
             if (run send@{
+            val sendData = ""
+            val sendWireParams = emptyMap<String, List<String>>()
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
-            run {
-                val hostParams = emptyMap<String, List<String>>()
-                val hostEventData = ""
-                val hostEventName = "reflect.begin"
-                val hostRequest = HostSendRequest(
-                    processorType = "x-sce-host",
-                    eventName = hostEventName,
-                    target = "",
-                    content = "",
-                    params = hostParams,
-                    sendId = "__send_5",
-                    eventData = hostEventData
-                )
-                val hostServed = performHostSend(hostRequest)
-                // W3C SCXML 6.2: a declared type with no handler registered is,
-                // from the document's side, a processor the platform does not
-                // support — the act it asked for was performed by nobody. Same
-                // event as an undeclared type, so a wiring mistake cannot read
-                // as success.
-                if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_5")
-                }
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "reflect.begin",
+                target = "",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_5",
+                eventData = sendData
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_5")
             }
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is AiLoopState.Reported -> {
                 // SCE-MAP: ai_loop.scxml:426 :: reported :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(AiLoopEvent.Run.Converged)
+                }
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(AiLoopEvent.Done.State.Running, EventMetadata.platform())
             }
             is AiLoopState.Restarting -> {
                 // SCE-MAP: ai_loop.scxml:394 :: restarting :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("restarts", "restarts"), com.sce.runtime.ScriptSource.lua("_scxml_add(restarts, 1)", "restarts + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("restarts", "restarts"), com.sce.runtime.ScriptSource.lua("_scxml_add(restarts, 1)", "restarts + 1"))) {
+                return@run
+            }
 
 
             if (run send@{
+            val sendData = ""
+            val sendWireParams = emptyMap<String, List<String>>()
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
-            run {
-                val hostParams = emptyMap<String, List<String>>()
-                val hostEventData = ""
-                val hostEventName = "session.replace"
-                val hostRequest = HostSendRequest(
-                    processorType = "x-sce-host",
-                    eventName = hostEventName,
-                    target = "",
-                    content = "",
-                    params = hostParams,
-                    sendId = "__send_6",
-                    eventData = hostEventData
-                )
-                val hostServed = performHostSend(hostRequest)
-                // W3C SCXML 6.2: a declared type with no handler registered is,
-                // from the document's side, a processor the platform does not
-                // support — the act it asked for was performed by nobody. Same
-                // event as an undeclared type, so a wiring mistake cannot read
-                // as success.
-                if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_6")
-                }
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "session.replace",
+                target = "",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_6",
+                eventData = sendData
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_6")
             }
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is AiLoopState.Run -> {
                 // SCE-MAP: ai_loop.scxml:233 :: run :: _state_body
@@ -1612,56 +1633,64 @@ class AiLoopStateMachine(
             }
             is AiLoopState.Screening -> {
                 // SCE-MAP: ai_loop.scxml:327 :: screening :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("screened", "screened"), com.sce.runtime.ScriptSource.lua("_scxml_add(screened, 1)", "screened + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("screened", "screened"), com.sce.runtime.ScriptSource.lua("_scxml_add(screened, 1)", "screened + 1"))) {
+                return@run
+            }
 
 
             if (run send@{
+            val sendData = ""
+            val sendWireParams = emptyMap<String, List<String>>()
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
-            run {
-                val hostParams = emptyMap<String, List<String>>()
-                val hostEventData = ""
-                val hostEventName = "screen.begin"
-                val hostRequest = HostSendRequest(
-                    processorType = "x-sce-host",
-                    eventName = hostEventName,
-                    target = "",
-                    content = "",
-                    params = hostParams,
-                    sendId = "__send_1",
-                    eventData = hostEventData
-                )
-                val hostServed = performHostSend(hostRequest)
-                // W3C SCXML 6.2: a declared type with no handler registered is,
-                // from the document's side, a processor the platform does not
-                // support — the act it asked for was performed by nobody. Same
-                // event as an undeclared type, so a wiring mistake cannot read
-                // as success.
-                if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_1")
-                }
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "screen.begin",
+                target = "",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_1",
+                eventData = sendData
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_1")
             }
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is AiLoopState.Spent -> {
                 // SCE-MAP: ai_loop.scxml:529 :: spent :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(AiLoopEvent.Run.Exhausted)
+                }
             }
             is AiLoopState.Stuck -> {
                 // SCE-MAP: ai_loop.scxml:434 :: stuck :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(AiLoopEvent.Run.Exhausted)
+                }
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(AiLoopEvent.Done.State.Running, EventMetadata.platform())
             }
@@ -1771,47 +1800,45 @@ class AiLoopStateMachine(
 
             if (run send@{
             var paramFailed = false
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt")))
+            } catch (_: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
+                paramFailed = true
+            }
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
-            run {
-                ensureScriptEngine()
-                val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val hostPayload = mutableMapOf<String, Any?>()
-                try {
-                    putParam(hostPayload, "text", hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt")))
-                } catch (_: Exception) {
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
-                    paramFailed = true
-                }
-
-
-                val hostParams = hostPayload.mapValues { (_, v) ->
-                    if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
-                }
-                val hostEventData = buildJsonFromParams(hostPayload)
-                val hostEventName = "prompt.turn"
-                val hostRequest = HostSendRequest(
-                    processorType = "x-sce-host",
-                    eventName = hostEventName,
-                    target = "",
-                    content = "",
-                    params = hostParams,
-                    sendId = "__send_2",
-                    eventData = hostEventData
-                )
-                val hostServed = performHostSend(hostRequest)
-                // W3C SCXML 6.2: a declared type with no handler registered is,
-                // from the document's side, a processor the platform does not
-                // support — the act it asked for was performed by nobody. Same
-                // event as an undeclared type, so a wiring mistake cannot read
-                // as success.
-                if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_2")
-                }
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "prompt.turn",
+                target = "",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_2",
+                eventData = sendData
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_2")
             }
             paramFailed
             }) {
@@ -1827,7 +1854,9 @@ class AiLoopStateMachine(
                 // SCE-MAP: ai_loop.scxml:468 :: paused :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("turns_since_reflect", "turns_since_reflect"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns_since_reflect, 1)", "turns_since_reflect + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("turns_since_reflect", "turns_since_reflect"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns_since_reflect, 1)", "turns_since_reflect + 1"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -1836,13 +1865,19 @@ class AiLoopStateMachine(
                 // SCE-MAP: ai_loop.scxml:379 :: reflecting :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("start_prompt", "start_prompt"), com.sce.runtime.ScriptSource.lua("_event.data.start_prompt", "_event.data.start_prompt"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("start_prompt", "start_prompt"), com.sce.runtime.ScriptSource.lua("_event.data.start_prompt", "_event.data.start_prompt"))) {
+                return
+            }
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt"), com.sce.runtime.ScriptSource.lua("_event.data.turn_prompt", "_event.data.turn_prompt"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt"), com.sce.runtime.ScriptSource.lua("_event.data.turn_prompt", "_event.data.turn_prompt"))) {
+                return
+            }
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("milestone", "milestone"), com.sce.runtime.ScriptSource.lua("_event.data.milestone", "_event.data.milestone"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("milestone", "milestone"), com.sce.runtime.ScriptSource.lua("_event.data.milestone", "_event.data.milestone"))) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: ai_loop.scxml:385 :: reflecting :: _transition_1
@@ -1850,47 +1885,45 @@ class AiLoopStateMachine(
 
             if (run send@{
             var paramFailed = false
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt")))
+            } catch (_: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
+                paramFailed = true
+            }
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
-            run {
-                ensureScriptEngine()
-                val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val hostPayload = mutableMapOf<String, Any?>()
-                try {
-                    putParam(hostPayload, "text", hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt")))
-                } catch (_: Exception) {
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
-                    paramFailed = true
-                }
-
-
-                val hostParams = hostPayload.mapValues { (_, v) ->
-                    if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
-                }
-                val hostEventData = buildJsonFromParams(hostPayload)
-                val hostEventName = "prompt.turn"
-                val hostRequest = HostSendRequest(
-                    processorType = "x-sce-host",
-                    eventName = hostEventName,
-                    target = "",
-                    content = "",
-                    params = hostParams,
-                    sendId = "__send_4",
-                    eventData = hostEventData
-                )
-                val hostServed = performHostSend(hostRequest)
-                // W3C SCXML 6.2: a declared type with no handler registered is,
-                // from the document's side, a processor the platform does not
-                // support — the act it asked for was performed by nobody. Same
-                // event as an undeclared type, so a wiring mistake cannot read
-                // as success.
-                if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                    raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_4")
-                }
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "prompt.turn",
+                target = "",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_4",
+                eventData = sendData
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_4")
             }
             paramFailed
             }) {
@@ -1906,13 +1939,17 @@ class AiLoopStateMachine(
                 // SCE-MAP: ai_loop.scxml:522 :: within :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("turns", "turns"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns, 1)", "turns + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("turns", "turns"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns, 1)", "turns + 1"))) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: ai_loop.scxml:525 :: within :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("turns", "turns"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns, 1)", "turns + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("turns", "turns"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns, 1)", "turns + 1"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -1921,7 +1958,9 @@ class AiLoopStateMachine(
                 // SCE-MAP: ai_loop.scxml:311 :: working :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("turns_since_reflect", "turns_since_reflect"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns_since_reflect, 1)", "turns_since_reflect + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("turns_since_reflect", "turns_since_reflect"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns_since_reflect, 1)", "turns_since_reflect + 1"))) {
+                return
+            }
             }
             else -> {}
         }

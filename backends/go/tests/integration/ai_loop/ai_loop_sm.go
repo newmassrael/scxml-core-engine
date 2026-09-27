@@ -1471,7 +1471,8 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_7"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -1526,7 +1527,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 			return
 		}
 	}
-
+	}
 		}()
 	case AiLoopStateJudging:
 		//line ai_loop.scxml:344
@@ -1535,7 +1536,8 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_3"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -1590,7 +1592,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 			return
 		}
 	}
-
+	}
 		}()
 	case AiLoopStatePaused:
 		//line ai_loop.scxml:451
@@ -1599,6 +1601,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_8"
+	{
 	{
 		eventDataStr := ""
 		_ = eventDataStr
@@ -1631,7 +1634,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		}
 	}
 	}
-
+	}
 		}()
 	case AiLoopStatePriming:
 		//line ai_loop.scxml:291
@@ -1640,7 +1643,8 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -1695,7 +1699,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 			return
 		}
 	}
-
+	}
 		}()
 	case AiLoopStateReflecting:
 		//line ai_loop.scxml:374
@@ -1711,6 +1715,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 
 	// W3C SCXML 6.2: send id="__send_5"
+	{
 	{
 		eventDataStr := ""
 		_ = eventDataStr
@@ -1743,7 +1748,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		}
 	}
 	}
-
+	}
 		}()
 	case AiLoopStateReported:
 		//line ai_loop.scxml:426
@@ -1770,6 +1775,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 
 	// W3C SCXML 6.2: send id="__send_6"
+	{
 	{
 		eventDataStr := ""
 		_ = eventDataStr
@@ -1802,7 +1808,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		}
 	}
 	}
-
+	}
 		}()
 	case AiLoopStateScreening:
 		//line ai_loop.scxml:327
@@ -1818,6 +1824,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 
 	// W3C SCXML 6.2: send id="__send_1"
+	{
 	{
 		eventDataStr := ""
 		_ = eventDataStr
@@ -1850,7 +1857,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		}
 	}
 	}
-
+	}
 		}()
 	case AiLoopStateSpent:
 		//line ai_loop.scxml:529
@@ -2306,7 +2313,8 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 			func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -2361,7 +2369,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 			return
 		}
 	}
-
+	}
 			}()
 		}
 	case AiLoopStatePaused:
@@ -2413,7 +2421,8 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 			func() {
 
 	// W3C SCXML 6.2: send id="__send_4"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -2468,7 +2477,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 			return
 		}
 	}
-
+	}
 			}()
 		}
 	case AiLoopStateWithin:

@@ -235,9 +235,12 @@ class StaticHostCallStateMachine(
         when (state) {
             is StaticHostCallState.Idle -> {
                 // SCE-MAP: static_host_call.scxml:18 :: idle :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             // W3C SCXML G.7: <sce:action name="showAttempts">
             actions.showAttempts(attempts, attempts >= 3.toUInt())
+                }
             }
         }
     }

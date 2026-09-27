@@ -598,14 +598,11 @@ impl StatePolicy for Test178Policy {
                         // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
                         // below are renderings of that one evaluation: the BasicHTTP and
                         // host-served arms read this map instead of asking the data model again.
-                        // While it was block-scoped they had to, and what they re-read was
-                        // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
-                        // posted zero form parameters, against §scxml-C-2.
                         let mut _send_wire_params: ::std::collections::BTreeMap<
                             String,
                             Vec<::sce_rust_runtime::ScriptValue>,
                         > = ::std::collections::BTreeMap::new();
-                        // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
                         let event_data_string: String = {
                             self.ensure_script_engine();
                             let sid = self.session_id.as_ref().unwrap().clone();
@@ -675,8 +672,8 @@ impl StatePolicy for Test178Policy {
                         if _param_failed {
                             break 'action_block;
                         }
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
             }
@@ -823,10 +820,21 @@ impl StatePolicy for Test178Policy {
                                     Ok(val) => ::sce_rust_runtime::sce_log_info!(
                                         "{}: {:?}", "_event ", val
                                     ),
-                                    Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                        "Log expression eval failed: {}",
-                                        e
-                                    ),
+                                    Err(e) => {
+                                        // W3C SCXML 5.9: an expression that fails raises error.execution,
+                                        // and (W3C SCXML 4.9) the error ends the block.
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "Log expression eval failed: {}",
+                                            e
+                                        );
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                Test178Event::ErrorExecution,
+                                                "<log> expr failed to evaluate",
+                                            ),
+                                        );
+                                        break 'action_block;
+                                    }
                                 }
                             }
                         }

@@ -334,18 +334,27 @@ class Test404StateMachine(
             }
             is Test404State.S01p -> {
                 // SCE-MAP: test404.scxml:14 :: s01p :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
             raiseInternal(Test404Event.Event3)
+                }
             }
             is Test404State.S01p1 -> {
                 // SCE-MAP: test404.scxml:24 :: s01p1 :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
             raiseInternal(Test404Event.Event2)
+                }
             }
             is Test404State.S01p2 -> {
                 // SCE-MAP: test404.scxml:31 :: s01p2 :: _state_body
+                // W3C SCXML 3.9: Onexit block 1/1
+                run {
 
             raiseInternal(Test404Event.Event1)
+                }
             }
             is Test404State.S02 -> {
                 // SCE-MAP: test404.scxml:39 :: s02 :: _state_body

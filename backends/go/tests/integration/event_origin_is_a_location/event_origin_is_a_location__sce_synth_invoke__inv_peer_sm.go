@@ -589,7 +589,8 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) ExecuteEntryActions(
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -620,7 +621,7 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) ExecuteEntryActions(
 			return
 		}
 	}
-
+	}
 		}()
 	default:
 		// No entry actions
@@ -707,6 +708,7 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) ExecuteTransitionCon
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -714,7 +716,7 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) ExecuteTransitionCon
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "replyArrived", Data: eventDataStr})
 	}
 	}
-
+	}
 			}()
 		}
 	}

@@ -320,26 +320,34 @@ class InvokeParamErrorStartsTheChildStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -455,68 +463,51 @@ class InvokeParamErrorStartsTheChildStateMachine(
             }
             is InvokeParamErrorStartsTheChildState.ParamPhase -> {
                 // SCE-MAP: invoke_param_error_starts_the_child.scxml:70 :: paramPhase :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 3000L, InvokeParamErrorStartsTheChildEvent.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 3000L, InvokeParamErrorStartsTheChildEvent.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "paramPhase.${System.identityHashCode(this)}.inv_probe"
-                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
-                    ensureScriptEngine()
-                    val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                    val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                    val invokeParams = mutableMapOf<String, Any?>()
-                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
-                    // `error.execution` on the internal queue AND the name and
-                    // value — and nothing else. The clause delegates only the
-                    // SUCCESSFUL name and value to the context ("Otherwise the use
-                    // of the name and value depends on the context in which the
-                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
-                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
-                    // of the element" is not reached by a failing `<param>`.
-                    //
-                    // This arm used to `return@run`, cancelling the whole invoke
-                    // and raising nothing — the strictest reading of 6.4.2 with
-                    // 5.7.1's reporting half dropped, so a document lost the child
-                    // AND the event that would have explained why. The comment
-                    // called that "the C++ pattern"; C++ does not cancel. The map
-                    // insert is inside the `try`, so a failure leaves the name
-                    // absent, which is the clause's other half.
-                    try {
-                        invokeParams["kept"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"here\"", "'here'"))
-                    } catch (_: Exception) {
-                        raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<invoke> <param name='kept'> expr failed to evaluate")
-                    }
-                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
-                    // `error.execution` on the internal queue AND the name and
-                    // value — and nothing else. The clause delegates only the
-                    // SUCCESSFUL name and value to the context ("Otherwise the use
-                    // of the name and value depends on the context in which the
-                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
-                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
-                    // of the element" is not reached by a failing `<param>`.
-                    //
-                    // This arm used to `return@run`, cancelling the whole invoke
-                    // and raising nothing — the strictest reading of 6.4.2 with
-                    // 5.7.1's reporting half dropped, so a document lost the child
-                    // AND the event that would have explained why. The comment
-                    // called that "the C++ pattern"; C++ does not cancel. The map
-                    // insert is inside the `try`, so a failure leaves the name
-                    // absent, which is the clause's other half.
-                    try {
-                        invokeParams["broken"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("nothing.deep", "nothing.deep"))
-                    } catch (_: Exception) {
-                        raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<invoke> <param name='broken'> expr failed to evaluate")
-                    }
                     deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
+                        // is executed — at macrostep end, where this deferred body
+                        // runs — not when the state was entered.
+                        ensureScriptEngine()
+                        val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val invokeParams = mutableMapOf<String, Any?>()
+                        // §scxml-5.7.1: a `<param>` that will not evaluate costs
+                        // `error.execution` AND the name and value — nothing else: the
+                        // child still starts. The map insert is inside the `try`, so a
+                        // failure leaves the name absent.
+                        try {
+                            invokeParams["kept"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"here\"", "'here'"))
+                        } catch (_: Exception) {
+                            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<invoke> <param name='kept'> could not be read")
+                        }
+                        // §scxml-5.7.1: a `<param>` that will not evaluate costs
+                        // `error.execution` AND the name and value — nothing else: the
+                        // child still starts. The map insert is inside the `try`, so a
+                        // failure leaves the name absent.
+                        try {
+                            invokeParams["broken"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("nothing.deep", "nothing.deep"))
+                        } catch (_: Exception) {
+                            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<invoke> <param name='broken'> could not be read")
+                        }
                         val childSM = InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
@@ -571,7 +562,9 @@ class InvokeParamErrorStartsTheChildStateMachine(
                 // SCE-MAP: invoke_param_error_starts_the_child.scxml:117 :: paramPhase :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("sawParamError", "sawParamError"), com.sce.runtime.ScriptSource.lua("1", "1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sawParamError", "sawParamError"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return
+            }
             }
             else -> {}
         }

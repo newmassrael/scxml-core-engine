@@ -160,19 +160,24 @@ class LateTickHonoursCancelStateMachine(
         when (state) {
             is LateTickHonoursCancelState.Active -> {
                 // SCE-MAP: late_tick_honours_cancel.scxml:50 :: active :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             cancelSend("s1")
 
 
             if (run send@{
-            scheduleSend("__send_1", 100L, LateTickHonoursCancelEvent.Finish)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_1", 100L, LateTickHonoursCancelEvent.Finish, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is LateTickHonoursCancelState.CancelLost -> {
                 // SCE-MAP: late_tick_honours_cancel.scxml:59 :: cancelLost :: _state_body
@@ -186,26 +191,33 @@ class LateTickHonoursCancelStateMachine(
             }
             is LateTickHonoursCancelState.Waiting -> {
                 // SCE-MAP: late_tick_honours_cancel.scxml:42 :: waiting :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("s1", 200L, LateTickHonoursCancelEvent.Settle)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("s1", 200L, LateTickHonoursCancelEvent.Settle, EventMetadata.external(sendId = "s1", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
-            scheduleSend("__send_0", 100L, LateTickHonoursCancelEvent.Poke)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 100L, LateTickHonoursCancelEvent.Poke, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
         }
     }

@@ -238,26 +238,34 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -349,33 +357,33 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
         when (state) {
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> {
                 // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5 :: emit :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
             var paramFailed = false
-            // W3C SCXML 5.10: Evaluate params for parent send (test233)
-            run {
-                ensureScriptEngine()
-                val engineP = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sidP = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val paramsP = mutableMapOf<String, Any?>()
-                try {
-                    putParam(paramsP, "value", engineP.evaluateExpr(sidP, com.sce.runtime.ScriptSource.lua("42", "42")))
-                } catch (_: Exception) {
-                    raisePlatformError(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.Error.Execution, "<send> <param name='value'> could not be read")
-                    paramFailed = true
-                }
-
-
-                val eventDataP = buildJsonFromParams(paramsP)
-                onSendToParent?.invoke("childToParent", eventDataP)
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "value", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("42", "42")))
+            } catch (_: Exception) {
+                raisePlatformError(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.Error.Execution, "<send> <param name='value'> could not be read")
+                paramFailed = true
             }
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
+            onSendToParent?.invoke("childToParent", sendData)
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported -> {
                 // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:22 :: reported :: _state_body
@@ -409,8 +417,9 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("fieldsPreserved", "")
+            onSendToParent?.invoke("fieldsPreserved", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -423,8 +432,9 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("fieldsStripped", "")
+            onSendToParent?.invoke("fieldsStripped", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

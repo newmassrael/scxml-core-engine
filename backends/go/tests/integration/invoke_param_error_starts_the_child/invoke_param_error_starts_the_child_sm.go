@@ -495,7 +495,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) ExecutePendingInvokes(engine *sce
 					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
 					// element" is not what a failing `<param>` costs: the child
 					// still starts, one pair short.
-					engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, "<invoke> <param name='kept'> expr failed to evaluate"))
+					engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, "<invoke> <param name='kept'> could not be read"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `nothing.deep`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
@@ -513,7 +513,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) ExecutePendingInvokes(engine *sce
 					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
 					// element" is not what a failing `<param>` costs: the child
 					// still starts, one pair short.
-					engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, "<invoke> <param name='broken'> expr failed to evaluate"))
+					engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, "<invoke> <param name='broken'> could not be read"))
 				}
 			}
 
@@ -844,18 +844,18 @@ func (p *InvokeParamErrorStartsTheChildPolicy) ExecuteEntryActions(state InvokeP
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
 		delayDur := sce.ParseDelay("3s")
-		delayEvtName := "timeout"
-		if delayEvt, delayOk := p.GetEventFromName(delayEvtName); delayOk {
+		if delayEvt, delayOk := p.GetEventFromName("timeout"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr)
 		}
 	}
 	}
-
+	}
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{

@@ -710,7 +710,8 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 
 
 	// W3C SCXML 6.2: send id="__send_0"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -743,14 +744,15 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 			return
 		}
 	}
-
+	}
 		}()
 		// W3C SCXML 3.8 + 4.9: onentry block 1, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -784,7 +786,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 			return
 		}
 	}
-
+	}
 
 	engine.Raise(sce.NewEventWithMetadata(APayloadRidesOnItsOwnEventEventPlain2))
 
@@ -794,32 +796,39 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
 	{
-		sendAborted := false
-		p.ensureScriptEngine()
-		se := p.ScriptEngine
+	p.ensureScriptEngine()
+	sendArgError := ""
+	// W3C SCXML 6.2 + B.2: a namelist names locations, and one that is not
+	// declared is an argument that cannot be evaluated — one error however
+	// many of its names are bad.
+	namelistParts := make([]sce.EventDataParam, 0)
+	if sendArgError == "" {
+		if !p.ScriptEngine.HasVariable(p.SessionID, "v9") {
+			sendArgError = "<send> namelist names 'v9', which is not declared"
+		} else if nlVal, nlErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `v9`); nlErr == nil {
+			namelistParts = append(namelistParts, sce.EventDataParam{Name: "v9", Value: nlVal})
+		} else {
+			sendArgError = "<send> namelist entry 'v9' could not be read"
+		}
+	}
+	if sendArgError != "" {
+		errEvt := sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sendArgError)
+		errEvt.Metadata.SendID = "__send_2"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
 		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
 		// delivered, so this is an ordered list rather than a map. The typed
 		// value is kept rather than its text — a receiver reading
 		// `_event.data.value === 42` finds the string "42" unequal.
 		parts := make([]sce.EventDataParam, 0)
-		// W3C SCXML B.2: Check variable existence before evaluation
-		if !se.HasVariable(p.SessionID, "v9") {
-			engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<send> namelist names 'v9', which is not declared"))
-			sendAborted = true
-		} else if nlVal, nlErr := se.EvaluateExpression(p.SessionID, `v9`); nlErr == nil {
-			parts = append(parts, sce.EventDataParam{Name: "v9", Value: nlVal})
-		} else {
-			engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<send> namelist entry 'v9' failed to evaluate"))
-			sendAborted = true
-		}
-		eventDataStr := ""
-		if !sendAborted {
-			eventDataStr = sce.BuildJSONFromTypedParams(parts)
-		}
+		// The namelist values the prologue read, after the params.
+		parts = append(parts, namelistParts...)
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
-		if !sendAborted {
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(APayloadRidesOnItsOwnEventEventExtN)
@@ -827,9 +836,8 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
-		}
 	}
-
+	}
 
 	engine.Raise(sce.NewEventWithMetadata(APayloadRidesOnItsOwnEventEventPlain3))
 
@@ -839,6 +847,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_3"
+	{
 	{
 		// W3C SCXML B.2: inline text takes the ordered readings, decided by
 		// the same filter inline `<data>` and `<donedata>` text goes
@@ -860,7 +869,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 		engine.RaiseExternalWithMeta(meta)
 	}
 	}
-
+	}
 
 	engine.Raise(sce.NewEventWithMetadata(APayloadRidesOnItsOwnEventEventPlain4))
 

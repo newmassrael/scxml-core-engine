@@ -379,26 +379,34 @@ class APayloadRidesOnItsOwnEventStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -501,8 +509,6 @@ class APayloadRidesOnItsOwnEventStateMachine(
             is APayloadRidesOnItsOwnEventState.S0 -> {
                 // SCE-MAP: a_payload_rides_on_its_own_event.scxml:37 :: s0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/4
-                // C++ EntryExitHelper pattern: each block executes independently
-                // Action-level error handling (try-catch in each action) provides isolation
                 run {
 
             raiseInternal(APayloadRidesOnItsOwnEventEvent.Plain1)
@@ -510,24 +516,21 @@ class APayloadRidesOnItsOwnEventStateMachine(
 
             if (run send@{
             var paramFailed = false
-            // W3C SCXML 5.10: An internal send carries `_event.data` just as
-            // an external one does. Before this the payload was dropped
-            // silently — the event was queued with no data at all.
-            run {
-                ensureScriptEngine()
-                val engineI = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sidI = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val paramsI = mutableMapOf<String, Any?>()
-                try {
-                    putParam(paramsI, "v", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("7", "7")))
-                } catch (_: Exception) {
-                    raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> <param name='v'> could not be read")
-                    paramFailed = true
-                }
-
-
-                raiseInternal(APayloadRidesOnItsOwnEventEvent.WithV, EventMetadata.internal(buildJsonFromParams(paramsI)))
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "v", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("7", "7")))
+            } catch (_: Exception) {
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> <param name='v'> could not be read")
+                paramFailed = true
             }
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(APayloadRidesOnItsOwnEventEvent.WithV, EventMetadata.internal(sendData))
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -536,30 +539,25 @@ class APayloadRidesOnItsOwnEventStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
                 // W3C SCXML 3.8: Onentry block 2/4
-                // C++ EntryExitHelper pattern: each block executes independently
-                // Action-level error handling (try-catch in each action) provides isolation
                 run {
 
 
             if (run send@{
             var paramFailed = false
-            // W3C SCXML 5.10: Evaluate params/namelist for event data
-            run {
-                ensureScriptEngine()
-                val engineE = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sidE = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val paramsE = mutableMapOf<String, Any?>()
-                try {
-                    putParam(paramsE, "v", engineE.evaluateExpr(sidE, com.sce.runtime.ScriptSource.lua("8", "8")))
-                } catch (_: Exception) {
-                    raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> <param name='v'> could not be read")
-                    paramFailed = true
-                }
-
-
-                val eventDataE = buildJsonFromParams(paramsE)
-                send(APayloadRidesOnItsOwnEventEvent.ExtV, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = eventDataE))
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "v", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("8", "8")))
+            } catch (_: Exception) {
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> <param name='v'> could not be read")
+                paramFailed = true
             }
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 6.2: send to this session's external queue
+            send(APayloadRidesOnItsOwnEventEvent.ExtV, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -570,31 +568,34 @@ class APayloadRidesOnItsOwnEventStateMachine(
             raiseInternal(APayloadRidesOnItsOwnEventEvent.Plain2)
                 }
                 // W3C SCXML 3.8: Onentry block 3/4
-                // C++ EntryExitHelper pattern: each block executes independently
-                // Action-level error handling (try-catch in each action) provides isolation
                 run {
 
 
             if (run send@{
-            // W3C SCXML 5.10: Evaluate params/namelist for event data
-            run {
-                ensureScriptEngine()
-                val engineE = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sidE = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val paramsE = mutableMapOf<String, Any?>()
-                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
-                if (!engineE.hasVariable(sidE, "v9")) {
-                    raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> namelist names 'v9', which is not declared")
-                    return@send false
-                }
-                try { paramsE["v9"] = engineE.getVariable(sidE, "v9") } catch (_: Exception) {
-                    raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> namelist entry 'v9' failed to evaluate")
-                    return@send false
-                }
-
-                val eventDataE = buildJsonFromParams(paramsE)
-                send(APayloadRidesOnItsOwnEventEvent.ExtN, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = eventDataE))
+            ensureScriptEngine()
+            val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            // W3C SCXML 6.2 + B.2 (test553): a namelist names locations, and one
+            // that is not declared is an argument that cannot be evaluated —
+            // one error however many of its names are bad.
+            val sendNamelist = mutableListOf<Pair<String, Any?>>()
+            if (!argEngine.hasVariable(argSid, "v9")) {
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> namelist names 'v9', which is not declared", "__send_2")
+                return@send true
             }
+            try {
+                sendNamelist.add("v9" to argEngine.getVariable(argSid, "v9"))
+            } catch (_: Exception) {
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> namelist entry 'v9' could not be read", "__send_2")
+                return@send true
+            }
+            val sendPayload = mutableMapOf<String, Any?>()
+            // W3C SCXML C.1: namelist variables become top-level keys in the
+            // data table — the values the prologue read, after the params.
+            for ((name, value) in sendNamelist) sendPayload[name] = value
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 6.2: send to this session's external queue
+            send(APayloadRidesOnItsOwnEventEvent.ExtN, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -605,15 +606,13 @@ class APayloadRidesOnItsOwnEventStateMachine(
             raiseInternal(APayloadRidesOnItsOwnEventEvent.Plain3)
                 }
                 // W3C SCXML 3.8: Onentry block 4/4
-                // C++ EntryExitHelper pattern: each block executes independently
-                // Action-level error handling (try-catch in each action) provides isolation
                 run {
 
 
             if (run send@{
-            // W3C SCXML B.2: the reading is decided at build time; a value
-            // is evaluated here and serialized, XML is handed on as source.
-            send(APayloadRidesOnItsOwnEventEvent.ExtC, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = evaluateSendContent(com.sce.runtime.ScriptSource.lua("10", "10"))))
+            val sendData = evaluateSendContent(com.sce.runtime.ScriptSource.lua("10", "10"))
+            // W3C SCXML 6.2: send to this session's external queue
+            send(APayloadRidesOnItsOwnEventEvent.ExtC, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -650,37 +649,49 @@ class APayloadRidesOnItsOwnEventStateMachine(
                 // SCE-MAP: a_payload_rides_on_its_own_event.scxml:61 :: s0 :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("stolen", "stolen"), com.sce.runtime.ScriptSource.lua("_scxml_add(stolen, 1)", "stolen + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("stolen", "stolen"), com.sce.runtime.ScriptSource.lua("_scxml_add(stolen, 1)", "stolen + 1"))) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: a_payload_rides_on_its_own_event.scxml:64 :: s0 :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("plains", "plains"), com.sce.runtime.ScriptSource.lua("_scxml_add(plains, 1)", "plains + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("plains", "plains"), com.sce.runtime.ScriptSource.lua("_scxml_add(plains, 1)", "plains + 1"))) {
+                return
+            }
             }
             2 -> {
                 // SCE-MAP: a_payload_rides_on_its_own_event.scxml:67 :: s0 :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("got", "got"), com.sce.runtime.ScriptSource.lua("_scxml_add(got, 1)", "got + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("got", "got"), com.sce.runtime.ScriptSource.lua("_scxml_add(got, 1)", "got + 1"))) {
+                return
+            }
             }
             3 -> {
                 // SCE-MAP: a_payload_rides_on_its_own_event.scxml:70 :: s0 :: _transition_3
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("got", "got"), com.sce.runtime.ScriptSource.lua("_scxml_add(got, 1)", "got + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("got", "got"), com.sce.runtime.ScriptSource.lua("_scxml_add(got, 1)", "got + 1"))) {
+                return
+            }
             }
             4 -> {
                 // SCE-MAP: a_payload_rides_on_its_own_event.scxml:73 :: s0 :: _transition_4
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("got", "got"), com.sce.runtime.ScriptSource.lua("_scxml_add(got, 1)", "got + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("got", "got"), com.sce.runtime.ScriptSource.lua("_scxml_add(got, 1)", "got + 1"))) {
+                return
+            }
             }
             5 -> {
                 // SCE-MAP: a_payload_rides_on_its_own_event.scxml:76 :: s0 :: _transition_5
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("got", "got"), com.sce.runtime.ScriptSource.lua("_scxml_add(got, 1)", "got + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("got", "got"), com.sce.runtime.ScriptSource.lua("_scxml_add(got, 1)", "got + 1"))) {
+                return
+            }
             }
             else -> {}
         }

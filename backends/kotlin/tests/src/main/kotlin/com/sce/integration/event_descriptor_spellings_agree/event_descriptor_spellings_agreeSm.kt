@@ -227,13 +227,19 @@ class EventDescriptorSpellingsAgreeStateMachine(
         when (state) {
             is EventDescriptorSpellingsAgreeState.Bounded -> {
                 // SCE-MAP: event_descriptor_spellings_agree.scxml:76 :: bounded :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(EventDescriptorSpellingsAgreeEvent.Wilder)
+                }
             }
             is EventDescriptorSpellingsAgreeState.Dotted -> {
                 // SCE-MAP: event_descriptor_spellings_agree.scxml:68 :: dotted :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(EventDescriptorSpellingsAgreeEvent.Dot)
+                }
             }
             is EventDescriptorSpellingsAgreeState.FailBounded -> {
                 // SCE-MAP: event_descriptor_spellings_agree.scxml:95 :: failBounded :: _state_body
@@ -262,13 +268,19 @@ class EventDescriptorSpellingsAgreeStateMachine(
             }
             is EventDescriptorSpellingsAgreeState.Suffixed -> {
                 // SCE-MAP: event_descriptor_spellings_agree.scxml:60 :: suffixed :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(EventDescriptorSpellingsAgreeEvent.Wild)
+                }
             }
             is EventDescriptorSpellingsAgreeState.Universal -> {
                 // SCE-MAP: event_descriptor_spellings_agree.scxml:84 :: universal :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(EventDescriptorSpellingsAgreeEvent.Any.Token.Sequence)
+                }
             }
         }
     }

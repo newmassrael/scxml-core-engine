@@ -524,26 +524,34 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -649,6 +657,8 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             }
             is AnErrorInsideAForeachEndsItsBlockState.S1 -> {
                 // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:74 :: s1 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run foreach@{
@@ -664,24 +674,21 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
 
             if (run send@{
             var paramFailed = false
-            // W3C SCXML 5.10: An internal send carries `_event.data` just as
-            // an external one does. Before this the payload was dropped
-            // silently — the event was queued with no data at all.
-            run {
-                ensureScriptEngine()
-                val engineI = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sidI = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val paramsI = mutableMapOf<String, Any?>()
-                try {
-                    putParam(paramsI, "bad", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
-                } catch (_: Exception) {
-                    raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<send> <param name='bad'> could not be read")
-                    paramFailed = true
-                }
-
-
-                raiseInternal(AnErrorInsideAForeachEndsItsBlockEvent.Sent, EventMetadata.internal(buildJsonFromParams(paramsI)))
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "bad", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
+            } catch (_: Exception) {
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<send> <param name='bad'> could not be read")
+                paramFailed = true
             }
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(AnErrorInsideAForeachEndsItsBlockEvent.Sent, EventMetadata.internal(sendData))
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -700,14 +707,19 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                 }
             }) {
                 // W3C SCXML 4.6 + 4.9: the block that contains the <foreach> ends.
-                return
+                return@run
             } // end of run foreach@
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("after1", "after1"), com.sce.runtime.ScriptSource.lua("1", "1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after1", "after1"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
+            }
+                }
             }
             is AnErrorInsideAForeachEndsItsBlockState.S2 -> {
                 // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:87 :: s2 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run foreach@{
@@ -734,11 +746,14 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                 }
             }) {
                 // W3C SCXML 4.6 + 4.9: the block that contains the <foreach> ends.
-                return
+                return@run
             } // end of run foreach@
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("after2", "after2"), com.sce.runtime.ScriptSource.lua("1", "1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after2", "after2"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
+            }
+                }
             }
         }
     }
@@ -772,13 +787,17 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                 // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:57 :: run :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:60 :: run :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("sent", "sent"), com.sce.runtime.ScriptSource.lua("_scxml_add(sent, 1)", "sent + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("sent", "sent"), com.sce.runtime.ScriptSource.lua("_scxml_add(sent, 1)", "sent + 1"))) {
+                return
+            }
             }
             2 -> {
                 // SCE-MAP: an_error_inside_a_foreach_ends_its_block.scxml:63 :: run :: _transition_2
@@ -797,24 +816,21 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
 
             if (run send@{
             var paramFailed = false
-            // W3C SCXML 5.10: An internal send carries `_event.data` just as
-            // an external one does. Before this the payload was dropped
-            // silently — the event was queued with no data at all.
-            run {
-                ensureScriptEngine()
-                val engineI = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sidI = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val paramsI = mutableMapOf<String, Any?>()
-                try {
-                    putParam(paramsI, "bad", engineI.evaluateExpr(sidI, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
-                } catch (_: Exception) {
-                    raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<send> <param name='bad'> could not be read")
-                    paramFailed = true
-                }
-
-
-                raiseInternal(AnErrorInsideAForeachEndsItsBlockEvent.Sent, EventMetadata.internal(buildJsonFromParams(paramsI)))
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "bad", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
+            } catch (_: Exception) {
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<send> <param name='bad'> could not be read")
+                paramFailed = true
             }
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(AnErrorInsideAForeachEndsItsBlockEvent.Sent, EventMetadata.internal(sendData))
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -837,7 +853,9 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             } // end of run foreach@
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("after3", "after3"), com.sce.runtime.ScriptSource.lua("1", "1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after3", "after3"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return
+            }
             }
             else -> {}
         }

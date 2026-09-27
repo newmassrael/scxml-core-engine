@@ -206,15 +206,11 @@ class Test377StateMachine(
             is Test377State.S0 -> {
                 // SCE-MAP: test377.scxml:9 :: s0 :: _state_body
                 // W3C SCXML 3.9: Onexit block 1/2
-                // C++ EntryExitHelper pattern: each block executes independently
-                // Action-level error handling (try-catch in each action) provides isolation
                 run {
 
             raiseInternal(Test377Event.Event1)
                 }
                 // W3C SCXML 3.9: Onexit block 2/2
-                // C++ EntryExitHelper pattern: each block executes independently
-                // Action-level error handling (try-catch in each action) provides isolation
                 run {
 
             raiseInternal(Test377Event.Event2)

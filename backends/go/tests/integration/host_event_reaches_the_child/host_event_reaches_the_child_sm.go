@@ -733,6 +733,7 @@ func (p *HostEventReachesTheChildPolicy) ExecuteTransitionContent(source HostEve
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.4: Send to invoked child "inv_probe"
@@ -740,7 +741,7 @@ func (p *HostEventReachesTheChildPolicy) ExecuteTransitionContent(source HostEve
 		p.childInvProbe.RaiseExternalByName("marker", eventDataStr)
 	}
 	}
-
+	}
 			}()
 		}
 	}

@@ -96,8 +96,11 @@ class Test415StateMachine(
         when (state) {
             is Test415State.Final -> {
                 // SCE-MAP: test415.scxml:9 :: final :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test415Event.Event1)
+                }
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }

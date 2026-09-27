@@ -1008,7 +1008,8 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_3"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -1047,7 +1048,7 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 			return
 		}
 	}
-
+	}
 		}()
 	case SendParamPayloadStateInternalPhase:
 		//line send_param_payload.scxml:125
@@ -1056,6 +1057,7 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_0"
+	{
 	{
 		// W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
 		// finished at codegen time. It has to be — this arm is what a machine
@@ -1075,7 +1077,7 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		engine.Raise(meta)
 	}
 	}
-
+	}
 		}()
 	case SendParamPayloadStateParamErrorPhase:
 		//line send_param_payload.scxml:192
@@ -1084,7 +1086,8 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_2"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -1118,7 +1121,7 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 			return
 		}
 	}
-
+	}
 		}()
 	case SendParamPayloadStateTypedPhase:
 		//line send_param_payload.scxml:141
@@ -1127,7 +1130,8 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
-	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
 		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
 		// and its pair left out, and the message still goes; the error ends
@@ -1178,7 +1182,7 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 			return
 		}
 	}
-
+	}
 		}()
 	default:
 		// No entry actions

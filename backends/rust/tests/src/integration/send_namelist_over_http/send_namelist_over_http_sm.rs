@@ -734,142 +734,147 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (2000ms)
-                        engine.schedule_event(
-                            SendNamelistOverHttpEvent::TimeoutDiscard,
-                            core::time::Duration::from_millis(2000),
-                            &send_id,
-                            event_data,
-                        );
+                        // W3C SCXML 6.2: Delayed send (2s)
+                        {
+                            let delay_ms = 2000_u64;
+                            let __sce_delayed_event =
+                                Some(SendNamelistOverHttpEvent::TimeoutDiscard);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
 
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
 
-                        let mut _send_aborted = false;
-
-                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                        // delivered, so each name carries a vector. The typed value is kept
-                        // rather than its text — a receiver reading `_event.data.value === 42`
-                        // finds the string "42" unequal.
-                        //
-                        // Declared out here rather than inside the payload block because
-                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                        // below are renderings of that one evaluation: the BasicHTTP and
-                        // host-served arms read this map instead of asking the data model again.
-                        // While it was block-scoped they had to, and what they re-read was
-                        // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
-                        // posted zero form parameters, against §scxml-C-2.
-                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                            String,
-                            Vec<::sce_rust_runtime::ScriptValue>,
-                        > = ::std::collections::BTreeMap::new();
-                        // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
-                        let event_data_string: String = {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let wire_params = &mut _send_wire_params;
-                            // W3C SCXML C.1: namelist variables become top-level keys in the data table
-                            // W3C SCXML B.2 (test 553): Check variable existence before evaluation
-                            if !se.has_variable(&sid, "__sce_not_declared__") {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "send namelist '__sce_not_declared__': variable not declared"
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorExecution, "<send> namelist names '__sce_not_declared__', which is not declared"));
-                                _send_aborted = true;
-                            } else {
-                                match se.evaluate_expression(&sid, "__sce_not_declared__") {
-                                    Ok(val) => {
-                                        wire_params
-                                            .entry("__sce_not_declared__".to_string())
-                                            .or_default()
-                                            .push(val);
+                        self.ensure_script_engine();
+                        let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
+                        let __sce_arg_se = self.script_engine.clone();
+                        let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
+                        let mut _send_arg_error: Option<&'static str> = None;
+                        // A target that evaluates to nothing is not an evaluation error: it is an
+                        // address nobody answers at, which the resolution below reports as
+                        // error.communication (W3C SCXML C.1).
+                        let _send_target_value: Option<sce_rust_runtime::ScriptValue> =
+                            if _send_arg_error.is_none() {
+                                match __sce_arg_se.evaluate_expression(
+                                    &__sce_arg_sid,
+                                    "_ioprocessors.basichttp.location",
+                                ) {
+                                    Ok(val) => Some(val),
+                                    Err(e) => {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "targetexpr eval failed: {}",
+                                            e
+                                        );
+                                        _send_arg_error =
+                                            Some("<send> targetexpr could not be evaluated");
+                                        None
                                     }
+                                }
+                            } else {
+                                None
+                            };
+                        if let Some(ref val) = _send_target_value {
+                            // W3C SCXML 6.2: a target this processor cannot address is refused as
+                            // a static one is, before anything is delivered.
+                            if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
+            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+        }
+                        }
+                        // W3C SCXML 6.2 + B.2 (test 553): a namelist names locations, and one that
+                        // is not declared is an argument that cannot be evaluated — one error
+                        // however many of its names are bad.
+                        let mut _send_namelist: Vec<(&'static str, sce_rust_runtime::ScriptValue)> =
+                            Vec::new();
+                        if _send_arg_error.is_none() {
+                            if !__sce_arg_se.has_variable(&__sce_arg_sid, "__sce_not_declared__") {
+                                _send_arg_error = Some("<send> namelist names '__sce_not_declared__', which is not declared");
+                            } else {
+                                match __sce_arg_se
+                                    .evaluate_expression(&__sce_arg_sid, "__sce_not_declared__")
+                                {
+                                    Ok(val) => _send_namelist.push(("__sce_not_declared__", val)),
                                     Err(e) => {
                                         ::sce_rust_runtime::sce_log_error!(
                                             "send namelist '__sce_not_declared__' eval failed: {}",
                                             e
                                         );
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorExecution, "<send> namelist entry '__sce_not_declared__' failed to evaluate"));
-                                        _send_aborted = true;
+                                        _send_arg_error = Some("<send> namelist entry '__sce_not_declared__' could not be read");
                                     }
                                 }
                             }
-                            if _send_aborted {
-                                String::new()
-                            } else {
-                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                            }
-                        };
-                        // W3C SCXML 6.2: event_data defaults to empty if namelist failed
-                        let event_data: &str = if _send_aborted {
-                            ""
+                        }
+                        if let Some(__sce_why) = _send_arg_error {
+                            ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                SendNamelistOverHttpEvent::ErrorExecution,
+                                __sce_why,
+                            );
+                            err_meta.metadata.send_id = send_id.clone();
+                            engine.raise(err_meta);
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
-                            &event_data_string
-                        };
-
-                        // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
-                        let _resolved_target: Option<String> = {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se.evaluate_expression(&sid, "_ioprocessors.basichttp.location") {
-                                Ok(ref val)
-                                    if matches!(
-                                        val,
-                                        sce_rust_runtime::ScriptValue::Null
-                                            | sce_rust_runtime::ScriptValue::Undefined
-                                    ) =>
-                                {
-                                    // W3C SCXML C.1 (test 496, 521): nil/undefined target raises error.communication
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach"));
-                                    None
-                                }
-                                Ok(val) => {
-                                    // §scxml-C-1: a target expression's value is read as text —
-                                    // the same reading C++ `resultToString` gives it.
-                                    let trimmed = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
-                                    if trimmed.starts_with("!") {
-                                        // W3C SCXML 6.2: Invalid target raises error.execution
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorExecution, "<send> targetexpr produced a target this processor cannot address");
-                                            err_meta.metadata.send_id = send_id.clone();
-                                            engine.raise(err_meta);
-                                        }
-                                        None
-                                    } else {
-                                        Some(trimmed)
-                                    }
-                                }
-                                Err(e) => {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "targetexpr eval failed: {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            SendNamelistOverHttpEvent::ErrorExecution,
-                                            "<send> targetexpr failed to evaluate",
-                                        ),
-                                    );
-                                    None
-                                }
+                            // §scxml-C-1: a target expression's value is read as text — the same
+                            // reading C++ `resultToString` gives it. A value that is not there names
+                            // no target; an empty STRING is not that case here, because a self-sent
+                            // event carries no origin on this backend, so `targetexpr="_event.origin"`
+                            // reads "" and must reach this session (test336).
+                            let _resolved_target: Option<String> = match _send_target_value {
+        Some(sce_rust_runtime::ScriptValue::Null) | Some(sce_rust_runtime::ScriptValue::Undefined) | None => None,
+        Some(ref val) => Some(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)),
+    };
+                            if _resolved_target.is_none() {
+                                // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
+                                // error.communication.
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                err_meta.metadata.send_id = send_id.clone();
+                                engine.raise(err_meta);
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
-                        };
-
-                        if !_send_aborted {
                             if let Some(ref _rt) = _resolved_target {
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // W3C SCXML C.1: namelist variables become top-level keys in the data
+                                    // table — the values the prologue read, after the params.
+                                    for (name, val) in _send_namelist.drain(..) {
+                                        wire_params.entry(name.to_string()).or_default().push(val);
+                                    }
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
+
                                 // W3C SCXML C.2: BasicHTTP send to HTTP target
                                 {
                                     // W3C SCXML C.2: Validate dynamic target is HTTP URL
                                     if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL"));
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
+                                        err_meta.metadata.send_id = send_id.clone();
+                                        engine.raise(err_meta);
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     } else {
                                         // W3C SCXML C.2: "If the namelist attribute is defined, the SCXML
                                         // Processor MUST map its variable names and values to HTTP POST
@@ -885,10 +890,11 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                                         );
                                     }
                                 }
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
                             } // end of if let Some(ref _rt) = _resolved_target
-                        } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on an argument error)
+                        } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }
                 }
             }
@@ -902,150 +908,146 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (3000ms)
-                        engine.schedule_event(
-                            SendNamelistOverHttpEvent::TimeoutMap,
-                            core::time::Duration::from_millis(3000),
-                            &send_id,
-                            event_data,
-                        );
+                        // W3C SCXML 6.2: Delayed send (3s)
+                        {
+                            let delay_ms = 3000_u64;
+                            let __sce_delayed_event = Some(SendNamelistOverHttpEvent::TimeoutMap);
+                            if let Some(evt) = __sce_delayed_event {
+                                engine.schedule_event(
+                                    evt,
+                                    core::time::Duration::from_millis(delay_ms),
+                                    &send_id,
+                                    event_data,
+                                );
+                            }
+                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
 
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
 
-                        let mut _send_aborted = false;
-
-                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                        // delivered, so each name carries a vector. The typed value is kept
-                        // rather than its text — a receiver reading `_event.data.value === 42`
-                        // finds the string "42" unequal.
-                        //
-                        // Declared out here rather than inside the payload block because
-                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                        // below are renderings of that one evaluation: the BasicHTTP and
-                        // host-served arms read this map instead of asking the data model again.
-                        // While it was block-scoped they had to, and what they re-read was
-                        // `<param>` alone — so `namelist="Var1"` reached `_event.data` and then
-                        // posted zero form parameters, against §scxml-C-2.
-                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                            String,
-                            Vec<::sce_rust_runtime::ScriptValue>,
-                        > = ::std::collections::BTreeMap::new();
-                        // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
-                        let event_data_string: String = {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let wire_params = &mut _send_wire_params;
-                            // W3C SCXML C.1: namelist variables become top-level keys in the data table
-                            // W3C SCXML B.2 (test 553): Check variable existence before evaluation
-                            if !se.has_variable(&sid, "Var1") {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "send namelist 'Var1': variable not declared"
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    SendNamelistOverHttpEvent::ErrorExecution,
-                                    "<send> namelist names 'Var1', which is not declared",
-                                ));
-                                _send_aborted = true;
-                            } else {
-                                match se.evaluate_expression(&sid, "Var1") {
-                                    Ok(val) => {
-                                        wire_params
-                                            .entry("Var1".to_string())
-                                            .or_default()
-                                            .push(val);
+                        self.ensure_script_engine();
+                        let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
+                        let __sce_arg_se = self.script_engine.clone();
+                        let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
+                        let mut _send_arg_error: Option<&'static str> = None;
+                        // A target that evaluates to nothing is not an evaluation error: it is an
+                        // address nobody answers at, which the resolution below reports as
+                        // error.communication (W3C SCXML C.1).
+                        let _send_target_value: Option<sce_rust_runtime::ScriptValue> =
+                            if _send_arg_error.is_none() {
+                                match __sce_arg_se.evaluate_expression(
+                                    &__sce_arg_sid,
+                                    "_ioprocessors.basichttp.location",
+                                ) {
+                                    Ok(val) => Some(val),
+                                    Err(e) => {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "targetexpr eval failed: {}",
+                                            e
+                                        );
+                                        _send_arg_error =
+                                            Some("<send> targetexpr could not be evaluated");
+                                        None
                                     }
+                                }
+                            } else {
+                                None
+                            };
+                        if let Some(ref val) = _send_target_value {
+                            // W3C SCXML 6.2: a target this processor cannot address is refused as
+                            // a static one is, before anything is delivered.
+                            if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
+            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+        }
+                        }
+                        // W3C SCXML 6.2 + B.2 (test 553): a namelist names locations, and one that
+                        // is not declared is an argument that cannot be evaluated — one error
+                        // however many of its names are bad.
+                        let mut _send_namelist: Vec<(&'static str, sce_rust_runtime::ScriptValue)> =
+                            Vec::new();
+                        if _send_arg_error.is_none() {
+                            if !__sce_arg_se.has_variable(&__sce_arg_sid, "Var1") {
+                                _send_arg_error =
+                                    Some("<send> namelist names 'Var1', which is not declared");
+                            } else {
+                                match __sce_arg_se.evaluate_expression(&__sce_arg_sid, "Var1") {
+                                    Ok(val) => _send_namelist.push(("Var1", val)),
                                     Err(e) => {
                                         ::sce_rust_runtime::sce_log_error!(
                                             "send namelist 'Var1' eval failed: {}",
                                             e
                                         );
-                                        engine.raise(
-                                            sce_rust_runtime::EventWithMetadata::platform_error(
-                                                SendNamelistOverHttpEvent::ErrorExecution,
-                                                "<send> namelist entry 'Var1' failed to evaluate",
-                                            ),
-                                        );
-                                        _send_aborted = true;
+                                        _send_arg_error =
+                                            Some("<send> namelist entry 'Var1' could not be read");
                                     }
                                 }
                             }
-                            if _send_aborted {
-                                String::new()
-                            } else {
-                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                            }
-                        };
-                        // W3C SCXML 6.2: event_data defaults to empty if namelist failed
-                        let event_data: &str = if _send_aborted {
-                            ""
+                        }
+                        if let Some(__sce_why) = _send_arg_error {
+                            ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                SendNamelistOverHttpEvent::ErrorExecution,
+                                __sce_why,
+                            );
+                            err_meta.metadata.send_id = send_id.clone();
+                            engine.raise(err_meta);
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
-                            &event_data_string
-                        };
-
-                        // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
-                        let _resolved_target: Option<String> = {
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se.evaluate_expression(&sid, "_ioprocessors.basichttp.location") {
-                                Ok(ref val)
-                                    if matches!(
-                                        val,
-                                        sce_rust_runtime::ScriptValue::Null
-                                            | sce_rust_runtime::ScriptValue::Undefined
-                                    ) =>
-                                {
-                                    // W3C SCXML C.1 (test 496, 521): nil/undefined target raises error.communication
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach"));
-                                    None
-                                }
-                                Ok(val) => {
-                                    // §scxml-C-1: a target expression's value is read as text —
-                                    // the same reading C++ `resultToString` gives it.
-                                    let trimmed = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
-                                    if trimmed.starts_with("!") {
-                                        // W3C SCXML 6.2: Invalid target raises error.execution
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorExecution, "<send> targetexpr produced a target this processor cannot address");
-                                            err_meta.metadata.send_id = send_id.clone();
-                                            engine.raise(err_meta);
-                                        }
-                                        None
-                                    } else {
-                                        Some(trimmed)
-                                    }
-                                }
-                                Err(e) => {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "targetexpr eval failed: {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            SendNamelistOverHttpEvent::ErrorExecution,
-                                            "<send> targetexpr failed to evaluate",
-                                        ),
-                                    );
-                                    None
-                                }
+                            // §scxml-C-1: a target expression's value is read as text — the same
+                            // reading C++ `resultToString` gives it. A value that is not there names
+                            // no target; an empty STRING is not that case here, because a self-sent
+                            // event carries no origin on this backend, so `targetexpr="_event.origin"`
+                            // reads "" and must reach this session (test336).
+                            let _resolved_target: Option<String> = match _send_target_value {
+        Some(sce_rust_runtime::ScriptValue::Null) | Some(sce_rust_runtime::ScriptValue::Undefined) | None => None,
+        Some(ref val) => Some(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)),
+    };
+                            if _resolved_target.is_none() {
+                                // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
+                                // error.communication.
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                err_meta.metadata.send_id = send_id.clone();
+                                engine.raise(err_meta);
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
-                        };
-
-                        if !_send_aborted {
                             if let Some(ref _rt) = _resolved_target {
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // W3C SCXML C.1: namelist variables become top-level keys in the data
+                                    // table — the values the prologue read, after the params.
+                                    for (name, val) in _send_namelist.drain(..) {
+                                        wire_params.entry(name.to_string()).or_default().push(val);
+                                    }
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
+
                                 // W3C SCXML C.2: BasicHTTP send to HTTP target
                                 {
                                     // W3C SCXML C.2: Validate dynamic target is HTTP URL
                                     if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL"));
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
+                                        err_meta.metadata.send_id = send_id.clone();
+                                        engine.raise(err_meta);
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     } else {
                                         // W3C SCXML C.2: "If the namelist attribute is defined, the SCXML
                                         // Processor MUST map its variable names and values to HTTP POST
@@ -1061,10 +1063,11 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                                         );
                                     }
                                 }
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
                             } // end of if let Some(ref _rt) = _resolved_target
-                        } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on an argument error)
+                        } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }
                 }
             }

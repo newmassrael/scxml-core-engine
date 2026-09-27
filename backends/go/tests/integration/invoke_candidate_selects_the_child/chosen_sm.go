@@ -388,6 +388,7 @@ func (p *ChosenPolicy) ExecuteEntryActions(state ChosenState, engine *sce.Engine
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -395,7 +396,7 @@ func (p *ChosenPolicy) ExecuteEntryActions(state ChosenState, engine *sce.Engine
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "from.chosen", Data: eventDataStr})
 	}
 	}
-
+	}
 		}()
 	default:
 		// No entry actions

@@ -138,8 +138,11 @@ class Test335StateMachine(
             }
             is Test335State.S0 -> {
                 // SCE-MAP: test335.scxml:7 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test335Event.Foo)
+                }
             }
         }
     }

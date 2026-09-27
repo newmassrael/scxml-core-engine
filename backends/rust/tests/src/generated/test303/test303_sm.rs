@@ -647,6 +647,8 @@ impl StatePolicy for Test303Policy {
                                 Test303Event::ErrorExecution,
                                 "<script> failed to execute",
                             ));
+                            // W3C SCXML 4.9: the error ends the block.
+                            break 'action_block;
                         }
                     }
                 }

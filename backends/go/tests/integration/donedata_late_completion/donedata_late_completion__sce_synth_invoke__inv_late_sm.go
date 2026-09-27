@@ -613,6 +613,7 @@ func (p *DonedataLateCompletionSceSynthInvokeInvLatePolicy) ExecuteEntryActions(
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -620,7 +621,7 @@ func (p *DonedataLateCompletionSceSynthInvokeInvLatePolicy) ExecuteEntryActions(
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "ready", Data: eventDataStr})
 	}
 	}
-
+	}
 		}()
 	default:
 		// No entry actions

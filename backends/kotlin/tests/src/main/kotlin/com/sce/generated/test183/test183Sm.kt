@@ -241,14 +241,18 @@ class Test183StateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test183Event.Error.Execution, "<assign> failed")
+            false
         }
     }
 
@@ -273,14 +277,18 @@ class Test183StateMachine(
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test183Event.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -382,22 +390,30 @@ class Test183StateMachine(
             }
             is Test183State.S0 -> {
                 // SCE-MAP: test183.scxml:11 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332),
+            ensureScriptEngine()
+            val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            // W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
+            // there even when a later argument fails (test183, test332),
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
-            // argument that cannot be evaluated, so the message is discarded
-            // (W3C SCXML 6.2, 5.9.2).
-            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), "__send_0", "<send>")) return@send false
-            send(Test183Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            // argument that cannot be evaluated (W3C SCXML 5.9.2).
+            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), "__send_0", "<send>")) return@send true
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(Test183Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
         }
     }

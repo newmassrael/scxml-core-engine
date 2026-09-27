@@ -235,6 +235,7 @@ class AutoforwardInternalQueueStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
             raisePlatformError(AutoforwardInternalQueueEvent.Error.Execution, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support", "__send_0")
             return@send true  // W3C SCXML 5.10: discarded; the block stops below
@@ -250,7 +251,9 @@ class AutoforwardInternalQueueStateMachine(
 
 
             if (run send@{
-            send(AutoforwardInternalQueueEvent.Probe, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(AutoforwardInternalQueueEvent.Probe, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

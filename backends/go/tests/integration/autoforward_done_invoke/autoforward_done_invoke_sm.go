@@ -812,6 +812,7 @@ func (p *AutoforwardDoneInvokePolicy) ExecuteTransitionContent(source Autoforwar
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: External send
@@ -822,7 +823,7 @@ func (p *AutoforwardDoneInvokePolicy) ExecuteTransitionContent(source Autoforwar
 		engine.RaiseExternalWithMeta(meta)
 	}
 	}
-
+	}
 			}()
 		}
 	}

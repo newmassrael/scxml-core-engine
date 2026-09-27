@@ -495,6 +495,7 @@ func (p *AutoforwardDoneInvokeSceSynthInvokeInvWatchPolicy) ExecuteTransitionCon
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -502,7 +503,7 @@ func (p *AutoforwardDoneInvokeSceSynthInvokeInvWatchPolicy) ExecuteTransitionCon
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "sawPlatform", Data: eventDataStr})
 	}
 	}
-
+	}
 			}()
 		case 1:
 			//line autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:9
@@ -511,6 +512,7 @@ func (p *AutoforwardDoneInvokeSceSynthInvokeInvWatchPolicy) ExecuteTransitionCon
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -518,7 +520,7 @@ func (p *AutoforwardDoneInvokeSceSynthInvokeInvWatchPolicy) ExecuteTransitionCon
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "sawProbeOnly", Data: eventDataStr})
 	}
 	}
-
+	}
 			}()
 		}
 	}

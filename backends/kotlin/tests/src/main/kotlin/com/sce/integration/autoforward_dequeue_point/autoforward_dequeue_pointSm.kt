@@ -238,7 +238,9 @@ class AutoforwardDequeuePointStateMachine(
 
 
             if (run send@{
-            send(AutoforwardDequeuePointEvent.First, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(AutoforwardDequeuePointEvent.First, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -248,7 +250,9 @@ class AutoforwardDequeuePointStateMachine(
 
 
             if (run send@{
-            send(AutoforwardDequeuePointEvent.Second, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(AutoforwardDequeuePointEvent.Second, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -261,8 +265,9 @@ class AutoforwardDequeuePointStateMachine(
 
 
             if (run send@{
+            val sendData = ""
             // W3C SCXML 6.4 (test192): Send event to invoked child
-            sendToChild("inv_probe", "mark")
+            sendToChild("inv_probe", "mark", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

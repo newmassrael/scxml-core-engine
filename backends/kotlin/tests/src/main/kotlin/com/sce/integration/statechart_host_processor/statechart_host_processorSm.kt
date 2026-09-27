@@ -375,26 +375,34 @@ class StatechartHostProcessorStateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -491,133 +499,150 @@ class StatechartHostProcessorStateMachine(
         when (state) {
             is StatechartHostProcessorState.Dispatching -> {
                 // SCE-MAP: statechart_host_processor.scxml:52 :: dispatching :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            send(StatechartHostProcessorEvent.Plain.Arrived, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(StatechartHostProcessorEvent.Plain.Arrived, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "within", "2500")
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
-            run {
-                val hostPayload = mutableMapOf<String, Any?>()
-                putParam(hostPayload, "within", "2500")
-
-                val hostParams = hostPayload.mapValues { (_, v) ->
-                    if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
-                }
-                val hostEventData = buildJsonFromParams(hostPayload)
-                val hostEventName = "watch.turn"
-                val hostRequest = HostSendRequest(
-                    processorType = "x-sce-host",
-                    eventName = hostEventName,
-                    target = "",
-                    content = "",
-                    params = hostParams,
-                    sendId = "__send_1",
-                    eventData = hostEventData
-                )
-                val hostServed = performHostSend(hostRequest)
-                // W3C SCXML 6.2: a declared type with no handler registered is,
-                // from the document's side, a processor the platform does not
-                // support — the act it asked for was performed by nobody. Same
-                // event as an undeclared type, so a wiring mistake cannot read
-                // as success.
-                if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                    raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_1")
-                }
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "watch.turn",
+                target = "",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_1",
+                eventData = sendData
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_1")
             }
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
             if (run send@{
-            send(StatechartHostProcessorEvent.Advance, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: ""))
+            val sendData = ""
+            // W3C SCXML 6.2: send to this session's external queue
+            send(StatechartHostProcessorEvent.Advance, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is StatechartHostProcessorState.Pairs -> {
                 // SCE-MAP: statechart_host_processor.scxml:81 :: pairs :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
             var paramFailed = false
+            ensureScriptEngine()
+            val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            // W3C SCXML 6.2 + B.2 (test553): a namelist names locations, and one
+            // that is not declared is an argument that cannot be evaluated —
+            // one error however many of its names are bad.
+            val sendNamelist = mutableListOf<Pair<String, Any?>>()
+            if (!argEngine.hasVariable(argSid, "mode")) {
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send> namelist names 'mode', which is not declared", "__send_3")
+                return@send true
+            }
+            try {
+                sendNamelist.add("mode" to argEngine.getVariable(argSid, "mode"))
+            } catch (_: Exception) {
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send> namelist entry 'mode' could not be read", "__send_3")
+                return@send true
+            }
+            ensureScriptEngine()
+            val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "kept", "here")
+            try {
+                putParam(sendPayload, "broken", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("nothing.deep", "nothing.deep")))
+            } catch (_: Exception) {
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send> <param name='broken'> could not be read")
+                paramFailed = true
+            }
+
+            // W3C SCXML C.1: namelist variables become top-level keys in the
+            // data table — the values the prologue read, after the params.
+            for ((name, value) in sendNamelist) sendPayload[name] = value
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
             // which declared it to this build. Dispatch rather than refuse —
             // and take the whole send, because a processor the host serves
             // owns delivery; falling through would also enqueue the event
             // locally and the document would see the act twice.
-            run {
-                ensureScriptEngine()
-                val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                val hostPayload = mutableMapOf<String, Any?>()
-                putParam(hostPayload, "kept", "here")
-                try {
-                    putParam(hostPayload, "broken", hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("nothing.deep", "nothing.deep")))
-                } catch (_: Exception) {
-                    raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send> <param name='broken'> could not be read")
-                    paramFailed = true
-                }
-
-                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
-                if (!hostEngine.hasVariable(hostSid, "mode")) {
-                    raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send> namelist names 'mode', which is not declared")
-                    return@send false
-                }
-                try { hostPayload["mode"] = hostEngine.getVariable(hostSid, "mode") } catch (_: Exception) {
-                    raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send> namelist entry 'mode' failed to evaluate")
-                    return@send false
-                }
-
-                val hostParams = hostPayload.mapValues { (_, v) ->
-                    if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
-                }
-                val hostEventData = buildJsonFromParams(hostPayload)
-                val hostEventName = "watch.pairs"
-                val hostRequest = HostSendRequest(
-                    processorType = "x-sce-host",
-                    eventName = hostEventName,
-                    target = "",
-                    content = "",
-                    params = hostParams,
-                    sendId = "__send_3",
-                    eventData = hostEventData
-                )
-                val hostServed = performHostSend(hostRequest)
-                // W3C SCXML 6.2: a declared type with no handler registered is,
-                // from the document's side, a processor the platform does not
-                // support — the act it asked for was performed by nobody. Same
-                // event as an undeclared type, so a wiring mistake cannot read
-                // as success.
-                if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                    raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_3")
-                }
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "watch.pairs",
+                target = "",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_3",
+                eventData = sendData
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_3")
             }
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
         }
     }
@@ -645,19 +670,25 @@ class StatechartHostProcessorStateMachine(
                 // SCE-MAP: statechart_host_processor.scxml:66 :: dispatching :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("plain", "plain"), com.sce.runtime.ScriptSource.lua("_scxml_add(plain, 1)", "plain + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("plain", "plain"), com.sce.runtime.ScriptSource.lua("_scxml_add(plain, 1)", "plain + 1"))) {
+                return
+            }
             }
             1 -> {
                 // SCE-MAP: statechart_host_processor.scxml:69 :: dispatching :: _transition_1
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("served", "served"), com.sce.runtime.ScriptSource.lua("_scxml_add(served, 1)", "served + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("served", "served"), com.sce.runtime.ScriptSource.lua("_scxml_add(served, 1)", "served + 1"))) {
+                return
+            }
             }
             2 -> {
                 // SCE-MAP: statechart_host_processor.scxml:72 :: dispatching :: _transition_2
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("refused", "refused"), com.sce.runtime.ScriptSource.lua("_scxml_add(refused, 1)", "refused + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("refused", "refused"), com.sce.runtime.ScriptSource.lua("_scxml_add(refused, 1)", "refused + 1"))) {
+                return
+            }
             }
             else -> {}
         }
@@ -666,7 +697,9 @@ class StatechartHostProcessorStateMachine(
                 // SCE-MAP: statechart_host_processor.scxml:88 :: pairs :: _transition_0
 
 
-            executeAssign(com.sce.runtime.ScriptSource.lua("paramErrors", "paramErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(paramErrors, 1)", "paramErrors + 1"))
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("paramErrors", "paramErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(paramErrors, 1)", "paramErrors + 1"))) {
+                return
+            }
             }
             else -> {}
         }

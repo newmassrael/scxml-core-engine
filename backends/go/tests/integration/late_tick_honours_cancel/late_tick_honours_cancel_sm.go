@@ -424,18 +424,18 @@ func (p *LateTickHonoursCancelPolicy) ExecuteEntryActions(state LateTickHonoursC
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
 		delayDur := sce.ParseDelay("100ms")
-		delayEvtName := "finish"
-		if delayEvt, delayOk := p.GetEventFromName(delayEvtName); delayOk {
+		if delayEvt, delayOk := p.GetEventFromName("finish"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr)
 		}
 	}
 	}
-
+	}
 		}()
 	case LateTickHonoursCancelStateWaiting:
 		//line late_tick_honours_cancel.scxml:42
@@ -445,33 +445,33 @@ func (p *LateTickHonoursCancelPolicy) ExecuteEntryActions(state LateTickHonoursC
 
 	// W3C SCXML 6.2: send id="s1"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
 		delayDur := sce.ParseDelay("200ms")
-		delayEvtName := "settle"
-		if delayEvt, delayOk := p.GetEventFromName(delayEvtName); delayOk {
+		if delayEvt, delayOk := p.GetEventFromName("settle"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "s1", eventDataStr)
 		}
 	}
 	}
-
+	}
 
 	// W3C SCXML 6.2: send id="__send_0"
+	{
 	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Delayed send
 	{
 		delayDur := sce.ParseDelay("100ms")
-		delayEvtName := "poke"
-		if delayEvt, delayOk := p.GetEventFromName(delayEvtName); delayOk {
+		if delayEvt, delayOk := p.GetEventFromName("poke"); delayOk {
 			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr)
 		}
 	}
 	}
-
+	}
 		}()
 	default:
 		// No entry actions

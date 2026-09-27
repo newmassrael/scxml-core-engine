@@ -284,46 +284,69 @@ class Test399StateMachine(
             }
             is Test399State.S0 -> {
                 // SCE-MAP: test399.scxml:9 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 2000L, Test399Event.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 2000L, Test399Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test399State.S01 -> {
                 // SCE-MAP: test399.scxml:17 :: s01 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test399Event.Foo.Self)
+                }
             }
             is Test399State.S02 -> {
                 // SCE-MAP: test399.scxml:25 :: s02 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test399Event.Bar)
+                }
             }
             is Test399State.S03 -> {
                 // SCE-MAP: test399.scxml:33 :: s03 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test399Event.Foo.Zoo)
+                }
             }
             is Test399State.S04 -> {
                 // SCE-MAP: test399.scxml:41 :: s04 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test399Event.Foos)
+                }
             }
             is Test399State.S05 -> {
                 // SCE-MAP: test399.scxml:50 :: s05 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test399Event.Foo.Zoo)
+                }
             }
             is Test399State.S06 -> {
                 // SCE-MAP: test399.scxml:58 :: s06 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test399Event.Foo.Self)
+                }
             }
         }
     }

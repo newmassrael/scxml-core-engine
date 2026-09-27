@@ -276,26 +276,34 @@ class Test460StateMachine(
     // in front of `=` and runs the result, so a write target written in
     // ECMAScript has to have been lowered too. Same split as
     // `ScxmlScriptEngine.assign`.
-    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource) {
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.assign(sid, location, expr)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test460Event.Error.Execution, "<assign> failed")
+            false
         }
     }
 
     // W3C SCXML 5.8: Script block execution
-    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        try {
+        return try {
             engine.executeScript(sid, script)
+            true
         } catch (e: Exception) {
             raisePlatformError(Test460Event.Error.Execution, "<script> failed to execute")
+            false
         }
     }
 
@@ -387,26 +395,54 @@ class Test460StateMachine(
         when (state) {
             is Test460State.Fail -> {
                 // SCE-MAP: test460.scxml:25 :: fail :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
-            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
-            try {
-                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"fail\"", "'fail'"))?.toString() ?: ""))
-            } catch (_: Exception) {}
+            // W3C SCXML 4.7: Log expression evaluation. An expression that fails
+            // raises error.execution (W3C SCXML 5.9), and the error ends the
+            // block (W3C SCXML 4.9).
+            if (run log@{
+                try {
+                    println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"fail\"", "'fail'"))?.toString() ?: ""))
+                    false
+                } catch (_: Exception) {
+                    raisePlatformError(Test460Event.Error.Execution, "<log> expr failed to evaluate")
+                    true
+                }
+            }) {
+                return@run
+            }
+                }
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test460State.Pass -> {
                 // SCE-MAP: test460.scxml:24 :: pass :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
-            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
-            try {
-                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"pass\"", "'pass'"))?.toString() ?: ""))
-            } catch (_: Exception) {}
+            // W3C SCXML 4.7: Log expression evaluation. An expression that fails
+            // raises error.execution (W3C SCXML 5.9), and the error ends the
+            // block (W3C SCXML 4.9).
+            if (run log@{
+                try {
+                    println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"pass\"", "'pass'"))?.toString() ?: ""))
+                    false
+                } catch (_: Exception) {
+                    raisePlatformError(Test460Event.Error.Execution, "<log> expr failed to evaluate")
+                    true
+                }
+            }) {
+                return@run
+            }
+                }
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test460State.S0 -> {
                 // SCE-MAP: test460.scxml:10 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run foreach@{
@@ -433,8 +469,9 @@ class Test460StateMachine(
                 }
             }) {
                 // W3C SCXML 4.6 + 4.9: the block that contains the <foreach> ends.
-                return
+                return@run
             } // end of run foreach@
+                }
             }
         }
     }

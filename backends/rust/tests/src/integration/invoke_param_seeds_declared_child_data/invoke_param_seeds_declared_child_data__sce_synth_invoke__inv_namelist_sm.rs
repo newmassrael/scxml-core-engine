@@ -775,8 +775,8 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistP
                                 } else {
                                 }
 
-                                let _ = send_id; // suppress unused warning when no send operation
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
                             }
                         }
                     }
@@ -801,8 +801,8 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistP
                                 } else {
                                 }
 
-                                let _ = send_id; // suppress unused warning when no send operation
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
                             }
                         }
                     }

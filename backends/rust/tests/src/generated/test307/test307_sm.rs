@@ -616,10 +616,19 @@ impl StatePolicy for Test307Policy {
                                 "entering s0 value of Var 1 is: ",
                                 val
                             ),
-                            Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                "Log expression eval failed: {}",
-                                e
-                            ),
+                            Err(e) => {
+                                // W3C SCXML 5.9: an expression that fails raises error.execution,
+                                // and (W3C SCXML 4.9) the error ends the block.
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Log expression eval failed: {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    Test307Event::ErrorExecution,
+                                    "<log> expr failed to evaluate",
+                                ));
+                                break 'action_block;
+                            }
                         }
                     }
 
@@ -666,10 +675,19 @@ impl StatePolicy for Test307Policy {
                                 "entering s1, value of non-existent substructure of Var 1 is: ",
                                 val
                             ),
-                            Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                "Log expression eval failed: {}",
-                                e
-                            ),
+                            Err(e) => {
+                                // W3C SCXML 5.9: an expression that fails raises error.execution,
+                                // and (W3C SCXML 4.9) the error ends the block.
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Log expression eval failed: {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    Test307Event::ErrorExecution,
+                                    "<log> expr failed to evaluate",
+                                ));
+                                break 'action_block;
+                            }
                         }
                     }
 
@@ -842,10 +860,21 @@ impl StatePolicy for Test307Policy {
                                         "error in state s0",
                                         val
                                     ),
-                                    Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                        "Log expression eval failed: {}",
-                                        e
-                                    ),
+                                    Err(e) => {
+                                        // W3C SCXML 5.9: an expression that fails raises error.execution,
+                                        // and (W3C SCXML 4.9) the error ends the block.
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "Log expression eval failed: {}",
+                                            e
+                                        );
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                Test307Event::ErrorExecution,
+                                                "<log> expr failed to evaluate",
+                                            ),
+                                        );
+                                        break 'action_block;
+                                    }
                                 }
                             }
                         }
@@ -881,10 +910,21 @@ impl StatePolicy for Test307Policy {
                                         "error in state s1",
                                         val
                                     ),
-                                    Err(e) => ::sce_rust_runtime::sce_log_error!(
-                                        "Log expression eval failed: {}",
-                                        e
-                                    ),
+                                    Err(e) => {
+                                        // W3C SCXML 5.9: an expression that fails raises error.execution,
+                                        // and (W3C SCXML 4.9) the error ends the block.
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "Log expression eval failed: {}",
+                                            e
+                                        );
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                Test307Event::ErrorExecution,
+                                                "<log> expr failed to evaluate",
+                                            ),
+                                        );
+                                        break 'action_block;
+                                    }
                                 }
                             }
                         }

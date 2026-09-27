@@ -446,6 +446,7 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteEntryAction
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -453,7 +454,7 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteEntryAction
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "ready", Data: eventDataStr})
 	}
 	}
-
+	}
 		}()
 	default:
 		// No entry actions
@@ -568,6 +569,7 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteTransitionC
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -575,7 +577,7 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteTransitionC
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "sawSecondEarly", Data: eventDataStr})
 	}
 	}
-
+	}
 			}()
 		}
 	case AutoforwardDequeuePointSceSynthInvokeInvProbeStateMarked:
@@ -587,6 +589,7 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteTransitionC
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
@@ -594,7 +597,7 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteTransitionC
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "sawMarkFirst", Data: eventDataStr})
 	}
 	}
-
+	}
 			}()
 		}
 	}

@@ -292,34 +292,48 @@ class Test412StateMachine(
             }
             is Test412State.S0 -> {
                 // SCE-MAP: test412.scxml:9 :: s0 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
 
             if (run send@{
-            scheduleSend("__send_0", 1000L, Test412Event.Timeout)
+            val sendData = ""
+            // W3C SCXML 6.2: Delayed send
+            scheduleSend("__send_0", 1000L, Test412Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
-                return
+                return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
             }
             is Test412State.S01 -> {
                 // SCE-MAP: test412.scxml:18 :: s01 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test412Event.Event1)
+                }
                 // W3C SCXML 3.3: the <initial> transition's content runs when,
                 // and only when, this state's initial state is entered by
                 // default — not when the state is entered only as the ancestor
                 // of a deeper target.
                 if (isDefaultEntry) {
+                    // W3C SCXML 4.9: its own block, ended by `return@run`.
+                    run {
 
             raiseInternal(Test412Event.Event2)
+                    }
                 }
             }
             is Test412State.S011 -> {
                 // SCE-MAP: test412.scxml:28 :: s011 :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
 
             raiseInternal(Test412Event.Event3)
+                }
             }
             is Test412State.S02 -> {
                 // SCE-MAP: test412.scxml:36 :: s02 :: _state_body

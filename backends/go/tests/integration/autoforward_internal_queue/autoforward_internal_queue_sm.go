@@ -705,6 +705,7 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionContent(source Autofor
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
+	{
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Unsupported send type "urn:x-sce-unsupported-processor" raises error.execution
@@ -715,7 +716,7 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionContent(source Autofor
 	}
 	return  // W3C SCXML 4.9: the error ends the block
 	}
-
+	}
 			}()
 		case 1:
 			//line autoforward_internal_queue.scxml:78
@@ -723,6 +724,7 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionContent(source Autofor
 			func() {
 
 	// W3C SCXML 6.2: send id="__send_1"
+	{
 	{
 		eventDataStr := ""
 		_ = eventDataStr
@@ -734,7 +736,7 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionContent(source Autofor
 		engine.RaiseExternalWithMeta(meta)
 	}
 	}
-
+	}
 			}()
 		}
 	}
