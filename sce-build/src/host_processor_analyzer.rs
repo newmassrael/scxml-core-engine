@@ -622,6 +622,21 @@ pub fn lower_mesh_sends(model: &SCXMLModel, language: Language) -> Cow<'_, SCXML
             action.send_type_host_served = true;
         }
     });
+    // The host serves this type for this machine, so it is one of the host's
+    // types exactly as a declared one is: every template that emits the
+    // host-send surface — the C11 registry, its `perform_host_send` and its
+    // registration entry points — is gated on this list, and a lowered send
+    // with no surface behind it does not compile. Recorded on the lowered
+    // copy only, so the manifest still echoes what the host declared.
+    if !lowered
+        .host_processor_types
+        .iter()
+        .any(|t| t == MESH_PROCESSOR_TYPE)
+    {
+        lowered
+            .host_processor_types
+            .push(MESH_PROCESSOR_TYPE.to_string());
+    }
     // A delayed Mesh send waits on the delayed-send queue as any delayed
     // host-served send does, so the queue's storage is sized with it.
     record_delayed_host_sends(&mut lowered);
@@ -860,6 +875,12 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(untouched(&lowered), untouched(&model));
+        // The lowered copy lists the type among the host's, so every template
+        // gated on that list emits the host-send surface a lowered send calls
+        // (the C11 registry did not, and the machine did not compile); the
+        // parsed model — what the manifest echoes — is left as declared.
+        assert_eq!(lowered.host_processor_types, [MESH_PROCESSOR_TYPE]);
+        assert!(model.host_processor_types.is_empty());
     }
 
     #[test]
