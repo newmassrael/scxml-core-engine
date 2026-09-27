@@ -34,8 +34,8 @@
             "default": ""
           },
           "elapsed_ms": {
-            "type": "number",
-            "description": "How long the situation had held when this case was observed, in milliseconds. ⚠ A DURATION, not a timestamp -- it restarts whenever the situation does, and a record where it goes backwards is ordinary rather than broken. This was first published as `at_ms`, a moment on a timeline, and the data said otherwise: on one corpus the two cases a specification described as 4 seconds and 70 seconds carried 4123 and 70123, which is time since a condition began and nothing else. ⚠⚠ Time is not a signal: no address, no value space, nothing drives it. That is why it sits on the case rather than in `given`. The unit is fixed so two packs cannot mean different things by one number."
+            "$ref": "#/$defs/elapsed",
+            "description": "How long the situation had held when this case was observed, in milliseconds -- a number when the record knows it, or a `{min, max}` window when it knows only bounds. ⚠ A DURATION, not a timestamp -- it restarts whenever the situation does, and a record where it goes backwards is ordinary rather than broken. This was first published as `at_ms`, a moment on a timeline, and the data said otherwise: on one corpus the two cases a specification described as 4 seconds and 70 seconds carried 4123 and 70123, which is time since a condition began and nothing else. ⚠⚠ Time is not a signal: no address, no value space, nothing drives it. That is why it sits on the case rather than in `given`. The unit is fixed so two packs cannot mean different things by one number."
           },
           "given": {
             "type": "object",
@@ -71,8 +71,8 @@
                   "description": "Addresses this step actually SET, as on a case."
                 },
                 "elapsed_ms": {
-                  "type": "number",
-                  "description": "How long the situation had held when this step was taken, as on a case."
+                  "$ref": "#/$defs/elapsed",
+                  "description": "How long the situation had held when this step was taken, as on a case: a number, or a `{min, max}` window."
                 }
               }
             },
@@ -80,6 +80,23 @@
           }
         }
       }
+    }
+  },
+  "$defs": {
+    "elapsed": {
+      "oneOf": [
+        {"type": "number", "minimum": 0},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["min", "max"],
+          "properties": {
+            "min": {"type": "number", "minimum": 0},
+            "max": {"type": "number", "minimum": 0}
+          },
+          "description": "The time is known only to lie between these bounds. ⚠ Why a window and not a guessed number: a record taken by a harness that waits 'up to' a timeout, or whose steps take as long as the platform takes, does not know the instant it observed -- and a document with a pending delay answers differently on either side of it. Measured 2026-09-27: fourteen cases of one component carried no time at all and could not be judged; a single number chosen for them would have judged them against a moment no run is known to have reached. A window lets `verify` judge every case whose answer is the same anywhere inside it, and withhold exactly the ones where a deadline falls within it."
+        }
+      ]
     }
   }
 }

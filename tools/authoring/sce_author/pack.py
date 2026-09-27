@@ -511,6 +511,30 @@ class Case:
     # values lost exactly that: a document reading "A becomes B" literally was
     # never shown the A, failed, and a document reading it loosely passed.
     before: tuple = ()
+    # The same time as bounds: (lo, hi), with lo == hi when `elapsed_ms` is
+    # exact, or None when the record said nothing. `elapsed_ms` stays the
+    # exact value only -- a reading that needs THE number (a clock input)
+    # must not be handed one end of a window as though it were the time.
+    elapsed_window: tuple | None = None
+
+    def __post_init__(self):
+        # One source of truth: an exact time IS a window of width zero, so a
+        # Case built with `elapsed_ms` alone is never read as untimed.
+        if self.elapsed_window is None and self.elapsed_ms is not None:
+            object.__setattr__(self, "elapsed_window",
+                               (float(self.elapsed_ms), float(self.elapsed_ms)))
+
+
+def _elapsed(raw, where: str) -> tuple:
+    """A record's `elapsed_ms` as (exact value or None, window or None)."""
+    if raw is None:
+        return None, None
+    if isinstance(raw, dict):
+        lo, hi = float(raw["min"]), float(raw["max"])
+        if lo > hi:
+            raise PackError(f"{where}: elapsed_ms window has min {lo} above max {hi}")
+        return (lo if lo == hi else None), (lo, hi)
+    return float(raw), (float(raw), float(raw))
 
 
 @dataclass
@@ -586,13 +610,15 @@ def load_examples(paths: list[pathlib.Path]) -> Examples:
             for index, step in enumerate(case.get("before") or (), 1):
                 step_given = dict(step.get("given") or {})
                 driven |= set(step_given)
-                before.append(Case(f"{name} (before {index})", step_given, {},
-                                   step.get("elapsed_ms"),
-                                   tuple(step.get("drove") or ()), variant))
-            cases.append(Case(name, given, expect,
-                              case.get("elapsed_ms"),
+                step_name = f"{name} (before {index})"
+                exact, window = _elapsed(step.get("elapsed_ms"), f"{path}: {step_name}")
+                before.append(Case(step_name, step_given, {}, exact,
+                                   tuple(step.get("drove") or ()), variant,
+                                   elapsed_window=window))
+            exact, window = _elapsed(case.get("elapsed_ms"), f"{path}: {name}")
+            cases.append(Case(name, given, expect, exact,
                               tuple(case.get("drove") or ()),
-                              variant, tuple(before)))
+                              variant, tuple(before), elapsed_window=window))
     return Examples(origin, frozenset(driven), frozenset(expected), count,
                     tuple(cases), independent, ordered)
 

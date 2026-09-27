@@ -259,6 +259,22 @@ restatement is not nothing happening -- but nothing says whether the age
 beside it runs from this assertion or from the one that started the situation.
 Those are different moments, and a delayed act can fall between them.
 
+⚠ **A time known only as bounds is written as bounds.** `elapsed_ms:
+{min, max}` is for a record whose harness waits "up to" a timeout, or whose
+steps last as long as the platform takes: it knows a window, not an instant.
+The engine moves to the window's earliest end and carries the rest as
+*slack* — how far real time may be ahead of it — through every later step
+until nothing is pending. A case is judged when no deadline falls inside that
+slack: the answer is then the same anywhere in the window. When one does,
+whether it fired is not known, so the run is given up from there exactly as
+for an event that might have been sent — never judged on one of two machines.
+A setup step that moves nothing still passes its time. A `clock` input is
+refused under a window rather than handed one end of it, and `when_absent`
+does not apply: a window is a statement, not a silence. Measured on one
+component: fourteen cases had no time at all and could not be judged, and a
+single number chosen for them would have judged them against a moment no run
+is known to have reached.
+
 ⚠ **It also says what the cases never looked at.** "Every case passed" is a
 statement about the cases, and a run that judged two of nine written positions
 prints the same count as one that judged nine of nine. So the positions no

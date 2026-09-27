@@ -75,6 +75,12 @@ class VerifyError(AuthoringError):
     """Verification could not be performed. Never a verdict about behaviour."""
 
 
+class ClockLost(VerifyError):
+    """From here on the machine's configuration is not known, because a
+    deadline fell inside the time a record knows only as a window. Unlike a
+    VerifyError it is not about one case: every case after it is withheld."""
+
+
 def _host_names(module, part: str) -> dict:
     """The names the generated module gives one part of the document's
     surface, keyed by the id the document wrote.
@@ -1167,6 +1173,15 @@ def input_value(name: str, rule: dict, case, latches: Latches | None = None,
         # not say when it was taken cannot drive a document that watches the
         # clock, and reading zero instead would make every duration answer as
         # though no time had passed -- true of no round that ever happened.
+        if case.elapsed_ms is None and case.elapsed_window is not None:
+            # A window is not an absence: the record DID say, only as bounds.
+            # A clock input needs the number, and either end of the window
+            # would be a time no run is known to have read.
+            lo, hi = case.elapsed_window
+            raise VerifyError(
+                f"input {name!r} is the clock and this case knows its time only "
+                f"between {lo:g} and {hi:g} ms, so there is no one reading to "
+                f"hand the document")
         if case.elapsed_ms is None:
             # Records often note the time only on the cases where it mattered.
             # What the others mean is the binding's to say, for the same
@@ -1738,6 +1753,9 @@ class StatechartRun:
         # Whatever the machine did on its way into the initial configuration
         # belongs to no case, because no record drove it.
         self.recorder.take()
+        # How far real time may be ahead of the engine's clock, from the
+        # windows records gave instead of numbers (`observe`).
+        self.slack_ms = 0.0
 
     def event(self, name: str):
         found = self.engine.policy.get_event_from_name(name)
@@ -1846,7 +1864,7 @@ class StatechartRun:
         document distinguishes -- and choosing a step SIZE is the move its
         runtime warns against, because the host owns this clock outright.
         """
-        if case.elapsed_ms is None:
+        if case.elapsed_window is None:
             if self.engine.time_until_next_scheduled_ms() is not None:
                 raise VerifyError(
                     "the machine is waiting on a delayed act and this case "
@@ -1854,14 +1872,35 @@ class StatechartRun:
                     "wait was over when it was observed. Reading it here "
                     "would date the reading to a moment no record names")
             return
-        if case.elapsed_ms < 0:
+        lo, hi = case.elapsed_window
+        if lo < 0:
             raise VerifyError(
-                f"records `elapsed_ms` of {case.elapsed_ms}, and an age "
+                f"records `elapsed_ms` of {lo:g}, and an age "
                 f"cannot be negative. A LATER case reading lower than an "
                 f"earlier one is ordinary -- the situation restarted -- but "
                 f"a single one below zero says the record means something "
                 f"else by the field")
-        self.engine.advance_time(int(case.elapsed_ms))
+        # ⚠ A WINDOW MOVES THE CLOCK TO ITS EARLIEST END and widens what is
+        # not known. The engine can stand at one instant only; the record
+        # stood somewhere in [lo, hi]. So the engine goes to lo, and `slack`
+        # grows by hi - lo: real time may now be ahead of the engine by up
+        # to that much, carried over every step until nothing is pending.
+        # A deadline the engine has not reached but which lies within the
+        # slack may or may not have fired in the run the record describes --
+        # and from that moment no configuration is known, so the run is
+        # given up rather than judged on one of two machines.
+        self.slack_ms += hi - lo
+        self.engine.advance_time(int(lo))
+        due = self.engine.time_until_next_scheduled_ms()
+        if due is None:
+            # Nothing pending: the uncertainty had nothing left to move.
+            self.slack_ms = 0.0
+        elif due <= self.slack_ms:
+            raise ClockLost(
+                f"a delayed act is due {due} ms after the earliest moment "
+                f"this record can have reached, and the record may have run "
+                f"up to {self.slack_ms:g} ms past it -- whether it fired is "
+                f"not known, so no configuration from here on is")
 
 
 def verify_statechart(pack: Pack, binding: dict, module, build: Build,
@@ -1875,8 +1914,10 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             "partly the result of the cases before it. Reading the file's "
             "line order as a timeline it was never promised would produce a "
             "verdict about an order nobody recorded."))
+    # A window is a recorded time too: it moves the clock to its earliest end.
     if build.needs_event_scheduler and not any(
-            case.elapsed_ms is not None for case in examples.cases):
+            step.elapsed_window is not None
+            for case in examples.cases for step in (*case.before, case)):
         return Verification(refusal=(
             "the document has delayed acts, so it has to be driven through "
             "time, and no case records an `elapsed_ms`. Virtual time would "
@@ -2026,6 +2067,12 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                     # A setup step that moves nothing this document listens
                     # for leaves the machine as it was. That is a fact about
                     # the setup, and nothing is claimed on it.
+                    # ⚠ Its TIME still passes, when the record states it: a
+                    # delayed act pending across the step is that much
+                    # nearer, whether or not the step reached the machine.
+                    if case.elapsed_window is not None:
+                        run.observe(case)
+                        run.recorder.take()
                     continue
                 # ⚠ A case that drove nothing this document listens for is
                 # NOT a pass. Reading the machine afterwards would report
@@ -2094,6 +2141,15 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                     value = now[name]
                 produced.update(output_values(name, rule, value))
             stood_in = planted.stand_in(produced)
+        except ClockLost as exc:
+            # Not this case's failure to be driven: the run itself stopped
+            # being knowable, as it does for an open event (`lost`).
+            lost = f"at {case.name or '(unnamed)'!r}: {exc}"
+            if judged:
+                withhold(result, case)
+            # A setup step records nothing of its own: its case's judged
+            # round reaches `lost` and is withheld there, once.
+            continue
         except VerifyError as exc:
             # A setup step that cannot be driven leaves the case unjudgeable,
             # and says which step it was.

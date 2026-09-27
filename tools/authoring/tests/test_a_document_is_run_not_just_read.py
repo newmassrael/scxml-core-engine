@@ -297,6 +297,24 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         self.assertEqual(0, result.unjudged,
                          "with the time recorded, every case can be driven")
 
+    def test_a_clock_is_not_handed_one_end_of_a_window(self):
+        """A record that knows its time only as a window DID say something,
+        so `when_absent` is not what it means -- and neither end of the
+        window is a reading any run is known to have made. The clock input
+        refuses the case; a statechart can still judge through the window,
+        because it asks only whether a deadline falls inside it."""
+        def watch_the_clock(binding):
+            binding["inputs"]["barrierDown"] = {"clock": True, "when_absent": 0}
+
+        pack, path = self.staged(
+            watch_the_clock,
+            lambda ex: [case.update(elapsed_ms={"min": 4000, "max": 4200})
+                        for case in ex["cases"]])
+        result = verify(pack, path)
+        self.assertTrue(result.ran)
+        self.assertEqual(len(result.results), result.unjudged)
+        self.assertIn("only between 4000 and 4200", result.results[0].refusal)
+
     def test_a_duration_that_restarts_is_not_a_broken_record(self):
         """⚠ A monotonicity check was written here and the data refused it.
 
