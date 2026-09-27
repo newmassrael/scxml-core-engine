@@ -3677,8 +3677,9 @@ fn child_needs_parens(
     }
 }
 
-/// `&&` nested inside `||` — parenthesise it for the C family even though
-/// precedence does not require it.
+/// An operand GCC's `-Wparentheses` flags — `&&` nested inside `||` first
+/// among them — parenthesised for the C family even though precedence does
+/// not require it.
 ///
 /// ⚠ Precedence-correct is not the same as compilable. `a || b && c` binds the
 /// way the document means, so `child_needs_parens` leaves it bare — and then
@@ -3691,8 +3692,28 @@ fn child_needs_parens(
 /// This is deliberately C-family only. Rust, Go, Kotlin and Python have no
 /// such diagnostic, and widening the rule would re-pin every committed tree in
 /// those languages to fix a warning they do not have.
+///
+/// The same warning has more shapes than `&&` within `||`, each as fatal
+/// under `-Werror`, and the rule covers every one GCC names:
+/// - `+`/`-`, or a comparison, as an operand of `&`, `|` or `^`
+///   (`(h * 5 + c) & m` emitted bare as `h * 5 + c & m` stopped the C11
+///   conformance build of `sce:std/hash/murmur3_32`);
+/// - `&` or `^` within `|`, and `&` within `^`;
+/// - `+`/`-` within `<<` or `>>`.
 fn c_family_clarity_parens(child: &TypedExpr, parent_op: BinOp) -> bool {
-    matches!(parent_op, BinOp::Or) && matches!(&child.kind, ExprKind::Binary { op: BinOp::And, .. })
+    use BinOp::*;
+    let ExprKind::Binary { op: child_op, .. } = &child.kind else {
+        return false;
+    };
+    let additive = matches!(child_op, Add | Sub);
+    match parent_op {
+        Or => matches!(child_op, And),
+        BitAnd => additive || child_op.is_comparison(),
+        BitXor => additive || child_op.is_comparison() || matches!(child_op, BitAnd),
+        BitOr => additive || child_op.is_comparison() || matches!(child_op, BitAnd | BitXor),
+        Shl | Shr | UShr => additive,
+        _ => false,
+    }
 }
 
 /// Wrap an emitted sub-expression in parens when it is used as the base of a
@@ -7595,7 +7616,10 @@ mod tests {
 
     #[test]
     fn cpp_precedence_bitwise_vs_comparison() {
-        assert_eq!(tp("a & 0xFF === b", ExprTarget::Cpp), "a & 0xFF == b");
+        // `===` binds tighter than `&` in both languages, so the parens change
+        // nothing about the meaning; they are there because GCC refuses a bare
+        // comparison as an operand of `&` under `-Werror=parentheses`.
+        assert_eq!(tp("a & 0xFF === b", ExprTarget::Cpp), "a & (0xFF == b)");
     }
 
     /// `&&` inside `||` must carry parens in the C family, although precedence
@@ -7633,6 +7657,40 @@ mod tests {
             tp("a === 2 || b >= 1 && b <= 4", ExprTarget::Rust),
             "a == 2 || b >= 1 && b <= 4"
         );
+    }
+
+    /// Every other operand shape GCC's `-Wparentheses` names, parenthesised
+    /// in the C family and left bare elsewhere.
+    ///
+    /// ⚠ THE WITNESS IS A BUILD FAILURE. `sce:std/hash/murmur3_32` emitted
+    /// `h = (h & 0xFFFFFFFF) * 5 + 0xe6546b64 & 0xFFFFFFFF;` for C11 and the
+    /// conformance build stopped on
+    ///
+    ///     error: suggest parentheses around '+' in operand of '&'
+    ///            [-Werror=parentheses]
+    #[test]
+    fn c_family_parenthesises_every_wparentheses_operand() {
+        let cases = [
+            ("h * 5 + c & m", "(h * 5 + c) & m"),
+            ("a - b | c", "(a - b) | c"),
+            ("a + b ^ c", "(a + b) ^ c"),
+            ("a & b | c", "(a & b) | c"),
+            ("a ^ b | c", "(a ^ b) | c"),
+            ("a & b ^ c", "(a & b) ^ c"),
+            ("a << b + c", "a << (b + c)"),
+            ("a + b >> c", "(a + b) >> c"),
+            ("a < b | c", "(a < b) | c"),
+        ];
+        for target in [ExprTarget::Cpp, ExprTarget::C] {
+            for (src, want) in cases {
+                assert_eq!(tp(src, target), want, "{target:?} left `{src}` bare");
+            }
+            // shapes GCC does not warn about stay bare
+            assert_eq!(tp("a * b & c", target), "a * b & c");
+            assert_eq!(tp("a & b & c", target), "a & b & c");
+            assert_eq!(tp("a | b | c", target), "a | b | c");
+        }
+        assert_eq!(tp("h * 5 + c & m", ExprTarget::Rust), "h * 5 + c & m");
     }
 
     #[test]
