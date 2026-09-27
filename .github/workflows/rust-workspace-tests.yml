@@ -16,7 +16,10 @@ name: Rust Workspace Tests
 # `template_registry::tests` now does, and this workflow is what makes
 # those tests binding.
 #
-# Scope is `--features cli`, matching the `workspace-tests` gate. The
+# Scope is `--features cli,sce-rust-mesh/wss`, matching the
+# `workspace-tests` gate this lane runs (the WebSocket binding's tests are
+# behind `sce-rust-mesh/wss`, and a lane without it would skip them the
+# same silent way). The
 # paragraph that used to sit here said the opposite — "the default
 # feature set", with the cli-gated targets deliberately left to
 # drift-verify.yml — and stayed after the flag was added, so the file
@@ -155,7 +158,7 @@ concurrency:
 
 jobs:
   test:
-    name: cargo test --workspace --features cli
+    name: cargo test --workspace --features cli,sce-rust-mesh/wss
     runs-on: ubuntu-latest
     # This lane exhausted the runner disk while running the workspace suite.
     # Omit DWARF from test artifacts, including linked standard-library
@@ -289,7 +292,7 @@ jobs:
     # `SCE_GATE_NO_FAIL_FAST` is the reporting choice this lane wants and a
     # developer does not: every failure in one run, because nobody iterates
     # on a runner.
-    - name: cargo test --workspace --features cli
+    - name: cargo test --workspace --features cli,sce-rust-mesh/wss
       env:
         SCE_REQUIRE_TOOLS: "1"
         SCE_GATE_NO_FAIL_FAST: "1"
