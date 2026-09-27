@@ -372,6 +372,15 @@ pub struct ImportContext {
     /// algorithm's `record:<alias>` names. `None` for every other import.
     #[serde(skip)]
     pub record: Option<RecordImport>,
+
+    /// For an imported algorithm whose signature has a record slot and no
+    /// list slot: the whole signature, record slots included. Another
+    /// algorithm's body calls it through these (SCE_FORGE.md §4.12 — a
+    /// record crosses between algorithms that name the same schema);
+    /// `host_only` still says why every other caller may not. `None` for
+    /// every other import.
+    #[serde(skip)]
+    pub record_slots: Option<AlgorithmSlots>,
 }
 
 /// An imported event-schema as a record type (SCE_FORGE.md §4.12): the
@@ -384,6 +393,38 @@ pub struct RecordImport {
     pub qualified_type: String,
     /// `(id, type)` in declaration order.
     pub fields: Vec<(String, SceType)>,
+    /// Which schema this is, by its document's identity — what a call
+    /// compares when it passes this record to another algorithm.
+    pub id: crate::forge::types::RecordId,
+}
+
+/// One parameter or the return of an imported algorithm's signature.
+#[derive(Debug, Clone)]
+pub enum CalleeSlot {
+    Scalar(SceType),
+    /// A record of the schema `id`, spelled `qualified_type` on this backend.
+    Record {
+        id: crate::forge::types::RecordId,
+        qualified_type: String,
+    },
+}
+
+impl CalleeSlot {
+    /// The type a value in this slot has in the expression pipeline.
+    pub fn inferred(&self) -> crate::forge::types::InferredType {
+        use crate::forge::types::InferredType;
+        match self {
+            Self::Scalar(ty) => InferredType::from_sce_type(ty),
+            Self::Record { id, .. } => InferredType::Record(*id),
+        }
+    }
+}
+
+/// The signature of an imported algorithm with a record slot.
+#[derive(Debug, Clone, Default)]
+pub struct AlgorithmSlots {
+    pub params: Vec<CalleeSlot>,
+    pub ret: Option<CalleeSlot>,
 }
 
 impl ImportContext {
@@ -667,6 +708,7 @@ fn resolve_single_import(
         param_types: Vec::new(),
         ret_type: None,
         host_only: None,
+        record_slots: None,
         may_fail: false,
         member_field_types: Vec::new(),
         member_method_sigs: Vec::new(),
@@ -21400,6 +21442,12 @@ fn record_locals(
                     alias,
                     type_spelling,
                     ..
+                }
+                | AlgorithmStmt::RecordFromCall {
+                    name,
+                    alias,
+                    type_spelling,
+                    ..
                 } => out.push((name, alias, type_spelling.as_ref())),
                 AlgorithmStmt::If {
                     then_body,
@@ -21506,6 +21554,7 @@ fn collect_bc_foreach_member_types(
             }
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
+            | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
@@ -21566,6 +21615,7 @@ fn collect_append_buffers(
                 collect_append_buffers(body, out);
             }
             AlgorithmStmt::RecordVar { .. }
+            | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
@@ -21942,6 +21992,7 @@ fn collect_algorithm_assigned_roots(
             }
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
+            | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. }
             | AlgorithmStmt::Require { .. } => {}
@@ -22010,6 +22061,7 @@ fn lower_algorithm_stmt_and_check(
         s,
         AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
+            | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Call { .. }
@@ -22286,6 +22338,48 @@ fn lower_algorithm_stmt(
                 Language::Go => format!("{pad}{local} := {ty}{{{}}}\n", joined(": ")),
                 Language::Python => format!("{pad}{local} = {ty}({})\n", joined("=")),
                 Language::Kotlin => format!("{pad}var {local} = {ty}({})\n", joined(" = ")),
+            };
+            out.push_str(&line);
+        }
+        // SCE_FORGE.md §4.12: a record local received whole from a call of an
+        // algorithm returning a record of the same schema. The call is lowered
+        // as every call is — its failure passed on by the call's own channel —
+        // and held to the record's type, so a call returning another schema's
+        // record, or no record, is refused where `init` is written.
+        AlgorithmStmt::RecordFromCall {
+            name,
+            alias,
+            type_spelling,
+            init,
+            init_spelling,
+            ..
+        } => {
+            let element = format!("<sce:var name=\"{name}\">");
+            let record = resolve_record(imports, alias, type_spelling.as_ref(), &element)?;
+            let site = ExpressionSite::new(init, init_spelling.as_ref());
+            let value = expr::transpile_into(
+                init,
+                l.expr_target(),
+                type_ctx,
+                renames,
+                InferredType::Record(record.id),
+            )
+            .map_err(|refusal| site.place(refusal))?;
+            let local = l.local_id(name);
+            let ty = &record.qualified_type;
+            let line = match lang {
+                Language::Rust => {
+                    let rust_mut = if assigned.contains(name.as_str()) {
+                        "mut "
+                    } else {
+                        ""
+                    };
+                    format!("{pad}let {rust_mut}{local}: {ty} = {value};\n")
+                }
+                Language::Cpp | Language::C11 => format!("{pad}{ty} {local} = {value};\n"),
+                Language::Go => format!("{pad}{local} := {value}\n"),
+                Language::Python => format!("{pad}{local} = {value}\n"),
+                Language::Kotlin => format!("{pad}var {local}: {ty} = {value}\n"),
             };
             out.push_str(&line);
         }
@@ -23173,7 +23267,10 @@ impl CallTarget<'_> {
     /// How many arguments the call takes.
     fn arity(&self) -> usize {
         match self {
-            Self::Algorithm(imp) => imp.param_types.len(),
+            Self::Algorithm(imp) => imp
+                .record_slots
+                .as_ref()
+                .map_or(imp.param_types.len(), |s| s.params.len()),
             Self::CollectionMethod { arity, .. } => *arity,
         }
     }
@@ -23184,12 +23281,20 @@ impl CallTarget<'_> {
     fn parameter(&self, i: usize) -> expr::Expected {
         use crate::forge::types::InferredType;
         match self {
-            Self::Algorithm(imp) => imp
-                .param_types
-                .get(i)
-                .map_or(expr::Expected::Hint(InferredType::Unknown), |ty| {
-                    expr::Expected::Slot(InferredType::from_sce_type(ty))
-                }),
+            Self::Algorithm(imp) => match &imp.record_slots {
+                Some(slots) => slots
+                    .params
+                    .get(i)
+                    .map_or(expr::Expected::Hint(InferredType::Unknown), |slot| {
+                        expr::Expected::Slot(slot.inferred())
+                    }),
+                None => imp
+                    .param_types
+                    .get(i)
+                    .map_or(expr::Expected::Hint(InferredType::Unknown), |ty| {
+                        expr::Expected::Slot(InferredType::from_sce_type(ty))
+                    }),
+            },
             Self::CollectionMethod { .. } => expr::Expected::Hint(InferredType::Unknown),
         }
     }
@@ -23317,7 +23422,13 @@ fn algorithm_call_target<'a>(
     receives_failures: bool,
 ) -> Result<CallTarget<'a>, ForgeError> {
     let at = site.locate(Some(0..trimmed.len()));
-    let refusal: ForgeError = if let Some(slot) = &imp.host_only {
+    // A record slot does not refuse the call here — this is an algorithm's
+    // body, which may pass a record of the callee's own schema.
+    let host_only = imp
+        .host_only
+        .as_ref()
+        .filter(|_| imp.record_slots.is_none());
+    let refusal: ForgeError = if let Some(slot) = host_only {
         expr::host_only_call(trimmed, slot, at.observed()).into()
     } else if imp.may_fail && !receives_failures {
         expr::unreceived_failure_call(trimmed, at.observed()).into()
@@ -24172,8 +24283,11 @@ impl<'a> AlgorithmTypes<'a> {
         for &(name, shape) in &self.record_items {
             type_ctx.insert_record(name, shape);
         }
-        for &(name, _, _) in &self.records {
+        for &(name, _, record) in &self.records {
             type_ctx.insert_record(name, RecordShape::Closed);
+            // The name as a whole value: what a call passes to an algorithm
+            // whose parameter is this record (SCE_FORGE.md §4.12).
+            type_ctx.insert_var(name, InferredType::Record(record.id));
         }
         for (name, ty) in &self.members {
             type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
@@ -24226,11 +24340,30 @@ impl<'a> AlgorithmTypes<'a> {
         // callee spelling — not its type.
         for imp in imports {
             if imp.kind == "algorithm" {
-                // A `list<T>` slot or a record slot has no signature to
-                // register: the alias is registered as callable only by a
-                // host (SCE_FORGE.md §4.12). A `may-fail` callee registers as
-                // one, and its call is judged by whether this body receives
-                // failures (§3.4.1).
+                // A callee with a record slot is callable from here, the
+                // record slots typed by the schema the callee names — a call
+                // passes only a record of that very schema (SCE_FORGE.md
+                // §4.12).
+                if let Some(slots) = &imp.record_slots {
+                    type_ctx.insert_func(
+                        imp.alias.as_str(),
+                        FuncSig {
+                            may_fail: imp.may_fail,
+                            ..FuncSig::new(
+                                slots.params.iter().map(CalleeSlot::inferred).collect(),
+                                slots
+                                    .ret
+                                    .as_ref()
+                                    .map_or(InferredType::Unknown, CalleeSlot::inferred),
+                            )
+                        },
+                    );
+                    continue;
+                }
+                // A `list<T>` slot has no signature to register: the alias is
+                // registered as callable only by a host (SCE_FORGE.md §4.12).
+                // A `may-fail` callee registers as one, and its call is judged
+                // by whether this body receives failures (§3.4.1).
                 if let Some(slot) = &imp.host_only {
                     type_ctx.insert_func(imp.alias.as_str(), FuncSig::host_only(slot.as_str()));
                     continue;
@@ -24332,6 +24465,10 @@ fn render_algorithm(
                 format!("{local}.{}", event_schema_field_ident(id, lang)),
             ));
         }
+        // The record as a whole value — an argument to an algorithm whose
+        // parameter is this record — is its local's identifier. (A member
+        // access looks its whole path up first, so this never shadows one.)
+        record_renames.push((name.to_string(), local));
     }
     let type_ctx = types.type_ctx(m, imports);
 
@@ -25940,6 +26077,7 @@ mod tests {
             param_types: Vec::new(),
             ret_type: None,
             host_only: None,
+            record_slots: None,
             may_fail: false,
             member_field_types: Vec::new(),
             member_method_sigs: Vec::new(),
@@ -26572,6 +26710,7 @@ mod tests {
                 param_types: Vec::new(),
                 ret_type: None,
                 host_only: None,
+                record_slots: None,
                 may_fail: false,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
@@ -26612,6 +26751,7 @@ mod tests {
                 param_types: Vec::new(),
                 ret_type: None,
                 host_only: None,
+                record_slots: None,
                 may_fail: false,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),

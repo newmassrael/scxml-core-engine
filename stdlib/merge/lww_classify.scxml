@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/lww_classify.scxml — what a replica does with a write to one
+  last-writer-wins cell stamped `msg`, given the stamps `logged` it already
+  holds for that cell (Actual Budget, loot-core/src/server/sync/index.ts
+  `compareMessages`):
+
+  - 2, a duplicate: the replica holds this very write — drop it;
+  - 1, old: it holds a later write to the cell — keep the write in its log
+    and its digest, but do not apply it; the later value stands;
+  - 0, apply it: nothing later is held.
+
+  "Later" is hlc_compare's order — the reference compares the stamps' text,
+  whose fixed width makes it the same order (hlc_text). The answer depends
+  only on the set of stamps, not on the order they were logged in, which is
+  what lets every replica classify the same write the same way whatever
+  order the writes reached it in.
+
+  logged {100/0/7, 200/0/7}, msg 200/0/7 → 2 · msg 150/0/9 → 1 ·
+  msg 250/0/1 → 0 · logged {} → 0.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="lww_classify" version="1.0">
+  <sce:import kind="event-schema" src="hlc_timestamp.scxml" as="Hlc"/>
+  <sce:import kind="algorithm" src="hlc_compare.scxml" as="order"/>
+  <sce:signature>
+    <sce:param name="logged" type="list&lt;record:Hlc&gt;"/>
+    <sce:param name="msg" type="record:Hlc"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="duplicate" type="bool" init="false"/>
+    <sce:var name="later" type="bool" init="false"/>
+    <sce:foreach item="x" in="logged">
+      <sce:var name="c" type="int32" init="order(x, msg)"/>
+      <sce:if cond="c === 0">
+        <sce:assign target="duplicate" expr="true"/>
+      </sce:if>
+      <sce:if cond="c &gt; 0">
+        <sce:assign target="later" expr="true"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="duplicate ? 2 : (later ? 1 : 0)"/>
+  </sce:body>
+</scxml>

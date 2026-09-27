@@ -440,6 +440,33 @@
           "type": "object"
         },
         {
+          "description": "`<sce:var name=... type=\"record:<alias>\" init=\"f(...)\"/>` — a record local received whole from a call of an imported algorithm that returns a record of the same schema (SCE_FORGE.md §4.12). The one place a record-returning call stands; its fields are updated afterwards like a built record's.\n\nA variant of its own, not an `init` on [`Self::RecordVar`]: every reader of a record local's fields would otherwise walk an empty field list here and say nothing about the value it was given.",
+          "properties": {
+            "init": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "record": {
+              "type": "string"
+            },
+            "stmt": {
+              "enum": [
+                "record_from_call"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "init",
+            "name",
+            "record",
+            "stmt"
+          ],
+          "type": "object"
+        },
+        {
           "description": "`<sce:assign target=\"lvalue\" expr=\"...\"/>` — mutates an existing l-value. SCE's `validate_lvalue_shape` accepts an identifier or a one-level member access only; a computed index (`buf[i]`) is rejected because it is not a statically-known storage location. Byte buffers are built forward-only via `<sce:append>` ([`AlgorithmStmt::Append`]), never index writes. Stored as a raw string and validated by the parser.",
           "properties": {
             "expr": {

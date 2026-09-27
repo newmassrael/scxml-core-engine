@@ -29,7 +29,7 @@
    `expected`, and is judged by the failure's contract name before anything
    reads `expected`. #}
 {% set call_args %}{% for arg_ty in f.args %}{% if arg_ty == "bytes" %}(sce_forge_bytes_view_t){ arg{{ loop.index0 }}.data, arg{{ loop.index0 }}.len }{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endset %}
-{% if f.output.list_of is defined %}
+{% if f.output.list_of is defined or f.output.type == "bytes" %}
 {% set ns = namespace(width=1) %}
 {% for c in f.cases %}
 {# A case that names a failure has no `expected` to size the array by. #}
@@ -37,6 +37,8 @@
 {% set ns.width = c.expected | length %}
 {% endif %}
 {% endfor %}
+{% endif %}
+{% if f.output.list_of is defined %}
 {% set signed_elem = f.output.list_of in ["i32", "i64"] %}
 {% set float_elem = f.output.list_of in ["f32", "f64"] %}
 {% endif %}
@@ -76,6 +78,9 @@ static void test_{{ f.name }}(void) {
 {% elif f.output.list_of is defined %}
         {{ f.output.list_of | c_type }} expected[{{ ns.width }}];
         size_t  expected_len;
+{% elif f.output.type == "bytes" %}
+        uint8_t expected[{{ ns.width }}];
+        size_t  expected_len;
 {% else %}
         {{ f.output.type | c_type }} expected;
 {% endif %}
@@ -111,6 +116,9 @@ static void test_{{ f.name }}(void) {
             .expected_len = {{ c.expected | length }},
 {% elif f.output.list_of is defined %}
             .expected = { {% for v in c.expected %}{{ v | c_literal(f.output.list_of) }}, {% else %}0{% endfor %} },
+            .expected_len = {{ c.expected | length }},
+{% elif f.output.type == "bytes" %}
+            .expected = {{ c.expected | c_literal("bytes") }},
             .expected_len = {{ c.expected | length }},
 {% else %}
             .expected = {{ c.expected | c_literal(f.output.type) }},
@@ -209,6 +217,25 @@ static void test_{{ f.name }}(void) {
             }
         }
 {% endif %}
+{% elif f.output.type == "bytes" %}
+{# A `bytes` return is the algorithm's `<fn>_result_t { bytes[N], len, ok }`,
+   compared by `ok`, then length, then byte. #}
+        {{ f.function }}_result_t actual = {% if f.may_fail %}result{% else %}{{ f.function }}({{ call_args }}){% endif %};
+        if (!actual.ok || actual.len != cases[i].expected_len) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu: ok=%d len=%zu expected_len=%zu\n",
+                i, (int)actual.ok, (size_t)actual.len, cases[i].expected_len);
+            ++g_failures;
+            continue;
+        }
+        for (size_t k = 0; k < actual.len; ++k) {
+            if (actual.bytes[k] != cases[i].expected[k]) {
+                fprintf(stderr,
+                    "FAIL: {{ f.name }} case %zu [%zu]: actual=%u expected=%u\n",
+                    i, k, (unsigned)actual.bytes[k], (unsigned)cases[i].expected[k]);
+                ++g_failures;
+            }
+        }
 {% else %}
         {{ f.output.type | c_type }} actual = {% if f.may_fail %}result.value{% else %}{{ f.function }}({{ call_args }}){% endif %};
 {% if f.output.compare == "tolerance" %}

@@ -1372,6 +1372,20 @@
       }
     },
     {
+      "name": "hlc_text",
+      "document": "sce:std/merge/hlc_text.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "hlc_text",
+      "args": [
+        { "record": "hlc_timestamp" }
+      ],
+      "output": {
+        "type": "bytes",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "hlc_within_drift",
       "document": "sce:std/merge/hlc_within_drift.scxml",
       "kind": "algorithm",
@@ -1398,6 +1412,21 @@
       ],
       "output": {
         "type": "bool",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "lww_classify",
+      "document": "sce:std/merge/lww_classify.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "lww_classify",
+      "args": [
+        { "list_of": { "record": "hlc_timestamp" } },
+        { "record": "hlc_timestamp" }
+      ],
+      "output": {
+        "type": "u8",
         "compare": "equality"
       }
     },

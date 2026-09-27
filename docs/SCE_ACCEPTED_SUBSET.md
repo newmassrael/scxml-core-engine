@@ -2568,8 +2568,9 @@ lists there are, and so is either statement under any other data model.
 kind does, `DaysInMonth(shown.year, shown.month)`, in a guard, an assignment
 or a host action's argument, judged against the signature the forge import
 pass discovers — its parameters' and return's types. An algorithm whose
-signature takes or returns a `list<T>` or a `record:` is callable only by a
-host (SCE_FORGE.md §4.12) and is refused where it is called. The import is
+signature takes or returns a `list<T>` or a `record:` is not called from a
+statechart — a host calls it, and another algorithm when its slots are
+records (SCE_FORGE.md §4.12) — and is refused where it is called. The import is
 read where the document is parsed and refused there if its file is missing
 or is not an algorithm (`import/file-not-found`, `import/kind-mismatch`,
 `import/not-forge`); under any other data model an algorithm import is

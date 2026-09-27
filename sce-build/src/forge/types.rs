@@ -82,6 +82,13 @@ pub enum InferredType {
     /// typed `<foreach>`; no emitter lowers it as an operand.
     List(ListElem),
 
+    /// A record — a value of the event-schema document `RecordId` names
+    /// (SCE_FORGE.md §4.12). It is passed whole by name, as an argument to
+    /// an algorithm whose parameter is that record or as the value a record
+    /// local is initialised from; it is never an operand, and its fields
+    /// are read as `r.<field>`, each typed by the schema.
+    Record(RecordId),
+
     /// The `null` literal. Has no direct SCE type; mostly used for
     /// emitter-side null-checks and rejected in arithmetic contexts.
     Null,
@@ -108,6 +115,75 @@ pub enum InferredType {
         offset: Rational,
         unit: UnitTag,
     },
+}
+
+/// Which record type a [`InferredType::Record`] is: the event-schema
+/// document it is a value of, by that document's `stdlib::identity`. Two
+/// documents that import one schema by different `src` name one record; two
+/// schemas that share a `name` in different places do not.
+///
+/// Interned like `UnitTag` so the lattice stays `Copy`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RecordId(u16);
+
+impl RecordId {
+    /// The id of the schema whose document identity is `identity` and whose
+    /// document declares `name` — the name its payload struct is spelled
+    /// from on every backend (`generator::event_schema_payload_type`).
+    pub fn intern(identity: &str, name: &str) -> Self {
+        let mut guard = record_registry().lock().expect("record registry poisoned");
+        if let Some(idx) = guard.iter().position(|(existing, _)| *existing == identity) {
+            return RecordId(idx as u16);
+        }
+        let idx = guard.len();
+        assert!(
+            idx < u16::MAX as usize,
+            "record registry exhausted its u16 index space"
+        );
+        guard.push((
+            Box::leak(identity.to_owned().into_boxed_str()),
+            Box::leak(name.to_owned().into_boxed_str()),
+        ));
+        RecordId(idx as u16)
+    }
+
+    fn entry(self) -> (&'static str, &'static str) {
+        record_registry()
+            .lock()
+            .expect("record registry poisoned")
+            .get(self.0 as usize)
+            .copied()
+            .expect("RecordId constructed only by intern()")
+    }
+
+    /// The schema document this id was interned from.
+    pub fn identity(self) -> &'static str {
+        self.entry().0
+    }
+
+    /// The `name` that schema document declares.
+    pub fn schema_name(self) -> &'static str {
+        self.entry().1
+    }
+
+    /// The record as a refusal names it: the schema's `name` and the file
+    /// that declares it. The file tells apart two schemas that share a name;
+    /// only its last segment is written, since the identity of a document
+    /// outside the standard library is an absolute path of the machine that
+    /// read it.
+    pub fn describe(self) -> String {
+        let (identity, name) = self.entry();
+        let file = identity.rsplit(['/', '\\']).next().unwrap_or(identity);
+        format!("record of event-schema `{name}` ({file})")
+    }
+}
+
+type RecordEntry = (&'static str, &'static str);
+
+fn record_registry() -> &'static std::sync::Mutex<Vec<RecordEntry>> {
+    static REG: std::sync::OnceLock<std::sync::Mutex<Vec<RecordEntry>>> =
+        std::sync::OnceLock::new();
+    REG.get_or_init(|| std::sync::Mutex::new(Vec::new()))
 }
 
 /// The element of a [`InferredType::List`]: a fixed-width number, a `bool`
@@ -223,6 +299,10 @@ impl InferredType {
             Self::Unknown => "unknown".into(),
             Self::Quantity { .. } => "quantity".into(),
             Self::List(elem) => format!("list<{}>", elem.element_type().describe()),
+            // By the schema document itself: two records of one `name` in
+            // different places are different types, and the diagnostic
+            // that refuses one for the other must say which is which.
+            Self::Record(id) => id.describe(),
         }
     }
 
@@ -333,9 +413,9 @@ impl InferredType {
             | Self::Null
             | Self::Unknown
             | Self::Quantity { .. } => return None,
-            // Spelled from its element, so not one of the fixed spellings
-            // this returns — [`Self::describe`] names it.
-            Self::List(_) => return None,
+            // Spelled from its element or its schema, so not one of the
+            // fixed spellings this returns — [`Self::describe`] names it.
+            Self::List(_) | Self::Record(_) => return None,
         })
     }
 
@@ -378,8 +458,9 @@ impl InferredType {
                 NumericBaseType::Int { signed, bits } => int(signed, bits),
                 NumericBaseType::Float { bits } => float(bits),
             },
-            // A list is not a scalar a host method or a field declares.
-            Self::Null | Self::Unknown | Self::List(_) => None,
+            // A list or a record is not a scalar a host method or a field
+            // declares.
+            Self::Null | Self::Unknown | Self::List(_) | Self::Record(_) => None,
         }
     }
 

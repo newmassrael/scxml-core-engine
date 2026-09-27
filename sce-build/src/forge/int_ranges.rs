@@ -367,6 +367,30 @@ impl Analysis<'_, '_> {
                     self.relate_store(env, &key, &field.expr);
                 }
             }
+            // The call is judged like any expression (its arguments may
+            // compute); what it returns is another algorithm's, which no
+            // guard here bounds, so every field holds its declared range.
+            AlgorithmStmt::RecordFromCall {
+                name,
+                init,
+                init_spelling,
+                ..
+            } => {
+                self.stored(init, init_spelling.as_ref(), env, None);
+                let prefix = format!("{name}.");
+                let fields: Vec<String> = self
+                    .ctx
+                    .vars
+                    .keys()
+                    .filter(|k| k.starts_with(&prefix))
+                    .map(|k| k.to_string())
+                    .collect();
+                for key in fields {
+                    let slot = self.declared_range(&key);
+                    self.store(env, &key, slot, None);
+                    env.forget_relations(&key);
+                }
+            }
             AlgorithmStmt::Assign {
                 target,
                 expr,

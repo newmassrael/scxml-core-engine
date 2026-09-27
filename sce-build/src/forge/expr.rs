@@ -540,6 +540,7 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_unknown_callees(ast, ctx)?;
     reject_unknown_names(ast, ctx)?;
     reject_unnamed_record_elements(ast, source)?;
+    reject_records_as_operands(ast, source, RecordPlace::Whole)?;
     reject_call_argument_mismatches(ast, ctx, source)?;
     lower_bytes_eq(ast, ctx);
     Ok(())
@@ -568,6 +569,63 @@ fn reject_unnamed_record_elements(expr: &TypedExpr, source: &str) -> Result<(), 
     expr.children()
         .into_iter()
         .try_for_each(|child| reject_unnamed_record_elements(child, source))
+}
+
+/// Where a record-valued node stands, for [`reject_records_as_operands`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RecordPlace {
+    /// The whole expression: a call returning a record may stand here, as
+    /// the value a record local is initialised from.
+    Whole,
+    /// A call's argument: a record may be passed here by name.
+    Argument,
+    /// Anywhere else — an operand, an index, a member's object.
+    Operand,
+}
+
+/// Refuse a record anywhere but where it is passed whole (SCE_FORGE.md
+/// §4.12): a record NAME as a call's argument, and a CALL returning a
+/// record as the whole expression a record local is initialised from. A
+/// record is no operand — backends do not compare or combine structs alike —
+/// and its fields are read by `r.<field>`, which types each field instead.
+fn reject_records_as_operands(
+    expr: &TypedExpr,
+    source: &str,
+    place: RecordPlace,
+) -> Result<(), Refusal> {
+    if matches!(expr.ty, InferredType::Record(_)) {
+        let admitted = matches!(
+            (&expr.kind, place),
+            (ExprKind::Ident(_), RecordPlace::Argument)
+                | (ExprKind::Call { .. }, RecordPlace::Whole)
+        );
+        if !admitted {
+            return Err(ExprError::UnsupportedConstruct {
+                construct: "a record used as a value (a record is passed whole by its name, as \
+                            an argument, or received from a call as a record local's init; \
+                            its fields are read as r.<field>)"
+                    .to_string(),
+                observed: expr
+                    .span
+                    .clone()
+                    .and_then(|span| source.get(span))
+                    .map(str::to_string),
+            }
+            .at(expr.span.clone()));
+        }
+    }
+    match &expr.kind {
+        ExprKind::Call { args, .. } => args
+            .iter()
+            .try_for_each(|arg| reject_records_as_operands(arg, source, RecordPlace::Argument)),
+        // `r.<field>` reads a field of the record `r` names: the object is
+        // the record's name, which is how a field is read.
+        ExprKind::Member { object, .. } if matches!(object.kind, ExprKind::Ident(_)) => Ok(()),
+        _ => expr
+            .children()
+            .into_iter()
+            .try_for_each(|child| reject_records_as_operands(child, source, RecordPlace::Operand)),
+    }
 }
 
 /// Whether a value of type `got` may stand where `slot` is declared.
@@ -600,6 +658,11 @@ pub(crate) fn slot_admits(slot: InferredType, got: InferredType) -> bool {
         (T::Bool, got) => got == T::Bool,
         (T::Str, got) => got == T::Str,
         (T::Bytes, got) => matches!(got, T::Bytes | T::Str),
+        // A record stands only where a record of the same schema is
+        // declared: two schemas are two struct types on every backend, even
+        // when their fields agree (SCE_FORGE.md §4.12).
+        (T::Record(want), got) => got == T::Record(want),
+        (_, T::Record(_)) => false,
         _ => true,
     }
 }
@@ -607,14 +670,16 @@ pub(crate) fn slot_admits(slot: InferredType, got: InferredType) -> bool {
 /// The refusal of a call to an imported algorithm whose signature has a
 /// `list<T>` or record slot (`slot` names it: "returns list<int64>",
 /// "takes record:Hlc `a`"), under either form — an expression's `days(n)` or
-/// a `<sce:call target="days">`. In v1 a list or a record crosses only the
-/// host boundary (SCE_FORGE.md §4.12). One text for both forms, so the two
-/// read alike.
+/// a `<sce:call target="days">`, from where no such call is admitted. A list
+/// crosses only the host boundary; a record the host boundary and an
+/// algorithm's call of another algorithm (SCE_FORGE.md §4.12). One text for
+/// both forms, so the two read alike.
 pub(crate) fn host_only_call(target: &str, slot: &str, observed: Option<String>) -> ExprError {
     ExprError::UnsupportedConstruct {
         construct: format!(
             "a call to algorithm `{target}`, which {slot} \
-             (v1: only a host calls such an algorithm)"
+             (v1: a host calls such an algorithm, and another algorithm when \
+             its slots are records rather than lists)"
         ),
         observed,
     }
@@ -6185,16 +6250,22 @@ pub(crate) fn pass_failure_on(
 
 /// The Go spelling of a type a function literal can return, or `None` for a
 /// type that has no single spelling here (untyped literals, opaque values).
-fn go_nameable_type(ty: InferredType) -> Option<&'static str> {
-    match ty {
-        InferredType::Int { signed, bits } => Some(go_int_type(signed, bits)),
-        InferredType::Float { bits: 32 } => Some("float32"),
-        InferredType::Float { .. } => Some("float64"),
-        InferredType::Bool => Some("bool"),
-        InferredType::Str => Some("string"),
-        InferredType::Bytes => Some("[]byte"),
-        _ => None,
-    }
+/// A record is its schema's payload struct, spelled by the one rule the
+/// struct was emitted by.
+fn go_nameable_type(ty: InferredType) -> Option<String> {
+    Some(match ty {
+        InferredType::Int { signed, bits } => go_int_type(signed, bits).to_string(),
+        InferredType::Float { bits: 32 } => "float32".to_string(),
+        InferredType::Float { .. } => "float64".to_string(),
+        InferredType::Bool => "bool".to_string(),
+        InferredType::Str => "string".to_string(),
+        InferredType::Bytes => "[]byte".to_string(),
+        InferredType::Record(id) => crate::forge::generator::event_schema_payload_type(
+            id.schema_name(),
+            crate::generator::Language::Go,
+        ),
+        _ => return None,
+    })
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

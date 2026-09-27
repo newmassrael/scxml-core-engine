@@ -7838,11 +7838,51 @@ fn parse_algorithm_stmt(
                 &type_str,
             )?;
             // A record local is built whole from one `<sce:set>` per schema
-            // field (SCE_FORGE.md §4.12). It takes neither `init` (there is no
-            // record literal) nor `capacity` (it is not a buffer). Which fields
-            // it must give is the schema's, judged where the import resolves.
+            // field, or received whole from a call's `init` (SCE_FORGE.md
+            // §4.12) — never both: there is no record literal to merge into.
+            // It takes no `capacity` (it is not a buffer). Which fields it
+            // must give, and whether the call returns this record, are judged
+            // where the import resolves.
             if let Some(alias) = sce_type.record_alias() {
-                for stray in ["init", "capacity"] {
+                if let Some(init) = node.attribute("init") {
+                    if let Some(value) = node.attribute("capacity") {
+                        return Err(located(
+                            node,
+                            doc_name,
+                            ValidationError::AttributeRuleViolated {
+                                element: format!("<sce:var name=\"{name}\">"),
+                                attr: "capacity".into(),
+                                value: value.into(),
+                                rule: "omitted — a record local is not a buffer".into(),
+                            },
+                        ));
+                    }
+                    if node.children().any(|n| n.is_element()) {
+                        return Err(located(
+                            node,
+                            doc_name,
+                            ValidationError::AttributeRuleViolated {
+                                element: format!("<sce:var name=\"{name}\">"),
+                                attr: "init".into(),
+                                value: init.into(),
+                                rule: format!(
+                                    "omitted, or the <sce:set> children are — a record local \
+                                     of {alias} is received from a call or built field by \
+                                     field, not both"
+                                ),
+                            },
+                        ));
+                    }
+                    return Ok(AlgorithmStmt::RecordFromCall {
+                        name,
+                        name_spelling: AttributeSpelling::of(node, None, "name"),
+                        alias: alias.to_string(),
+                        type_spelling: AttributeSpelling::of(node, None, "type"),
+                        init: init.to_string(),
+                        init_spelling: AttributeSpelling::of(node, None, "init"),
+                    });
+                }
+                for stray in ["capacity"] {
                     if let Some(value) = node.attribute(stray) {
                         return Err(located(
                             node,
@@ -8167,6 +8207,7 @@ fn collect_append_buffers<'a>(stmts: &'a [AlgorithmStmt], buffers: &mut Vec<Appe
             }
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
+            | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
@@ -8346,6 +8387,7 @@ fn reject_read_only_assignment(
             }
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
+            | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. }
             | AlgorithmStmt::Require { .. } => {}
@@ -8398,6 +8440,7 @@ fn reject_require_without_may_fail(
             }
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
+            | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }

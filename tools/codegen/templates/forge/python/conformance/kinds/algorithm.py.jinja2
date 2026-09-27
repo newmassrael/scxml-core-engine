@@ -79,6 +79,10 @@
 {% else %}
             self.assertEqual(list(actual), expected, "{{ f.name }}")
 {% endif %}
+{% elif f.output.type == "bytes" %}
+{# A `bytes` return is `bytes`; its `expected` is a JSON array of byte
+   values, read as a `bytes` argument is. #}
+            self.assertEqual(bytes(actual), bytes(expected), "{{ f.name }}")
 {% elif f.output.compare == "tolerance" %}
             self.assert_close(actual, expected, "{{ f.name }}")
 {% else %}

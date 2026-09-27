@@ -3856,6 +3856,27 @@ pub enum AlgorithmStmt {
         type_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
         fields: Vec<RecordFieldInit>,
     },
+    /// `<sce:var name=... type="record:<alias>" init="f(...)"/>` — a record
+    /// local received whole from a call of an imported algorithm that
+    /// returns a record of the same schema (SCE_FORGE.md §4.12). The one
+    /// place a record-returning call stands; its fields are updated
+    /// afterwards like a built record's.
+    ///
+    /// A variant of its own, not an `init` on [`Self::RecordVar`]: every
+    /// reader of a record local's fields would otherwise walk an empty field
+    /// list here and say nothing about the value it was given.
+    RecordFromCall {
+        name: String,
+        #[serde(skip)]
+        name_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        #[serde(rename = "record")]
+        alias: String,
+        #[serde(skip)]
+        type_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        init: String,
+        #[serde(skip)]
+        init_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    },
     /// `<sce:assign target="lvalue" expr="..."/>` — mutates an existing
     /// l-value. SCE's `validate_lvalue_shape` accepts an identifier or a
     /// one-level member access only; a computed index (`buf[i]`) is rejected
@@ -4030,7 +4051,8 @@ fn collect_algorithm_bindings<'a>(stmts: &'a [AlgorithmStmt], out: &mut Vec<Algo
             AlgorithmStmt::Var { name, sce_type, .. } => {
                 out.push(AlgorithmBinding::Local { name, sce_type });
             }
-            AlgorithmStmt::RecordVar { name, alias, .. } => {
+            AlgorithmStmt::RecordVar { name, alias, .. }
+            | AlgorithmStmt::RecordFromCall { name, alias, .. } => {
                 out.push(AlgorithmBinding::RecordLocal { name, alias });
             }
             AlgorithmStmt::Foreach {

@@ -254,7 +254,9 @@ function textCases() {
     const t = new Timestamp(ms, counter, node.toString(16).padStart(16, '0'));
     const text = t.toString();
     cases.push({
-      args: [hlc(ms, counter, Number(node) === Number(node) && node <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(node) : node.toString())],
+      // A uint64 past 2^53 has no exact JS number; it is written as the
+      // exact JSON integer it is, which every harness reads as a uint64.
+      args: [hlc(ms, counter, JSON.rawJSON(node.toString()))],
       expected: [...new TextEncoder().encode(text)],
       note: text,
     });
@@ -289,7 +291,7 @@ function lwwCases() {
   ];
   for (let i = 0; i < 4; i++) {
     const logged = Array.from({ length: 1 + (rand() % 4) }, () => t(base + (rand() % 4), rand() % 3, rand() % 3 + 1));
-    shapes.push([`${logged.length} pseudo-random stamps`, logged, t(base + (rand() % 4), rand() % 3, rand() % 3 + 1)]);
+    shapes.push([`${logged.length} pseudo-random stamp${logged.length === 1 ? '' : 's'}`, logged, t(base + (rand() % 4), rand() % 3, rand() % 3 + 1)]);
   }
   for (const [name, logged, msg] of shapes) {
     cases.push({ args: [logged.map(rec), rec(msg)], expected: classify(logged, msg), note: name });

@@ -53,9 +53,10 @@ pub fn resolve(base_dir: &Path, src: &str) -> PathBuf {
     }
 }
 
-/// The standard document at `path` (an `sce:std/...` path, `.` and `..`
-/// folded lexically), or `None` when the library has no such document.
-pub fn lookup(path: &Path) -> Option<&'static str> {
+/// The library-relative name an `sce:std/...` path denotes, `.` and `..`
+/// folded lexically; `None` for a path that is not one, or that leaves the
+/// library root.
+fn folded_name(path: &Path) -> Option<String> {
     let relative = path.to_str()?.strip_prefix(SCHEME)?;
     let mut parts: Vec<&str> = Vec::new();
     for component in Path::new(relative).components() {
@@ -70,11 +71,33 @@ pub fn lookup(path: &Path) -> Option<&'static str> {
             Component::RootDir | Component::Prefix(_) => return None,
         }
     }
-    let name = parts.join("/");
+    Some(parts.join("/"))
+}
+
+/// The standard document at `path` (an `sce:std/...` path, `.` and `..`
+/// folded lexically), or `None` when the library has no such document.
+pub fn lookup(path: &Path) -> Option<&'static str> {
+    let name = folded_name(path)?;
     EMBEDDED_STDLIB
         .iter()
         .find(|(entry, _)| *entry == name)
         .map(|(_, content)| *content)
+}
+
+/// One spelling for the document an import resolved to (`resolve`), so two
+/// documents that import it by different `src` — `hlc_timestamp.scxml`
+/// from beside it, `sce:std/merge/hlc_timestamp.scxml` from anywhere —
+/// compare equal. A standard document is its folded `sce:std/...` path; a
+/// file is its canonical path, or its path as written when the file cannot
+/// be canonicalized (the import's own read reports that).
+pub fn identity(path: &Path) -> String {
+    if let Some(name) = folded_name(path) {
+        return format!("{SCHEME}{name}");
+    }
+    std::fs::canonicalize(path)
+        .unwrap_or_else(|_| path.to_path_buf())
+        .display()
+        .to_string()
 }
 
 /// Every standard document, as `(sce:std path, contents)`, sorted by path.

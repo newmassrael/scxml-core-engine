@@ -989,6 +989,22 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
                 }
             });
         }
+        // A record local received whole from a call: one line, as a scalar
+        // local with an `init` is.
+        AlgorithmStmt::RecordFromCall {
+            name, alias, init, ..
+        } => {
+            out.line_of(vec![
+                Part::Word(Word::Var),
+                Part::Text(format!(
+                    "{}: {}{} = {}",
+                    text(name),
+                    crate::forge::model::AlgorithmValueType::RECORD_PREFIX,
+                    text(alias),
+                    text(init)
+                )),
+            ]);
+        }
         AlgorithmStmt::Assign { target, expr, .. } => {
             out.line(&format!("{} = {}", text(target), text(expr)));
         }

@@ -112,6 +112,12 @@
 {% else %}
             assertEquals(expected, actual, "{{ f.name }}")
 {% endif %}
+{% elif f.output.type == "bytes" %}
+{# A `bytes` return is a `ByteArray`, whose `equals` is identity: both
+   sides compare as `List<Byte>`. #}
+            val expected = {{ "case.jsonObject[\"expected\"]!!" | kt_unmarshal("bytes") }}.toList()
+            val actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %}.toList()
+            assertEquals(expected, actual, "{{ f.name }}")
 {% else %}
             val expected = {{ "case.jsonObject[\"expected\"]!!" | kt_unmarshal(f.output.type) }}
             val actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %}

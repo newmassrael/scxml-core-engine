@@ -178,6 +178,15 @@ impl Names {
                         self.expr(&f.expr, f.expr_spelling.as_ref())?;
                     }
                 }
+                AlgorithmStmt::RecordFromCall {
+                    alias,
+                    init,
+                    init_spelling,
+                    ..
+                } => {
+                    self.name(alias);
+                    self.expr(init, init_spelling.as_ref())?;
+                }
                 // A target is an lvalue in expression syntax — `x`,
                 // `buf[i]` — so it is read the way an expression is.
                 AlgorithmStmt::Assign {

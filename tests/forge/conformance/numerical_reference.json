@@ -1860,6 +1860,23 @@
         { "args": [0, 7864320, 4, 131072, 3], "fails": "precondition", "note": "deviation: a request of 4 against a burst of 3 — the script answers deficit 1, a finite wait for a request no wait admits" }
       ]
     },
+    "hlc_text": {
+      "fixture": "hlc_text",
+      "signature": "(ts: record:Hlc) -> bytes may-fail",
+      "formula": "the stamp's canonical text as 46 ASCII bytes: the wall time as an ISO 8601 UTC instant to the millisecond, the counter as four upper-case hex digits, the node as sixteen lower-case hex digits, joined by '-'; a year past four digits or a counter past 0xFFFF fails 'precondition' (the standard document sce:std/merge/hlc_text.scxml; expected values from the reference run by tools/reference-oracles/actual_crdt.mjs against Actual Budget timestamp.ts toString, each case's note the text itself)",
+      "cases": [
+        { "args": [{ "wallTime": 1790503200000, "counter": 0, "nodeId": 1 }], "expected": [50, 48, 50, 54, 45, 48, 57, 45, 50, 55, 84, 49, 48, 58, 48, 48, 58, 48, 48, 46, 48, 48, 48, 90, 45, 48, 48, 48, 48, 45, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 49], "note": "2026-09-27T10:00:00.000Z-0000-0000000000000001" },
+        { "args": [{ "wallTime": 0, "counter": 0, "nodeId": 0 }], "expected": [49, 57, 55, 48, 45, 48, 49, 45, 48, 49, 84, 48, 48, 58, 48, 48, 58, 48, 48, 46, 48, 48, 48, 90, 45, 48, 48, 48, 48, 45, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48], "note": "1970-01-01T00:00:00.000Z-0000-0000000000000000" },
+        { "args": [{ "wallTime": 253402300799999, "counter": 65535, "nodeId": 18446744073709551615 }], "expected": [57, 57, 57, 57, 45, 49, 50, 45, 51, 49, 84, 50, 51, 58, 53, 57, 58, 53, 57, 46, 57, 57, 57, 90, 45, 70, 70, 70, 70, 45, 102, 102, 102, 102, 102, 102, 102, 102, 102, 102, 102, 102, 102, 102, 102, 102], "note": "9999-12-31T23:59:59.999Z-FFFF-ffffffffffffffff" },
+        { "args": [{ "wallTime": 951827696789, "counter": 2587, "nodeId": 81985529216486895 }], "expected": [50, 48, 48, 48, 45, 48, 50, 45, 50, 57, 84, 49, 50, 58, 51, 52, 58, 53, 54, 46, 55, 56, 57, 90, 45, 48, 65, 49, 66, 45, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102], "note": "2000-02-29T12:34:56.789Z-0A1B-0123456789abcdef" },
+        { "args": [{ "wallTime": 4160434113519, "counter": 56292, "nodeId": 3514706574586617521 }], "expected": [50, 49, 48, 49, 45, 49, 49, 45, 48, 51, 84, 48, 52, 58, 48, 56, 58, 51, 51, 46, 53, 49, 57, 90, 45, 68, 66, 69, 52, 45, 51, 48, 99, 54, 98, 102, 48, 50, 48, 51, 102, 55, 49, 101, 98, 49], "note": "2101-11-03T04:08:33.519Z-DBE4-30c6bf0203f71eb1" },
+        { "args": [{ "wallTime": 5592994689861, "counter": 55365, "nodeId": 2295849675129714498 }], "expected": [50, 49, 52, 55, 45, 48, 51, 45, 50, 55, 84, 49, 55, 58, 51, 56, 58, 48, 57, 46, 56, 54, 49, 90, 45, 68, 56, 52, 53, 45, 49, 102, 100, 99, 55, 102, 49, 100, 57, 55, 99, 100, 55, 55, 52, 50], "note": "2147-03-27T17:38:09.861Z-D845-1fdc7f1d97cd7742" },
+        { "args": [{ "wallTime": 2262174416645, "counter": 38799, "nodeId": 8945477587788001357 }], "expected": [50, 48, 52, 49, 45, 48, 57, 45, 48, 55, 84, 49, 51, 58, 52, 54, 58, 53, 54, 46, 54, 52, 53, 90, 45, 57, 55, 56, 70, 45, 55, 99, 50, 52, 98, 56, 55, 56, 56, 101, 53, 50, 55, 48, 52, 100], "note": "2041-09-07T13:46:56.645Z-978F-7c24b8788e52704d" },
+        { "args": [{ "wallTime": 5175997792056, "counter": 11099, "nodeId": 7397465302807409308 }], "expected": [50, 49, 51, 52, 45, 48, 49, 45, 48, 56, 84, 48, 57, 58, 48, 57, 58, 53, 50, 46, 48, 53, 54, 90, 45, 50, 66, 53, 66, 45, 54, 54, 97, 57, 49, 51, 55, 102, 100, 99, 49, 99, 102, 50, 57, 99], "note": "2134-01-08T09:09:52.056Z-2B5B-66a9137fdc1cf29c" },
+        { "args": [{ "wallTime": 1767225600000, "counter": 65536, "nodeId": 1 }], "fails": "precondition", "note": "a counter past four hex digits — the reference refuses it at send (OverflowError)" },
+        { "args": [{ "wallTime": 253402300800000, "counter": 0, "nodeId": 1 }], "fails": "precondition", "note": "the year 10000 — the reference writes \"+010000-…\", not 46 characters" }
+      ]
+    },
     "hlc_within_drift": {
       "fixture": "hlc_within_drift",
       "signature": "(wallTime: i64, now: i64, maxDrift: i64) -> bool may-fail",
@@ -1873,6 +1890,23 @@
         { "args": [1790503500001, 1790503200000, 300000], "expected": false, "note": "a message 300001 ms ahead, bound 300000" },
         { "args": [1790506200000, 1790503200000, 300000], "expected": false, "note": "a message 3000000 ms ahead, bound 300000" },
         { "args": [0, 0, -1], "fails": "precondition", "note": "a negative bound" }
+      ]
+    },
+    "lww_classify": {
+      "fixture": "lww_classify",
+      "signature": "(logged: list<record:Hlc>, msg: record:Hlc) -> u8",
+      "formula": "2 when the cell's logged stamps hold msg itself (a duplicate), else 1 when one of them is later than msg by hlc_compare's order (keep it, do not apply it), else 0 (apply it) (the standard document sce:std/merge/lww_classify.scxml; expected values from the rule of Actual Budget sync/index.ts compareMessages, run by tools/reference-oracles/actual_crdt.mjs over the reference's Timestamp text order)",
+      "cases": [
+        { "args": [[], { "wallTime": 1790503200000, "counter": 0, "nodeId": 1 }], "expected": 0, "note": "nothing logged" },
+        { "args": [[{ "wallTime": 1790503200000, "counter": 0, "nodeId": 1 }, { "wallTime": 1790503200005, "counter": 0, "nodeId": 1 }], { "wallTime": 1790503200005, "counter": 0, "nodeId": 1 }], "expected": 2, "note": "the same write again" },
+        { "args": [[{ "wallTime": 1790503200010, "counter": 0, "nodeId": 1 }], { "wallTime": 1790503200000, "counter": 0, "nodeId": 2 }], "expected": 1, "note": "a later wall time logged" },
+        { "args": [[{ "wallTime": 1790503200000, "counter": 3, "nodeId": 1 }], { "wallTime": 1790503200000, "counter": 2, "nodeId": 9 }], "expected": 1, "note": "a later counter logged" },
+        { "args": [[{ "wallTime": 1790503200000, "counter": 0, "nodeId": 9 }], { "wallTime": 1790503200000, "counter": 0, "nodeId": 1 }], "expected": 1, "note": "a later node logged" },
+        { "args": [[{ "wallTime": 1790503199990, "counter": 0, "nodeId": 9 }, { "wallTime": 1790503200000, "counter": 0, "nodeId": 1 }], { "wallTime": 1790503200000, "counter": 1, "nodeId": 1 }], "expected": 0, "note": "everything logged is earlier" },
+        { "args": [[{ "wallTime": 1790503200003, "counter": 1, "nodeId": 3 }, { "wallTime": 1790503200000, "counter": 1, "nodeId": 1 }, { "wallTime": 1790503200000, "counter": 0, "nodeId": 3 }, { "wallTime": 1790503200000, "counter": 2, "nodeId": 2 }], { "wallTime": 1790503200003, "counter": 0, "nodeId": 2 }], "expected": 1, "note": "4 pseudo-random stamps" },
+        { "args": [[{ "wallTime": 1790503200000, "counter": 0, "nodeId": 1 }], { "wallTime": 1790503200002, "counter": 2, "nodeId": 1 }], "expected": 0, "note": "1 pseudo-random stamp" },
+        { "args": [[{ "wallTime": 1790503200000, "counter": 2, "nodeId": 3 }, { "wallTime": 1790503200001, "counter": 1, "nodeId": 2 }], { "wallTime": 1790503200003, "counter": 0, "nodeId": 1 }], "expected": 0, "note": "2 pseudo-random stamps" },
+        { "args": [[{ "wallTime": 1790503200002, "counter": 1, "nodeId": 2 }], { "wallTime": 1790503200000, "counter": 0, "nodeId": 3 }], "expected": 1, "note": "1 pseudo-random stamp" }
       ]
     },
     "merkle_diff": {

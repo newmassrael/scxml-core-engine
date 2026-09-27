@@ -126,6 +126,24 @@
                   std::to_string(expected[k]).c_str());
 {% endif %}
         }
+{% elif f.output.type == "bytes" %}
+{# A `bytes` return is a `std::vector<std::uint8_t>`, its `expected` a JSON
+   array of byte values: compared by length, then byte by byte. #}
+        const auto expected = c["expected"].get<std::vector<std::uint8_t>>();
+        const auto actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %};
+        CHECK(actual.size() == expected.size(),
+              "{{ f.name }} case %d: length actual=%zu expected=%zu",
+              i,
+              actual.size(),
+              expected.size());
+        for (std::size_t k = 0; k < expected.size() && k < actual.size(); ++k) {
+            CHECK(actual[k] == expected[k],
+                  "{{ f.name }} case %d [%zu]: actual=%u expected=%u",
+                  i,
+                  k,
+                  static_cast<unsigned>(actual[k]),
+                  static_cast<unsigned>(expected[k]));
+        }
 {% else %}
         auto expected = c["expected"].get<{{ f.output.type | cpp_type }}>();
         auto actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %};

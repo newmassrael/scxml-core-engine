@@ -13,7 +13,7 @@ evidenced by the reference's own answer, not asserted.
 
 | Script | Reference (pinned) | Runs | Documents |
 |---|---|---|---|
-| `actual_crdt.mjs` | actualbudget/actual `packages/crdt` @ `bfa850ca618ca78c556ded61274602f1fca7a4a4` (MIT), with `murmurhash@2.0.1` as its `yarn.lock` pins | `merkle.ts` `insert`/`prune`/`diff`, `timestamp.ts` `recv` and `hash`, `murmurhash.v3` | `sce:std/hash/murmur3_32`, `sce:std/merge/merkle_insert`, `merkle_prune`, `merkle_diff`, `hlc_within_drift` |
+| `actual_crdt.mjs` | actualbudget/actual `packages/crdt` @ `bfa850ca618ca78c556ded61274602f1fca7a4a4` (MIT), with `murmurhash@2.0.1` as its `yarn.lock` pins | `merkle.ts` `insert`/`prune`/`diff`, `timestamp.ts` `recv`, `hash` and `toString`, `murmurhash.v3` | `sce:std/hash/murmur3_32`, `sce:std/merge/merkle_insert`, `merkle_prune`, `merkle_diff`, `hlc_within_drift`, `hlc_text`, `lww_classify` (see below) |
 | `signal_rate.py` | signalapp/Signal-Server @ `bdf3e1aea1b83e6ce14530ba515501c15bade3ad` (AGPL-3.0; executed, not copied) | `service/src/main/resources/lua/validate_rate_limit.lua` via `EVAL` in `redis:7-alpine` | `sce:std/rate/gcra_admit` |
 | `sabre_changes.php` | sabre-io/dav @ `1ce51f845f778b6fab8e9289670c8ad82e43a5c2` (BSD-3-Clause) | `Sabre\CalDAV\Backend\PDO::getChangesForCalendar` over SQLite built from `examples/sql/sqlite.calendars.sql`, in `php:8.4-cli-alpine` | `sce:std/sync/changes_since` |
 | `sabre_precondition.php` | sabre-io/dav, as above, with its composer dependencies | `Sabre\DAV\Server::checkPreconditions` on real requests | `sce:std/http/precondition` |
@@ -50,6 +50,13 @@ reference or in the script, never noise.
 
 - `actual_crdt.mjs` refuses a prune case that drops nothing (a node has at
   most three children, so a careless case would not exercise pruning).
+- ⚠ `lww_classify` is the one document whose cases are NOT the reference's
+  function run: `compareMessages` (`loot-core/src/server/sync/index.ts`)
+  reads its answer from the replica's database. The script applies the rule
+  that function states after its query — duplicate, then later, then apply —
+  to stamps ordered by the reference's own `Timestamp.toString()`, so the
+  ORDER is the reference's and the three-way rule is transcribed. Running the
+  function itself needs its SQLite schema seeded per case.
 - `signal_rate.py` asserts, for every case it takes from the script, that the
   script's answer and the arrival-time limiter's agree — the equivalence the
   document claims, measured on each input.

@@ -13,7 +13,9 @@
 
    A `list<T>` return (SCE_FORGE.md §4.12) is `Result<SceOwnedList<T, N>,
    CapacityExceeded>`; the oracle's cases stay within N, so the harness
-   unwraps it and compares the slice element by element.
+   unwraps it and compares the slice element by element. A `bytes` return
+   is the same bounded storage (`SceBytes<N>`), its `expected` a JSON array
+   of byte values.
 
    A record argument or output (SCE_FORGE.md §4.12) is the event-schema's
    payload struct, built from and compared against a JSON object keyed by
@@ -119,6 +121,13 @@
 {% else %}
         assert_eq!(actual, expected.as_slice(), "{{ f.name }}");
 {% endif %}
+{% elif f.output.type == "bytes" %}
+        let expected = {{ "case[\"expected\"]" | rust_unmarshal("bytes") }};
+{% if not f.may_fail %}
+        let actual = {{ call }}
+            .expect("{{ f.name }}: a case within the declared capacity");
+{% endif %}
+        assert_eq!(actual.as_slice(), expected.as_slice(), "{{ f.name }}");
 {% else %}
         let expected = {{ "case[\"expected\"]" | rust_unmarshal(f.output.type) }};
 {% if not f.may_fail %}

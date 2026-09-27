@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/hlc_text.scxml — a hybrid logical clock timestamp in its
+  canonical text (Actual Budget, packages/crdt/src/crdt/timestamp.ts
+  `toString`): the wall time as an ISO 8601 UTC instant to the millisecond,
+  the counter as four upper-case hex digits, the node as sixteen lower-case
+  hex digits, joined by '-' — 46 ASCII bytes.
+
+  2026-09-27T10:00:00.000Z-0000-0000000000000001
+
+  The text is fixed-width, so comparing two texts byte by byte orders them
+  as hlc_compare does: wall time, then counter, then node. It is what a
+  change log keys its rows by and what a digest hashes —
+  murmur3_32(hlc_text(ts), 0) is the reference's `Timestamp.hash()`, the
+  hash merkle_insert takes.
+
+  The node is written in lower case because the reference's node ids are
+  (`makeClientId`, the tail of a v4 UUID); the reference itself keeps
+  whatever case its node string has.
+
+  A wall time outside 0000-01-01 .. 9999-12-31 has no four-digit year, and
+  a counter past 0xFFFF no four-digit counter: both fail `precondition` —
+  the reference's send refuses the counter too (OverflowError), and its
+  ISO text of such a year is not 24 characters.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="hlc_text" version="1.0">
+  <sce:import kind="event-schema" src="hlc_timestamp.scxml" as="Hlc"/>
+  <sce:import kind="event-schema" src="sce:std/time/civil_date.scxml" as="CivilDate"/>
+  <sce:import kind="algorithm" src="sce:std/time/civil_from_days.scxml" as="civil"/>
+  <sce:signature>
+    <sce:param name="ts" type="record:Hlc"/>
+    <sce:return type="bytes" returns-max-size="46" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="ts.wallTime &gt;= 0 &amp;&amp; ts.wallTime &lt;= 253402300799999 &amp;&amp; ts.counter &lt;= 65535"/>
+    <sce:var name="out" type="bytes" capacity="46"/>
+    <sce:var name="date" type="record:CivilDate" init="civil(ts.wallTime / 86400000)"/>
+    <sce:var name="ms" type="int64" init="ts.wallTime % 86400000"/>
+    <!-- Decimal fields, most significant digit first: `value` holds the
+         field, `unit` its highest power of ten. -->
+    <sce:var name="value" type="int64" init="date.year"/>
+    <sce:var name="unit" type="int64" init="1000"/>
+    <sce:var name="field" type="uint32" init="0"/>
+    <!-- year-month-dayThh:mm:ss.mmm : seven fields and the separator after each. -->
+    <sce:while cond="field &lt; 7">
+      <sce:while cond="unit &gt; 0">
+        <sce:var name="digit" type="uint8" init="48 + (value / unit) % 10"/>
+        <sce:append target="out" expr="digit"/>
+        <sce:assign target="unit" expr="unit / 10"/>
+      </sce:while>
+      <sce:var name="separator" type="uint8" init="field &lt; 2 ? 45 : (field === 2 ? 84 : (field &lt; 5 ? 58 : (field === 5 ? 46 : 90)))"/>
+      <sce:append target="out" expr="separator"/>
+      <sce:assign target="field" expr="field + 1"/>
+      <sce:assign target="value" expr="field === 1 ? date.month : (field === 2 ? date.day : (field === 3 ? ms / 3600000 : (field === 4 ? (ms / 60000) % 60 : (field === 5 ? (ms / 1000) % 60 : ms % 1000))))"/>
+      <sce:assign target="unit" expr="field === 6 ? 100 : 10"/>
+    </sce:while>
+    <sce:var name="dash" type="uint8" init="45"/>
+    <sce:append target="out" expr="dash"/>
+    <!-- The counter: four upper-case hex digits. -->
+    <sce:var name="shift" type="uint32" init="12"/>
+    <sce:var name="nibble" type="uint8" init="0"/>
+    <sce:var name="more" type="bool" init="true"/>
+    <sce:while cond="more">
+      <sce:assign target="nibble" expr="(ts.counter &gt;&gt; shift) &amp; 15"/>
+      <sce:var name="upper" type="uint8" init="nibble &lt; 10 ? 48 + nibble : 55 + nibble"/>
+      <sce:append target="out" expr="upper"/>
+      <sce:assign target="more" expr="shift &gt; 0"/>
+      <sce:if cond="more">
+        <sce:assign target="shift" expr="shift - 4"/>
+      </sce:if>
+    </sce:while>
+    <sce:append target="out" expr="dash"/>
+    <!-- The node: sixteen lower-case hex digits. -->
+    <sce:assign target="shift" expr="60"/>
+    <sce:assign target="more" expr="true"/>
+    <sce:while cond="more">
+      <sce:assign target="nibble" expr="(ts.nodeId &gt;&gt; shift) &amp; 15"/>
+      <sce:var name="lower" type="uint8" init="nibble &lt; 10 ? 48 + nibble : 87 + nibble"/>
+      <sce:append target="out" expr="lower"/>
+      <sce:assign target="more" expr="shift &gt; 0"/>
+      <sce:if cond="more">
+        <sce:assign target="shift" expr="shift - 4"/>
+      </sce:if>
+    </sce:while>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

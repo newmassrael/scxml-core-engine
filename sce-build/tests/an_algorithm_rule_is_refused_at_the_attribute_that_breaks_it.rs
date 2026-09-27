@@ -506,10 +506,130 @@ const RECORD_WHOLE_ASSIGN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+/// A schema field for field the same as `probe_schema_hlc` but a different
+/// document — so a different record type (SCE_FORGE.md §4.12).
+const SCHEMA_TWIN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="event-schema" name="probe_schema_twin" sce:event-name="twin.stamp">
+  <datamodel>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// An algorithm with a record parameter, which another algorithm may call
+/// with a record of the same schema.
+const RECORD_CALLEE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_callee" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_hlc.scxml" as="Hlc"/>
+  <sce:signature>
+    <sce:param name="s" type="record:Hlc"/>
+    <sce:return type="int64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="s.wallTime"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// The record callee called with a record of the same schema, imported
+/// under another alias — accepted: a record type is its schema document,
+/// not the alias either side names it by.
+const RECORD_CALL_SAME_SCHEMA: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_call_same_schema" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_hlc.scxml" as="Stamp"/>
+  <sce:import kind="algorithm" src="probe_record_callee.scxml" as="wall"/>
+  <sce:signature>
+    <sce:param name="p" type="record:Stamp"/>
+    <sce:return type="int64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="w" type="int64" init="wall(p)"/>
+    <sce:return expr="w"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// The record callee called with a record of the twin schema under the
+/// callee's own alias — refused at the argument: the alias matches, the
+/// schema does not.
+const RECORD_CALL_OTHER_SCHEMA: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_call_other_schema" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_twin.scxml" as="Hlc"/>
+  <sce:import kind="algorithm" src="probe_record_callee.scxml" as="wall"/>
+  <sce:signature>
+    <sce:param name="p" type="record:Hlc"/>
+    <sce:return type="int64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="w" type="int64"
+             init="wall(p)"/>
+    <sce:return expr="w"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// The record callee called from a validator — refused at the call: only an
+/// algorithm's body calls a record algorithm besides a host.
+const RECORD_CALL_FROM_VALIDATOR: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="validator" version="1.0">
+  <sce:import src="probe_record_callee.scxml" kind="algorithm" as="wall"/>
+  <datamodel>
+    <data id="raw" sce:type="int64" sce:direction="in"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="wall(raw) &gt; 0"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// Two records compared whole — refused at the first: a record is passed
+/// whole or read a field at a time, never an operand.
+const RECORD_AS_OPERAND: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_as_operand" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_hlc.scxml" as="Hlc"/>
+  <sce:signature>
+    <sce:param name="p" type="record:Hlc"/>
+    <sce:param name="q" type="record:Hlc"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="same" type="bool"
+             init="p === q"/>
+    <sce:return expr="same"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A standard schema named by `sce:std/…` here and by a relative path inside
+/// the standard callee (`hlc_compare` imports `hlc_timestamp.scxml`) —
+/// accepted: both names reach one document, so one record type.
+const RECORD_CALL_STD_SCHEMA: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_call_std_schema" version="1.0">
+  <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Stamp"/>
+  <sce:import kind="algorithm" src="sce:std/merge/hlc_compare.scxml" as="order"/>
+  <sce:signature>
+    <sce:param name="a" type="record:Stamp"/>
+    <sce:param name="b" type="record:Stamp"/>
+    <sce:return type="int32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="c" type="int32" init="order(a, b)"/>
+    <sce:return expr="c"/>
+  </sce:body>
+</scxml>
+"#;
+
 const SUPPORT: &[(&str, &str)] = &[
     ("probe_list_callee.scxml", LIST_CALLEE),
     ("probe_schema_hlc.scxml", SCHEMA_HLC),
     ("probe_schema_named.scxml", SCHEMA_NAMED),
+    ("probe_schema_twin.scxml", SCHEMA_TWIN),
+    ("probe_record_callee.scxml", RECORD_CALLEE),
+    (
+        "probe_record_call_same_schema.scxml",
+        RECORD_CALL_SAME_SCHEMA,
+    ),
+    ("probe_record_call_std_schema.scxml", RECORD_CALL_STD_SCHEMA),
 ];
 
 const CASES: &[Case] = &[
@@ -713,6 +833,30 @@ const CASES: &[Case] = &[
         col: 25,
         actual: Some("r"),
     },
+    Case {
+        file: "probe_record_call_other_schema.scxml",
+        document: RECORD_CALL_OTHER_SCHEMA,
+        code: "expression/type-mismatch",
+        line: 11,
+        col: 25,
+        actual: Some("p"),
+    },
+    Case {
+        file: "probe_record_call_from_validator.scxml",
+        document: RECORD_CALL_FROM_VALIDATOR,
+        code: "expression/unsupported-construct",
+        line: 7,
+        col: 29,
+        actual: Some("wall"),
+    },
+    Case {
+        file: "probe_record_as_operand.scxml",
+        document: RECORD_AS_OPERAND,
+        code: "expression/unsupported-construct",
+        line: 11,
+        col: 20,
+        actual: Some("p"),
+    },
 ];
 
 /// Every case, and every document a case imports, written into one
@@ -749,6 +893,42 @@ fn a_list_returning_algorithm_is_accepted_for_a_host() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+/// An algorithm's call of a record algorithm with a record of the callee's
+/// own schema is accepted on every backend — the call the record-slot
+/// refusals above are the other side of (SCE_FORGE.md §4.12). The schema is
+/// the same DOCUMENT under another alias, and then a standard schema reached
+/// by `sce:std/…` on one side and a relative path on the other.
+#[test]
+fn a_record_algorithm_is_callable_from_an_algorithm_of_the_same_schema() {
+    let dir = fixture();
+    for file in [
+        "probe_record_call_same_schema.scxml",
+        "probe_record_call_std_schema.scxml",
+    ] {
+        for language in ["rust", "cpp", "c11", "go", "python", "kotlin"] {
+            let output = Command::new(codegen_bin())
+                .current_dir(dir.path())
+                .args([
+                    "--error-format=json",
+                    "check",
+                    file,
+                    "-l",
+                    language,
+                    // Go names every import by module path (ignored elsewhere).
+                    "--go-module-prefix",
+                    "example.com/probe",
+                ])
+                .output()
+                .expect("run sce-codegen");
+            assert!(
+                output.status.success(),
+                "{file} {language}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
 }
 
 /// The one record `sce-codegen check` prints for `file` in JSON mode, or why

@@ -137,6 +137,22 @@
 			}
 {% endif %}
 		}
+{% elif f.output.type == "bytes" %}
+{# A `bytes` return is a `[]byte`; its `expected`, a JSON array of byte
+   values, unmarshals through `[]int` as a `bytes` argument does. #}
+		var expected []int
+		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
+		actual := {% if f.may_fail %}returned{% else %}{{ call }}{% endif %}
+
+		if len(actual) != len(expected) {
+			t.Errorf("{{ f.name }}: actual=%v expected=%v", actual, expected)
+			continue
+		}
+		for __i := range expected {
+			if int(actual[__i]) != expected[__i] {
+				t.Errorf("{{ f.name }}[%d]: actual=%v expected=%v", __i, actual[__i], expected[__i])
+			}
+		}
 {% else %}
 		var expected {{ f.output.type | go_type }}
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")

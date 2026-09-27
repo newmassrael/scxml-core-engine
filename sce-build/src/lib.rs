@@ -4568,7 +4568,24 @@ fn validate_and_enrich_imports(
                         .iter()
                         .map(|f| (f.id.clone(), f.sce_type.clone()))
                         .collect(),
+                    id: forge::types::RecordId::intern(
+                        &forge::stdlib::identity(&source.path),
+                        &sm.name,
+                    ),
                 });
+            }
+            // An algorithm with a record slot (and no list slot) is callable
+            // from another algorithm's body, so its whole signature rides
+            // along, each record slot named by the schema the CALLEE
+            // imported — resolved from the callee's own directory, the way
+            // the callee itself resolves it.
+            if let forge::model::ForgeDocument::Algorithm(am) = &doc {
+                let callee_base = source
+                    .path
+                    .parent()
+                    .map_or_else(|| base_dir.to_path_buf(), |p| p.to_path_buf());
+                ctx.record_slots =
+                    algorithm_record_slots(am, &parsed.imports, &callee_base, *language);
             }
             // Whether the imported transform keeps state is recorded here,
             // where its model is in hand, and judged once the importing
@@ -5610,6 +5627,68 @@ fn validate_worker_inbox_ordering_placement(
     Ok(())
 }
 
+/// The whole signature of an imported algorithm that has a record slot and
+/// no list slot — what another algorithm's body calls it through
+/// (SCE_FORGE.md §4.12). `None` for an algorithm with no record slot, with a
+/// list slot (only a host calls one), or with a record slot whose schema
+/// import the callee cannot resolve (the callee's own compilation reports
+/// that; its callers keep the host-only refusal meanwhile).
+fn algorithm_record_slots(
+    am: &forge::model::AlgorithmModel,
+    callee_imports: &[forge::model::ForgeImport],
+    callee_base: &Path,
+    language: generator::Language,
+) -> Option<forge::generator::AlgorithmSlots> {
+    use forge::generator::{AlgorithmSlots, CalleeSlot};
+    use forge::model::AlgorithmValueType;
+    let slot = |ty: &AlgorithmValueType| -> Option<CalleeSlot> {
+        match ty {
+            AlgorithmValueType::Scalar(t) => Some(CalleeSlot::Scalar(t.clone())),
+            AlgorithmValueType::List { .. } => None,
+            AlgorithmValueType::Record { alias } => {
+                let imp = callee_imports.iter().find(|i| {
+                    i.alias == *alias && matches!(i.kind, forge::model::ForgeKind::EventSchema)
+                })?;
+                let source = forge::import_source::ImportSource::read(callee_base, imp).ok()?;
+                let parsed = source.parse().ok()??;
+                let forge::model::ForgeDocument::EventSchema(sm) = &parsed.document else {
+                    return None;
+                };
+                Some(CalleeSlot::Record {
+                    id: forge::types::RecordId::intern(
+                        &forge::stdlib::identity(&source.path),
+                        &sm.name,
+                    ),
+                    qualified_type: forge::generator::event_schema_payload_type(&sm.name, language),
+                })
+            }
+        }
+    };
+    let sig = &am.signature;
+    let has_record = sig
+        .params
+        .iter()
+        .any(|p| p.sce_type.record_alias().is_some())
+        || sig
+            .return_type
+            .as_ref()
+            .is_some_and(|t| t.record_alias().is_some());
+    if !has_record {
+        return None;
+    }
+    Some(AlgorithmSlots {
+        params: sig
+            .params
+            .iter()
+            .map(|p| slot(&p.sce_type))
+            .collect::<Option<Vec<_>>>()?,
+        ret: match &sig.return_type {
+            Some(t) => Some(slot(t)?),
+            None => None,
+        },
+    })
+}
+
 /// The call signature a stateless import exposes to its caller's type
 /// inference (see [`discover_stateless_signature`]).
 #[derive(Debug, Default)]
@@ -5711,9 +5790,13 @@ pub(crate) fn discover_stateless_signature(
                         .filter(|t| t.scalar().is_none())
                         .map(|t| format!("returns {}", t.as_attr()))
                 });
+            // `may_fail` is the declaration's whatever the slots are: a
+            // record-slot callee is still called from a body (its slots ride
+            // in `record_slots`), and that call passes the failure on.
             if let Some(reason) = host_only {
                 return StatelessSignature {
                     host_only: Some(reason),
+                    may_fail: m.signature.may_fail,
                     ..StatelessSignature::default()
                 };
             }
