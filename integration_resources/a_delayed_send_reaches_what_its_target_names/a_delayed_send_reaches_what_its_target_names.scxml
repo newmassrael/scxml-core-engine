@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 6.2 + 6.4 + C.1: a `delay` postpones a `<send>`; it does not
+  change where the send goes. The target is resolved when the send is, and the
+  event reaches that target when the delay has elapsed.
+
+  "the SCXML Processor MUST [...] dispatch the message [...] after the delay"
+  (6.2), and "If the SCXML Processor cannot dispatch the event to the target,
+  it MUST place the error error.communication on the internal event queue of
+  the session that attempted to send the event." (C.1) For a delayed send the
+  dispatch is the delivery at the end of the delay, so that is when a target
+  that is no longer there is reported.
+
+  Measured 2026-09-28, no channel routed every delayed send by its target. A
+  delayed `#_internal` went at once in Rust, Go, Python and Kotlin, and to the
+  C++ AOT's own external queue. A delayed `#_parent` was queued to the sender
+  itself in Rust, Go and Python, lost its payload in the C++ AOT, and never
+  arrived in the C++ Interpreter, which rescheduled it every time it fired. A
+  delayed child send went at once in the C++ AOT, Python and Kotlin, and to
+  the sender's own queue in Rust and Go. C11 refused every delayed route but
+  its own queue and a payload-less `#_parent`. The Interpreter dropped a
+  delayed send to a child that had ended in silence.
+
+    inner    `#_internal` after 20ms, sent after `early` goes to this
+             session's external queue after 10ms. Each appends a digit —
+             `early` 3, `inner` 1 — so `order` reads 31; sent at once,
+             ignoring its delay, `inner` would read 13. It arrives as an
+             internal event: `_event.type` is 'internal' (W3C SCXML 5.10.1),
+             which `innerInternal` records; queued externally it would read
+             'external'.
+    late     the child sends `#_parent` with `<content expr="5"/>` after 20ms;
+             it arrives here, once, carrying 5.
+    ping     `#_kid` after 20ms with `<content expr="7"/>` reaches the child,
+             which answers `pong` carrying 8.
+    lost     `#_gone` after 100ms, and then `stop` at once, which ends `gone`
+             well inside that wait — a margin, so the verdict is about the
+             routing and not about which of two things one host tick happens
+             to take first. When the delay elapses the invocation is no
+             longer there:
+             error.communication, and `lost` reaches nobody.
+    stranger `#_scxml_stranger` after 20ms names a session this processor
+             cannot reach: error.communication when the send is made, and the
+             `<assign>` after it does not run.
+
+    order 31, innerInternal 1, lateOk 1, lateCount 1, pongOk 1, commErrors 2,
+    lostArrived 0, afterStranger 0, ending in `done`.
+
+  This fixture is the canonical source for all 7 channels — see
+  docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test locations.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="run"
+       name="a_delayed_send_reaches_what_its_target_names">
+  <datamodel>
+    <data id="order" expr="0"/>
+    <data id="innerInternal" expr="0"/>
+    <data id="lateOk" expr="0"/>
+    <data id="lateCount" expr="0"/>
+    <data id="pongOk" expr="0"/>
+    <data id="commErrors" expr="0"/>
+    <data id="lostArrived" expr="0"/>
+    <data id="afterStranger" expr="0"/>
+    <data id="hellos" expr="0"/>
+  </datamodel>
+
+  <state id="run">
+    <onentry>
+      <send event="early" delay="10ms"/>
+      <send event="inner" target="#_internal" delay="20ms"/>
+    </onentry>
+    <onentry>
+      <send event="lost" target="#_scxml_stranger" delay="20ms"/>
+      <assign location="afterStranger" expr="1"/>
+    </onentry>
+
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+               datamodel="ecmascript" initial="wait">
+          <state id="wait">
+            <onentry>
+              <send target="#_parent" event="hello"/>
+              <send target="#_parent" event="late" delay="20ms">
+                <content expr="5"/>
+              </send>
+            </onentry>
+            <transition event="ping" cond="_event.data === 7">
+              <send target="#_parent" event="pong">
+                <content expr="_event.data + 1"/>
+              </send>
+            </transition>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+    <invoke type="scxml" id="gone">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+               datamodel="ecmascript" initial="idle">
+          <state id="idle">
+            <onentry>
+              <send target="#_parent" event="hello"/>
+            </onentry>
+            <transition event="lost">
+              <send target="#_parent" event="lostReached"/>
+            </transition>
+            <transition event="stop" target="over"/>
+          </state>
+          <final id="over"/>
+        </scxml>
+      </content>
+    </invoke>
+
+    <transition event="error.communication">
+      <assign location="commErrors" expr="commErrors + 1"/>
+    </transition>
+    <transition event="inner">
+      <assign location="order" expr="order * 10 + 1"/>
+      <if cond="_event.type === 'internal'">
+        <assign location="innerInternal" expr="1"/>
+      </if>
+    </transition>
+    <transition event="early">
+      <assign location="order" expr="order * 10 + 3"/>
+    </transition>
+    <transition event="late">
+      <assign location="lateCount" expr="lateCount + 1"/>
+      <if cond="_event.data === 5">
+        <assign location="lateOk" expr="1"/>
+      </if>
+    </transition>
+    <transition event="hello" cond="hellos === 1">
+      <assign location="hellos" expr="2"/>
+      <send target="#_kid" event="ping" delay="20ms">
+        <content expr="7"/>
+      </send>
+      <send target="#_gone" event="lost" delay="100ms"/>
+      <send target="#_gone" event="stop"/>
+    </transition>
+    <transition event="hello">
+      <assign location="hellos" expr="hellos + 1"/>
+    </transition>
+    <transition event="lostReached">
+      <assign location="lostArrived" expr="1"/>
+    </transition>
+    <transition event="pong">
+      <if cond="_event.data === 8">
+        <assign location="pongOk" expr="1"/>
+      </if>
+      <send event="settle" delay="300ms"/>
+    </transition>
+    <transition event="settle" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>

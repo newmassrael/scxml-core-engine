@@ -592,6 +592,28 @@ neither end. Expected: `execErrors` 1, `commErrors` 2, `afterRefused`,
 `afterNobody` and `afterStranger` 0, `bareArrived` and `pongOk` 1, ending in
 `done`.
 
+`a_delayed_send_reaches_what_its_target_names` covers W3C §6.2.4, §6.4 and C.1
+on where a DELAYED `<send>` goes: a delay postpones the send, it does not
+change where it goes. The target is resolved when the send is performed and
+delivered to when it comes due. A delayed `#_internal` joins the internal
+queue (`_event.type` is `internal`); a delayed `#_parent` reaches the parent
+with its `<content>`; a delayed `#_kid` reaches the child, whose reply comes
+back. `#_scxml_stranger` is refused when the send is performed, as the same
+send without a delay is. A delayed send to `#_gone`, which reaches its final
+state before the send is due, raises error.communication in the sender then.
+Before 2026-09-28 no channel routed every delayed send by its target. A
+delayed `#_internal` went at once in Rust, Go, Python and Kotlin, and to the
+C++ AOT's own external queue. A delayed `#_parent` was queued to the sender
+itself in Rust, Go and Python, lost its payload in the C++ AOT, and never
+arrived in the Interpreter, which rescheduled it every time it fired. A
+delayed `#_kid` went at once in the C++ AOT, Python and Kotlin, and to the
+sender's own queue in Rust and Go; Kotlin and Python also sent a delayed
+`#_scxml_` at once. C11 refused a delayed `#_internal`, `#_kid` and a
+`#_parent` carrying a payload, and the Interpreter dropped the send to the
+ended child in silence. Expected: `order` 31, `innerInternal`,
+`lateOk`, `lateCount` and `pongOk` 1, `commErrors` 2, `lostArrived` and
+`afterStranger` 0, ending in `done`.
+
 `invoke_expression_failure_is_reported` covers W3C §6.4.3: an `<invoke>` that
 names its target through an expression must evaluate that expression when the
 element fires, and raise `error.execution` when it cannot. The axis is the

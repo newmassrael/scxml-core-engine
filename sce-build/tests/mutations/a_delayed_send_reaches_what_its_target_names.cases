@@ -1,0 +1,73 @@
+# Mutation cases for §scxml-6.2.4 / §scxml-6.4 / §scxml-C-1 on a delayed
+# `<send>` — a delay postpones the send, it does not change where it goes: the
+# target is resolved when the send is performed and delivered to when it comes
+# due, and a target no longer there by then is reported to the sender.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_delayed_send_reaches_what_its_target_names.cases`.
+#
+# Measured 2026-09-28, before this round no channel routed every delayed send
+# by its target. The cases below hold the three channels this harness reaches: the
+# Interpreter dropped a delayed send to an ended child in silence; the C++ AOT
+# put a delayed `#_internal` on its own external queue and sent a delayed
+# `#_<invokeid>` at once; and C11 refused both, and a delayed `#_parent`
+# carrying a payload, at run time. The other channels' defects are listed in
+# the fixture's header.
+#
+# The C++ AOT and C11 targets are the TEMPLATES the built binaries carry. The
+# Rust, Go, Kotlin and Python halves have no round here (the harness reaches
+# cargo and ctest only); the same fixture holds them in their suites.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_a_delayed_send_reaches_what_its_target_names)$'
+mutation_targets sce/src/events/EventDispatcherImpl.cpp sce/include/static/StaticExecutionEngine.h tools/codegen/templates/invoke_methods.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles tests/integration/ADelayedSendReachesWhatItsTargetNamesTest.cpp tests/integration/ADelayedSendReachesWhatItsTargetNamesAotTest.cpp backends/c/tests/integration/test_a_delayed_send_reaches_what_its_target_names.c
+
+# ── Interpreter: a target gone by fire time is not reported ────────
+
+mutation_case "the interpreter drops a delayed send to an ended child in silence" <<'PY'
+edit("sce/src/events/EventDispatcherImpl.cpp",
+     "                isPlatform ? target : std::make_shared<DispatchReportingTarget>(target);",
+     "                target;")
+PY
+
+# ── C++ AOT: a delayed `#_internal` lands on the external queue ────
+
+mutation_case "the C++ AOT delivers a delayed #_internal to the external queue" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     "            raise(EventWithMetadata(event, eventData, origin, sendId));\n            return;",
+     "            raiseExternal(EventWithMetadata(event, eventData, origin, sendId));\n            return;")
+PY
+
+# ── C++ AOT: an ended child still reads as running ─────────────────
+
+mutation_case "the C++ AOT delivers a due send to a child at its final state" <<'PY'
+edit("tools/codegen/templates/invoke_methods.jinja2",
+     "            if ({{ slot }} && !{{ slot }}->isInFinalState()) {\n                {{ slot }}->raiseExternal(forwarded);",
+     "            if ({{ slot }}) {\n                {{ slot }}->raiseExternal(forwarded);")
+PY
+
+# ── C11: a delayed `#_internal` lands on the external queue ────────
+
+mutation_case "C11 delivers a delayed #_internal to the external queue" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        if (ready.route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INTERNAL) {",
+     "        if (false) {")
+PY
+
+# ── C11: an ended child still reads as running ─────────────────────
+
+mutation_case "C11 delivers a due send to a child at its final state" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        if (sm->{{ slot }}_active && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {",
+     "        if (sm->{{ slot }}_active) {")
+PY
+
+# ── C11: a delayed `#_parent` loses its payload ────────────────────
+
+mutation_case "C11 sends the parent a delayed event without its payload" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     " ready.data[0] != '\\0' ? ready.data : NULL{% else %} NULL{% endif %});",
+     " NULL{% else %} NULL{% endif %});")
+PY
