@@ -64,6 +64,11 @@ pub enum Signal {
     /// binding outside that request's responder set (§mesh-14.6). The
     /// request stays answerable.
     RpcReplyFromUndeclaredPeer { source: String, invoke_id: String },
+    /// INVOKE_CHILD_LOST (row 5): the link to `target` was lost while the
+    /// request `invoke_id` (the wire id, hex) waited on it. The request is
+    /// forgotten, as a cancel forgets it (§mesh-9.5), since no reply can
+    /// arrive on a link that is gone.
+    InvokeChildLost { invoke_id: String, target: String },
 }
 
 /// The deployment binding a row is observed on: the peer it names and the
@@ -89,6 +94,7 @@ impl Signal {
             Signal::SendFailed { .. } => "SEND_FAILED",
             Signal::DeliveryExhausted { .. } => "DELIVERY_EXHAUSTED",
             Signal::RpcReplyFromUndeclaredPeer { .. } => "RPC_REPLY_FROM_UNDECLARED_PEER",
+            Signal::InvokeChildLost { .. } => "INVOKE_CHILD_LOST",
         }
     }
 
@@ -120,6 +126,9 @@ impl Signal {
             | Signal::TransportUnavailable
             | Signal::SendFailed { .. }
             | Signal::DeliveryExhausted { .. } => (None, true, true),
+            // Row 5 names its own `target` column below, after `invoke_id`,
+            // where the C++ core's field order puts it.
+            Signal::InvokeChildLost { .. } => (None, false, false),
         };
         if let Some(source) = source {
             json.string("source", source);
@@ -167,6 +176,10 @@ impl Signal {
             // after `source` as well.
             Signal::RpcReplyFromUndeclaredPeer { invoke_id, .. } => {
                 json.string("invoke_id", invoke_id)
+            }
+            Signal::InvokeChildLost { invoke_id, target } => {
+                json.string("invoke_id", invoke_id);
+                json.string("target", target);
             }
             Signal::MissingSequence { .. } | Signal::TransportUnavailable => {}
         }
@@ -313,6 +326,20 @@ mod tests {
             }
             .event_data(WSS_TO_HMI),
             r#"{"errorName":"communication","reason":"RPC_REPLY_FROM_UNDECLARED_PEER","source":"mallory","invoke_id":"019200000000700080000000000000ab"}"#
+        );
+    }
+
+    /// Row 5 carries the request and the peer it waited on, in the C++
+    /// core's field order, and no transport column.
+    #[test]
+    fn a_request_whose_link_is_lost_names_it_and_its_target() {
+        assert_eq!(
+            Signal::InvokeChildLost {
+                invoke_id: "019200000000700080000000000000ab".to_string(),
+                target: "hmi".to_string(),
+            }
+            .event_data(WSS_TO_HMI),
+            r#"{"errorName":"communication","reason":"INVOKE_CHILD_LOST","invoke_id":"019200000000700080000000000000ab","target":"hmi"}"#
         );
     }
 

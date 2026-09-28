@@ -30,6 +30,8 @@ internal data class Pending(
     val invokeId: String,
     /** Which start of that invoke this is (the engine's token). */
     val token: Long,
+    /** The peer it was sent to, whose link carries its reply. */
+    val target: String,
     /** The machines whose reply may answer it (§mesh-14.6). */
     val responders: List<String>,
     /** The monotonic time it stops waiting, if it has a deadline. */
@@ -79,6 +81,16 @@ internal class Correlation {
     /** Forget the request for the start [token] of [invokeId]: its state exited, and nothing goes on the wire (§mesh-9.5). */
     fun cancel(invokeId: String, token: Long) {
         pending.entries.removeAll { it.value.invokeId == invokeId && it.value.token == token }
+    }
+
+    /**
+     * Forget every request sent to [peer], whose link is gone, in wire-id
+     * order: no reply can come back on it (§mesh-16.7 row 5).
+     */
+    fun forgetSentTo(peer: String): List<String> {
+        val lost = pending.entries.filter { it.value.target == peer }.map { it.key }.sorted()
+        lost.forEach { pending.remove(it) }
+        return lost
     }
 
     /**

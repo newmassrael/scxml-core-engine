@@ -51,7 +51,28 @@ class RpcTest {
     }
 
     private fun pending(invokeId: String, token: Long, expiresMs: Long?) =
-        Pending(invokeId, token, listOf("cloud"), expiresMs)
+        Pending(invokeId, token, "cloud", listOf("cloud"), expiresMs)
+
+    /** §mesh-16.7 row 5: a lost link forgets what was sent on it, and only that. */
+    @Test
+    fun aLostLinkForgetsOnlyTheRequestsSentOnIt() {
+        val table = Correlation()
+        val other = wire.copyOf().also { it[15] = 0xac.toByte() }
+        table.register(wire, pending("ask", 1, 100))
+        table.register(other, pending("look", 2, null).copy(target = "hmi"))
+        assertEquals(listOf(hex(wire)), table.forgetSentTo("cloud"))
+        assertTrue(!table.isWaiting(wire))
+        assertTrue(table.isWaiting(other))
+        assertTrue(table.expire(1000).isEmpty(), "a forgotten request has no deadline")
+    }
+
+    @Test
+    fun aRequestWhoseLinkIsLostNamesItAndItsTarget() {
+        assertEquals(
+            """{"errorName":"communication","reason":"INVOKE_CHILD_LOST","invoke_id":"019200000000700080000000000000ab","target":"hmi"}""",
+            Signal.InvokeChildLost(hex(wire), "hmi").eventData(Binding("hmi", "wss")),
+        )
+    }
 
     /** §mesh-14.6: only a declared responder retires a request, and a rejected reply leaves it answerable. */
     @Test

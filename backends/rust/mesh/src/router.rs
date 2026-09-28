@@ -278,6 +278,7 @@ impl Router {
             Pending {
                 invoke_id: request.invoke_id.clone(),
                 token: request.token,
+                target: peer_name.to_string(),
                 responders,
                 expires_ms: deadline_ms
                     .map(|ms| now_ms.saturating_add(i64::try_from(ms).unwrap_or(i64::MAX))),
@@ -319,20 +320,37 @@ impl Router {
     }
 
     /// `peer`'s transport stopped being ready.
+    ///
+    /// A request waiting on the link can no longer be answered over it: it is
+    /// forgotten, as a cancel forgets it, and each is §mesh-16.7 row 5 — the
+    /// peer-down path the C++ core takes for the same requests.
     pub fn peer_not_ready(&mut self, peer: &str) -> Result<Vec<Effect>, RouterError> {
         let bound = self
             .peers
             .get_mut(peer)
             .ok_or_else(|| RouterError::UnknownPeer(peer.to_string()))?;
-        Ok(bound
+        let raise = |signal| Effect::Raise {
+            peer: Some(peer.to_string()),
+            signal,
+        };
+        let mut effects: Vec<Effect> = bound
             .outbound
             .mark_not_ready()
-            .map(|signal| Effect::Raise {
-                peer: Some(peer.to_string()),
-                signal,
-            })
+            .map(raise)
             .into_iter()
-            .collect())
+            .collect();
+        effects.extend(
+            self.requests
+                .forget_sent_to(peer)
+                .into_iter()
+                .map(|wire_id| {
+                    raise(Signal::InvokeChildLost {
+                        invoke_id: rpc::hex(&wire_id),
+                        target: peer.to_string(),
+                    })
+                }),
+        );
+        Ok(effects)
     }
 
     /// The retry policy the host applies when a transmission to `peer`
@@ -1364,6 +1382,30 @@ mod tests {
         let envelope = Envelope::decode(&mut SceCursor::new(&bytes)).unwrap();
         assert_eq!(envelope.pattern, PatternKind::RpcReply);
         assert_eq!(envelope.invoke_id, None);
+    }
+
+    /// §mesh-16.7 row 5: the link a request waits on is lost. The request is
+    /// forgotten and named; a reply or a deadline that comes afterwards ends
+    /// nothing.
+    #[test]
+    fn a_lost_link_is_row_5_for_each_request_waiting_on_it() {
+        let mut ecu = requester(Some(100));
+        started(&mut ecu, None);
+        assert_eq!(
+            ecu.peer_not_ready("hmi").unwrap(),
+            alloc::vec![Effect::Raise {
+                peer: Some("hmi".to_string()),
+                signal: Signal::InvokeChildLost {
+                    invoke_id: WIRE_HEX.to_string(),
+                    target: "hmi".to_string(),
+                },
+            }]
+        );
+        assert!(ecu
+            .receive("hmi", reply(2, Some(RpcStatus::Ok), None, "1"), 20)
+            .unwrap()
+            .is_empty());
+        assert!(ecu.tick(1000).unwrap().is_empty());
     }
 
     #[test]

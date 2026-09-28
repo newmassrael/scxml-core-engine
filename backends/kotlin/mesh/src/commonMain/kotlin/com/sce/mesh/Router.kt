@@ -243,7 +243,13 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
         val effects = transmit(peerName, peer, envelope, nowMs) ?: return Invoked.Failed(RouterError.Encode)
         requests.register(
             wireId,
-            Pending(request.invokeId, request.token, peer.config.responders, deadlineMs?.let { saturatingAdd(nowMs, it) }),
+            Pending(
+                request.invokeId,
+                request.token,
+                peerName,
+                peer.config.responders,
+                deadlineMs?.let { saturatingAdd(nowMs, it) },
+            ),
         )
         return Invoked.Started(effects)
     }
@@ -290,7 +296,11 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
     /** [peer]'s transport stopped being ready. */
     fun peerNotReady(peer: String): Routed {
         val bound = peers[peer] ?: return Routed.Refused(RouterError.UnknownPeer(peer))
-        return Routed.Done(listOfNotNull(bound.outbound.markNotReady()?.let { Effect.Raise(peer, it) }))
+        // A request waiting on the link can no longer be answered over it: it is
+        // forgotten, as a cancel forgets it, and each is §mesh-16.7 row 5 — the
+        // peer-down path the C++ core takes for the same requests.
+        val lost = requests.forgetSentTo(peer).map { Effect.Raise(peer, Signal.InvokeChildLost(it, peer)) }
+        return Routed.Done(listOfNotNull(bound.outbound.markNotReady()?.let { Effect.Raise(peer, it) }) + lost)
     }
 
     /**

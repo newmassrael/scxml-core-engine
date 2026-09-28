@@ -483,6 +483,19 @@ class RouterTest {
         assertNull(envelope.invoke_id)
     }
 
+    /** §mesh-16.7 row 5: the link a request waits on is lost; a reply or a deadline afterwards ends nothing. */
+    @Test
+    fun aLostLinkIsRow5ForEachRequestWaitingOnIt() {
+        val ecu = requester(100)
+        started(ecu, null)
+        assertEquals(
+            listOf(Effect.Raise("hmi", Signal.InvokeChildLost(wireHex, "hmi"))),
+            done(ecu.peerNotReady("hmi")),
+        )
+        assertTrue(done(ecu.receive("hmi", reply(2, RpcStatus.OK, null, "1"), 20)).isEmpty())
+        assertTrue(done(ecu.tick(1000)).isEmpty())
+    }
+
     @Test
     fun unhexReadsBackWhatHexWroteAndNothingElse() {
         assertTrue(wire.contentEquals(unhex(hex(wire))))

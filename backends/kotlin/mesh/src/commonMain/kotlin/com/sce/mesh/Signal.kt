@@ -51,6 +51,14 @@ sealed class Signal {
      */
     data class RpcReplyFromUndeclaredPeer(val source: String, val invokeId: String) : Signal()
 
+    /**
+     * INVOKE_CHILD_LOST (row 5): the link to [target] was lost while the
+     * request [invokeId] (the wire id, hex) waited on it. The request is
+     * forgotten, as a cancel forgets it (§mesh-9.5), since no reply can arrive
+     * on a link that is gone.
+     */
+    data class InvokeChildLost(val invokeId: String, val target: String) : Signal()
+
     /** The row's `reason`, as §mesh-16.7 spells it. */
     val reason: String
         get() = when (this) {
@@ -64,6 +72,7 @@ sealed class Signal {
             is SendFailed -> "SEND_FAILED"
             is DeliveryExhausted -> "DELIVERY_EXHAUSTED"
             is RpcReplyFromUndeclaredPeer -> "RPC_REPLY_FROM_UNDECLARED_PEER"
+            is InvokeChildLost -> "INVOKE_CHILD_LOST"
         }
 
     /**
@@ -112,6 +121,11 @@ sealed class Signal {
             }
             // §mesh-16.7 row 14's columns: `source`, then the request it tried to retire.
             is RpcReplyFromUndeclaredPeer -> text("invoke_id", invokeId)
+            // Row 5 names its own `target` column, after `invoke_id`, where the C++ core's field order puts it.
+            is InvokeChildLost -> {
+                text("invoke_id", invokeId)
+                text("target", target)
+            }
             is MissingSequence, TransportUnavailable -> Unit
         }
         return json.finish()

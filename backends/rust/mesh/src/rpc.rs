@@ -32,6 +32,8 @@ pub(crate) struct Pending {
     pub invoke_id: String,
     /// Which start of that invoke this is (the engine's token).
     pub token: u64,
+    /// The peer it was sent to, whose link carries its reply.
+    pub target: String,
     /// The machines whose reply may answer it (§mesh-14.6).
     pub responders: &'static [&'static str],
     /// The monotonic time it stops waiting, if it has a deadline.
@@ -90,6 +92,21 @@ impl Correlation {
     pub fn cancel(&mut self, invoke_id: &str, token: u64) {
         self.pending
             .retain(|_, p| !(p.invoke_id == invoke_id && p.token == token));
+    }
+
+    /// Forget every request sent to `peer`, whose link is gone, in wire-id
+    /// order: no reply can come back on it (§mesh-16.7 row 5).
+    pub fn forget_sent_to(&mut self, peer: &str) -> Vec<[u8; 16]> {
+        let lost: Vec<[u8; 16]> = self
+            .pending
+            .iter()
+            .filter(|(_, p)| p.target == peer)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &lost {
+            self.pending.remove(id);
+        }
+        lost
     }
 
     /// Retire every request whose deadline is at or before `now_ms`, in
@@ -206,9 +223,34 @@ mod tests {
         Pending {
             invoke_id: invoke_id.into(),
             token,
+            target: "cloud".into(),
             responders: &["cloud"],
             expires_ms,
         }
+    }
+
+    /// §mesh-16.7 row 5: a lost link forgets what was sent on it, and only
+    /// that.
+    #[test]
+    fn a_lost_link_forgets_only_the_requests_sent_on_it() {
+        let mut table = Correlation::default();
+        let mut other = WIRE;
+        other[15] = 0xac;
+        table.register(WIRE, pending("ask", 1, Some(100)));
+        table.register(
+            other,
+            Pending {
+                target: "hmi".into(),
+                ..pending("look", 2, None)
+            },
+        );
+        assert_eq!(table.forget_sent_to("cloud"), alloc::vec![WIRE]);
+        assert!(!table.is_waiting(&WIRE));
+        assert!(table.is_waiting(&other));
+        assert!(
+            table.expire(1000).is_empty(),
+            "a forgotten request has no deadline"
+        );
     }
 
     /// §mesh-14.6: only a declared responder retires a request, and a
