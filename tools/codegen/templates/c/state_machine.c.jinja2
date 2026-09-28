@@ -3791,13 +3791,26 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
             lua_pushnil(sm->L);
         }
         lua_setglobal(sm->L, "_pending_event_origin_carry");
+        /* The same for the processor type: an event whose producer named one
+           — a host reporting its invocation's end through
+           `_complete_host_invoke_from` or `_fail_host_invoke` (W3C SCXML
+           5.10.1) — keeps it, and every other external event carries the
+           SCXML Event I/O Processor's. */
+        if (evt.origin_type[0] != '\0') {
+            lua_pushstring(sm->L, evt.origin_type);
+        } else {
+            lua_pushnil(sm->L);
+        }
+        lua_setglobal(sm->L, "_pending_event_origintype_carry");
         (void)luaL_dostring(sm->L,
                             "_pending_event_type = 'external'; "
                             "_pending_event_origin = "
                               "_pending_event_origin_carry or _scxml_location; "
                             "_pending_event_origin_carry = nil; "
                             "_pending_event_origintype = "
-                              "'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'");
+                              "_pending_event_origintype_carry or "
+                              "'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'; "
+                            "_pending_event_origintype_carry = nil");
         /* `_event.data` hydration from `evt.data` now happens inside
            `set_current_event`, so the internal drain gets the same rule
            this site used to hold alone. */

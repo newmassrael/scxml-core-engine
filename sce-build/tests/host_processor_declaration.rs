@@ -381,6 +381,8 @@ fn the_invoke_half_is_reported_and_then_claimed() {
             // `typed`: a request and a result record (SCE Accepted Subset
             // §2.12) — typed, and still a host-run invoke to name.
             ("invoke-type", "perm"),
+            // `failing`: the host reports that the run failed (§scxml-6.4).
+            ("invoke-type", "job"),
             // `passing`: left in the macrostep that entered it, so the host
             // never starts it — still a site that needs the declaration,
             // since whether it starts is decided at run time.
