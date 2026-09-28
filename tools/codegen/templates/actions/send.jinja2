@@ -149,17 +149,31 @@ eventData = contentData;
 ::SCE::DoneDataHelper::emitContentLiteral("{{ action.content | escape_cpp }}", eventData, &typedData);
 {% endif %}
 {% elif action.contentexpr %}
-// W3C SCXML 5.10: Evaluate content expression
+// W3C SCXML 5.6.2: the value of <content expr> is the output of <content> —
+// the event's data, as the typed value JSON carries. "If the evaluation of
+// 'expr' produces an error, the Processor MUST place error.execution in the
+// internal event queue and use the empty string as the value": the message
+// still goes, carrying "", and — like a failing <param> — the error ends the
+// block once it has (§scxml-4.9), which `paramFailed` is read for below.
 {
     this->ensureScriptEngine();
-    auto& scriptEngine = getScriptEngine();
-    auto contentResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.contentexpr | to_script_source_expr }}).get();
-    if (::SCE::ScriptResultUtils::isSuccess(contentResult)) {
-        eventData = ::SCE::ScriptResultUtils::resultToString(contentResult);
-    } else {
-        SCE_LOG_ERROR("Failed to evaluate content expr: {{ action.contentexpr | escape_cpp_format }}");
-        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
-                                                        "<send> contentexpr failed to evaluate"));
+    auto& contentScriptEngine = getScriptEngine();
+    bool contentFailed = false;
+    ::SCE::DoneDataHelper::evaluateContent(
+        contentScriptEngine,
+        sessionId_.value(),
+        {{ action.contentexpr | to_script_source_expr }},
+        eventData,
+        [&engine, &contentFailed](const std::string& msg) {
+            SCE_LOG_ERROR("<send> contentexpr failed to evaluate: {}", msg);
+            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                                                            "<send> contentexpr failed to evaluate"));
+            contentFailed = true;
+        },
+        &typedData);
+    if (contentFailed) {
+        ::SCE::DoneDataHelper::emitContentLiteral("", eventData, &typedData);
+        paramFailed = true;
     }
 }
 {% endif %}
@@ -216,7 +230,7 @@ if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
 {% set event_enum_cpp = '*sendEvent' if dyn_event else 'Event::' ~ (action.event | replace('.', '_') | replace('-', '_') | capitalize) %}
 {# Declared for any `<param>`, a literal included: the failure branch names the
    flag. #}
-{% set param_ns = namespace(can_fail=(action.params | default([]) | length > 0)) %}
+{% set param_ns = namespace(can_fail=(action.params | default([]) | length > 0) or (action.contentexpr and not action.content)) %}
 {# W3C SCXML 4.9: the statement that ends the block this <send> sits in, named
    by whoever includes it — `return;` in an entry, exit, initial, history or
    transition block, which is its own function or lambda, and `return false;`

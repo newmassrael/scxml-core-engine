@@ -76,6 +76,10 @@
 {% else %}
 {% set has_dynamic_params = false %}
 {% endif %}
+{# W3C SCXML 5.6.2: a <content expr> is read at send time, and one that fails
+   costs what a failing <param> does — reported, the message sent with '' as
+   its value, the block ended — so it rides the same flag. #}
+{% set content_expr = action.contentexpr and model.needs_script_engine and not has_params and not has_namelist and not action.content %}
 {% if send_id %}
 	// W3C SCXML 6.2: send id="{{ send_id }}"
 {% endif %}
@@ -340,6 +344,25 @@
 		eventDataStr := "\"{{ action.content | normalize_ws | escape_json_string | escape_go }}\""
 {% endif %}
 		_ = eventDataStr
+{% elif content_expr %}
+	{
+		// W3C SCXML 5.6.2: the value of <content expr> is the output of
+		// <content>, the event's data — serialized so the far end parses.
+		// "If the evaluation of 'expr' produces an error, the Processor MUST
+		// place error.execution in the internal event queue and use the empty
+		// string as the value of the <content> element."
+		paramFailed := false
+		p.ensureScriptEngine()
+		eventDataStr := sce.ScriptValueToJSON("")
+		if contentVal, contentErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.contentexpr | to_lua_expr }}`); contentErr == nil {
+			eventDataStr = sce.ScriptValueToJSON(contentVal)
+		} else {
+{% if 'error.execution' in model.events %}
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> contentexpr failed to evaluate"))
+{% endif %}
+			paramFailed = true
+		}
+		_ = eventDataStr
 {% else %}
 	{
 		eventDataStr := ""
@@ -529,7 +552,7 @@
 {% if dynamic_mesh %}
 	} // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
 {% endif %}
-{% if has_dynamic_params %}
+{% if has_dynamic_params or content_expr %}
 {% if in_block %}
 		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
 		// <foreach> it came — the block is its own function.

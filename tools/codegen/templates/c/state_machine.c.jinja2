@@ -150,11 +150,11 @@
    build time (`to_lua_data_content`: an expression when it is one, otherwise
    the string); text whose first character is `<` crosses as the XML it is,
    because `set_current_event` builds the DOM from exactly that (W3C test561).
-   `<content expr>` is evaluated here; one that fails raises error.execution
-   and the message still goes, with no data — the reading this backend gave
-   it before its payload moved onto the event, kept so that this change moves
-   only WHERE the payload rides. (W3C SCXML 5.6 asks for the empty string as
-   the content's value; whether every channel gives it is its own question.) #}
+   `<content expr>` is evaluated here. One that fails costs what W3C SCXML
+   5.6.2 says: error.execution, and the empty string as the content's value —
+   so the message still goes, carrying the JSON `""` — and, like a failing
+   `<param>`, the error ends the block once it has (4.9), which is the
+   `_param_failed` the end of the element reads. #}
 {% macro send_content_json(action, csym_prefix, machine) %}
                 char _ed[SCE_MAX_DATA_LEN];
 {% if action.contentexpr %}
@@ -164,7 +164,8 @@
                     {{ csym_prefix }}{{ machine }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
                         "<send> <content expr> failed to evaluate");
-                    _ed[0] = '\0';
+                    memcpy(_ed, "\"\"", sizeof("\"\""));
+                    _param_failed = true;
                 } else {
 {{ send_payload_take(csym_prefix, machine, "<content>") }}
                 }
@@ -783,7 +784,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% elif action.type == 'send' %}
 {# Declared for any `<param>`, a literal included: some arms evaluate a
    literal through Lua too, and their failure branch names the flag. #}
-{% set send_param_ns = namespace(can_fail=(action.params | default([]) | length > 0)) %}
+{% set send_param_ns = namespace(can_fail=(action.params | default([]) | length > 0) or action.contentexpr) %}
         {
             /* W3C SCXML 6.2: <send{% if action.event %} event="{{ action.event }}"{% endif %}{% if action.eventexpr %} eventexpr="{{ action.eventexpr }}"{% endif %}{% if action.target %} target="{{ action.target }}"{% endif %}{% if action.delay %} delay="{{ action.delay }}"{% endif %}> */
 {% if send_param_ns.can_fail %}

@@ -86,7 +86,9 @@
 {% endif %}
 {% set send_id_kt = action.auto_send_id | escape_kotlin %}
 {% set has_namelist = action.namelist and action.namelist | trim %}
-{% set param_ns = namespace(can_fail=false) %}
+{# A <content expr> that fails costs what a failing <param> does (§scxml-5.6.2):
+   the message still goes and the block ends after it. #}
+{% set param_ns = namespace(can_fail=(action.contentexpr and model.needs_script_engine and not (action.params or has_namelist or action.content))) %}
 {% for param in action.params %}
 {% if not param.is_static_literal %}
 {% set param_ns.can_fail = true %}
@@ -257,15 +259,22 @@
             val sendWireParams = emptyMap<String, List<String>>()
 {% endif %}
 {% elif action.contentexpr and model.needs_script_engine %}
+            // W3C SCXML 5.6.2: the value of <content expr> is the event's data.
+            // "If the evaluation of 'expr' produces an error, the Processor MUST
+            // place error.execution in the internal event queue and use the
+            // empty string as the value of the <content> element": the message
+            // still goes, carrying "", and — like a failing <param> — the error
+            // ends the block once it has (§scxml-4.9).
             ensureScriptEngine()
-            val sendContentValue = try {
-                (scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)"))
+            val sendData = try {
+                val sendContentValue = (scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)"))
                     .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), {{ action.contentexpr | to_script_source_expr }})
+                if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
                 raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> contentexpr failed to evaluate", "{{ send_id_kt }}")
-                return@send true
+                paramFailed = true
+                valueToJson("")
             }
-            val sendData = if (sendContentValue != null) valueToJson(sendContentValue) else ""
 {% if needs_wire_params %}
             val sendWireParams = emptyMap<String, List<String>>()
 {% endif %}

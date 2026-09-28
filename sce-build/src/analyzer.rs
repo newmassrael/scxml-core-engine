@@ -671,8 +671,10 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
             // named for the element it was written for; what it gates is
             // the include, which this needs too. Without it the emitted
             // C++ named `::SCE::DoneDataHelper` with no header declaring
-            // it, and W3C 179 stopped compiling.
-            if !action.content.is_empty() {
+            // it, and W3C 179 stopped compiling. `<content expr>` goes
+            // through the same helper (§scxml-5.6.2), so it needs the
+            // include as well.
+            if !action.content.is_empty() || !action.contentexpr.is_empty() {
                 model.needs_donedata_helper = Some(true);
             }
             if !action.delay.is_empty() || !action.delayexpr.is_empty() {

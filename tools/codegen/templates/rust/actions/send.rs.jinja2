@@ -127,6 +127,11 @@
 {% else %}
 {% set has_dynamic_params = false %}
 {% endif %}
+{# W3C SCXML 5.6.2: a <content expr> is read at send time, and one that fails
+   costs what a failing <param> does — reported, the message sent with '' as
+   its value, the block ended — so it rides the same flag. #}
+{% set content_expr = action.contentexpr and model.needs_script_engine and not has_params and not has_namelist and not action.content %}
+{% set payload_can_fail = has_dynamic_params or content_expr %}
 {# The event name every event-carrying arm uses: the prologue's evaluation
    when there is an `eventexpr`, nothing to resolve otherwise. #}
 {% set dyn_event = action.eventexpr and model.needs_script_engine and not action.event %}
@@ -313,7 +318,7 @@
 {# W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
    pair left out, and the message still goes; the error ends the block once
    it has. `_param_failed` is what the check after the dispatch reads. #}
-{% if has_dynamic_params %}
+{% if payload_can_fail %}
     let mut _param_failed = false;
 {% endif %}
 
@@ -458,6 +463,30 @@
     // evaluate — §scxml-B-2-8-1's last rung, taken at codegen time.
     let event_data: &str = "\"{{ action.content | normalize_ws | escape_json_string | escape_rust }}\"";
 {% endif %}
+{% elif content_expr %}
+    // W3C SCXML 5.6.2: the value of <content expr> is the output of <content>,
+    // the event's data — serialized so the far end parses instead of
+    // evaluating. "If the evaluation of 'expr' produces an error, the
+    // Processor MUST place error.execution in the internal event queue and use
+    // the empty string as the value of the <content> element."
+    let event_data_string: String = {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+        match se.evaluate_expression(&sid, "{{ action.contentexpr | to_lua_expr | escape_rust }}") {
+            Ok(val) => ::sce_rust_runtime::helpers::event_data::script_value_to_json(&val),
+            Err(e) => {
+                ::sce_rust_runtime::sce_log_error!("send contentexpr eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> contentexpr failed to evaluate"));
+{% endif %}
+                _param_failed = true;
+                ::sce_rust_runtime::helpers::event_data::script_value_to_json(&sce_rust_runtime::ScriptValue::String(String::new()))
+            }
+        }
+    };
+    let event_data: &str = &event_data_string;
 {% else %}
     let event_data: &str = "";
 {% endif %}
@@ -713,7 +742,7 @@
 {% endif %}
 
 
-{% if has_dynamic_params %}
+{% if payload_can_fail %}
 {% if in_block %}
     // W3C SCXML 4.9: a <param> that could not be read raised an error while
     // this element was processed, so the rest of the block does not run —

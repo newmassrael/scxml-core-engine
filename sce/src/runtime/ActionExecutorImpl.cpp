@@ -12,6 +12,7 @@
 #include "actions/SendAction.h"
 #include "common/AssignHelper.h"
 #include "common/AssignmentExecutionHelper.h"
+#include "common/DoneDataHelper.h"
 #include "common/EventMetadataHelper.h"
 #include "common/EventTypeHelper.h"
 #include "common/ForeachValidator.h"
@@ -955,6 +956,34 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             SCE_LOG_DEBUG("ActionExecutorImpl: Param evaluation complete: {} params processed", paramCount);
         }
 
+        // §scxml-5.6.2: a <content expr> is evaluated now, with the rest of
+        // the send, and its result is the output of <content> — the event's
+        // data. "If the evaluation of 'expr' produces an error, the Processor
+        // MUST place error.execution in the internal event queue and use the
+        // empty string as the value of the <content> element": the clause
+        // names the value the content takes, so the message still goes,
+        // carrying "", and — like a failing <param> — the error ends the block
+        // once it has (§scxml-4.9). The expression used to be parsed and never
+        // read, so the event arrived with no data at all.
+        bool contentFailed = false;
+        std::string contentData = action.getContent();
+        if (!action.getContentExpr().empty()) {
+            DoneDataHelper::evaluateContent(scriptEngine_, sessionId_, ScriptSource(action.getContentExpr()),
+                                            contentData, [this, &contentFailed](const std::string &msg) {
+                                                SCE_LOG_ERROR("ActionExecutorImpl: <send> contentexpr: {}", msg);
+                                                if (eventRaiser_) {
+                                                    eventRaiser_->raiseEvent("error.execution",
+                                                                             "<send> contentexpr failed to evaluate");
+                                                }
+                                                contentFailed = true;
+                                            });
+            if (contentFailed) {
+                // The empty STRING, as JSON, so it arrives as '' rather than
+                // as no data.
+                contentData = "\"\"";
+            }
+        }
+
         // §scxml-6.2: the value of delayexpr must be the CSS2 time the clause
         // names too. One that is not — a bare number included — is an
         // argument that cannot be evaluated: error.execution with the send
@@ -996,7 +1025,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             // §scxml-C-2: Set content for HTTP body
             // §scxml-5.6: <content> is the container whose data is handed to the
             // external service named by the send target.
-            event.content = action.getContent();
+            event.content = contentData;
             // §scxml-5.10: Set event type for origintype field (test 253, 331, 352, 372)
             event.type = sendType.empty() ? Constants::SCXML_EVENT_PROCESSOR_TYPE : sendType;
 
@@ -1047,7 +1076,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             }
 
             // SCXML 6.2.4: "Fire and forget" semantics - event is queued regardless of delivery status
-            return !aParamFailed;
+            return !aParamFailed && !contentFailed;
         } else {
             // SCXML 3.12.1: Generate error.execution event instead of throwing
             SCE_LOG_ERROR("ActionExecutorImpl: EventDispatcher not available for send action - generating error event");
@@ -1059,7 +1088,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             }
 
             // SCXML send actions should follow fire-and-forget - infrastructure failures don't affect action success
-            return !aParamFailed;  // Fire and forget semantics
+            return !aParamFailed && !contentFailed;  // Fire and forget semantics
         }
 
     } catch (const std::exception &e) {
