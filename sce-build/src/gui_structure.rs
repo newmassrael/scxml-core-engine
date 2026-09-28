@@ -207,7 +207,9 @@ fn push_transition(out: &mut Vec<Value>, source: &str, index: usize, t: &Transit
         source,
         index,
         &t.event,
-        t.transition_type == "internal",
+        // A targetless transition exits no state (§scxml-3.13), which is
+        // what "internal" tells the GUI; the C++ engine reports it so.
+        t.transition_type == "internal" || t.targets.is_empty(),
         &t.cond,
         &t.actions,
         &t.unresolved,
@@ -349,9 +351,10 @@ fn action_object(a: &Action) -> Value {
     head.extend(o);
     let mut o = head;
     match a.action_type.as_str() {
-        "assign" if o.get("expr").is_none() => {
-            // C++ writes `expr` for every assign, empty or not.
-            o.insert("expr".into(), json!(""));
+        "assign" => {
+            // C++ writes `location` and `expr` for every assign, empty or not.
+            o.entry("location").or_insert_with(|| json!(""));
+            o.entry("expr").or_insert_with(|| json!(""));
         }
         "raise" if o.get("event").is_none() => {
             o.insert("event".into(), json!(""));
@@ -429,9 +432,12 @@ fn invoke_object(inv: &Invoke) -> Value {
     let mut autoforward = false;
     match inv {
         Invoke::Scxml(i) => {
-            put("invokeSrc", &i.src);
-            if let Some(xml) = &i.inline_child_xml {
-                put("invokeContent", xml);
+            // An inline child is lowered to a synthesised `src`
+            // (`#<doc>__sce_synth_invoke__<id>`) the author never wrote;
+            // the GUI gets the content they did write instead.
+            match &i.inline_child_xml {
+                Some(xml) => put("invokeContent", xml),
+                None => put("invokeSrc", &i.src),
             }
             put("invokeNamelist", &i.namelist);
             put("invokeFinalize", &i.finalize_content);

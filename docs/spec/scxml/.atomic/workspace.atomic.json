@@ -1949,6 +1949,10 @@
         {
           "file": "sce-build/src/scxml_semantic.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/gui_structure.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

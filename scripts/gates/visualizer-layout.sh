@@ -47,6 +47,9 @@ command -v node >/dev/null 2>&1 \
 [[ -f web/visualizer/visualizer.js ]] \
     || sce_gate_cannot_run "the engine WASM glue is missing, so no document can be turned into a structure"
 
+[[ -f web/visualizer/wasm/sce_build.js ]] \
+    || sce_gate_cannot_run "the codegen WASM (visualizer-wasm builds it) is missing, so the GUI's structure cannot be built from the Rust model"
+
 # The fixtures, and the reason each one is here, live beside the measurement
 # in a file of their own.
 #
@@ -122,5 +125,18 @@ SCE_STRESS_SEED="${SCE_STRESS_SEED:-20260918}" \
 SCE_STRESS_OPS="${SCE_STRESS_OPS:-25}" \
     node web/visualizer/measure/stress.js \
     || sce_gate_fail "the drawing did not survive a run of random gestures; its output above names the seed to replay"
+
+# The structure half. The GUI draws what `sce_build::gui_structure` builds from
+# the Rust model while the C++ engine runs the machine, and the live highlight
+# joins the two by state id and by (source, sourceIndex). A difference neither
+# declared nor explained lights the wrong state or arrow; the declared ones, and
+# why each is right, are in the script.
+STRUCTURE_LIST="web/visualizer/measure/structure-fixtures.txt"
+[[ -f "$STRUCTURE_LIST" ]] || sce_gate_fail "$STRUCTURE_LIST is missing; there is nothing to compare"
+mapfile -t STRUCTURES < <(grep -vE '^\s*(#|$)' "$STRUCTURE_LIST")
+[[ ${#STRUCTURES[@]} -gt 0 ]] \
+    || sce_gate_fail "$STRUCTURE_LIST names no document; an empty comparison is not a clean one"
+node web/visualizer/measure/structure-parity.js "${STRUCTURES[@]}" \
+    || sce_gate_fail "the Rust structure and the C++ engine's disagree beyond what is declared; its output above names where"
 
 printf 'visualizer-layout: OK\n'
