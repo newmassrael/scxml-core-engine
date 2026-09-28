@@ -60,6 +60,10 @@ pub mod comment_text;
 #[cfg(test)]
 mod commit_stamp;
 pub mod conformance;
+/// The print diagram's figure model: how a statechart splits into figures
+/// by hierarchy and where each transition is described. Renderers draw
+/// from it; the completeness and described-once properties are tested on it.
+pub mod diagram;
 /// The W3C SCXML ECMAScript datamodel — parsed, then emitted as Lua. It replaces the
 /// string-rewriting transformer whose entry point could not fail; see the
 /// module docs for what that signature cost.
