@@ -66,10 +66,11 @@ struct ScheduledRoute {
         InternalQueue,  ///< `#_internal`: this session's internal queue
         Invocation,     ///< `#_<invokeid>`: an invocation of this session
         Parent,         ///< `#_parent`: the session that invoked this one
+        Session,        ///< a session named by its id — a child's published location (§scxml-C-1)
     };
     Kind kind;
     std::string eventName;
-    std::string invokeId;  ///< the invocation, for Kind::Invocation
+    std::string address;  ///< the invoke id (Kind::Invocation) or the session id (Kind::Session)
 };
 
 /**

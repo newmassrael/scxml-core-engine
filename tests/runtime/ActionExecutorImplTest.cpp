@@ -9,6 +9,7 @@
 #include "actions/RaiseAction.h"
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
+#include "common/IOProcessorHelper.h"
 #include "core/LogMacros.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
@@ -368,16 +369,25 @@ TEST_F(ActionExecutorImplTest, SCXMLComplianceTargetValidation) {
 
     // Test various target formats
     std::vector<std::string> validTargets = {
-        "",                           // Empty (session-scoped)
-        "#_scxml_" + sessionId,       // Session-scoped format, naming this session
-        "http://example.com/target",  // HTTP target
-        "scxml:another_session"       // SCXML target
+        "",                                           // Empty (session-scoped)
+        "#_scxml_" + sessionId,                       // Session-scoped format, naming this session
+        IOProcessorHelper::scxmlLocation(sessionId),  // the location this session publishes (C.1)
+        "http://example.com/target",                  // HTTP target
     };
 
     for (const auto &target : validTargets) {
         sendAction.setTarget(target);
         bool result = executor->executeSendAction(sendAction);
         EXPECT_TRUE(result) << "Target should be valid: " << target;
+    }
+
+    // W3C SCXML 6.2.4: a value the SCXML Event I/O Processor does not support
+    // as a target is error.execution — the send fails, and so ends its block.
+    // (A value with a URI scheme is the target factory's to judge: it serves
+    // the schemes a platform registered.)
+    for (const std::string target : {"bogus", "!invalid"}) {
+        sendAction.setTarget(target);
+        EXPECT_FALSE(executor->executeSendAction(sendAction)) << "an unsupported target was accepted: " << target;
     }
 
     // W3C SCXML C.1: a well-formed session target that names no session this

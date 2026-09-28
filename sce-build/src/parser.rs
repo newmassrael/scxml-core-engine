@@ -3454,6 +3454,16 @@ impl SCXMLParser {
         // change emitted code under cover of a refactor.
         action.send_type_unsupported = !action.send_type.is_empty()
             && !crate::host_processor_analyzer::is_supported_send_type(&action.send_type);
+        // §scxml-6.2.4: a written target the SCXML Event I/O Processor cannot
+        // address — `bogus` as much as `!invalid` — is the element's own
+        // argument error. Decided once, here, for every backend; a
+        // `targetexpr` is judged by each runtime's target table when it is
+        // evaluated, and a `typeexpr` leaves the processor unknown until then.
+        action.target_unsupported = action.targetexpr.is_empty()
+            && action.typeexpr.is_empty()
+            && (action.send_type.is_empty()
+                || action.send_type == crate::host_processor_analyzer::SCXML_EVENT_PROCESSOR_TYPE)
+            && crate::host_processor_analyzer::is_unsupported_scxml_target(&action.target);
         action.delay = elem.attribute("delay").unwrap_or("").to_string();
         action.delayexpr = elem.attribute("delayexpr").unwrap_or("").to_string();
         // §scxml-6.2: a `delay` written but not a CSS2 time is not read as

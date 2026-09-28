@@ -8928,6 +8928,36 @@
         {
           "file": "sce-build/src/scxml_semantic.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "validateTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "SendHelper",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "Kind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "classifyTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "deliverRouted",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "sendToTarget",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -10685,6 +10715,11 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "settleDeliveredChild",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "sendToTarget",
           "kind": "implements"
         }
       ],
@@ -13645,6 +13680,36 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "settleDeliveredChild",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "SendHelper",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "Kind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "classifyTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "Kind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "deliverRouted",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "sendToTarget",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -14170,6 +14235,11 @@
         {
           "file": "backends/rust/runtime/src/helpers/send.rs",
           "symbol": "validate_basic_http_send",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "Kind",
           "kind": "implements"
         }
       ],

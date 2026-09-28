@@ -727,6 +727,26 @@
         return false;
     }
 
+    // W3C SCXML 6.4 + C.1: whether `#_<invokeid>` names an invocation that is
+    // running now — one that has not started, or whose session has reached its
+    // final state, is not there to address, and a send naming it is reported
+    // when it is made.
+    bool isInvocationRunning([[maybe_unused]] const std::string& invokeId) {
+        {% for invoke_info in model.invokes | scxml_family %}
+        {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
+        if (invokeId == "{{ invoke_info.invoke_id }}") {
+            {% for target in child_targets %}
+            {% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem ~ '_') if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix ~ '_') %}
+            if ({{ slot }} && !{{ slot }}->isInFinalState()) {
+                return true;
+            }
+            {% endfor %}
+            return false;
+        }
+        {% endfor %}
+        return false;
+    }
+
     // W3C SCXML 6.4: Tick all active child state machines to process their events
     // Child state machines need to run independently during parent's event loop
     template <typename Engine>
@@ -795,6 +815,35 @@
                 AOT_DEBUG("AOT C.1 addressed send: delivering '{}' to child session '{}'",
                           addressed.name, childSessionId);
                 child_{{ invoke_info.field_suffix }}_->raiseExternal(addressed);
+                return true;
+            }
+        }
+        {% endfor %}
+        {% endif %}
+        {% endfor %}
+        return false;
+    }
+
+    // W3C SCXML C.1: whether `childSessionId` names a child of this machine
+    // that is running now — the test `deliverToChildSession` makes, and one
+    // whose session has reached its final state has ended. Emitted beside it,
+    // so the concept that finds one finds both.
+    bool isChildSessionRunning(const std::string& childSessionId) {
+        if (childSessionId.empty()) {
+            return false;
+        }
+        {% for state_id, state in model.states | dictsort %}
+        {% if state.invokes | scxml %}
+        {% for invoke_info in state.invokes | scxml %}
+        {
+            bool __sce_addressed = false;
+            {
+                std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
+                auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
+                __sce_addressed = (it != activeInvokes_.end() && it->second.sessionId == childSessionId);
+            }
+            if (__sce_addressed && child_{{ invoke_info.field_suffix }}_ &&
+                !child_{{ invoke_info.field_suffix }}_->isInFinalState()) {
                 return true;
             }
         }

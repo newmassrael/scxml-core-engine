@@ -803,10 +803,11 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             target = evaluateExpression(action.getTargetExpr());
         }
 
-        // §scxml-6.2 (tests 159, 194): Validate target format using shared helper
-        // Invalid target values (e.g., starting with "!") must raise error.execution
+        // §scxml-6.2.4 (tests 159, 194): a target value this processor does not
+        // support raises error.execution — SendHelper::classifyTarget decides it,
+        // for a written target and an evaluated targetexpr alike.
         std::string targetErrorMsg;
-        if (!SendHelper::validateTarget(target, targetErrorMsg)) {
+        if (!SendHelper::validateTarget(sendType, target, targetErrorMsg)) {
             SCE_LOG_ERROR("ActionExecutorImpl: {}", targetErrorMsg);
             if (eventRaiser_) {
                 eventRaiser_->raiseEvent("error.execution", targetErrorMsg, sendId,

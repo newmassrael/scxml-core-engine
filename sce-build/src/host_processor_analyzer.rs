@@ -80,6 +80,36 @@ pub fn is_supported_send_type(send_type: &str) -> bool {
     send_type.is_empty() || SUPPORTED_SEND_TYPES.contains(&send_type)
 }
 
+/// Whether a target written for the SCXML Event I/O Processor is a value it
+/// cannot address.
+///
+/// §scxml-6.2.4: "If the value of the 'target' or 'targetexpr' attribute is
+/// not supported or invalid, the Processor MUST place the error
+/// error.execution on the internal event queue." The shapes it addresses are
+/// the ones every runtime's target table routes — `#_internal`, `#_parent`,
+/// `#_scxml_<id>`, `#_<invokeid>`, a Mesh `#<name>`, an http(s) URL and a
+/// published `sce://scxml/<id>` location; the C++ spelling of the same table
+/// is `SendHelper::classifyTarget`. Anything else — `bogus`, `!invalid`, or a
+/// URI of another scheme, which a generated machine registers no processor
+/// for (the Interpreter's target factory is where schemes are registered) —
+/// is the error. An empty target is the absent attribute and is not judged
+/// here.
+pub fn is_unsupported_scxml_target(target: &str) -> bool {
+    const LOCATION_PREFIX: &str = "sce://scxml/";
+    if target.is_empty() {
+        return false;
+    }
+    if target.starts_with('!') {
+        return true;
+    }
+    let addressed = target.starts_with("#_")
+        || (target.len() >= 2 && target.starts_with('#'))
+        || target.starts_with("http://")
+        || target.starts_with("https://")
+        || (target.len() > LOCATION_PREFIX.len() && target.starts_with(LOCATION_PREFIX));
+    !addressed
+}
+
 /// One site naming a processor type this build has no path for.
 ///
 /// Separate from the wire record for the reason

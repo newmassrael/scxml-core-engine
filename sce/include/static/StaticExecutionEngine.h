@@ -1177,30 +1177,149 @@ public:
      */
     void deliverScheduled(Event event, const std::string &eventData, const std::string &sendId,
                           const std::string &origin, const ::SCE::ScheduledRoute &route) {
-        using Kind = ::SCE::ScheduledRoute::Kind;
-        if (route.kind == Kind::InternalQueue) {
-            raise(EventWithMetadata(event, eventData, origin, sendId));
-            return;
-        }
-        SCE::Common::ForwardedEvent forwarded{
-            route.eventName, eventData, origin, sendId, "external", SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, ""};
-        bool delivered = false;
-        if (route.kind == Kind::Invocation) {
-            if constexpr (SCE::Core::HasInvocationDelivery<StatePolicy>) {
-                delivered = policy_.deliverToInvocation(route.invokeId, forwarded);
-            }
-        } else {
-            if constexpr (SCE::Core::HasParentDelivery<StatePolicy>) {
-                delivered = policy_.deliverToParent(forwarded);
-            }
-        }
-        if (!delivered) {
+        if (!deliverRouted(event, eventData, sendId, origin, route)) {
             if (auto communicationError = policy_.getEventFromName("error.communication")) {
                 raise(EventWithMetadata(*communicationError,
                                         "<send> named a target that was no longer there when its delay elapsed", "",
                                         sendId));
             }
         }
+    }
+
+    /**
+     * @brief Deliver a send to the target a route names, now
+     *
+     * The one delivery both a send made at once and a delayed send whose wait
+     * is over go through (§scxml-6.2.4: a delay postpones a send, it does not
+     * change where it goes). It answers whether the target was there to take
+     * the event; the caller reports a `false` as error.communication
+     * (§scxml-C-1).
+     */
+    bool deliverRouted(Event event, const std::string &eventData, const std::string &sendId, const std::string &origin,
+                       const ::SCE::ScheduledRoute &route) {
+        using Kind = ::SCE::ScheduledRoute::Kind;
+        if (route.kind == Kind::InternalQueue) {
+            raise(EventWithMetadata(event, eventData, origin, sendId));
+            return true;
+        }
+        SCE::Common::ForwardedEvent forwarded{
+            route.eventName, eventData, origin, sendId, "external", SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, ""};
+        if (route.kind == Kind::Invocation) {
+            if constexpr (SCE::Core::HasInvocationDelivery<StatePolicy>) {
+                return policy_.deliverToInvocation(route.address, forwarded);
+            } else {
+                return false;
+            }
+        }
+        if (route.kind == Kind::Session) {
+            if constexpr (SCE::Core::HasChildSessionDelivery<StatePolicy>) {
+                return policy_.deliverToChildSession(route.address, forwarded);
+            } else {
+                return false;
+            }
+        }
+        if constexpr (SCE::Core::HasParentDelivery<StatePolicy>) {
+            return policy_.deliverToParent(forwarded);
+        } else {
+            return false;
+        }
+    }
+
+    /// What became of a `<send>` handed to [sendToTarget].
+    enum class TargetSendOutcome {
+        Sent,         ///< delivered, or scheduled to be when its delay elapses
+        Unsupported,  ///< the value is not a target: the caller raises error.execution
+        Unreachable,  ///< nothing the value names is there: the caller raises error.communication
+    };
+
+    /**
+     * @brief Send to a target value read at run time (§scxml-6.2.4, §scxml-C-1)
+     *
+     * A `targetexpr` is a target: whatever value it yields is routed as the same
+     * value written in `target` is — `SendHelper::classifyTarget` reads it, for
+     * the Interpreter as for this engine — sent at once or, with a delay, from
+     * the scheduler through [deliverRouted] when it comes due. A session the
+     * value names that is not there now is reported now; an invocation or a
+     * session that ends while a delayed send waits is reported when it comes
+     * due.
+     *
+     * @param event This machine's spelling of the event, for its own queues
+     * @param eventName The event's name, for another session to resolve
+     * @param ownSessionId The sending session, which a session target may name
+     */
+    TargetSendOutcome sendToTarget(Event event, const std::string &eventName, const std::string &target,
+                                   const std::string &ownSessionId, std::chrono::milliseconds delay,
+                                   const std::string &sendId, const std::string &eventData, const std::string &origin) {
+        using Kind = ::SCE::SendHelper::SendTarget::Kind;
+        using RouteKind = ::SCE::ScheduledRoute::Kind;
+        const auto resolved = ::SCE::SendHelper::classifyTarget(target, ownSessionId);
+        const bool delayed = delay.count() > 0;
+        std::optional<::SCE::ScheduledRoute> route;
+        switch (resolved.kind) {
+        case Kind::Unsupported:
+        case Kind::Uri:
+            // A generated machine registers no target schemes: a URI of any
+            // scheme but http(s) and its own locations is one it cannot address.
+            return TargetSendOutcome::Unsupported;
+        case Kind::Unreachable:
+            return TargetSendOutcome::Unreachable;
+        case Kind::SelfExternal:
+            if (delayed) {
+                scheduleEvent(event, delay, sendId, eventData, origin);
+            } else {
+                raiseExternal(EventWithMetadata(event, eventData, origin, sendId, "external",
+                                                SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE));
+            }
+            return TargetSendOutcome::Sent;
+        case Kind::Mesh:
+        case Kind::Http:
+            // Another processor's address: the external path hands it over.
+            // (Built in place — `reader_names` reads `Type name(...)` in this
+            // header as a member the generated machine carries.)
+            raiseExternal(EventWithMetadata(event, eventData, origin, sendId, "external",
+                                            SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, "", target));
+            return TargetSendOutcome::Sent;
+        case Kind::Internal:
+            route = ::SCE::ScheduledRoute{RouteKind::InternalQueue, "", ""};
+            break;
+        case Kind::Parent:
+            route = ::SCE::ScheduledRoute{RouteKind::Parent, eventName, ""};
+            break;
+        case Kind::Invocation:
+            // §scxml-6.4 + §scxml-C-1: an invocation that is not running now is
+            // not there to address, delayed or not.
+            // `isInvocationRunning` is emitted beside `deliverToInvocation`, so
+            // the concept that finds one finds both.
+            if constexpr (SCE::Core::HasInvocationDelivery<StatePolicy>) {
+                if (!policy_.isInvocationRunning(resolved.id)) {
+                    return TargetSendOutcome::Unreachable;
+                }
+            } else {
+                return TargetSendOutcome::Unreachable;
+            }
+            route = ::SCE::ScheduledRoute{RouteKind::Invocation, eventName, resolved.id};
+            break;
+        case Kind::Session:
+            // §scxml-C-1: a session that does not exist is reported when the
+            // send is made, delayed or not.
+            // `isChildSessionRunning` is emitted beside `deliverToChildSession`,
+            // so the concept that finds one finds both.
+            if constexpr (SCE::Core::HasChildSessionDelivery<StatePolicy>) {
+                if (!policy_.isChildSessionRunning(resolved.id)) {
+                    return TargetSendOutcome::Unreachable;
+                }
+            } else {
+                return TargetSendOutcome::Unreachable;
+            }
+            route = ::SCE::ScheduledRoute{RouteKind::Session, eventName, resolved.id};
+            break;
+        }
+        if (delayed) {
+            scheduleRoutedEvent(event, delay, sendId, eventData, origin, *route);
+            return TargetSendOutcome::Sent;
+        }
+        return deliverRouted(event, eventData, sendId, origin, *route) ? TargetSendOutcome::Sent
+                                                                       : TargetSendOutcome::Unreachable;
     }
 
     /**

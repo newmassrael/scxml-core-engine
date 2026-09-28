@@ -212,19 +212,14 @@ engine.raiseExternal({{ event_cpp }}, eventData, "", {{ target_cpp }});
    that only stated the target had been validated at build time claimed the
    send and delivered nothing, and every reply a server sent was lost. #}
 {% macro send_dispatch_local(action, model, event_cpp) %}
-{% set target_cpp = 'dynamicTarget' if action.targetexpr else '"' ~ action.target ~ '"' %}
+{# A `targetexpr` never reaches here: its send is routed by `engine.sendToTarget`. #}
+{% set target_cpp = '"' ~ action.target ~ '"' %}
 {# A static target is decided here, at build time, so only the branch it takes
    is emitted — a runtime test of a constant leaves the other branch as dead
    code the compiler still has to reason about. `typedData` is carried only by
    a send whose payload can produce one. #}
 {% set carries_typed = action.params or action.namelist or action.content or action.contentexpr %}
-{% if action.targetexpr %}
-if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
-{{ send_raise_internal(event_cpp, carries_typed) }}
-} else {
-{{ send_raise_external(action, model, event_cpp, target_cpp, carries_typed) }}
-}
-{% elif action.target == '#_internal' %}
+{% if action.target == '#_internal' %}
 {{ send_raise_internal(event_cpp, carries_typed) }}
 {% else %}
 {{ send_raise_external(action, model, event_cpp, target_cpp, carries_typed) }}
@@ -437,8 +432,9 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
 // declaration MOVES, so a runtime re-derivation would refuse a type the
 // build had already promised to dispatch.
 {{ send_arg_error("<send type='" ~ action.send_type ~ "'> names a processor this platform does not support", block_end, '') }}
-{% elif not action.targetexpr and action.target and not action.target.startswith('#') and action.target.startswith('!') %}
-// W3C SCXML 6.2 (tests 159, 194): a target this processor cannot address.
+{% elif action.target_unsupported %}
+// W3C SCXML 6.2.4 (tests 159, 194): a target this processor cannot address —
+// `Action::target_unsupported`, decided once at build time for every backend.
 {{ send_arg_error("<send target='" ~ action.target ~ "'> is not a target this processor can address", block_end, '') }}
 {% elif is_http and not action.target and not action.targetexpr %}
 // W3C SCXML C.2 (test 577): BasicHTTP names no target to post to.
@@ -627,6 +623,30 @@ engine.raise(typename Engine::EventWithMetadata(
 // form is a rendering of the payload evaluated above, so a second reading of
 // the data model cannot disagree with the first.
 engine.performHttpSend({% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}, {{ event_name_cpp }}, {% if action.contentexpr and not (action.params or action.namelist or action.content) %}eventData{% else %}"{{ action.content | escape_cpp }}"{% endif %}, params, sendId);
+{% elif action.targetexpr and (action.event or dyn_event) %}
+{% if dyn_event %}
+if (sendEvent) {
+{% endif %}
+{
+    // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+    // the same value written in `target` is, at once or after the delay, by
+    // the table SendHelper::classifyTarget holds for every C++ path.
+    const auto routed = engine.sendToTarget({{ event_enum_cpp }}, {{ event_name_cpp }}, dynamicTarget,
+                                            sessionId_.value_or(""),
+                                            {% if has_delay %}delayMs{% else %}std::chrono::milliseconds{0}{% endif %},
+                                            sendId, eventData, {% if has_script %}sessionId_.value_or(""){% else %}""{% endif %});
+    if (routed == Engine::TargetSendOutcome::Unsupported) {
+{{ send_arg_error("<send> targetexpr produced a value that is not a target", block_end, '        ') }}
+    }
+    if (routed == Engine::TargetSendOutcome::Unreachable) {
+        engine.raise(typename Engine::EventWithMetadata(
+            Event::Error_communication, "<send> targetexpr names a session this processor cannot reach", "", sendId));
+        {{ block_end or 'return;' }}
+    }
+}
+{% if dyn_event %}
+}
+{% endif %}
 {% elif action.event or dyn_event %}
 {% if dyn_event %}
 if (sendEvent) {
@@ -640,14 +660,6 @@ if (sendEvent) {
 engine.scheduleRoutedEvent({{ event_enum_cpp }}, delayMs, sendId, eventData, {{ delayed_origin_cpp }},
                            ::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::InternalQueue, "", ""});
 {% else %}
-{% if action.targetexpr %}
-// W3C SCXML 6.2 + C.1: the target resolved now decides the queue the delayed
-// event reaches, as it decides an immediate send's.
-if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
-    engine.scheduleRoutedEvent({{ event_enum_cpp }}, delayMs, sendId, eventData, {{ delayed_origin_cpp }},
-                               ::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::InternalQueue, "", ""});
-} else
-{% endif %}
 {
     // W3C SCXML 6.2: Delayed send to this session's external queue.
     // §scxml-C-1: the origin is this session, as on the immediate path.

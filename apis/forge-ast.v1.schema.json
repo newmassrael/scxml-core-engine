@@ -201,6 +201,11 @@
         "target": {
           "type": "string"
         },
+        "target_unsupported": {
+          "default": false,
+          "description": "`true` when a written `target` is a value the SCXML Event I/O Processor cannot address (§scxml-6.2.4) — decided by [`crate::host_processor_analyzer::is_unsupported_scxml_target`] and read by every backend's send template, which refuses the send with error.execution as it refuses an unsupported `type`.",
+          "type": "boolean"
+        },
         "targetexpr": {
           "type": "string"
         },

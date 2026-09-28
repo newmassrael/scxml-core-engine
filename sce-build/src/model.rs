@@ -310,6 +310,14 @@ pub struct Action {
     #[serde(default)]
     pub send_type_unsupported: bool,
 
+    /// `true` when a written `target` is a value the SCXML Event I/O
+    /// Processor cannot address (§scxml-6.2.4) — decided by
+    /// [`crate::host_processor_analyzer::is_unsupported_scxml_target`] and
+    /// read by every backend's send template, which refuses the send with
+    /// error.execution as it refuses an unsupported `type`.
+    #[serde(default)]
+    pub target_unsupported: bool,
+
     /// `true` when [`Self::send_type`] names a processor the *host* has
     /// declared it serves (§scxml-6.2.5 makes the identifier extensible,
     /// so the set is open to the platform).
@@ -716,6 +724,7 @@ impl Action {
                 "delay_invalid",
                 "send_type_host_served",
                 "send_type_unsupported",
+                "target_unsupported",
                 "is_static_literal",
                 "static_value",
             ],

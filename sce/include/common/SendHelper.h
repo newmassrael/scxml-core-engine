@@ -15,9 +15,11 @@
 
 #pragma once
 
+#include "common/IOProcessorHelper.h"
 #include "common/SCXMLConstants.h"
 #include "common/UniqueIdGenerator.h"
 #include "core/LogMacros.h"
+#include <cctype>
 #ifdef SCE_ENABLE_HTTP
 #include "common/UrlEncodingHelper.h"
 #endif
@@ -311,19 +313,27 @@ public:
     static constexpr const char *RESERVED_HOST_TYPE_PREFIX = "sce:";
 
     /**
-     * @brief Validate send target according to §scxml-6.2
+     * @brief Validate send target according to §scxml-6.2.4
      *
-     * §scxml-6.2 (tests 159, 194): Invalid target values (e.g., starting with "!")
-     * must raise error.execution and stop subsequent executable content.
+     * §scxml-6.2.4 (tests 159, 194): a target value the processor does not
+     * support, or that is invalid, raises error.execution and ends the block.
+     * For the SCXML Event I/O Processor that is every value [classifyTarget]
+     * calls Unsupported — `!invalid` and `bogus` alike. A value with another
+     * URI scheme is left to the target factory, which serves the schemes the
+     * platform registered; another processor reads its own targets, so only
+     * the `!` spelling is refused for it here.
      *
-     * This function reuses isInvalidTarget() to avoid code duplication.
-     *
+     * @param sendType The `<send>` type, empty for the default processor
      * @param target Target string to validate
      * @param errorMsg Output parameter for error message if validation fails
      * @return true if valid, false if invalid (error.execution should be raised)
      */
-    static bool validateTarget(const std::string &target, std::string &errorMsg) {
-        if (isInvalidTarget(target)) {
+    static bool validateTarget(const std::string &sendType, const std::string &target, std::string &errorMsg) {
+        const bool scxmlProcessor = sendType.empty() || sendType == Constants::SCXML_EVENT_PROCESSOR_TYPE;
+        const bool unsupported =
+            isInvalidTarget(target) ||
+            (scxmlProcessor && !target.empty() && classifyTarget(target, "").kind == SendTarget::Kind::Unsupported);
+        if (unsupported) {
             errorMsg = "Invalid target value: " + target;
             return false;
         }
@@ -349,6 +359,110 @@ public:
     static bool isUnreachableTarget(const std::string &target) {
         // §scxml-C-1: Empty or "undefined" targets are unreachable
         return target.empty() || target == "undefined";
+    }
+
+    /**
+     * @brief Where a `<send>` to the SCXML Event I/O Processor goes (§scxml-6.2.4, §scxml-C-1)
+     *
+     * One reading of a target value for every C++ path — a `target` written in
+     * the document and a `targetexpr` evaluated at run time alike, sent at once
+     * or after a delay — so no path can route a value the others route
+     * differently. The predicates above are its parts.
+     */
+    struct SendTarget {
+        enum class Kind {
+            SelfExternal,  ///< the sending session's own external queue
+            Internal,      ///< `#_internal`: the sending session's internal queue
+            Parent,        ///< `#_parent`: the session that invoked this one
+            Session,       ///< a session named by `#_scxml_<id>` or its published location
+            Invocation,    ///< `#_<invokeid>`: an invocation of the sending session
+            Mesh,          ///< `#<name>`: a machine an SCE Mesh deployment binds
+            Http,          ///< an http(s) URL (§scxml-C-2)
+            Uri,           ///< another scheme's URI: supported where the platform registered the scheme
+            Unreachable,   ///< a value naming no session: error.communication (§scxml-C-1)
+            Unsupported,   ///< a value this processor cannot address: error.execution (§scxml-6.2.4)
+        };
+        Kind kind;
+        std::string id;  ///< the session id (Session) or the invoke id (Invocation)
+    };
+
+    /**
+     * @brief Classify a target value (§scxml-6.2.4, §scxml-C-1)
+     *
+     * §scxml-6.2.4: "If the value of the 'target' or 'targetexpr' attribute is
+     * not supported or invalid, the Processor MUST place the error
+     * error.execution on the internal event queue. If it is unable to dispatch
+     * the message, the Processor MUST place the error error.communication on
+     * the internal event queue." A value of none of the shapes below —
+     * `bogus`, `!invalid` — is the first; an empty or `undefined` value, which
+     * names no session, is the second.
+     *
+     * @param target The target value, as written or as evaluated
+     * @param ownSessionId The sending session, so a session target naming it
+     *        is its own external queue
+     */
+    static SendTarget classifyTarget(const std::string &target, const std::string &ownSessionId) {
+        using Kind = SendTarget::Kind;
+        if (isUnreachableTarget(target)) {
+            return {Kind::Unreachable, ""};
+        }
+        if (isInvalidTarget(target)) {
+            return {Kind::Unsupported, ""};
+        }
+        if (isInternalTarget(target)) {
+            return {Kind::Internal, ""};
+        }
+        if (target == "#_parent") {
+            return {Kind::Parent, ""};
+        }
+        if (isSessionTarget(target)) {
+            const std::string sessionId = extractSessionId(target);
+            if (sessionId.empty() || sessionId == ownSessionId) {
+                return {Kind::SelfExternal, ""};
+            }
+            return {Kind::Session, sessionId};
+        }
+        if (const std::string located = IOProcessorHelper::sessionIdFromScxmlLocation(target); !located.empty()) {
+            if (located == ownSessionId) {
+                return {Kind::SelfExternal, ""};
+            }
+            return {Kind::Session, located};
+        }
+        if (isChildInvokeTarget(target)) {
+            return {Kind::Invocation, extractInvokeId(target)};
+        }
+        if (isMeshTarget(target)) {
+            return {Kind::Mesh, ""};
+        }
+        if (isHttpTarget(target)) {
+            return {Kind::Http, ""};
+        }
+        if (hasUriScheme(target)) {
+            return {Kind::Uri, ""};
+        }
+        return {Kind::Unsupported, ""};
+    }
+
+    /**
+     * @brief Whether `target` begins with a URI scheme (RFC 3986 §3.1)
+     *
+     * `scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )`, then `:`. A value
+     * with one names some processor's address, which a platform may serve —
+     * the Interpreter's target factory takes registered schemes; a value with
+     * none, and none of the `#` shapes, is no address at all.
+     */
+    static bool hasUriScheme(const std::string &target) {
+        const auto colon = target.find(':');
+        if (colon == std::string::npos || colon == 0 || !std::isalpha(static_cast<unsigned char>(target[0]))) {
+            return false;
+        }
+        for (size_t i = 1; i < colon; ++i) {
+            const auto c = static_cast<unsigned char>(target[i]);
+            if (!std::isalnum(c) && c != '+' && c != '-' && c != '.') {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
