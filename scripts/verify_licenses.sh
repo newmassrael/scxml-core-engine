@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 #
 # verify_licenses.sh — drift guard for sce/sce_licenses.cmake.
 #
-# LGPL-2.1 §1 (SCE itself) and MIT §1 (vendored third_party deps) both
+# AGPL-3.0 section 4 (SCE itself) and MIT section 1 (vendored third_party deps) both
 # require the licence text to ride along with the distribution. The
 # SSOT in sce/sce_licenses.cmake is shared by CMakeLists.txt install()
 # rules and scripts/package_embed.sh; this verifier closes the drift

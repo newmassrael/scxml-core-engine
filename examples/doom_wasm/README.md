@@ -176,4 +176,6 @@ target_compile_definitions(doom_sce PRIVATE SCE_DEBUG)
 ## License
 
 - DOOM source code (doomgeneric): GNU GPL v2
-- SCE engine and state machines: LGPL-2.1 (generated code is MIT)
+- SCE engine: AGPL-3.0-only WITH SCE Linking Exception, or Commercial;
+  the example links it unmodified (Linking Exception, section 2)
+- Generated state machines: SCE Linking Exception, section 3

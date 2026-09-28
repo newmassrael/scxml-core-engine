@@ -254,7 +254,7 @@ grep "CPPHTTPLIB_VERSION" /usr/include/httplib.h
 
 ## License Compatibility Matrix
 
-### The engine: SCE Dual License (LGPL-2.1/Commercial) + MIT Dependencies
+### The engine: SCE Dual License (AGPL-3.0 + Linking Exception / Commercial) + MIT Dependencies
 
 ⚠ This matrix covers the six ENGINE dependencies only. It says nothing about
 the visualizer's two, which is the next table.
@@ -273,7 +273,16 @@ the visualizer's two, which is the next table.
 **Key Benefit:** Every ENGINE dependency is MIT licensed, providing maximum
 flexibility for both open source and commercial use. No LGPL or GPL
 dependencies means no dynamic linking requirements or source disclosure
-obligations for the engine's dependencies.
+obligations for the engine's dependencies. Every MIT dependency is also
+compatible with SCE's own AGPL-3.0 branch.
+
+### SCE itself with the visualizer's elkjs
+
+SCE's own AGPL-3.0 branch and elkjs's EPL-2.0 are not compatible on their
+own terms. The SCE Linking Exception, section 4
+([LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md)), is the copyright holder's
+permission to combine SCE with the components in this document under their
+own licences, and it is what lets the visualizer ship elkjs.
 
 ### The visualizer: d3 (ISC) + elkjs (EPL-2.0)
 

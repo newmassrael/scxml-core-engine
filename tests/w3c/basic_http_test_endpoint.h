@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial */
+/* SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial */
 /* SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael */
 
 #ifndef SCE_W3C_BASIC_HTTP_TEST_ENDPOINT_H

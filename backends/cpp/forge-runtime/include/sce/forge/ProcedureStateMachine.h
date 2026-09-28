@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // This file is part of SCE (SCXML Core Engine).
 //
 // Dual Licensed:
-// 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
+// 1. AGPL-3.0 + Linking Exception: Free for unmodified use (see LICENSE-EXCEPTION.md)
 // 2. Commercial: For modifications (contact newmassrael@gmail.com)
 //
 // Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE

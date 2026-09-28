@@ -3,7 +3,7 @@ name: License SSOT Verify
 # Drift guard for sce/sce_licenses.cmake — the SSOT shared by
 # find_package install rules and scripts/package_embed.sh. Catches a
 # vendored third_party dep added without its LICENSE entered into the
-# SSOT (silent LGPL §1 / MIT §1 compliance violation), an upstream
+# SSOT (silent AGPL-3.0 section 4 / MIT section 1 compliance violation), an upstream
 # upgrade that moves an embedded SPDX/copyright notice out of the
 # registered grep target, and SSOT entries pointing at files renamed
 # or deleted on disk.

@@ -601,8 +601,8 @@ endforeach()
 include(${CMAKE_CURRENT_SOURCE_DIR}/sce/sce_codegen_assets.cmake)
 
 # License-text distribution is declared in sce/sce_licenses.cmake — the
-# single source of truth shared with scripts/package_embed.sh. LGPL-2.1
-# §1 (SCE itself) and MIT §1 (every vendored third_party dep with a
+# single source of truth shared with scripts/package_embed.sh. AGPL-3.0
+# section 4 (SCE itself) and MIT section 1 (every vendored third_party dep with a
 # standalone LICENSE file) both require the licence text to ride along
 # with the distribution; a flat hardcoded list in either consumer
 # drifts the moment a new third_party dep lands. Each file is shipped

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # The gate registry: what gates exist, what triggers each, what each needs
@@ -993,7 +993,7 @@ GATES: dict[str, dict] = {
         "cost_s": 13,
         "summary": "spec snapshot integrity + verifies-catalog drift",
     },
-    # A compliance verdict — an LGPL section 1 / MIT section 1 violation in a
+    # A compliance verdict — an AGPL-3.0 section 4 / MIT section 1 violation in a
     # release tarball — that was reachable only after a push, on a check that
     # needs nothing but bash and takes three hundredths of a second.
     "license-ssot": {

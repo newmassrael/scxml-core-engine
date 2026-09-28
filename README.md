@@ -1311,38 +1311,45 @@ ctest -R benchmark.*quick
 
 SCE uses a **Dual License** model:
 
-### Generated Code: MIT (No Restrictions)
+### Engine and Generator: AGPL-3.0 + Linking Exception, or Commercial
 
-All code generated from your SCXML files is **MIT licensed** and owned by you.
+**Option 1: AGPL-3.0-only + SCE Linking Exception (FREE)**
+- Use the unmodified engine in your application (open source or proprietary)
+- Static or dynamic linking — no obligation to disclose your code
+- Modify the engine and publish the modifications under AGPL-3.0,
+  including to users who reach it over a network
+
+**Option 2: Commercial (contact newmassrael@gmail.com for pricing)**
+- Modify the engine or the generator and keep changes proprietary
+- Build competing products/SDKs without releasing them under AGPL-3.0
+- Avoid AGPL-3.0 compliance requirements
+
+See [LICENSE](LICENSE), [LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md) and
+[LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md) for details.
+
+### Generated Code
+
+Code produced by an unmodified `sce-codegen` may be used in your
+application under terms of your choice, as long as the application is not
+a competing product (an SDK, library, runtime, tool or hosted service
+offering state-machine functionality to others). What it derives from your
+input document is yours.
 
 ```bash
 sce-codegen generate your_machine.scxml -o output/ -l cpp
-# Generated: your_machine_sm.h (MIT License, unrestricted use)
+# Generated: your_machine_sm.h (Linking Exception, section 3)
 ```
 
 See [LICENSE-GENERATED.md](LICENSE-GENERATED.md) for details.
-
-### Runtime Engine: LGPL-2.1 or Commercial
-
-**Option 1: LGPL-2.1 + Static Linking Exception (FREE)**
-- Use unmodified engine in any project (open source or proprietary)
-- Static or dynamic linking — no obligation to disclose your code
-- Modify engine and share modifications under LGPL-2.1
-
-**Option 2: Commercial ($5000 Individual / Enterprise: contact for pricing)**
-- Modify engine and keep changes proprietary
-- Create derivative products/SDKs
-- Avoid LGPL compliance requirements
-
-See [LICENSE](LICENSE) and [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md) for details.
 
 ### Quick Decision
 
 | Your Situation | License | Cost |
 |---------------|---------|------|
-| Use unmodified engine | LGPL-2.1 + Exception | FREE |
-| Modify engine + share changes | LGPL-2.1 | FREE |
-| Modify engine + keep private | Commercial | $5000 / Contact |
-| Your generated code (always) | MIT | FREE |
+| Use unmodified engine in your application | AGPL-3.0 + Exception | FREE |
+| Use generated code in your application | AGPL-3.0 + Exception | FREE |
+| Modify engine + publish changes | AGPL-3.0 | FREE |
+| Modify engine + keep private | Commercial | Contact |
+| Build a competing SDK / product | AGPL-3.0 in full, or Commercial | FREE / Contact |
 
 **Contact:** newmassrael@gmail.com

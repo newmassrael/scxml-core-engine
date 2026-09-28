@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # Generated-machine crate for the per-machine no_std event-queue-sizing gate.
@@ -20,7 +20,7 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 description = "Generated no_std machine (sce:capacity=2) consumed by the queue-size gate"
-license = "LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+license = "AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
 
 [lib]
 name = "sce_nostd_queue_size_machine"

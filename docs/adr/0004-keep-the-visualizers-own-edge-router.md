@@ -48,6 +48,12 @@ router would stop existing rather than being improved.
   OR LicenseRef-SCE-Commercial`. The linking exception is what the
   commercial offer is *for*: a customer links SCE into a closed product
   without LGPL §6 obligations.
+
+  > Note, 2026-09-28: SCE is now offered as `AGPL-3.0-only WITH
+  > LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial`. The
+  > argument below is unchanged by that: the exception still cannot reach
+  > a library SCE does not own, so a commercial customer would still carry
+  > libavoid's LGPL-2.1 obligations.
 - **That exception cannot be extended to libavoid.** A commercial customer
   shipping the visualizer would carry §6 for that library regardless of
   what they paid for. The commercial licence would stop covering the whole

@@ -1,15 +1,16 @@
-# SCE Commercial License (LGPL-2.1 Alternative)
+# SCE Commercial License (AGPL-3.0 Alternative)
 
 ## Overview
 
-This Commercial License provides an alternative to LGPL-2.1 (with the
-Static Linking Exception) for the SCE (SCXML Core Engine) Execution
-Engine. It is required when you need to **modify the engine privately**
-or **redistribute it as part of a derivative product / SDK**.
+This Commercial License provides an alternative to AGPL-3.0 (with the
+SCE Linking Exception) for the SCE (SCXML Core Engine) runtimes and code
+generator. It is required when you need to **modify the engine or the
+generator privately** or **build a competing product / SDK** on SCE
+without releasing it under AGPL-3.0.
 
 **Licensor:** newmassrael  
-**License Model:** GitHub Sponsors (Cumulative Sponsorship)  
-**License Version:** 4.0 (with Static Linking Exception baseline)
+**License Model:** Negotiated with the licensor  
+**License Version:** 5.0 (with AGPL-3.0 + Linking Exception baseline)
 
 ---
 
@@ -17,56 +18,61 @@ or **redistribute it as part of a derivative product / SDK**.
 
 ### ✅ You DON'T Need Commercial License If:
 
-**Using engine unmodified (any linking mode):**
-- Link with SCE Engine without modifications
-- Static OR dynamic linking — no obligation to disclose object code
-  (Static Linking Exception covers this — see [LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md))
+**Using the engine unmodified in your application (any linking mode):**
+- Link with the SCE engine without modifications
+- Static OR dynamic linking — no obligation to disclose your source or
+  the engine's (Linking Exception, section 2 — see
+  [LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md))
 - Use in commercial products (closed source OK)
-- **License: LGPL-2.1 + Static Linking Exception (FREE)**
+- **License: AGPL-3.0 + Linking Exception (FREE)**
 
-**Modifying engine + publishing modifications:**
-- Modify Helper files or StaticExecutionEngine
-- Distribute modified engine source under LGPL-2.1
-- Note: The Static Linking Exception does NOT apply to modified versions
-- **License: LGPL-2.1 (FREE)**
+**Using generated code in your application:**
+- Code produced by an unmodified `sce-codegen`
+- Closed source OK (Linking Exception, section 3)
+- **License: AGPL-3.0 + Linking Exception (FREE)**
+
+**Modifying the engine + publishing the modifications:**
+- Modify Helper files, StaticExecutionEngine or the generator
+- Release the modified engine, and every work based on it, under
+  AGPL-3.0, including to users who reach it over a network
+- Note: the Linking Exception does NOT apply to modified versions
+- **License: AGPL-3.0 (FREE)**
 
 ### 💰 You NEED Commercial License If:
 
-**Modifying engine + keeping changes private:**
-- Modify SendHelper, GuardHelper, StaticExecutionEngine, etc.
-- Want to keep modifications proprietary (no source disclosure)
-- Want to prevent users from relinking with modified versions
+**Modifying the engine or the generator + keeping changes private:**
+- Modify SendHelper, GuardHelper, StaticExecutionEngine, templates, etc.
+- Want to keep modifications proprietary (no source disclosure), in a
+  distributed product or in a hosted service
 
-**Creating derivative products / SDKs:**
-- Build a commercial SDK based on SCE Engine
-- Redistribute SCE Engine as a standalone component or library
-  wrapper (rebranded or competing state machine product)
-
----
-
-## Pricing (GitHub Sponsors Cumulative Model)
-
-### Individual Developer License
-- **Cumulative Sponsorship:** $5000 USD via GitHub Sponsors
-- **For:** Individual developers and freelancers
-
-### Enterprise License (5+ developers)
-- **Pricing:** Contact for quote (GitHub Sponsors available)
-- **For:** Companies and organizations
-
-**Sponsor at:** https://github.com/newmassrael  
-**Contact:** newmassrael@gmail.com
+**Creating competing products / SDKs without AGPL-3.0:**
+- Build a commercial SDK, library, framework, runtime, development tool
+  or hosted service that offers state-machine functionality to others
+- Redistribute SCE as a standalone component or library wrapper
+  (rebranded or competing state machine product)
 
 ---
 
-## Key Benefits vs LGPL-2.1 + Exception
+## Pricing
 
-| Aspect | LGPL-2.1 + Exception (Free) | Commercial ($5000 / Contact) |
+Pricing and terms are agreed directly with the licensor, for individual
+developers and for companies alike. A sponsorship alone does not grant a
+Commercial License; the licence is what the licensor confirms in writing.
+
+**Contact:** newmassrael@gmail.com  
+**GitHub:** https://github.com/newmassrael
+
+---
+
+## Key Benefits vs AGPL-3.0 + Exception
+
+| Aspect | AGPL-3.0 + Exception (Free) | Commercial (Contact) |
 |--------|------------------------------|------------------------------|
 | Use unmodified engine | ✅ Free | ✅ Included |
 | **Static linking (proprietary app)** | ✅ **Free via Exception** | ✅ Included |
-| **Dynamic linking (proprietary app)** | ✅ **Free** | ✅ Included |
-| Modify engine source | ✅ Free (share under LGPL) | ✅ Included |
-| **Keep modifications private** | ❌ Must disclose | ✅ **Allowed** |
-| **Redistribute as SDK / rebranded product** | ❌ Not permitted | ✅ **Allowed** |
+| **Dynamic linking (proprietary app)** | ✅ **Free via Exception** | ✅ Included |
+| Generated code in proprietary app | ✅ **Free via Exception** | ✅ Included |
+| Modify engine source | ✅ Free (publish under AGPL-3.0) | ✅ Included |
+| **Keep modifications private** | ❌ Must publish, including to network users | ✅ **Allowed** |
+| **Competing SDK / rebranded product** | ⚠ Only if the whole product is AGPL-3.0 | ✅ **Allowed** |
 | Support | Community | **Priority email** |

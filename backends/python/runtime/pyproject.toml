@@ -7,7 +7,7 @@ name = "sce-python-runtime"
 version = "0.1.0"
 description = "Python runtime for AOT-generated SCXML state machines (Lua-backed ECMAScript datamodel)"
 readme = "README.md"
-license = {text = "LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"}
+license = {text = "AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"}
 requires-python = ">=3.9"
 authors = [
     {name = "newmassrael", email = "newmassrael@gmail.com"},

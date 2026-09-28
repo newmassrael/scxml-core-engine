@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 #
 # package_embed.sh — Generate a self-contained C++ embed package (sce_core + sce_base)
@@ -271,8 +271,8 @@ cp "${SCE_ROOT}/${CODEGEN_STYLE_FILE}" \
 # ============================================================================
 # 4c. License-text payload from SSOT (sce/sce_licenses.cmake)
 # ----------------------------------------------------------------------------
-# Shared with CMakeLists.txt install() rules. LGPL-2.1 §1 (SCE itself)
-# and MIT §1 (every vendored third_party dep with a standalone LICENSE
+# Shared with CMakeLists.txt install() rules. AGPL-3.0 section 4 (SCE itself)
+# and MIT section 1 (every vendored third_party dep with a standalone LICENSE
 # file) both require the licence text to ride along with the source.
 # Hardcoding the file list here would drift the moment a new
 # third_party dep lands; reading the SSOT keeps both consumers
@@ -317,7 +317,7 @@ if [ -z "${LICENSE_FILES_SCE}" ] || [ -z "${LICENSE_FILES_TP_CORE}" ]; then
 fi
 
 echo "Copying license texts..."
-# SCE-self files land at the embed root (LICENSE, LICENSE-LGPL-2.1.md, ...).
+# SCE-self files land at the embed root (LICENSE, LICENSE-AGPL-3.0.md, ...).
 for f in ${LICENSE_FILES_SCE}; do
     if [ ! -f "${SCE_ROOT}/${f}" ]; then
         echo "ERROR: SSOT-listed licence missing: ${f}" >&2

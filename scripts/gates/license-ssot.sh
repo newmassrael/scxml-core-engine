@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # Mirrors: license-verify.yml
@@ -12,7 +12,7 @@
 # pointing at files renamed or deleted on disk.
 #
 # There was no local mirror of this until the registry started asking which
-# workflows lack one. The verdict is a compliance verdict — an LGPL section 1
+# workflows lack one. The verdict is a compliance verdict — an AGPL-3.0 section 4
 # or MIT section 1 violation ships in a release tarball — and it was reachable
 # only after a push, on a check that needs nothing but bash, grep, find and
 # sed and takes three hundredths of a second.

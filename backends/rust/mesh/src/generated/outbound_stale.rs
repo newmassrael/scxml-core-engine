@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e2a3a8b4e1357d9d4d92950925a9e4c7d6137a4246c0000110af1331c99ac086
+// source-hash: c99c3c0939ed7b1256239958164f8fd91e9fc2a690644b8df67efbcf58589a94
 #![doc = "SCE-MAP: outbound_stale.scxml:18 :: _forge_body"]
 // SCE-MAP: outbound_stale.scxml:18 :: _forge_body
 

@@ -4,7 +4,7 @@
 #   - CMakeLists.txt install() rules (per-tier components)
 #   - scripts/package_embed.sh (vendor embed payload)
 #
-# Both LGPL-2.1 §1 and MIT (the licence used by every vendored
+# Both AGPL-3.0 section 4 and MIT (the licence used by every vendored
 # third_party dep with a standalone LICENSE file) require the licence
 # text to ride along with the distributed binary or source. Hardcoding
 # the file list in either consumer drifts the moment a new third_party
@@ -25,13 +25,13 @@
 # Both satisfy MIT §1 by virtue of the source/header itself being
 # distributed; do not fabricate LICENSE files for them.
 
-# SCE itself — the dual LGPL-2.1+exception / Commercial covenant. All
+# SCE itself — the dual AGPL-3.0+exception / Commercial covenant. All
 # six are always shipped: the linking-exception text and the commercial
 # branch text are *both* load-bearing because the choice of branch
 # belongs to the consumer, not the upstream.
 set(SCE_LICENSE_FILES_SCE
     LICENSE
-    LICENSE-LGPL-2.1.md
+    LICENSE-AGPL-3.0.md
     LICENSE-EXCEPTION.md
     LICENSE-COMMERCIAL.md
     LICENSE-GENERATED.md
