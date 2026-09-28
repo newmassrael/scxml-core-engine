@@ -186,6 +186,21 @@ scripts/regen_parallel_region_root_external_domain_kotlin.sh
 stage "Transition-domain witness Python tree"
 scripts/regen_parallel_region_root_external_domain_python.sh
 
+# The Mesh trees are generated from the standard library's stdlib/mesh by
+# their own scripts, and this script did not know about them — so a change
+# to what a source-hash covers left all three stale with nothing here to
+# restore them, and the C++ one sits outside `backends/`, where
+# `regen-reproduces` does not even look. Named here so "regenerate
+# everything" includes them (measured 2026-09-28: the source-hash fix that
+# stopped folding the whole library into them regenerated every other tree
+# and not these).
+stage "Mesh Rust tree"
+backends/rust/mesh/generate.sh
+stage "Mesh C++ envelope tree"
+sce/src/mesh/generate_envelope.sh
+stage "Mesh Kotlin tree"
+backends/kotlin/mesh/generate.sh
+
 # The committed Rust trees are generator output *as rustfmt leaves it*, not
 # as the emitter writes it. `backends/rust/tests` is a workspace member, so
 # `cargo fmt --all` reformats it and `fmt-check.yml` requires that state —

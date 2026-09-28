@@ -107,6 +107,64 @@ pub fn documents() -> impl Iterator<Item = (String, &'static str)> {
         .map(|(name, content)| (format!("{SCHEME}{name}"), *content))
 }
 
+/// The namespace SCE's own elements are in (`sce:import` among them).
+const SCE_NAMESPACE: &str = "http://sce.dev/ext";
+
+/// The `src` of every `<sce:import>` a document names, in document order.
+///
+/// Read from its elements, never from its text: a comment or a string that
+/// mentions a standard name imports nothing. A document that is not
+/// well-formed names none here; its own parse reports why.
+pub fn import_sources(content: &str) -> Vec<String> {
+    let Ok(document) = roxmltree::Document::parse(content) else {
+        return Vec::new();
+    };
+    document
+        .descendants()
+        .filter(|node| {
+            node.is_element()
+                && node.tag_name().name() == "import"
+                && node.tag_name().namespace() == Some(SCE_NAMESPACE)
+        })
+        .filter_map(|node| node.attribute("src").map(str::to_string))
+        .collect()
+}
+
+/// The standard documents `seeds` name and every standard document they
+/// import, transitively — each once, as `(sce:std path, contents)`, sorted
+/// by path.
+///
+/// This is the part of the library a document generated from `seeds`
+/// depends on. A seed or an import the library has no document for is left
+/// out: the import's own read refuses it. A cycle ends where it began.
+pub fn closure(
+    seeds: impl IntoIterator<Item = PathBuf>,
+) -> std::collections::BTreeMap<String, &'static str> {
+    let mut found = std::collections::BTreeMap::new();
+    let mut pending: Vec<PathBuf> = seeds.into_iter().collect();
+    while let Some(path) = pending.pop() {
+        let Some(name) = folded_name(&path) else {
+            continue;
+        };
+        let key = format!("{SCHEME}{name}");
+        if found.contains_key(&key) {
+            continue;
+        }
+        let Some(content) = lookup(&path) else {
+            continue;
+        };
+        found.insert(key.clone(), content);
+        let base = Path::new(&key).parent().unwrap_or(Path::new(SCHEME));
+        pending.extend(
+            import_sources(content)
+                .iter()
+                .map(|src| resolve(base, src))
+                .filter(|resolved| names_standard(resolved)),
+        );
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

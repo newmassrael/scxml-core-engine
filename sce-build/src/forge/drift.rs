@@ -203,11 +203,19 @@ impl SourceSet {
     ) -> Result<Self, DriftHashError> {
         let mut entries: BTreeMap<PathBuf, [u8; 32]> = BTreeMap::new();
         // A standard document is generated from the library it belongs to,
-        // which lives in the generator rather than under a directory: its
-        // source set is every standard document, under its `sce:std/...`
-        // name, and nothing on disk.
+        // which lives in the generator rather than under a directory. Its
+        // source set is the library's counterpart of a directory walk — the
+        // standard documents under the root's `sce:std/...` prefix — and the
+        // standard documents they import, under their `sce:std/...` names,
+        // and nothing on disk. Not the whole library: a document added to
+        // another corner of it moves no hash here.
         if crate::forge::stdlib::names_standard(input_root) {
-            for (name, content) in crate::forge::stdlib::documents() {
+            let prefix = format!("{}/", input_root.to_string_lossy().trim_end_matches('/'));
+            let seeds = crate::forge::stdlib::documents()
+                .map(|(name, _)| name)
+                .filter(|name| name.starts_with(&prefix))
+                .map(PathBuf::from);
+            for (name, content) in crate::forge::stdlib::closure(seeds) {
                 entries.insert(PathBuf::from(name), sha256_bytes(content.as_bytes()));
             }
             return Ok(Self {
@@ -233,21 +241,32 @@ impl SourceSet {
         }
         // A document that imports from SCE's standard library generates from
         // documents that are not under the root: they are embedded in the
-        // generator (`forge::stdlib`). Folded in under their `sce:std/...`
-        // names — every one, since a standard document may import another —
-        // so a changed standard document moves the hash of every tree that
-        // imports from the library, and of no other tree.
-        let imports_standard = entries.keys().any(|rel| {
-            fs::read(input_root.join(rel)).is_ok_and(|bytes| {
-                bytes
-                    .windows(crate::forge::stdlib::SCHEME.len())
-                    .any(|w| w == crate::forge::stdlib::SCHEME.as_bytes())
+        // generator (`forge::stdlib`). The ones it reaches — its
+        // `<sce:import>`s of `sce:std/...` names, and theirs in turn — are
+        // folded in under those names, so a changed standard document moves
+        // the hash of every tree that reaches it, and of no other tree.
+        //
+        // ⚠ Until 2026-09-28 this folded in the WHOLE library whenever a
+        // document's bytes contained `sce:std/` anywhere — a header comment
+        // naming the document itself was enough. The committed Mesh trees
+        // under stdlib/mesh import nothing from the library by that name, yet
+        // every document added anywhere in it re-stamped all three of them.
+        let seeds: Vec<PathBuf> = entries
+            .keys()
+            .filter(|rel| rel.as_path() != Path::new("deploy.yaml"))
+            .flat_map(|rel| {
+                let file = input_root.join(rel);
+                let base = file.parent().map(Path::to_path_buf).unwrap_or_default();
+                let content = fs::read_to_string(&file).unwrap_or_default();
+                crate::forge::stdlib::import_sources(&content)
+                    .into_iter()
+                    .map(move |src| crate::forge::stdlib::resolve(&base, &src))
+                    .filter(|resolved| crate::forge::stdlib::names_standard(resolved))
+                    .collect::<Vec<_>>()
             })
-        });
-        if imports_standard {
-            for (name, content) in crate::forge::stdlib::documents() {
-                entries.insert(PathBuf::from(name), sha256_bytes(content.as_bytes()));
-            }
+            .collect();
+        for (name, content) in crate::forge::stdlib::closure(seeds) {
+            entries.insert(PathBuf::from(name), sha256_bytes(content.as_bytes()));
         }
         let members = entries
             .keys()
@@ -1127,33 +1146,82 @@ mod tests {
         assert_eq!(set.len(), 1);
     }
 
-    /// A root that imports from the standard library generates from its
-    /// documents too, so they are folded in — under their `sce:std/...`
-    /// names, never as paths a build system could watch, since they live in
-    /// the generator. A root that does not import from it is untouched: a
-    /// standard document's edit must not move a tree that never read it.
+    /// A root that imports from the standard library generates from the
+    /// documents it reaches, so those are folded in — under their
+    /// `sce:std/...` names, never as paths a build system could watch, since
+    /// they live in the generator — and no others: a standard document's
+    /// edit must not move a tree that never read it.
     #[test]
-    fn a_root_that_imports_from_the_standard_library_folds_it_in() {
+    fn a_root_folds_in_the_standard_documents_its_imports_reach() {
         let plain = TempDir::new().unwrap();
         write_file(plain.path(), "doc.scxml", b"<scxml/>");
         let plain_set = SourceSet::collect(plain.path(), None).unwrap();
         assert_eq!(plain_set.len(), 1);
 
+        // days_in_month imports is_leap_year by a relative name inside the
+        // library: both are what the document reaches.
         let importing = TempDir::new().unwrap();
         let doc = write_file(
             importing.path(),
             "doc.scxml",
-            br#"<scxml><sce:import kind="algorithm" src="sce:std/time/days_from_civil.scxml" as="c"/></scxml>"#,
+            br#"<scxml xmlns:sce="http://sce.dev/ext"><sce:import kind="algorithm" src="sce:std/time/days_in_month.scxml" as="d"/></scxml>"#,
         );
         let set = SourceSet::collect(importing.path(), None).unwrap();
-        let standard = crate::forge::stdlib::documents().count();
-        assert!(standard > 0, "the library holds a document");
-        assert_eq!(set.len(), 1 + standard);
+        let reached =
+            crate::forge::stdlib::closure([PathBuf::from("sce:std/time/days_in_month.scxml")]);
+        assert!(
+            reached.contains_key("sce:std/time/is_leap_year.scxml"),
+            "the closure follows an import inside the library: {:?}",
+            reached.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            reached.len() < crate::forge::stdlib::documents().count(),
+            "a document reaches part of the library, not all of it"
+        );
+        assert_eq!(set.len(), 1 + reached.len());
         assert!(set.covers(&doc));
         assert_eq!(
             set.contributing_paths(),
             vec![importing.path().join("doc.scxml")]
         );
+    }
+
+    /// A standard document's source set is the library's counterpart of its
+    /// directory — the documents under its `sce:std/...` prefix and what
+    /// they import — not the whole library, so a document added elsewhere
+    /// in it leaves the hash where it was.
+    #[test]
+    fn a_standard_root_holds_its_prefix_and_what_it_imports() {
+        let set = SourceSet::collect(Path::new("sce:std/time"), None).unwrap();
+        let names: Vec<&Path> = set.entries.keys().map(PathBuf::as_path).collect();
+        assert!(
+            names.contains(&Path::new("sce:std/time/days_in_month.scxml")),
+            "{names:?}"
+        );
+        assert!(
+            names
+                .iter()
+                .all(|n| n.to_string_lossy().starts_with("sce:std/time/")),
+            "the time documents import only each other, so nothing else is in: {names:?}"
+        );
+        assert!(set.covers(Path::new("sce:std/time/days_in_month.scxml")));
+    }
+
+    /// Only an `<sce:import>` element imports. A document whose comment
+    /// names a standard document — as every document under stdlib/ names
+    /// itself in its header — reads nothing from the library, and folding
+    /// the library in for it re-stamped a tree for every document added
+    /// anywhere in it.
+    #[test]
+    fn a_standard_name_in_a_comment_folds_nothing_in() {
+        let dir = TempDir::new().unwrap();
+        write_file(
+            dir.path(),
+            "doc.scxml",
+            b"<!-- sce:std/mesh/envelope_id.scxml: a sixteen-byte id -->\n<scxml/>",
+        );
+        let set = SourceSet::collect(dir.path(), None).unwrap();
+        assert_eq!(set.len(), 1);
     }
 
     /// Coverage is keyed on file identity, so a sandbox link name resolves

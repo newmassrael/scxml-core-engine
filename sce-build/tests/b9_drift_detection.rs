@@ -1024,3 +1024,32 @@ fn orchestrate_refuses_an_outside_input_that_duplicates_a_covered_file() {
     );
     assert!(diagnostic.contains("second.scxml"), "{diagnostic}");
 }
+
+/// The committed Mesh trees are generated from `stdlib/mesh`, whose
+/// documents import each other by relative name and nothing from the rest
+/// of the library by its `sce:std/...` name — so their source set is the
+/// documents under that directory and no standard document more, and a
+/// document added anywhere else in the library leaves their headers alone.
+///
+/// ⚠ Every Mesh document's header comment names it as `sce:std/mesh/…`, and
+/// until 2026-09-28 that text alone folded the WHOLE library into the set:
+/// each new standard document re-stamped all three Mesh trees.
+#[test]
+fn the_mesh_trees_hash_their_own_documents_and_no_other_part_of_the_library() {
+    let root = workspace_root().join("stdlib/mesh");
+    let on_disk = fs::read_dir(&root)
+        .expect("stdlib/mesh")
+        .filter(|entry| {
+            entry
+                .as_ref()
+                .is_ok_and(|e| e.path().extension().is_some_and(|x| x == "scxml"))
+        })
+        .count();
+    assert!(on_disk > 0, "stdlib/mesh holds the Mesh documents");
+    let set = sce_build::forge::drift::SourceSet::collect(&root, None).expect("collects");
+    assert_eq!(
+        set.len(),
+        on_disk,
+        "stdlib/mesh folds in a standard document it does not import"
+    );
+}
