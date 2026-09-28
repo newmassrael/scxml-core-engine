@@ -10593,6 +10593,11 @@
           "file": "sce/src/events/ParentEventTarget.cpp",
           "symbol": "ParentEventTarget::send",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "settleDeliveredChild",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -13527,6 +13532,11 @@
         {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "deliver_to_invocation",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "settleDeliveredChild",
           "kind": "implements"
         }
       ],

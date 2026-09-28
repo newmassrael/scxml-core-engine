@@ -2695,6 +2695,41 @@ abstract class StateMachineEngine<S : State, E : Event>(
         }
     }
 
+    /**
+     * §scxml-6.4: a `<send>` delivered to an invoked child is processed by it
+     * now, as the C++ AOT does (`raiseExternal` then `step`), not at the next
+     * [tickChildren]. [tick] delivers every due send before it ticks the
+     * children, so a child left holding an earlier event until then would be
+     * judged — and addressed — by a later delayed send as if that earlier
+     * event had not arrived: a `stop` sent at once and a delayed send due
+     * after it would reach the child in the wrong order, and the delayed one
+     * would find a child still running that should have ended (§scxml-C-1).
+     *
+     * Only the synchronous mode needs this; an asynchronous child runs its own
+     * loop. The child's turn is this machine's, so a delay it arms is measured
+     * from the same instant as one armed here.
+     */
+    private fun settleDeliveredChild(entry: InvokeEntry) {
+        val child = entry.child
+        if (!child.syncMode || child.isInFinalState) return
+        child.runDelivered(engineElapsedMs())
+        if (child.isInFinalState) {
+            entry.onComplete?.invoke()
+        }
+    }
+
+    /** The child half of [settleDeliveredChild]: run the queue in [nowMs]'s turn. */
+    private fun runDelivered(nowMs: Long) {
+        val opened = turnNowMs == null
+        if (opened) turnNowMs = nowMs
+        try {
+            runMainEventLoop()
+            cleanupCompletedInvokes()
+        } finally {
+            endTurn(opened)
+        }
+    }
+
     /** C++ tickChildren pattern — tick all active child SMs. */
     private fun tickChildren() {
         for ((_, entry) in activeInvokes.toList()) {
@@ -3287,9 +3322,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * running, though its entry stays until the macrostep's cleanup.
      */
     protected fun sendToChild(invokeId: String, eventName: String, eventData: String = ""): Boolean {
-        val child = activeInvokes[invokeId]?.child ?: return false
+        val entry = activeInvokes[invokeId] ?: return false
+        val child = entry.child
         if (child.isInFinalState) return false
         if (eventData.isEmpty()) child.sendByName(eventName) else child.sendByNameWithData(eventName, eventData)
+        settleDeliveredChild(entry)
         return true
     }
 
@@ -3321,6 +3358,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         for ((_, entry) in activeInvokes) {
             if (entry.child.scriptSessionId == childSessionId) {
                 entry.child.sendByNameWithData(eventName, eventData)
+                settleDeliveredChild(entry)
                 return true
             }
         }
