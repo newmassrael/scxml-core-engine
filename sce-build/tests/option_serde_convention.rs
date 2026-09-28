@@ -79,6 +79,12 @@ const WIRE_FORMAT_EXEMPT: &[&str] = &[
     // `with` / `location` is the wire convention. What templates read from
     // this module is `ReaderNames`, which carries no `Option` field.
     "reader_names.rs",
+    // `ParentSend` — the stdout manifest's `parent_sends` wire shape
+    // (SCE_ERROR_CONTRACT.md §10), a sibling of the three above: serialised
+    // straight to JSON for the CLI manifest and read by the set compile as
+    // Rust data, never fed into a minijinja template, so omitting an absent
+    // `event` (an `eventexpr` site) or `location` is the wire convention.
+    "parent_send_analyzer.rs",
 ];
 
 fn is_wire_format_exempt(rs_file: &Path, repo_root: &Path) -> bool {

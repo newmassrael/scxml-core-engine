@@ -79,7 +79,7 @@ pub struct Arrow {
     /// Equal to this figure's name exactly when the arrow describes it.
     pub described_in: Vec<FigureName>,
     /// The real source, when the arrow leaves a folded box that contains
-    /// it — "unlocked 에서" — so an arrow drawn from `released` does not
+    /// it — "from unlocked" — so an arrow drawn from `released` does not
     /// read as leaving `released` itself.
     pub from_inside: Option<String>,
 }

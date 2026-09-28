@@ -87,14 +87,17 @@ mod tests {
     /// The values the design rests on, read back through the lookup.
     #[test]
     fn measured_advances_come_back_through_the_lookup() {
-        assert_eq!(advance(Face::Proportional, '가'), Some(920));
-        assert_eq!(advance(Face::Proportional, '힣'), Some(920));
+        // Hangul written as escapes: the probes measure the script, and an
+        // escape keeps this file readable to every reader and out of the
+        // non-Latin-prose registry (the way that gate writes its own).
+        assert_eq!(advance(Face::Proportional, '\u{AC00}'), Some(920));
+        assert_eq!(advance(Face::Proportional, '\u{D7A3}'), Some(920));
         assert_eq!(advance(Face::Proportional, 'A'), Some(608));
         assert_eq!(advance(Face::Proportional, 'W'), Some(878));
         assert_eq!(advance(Face::Mono, 'A'), Some(500));
-        assert_eq!(advance(Face::Mono, '가'), Some(920));
-        // 10 pt: two syllables and a space.
-        let w = width_pt(Face::Proportional, "잠금 A", 10.0).expect("measured");
+        assert_eq!(advance(Face::Mono, '\u{AC00}'), Some(920));
+        // 10 pt: two syllables, a space and `A`.
+        let w = width_pt(Face::Proportional, "\u{C7A0}\u{AE08} A", 10.0).expect("measured");
         assert!(
             (w - (920.0 * 2.0 + 224.0 + 608.0) / 100.0).abs() < 1e-9,
             "{w}"
