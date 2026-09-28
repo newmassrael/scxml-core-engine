@@ -1,7 +1,0 @@
-// SCE Forge: Inline lookup 'rpmStatus'
-type RpmStatus int
-
-const (
-	RpmStatusOFF RpmStatus = iota
-	RpmStatusRUNNING
-)

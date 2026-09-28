@@ -106,28 +106,74 @@ restricted_term_gate_staged() {
         return 1
     fi
 
+    # `-z`, because without it git QUOTES a path that is not plain ASCII, and a
+    # quoted path names no index entry. The list used to be read without it,
+    # so such a file was skipped and its content never scanned — measured
+    # 2026-09-28 by `the_restricted_term_gate_runs_each_pattern_once`.
     local -a staged=()
-    mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMR)
+    mapfile -d '' -t staged < <(git diff --cached --name-only -z --diff-filter=ACMR)
     [[ ${#staged[@]} -eq 0 ]] && return 0
 
     # The STAGED blob is scanned, not the diff: content a commit merely carries
     # along is still published by that commit, and a diff-scoped check would
     # wave it through because those lines are not the ones that changed.
-    local f i hits=0 tmp
-    tmp="$(mktemp)" || return 1
+    #
+    # Every staged blob is written ONCE under a scratch root, and each pattern
+    # is then ONE recursive grep over it. The earlier form ran a grep per file
+    # per pattern inside a command substitution, and a commit of 3,509 files
+    # spent about seventy minutes here on 2026-09-28. The cost now follows the
+    # pattern count; the file count only sizes one checkout.
+    #
+    # `checkout-index` writes the index version of each path. Two settings keep
+    # those bytes equal to `git show :<path>`: `core.symlinks=false` writes a
+    # symlink as a file holding its target text, which is what the commit
+    # publishes, and `core.autocrlf=false` turns line-ending conversion off. A
+    # path whose attributes still ask for a conversion (a filter, `text`,
+    # `eol`) is rewritten from the raw blob, so no attribute can change what is
+    # scanned.
+    local root
+    root="$(mktemp -d)" || return 1
+    printf '%s\0' "${staged[@]}" \
+        | git -c core.symlinks=false -c core.autocrlf=false \
+              checkout-index -z --stdin --force --prefix="$root/" 2>/dev/null
+    local path attr value
+    while IFS= read -r -d '' path && IFS= read -r -d '' attr && IFS= read -r -d '' value; do
+        [[ "$value" == "unspecified" || "$value" == "unset" ]] && continue
+        git cat-file blob ":$path" > "$root/$path" 2>/dev/null || rm -f "$root/$path"
+    done < <(printf '%s\0' "${staged[@]}" | git check-attr -z --cached --stdin filter text eol)
+
+    # A path the checkout did not write is written from its blob here, so a
+    # blob can never drop out of the scan in silence. What still fails is not
+    # a blob (a gitlink), which the earlier form skipped the same way.
+    local f
     for f in "${staged[@]}"; do
-        git show ":$f" > "$tmp" 2>/dev/null || continue
+        [[ -e "$root/$f" ]] && continue
+        mkdir -p "$(dirname "$root/$f")"
+        git cat-file blob ":$f" > "$root/$f" 2>/dev/null || rm -f "$root/$f"
+    done
+
+    # -I skips binaries; -Z ends each file name with NUL, so no character in a
+    # path can be mistaken for the separator; only the line NUMBER is kept,
+    # never the text.
+    local -A found=()
+    local i hit
+    for i in "${!pats[@]}"; do
+        while IFS= read -r -d '' path && IFS= read -r hit; do
+            found["$i:${path#"$root"/}"]+="${hit%%:*},"
+        done < <(grep -r -I -n -Z -E -- "${pats[$i]}" "$root" 2>/dev/null)
+    done
+    rm -rf "$root"
+
+    local hits=0 nums
+    for f in "${staged[@]}"; do
         for i in "${!pats[@]}"; do
-            # -I skips binaries; only the line NUMBER is kept, never the text.
-            local nums
-            nums="$(grep -I -n -E -- "${pats[$i]}" "$tmp" 2>/dev/null | cut -d: -f1 | tr '\n' ',')"
+            nums="${found["$i:$f"]:-}"
             if [[ -n "$nums" ]]; then
                 printf '  %s: line(s) %s — term #%d\n' "$f" "${nums%,}" "$i" >&2
                 hits=$((hits + 1))
             fi
         done
     done
-    rm -f "$tmp"
 
     if [[ $hits -gt 0 ]]; then
         printf '\nERROR pre-commit: staged content matches the restricted-term list.\n' >&2

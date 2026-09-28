@@ -166,6 +166,7 @@ cargo test -p sce-build --features cli,ffi \
     --test spec_surface_registration \
     --test workflow_trigger_coverage \
     --test hook_ci_parity \
+    --test the_restricted_term_gate_runs_each_pattern_once \
     --test build_jobs_has_one_owner \
     --test codegen_binary_resolution \
     --test cmake_option_guard_scope \
