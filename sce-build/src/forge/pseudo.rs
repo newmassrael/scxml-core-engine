@@ -1986,6 +1986,32 @@ fn render_statechart(
     Ok(out.nodes)
 }
 
+/// The lines one block of executable content is written as on the
+/// statechart page, in `lexicon`, one per page line, indentation kept.
+///
+/// The seam another surface takes the page's words through: a print
+/// diagram shows a state's `<onentry>` inside its box, and writing those
+/// actions with a renderer of its own would let the figure and the page a
+/// reviewer approved say different things about the same action. So the
+/// diagram asks here, and the page's totality contract comes with it: a
+/// construct the page refuses is refused here by the same name.
+pub fn action_lines(
+    actions: &[crate::model::Action],
+    lexicon: &crate::forge::page::Lexicon,
+) -> Result<Vec<String>, Unsupported> {
+    let mut out = Out::new();
+    for a in actions {
+        render_scxml_action(a, &mut out);
+    }
+    if let Some(gap) = out.refused {
+        return Err(Unsupported::feature("statechart", gap));
+    }
+    let page = Indent
+        .write(&out.nodes, lexicon)
+        .expect("the indent shape refuses nothing");
+    Ok(page.lines().map(str::to_string).collect())
+}
+
 /// One `<invoke>`, in whichever of its four shapes.
 ///
 /// ⚠ What is deliberately NOT printed, named here so the omission is

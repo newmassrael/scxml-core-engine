@@ -465,6 +465,45 @@ mod tests {
         assert_eq!(inside.elsewhere, ["released", "locked"]);
     }
 
+    /// The words a figure puts in a state's box are the page's words: the
+    /// lines `action_lines` returns for an `<onentry>` appear, as written,
+    /// on the statechart page a reviewer reads — in both lexicons.
+    #[test]
+    fn a_box_says_what_the_page_says() {
+        use crate::forge::model::ForgeDocument;
+        use crate::forge::page::{EN, KO};
+        let m = parse(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       initial="idle" datamodel="ecmascript">
+  <state id="idle">
+    <onentry>
+      <send event="indicator.update" target="#_parent"/>
+      <assign location="count" expr="count + 1"/>
+    </onentry>
+  </state>
+</scxml>"##,
+        );
+        let block = &m.states["idle"].on_entry_blocks[0];
+        for lexicon in [&EN, &KO] {
+            let nodes = crate::forge::pseudo::render_nodes(
+                &ForgeDocument::Statechart(Box::new(m.clone())),
+                &crate::forge::pseudo::Deployment::default(),
+            )
+            .expect("the page renders");
+            let page = crate::forge::page::write_page(&nodes, &crate::forge::page::Indent, lexicon)
+                .expect("indent refuses nothing");
+            let page_lines: Vec<&str> = page.lines().map(str::trim).collect();
+            let lines = crate::forge::pseudo::action_lines(block, lexicon).expect("renders");
+            assert!(lines.len() >= 2, "{lines:?}");
+            for line in &lines {
+                assert!(
+                    page_lines.contains(&line.trim()),
+                    "{line:?} is not on the page:\n{page}"
+                );
+            }
+        }
+    }
+
     /// Same input, same split — compared as serialized data, the form a
     /// renderer consumes.
     #[test]
