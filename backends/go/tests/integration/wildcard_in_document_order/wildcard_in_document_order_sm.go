@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3d00f3fb685d7db5391eb1dd1a16f454a494f9ac5306212c01c169f328172a40
+// source-hash: 29697707f7a74196e127bf6f7db189bad27f8db18c5d042ec16e1ad0e6f1d60a
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -835,7 +835,7 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteEntryActions(state WildcardInDocu
 	p.ensureScriptEngine()
 	switch state {
 	case WildcardInDocumentOrderStateGuardClosed:
-		//line wildcard_in_document_order.scxml:58
+		//line wildcard_in_document_order.scxml:64
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -844,7 +844,7 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteEntryActions(state WildcardInDocu
 
 		}()
 	case WildcardInDocumentOrderStateGuardedInternal:
-		//line wildcard_in_document_order.scxml:80
+		//line wildcard_in_document_order.scxml:85
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -860,16 +860,23 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteEntryActions(state WildcardInDocu
 
 		}()
 	case WildcardInDocumentOrderStateGuardOpen:
-		//line wildcard_in_document_order.scxml:70
+		//line wildcard_in_document_order.scxml:74
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
+
+	// W3C SCXML 5.3: <assign location="armed" expr="true">
+	if err := p.assignVariable(`armed`, `true`); err != nil {
+		engine.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, "<assign> to 'armed' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
 
 	engine.Raise(sce.NewEventWithMetadata(WildcardInDocumentOrderEventProbe))
 
 		}()
 	case WildcardInDocumentOrderStateSealedInternal:
-		//line wildcard_in_document_order.scxml:93
+		//line wildcard_in_document_order.scxml:98
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -945,7 +952,7 @@ func (p *WildcardInDocumentOrderPolicy) FirstEnabledTransition(state WildcardInD
 					Source:          state,
 					Targets:         transitionTargetsOfWildcardInDocumentOrder[state][0],
 					TransitionIndex: 0,
-					HasActions:      true,
+					HasActions:      false,
 					IsInternal:      false,
 				}, true
 			}
@@ -1064,22 +1071,5 @@ func (p *WildcardInDocumentOrderPolicy) FirstEnabledTransition(state WildcardInD
 // 3.13), between the microstep's exits and its entries.
 //line wildcard_in_document_order.scxml:48
 func (p *WildcardInDocumentOrderPolicy) ExecuteTransitionContent(source WildcardInDocumentOrderState, transitionIndex int, engine *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent]) {
-	p.ensureScriptEngine()
-	switch source {
-	case WildcardInDocumentOrderStateGuardClosed:
-		switch transitionIndex {
-		case 0:
-			//line wildcard_in_document_order.scxml:62
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-
-	// W3C SCXML 5.3: <assign location="armed" expr="true">
-	if err := p.assignVariable(`armed`, `true`); err != nil {
-		engine.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, "<assign> to 'armed' failed"))
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-			}()
-		}
-	}
+	// W3C SCXML 3.13: no transition in this document has content.
 }

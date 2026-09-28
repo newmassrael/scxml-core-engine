@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3d00f3fb685d7db5391eb1dd1a16f454a494f9ac5306212c01c169f328172a40
+// source-hash: 29697707f7a74196e127bf6f7db189bad27f8db18c5d042ec16e1ad0e6f1d60a
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/wildcard_in_document_order/wildcard_in_document_order.scxml
@@ -165,7 +165,7 @@ class WildcardInDocumentOrderStateMachine(
             WildcardInDocumentOrderState.GuardClosed,
             listOf(StateTarget(WildcardInDocumentOrderState.GuardOpen)),
             0,
-            hasActions = true,
+            hasActions = false,
             isInternal = false,
         )
 
@@ -622,27 +622,27 @@ class WildcardInDocumentOrderStateMachine(
     override fun onEntry(state: WildcardInDocumentOrderState, isDefaultEntry: Boolean) {
         when (state) {
             is WildcardInDocumentOrderState.FailGuardedInternalReentered -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:109 :: failGuardedInternalReentered :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:114 :: failGuardedInternalReentered :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is WildcardInDocumentOrderState.FailGuardIgnored -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:107 :: failGuardIgnored :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:112 :: failGuardIgnored :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is WildcardInDocumentOrderState.FailGuardNeverFired -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:108 :: failGuardNeverFired :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:113 :: failGuardNeverFired :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is WildcardInDocumentOrderState.FailSealedInternalReentered -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:110 :: failSealedInternalReentered :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:115 :: failSealedInternalReentered :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is WildcardInDocumentOrderState.GuardClosed -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:58 :: guardClosed :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:64 :: guardClosed :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -650,13 +650,13 @@ class WildcardInDocumentOrderStateMachine(
                 }
             }
             is WildcardInDocumentOrderState.GuardClosedLeaf -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:65 :: guardClosedLeaf :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:69 :: guardClosedLeaf :: _state_body
             }
             is WildcardInDocumentOrderState.GuardedFrom -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:86 :: guardedFrom :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:91 :: guardedFrom :: _state_body
             }
             is WildcardInDocumentOrderState.GuardedInternal -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:80 :: guardedInternal :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:85 :: guardedInternal :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -669,29 +669,34 @@ class WildcardInDocumentOrderStateMachine(
                 }
             }
             is WildcardInDocumentOrderState.GuardedTo -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:87 :: guardedTo :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:92 :: guardedTo :: _state_body
             }
             is WildcardInDocumentOrderState.GuardOpen -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:70 :: guardOpen :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:74 :: guardOpen :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
+
+
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("armed", "armed"), com.sce.runtime.ScriptSource.lua("true", "true"))) {
+                return@run
+            }
 
             raiseInternal(WildcardInDocumentOrderEvent.Probe)
                 }
             }
             is WildcardInDocumentOrderState.GuardOpenLeaf -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:75 :: guardOpenLeaf :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:80 :: guardOpenLeaf :: _state_body
             }
             is WildcardInDocumentOrderState.Pass -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:106 :: pass :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:111 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is WildcardInDocumentOrderState.SealedFrom -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:99 :: sealedFrom :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:104 :: sealedFrom :: _state_body
             }
             is WildcardInDocumentOrderState.SealedInternal -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:93 :: sealedInternal :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:98 :: sealedInternal :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -704,7 +709,7 @@ class WildcardInDocumentOrderStateMachine(
                 }
             }
             is WildcardInDocumentOrderState.SealedTo -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:100 :: sealedTo :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:105 :: sealedTo :: _state_body
             }
         }
     }
@@ -714,49 +719,49 @@ class WildcardInDocumentOrderStateMachine(
     override fun onExit(state: WildcardInDocumentOrderState) {
         when (state) {
             is WildcardInDocumentOrderState.FailGuardedInternalReentered -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:109 :: failGuardedInternalReentered :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:114 :: failGuardedInternalReentered :: _state_body
             }
             is WildcardInDocumentOrderState.FailGuardIgnored -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:107 :: failGuardIgnored :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:112 :: failGuardIgnored :: _state_body
             }
             is WildcardInDocumentOrderState.FailGuardNeverFired -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:108 :: failGuardNeverFired :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:113 :: failGuardNeverFired :: _state_body
             }
             is WildcardInDocumentOrderState.FailSealedInternalReentered -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:110 :: failSealedInternalReentered :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:115 :: failSealedInternalReentered :: _state_body
             }
             is WildcardInDocumentOrderState.GuardClosed -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:58 :: guardClosed :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:64 :: guardClosed :: _state_body
             }
             is WildcardInDocumentOrderState.GuardClosedLeaf -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:65 :: guardClosedLeaf :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:69 :: guardClosedLeaf :: _state_body
             }
             is WildcardInDocumentOrderState.GuardedFrom -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:86 :: guardedFrom :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:91 :: guardedFrom :: _state_body
             }
             is WildcardInDocumentOrderState.GuardedInternal -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:80 :: guardedInternal :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:85 :: guardedInternal :: _state_body
             }
             is WildcardInDocumentOrderState.GuardedTo -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:87 :: guardedTo :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:92 :: guardedTo :: _state_body
             }
             is WildcardInDocumentOrderState.GuardOpen -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:70 :: guardOpen :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:74 :: guardOpen :: _state_body
             }
             is WildcardInDocumentOrderState.GuardOpenLeaf -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:75 :: guardOpenLeaf :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:80 :: guardOpenLeaf :: _state_body
             }
             is WildcardInDocumentOrderState.Pass -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:106 :: pass :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:111 :: pass :: _state_body
             }
             is WildcardInDocumentOrderState.SealedFrom -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:99 :: sealedFrom :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:104 :: sealedFrom :: _state_body
             }
             is WildcardInDocumentOrderState.SealedInternal -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:93 :: sealedInternal :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:98 :: sealedInternal :: _state_body
             }
             is WildcardInDocumentOrderState.SealedTo -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:100 :: sealedTo :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:105 :: sealedTo :: _state_body
             }
         }
     }
@@ -766,17 +771,6 @@ class WildcardInDocumentOrderStateMachine(
     // SCE-MAP: wildcard_in_document_order.scxml:48 :: _machine
     override fun executeTransitionContent(source: WildcardInDocumentOrderState, transitionIndex: Int) {
         when (source) {
-        is WildcardInDocumentOrderState.GuardClosed -> when (transitionIndex) {
-            0 -> {
-                // SCE-MAP: wildcard_in_document_order.scxml:62 :: guardClosed :: _transition_0
-
-
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("armed", "armed"), com.sce.runtime.ScriptSource.lua("true", "true"))) {
-                return
-            }
-            }
-            else -> {}
-        }
         else -> {}
         }
     }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3d00f3fb685d7db5391eb1dd1a16f454a494f9ac5306212c01c169f328172a40
+// source-hash: 29697707f7a74196e127bf6f7db189bad27f8db18c5d042ec16e1ad0e6f1d60a
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -839,7 +839,7 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
     ) {
         match state {
             WildcardInDocumentOrderState::GuardClosed => {
-                // SCE-MAP: wildcard_in_document_order.scxml:58 :: guardClosed :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:64 :: guardClosed :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -850,7 +850,7 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
                 }
             }
             WildcardInDocumentOrderState::GuardedInternal => {
-                // SCE-MAP: wildcard_in_document_order.scxml:80 :: guardedInternal :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:85 :: guardedInternal :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -887,10 +887,33 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
                 }
             }
             WildcardInDocumentOrderState::GuardOpen => {
-                // SCE-MAP: wildcard_in_document_order.scxml:70 :: guardOpen :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:74 :: guardOpen :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="armed">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "true";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "armed", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!("Assign failed for 'armed': {}", e);
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                WildcardInDocumentOrderEvent::ErrorExecution,
+                                "<assign> to 'armed' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+
                     // W3C SCXML 3.8.1: <raise event="probe">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         WildcardInDocumentOrderEvent::Probe,
@@ -898,7 +921,7 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
                 }
             }
             WildcardInDocumentOrderState::SealedInternal => {
-                // SCE-MAP: wildcard_in_document_order.scxml:93 :: sealedInternal :: _state_body
+                // SCE-MAP: wildcard_in_document_order.scxml:98 :: sealedInternal :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1024,7 +1047,7 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
                                 WildcardInDocumentOrderState::GuardOpen,
                             )],
                             transition_index: 0,
-                            has_actions: true,
+                            has_actions: false,
                             is_internal: false,
                         });
                     }
@@ -1203,48 +1226,8 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
         transition_index: usize,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            WildcardInDocumentOrderState::GuardClosed => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: wildcard_in_document_order.scxml:62 :: guardClosed :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="armed">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "true";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "armed", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'armed': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            WildcardInDocumentOrderEvent::ErrorExecution,
-                                            "<assign> to 'armed' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
+        // W3C SCXML 3.13: no transition in this document has content.
+        let _ = (source, transition_index, engine);
     }
     // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support
     // Delegates to inherent impl method (matches C++ initializeDataModel pattern)

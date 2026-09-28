@@ -55,13 +55,17 @@
         <data id="sealedEntries" expr="0"/>
     </datamodel>
 
+    <!-- `armed` is set on entering `guardOpen`, not on the `probe`
+         transition that leaves `guardClosed`: a value recorded on an outer
+         transition is exactly what an inner transition on the same event
+         pre-empts (W3C SCXML 3.13; `scxml/recording-intercepted`), and here
+         the inner wildcard is the transition under test. Set where it is
+         needed, the value does not depend on which of the two was taken. -->
     <state id="guardClosed" initial="guardClosedLeaf">
         <onentry>
             <raise event="probe"/>
         </onentry>
-        <transition event="probe" target="guardOpen">
-            <assign location="armed" expr="true"/>
-        </transition>
+        <transition event="probe" target="guardOpen"/>
         <state id="guardClosedLeaf">
             <transition event="*" cond="armed" target="failGuardIgnored"/>
         </state>
@@ -69,6 +73,7 @@
 
     <state id="guardOpen" initial="guardOpenLeaf">
         <onentry>
+            <assign location="armed" expr="true"/>
             <raise event="probe"/>
         </onentry>
         <transition event="probe" target="failGuardNeverFired"/>

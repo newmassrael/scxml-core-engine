@@ -235,6 +235,7 @@ pub mod scxml_identifier;
 /// the design-time reach set and rejects orphan states / dead
 /// transitions before codegen.
 pub mod scxml_reachability;
+pub mod scxml_recording_interception;
 /// Statechart state-reference resolution. Rejects `<transition
 /// target>`, `<state initial>`, `<initial>` and `<history>` default
 /// ids that name nothing in the document — the shapes that otherwise
@@ -545,9 +546,9 @@ pub fn lint_statechart(model: &model::SCXMLModel, source: &str) -> Result<(), Co
 
 /// Every design-time lint finding, in the order [`lint_statechart`]
 /// documents: all of reachability's, then exhaustiveness's, then guard
-/// analysis's, each in document order.
+/// analysis's, then recording interception's, each in document order.
 ///
-/// All three run whatever the first finds. The ordering rationale above
+/// All four run whatever the first finds. The ordering rationale above
 /// is about which record an author reads FIRST, not about which walkers
 /// may run: an orphan region and an unrelated always-false guard are two
 /// repairs, and stopping at the first cost the author a build round per
@@ -564,6 +565,7 @@ pub fn lint_statechart_findings(model: &model::SCXMLModel, source: &str) -> Vec<
         .into_iter()
         .chain(scxml_exhaustiveness::findings(model, source))
         .chain(scxml_guard_analysis::findings(model, source))
+        .chain(scxml_recording_interception::findings(model, source))
         .map(|err| model.with_enclosing_anchor(err))
         .collect()
 }

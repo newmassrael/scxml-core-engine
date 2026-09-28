@@ -102,6 +102,16 @@ impl<'a> EventDescriptor<'a> {
         }
     }
 
+    /// Whether some event name matches both descriptors — one is `Any`, or
+    /// one's token prefix is a token prefix of the other's (`speed` and
+    /// `speed.update` overlap; `speed` and `speedo` do not).
+    pub fn overlaps(&self, other: &EventDescriptor<'_>) -> bool {
+        match (self.prefix(), other.prefix()) {
+            (None, _) | (_, None) => true,
+            (Some(a), Some(b)) => self.matches(b) || other.matches(a),
+        }
+    }
+
     /// The token prefix, or `None` for a descriptor that matches everything.
     pub fn prefix(&self) -> Option<&'a str> {
         match self {

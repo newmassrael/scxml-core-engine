@@ -710,6 +710,34 @@ pub enum ScxmlSemanticError {
         /// (the later one in the list).
         shadowed_index: usize,
     },
+
+    /// An outer state records a value on an event, and a descendant's own
+    /// transition on that event is the one taken while the descendant is
+    /// active — so the value is not recorded.
+    ///
+    /// §scxml-3.13: selection walks out from each atomic state and takes
+    /// the first enabled transition, so the descendant's pre-empts the
+    /// ancestor's. Legal SCXML and often intended, which is why this is a
+    /// lint; measured on a door lock whose skipped speed record let it
+    /// unlock at 20 km/h. See [`crate::scxml_recording_interception`].
+    #[error(
+        "State '{outer}' records {locations} on '{event}', but its descendant \
+         '{inner}' has its own transition on that event, which is taken instead \
+         while '{inner}' is active — the record is skipped. Assign it in the \
+         transition of '{inner}' too, or keep the recording in a <parallel> \
+         region of its own."
+    )]
+    RecordingIntercepted {
+        /// The state whose transition records.
+        outer: String,
+        /// The recording transition's `event` attribute.
+        event: String,
+        /// The locations it assigns that the intercepting transition does
+        /// not, comma-separated in document order.
+        locations: String,
+        /// The descendant whose transition intercepts it.
+        inner: String,
+    },
 }
 
 #[cfg(test)]
@@ -938,6 +966,12 @@ mod tests {
                 shadowing_index: 0,
                 shadowed_index: 1,
             },
+            ScxmlSemanticError::RecordingIntercepted {
+                outer: "released".into(),
+                event: "speed.update".into(),
+                locations: "speed".into(),
+                inner: "unlocked".into(),
+            },
         ];
         // The list above is not self-checking: a new variant reaches
         // `ForgeError` through the blanket `From` impl, so omitting it
@@ -967,7 +1001,7 @@ mod tests {
 
     /// Number of arms in [`variant_name`]. Kept next to it so the two
     /// move together.
-    const VARIANT_COUNT: usize = 17;
+    const VARIANT_COUNT: usize = 18;
 
     /// Exhaustive discriminant projection — the compile-time half of
     /// `every_variant_routes_through_forge_error`'s coverage claim.
@@ -996,6 +1030,7 @@ mod tests {
             ScxmlSemanticError::StaleUnhandledDeclaration { .. } => "StaleUnhandledDeclaration",
             ScxmlSemanticError::AlwaysFalseGuard { .. } => "AlwaysFalseGuard",
             ScxmlSemanticError::ShadowedTransition { .. } => "ShadowedTransition",
+            ScxmlSemanticError::RecordingIntercepted { .. } => "RecordingIntercepted",
         }
     }
 

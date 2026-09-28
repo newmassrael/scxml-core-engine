@@ -954,6 +954,14 @@ pub enum DiagnosticCode {
     ScxmlAlwaysFalseGuard,
     #[serde(rename = "scxml/shadowed-transition")]
     ScxmlShadowedTransition,
+    /// An outer state's recording (`<assign>` on an event) that a
+    /// descendant's own transition on that event pre-empts while the
+    /// descendant is active (§scxml-3.13 selection). A `--lint` finding,
+    /// NeutralOrDeterministic: the repair is the author's — record it in
+    /// the descendant's transition too, or move it into a `<parallel>`
+    /// region.
+    #[serde(rename = "scxml/recording-intercepted")]
+    ScxmlRecordingIntercepted,
     // ── SCE Protocol-Synthesis RFC §synth-5-E sample-callback SCXML on-sample family ──
     // Author-facing rules for `<sce:on-sample>` SCE extension: the
     // structural diagnostics (placement, uniqueness,
@@ -3303,6 +3311,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // NL→IR Mapping Roadmap Item 3 — guard analysis
         ScxmlAlwaysFalseGuard,
         ScxmlShadowedTransition,
+        ScxmlRecordingIntercepted,
         ScxmlOnSampleInvalidParent,
         ScxmlOnSampleLinkDuplicateInState,
         ScxmlOnSampleEventNameConflict,
@@ -4531,6 +4540,10 @@ impl DiagnosticCode {
             // hygiene.
             | ScxmlAlwaysFalseGuard
             | ScxmlShadowedTransition => None,
+            // §3.13 selection is exactly what pre-empts the record; the
+            // spec states the algorithm, not this lint, so the anchor is
+            // the rule being followed rather than a rule being broken.
+            ScxmlRecordingIntercepted => Some("W3C SCXML §3.13"),
             // The reassembly declared-consumption invariant carries the spec anchor
             // that lived in the diagnostic.rs:1170 placeholder comment.
             ReassemblyPerPeerQuotaBuildInvariantViolated => {
@@ -4672,6 +4685,7 @@ impl DiagnosticCode {
             ScxmlStaleUnhandledDeclaration => "scxml/stale-unhandled-declaration",
             ScxmlAlwaysFalseGuard => "scxml/always-false-guard",
             ScxmlShadowedTransition => "scxml/shadowed-transition",
+            ScxmlRecordingIntercepted => "scxml/recording-intercepted",
             ScxmlOnSampleInvalidParent => "scxml/on-sample-invalid-parent",
             ScxmlOnSampleLinkDuplicateInState => "scxml/on-sample-link-duplicate-in-state",
             ScxmlOnSampleEventNameConflict => "scxml/on-sample-event-name-conflict",
@@ -9832,6 +9846,27 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 format!("shadowed:{shadowed_index}"),
             ],
         },
+        ScxmlSemanticError::RecordingIntercepted {
+            outer,
+            event,
+            locations,
+            inner,
+        } => DiagnosticPayload {
+            // `actual` names what goes unrecorded; the two states and
+            // the event key the record, so one recording intercepted by
+            // two descendants is two findings.
+            code: DiagnosticCode::ScxmlRecordingIntercepted,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(locations.clone()),
+            fix: None,
+            key_fragments: vec![
+                format!("scxml-state:{outer}"),
+                "recording-intercepted".to_string(),
+                event.clone(),
+                format!("by:{inner}"),
+            ],
+        },
         ScxmlSemanticError::NonExhaustiveEventHandling {
             parent,
             event,
@@ -11001,6 +11036,19 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:d4a8c789490ede2b","code":"scxml/shadowed-transition","stage":"validation","message":"Transition #1 in state 'armed' (event 'fire') is shadowed by an earlier unconditional transition #0 with the same event descriptor. The shadowed transition can never fire. Reorder the transitions, add a guard to the shadowing transition, or remove the shadowed transition.","actual":"fire"}"#,
+            ),
+            (
+                // The measured door lock: `released` records `speed`,
+                // `unlocked` takes the fast update itself.
+                "forge/scxml-recording-intercepted",
+                crate::scxml_semantic::ScxmlSemanticError::RecordingIntercepted {
+                    outer: "released".into(),
+                    event: "speed.update".into(),
+                    locations: "speed".into(),
+                    inner: "unlocked".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:065deaecdc3cc4e6","code":"scxml/recording-intercepted","stage":"validation","spec":"W3C SCXML §3.13","message":"State 'released' records speed on 'speed.update', but its descendant 'unlocked' has its own transition on that event, which is taken instead while 'unlocked' is active — the record is skipped. Assign it in the transition of 'unlocked' too, or keep the recording in a <parallel> region of its own.","actual":"speed"}"#,
             ),
             (
                 // SCE Protocol-Synthesis RFC §synth-5-E sample-callback placement rule
@@ -16130,6 +16178,9 @@ mod tests {
             // validator can predict.
             | ScxmlAlwaysFalseGuard
             | ScxmlShadowedTransition
+            // Same: record it in the descendant too, or move it into a
+            // region — the author's choice, no candidate set to offer.
+            | ScxmlRecordingIntercepted
             // NL→IR Item C1 Path A: Enum kind invariants. The five
             // codes don't carry author-actionable closed candidate
             // lists (variant names/values are author-defined; the
@@ -16447,6 +16498,7 @@ mod tests {
                 | ScxmlStaleUnhandledDeclaration
                 | ScxmlAlwaysFalseGuard
                 | ScxmlShadowedTransition
+                | ScxmlRecordingIntercepted
                 | ScxmlOnSampleInvalidParent
                 | ScxmlOnSampleLinkDuplicateInState
                 | ScxmlOnSampleEventNameConflict
@@ -16740,9 +16792,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            402,
+            403,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 402 distinct variants to match the DiagnosticCode \
+             expected 403 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17188,7 +17240,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ScxmlContradictoryUnhandledDeclaration
             | ScxmlStaleUnhandledDeclaration
             | ScxmlAlwaysFalseGuard
-            | ScxmlShadowedTransition => Carries,
+            | ScxmlShadowedTransition
+            | ScxmlRecordingIntercepted => Carries,
 
             // Judged by the document-set compile, which locates it on the
             // `<send target="#_parent">` and resolves the enclosing anchor
@@ -19034,6 +19087,24 @@ mod anchor_contract_tests {
                        <state id="a">
                          <transition event="go" target="a"/>
                          <transition event="go" target="a"/>
+                       </state>
+                     </state>
+                   </scxml>"#,
+            ),
+            // `scxml/recording-intercepted` — `live` records `n` on
+            // `tick`, and `a`'s own `tick` transition is taken instead;
+            // the record points at `a`'s transition, inside the anchor.
+            (
+                "scxml/recording-intercepted",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="live" datamodel="ecmascript">
+                     <datamodel><data id="n" expr="0"/></datamodel>
+                     <state id="live" initial="a"
+                            sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <transition event="tick"><assign location="n" expr="n + 1"/></transition>
+                       <state id="a">
+                         <transition event="tick" target="a"/>
                        </state>
                      </state>
                    </scxml>"#,

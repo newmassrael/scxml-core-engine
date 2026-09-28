@@ -2896,8 +2896,8 @@ document would otherwise pass `check` with `status: ok`, pass
 
 ### Design-time lints are opt-in (`--lint`)
 
-Three validators below — graph reachability, event-set exhaustiveness,
-and guard analysis — **reject legal SCXML**. Each flags a document the
+Four validators below — graph reachability, event-set exhaustiveness,
+guard analysis and recording interception — **reject legal SCXML**. Each flags a document the
 W3C algorithms accept and an Interpreter runs; what they assert is
 design intent, not validity. They are therefore off by default and
 enabled with `sce-codegen check --lint` / `generate --lint`, which call
@@ -3145,6 +3145,40 @@ Repair guidance:
 3. For shadowed transitions, reorder so the more specific transition
    precedes the unconditional one, or add a guard to the previously
    unconditional transition.
+
+---
+
+### Recording intercepted by an inner transition
+
+`scxml/recording-intercepted` fires when a state's transition on an
+event assigns a location (`<assign location="L">`, nested blocks
+included), and a proper descendant — reached through `<state>`s only —
+has a transition whose event descriptors overlap it and which does not
+assign `L` itself. W3C SCXML §3.13 selection walks out from each atomic
+state and takes the first enabled transition, so while that descendant
+is active its transition is taken and the ancestor's recording never
+runs.
+
+The document is legal and the skip may be intended, which is why this
+is a `--lint` finding. It was added on a measurement: a door lock
+recorded the vehicle speed on its outer state while the unlocked state
+locked itself on a fast speed update; the fast update left the recorded
+speed at its previous, slow value, and the next unlock request passed
+its low-speed guard at 20 km/h. The same machine with the recording in
+a `<parallel>` region of its own behaved.
+
+Not flagged: an outer `<parallel>`, or a `<parallel>` between the two
+states — each region selects its own transition, and the cross-region
+case turns on conflict resolution the walk does not model; and an
+eventless transition, which records on no event.
+
+Repair guidance:
+
+1. Assign the location in the descendant's transition too.
+2. Or move the recording into a `<parallel>` region beside the states
+   that react to the event.
+3. Or, when skipping the record in that state is intended, leave it —
+   the lint is design advice.
 
 ---
 
@@ -3688,6 +3722,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/stale-unhandled-declaration` | Validation |
 | `scxml/always-false-guard` | Validation |
 | `scxml/shadowed-transition` | Validation |
+| `scxml/recording-intercepted` | Validation |
 | `scxml/on-sample-invalid-parent` | Validation |
 | `scxml/on-sample-link-duplicate-in-state` | Validation |
 | `scxml/on-sample-event-name-conflict` | Validation |

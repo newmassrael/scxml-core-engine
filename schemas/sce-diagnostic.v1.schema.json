@@ -123,6 +123,7 @@
         "scxml/stale-unhandled-declaration",
         "scxml/always-false-guard",
         "scxml/shadowed-transition",
+        "scxml/recording-intercepted",
         "scxml/on-sample-invalid-parent",
         "scxml/on-sample-link-duplicate-in-state",
         "scxml/on-sample-event-name-conflict",
