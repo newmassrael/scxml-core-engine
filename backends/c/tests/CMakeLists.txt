@@ -1889,6 +1889,35 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 6.2.4 + C.1: a targetexpr is routed as the same value written
+    # in target is, at once or after a delay.
+    sce_generate_static_integration_c_test(a_target_expression_is_routed_as_its_literal_is "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN kid
+    )
+
+    add_executable(sce_c_integration_a_target_expression_is_routed_as_its_literal_is
+        integration/test_a_target_expression_is_routed_as_its_literal_is.c
+        ${INTEGRATION_C_TEST_a_target_expression_is_routed_as_its_literal_is_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_a_target_expression_is_routed_as_its_literal_is PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_a_target_expression_is_routed_as_its_literal_is PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_target_expression_is_routed_as_its_literal_is PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_target_expression_is_routed_as_its_literal_is
+        COMMAND sce_c_integration_a_target_expression_is_routed_as_its_literal_is
+    )
+    set_tests_properties(c11_integration_a_target_expression_is_routed_as_its_literal_is PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach
     # the datamodel as a value. Every other fixture here leaves the carrier's
     # `data` field zeroed, so this edge — the one a downstream MCU consumer

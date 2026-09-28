@@ -98,15 +98,15 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 260
+engine-documents 262
 native-prefix-documents 2
-datamodel-variable-init 424
-transition-guard 240
-assign-action 370
-child-invoke-needs-script-engine 54
+datamodel-variable-init 444
+transition-guard 242
+assign-action 385
+child-invoke-needs-script-engine 55
 log-expr 46
 send-param-expr 49
-send-dynamic-attr 50
+send-dynamic-attr 62
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
@@ -117,7 +117,7 @@ if-condition 19
 elseif-condition 4
 global-script 3
 mesh-rpc-srcexpr 2
-mesh-rpc-request-expr 1
+mesh-rpc-request-expr 2
 hybrid-invoke 7
 cancel-expr 3
 ```
@@ -323,11 +323,22 @@ never spelled correctly.
   them are constants), and raised `datamodel-variable-init` by eight,
   `assign-action` by ten, `if-condition` by two and `elseif-condition` by
   one; `engine-documents` did not move, as the document already needed one.
+  ⚠ **2026-09-29, caught up:** `tests/mesh/wss_loopback/client.scxml` took
+  an `<invoke type="sce:mesh-rpc">` whose two `<param>`s are expressions
+  (`b9ffee0e86`) and raised `engine-documents` and `mesh-rpc-request-expr`
+  by one each; it landed without this table, so `main` read red until
+  the next entry below re-derived the whole block. Then
+  `integration_resources/a_target_expression_is_routed_as_its_literal_is/`
+  (one engine document with an inline child: twenty data items, fifteen
+  assigns, the two guards on `_event.type`, and twelve `targetexpr` sends)
+  raised `engine-documents` and `child-invoke-needs-script-engine` by one,
+  `datamodel-variable-init` by twenty, `assign-action` by fifteen,
+  `send-dynamic-attr` by twelve and `transition-guard` by two.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
-- **50% of judged documents need an engine** (260 of 516). The remaining
-  50% already compile without one, which is what makes "the engine is a
+- **51% of judged documents need an engine** (262 of 517). The remaining
+  49% already compile without one, which is what makes "the engine is a
   fallback" a description of the tree rather than an aspiration.
   ⚠ This figure was previously stated as 32%, taken over the 736 walked
   documents rather than the 475 the causes were measured over. The

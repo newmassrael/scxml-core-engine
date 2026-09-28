@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 6.2.4 + C.1: a `targetexpr` is a target. Whatever value it yields
+  is routed as the same value written in `target` is, sent at once or after a
+  delay alike:
+
+    `#_internal`         the internal queue (`_event.type` is 'internal');
+    `#_parent`           the session that invoked this one — and, in a
+                         session nothing invoked, error.communication;
+    `#_<invokeid>`       that invocation;
+    `_event.origin`      the session a received event came from — C.1 makes
+                         it a location a reply can be sent to;
+    `#_scxml_nosuch`     a session this processor cannot reach:
+                         error.communication;
+    `bogus`              a value the SCXML Event I/O Processor does not
+                         support as a target: error.execution (6.2.4).
+
+  A failed send is the element that raised, so the rest of its block does not
+  run (4.9). Each is sent once at once and once after 10ms.
+
+  This session was not invoked, so its own `#_parent` names nothing.
+
+  The child `kid` says hello to its parent. The parent then sends `#_internal`,
+  `#_kid` and the hello's `_event.origin` through `targetexpr`, at once and
+  delayed; the child answers each through `targetexpr="'#_parent'"`, at once
+  for an event sent at once and after 10ms for a delayed one.
+
+    internalNow, internalLater  1 — each arrived as an internal event;
+    kidNow, kidLater            1 — `#_kid` reached the child, whose reply came
+                                    back through `#_parent`;
+    sessNow, sessLater          1 — the child's origin reached the child;
+    commErrors 4, execErrors 2;
+    afterStranger, afterStrangerLater, afterOrphan, afterOrphanLater,
+    afterBogus, afterBogusLater 0;
+    ending in `done`.
+
+  Measured 2026-09-29: of the six generated channels, none routed a dynamic
+  `#_parent`, `#_<invokeid>` or a session other than its own anywhere but the
+  sender's own external queue (the Python and Kotlin immediate `#_parent` and
+  the Python immediate child aside), Go put an immediate dynamic `#_internal`
+  on the external queue, no channel raised error.execution for `bogus`, and
+  C11 refused every delayed dynamic target.
+
+  This fixture is the canonical source for all 7 channels — see
+  docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test locations.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="run"
+       name="a_target_expression_is_routed_as_its_literal_is">
+  <datamodel>
+    <data id="tInternal" expr="'#_internal'"/>
+    <data id="tKid" expr="'#_kid'"/>
+    <data id="tStranger" expr="'#_scxml_nosuch'"/>
+    <data id="tParent" expr="'#_parent'"/>
+    <data id="tBogus" expr="'bogus'"/>
+    <data id="kidLoc" expr="''"/>
+    <data id="internalNow" expr="0"/>
+    <data id="internalLater" expr="0"/>
+    <data id="kidNow" expr="0"/>
+    <data id="kidLater" expr="0"/>
+    <data id="sessNow" expr="0"/>
+    <data id="sessLater" expr="0"/>
+    <data id="commErrors" expr="0"/>
+    <data id="execErrors" expr="0"/>
+    <data id="afterStranger" expr="0"/>
+    <data id="afterStrangerLater" expr="0"/>
+    <data id="afterOrphan" expr="0"/>
+    <data id="afterOrphanLater" expr="0"/>
+    <data id="afterBogus" expr="0"/>
+    <data id="afterBogusLater" expr="0"/>
+  </datamodel>
+
+  <state id="run">
+    <onentry>
+      <send targetexpr="tStranger" event="lost"/>
+      <assign location="afterStranger" expr="1"/>
+    </onentry>
+    <onentry>
+      <send targetexpr="tStranger" event="lost" delay="10ms"/>
+      <assign location="afterStrangerLater" expr="1"/>
+    </onentry>
+    <onentry>
+      <send targetexpr="tParent" event="lost"/>
+      <assign location="afterOrphan" expr="1"/>
+    </onentry>
+    <onentry>
+      <send targetexpr="tParent" event="lost" delay="10ms"/>
+      <assign location="afterOrphanLater" expr="1"/>
+    </onentry>
+    <onentry>
+      <send targetexpr="tBogus" event="lost"/>
+      <assign location="afterBogus" expr="1"/>
+    </onentry>
+    <onentry>
+      <send targetexpr="tBogus" event="lost" delay="10ms"/>
+      <assign location="afterBogusLater" expr="1"/>
+    </onentry>
+
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+               datamodel="ecmascript" initial="wait">
+          <datamodel>
+            <data id="tParent" expr="'#_parent'"/>
+          </datamodel>
+          <state id="wait">
+            <onentry>
+              <send target="#_parent" event="hello"/>
+            </onentry>
+            <transition event="kNow">
+              <send targetexpr="tParent" event="kAckNow"/>
+            </transition>
+            <transition event="kLater">
+              <send targetexpr="tParent" event="kAckLater" delay="10ms"/>
+            </transition>
+            <transition event="sNow">
+              <send targetexpr="tParent" event="sAckNow"/>
+            </transition>
+            <transition event="sLater">
+              <send targetexpr="tParent" event="sAckLater" delay="10ms"/>
+            </transition>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+
+    <transition event="error.communication">
+      <assign location="commErrors" expr="commErrors + 1"/>
+    </transition>
+    <transition event="error.execution">
+      <assign location="execErrors" expr="execErrors + 1"/>
+    </transition>
+    <transition event="hello">
+      <assign location="kidLoc" expr="_event.origin"/>
+      <send targetexpr="tInternal" event="inNow"/>
+      <send targetexpr="tInternal" event="inLater" delay="10ms"/>
+      <send targetexpr="tKid" event="kNow"/>
+      <send targetexpr="tKid" event="kLater" delay="10ms"/>
+      <send targetexpr="kidLoc" event="sNow"/>
+      <send targetexpr="kidLoc" event="sLater" delay="10ms"/>
+      <send event="settle" delay="300ms"/>
+    </transition>
+    <transition event="inNow" cond="_event.type === 'internal'">
+      <assign location="internalNow" expr="internalNow + 1"/>
+    </transition>
+    <transition event="inLater" cond="_event.type === 'internal'">
+      <assign location="internalLater" expr="internalLater + 1"/>
+    </transition>
+    <transition event="kAckNow">
+      <assign location="kidNow" expr="kidNow + 1"/>
+    </transition>
+    <transition event="kAckLater">
+      <assign location="kidLater" expr="kidLater + 1"/>
+    </transition>
+    <transition event="sAckNow">
+      <assign location="sessNow" expr="sessNow + 1"/>
+    </transition>
+    <transition event="sAckLater">
+      <assign location="sessLater" expr="sessLater + 1"/>
+    </transition>
+    <transition event="settle" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>

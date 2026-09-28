@@ -1,0 +1,60 @@
+# Mutation cases for §scxml-6.2.4 / §scxml-C-1 on `<send targetexpr>`: the
+# value is routed as the same value written in `target` is, at once or after
+# a delay, by one target table per runtime — a target naming nothing that is
+# there is error.communication when the send is made, one the SCXML Event I/O
+# Processor does not support is error.execution, and either ends the block.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_target_expression_is_routed_as_its_literal_is.cases`.
+#
+# Measured 2026-09-29, before this round no generated channel routed a dynamic
+# `#_parent`, `#_<invokeid>` or foreign session anywhere but the sender's own
+# external queue, and none raised error.execution for an unsupported value.
+# The cases below hold the three channels this harness reaches; the Rust, Go,
+# Kotlin and Python halves are held by the same fixture in their suites.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_a_target_expression_is_routed_as_its_literal_is)$'
+mutation_targets sce/include/common/SendHelper.h sce/include/static/StaticExecutionEngine.h tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles tests/integration/ATargetExpressionIsRoutedAsItsLiteralIsTest.cpp tests/integration/ATargetExpressionIsRoutedAsItsLiteralIsAotTest.cpp backends/c/tests/integration/test_a_target_expression_is_routed_as_its_literal_is.c
+
+# ── The table: a value no processor addresses is accepted ──────────
+
+mutation_case "the interpreter accepts a target the SCXML processor does not support" <<'PY'
+edit("sce/include/common/SendHelper.h",
+     "            (scxmlProcessor && !target.empty() && classifyTarget(target, \"\").kind == SendTarget::Kind::Unsupported);",
+     "            (scxmlProcessor && target.empty());")
+PY
+
+# ── C++ AOT: an orphan's delayed `#_parent` waits instead of failing ──
+
+mutation_case "the C++ AOT schedules a #_parent send from a session nothing invoked" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     "                if (!policy_.hasParentSession()) {\n                    return TargetSendOutcome::Unreachable;",
+     "                if (false) {\n                    return TargetSendOutcome::Unreachable;")
+PY
+
+# ── C++ AOT: a session target is delivered to no one ───────────────
+
+mutation_case "the C++ AOT reads a foreign session as unreachable" <<'PY'
+edit("sce/include/common/SendHelper.h",
+     "            return {Kind::Session, located};",
+     "            return {Kind::Unreachable, \"\"};")
+PY
+
+# ── C11: an orphan's delayed `#_parent` waits instead of failing ───
+
+mutation_case "C11 schedules a #_parent send from a session nothing invoked" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "                        if (sm->parent_dispatch == NULL) {\n                            {{ P }}_raise_platform_error_with_send_id(",
+     "                        if (false) {\n                            {{ P }}_raise_platform_error_with_send_id(")
+PY
+
+# ── C11: an invocation target is reported unreachable ──────────────
+
+mutation_case "C11 finds no running invocation for #_<invokeid>" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "                            _send_invoke = invocation_is_running(sm, _send_target_id)\n                                               ? _send_target_id\n                                               : invocation_of_session(sm, _send_target_id);",
+     "                            _send_invoke = invocation_of_session(sm, _send_target_id);")
+PY

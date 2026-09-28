@@ -1,0 +1,6 @@
+// GENERATED -- DO NOT EDIT (scripts/regen_a_target_expression_is_routed_as_its_literal_is.sh)
+
+mod a_target_expression_is_routed_as_its_literal_is_sm;
+pub use a_target_expression_is_routed_as_its_literal_is_sm::*;
+mod a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid_sm;
+pub use a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid_sm::*;

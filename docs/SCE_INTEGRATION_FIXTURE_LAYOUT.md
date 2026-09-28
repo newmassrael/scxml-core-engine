@@ -614,6 +614,24 @@ ended child in silence. Expected: `order` 31, `innerInternal`,
 `lateOk`, `lateCount` and `pongOk` 1, `commErrors` 2, `lostArrived` and
 `afterStranger` 0, ending in `done`.
 
+`a_target_expression_is_routed_as_its_literal_is` covers W3C §6.2.4 and C.1 on
+a `targetexpr`: whatever value it yields is routed as the same value written
+in `target` is, sent at once or after a delay. `#_internal` joins the internal
+queue (`_event.type` is `internal`), `#_kid` reaches the child and its reply
+comes back through the child's own `targetexpr="'#_parent'"`, and the child's
+`_event.origin` reaches the child as a session. `#_scxml_nosuch` names a
+session this processor cannot reach (error.communication) and `bogus` is no
+target at all (error.execution); each ends its block. Every channel reads the
+value through one table — C++ `SendHelper::classifyTarget`, and its copy in
+each runtime. Before 2026-09-29 none of the six generated channels routed a
+dynamic `#_parent`, `#_<invokeid>` or foreign session anywhere but the
+sender's own external queue (Python's and Kotlin's immediate `#_parent` and
+Python's immediate child aside), Go put an immediate dynamic `#_internal` on
+the external queue, no channel raised error.execution for `bogus`, and C11
+refused every delayed dynamic target. Expected: `internalNow`,
+`internalLater`, `kidNow`, `kidLater`, `sessNow` and `sessLater` 1,
+`commErrors` and `execErrors` 2, the four `after*` 0, ending in `done`.
+
 `invoke_expression_failure_is_reported` covers W3C §6.4.3: an `<invoke>` that
 names its target through an expression must evaluate that expression when the
 element fires, and raise `error.execution` when it cannot. The axis is the
