@@ -1940,6 +1940,9 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
                         .join(" ");
                     out.line(&format!("candidates {}", text(&paths)));
                 }
+                if !i.namelist.is_empty() {
+                    out.line(&format!("namelist {}", text(&i.namelist)));
+                }
             }
             Invoke::MeshRpc(i) => {
                 out.line("type mesh-rpc");

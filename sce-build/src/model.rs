@@ -1617,6 +1617,11 @@ pub struct HybridInvokeInfo {
     /// one thing. The stem is also the name codegen already gives a child,
     /// so the match and the generated symbol cannot disagree.
     pub candidates: Vec<InvokeCandidate>,
+    /// §scxml-6.4.1: the `namelist` attribute as written — the same field
+    /// [`ScxmlInvokeInfo::namelist`] carries, for the same clause. How the
+    /// child was named does not change what its arguments are, so a hybrid
+    /// invoke validates and passes it exactly as a static one does.
+    pub namelist: String,
 }
 
 impl HybridInvokeInfo {
@@ -1665,6 +1670,20 @@ pub struct InvokeCandidate {
     pub path: String,
     /// File stem of that path — the identity the runtime matches on.
     pub stem: String,
+    /// §scxml-6.4: the candidate's own [`InvokeSessionCommon::child_needs_script_engine`].
+    ///
+    /// ⚠ Per candidate, not per invoke: each is a different document, and
+    /// only the one the value names is started. The invoke-level field is
+    /// never populated for a hybrid invoke, so a candidate that runs a
+    /// script engine was started without one before this existed.
+    ///
+    /// Named as the invoke-level fields are, so a template that seeds a
+    /// child reads the same names whichever it was handed.
+    pub child_needs_script_engine: bool,
+    /// §scxml-6.4.3: the candidate's top-level `<data>` ids — the names a
+    /// `<param>` or `namelist` item may add to ITS data model and no other.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child_datamodel_vars: Option<Vec<String>>,
 }
 
 impl InvokeCandidate {
@@ -1690,6 +1709,7 @@ impl InvokeCandidate {
         Some(Self {
             path: path.to_string(),
             stem,
+            ..Default::default()
         })
     }
 }
@@ -3274,13 +3294,13 @@ impl SCXMLModel {
     /// §scxml-6.4.1 gives `namelist` on `<invoke>` the same reading it has
     /// on `<send>` — a list of data-model locations read in the invoking
     /// session — so a document carrying one needs the namelist helper
-    /// declared whether or not it also sends anything. Only
-    /// [`Invoke::Scxml`] can carry the attribute: the hybrid, mesh-rpc and
-    /// unsupported variants have no namelist field.
+    /// declared whether or not it also sends anything. A mesh-rpc invoke
+    /// carries no namelist field; every other variant does.
     pub fn has_invoke_namelist(&self) -> bool {
         self.states.values().any(|s| {
             s.invokes.iter().any(|i| match i {
                 Invoke::Scxml(si) => !si.namelist.is_empty(),
+                Invoke::Hybrid(hi) => !hi.namelist.is_empty(),
                 // Read when a host that runs the type starts it; asked before
                 // the host's declaration is applied, so every one counts.
                 Invoke::Unsupported(ui) => !ui.namelist.is_empty(),

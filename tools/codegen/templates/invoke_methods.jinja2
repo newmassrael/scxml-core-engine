@@ -1,7 +1,172 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{% macro hybrid_child_start(invoke_info, cpp_ns_prefix, child_type, slot) %}
+{#
+    §scxml-6.4: "if the evaluation of its arguments produces an error, the
+    SCXML Processor MUST terminate the processing of the element without
+    further action". Read in the PARENT before any child exists, so it is one
+    check whichever child the invoke goes on to start; a hybrid invoke runs it
+    after its value has chosen a candidate and before that candidate is built.
+    Declares `namelistTypedParams`, which `invoke_seed_child` reads.
+#}
+{% macro invoke_namelist_guard(invoke_info) %}
+                        {% if invoke_info.namelist %}
+                        // W3C SCXML 6.4.1: Namelist handling - validate and pass values to child
+                        std::map<std::string, std::vector<std::string>> namelistParams;
+                        // §scxml-6.4.1: "the value stored at the location is
+                        // the value" — so what crosses into the child is the
+                        // ScriptValue, not its rendering. `namelistParams`
+                        // stays for the diagnostic text below, where a string
+                        // is what a log wants.
+                        std::map<std::string, std::vector<::ScriptValue>> namelistTypedParams;
+
+                        // Step 1: Validate namelist variables before creating child
+                        {
+                            ensureScriptEngine();
+                            auto& scriptEngine = getScriptEngine();
+
+                            bool namelistValid = ::SCE::NamelistHelper::evaluateNamelist(
+                                scriptEngine,
+                                sessionId_.value(),
+                                "{{ invoke_info.namelist }}",
+                                namelistParams,
+                                [&engine](const std::string& errorMsg) {
+                                    SCE_LOG_ERROR("Namelist evaluation failed for invoke {{ invoke_info.invoke_id }}: {}", errorMsg);
+                                    // W3C SCXML 6.4.1: Raise error.execution on namelist error
+                                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+                                },
+                                &namelistTypedParams
+                            );
+
+                            if (!namelistValid) {
+                                // W3C SCXML 6.4.1: Invoke cancelled due to namelist validation failure
+                                AOT_DEBUG("Skipping invoke {{ invoke_info.invoke_id }} due to namelist validation failure");
+                                return;  // Skip this invoke - don't create child
+                            }
+
+                            AOT_DEBUG("Namelist validation passed for invoke {{ invoke_info.invoke_id }}");
+                        }
+                        {% endif %}
+{% endmacro %}
+{#
+    §scxml-6.4.1 + §scxml-6.4.3: the invoke's `namelist` values and `<param>`s,
+    into the child in `slot` before it initializes.
+
+    `child` describes the session being started — the invoke itself for a
+    static child, the chosen candidate for a hybrid one. The arguments are the
+    invoke's and are evaluated whatever the child is; only which names the
+    child KEEPS depends on it, so a candidate is given exactly the names its
+    own top-level `<data>` declares.
+#}
+{% macro invoke_seed_child(invoke_info, child, slot, model) %}
+                        {% if invoke_info.namelist %}
+                        // §scxml-6.4.1 + §scxml-6.4.3: pass namelist VALUES to
+                        // the child datamodel (Step 2). Which names are
+                        // eligible is decided here rather than at runtime,
+                        // because both the namelist and the child's top-level
+                        // `<data>` ids are static — the C11 backend has
+                        // filtered this way from the start, and deciding it at
+                        // codegen time keeps a `std::set` per invoke out of
+                        // every machine that has one.
+                        {% if child.child_needs_script_engine %}
+                        {% for ns_name in invoke_info.namelist.split() %}
+                        {% if child.child_datamodel_vars and ns_name in child.child_datamodel_vars %}
+                        // §scxml-6.4.3: `{{ ns_name }}` matches a top-level `<data>` of
+                        // the child, so the value at that location becomes its
+                        // initial value — and the `<data>`'s own expression is
+                        // ignored.
+                        {
+                            const auto __sce_nl = namelistTypedParams.find("{{ ns_name }}");
+                            if (__sce_nl != namelistTypedParams.end() && !__sce_nl->second.empty()) {
+                                AOT_DEBUG("Seeding namelist location '{{ ns_name }}' in child {{ invoke_info.invoke_id }}");
+                                {{ slot }}->setParamValueInScriptEngine("{{ ns_name }}", __sce_nl->second.front());
+                            }
+                        }
+                        {% else %}
+                        // §scxml-6.4.3: `{{ ns_name }}` matches no top-level `<data>` of
+                        // the child, so the Processor MUST NOT add it to the
+                        // invoked session's data model. Nothing is emitted for
+                        // it — the parent still evaluates it, because a
+                        // location the parent does not declare is an
+                        // error.execution either way (test553).
+                        {% endif %}
+                        {% endfor %}
+                        {% else %}
+                        // Child does not use JSEngine - namelist handled via static datamodel
+                        AOT_DEBUG("Namelist variables - child uses static datamodel");
+                        {% endif %}
+                        {% endif %}
+
+                        {% if invoke_info.params %}
+                        // §scxml-6.4.3: pass param VALUES to the child
+                        // datamodel before initialization. The expression is
+                        // evaluated HERE, in the invoking session, because the
+                        // clause says the value of the `<param>` element is
+                        // what becomes the child `<data>`'s initial value.
+                        // Evaluating the author's text in the child instead
+                        // asks what that source means there — the same answer
+                        // for a literal, a different one for anything that
+                        // names a variable, and the whole W3C IRP param
+                        // surface is literals. The Interpreter
+                        // (`InvokeExecutor.cpp`) has always done it this way.
+                        {% for param in invoke_info.params %}
+                        {% if model.needs_script_engine %}
+                        {# §scxml-5.7: the value comes from 'expr' or, failing that,
+                           'location' — a location expression, read as its value.
+                           The parser admits exactly one, so both empty is
+                           `location=""`, a location that names nothing. The
+                           <param> is an argument of this <invoke> whether or not
+                           the child declares `name` or runs a script engine, so
+                           it is evaluated — and its failure raised — either way;
+                           §scxml-6.4.3 decides only what the child keeps. The
+                           author's text is filtered where it is emitted, never
+                           bound to a name first, so the migration scan reads
+                           the site as the filter call it is. #}
+                        {% set child_keeps = child.child_needs_script_engine and child.child_datamodel_vars and param.name in child.child_datamodel_vars %}
+                        {% if not (param.expr or param.location) %}
+                        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> names no location"));
+                        {% else %}
+                        {
+                            ensureScriptEngine();
+                            auto __sce_param = getScriptEngine().evaluateExpression(sessionId_.value(), {{ (param.expr if param.expr else param.location) | to_script_source_expr }}).get();
+                            if (::SCE::ScriptResultUtils::isSuccess(__sce_param)) {
+                                {% if child_keeps %}
+                                {{ slot }}->setParamValueInScriptEngine("{{ param.name | escape_cpp }}", __sce_param.getInternalValue());
+                                {% else %}
+                                // §scxml-6.4.3: `{{ param.name }}` matches no top-level
+                                // `<data>` of the child, so the Processor MUST NOT add
+                                // it to the invoked session's data model.
+                                (void)__sce_param;
+                                {% endif %}
+                            } else {
+                                // §scxml-5.7.1: BOTH halves — `error.execution` on
+                                // the internal queue AND the name and value
+                                // ignored. The log line alone kept neither: a log
+                                // is not a queue, so the document that miscomputed
+                                // the `<param>` saw a child come up with a `<data>`
+                                // nothing explained and had no event to act on.
+                                //
+                                // The clause delegates only the SUCCESSFUL name and
+                                // value to the context ("Otherwise the use of the
+                                // name and value depends on the context ... See 5.5
+                                // <donedata>, 6.2 <send> and 6.4 <invoke>"), so
+                                // §scxml-6.4.2's "terminate the processing of the
+                                // element" is not what a failing `<param>` costs:
+                                // the child still starts, one pair short.
+                                SCE_LOG_ERROR("Failed to evaluate <invoke> param expression for {}: {}", "{{ param.name | escape_cpp }}", "{{ (param.expr if param.expr else param.location) | escape_cpp }}");
+                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> could not be read"));
+                            }
+                        }
+                        {% endif %}
+                        {% else %}
+                        // No script engine in this document: the <param> is a literal the
+                        // static datamodel carries.
+                        AOT_DEBUG("Param {{ param.name | escape_cpp }}={{ param.expr | escape_cpp }} - static datamodel");
+                        {% endif %}
+                        {% endfor %}
+                        {% endif %}
+{% endmacro %}
+{% macro hybrid_child_start(invoke_info, child, cpp_ns_prefix, child_type, slot, model) %}
                         // W3C SCXML 6.4: Create pre-generated AOT child (pure AOT — no Interpreter dependency).
                         // SCE_MESH §14 arch-debt #4 caveat: partition-naive
                         // namespace ref — see the sibling create-child site
@@ -22,11 +187,13 @@
                         // W3C SCXML B.1: Forward the build-configured script
                         // engine to the child before initialize() — generated
                         // Policy::getScriptEngine() throws when unset.
-                        {% if invoke_info.child_needs_script_engine %}
+                        {% if child.child_needs_script_engine %}
                         {{ slot }}->setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
                             &::SCE::ScriptEngineProvider::getScriptEngine(),
                             [](::SCE::IScriptEngine*){}));
                         {% endif %}
+
+{{ invoke_seed_child(invoke_info, child, slot, model) }}
 
                         // W3C SCXML 6.4.1: Track active invoke session
                         // SCE_MESH.md §16.7 row 5 sub-atomic C — same shared-
@@ -120,43 +287,7 @@
                     // Full ID example: "s0.123456789._invoke_0" where 123456789 is runtime platformid (pointer address)
                     // Match on "._invoke_0" suffix to identify this invoke - substring matching required because platformid is runtime-only
                     if (pending.documentId == "{{ invoke_info.invoke_id }}") {
-                        {% if invoke_info.namelist %}
-                        // W3C SCXML 6.4.1: Namelist handling - validate and pass values to child
-                        std::map<std::string, std::vector<std::string>> namelistParams;
-                        // §scxml-6.4.1: "the value stored at the location is
-                        // the value" — so what crosses into the child is the
-                        // ScriptValue, not its rendering. `namelistParams`
-                        // stays for the diagnostic text below, where a string
-                        // is what a log wants.
-                        std::map<std::string, std::vector<::ScriptValue>> namelistTypedParams;
-
-                        // Step 1: Validate namelist variables before creating child
-                        {
-                            ensureScriptEngine();
-                            auto& scriptEngine = getScriptEngine();
-
-                            bool namelistValid = ::SCE::NamelistHelper::evaluateNamelist(
-                                scriptEngine,
-                                sessionId_.value(),
-                                "{{ invoke_info.namelist }}",
-                                namelistParams,
-                                [&engine](const std::string& errorMsg) {
-                                    SCE_LOG_ERROR("Namelist evaluation failed for invoke {{ invoke_info.invoke_id }}: {}", errorMsg);
-                                    // W3C SCXML 6.4.1: Raise error.execution on namelist error
-                                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
-                                },
-                                &namelistTypedParams
-                            );
-
-                            if (!namelistValid) {
-                                // W3C SCXML 6.4.1: Invoke cancelled due to namelist validation failure
-                                AOT_DEBUG("Skipping invoke {{ invoke_info.invoke_id }} due to namelist validation failure");
-                                return;  // Skip this invoke - don't create child
-                            }
-
-                            AOT_DEBUG("Namelist validation passed for invoke {{ invoke_info.invoke_id }}");
-                        }
-                        {% endif %}
+{{ invoke_namelist_guard(invoke_info) }}
 
                         // W3C SCXML 6.4: Instantiate and initialize child state machine
                         AOT_DEBUG("Creating child state machine: {{ invoke_info.child_name }} for invoke {{ invoke_info.invoke_id }}");
@@ -203,112 +334,7 @@
                             [](::SCE::IScriptEngine*){}));
                         {% endif %}
 
-                        {% if invoke_info.namelist %}
-                        // §scxml-6.4.1 + §scxml-6.4.3: pass namelist VALUES to
-                        // the child datamodel (Step 2). Which names are
-                        // eligible is decided here rather than at runtime,
-                        // because both the namelist and the child's top-level
-                        // `<data>` ids are static — the C11 backend has
-                        // filtered this way from the start, and deciding it at
-                        // codegen time keeps a `std::set` per invoke out of
-                        // every machine that has one.
-                        {% if invoke_info.child_needs_script_engine %}
-                        {% for ns_name in invoke_info.namelist.split() %}
-                        {% if invoke_info.child_datamodel_vars and ns_name in invoke_info.child_datamodel_vars %}
-                        // §scxml-6.4.3: `{{ ns_name }}` matches a top-level `<data>` of
-                        // the child, so the value at that location becomes its
-                        // initial value — and the `<data>`'s own expression is
-                        // ignored.
-                        {
-                            const auto __sce_nl = namelistTypedParams.find("{{ ns_name }}");
-                            if (__sce_nl != namelistTypedParams.end() && !__sce_nl->second.empty()) {
-                                AOT_DEBUG("Seeding namelist location '{{ ns_name }}' in child {{ invoke_info.invoke_id }}");
-                                child_{{ invoke_info.field_suffix }}_->setParamValueInScriptEngine("{{ ns_name }}", __sce_nl->second.front());
-                            }
-                        }
-                        {% else %}
-                        // §scxml-6.4.3: `{{ ns_name }}` matches no top-level `<data>` of
-                        // the child, so the Processor MUST NOT add it to the
-                        // invoked session's data model. Nothing is emitted for
-                        // it — the parent still evaluates it, because a
-                        // location the parent does not declare is an
-                        // error.execution either way (test553).
-                        {% endif %}
-                        {% endfor %}
-                        {% else %}
-                        // Child does not use JSEngine - namelist handled via static datamodel
-                        AOT_DEBUG("Namelist variables - child uses static datamodel");
-                        {% endif %}
-                        {% endif %}
-
-                        {% if invoke_info.params %}
-                        // §scxml-6.4.3: pass param VALUES to the child
-                        // datamodel before initialization. The expression is
-                        // evaluated HERE, in the invoking session, because the
-                        // clause says the value of the `<param>` element is
-                        // what becomes the child `<data>`'s initial value.
-                        // Evaluating the author's text in the child instead
-                        // asks what that source means there — the same answer
-                        // for a literal, a different one for anything that
-                        // names a variable, and the whole W3C IRP param
-                        // surface is literals. The Interpreter
-                        // (`InvokeExecutor.cpp`) has always done it this way.
-                        {% for param in invoke_info.params %}
-                        {% if model.needs_script_engine %}
-                        {# §scxml-5.7: the value comes from 'expr' or, failing that,
-                           'location' — a location expression, read as its value.
-                           The parser admits exactly one, so both empty is
-                           `location=""`, a location that names nothing. The
-                           <param> is an argument of this <invoke> whether or not
-                           the child declares `name` or runs a script engine, so
-                           it is evaluated — and its failure raised — either way;
-                           §scxml-6.4.3 decides only what the child keeps. The
-                           author's text is filtered where it is emitted, never
-                           bound to a name first, so the migration scan reads
-                           the site as the filter call it is. #}
-                        {% set child_keeps = invoke_info.child_needs_script_engine and invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
-                        {% if not (param.expr or param.location) %}
-                        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> names no location"));
-                        {% else %}
-                        {
-                            ensureScriptEngine();
-                            auto __sce_param = getScriptEngine().evaluateExpression(sessionId_.value(), {{ (param.expr if param.expr else param.location) | to_script_source_expr }}).get();
-                            if (::SCE::ScriptResultUtils::isSuccess(__sce_param)) {
-                                {% if child_keeps %}
-                                child_{{ invoke_info.field_suffix }}_->setParamValueInScriptEngine("{{ param.name | escape_cpp }}", __sce_param.getInternalValue());
-                                {% else %}
-                                // §scxml-6.4.3: `{{ param.name }}` matches no top-level
-                                // `<data>` of the child, so the Processor MUST NOT add
-                                // it to the invoked session's data model.
-                                (void)__sce_param;
-                                {% endif %}
-                            } else {
-                                // §scxml-5.7.1: BOTH halves — `error.execution` on
-                                // the internal queue AND the name and value
-                                // ignored. The log line alone kept neither: a log
-                                // is not a queue, so the document that miscomputed
-                                // the `<param>` saw a child come up with a `<data>`
-                                // nothing explained and had no event to act on.
-                                //
-                                // The clause delegates only the SUCCESSFUL name and
-                                // value to the context ("Otherwise the use of the
-                                // name and value depends on the context ... See 5.5
-                                // <donedata>, 6.2 <send> and 6.4 <invoke>"), so
-                                // §scxml-6.4.2's "terminate the processing of the
-                                // element" is not what a failing `<param>` costs:
-                                // the child still starts, one pair short.
-                                SCE_LOG_ERROR("Failed to evaluate <invoke> param expression for {}: {}", "{{ param.name | escape_cpp }}", "{{ (param.expr if param.expr else param.location) | escape_cpp }}");
-                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> could not be read"));
-                            }
-                        }
-                        {% endif %}
-                        {% else %}
-                        // No script engine in this document: the <param> is a literal the
-                        // static datamodel carries.
-                        AOT_DEBUG("Param {{ param.name | escape_cpp }}={{ param.expr | escape_cpp }} - static datamodel");
-                        {% endif %}
-                        {% endfor %}
-                        {% endif %}
+{{ invoke_seed_child(invoke_info, invoke_info, "child_" ~ invoke_info.field_suffix ~ "_", model) }}
 
                         // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
                         // Child may send events during initialize() that need autoforward
@@ -438,6 +464,21 @@
                             AOT_DEBUG("Hybrid invoke: contentexpr evaluated successfully");
                         }
                         {% endif %}
+{% if invoke_info.candidates %}
+
+                        // A value naming none of the declared candidates is the
+                        // same failure the Interpreter reports when the document
+                        // will not load: there is no service to create, the
+                        // author needs to hear which name arrived, and — as
+                        // there — the arguments are not read.
+                        if ({% for candidate in invoke_info.candidates %}__sce_selected_{{ invoke_info.field_suffix }} != "{{ candidate.stem | escape_cpp }}"{{ " && " if not loop.last }}{% endfor %}) {
+                            SCE_LOG_ERROR("Hybrid invoke: '{}' names no declared candidate", __sce_selected_{{ invoke_info.field_suffix }});
+                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                                "<invoke srcexpr='{{ invoke_info.srcexpr | escape_cpp }}'> evaluated to a document it did not declare"));
+                            return;
+                        }
+{% endif %}
+{{ invoke_namelist_guard(invoke_info) }}
 
                         // W3C SCXML 6.5: Generate child session ID
                         std::string childSessionId = (sessionId_.has_value() ? sessionId_.value() : "") + "." + pending.invokeId;
@@ -448,19 +489,12 @@
                         // slot of its own and at most one is ever filled.
 {% for candidate in invoke_info.candidates %}
                         if (__sce_selected_{{ invoke_info.field_suffix }} == "{{ candidate.stem | escape_cpp }}") {
-{{ hybrid_child_start(invoke_info, cpp_ns_prefix, candidate.stem, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem ~ "_") }}
+{{ hybrid_child_start(invoke_info, candidate, cpp_ns_prefix, candidate.stem, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem ~ "_", model) }}
                         }
 {% endfor %}
-                        // A value naming none of them is the same failure the
-                        // Interpreter reports when the document will not load:
-                        // there is no service to create, and the author needs
-                        // to hear which name arrived.
-                        SCE_LOG_ERROR("Hybrid invoke: '{}' names no declared candidate", __sce_selected_{{ invoke_info.field_suffix }});
-                        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
-                            "<invoke srcexpr='{{ invoke_info.srcexpr | escape_cpp }}'> evaluated to a document it did not declare"));
                         return;
 {% else %}
-{{ hybrid_child_start(invoke_info, cpp_ns_prefix, invoke_info.child_name, "child_" ~ invoke_info.field_suffix ~ "_") }}
+{{ hybrid_child_start(invoke_info, invoke_info, cpp_ns_prefix, invoke_info.child_name, "child_" ~ invoke_info.field_suffix ~ "_", model) }}
 {% endif %}
                     }
                     {% endfor %}

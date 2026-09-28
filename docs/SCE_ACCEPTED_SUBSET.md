@@ -2355,7 +2355,24 @@ default rather than a gap — a build cannot know what an expression will
 compute, and inventing a candidate set would be the generator guessing.
 `--deploy` changes none of this; it writes the same stub.
 
-The runtime witness is
+How the child was named decides which document runs; it does not change
+what the invoke's **arguments** are. A hybrid invoke's `namelist` and
+`<param>`s are evaluated in the invoking session exactly as a static
+invoke's are (§scxml-6.4.1): an unreadable `namelist` name is one
+`error.execution` and no child, a failing `<param>` is reported and its
+pair left out, and a value reaches the child only under a name the
+CHOSEN candidate's own top-level `<data>` declares (§scxml-6.4.3). The
+arguments are read after the value has chosen a candidate, so a value
+naming none of them reads nothing — the Interpreter's order, which
+loads the document first. Measured 2026-09-28: every AOT channel
+evaluated none of them, the parser did not keep a hybrid invoke's
+`namelist` at all, and each candidate was started with the invoke-level
+child metadata, which a hybrid invoke never populates. The witness is
+`integration_resources/a_hybrid_invoke_carries_its_arguments/`, whose
+two candidates declare different names so a filter by the wrong one
+leaks a name into the child the value chose.
+
+The runtime witness for the selection itself is
 `integration_resources/invoke_candidate_selects_the_child/`, driven on
 all seven channels. Its two candidates announce themselves differently,
 so the right child, the wrong child, a failure to load and a stub each

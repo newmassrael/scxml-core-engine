@@ -313,7 +313,7 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                     "done_event": done_event,
                     "has_done_event": has_done_event,
                     "params": params_json,
-                    "namelist": "",
+                    "namelist": hi.namelist,
                     "idlocation": hi.idlocation,
                     "finalize_content": "",
                     "state_id": state_id,

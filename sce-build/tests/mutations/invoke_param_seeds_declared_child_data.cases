@@ -100,8 +100,8 @@ PY
 
 mutation_case "the cpp aot engine seeds an invoke param the child never declared" <<'PY'
 edit("tools/codegen/templates/invoke_methods.jinja2",
-     """                        {% set child_keeps = invoke_info.child_needs_script_engine and invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}""",
-     """                        {% set child_keeps = invoke_info.child_needs_script_engine %}""")
+     """                        {% set child_keeps = child.child_needs_script_engine and child.child_datamodel_vars and param.name in child.child_datamodel_vars %}""",
+     """                        {% set child_keeps = child.child_needs_script_engine %}""")
 PY
 
 # ── C++ AOT: the namelist arm carries a value at all ───────────────
@@ -113,7 +113,7 @@ PY
 
 mutation_case "the cpp aot engine seeds nothing from an invoke namelist" <<'PY'
 edit("tools/codegen/templates/invoke_methods.jinja2",
-     """                        {% if invoke_info.child_datamodel_vars and ns_name in invoke_info.child_datamodel_vars %}""",
+     """                        {% if child.child_datamodel_vars and ns_name in child.child_datamodel_vars %}""",
      """                        {% if false %}""")
 PY
 
@@ -128,7 +128,7 @@ mutation_case "the c11 engine evaluates an invoke param in the child lua state" 
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
      """            if (luaL_dostring(sm->L,
                 "return ({{ param_source | to_lua_expr | escape_c }})") == 0) {""",
-     """            if (luaL_dostring(sm->child_{{ invoke_info.field_suffix }}.L,
+     """            if (luaL_dostring({{ child_L }},
                 "return ({{ param_source | to_lua_expr | escape_c }})") == 0) {""")
 PY
 
@@ -140,6 +140,6 @@ PY
 
 mutation_case "the c11 engine transfers an invoke param the child never declared" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     """            {% set child_keeps = invoke_info.child_needs_script_engine and invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}""",
-     """            {% set child_keeps = invoke_info.child_needs_script_engine %}""")
+     """            {% set child_keeps = child.child_needs_script_engine and child.child_datamodel_vars and param.name in child.child_datamodel_vars %}""",
+     """            {% set child_keeps = child.child_needs_script_engine %}""")
 PY

@@ -4278,8 +4278,12 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // resolve fragments by name; empty in the common case, so the
     // parser resolves exactly as `absolute → base → cwd` when no
     // include dirs are passed.
-    let mut parser =
-        SCXMLParser::new().with_include_dirs(include_dirs.iter().map(PathBuf::from).collect());
+    // §scxml-6.4: a hybrid invoke's candidates are found where
+    // `copy_static_invoke_children` stages them from — the input root first
+    // — so the arguments each one may keep are read from the real document.
+    let mut parser = SCXMLParser::new()
+        .with_include_dirs(include_dirs.iter().map(PathBuf::from).collect())
+        .with_candidate_roots(input_root_override.map(PathBuf::from).into_iter().collect());
     // Typed parser failures (XML/XSD/validation) flow straight to the
     // unified diagnostic emitter — the old CliError::ScxmlParse
     // wrapper collapsed forge codes into cli/scxml-parse, losing the

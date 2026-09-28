@@ -13,6 +13,137 @@
    as static inline helpers — no .c source.                             #}
 {%- import 'c/param_macros.jinja2' as param_macros %}
 
+{# ── §scxml-6.4: a namelist the invoke cannot read starts nothing ──────
+   One check for every child the invoke may start — a static child, or the
+   candidate a hybrid invoke's value chose — because how the child was named
+   does not change what the arguments are. A hybrid invoke runs it after its
+   value has chosen a candidate and before that candidate is built. #}
+{% macro invoke_namelist_guard(invoke_info, model, csym_prefix) %}
+            {% if invoke_info.namelist %}
+            {# W3C SCXML 6.4 / test554: a namelist name not declared in the
+               parent's `<datamodel>` is an evaluation error — cpp
+               `InvokeExecutor::startInvoke` (sce/src/runtime/InvokeExecutor.cpp:425-432)
+               aborts the spawn via `destroySession + return ""`, propagating
+               error.execution upstream. Parent vars are statically known
+               at codegen time (model.variables), so the membership check
+               folds to a compile-time predicate. The `loop.first` arm
+               emits the error.execution raise + skip-spawn (`continue`)
+               exactly once on the first undeclared name — subsequent
+               undeclared names produce no output (the spawn is already
+               aborted). The param/namelist transfer block below stays
+               unreachable for this iteration. #}
+            {% set _parent_var_ids = model.variables | map(attribute='id') | list %}
+            {% for _ns_name in invoke_info.namelist.split() if _ns_name not in _parent_var_ids %}
+            {% if loop.first %}
+            /* W3C SCXML 6.4 (test554): namelist references undeclared
+               parent var `{{ _ns_name }}` — abort spawn and raise
+               error.execution per cpp `InvokeExecutor`. */
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<invoke> namelist names '{{ _ns_name }}', which the parent does not declare");
+            continue;
+            {% endif %}
+            {% endfor %}
+            {% endif %}
+{% endmacro %}
+
+{# ── §scxml-6.4.1 + §scxml-6.4.3: the invoke's arguments, into one child ──
+   `child` describes the session being started — the invoke itself for a
+   static child, the chosen candidate for a hybrid one — and `child_L` is that
+   child's `lua_State`. The arguments are the invoke's and are evaluated
+   whatever the child is; only which names the child KEEPS depends on it, so a
+   candidate is given exactly the names its own top-level `<data>` declares.
+   `se` is the script-engine macro module the including template imported. #}
+{% macro invoke_seed_child(invoke_info, child, child_L, model, csym_prefix, se) %}
+            {% if model.needs_script_engine and (invoke_info.params or (child.child_needs_script_engine and invoke_info.namelist)) %}
+            /* W3C SCXML 6.4.1 (test226/240/241/243/244/245/276):
+               `<param>` and `namelist` value passing. Evaluate each
+               param's `expr` (or read each namelist name's binding)
+               on the parent's `lua_State` so the value lands on
+               `sm->L`'s top of stack, then transfer to the child's
+               `lua_State` as a global under the param/namelist name —
+               overriding the `<data expr=...>` defaults that the
+               child's `_init` already seeded. C11 evaluates
+               parent-side because each generated SM owns its own Lua
+               state and a parent-side variable name is undefined in
+               the child's state.
+
+               The cpp backend transferred the expr STRING for
+               re-evaluation in the child's engine until the fixture
+               `integration_resources/invoke_param_seeds_declared_child_data/`
+               separated the two: for literal exprs — the entire W3C
+               corpus param/namelist surface — both shapes converge on
+               the same observable, which is why the divergence lived
+               as long as it did. It now passes the value, so this
+               backend's shape and cpp's are the same shape.
+
+               Names not declared in the child's `<datamodel>` skip
+               the transfer (test245: namelist Var2 with no child
+               <data id="Var2"> stays unbound). §scxml-6.4.3 requires
+               it — "if the names do not match, the Processor MUST NOT
+               add the value ... to the invoked session's data model" —
+               and cpp decides the same question at codegen time now,
+               having reached it through the runtime
+               `DatamodelValidationHelper::isVariableDeclaredInChild`
+               on its namelist arm alone. */
+            {% if invoke_info.params %}
+            {% for param in invoke_info.params %}
+            {# §scxml-5.7: the value comes from 'expr' or, failing that,
+               'location' — a location expression, read as its value; both
+               empty is `location=""`, a location that names nothing. The
+               <param> is an argument of this <invoke> whether or not the
+               child declares `name` or runs a script engine, so it is
+               evaluated — and its failure raised — either way; §scxml-6.4.3
+               decides only what the child keeps. #}
+            {% set param_source = param.expr or param.location %}
+            {% set child_keeps = child.child_needs_script_engine and child.child_datamodel_vars and param.name in child.child_datamodel_vars %}
+            {% if not param_source %}
+            /* `<param name="{{ param.name }}" location=""/>` names no location. */
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<invoke> <param name='{{ param.name | escape_c }}'> names no location");
+            {% else %}
+            /* `<param name="{{ param.name }}"/>` */
+            if (luaL_dostring(sm->L,
+                "return ({{ param_source | to_lua_expr | escape_c }})") == 0) {
+            {% if child_keeps %}
+{{ se.lua_xfer_top_to_child("sm->L", child_L, param.name) }}
+            {% else %}
+                /* §scxml-6.4.3: `{{ param.name }}` is not kept by the child. */
+                lua_pop(sm->L, 1);
+            {% endif %}
+            } else {
+                /* §scxml-5.7.1: BOTH halves — `error.execution` on the internal
+                   queue AND the name and value ignored. Only the silent half was
+                   here: the error object was popped and the child came up with a
+                   `<data>` nothing explained.
+
+                   The clause delegates only the SUCCESSFUL name and value to the
+                   context ("Otherwise the use of the name and value depends on
+                   the context ... See 5.5 <donedata>, 6.2 <send> and 6.4
+                   <invoke>"), so §scxml-6.4.2's "terminate the processing of the
+                   element" is not what a failing `<param>` costs: the child still
+                   starts, one pair short. */
+                lua_pop(sm->L, 1);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<invoke> <param name='{{ param.name | escape_c }}'> could not be read");
+            }
+            {% endif %}
+            {% endfor %}
+            {% endif %}
+            {% if invoke_info.namelist and child.child_needs_script_engine %}
+            {% for ns_name in invoke_info.namelist.split() %}
+            {% if child.child_datamodel_vars and ns_name in child.child_datamodel_vars %}
+            /* namelist `{{ ns_name }}` */
+            lua_getglobal(sm->L, "{{ ns_name }}");
+{{ se.lua_xfer_top_to_child("sm->L", child_L, ns_name) }}
+            {% endif %}
+            {% endfor %}
+            {% endif %}
+            {% endif %}
+{% endmacro %}
+
 {% set _ns = namespace(any_child_parent_send=false) %}
 {% for invoke_info in model.invokes | scxml %}
 {% if invoke_info.child_has_send_to_parent %}
@@ -285,32 +416,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
         {% for invoke_info in state.invokes | scxml %}
         if (p->state == (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}
             && p->invoke_idx == {{ loop.index0 }}) {
-            {% if invoke_info.namelist %}
-            {# W3C SCXML 6.4 / test554: a namelist name not declared in the
-               parent's `<datamodel>` is an evaluation error — cpp
-               `InvokeExecutor::startInvoke` (sce/src/runtime/InvokeExecutor.cpp:425-432)
-               aborts the spawn via `destroySession + return ""`, propagating
-               error.execution upstream. Parent vars are statically known
-               at codegen time (model.variables), so the membership check
-               folds to a compile-time predicate. The `loop.first` arm
-               emits the error.execution raise + skip-spawn (`continue`)
-               exactly once on the first undeclared name — subsequent
-               undeclared names produce no output (the spawn is already
-               aborted). The param/namelist transfer block below stays
-               unreachable for this iteration. #}
-            {% set _parent_var_ids = model.variables | map(attribute='id') | list %}
-            {% for _ns_name in invoke_info.namelist.split() if _ns_name not in _parent_var_ids %}
-            {% if loop.first %}
-            /* W3C SCXML 6.4 (test554): namelist references undeclared
-               parent var `{{ _ns_name }}` — abort spawn and raise
-               error.execution per cpp `InvokeExecutor`. */
-            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<invoke> namelist names '{{ _ns_name }}', which the parent does not declare");
-            continue;
-            {% endif %}
-            {% endfor %}
-            {% endif %}
+{{ invoke_namelist_guard(invoke_info, model, csym_prefix) }}
             /* W3C SCXML 6.4: spawn child {{ invoke_info.child_name }}
                (invoke id `{{ invoke_info.invoke_id }}` in state `{{ state_id }}`). */
             {% if invoke_info.child_has_send_to_parent %}
@@ -340,93 +446,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                carry an `invoke_id` slot (test247-shape children with
                no `<send target="#_parent">`). */
             sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
-            {% if model.needs_script_engine and (invoke_info.params or (invoke_info.child_needs_script_engine and invoke_info.namelist)) %}
-            /* W3C SCXML 6.4.1 (test226/240/241/243/244/245/276):
-               `<param>` and `namelist` value passing. Evaluate each
-               param's `expr` (or read each namelist name's binding)
-               on the parent's `lua_State` so the value lands on
-               `sm->L`'s top of stack, then transfer to the child's
-               `lua_State` as a global under the param/namelist name —
-               overriding the `<data expr=...>` defaults that the
-               child's `_init` already seeded. C11 evaluates
-               parent-side because each generated SM owns its own Lua
-               state and a parent-side variable name is undefined in
-               the child's state.
-
-               The cpp backend transferred the expr STRING for
-               re-evaluation in the child's engine until the fixture
-               `integration_resources/invoke_param_seeds_declared_child_data/`
-               separated the two: for literal exprs — the entire W3C
-               corpus param/namelist surface — both shapes converge on
-               the same observable, which is why the divergence lived
-               as long as it did. It now passes the value, so this
-               backend's shape and cpp's are the same shape.
-
-               Names not declared in the child's `<datamodel>` skip
-               the transfer (test245: namelist Var2 with no child
-               <data id="Var2"> stays unbound). §scxml-6.4.3 requires
-               it — "if the names do not match, the Processor MUST NOT
-               add the value ... to the invoked session's data model" —
-               and cpp decides the same question at codegen time now,
-               having reached it through the runtime
-               `DatamodelValidationHelper::isVariableDeclaredInChild`
-               on its namelist arm alone. */
-            {% if invoke_info.params %}
-            {% for param in invoke_info.params %}
-            {# §scxml-5.7: the value comes from 'expr' or, failing that,
-               'location' — a location expression, read as its value; both
-               empty is `location=""`, a location that names nothing. The
-               <param> is an argument of this <invoke> whether or not the
-               child declares `name` or runs a script engine, so it is
-               evaluated — and its failure raised — either way; §scxml-6.4.3
-               decides only what the child keeps. #}
-            {% set param_source = param.expr or param.location %}
-            {% set child_keeps = invoke_info.child_needs_script_engine and invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
-            {% if not param_source %}
-            /* `<param name="{{ param.name }}" location=""/>` names no location. */
-            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<invoke> <param name='{{ param.name | escape_c }}'> names no location");
-            {% else %}
-            /* `<param name="{{ param.name }}"/>` */
-            if (luaL_dostring(sm->L,
-                "return ({{ param_source | to_lua_expr | escape_c }})") == 0) {
-            {% if child_keeps %}
-{{ se.lua_xfer_top_to_child("sm->L", "sm->child_" ~ invoke_info.field_suffix ~ ".L", param.name) }}
-            {% else %}
-                /* §scxml-6.4.3: `{{ param.name }}` is not kept by the child. */
-                lua_pop(sm->L, 1);
-            {% endif %}
-            } else {
-                /* §scxml-5.7.1: BOTH halves — `error.execution` on the internal
-                   queue AND the name and value ignored. Only the silent half was
-                   here: the error object was popped and the child came up with a
-                   `<data>` nothing explained.
-
-                   The clause delegates only the SUCCESSFUL name and value to the
-                   context ("Otherwise the use of the name and value depends on
-                   the context ... See 5.5 <donedata>, 6.2 <send> and 6.4
-                   <invoke>"), so §scxml-6.4.2's "terminate the processing of the
-                   element" is not what a failing `<param>` costs: the child still
-                   starts, one pair short. */
-                lua_pop(sm->L, 1);
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke> <param name='{{ param.name | escape_c }}'> could not be read");
-            }
-            {% endif %}
-            {% endfor %}
-            {% endif %}
-            {% if invoke_info.namelist and invoke_info.child_needs_script_engine %}
-            {% for ns_name in invoke_info.namelist.split() %}
-            {% if invoke_info.child_datamodel_vars and ns_name in invoke_info.child_datamodel_vars %}
-            /* namelist `{{ ns_name }}` */
-            lua_getglobal(sm->L, "{{ ns_name }}");
-{{ se.lua_xfer_top_to_child("sm->L", "sm->child_" ~ invoke_info.field_suffix ~ ".L", ns_name) }}
-            {% endif %}
-            {% endfor %}
-            {% endif %}
-            {% endif %}
+{{ invoke_seed_child(invoke_info, invoke_info, "sm->child_" ~ invoke_info.field_suffix ~ ".L", model, csym_prefix, se) }}
             /* W3C SCXML 6.4: drive the child's deferred main event loop
                now that param/namelist have been applied and parent
                routing is live. At least one pass, even for a child whose
@@ -561,7 +581,15 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             /* §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the evaluated value
                chooses among the declared candidates, matched on the document
                stem. A value naming none of them is the failure the
-               Interpreter reports when a document will not load. */
+               Interpreter reports when a document will not load — and, as
+               there, the arguments are not read. */
+            if ({% for candidate in invoke_info.candidates %}strcmp(__sce_selected_{{ invoke_info.field_suffix }}, "{{ candidate.stem | escape_c }}") != 0{{ " && " if not loop.last }}{% endfor %}) {
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<invoke srcexpr='{{ invoke_info.srcexpr | escape_c }}'> evaluated to a document it did not declare");
+                continue;
+            }
+{{ invoke_namelist_guard(invoke_info, model, csym_prefix) }}
 {% for candidate in invoke_info.candidates %}
             if (strcmp(__sce_selected_{{ invoke_info.field_suffix }}, "{{ candidate.stem | escape_c }}") == 0) {
                 /* Parent routing is stamped before the entry walk, for the
@@ -577,6 +605,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                     p->invoke_id);
                 sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_active = true;
                 sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
+{{ invoke_seed_child(invoke_info, candidate, "sm->child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem ~ ".L", model, csym_prefix, se) }}
 {% if invoke_info.use_specific_event or 'done.invoke' in model.events %}
                 /* Only when the document listens for it: a machine that
                    observes its child by what the child SENDS has no
@@ -593,9 +622,6 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 continue;
             }
 {% endfor %}
-            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<invoke srcexpr='{{ invoke_info.srcexpr | escape_c }}'> evaluated to a document it did not declare");
             continue;
 {% else %}
             /* W3C SCXML 6.4: spawn pre-generated AOT stub child
@@ -603,9 +629,11 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                child reaches its final state during `_init`'s entry
                walk and the immediate-final raise below fires
                `done.invoke` synchronously). */
+{{ invoke_namelist_guard(invoke_info, model, csym_prefix) }}
             {{ csym_prefix }}{{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
             sm->child_{{ invoke_info.field_suffix }}_active = true;
             sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
+{{ invoke_seed_child(invoke_info, invoke_info, "sm->child_" ~ invoke_info.field_suffix ~ ".L", model, csym_prefix, se) }}
             if ({{ csym_prefix }}{{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
                 memset(&_done_evt, 0, sizeof(_done_evt));

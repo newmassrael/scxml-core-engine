@@ -443,6 +443,7 @@ fn each_invoke_shape_renders_once_and_whole() {
                 .iter()
                 .map(|p| sce_build::model::InvokeCandidate::from_path(p).unwrap())
                 .collect(),
+            namelist: "seed".to_string(),
         }),
         Invoke::MeshRpc(MeshRpcInvokeInfo {
             base: base("i3"),
@@ -500,6 +501,7 @@ machine m (datamodel: ecmascript, initial: s0)
       srcexpr pick()
       contentexpr body()
       candidates a.scxml b.scxml
+      namelist seed
     invoke i3:
       id-into where
       param p = 1

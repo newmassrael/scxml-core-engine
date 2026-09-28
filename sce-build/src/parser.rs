@@ -108,6 +108,14 @@ pub struct SCXMLParser {
     ///
     /// [`parse_file`]: SCXMLParser::parse_file
     include_dirs: Vec<PathBuf>,
+    /// Directories a hybrid invoke's `sce:candidates` documents are looked
+    /// for in, before the directory of the document being parsed. Set via
+    /// [`SCXMLParser::with_candidate_roots`] to the build's `--input-root`,
+    /// the order the CLI stages candidates in: a build that parses a STAGED
+    /// copy of the document has only that copy beside it, and the candidates
+    /// arrive there after the parse — so without this every candidate reads
+    /// as unreadable, declares nothing, and is given no argument at all.
+    candidate_roots: Vec<PathBuf>,
 }
 
 /// Run the XInclude + `sce:template` preprocessors on raw SCXML
@@ -1753,7 +1761,18 @@ impl SCXMLParser {
             invoke_ids_seen: BTreeSet::new(),
             preprocessor_deps: Vec::new(),
             include_dirs: Vec::new(),
+            candidate_roots: Vec::new(),
         }
+    }
+
+    /// Configure where a hybrid invoke's `sce:candidates` documents are
+    /// found, ahead of the parsed document's own directory — the build's
+    /// `--input-root`, which a parse of a staged copy needs because the
+    /// candidates are staged beside it only afterwards. Chains off
+    /// [`SCXMLParser::new`].
+    pub fn with_candidate_roots(mut self, roots: Vec<PathBuf>) -> Self {
+        self.candidate_roots = roots;
+        self
     }
 
     /// Configure the `--include-dir` search path used to resolve
@@ -4042,7 +4061,34 @@ impl SCXMLParser {
             // an AOT target honour the VALUE the expression computes instead
             // of only the fact that it computed. Optional: without it the
             // build-time stub stays, exactly as before the attribute existed.
-            let candidates = collect_invoke_candidates(elem, &srcexpr, &contentexpr, source_name)?;
+            let mut candidates =
+                collect_invoke_candidates(elem, &srcexpr, &contentexpr, source_name)?;
+            // §scxml-6.4.3: which names a `<param>` or `namelist` item may add
+            // to the child depends on the child, so each candidate is read as
+            // a static `src` child is. It is found where the CLI stages it
+            // from — the input root first, then beside the document — and it
+            // is an input of this document's output, so it joins the deps a
+            // `--write-deps` build regenerates on.
+            if base_dir.is_some() || !self.candidate_roots.is_empty() {
+                for candidate in &mut candidates {
+                    let search: Vec<PathBuf> = self
+                        .candidate_roots
+                        .iter()
+                        .map(PathBuf::as_path)
+                        .chain(base_dir)
+                        .map(|dir| dir.join(&candidate.path))
+                        .collect();
+                    match search.iter().find(|p| p.exists()) {
+                        Some(found) => {
+                            populate_candidate_metadata(found, candidate);
+                            self.preprocessor_deps
+                                .push(found.canonicalize().unwrap_or_else(|_| found.clone()));
+                        }
+                        // Unreadable: answered as an unreadable static `src`.
+                        None => populate_candidate_metadata(&search[0], candidate),
+                    }
+                }
+            }
             let (invoke_req, invoke_provenance) = collect_sce_traceability(
                 elem,
                 || format!("<invoke id=\"{invoke_id}\">"),
@@ -4071,6 +4117,7 @@ impl SCXMLParser {
                 contentexpr,
                 contentexpr_spelling,
                 candidates,
+                namelist,
             })));
         }
 
@@ -6990,6 +7037,23 @@ fn parse_child_metadata(child_path: &Path, common: &mut InvokeSessionCommon) {
             common.child_datamodel_vars = Some(Vec::new());
         }
     }
+}
+
+/// §scxml-6.4: a hybrid invoke's candidate is a child like any other, so it
+/// is described by the same derivation a static child is — one owner for
+/// "does this document need an engine" and "which names may it be given".
+///
+/// A candidate the build cannot read is answered the way
+/// [`parse_child_metadata`] answers an unreadable `src`: it is given an
+/// engine and declares nothing, so nothing is seeded into it.
+fn populate_candidate_metadata(
+    candidate_path: &Path,
+    candidate: &mut crate::model::InvokeCandidate,
+) {
+    let mut common = InvokeSessionCommon::default();
+    parse_child_metadata(candidate_path, &mut common);
+    candidate.child_needs_script_engine = common.child_needs_script_engine;
+    candidate.child_datamodel_vars = common.child_datamodel_vars;
 }
 
 // ══════════════════════════════════════════════════════════════

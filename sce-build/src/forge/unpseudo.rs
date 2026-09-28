@@ -2923,7 +2923,12 @@ fn parse_scxml_invoke(
                 scxml.src = undo(value, k.number)?;
                 unsupported_src = scxml.src.clone();
             }
-            "namelist" => scxml.namelist = undo(value, k.number)?,
+            // Both arms carry the attribute; the `type` line decides which
+            // one the rebuilt invoke is, so the value goes to each.
+            "namelist" => {
+                scxml.namelist = undo(value, k.number)?;
+                hybrid.namelist = scxml.namelist.clone();
+            }
             "finalize" => scxml.finalize_content = undo(value, k.number)?,
             "mesh-target" => scxml.remote_mesh_target = Some(undo(value, k.number)?),
             "mesh-transport" => scxml.remote_mesh_transport = Some(undo(value, k.number)?),

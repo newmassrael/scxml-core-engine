@@ -640,6 +640,17 @@ fn collect_invoke_causes(invoke: &Invoke, out: &mut Vec<NeedsScriptEngineCause>)
                 info.common.base.source_location.as_ref(),
             ));
             push_child_invoke_cause(&info.common, out);
+            // §scxml-6.4: a declared candidate is a child the parent starts
+            // and hands its engine to, so one that runs a script engine is
+            // the same cause a static child is — once for the invoke.
+            if info.candidates.iter().any(|c| c.child_needs_script_engine) {
+                out.push(NeedsScriptEngineCause::new(
+                    ScriptEngineCauseKind::ChildInvokeNeedsScriptEngine {
+                        invoke_id: info.common.base.invoke_id.clone(),
+                    },
+                    info.common.base.source_location.as_ref(),
+                ));
+            }
         }
         Invoke::Scxml(info) => {
             if !info.namelist.is_empty() {

@@ -10898,6 +10898,16 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::finishAtTopLevelFinal",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "InvokeCandidate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_invoke",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
