@@ -143,6 +143,7 @@ pub mod generator;
 /// apart — which is the failure mode a CMake-side reimplementation of the
 /// hash would carry.
 pub mod generator_witness;
+pub mod gui_structure;
 /// Which `<send>` / `<invoke>` `type` values this build has a lowering
 /// path for, and the sites naming one it does not. Single source of
 /// truth for the accepted set — the per-backend send templates read the

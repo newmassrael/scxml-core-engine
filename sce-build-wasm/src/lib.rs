@@ -89,6 +89,20 @@ pub fn annotation_overlay(scxml_content: &str, scxml_name: &str) -> Result<Strin
     serde_json::to_string(&overlay).map_err(|e| JsValue::from_str(&format!("JSON error: {e}")))
 }
 
+/// The statechart structure the visualizer draws, from this crate's
+/// model rather than the C++ engine's parser — so the GUI and every other
+/// surface a reviewer reads show one interpretation. The contract is the
+/// C++ builder's; see [`sce_build::gui_structure`].
+#[wasm_bindgen]
+pub fn gui_structure(scxml_content: &str, scxml_name: &str) -> Result<String, JsValue> {
+    let mut parser = sce_build::parser::SCXMLParser::new();
+    let model = parser
+        .parse_string(scxml_content, scxml_name)
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
+    serde_json::to_string(&sce_build::gui_structure::gui_structure(&model))
+        .map_err(|e| JsValue::from_str(&format!("JSON error: {e}")))
+}
+
 /// Extract the state machine name from SCXML content.
 #[wasm_bindgen]
 pub fn get_machine_name(scxml_content: &str) -> Result<String, JsValue> {

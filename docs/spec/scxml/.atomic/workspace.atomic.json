@@ -576,6 +576,10 @@
         {
           "file": "sce-build/src/diagram/mod.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/gui_structure.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -2159,6 +2163,10 @@
         {
           "file": "sce-build/src/diagram/layout.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/gui_structure.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2444,6 +2452,10 @@
         },
         {
           "file": "sce-build/src/diagram/layout.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/gui_structure.rs",
           "kind": "references"
         }
       ],
