@@ -456,6 +456,10 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "stop",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/pseudo.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -555,6 +559,10 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "historyDefaultTargetsOf",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/pseudo.rs",
           "kind": "references"
         }
       ],
@@ -2119,6 +2127,10 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "documentInitialTargets",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/pseudo.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2396,6 +2408,10 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "initialTargetsOf",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/pseudo.rs",
           "kind": "references"
         }
       ],

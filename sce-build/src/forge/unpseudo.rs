@@ -135,6 +135,95 @@ fn undo(s: &str, line: usize) -> Result<String, ParseError> {
     })
 }
 
+/// A node's traceability family as read back — the reader's half of
+/// the renderer's `Out::traceability`, which states the line shapes.
+#[derive(Default)]
+struct Traced {
+    req: Vec<RequirementId>,
+    provenance: Vec<crate::provenance::SpecProvenance>,
+    unresolved: Vec<crate::provenance::UnresolvedMarker>,
+}
+
+/// Read `l`, with the lines nested under it, as one traceability line;
+/// `false` when it is not one.
+///
+/// ⚠ A line `<word> = <expr>` is an assignment to a variable of that
+/// name, never an annotation: the renderer refuses an annotation value
+/// that begins with `=` so that this test is exact rather than a guess.
+fn read_traceability(l: &Line<'_>, sub: &[&Line<'_>], t: &mut Traced) -> Result<bool, ParseError> {
+    let Some((word, value)) = l.text.split_once(' ') else {
+        return Ok(false);
+    };
+    if value.is_empty() || value.starts_with('=') {
+        return Ok(false);
+    }
+    let kind = match word {
+        "req" | "provenance" => {
+            if let Some(extra) = sub.first() {
+                return Err(ParseError {
+                    line: extra.number,
+                    why: format!("a `{word}` line holds nothing under it"),
+                });
+            }
+            let value = undo(value, l.number)?;
+            if word == "req" {
+                t.req.push(RequirementId(value));
+            } else {
+                t.provenance.push(
+                    crate::provenance::SpecProvenance::parse_compact(&value).ok_or_else(|| {
+                        ParseError {
+                            line: l.number,
+                            why: format!("`{value}` is not a provenance anchor"),
+                        }
+                    })?,
+                );
+            }
+            return Ok(true);
+        }
+        "unresolved" => crate::provenance::MarkerKind::Unresolved,
+        "assumed" => crate::provenance::MarkerKind::Assumed,
+        _ => return Ok(false),
+    };
+    let mut marker = crate::provenance::UnresolvedMarker {
+        id: undo(value, l.number)?,
+        kind,
+        ..Default::default()
+    };
+    for k in sub {
+        if let Some(reason) = k.text.strip_prefix("reason ") {
+            marker.reason = Some(undo(reason, k.number)?);
+        } else if let Some(candidates) = k.text.strip_prefix("candidates ") {
+            marker.candidates = undo_each(candidates, k.number)?;
+        } else {
+            return Err(ParseError {
+                line: k.number,
+                why: format!("`{}` is not a marker line", k.text),
+            });
+        }
+    }
+    t.unresolved.push(marker);
+    Ok(true)
+}
+
+/// The traceability lines that open `kids`, and the lines after them —
+/// for a node whose family the renderer writes first under its head.
+fn split_traceability<'a>(
+    kids: &[&'a Line<'a>],
+) -> Result<(Traced, Vec<&'a Line<'a>>), ParseError> {
+    let mut traced = Traced::default();
+    let mut rest = Vec::new();
+    let mut leading = true;
+    for (l, sub) in group(kids) {
+        if leading && read_traceability(l, &sub, &mut traced)? {
+            continue;
+        }
+        leading = false;
+        rest.push(l);
+        rest.extend(sub);
+    }
+    Ok((traced, rest))
+}
+
 /// One word of a clause, as `crate::forge::pseudo::word` wrote it.
 ///
 /// The escaped space is undone BEFORE `undo`, and it has to be that way
@@ -2485,6 +2574,7 @@ fn parse_statechart(
             why: format!("`{clause}` is not `<key>: <value>`"),
         })?;
         match key {
+            "name" => m.scxml_name = undo(value, head.number)?,
             "datamodel" => {
                 m.datamodel =
                     crate::model::Datamodel::from_attr(value).ok_or_else(|| ParseError {
@@ -2550,11 +2640,22 @@ fn parse_statechart(
             }
             Some("data") => m.variables.push(parse_variable(line, &kids)?),
             Some("state") | Some("parallel") | Some("final") => {
-                let mut s = parse_scxml_state(line, &kids)?;
-                s.document_order = order;
-                order += 1;
-                m.invokes.extend(s.invokes.iter().cloned());
-                m.states.insert(s.id.clone(), s);
+                // A state and every state written under it, in document
+                // order — the order `document_order` counts, parent
+                // before child, as the parser counts it.
+                let subtree = parse_scxml_state(line, &kids, None)?;
+                for mut s in subtree.states {
+                    s.document_order = order;
+                    order += 1;
+                    m.invokes.extend(s.invokes.iter().cloned());
+                    m.states.insert(s.id.clone(), s);
+                }
+                for (id, h) in subtree.histories {
+                    m.history_default_targets
+                        .insert(id.clone(), h.default_target.clone());
+                    m.history_states.insert(id, h);
+                    m.has_history_states = true;
+                }
             }
             _ => m.global_scripts.push(parse_scxml_action(line, &kids)?),
         }
@@ -2604,13 +2705,17 @@ fn parse_variable(
         direction: None,
         // Named by the analyzer, which a rendering has not been through.
         reader: None,
-        // The statechart page does not write a variable's annotations
-        // yet, so there is nothing on it to read back.
         req: Vec::new(),
         provenance: Vec::new(),
         unresolved: Vec::new(),
     };
-    for kid in kids {
+    // The family first, as the renderer writes it; what follows is the
+    // record's fields.
+    let (traced, kids) = split_traceability(kids)?;
+    v.req = traced.req;
+    v.provenance = traced.provenance;
+    v.unresolved = traced.unresolved;
+    for kid in &kids {
         let (name, expr) = kid.text.split_once(" = ").ok_or_else(|| ParseError {
             line: kid.number,
             why: "a record field is `<field> = <expr>`".to_string(),
@@ -2685,17 +2790,32 @@ fn parse_variable(
     Ok(v)
 }
 
+/// What one state line and everything under it describe.
+#[derive(Default)]
+struct Subtree {
+    /// The state first, then its descendants in document order, each
+    /// with `parent` set and each parent's `children` listing them — the
+    /// two fields the parser fills from the same nesting.
+    states: Vec<crate::model::State>,
+    /// The `<history>` pseudo-states among them, by id.
+    histories: Vec<(String, crate::model::HistoryInfo)>,
+}
+
 fn parse_scxml_state(
     line: &Line<'_>,
     kids: &[&Line<'_>],
-) -> Result<crate::model::State, ParseError> {
+    parent: Option<&str>,
+) -> Result<Subtree, ParseError> {
     let w: Vec<&str> = line.text.trim_end_matches(':').split_whitespace().collect();
     let mut s = crate::model::State {
         id: undo(w.get(1).copied().unwrap_or(""), line.number)?,
         is_final: w[0] == "final",
         is_parallel: w[0] == "parallel",
+        parent: parent.map(str::to_string),
         ..Default::default()
     };
+    let mut below = Subtree::default();
+    let mut traced = Traced::default();
     let mut i = 2;
     while i < w.len() {
         match w[i] {
@@ -2742,8 +2862,19 @@ fn parse_scxml_state(
             s.initial_children = undo_each(v, l.number)?;
         } else if let Some(v) = l.text.strip_prefix("unhandled ") {
             s.unhandled = undo_each(v, l.number)?;
-        } else if let Some(id) = l.text.strip_prefix("req ") {
-            s.req.push(RequirementId(undo(id, l.number)?));
+        } else if read_traceability(l, &sub, &mut traced)? {
+        } else if ["state ", "parallel ", "final "]
+            .iter()
+            .any(|k| l.text.starts_with(k))
+        {
+            let nested = parse_scxml_state(l, &sub, Some(&s.id))?;
+            s.children.push(nested.states[0].id.clone());
+            below.states.extend(nested.states);
+            below.histories.extend(nested.histories);
+        } else if let Some(rest) = l.text.strip_prefix("history ") {
+            below
+                .histories
+                .push(parse_history(rest, &sub, &s.id, l.number)?);
         } else if l.text.starts_with("data ") {
             s.datamodel.push(parse_variable(l, &sub)?);
         } else if l.text.starts_with("invoke") {
@@ -2776,7 +2907,44 @@ fn parse_scxml_state(
     for (i, t) in s.transitions.iter_mut().enumerate() {
         t.transition_index = i;
     }
-    Ok(s)
+    s.req = traced.req;
+    s.provenance = traced.provenance;
+    s.unresolved = traced.unresolved;
+    below.states.insert(0, s);
+    Ok(below)
+}
+
+/// `<id> <shallow|deep> -> <default target>`, with the default
+/// transition's actions under it — the renderer's `render_history`.
+fn parse_history(
+    rest: &str,
+    kids: &[&Line<'_>],
+    parent: &str,
+    number: usize,
+) -> Result<(String, crate::model::HistoryInfo), ParseError> {
+    let malformed = || ParseError {
+        line: number,
+        why: "a history is `history <id> <type> -> <default target>`".to_string(),
+    };
+    let (head, default_target) = rest.split_once(" -> ").ok_or_else(malformed)?;
+    let (id, history_type) = head.split_once(' ').ok_or_else(malformed)?;
+    let default_target = undo(default_target, number)?;
+    Ok((
+        undo(id, number)?,
+        crate::model::HistoryInfo {
+            parent: parent.to_string(),
+            history_type: undo(history_type, number)?,
+            default_targets: default_target
+                .split_whitespace()
+                .map(str::to_string)
+                .collect(),
+            default_target,
+            // Derived by the parser from the default target, and not on
+            // the page — see the renderer.
+            leaf_target: String::new(),
+            default_actions: parse_action_list(kids)?,
+        },
+    ))
 }
 
 fn parse_scxml_donedata(kids: &[&Line<'_>]) -> Result<crate::model::DoneData, ParseError> {
@@ -2850,20 +3018,12 @@ fn parse_scxml_transition(
         None => (rest, String::new()),
     };
 
-    // ⚠ A transition's requirement ids come first in its body, above
-    // the actions — the renderer has always written them there and
-    // this reader handed the whole body to the action list, so `req
-    // REQ_TRANS_GO` was reported as "not an action". The state body
-    // already reads `req` this way; the transition body did not.
-    let top = kids.first().map(|l| l.depth);
-    let (req, actions): (Vec<&Line<'_>>, Vec<&Line<'_>>) = kids
-        .iter()
-        .partition(|l| Some(l.depth) == top && l.text.starts_with("req "));
-    let mut requirements = Vec::new();
-    for l in &req {
-        let id = l.text.strip_prefix("req ").unwrap_or_default();
-        requirements.push(RequirementId(undo(id, l.number)?));
-    }
+    // ⚠ A transition's traceability comes first in its body, above the
+    // actions. This reader once handed the whole body to the action
+    // list, so `req REQ_TRANS_GO` was reported as "not an action"; the
+    // fix that followed took every top-level `req ` line, which also
+    // took an assignment to a variable called `req`.
+    let (traced, actions) = split_traceability(kids)?;
 
     Ok(crate::model::Transition {
         event,
@@ -2875,7 +3035,9 @@ fn parse_scxml_transition(
         cond,
         transition_type,
         native_guard,
-        req: requirements,
+        req: traced.req,
+        provenance: traced.provenance,
+        unresolved: traced.unresolved,
         actions: parse_action_list(&actions)?,
         ..Default::default()
     })
@@ -2910,7 +3072,11 @@ fn parse_scxml_invoke(
     let mut request_schema = String::new();
     let mut result_schema = String::new();
 
+    let mut traced = Traced::default();
     for (k, sub) in group(kids) {
+        if read_traceability(k, &sub, &mut traced)? {
+            continue;
+        }
         let (keyword, value) = match k.text.split_once(' ') {
             Some((a, b)) => (a, b),
             // A clause that opens a block has no value and ends in a
@@ -2921,7 +3087,6 @@ fn parse_scxml_invoke(
         match keyword {
             "id-into" => base.idlocation = undo(value, k.number)?,
             "param" => base.params.push(parse_param(value, &sub, k.number)?),
-            "req" => base.req.push(RequirementId(undo(value, k.number)?)),
             "type" => kind = value.to_string(),
             "autoforward" => autoforward = true,
             "src" => {
@@ -2997,6 +3162,9 @@ fn parse_scxml_invoke(
             }
         }
     }
+    base.req = traced.req;
+    base.provenance = traced.provenance;
+    base.unresolved = traced.unresolved;
 
     Ok(match kind.as_str() {
         "scxml" => {
@@ -3212,7 +3380,21 @@ fn parse_action_list(body: &[&Line<'_>]) -> Result<Vec<crate::model::Action>, Pa
     Ok(out)
 }
 
+/// One action: its traceability off the front of its block, as the
+/// renderer writes it, and the action itself from what remains.
 fn parse_scxml_action(
+    line: &Line<'_>,
+    kids: &[&Line<'_>],
+) -> Result<crate::model::Action, ParseError> {
+    let (traced, kids) = split_traceability(kids)?;
+    let mut a = parse_scxml_action_body(line, &kids)?;
+    a.req = traced.req;
+    a.provenance = traced.provenance;
+    a.unresolved = traced.unresolved;
+    Ok(a)
+}
+
+fn parse_scxml_action_body(
     line: &Line<'_>,
     kids: &[&Line<'_>],
 ) -> Result<crate::model::Action, ParseError> {

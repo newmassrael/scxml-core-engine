@@ -338,6 +338,78 @@ fn every_requirement_the_model_holds_reaches_the_report_the_table_and_the_verdic
     );
 }
 
+/// Every requirement id and every marker the model holds reaches the
+/// pseudocode page a specification owner reviews — and comes back off it.
+///
+/// ⚠ The page is the reader the owner actually reads, and until
+/// 2026-09-28 it wrote a state's and a transition's `req` and nothing
+/// else: no `provenance` or marker anywhere, no action's family (so an
+/// `<onentry sce:req>`, which the parser copies onto its actions, did not
+/// reach it either), and no `<history>` at all. The text round trip could
+/// not see any of it, because the reader dropped what the renderer never
+/// wrote.
+#[test]
+fn every_annotation_the_model_holds_reaches_the_pseudocode_page() {
+    use sce_build::forge::model::ForgeDocument;
+
+    let model = parse(DOC, "reach");
+    let (unresolved, req) = held(&model);
+    let page =
+        sce_build::forge::pseudo::render(&ForgeDocument::Statechart(Box::new(model.clone())))
+            .expect("the document renders");
+
+    // What the page writes, read off its lines by their leading word.
+    let (mut paged_req, mut paged_unresolved) = (BTreeSet::new(), BTreeSet::new());
+    for line in page.lines().map(str::trim) {
+        if let Some(id) = line.strip_prefix("req ") {
+            paged_req.insert(id.to_string());
+        } else if let Some(id) = line.strip_prefix("unresolved ") {
+            paged_unresolved.insert(id.to_string());
+        }
+    }
+    // What a reader of the page recovers.
+    let read_back = match sce_build::forge::unpseudo::parse(&page).expect("the page reads back") {
+        ForgeDocument::Statechart(m) => *m,
+        other => panic!("the page read back as {:?}", other.kind()),
+    };
+    let (back_unresolved, back_req) = held(&read_back);
+
+    let missing = |held: &BTreeSet<String>, seen: &BTreeSet<String>| -> Vec<String> {
+        held.difference(seen).cloned().collect()
+    };
+    let not_on_page = (
+        missing(&req, &paged_req),
+        missing(&unresolved, &paged_unresolved),
+    );
+    let not_read_back = (
+        missing(&req, &back_req),
+        missing(&unresolved, &back_unresolved),
+    );
+    println!(
+        "swept {} requirement id(s) and {} marker(s) the model holds against the page",
+        req.len(),
+        unresolved.len()
+    );
+    assert!(
+        not_on_page.0.is_empty() && not_on_page.1.is_empty(),
+        "the pseudocode page leaves out annotations the model holds.\n  \
+         req:        {:?}\n  unresolved: {:?}\n--- page ---\n{page}",
+        not_on_page.0,
+        not_on_page.1,
+    );
+    assert!(
+        not_read_back.0.is_empty() && not_read_back.1.is_empty(),
+        "the page writes annotations its reader does not recover.\n  \
+         req:        {:?}\n  unresolved: {:?}",
+        not_read_back.0,
+        not_read_back.1,
+    );
+    assert!(
+        req.len() >= 13 && unresolved.len() >= 12,
+        "the sweep saw too little"
+    );
+}
+
 /// A block annotation reaches every action inside the block, nested ones
 /// included.
 ///

@@ -187,6 +187,17 @@ pub enum Word {
     Timer,
     BoundedCollection,
     Worker,
+    /// The traceability family (docs/SCE_ACCEPTED_SUBSET.md §2.10): what
+    /// a node says it implements, where the specification says so, and
+    /// what the specification does not settle. Words, so a page in
+    /// another language names them — a reviewer's first question of any
+    /// line is which requirement it serves.
+    Req,
+    Provenance,
+    Unresolved,
+    Assumed,
+    Reason,
+    Candidates,
     /// The two a shape spends rather than the mapping: a block's open
     /// and close, for a shape that marks them instead of indenting.
     /// ⚠ They are WORDS and not shape-private literals for the same
@@ -313,6 +324,12 @@ impl Word {
         Word::Timer,
         Word::BoundedCollection,
         Word::Worker,
+        Word::Req,
+        Word::Provenance,
+        Word::Unresolved,
+        Word::Assumed,
+        Word::Reason,
+        Word::Candidates,
         Word::Begin,
         Word::End,
     ];
@@ -458,6 +475,12 @@ fn en_word(w: Word) -> &'static str {
         Word::Timer => "timer",
         Word::BoundedCollection => "bounded-collection",
         Word::Worker => "worker",
+        Word::Req => "req",
+        Word::Provenance => "provenance",
+        Word::Unresolved => "unresolved",
+        Word::Assumed => "assumed",
+        Word::Reason => "reason",
+        Word::Candidates => "candidates",
         Word::Begin => "begin",
         Word::End => "end",
     }
@@ -955,6 +978,15 @@ fn ko_word(w: Word) -> &'static str {
         Word::Timer => "타이머",
         Word::BoundedCollection => "유한컬렉션",
         Word::Worker => "작업자",
+        // `미결` rather than `미해결`: the page's other words are short,
+        // and `미처리` (unhandled) already spends the `미` shape for a
+        // different idea, so the pair must read apart at a glance.
+        Word::Req => "요구사항",
+        Word::Provenance => "출처",
+        Word::Unresolved => "미결",
+        Word::Assumed => "가정",
+        Word::Reason => "이유",
+        Word::Candidates => "후보",
         Word::Begin => "시작",
         Word::End => "종료",
     }

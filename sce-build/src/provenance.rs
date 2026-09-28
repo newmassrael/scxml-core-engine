@@ -181,6 +181,47 @@ impl SpecProvenance {
             at,
         })
     }
+
+    /// The compact URI form of this anchor — the inverse of
+    /// [`Self::parse_compact`], with the explicit `kind=value` position
+    /// spelling — or `None` when no compact string reads back as it.
+    ///
+    /// "Reads back" is the definition, checked rather than argued: an
+    /// anchor from the element form may hold what the compact grammar
+    /// cannot carry — a `#` or `@` inside `doc_id`, a section whose tail
+    /// spells a position, surrounding whitespace — and a writer that
+    /// emitted it anyway would hand a reader a different anchor. A caller
+    /// that must show every anchor refuses the `None` by name.
+    pub fn to_compact(&self) -> Option<String> {
+        let mut out = self.doc_id.clone();
+        if let Some(rev) = &self.rev {
+            out.push('@');
+            out.push_str(rev);
+        }
+        if self.section.is_some() || self.at.is_some() {
+            out.push('#');
+            if let Some(section) = &self.section {
+                out.push_str(section);
+            }
+            if let Some(at) = &self.at {
+                out.push(':');
+                out.push_str(&at.to_tagged());
+            }
+        }
+        (Self::parse_compact(&out).as_ref() == Some(self)).then_some(out)
+    }
+}
+
+impl Position {
+    /// The explicit `kind=value` spelling — the one [`Self::parse_tagged`]
+    /// reads.
+    pub fn to_tagged(&self) -> String {
+        match self {
+            Position::Page(n) => format!("page={n}"),
+            Position::Row(n) => format!("row={n}"),
+            Position::Path(p) => format!("path={p}"),
+        }
+    }
 }
 
 /// Opaque requirement identifier. The string is treated as a token —
@@ -406,6 +447,52 @@ mod tests {
         let p = SpecProvenance::parse_compact("D#4.4.2:draft").unwrap();
         assert_eq!(p.section.as_deref(), Some("4.4.2:draft"));
         assert!(p.at.is_none());
+    }
+
+    /// Every anchor the compact grammar can hold is written back as a
+    /// string that reads as the same anchor, and one it cannot hold is
+    /// not written at all.
+    #[test]
+    fn to_compact_is_the_inverse_of_parse_compact() {
+        let readable = [
+            "D",
+            "D@3",
+            "D#4.4.2",
+            "D@3#4.4.2:page=118",
+            "D#Sheet1:row=41",
+            "D#Pkg:path=/Elem/x",
+            "D#:page=7",
+            "D#4.4.2:draft",
+        ];
+        for input in readable {
+            let anchor = SpecProvenance::parse_compact(input).unwrap();
+            let written = anchor
+                .to_compact()
+                .unwrap_or_else(|| panic!("`{input}` has a compact form"));
+            assert_eq!(
+                SpecProvenance::parse_compact(&written).as_ref(),
+                Some(&anchor),
+                "`{input}` wrote `{written}`"
+            );
+        }
+        let unspellable = [
+            SpecProvenance {
+                doc_id: "A#B".into(),
+                ..Default::default()
+            },
+            SpecProvenance {
+                doc_id: "A@B".into(),
+                ..Default::default()
+            },
+            SpecProvenance {
+                doc_id: "D".into(),
+                section: Some("x:page=3".into()),
+                ..Default::default()
+            },
+        ];
+        for anchor in unspellable {
+            assert_eq!(anchor.to_compact(), None, "{anchor:?}");
+        }
     }
 
     #[test]

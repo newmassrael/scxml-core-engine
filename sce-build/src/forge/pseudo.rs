@@ -602,6 +602,26 @@ struct Out<'d> {
     /// reappearing one level down. [`Out::annotate_unplaced`] writes
     /// whatever is left.
     annotated: std::collections::BTreeSet<String>,
+    /// The first shape this rendering met that no line can carry back,
+    /// found while writing rather than by a second walk of the model.
+    /// A caller that can refuse turns it into [`Unsupported`]; see
+    /// [`Out::traceability`].
+    refused: Option<&'static str>,
+}
+
+/// A node's traceability family — docs/SCE_ACCEPTED_SUBSET.md §2.10 —
+/// borrowed for rendering. Every annotatable statechart node carries the
+/// same three lists, so one writer serves them all.
+struct Traced<'m> {
+    req: &'m [crate::provenance::RequirementId],
+    provenance: &'m [crate::provenance::SpecProvenance],
+    unresolved: &'m [crate::provenance::UnresolvedMarker],
+}
+
+impl Traced<'_> {
+    fn is_empty(&self) -> bool {
+        self.req.is_empty() && self.provenance.is_empty() && self.unresolved.is_empty()
+    }
 }
 
 impl<'d> Out<'d> {
@@ -615,7 +635,112 @@ impl<'d> Out<'d> {
             depth: 0,
             deployment,
             annotated: Default::default(),
+            refused: None,
         }
+    }
+
+    /// Record the first shape the page cannot carry back.
+    fn refuse(&mut self, why: &'static str) {
+        self.refused.get_or_insert(why);
+    }
+
+    /// A node's traceability, one line per entry, at the current depth:
+    ///
+    /// ```text
+    /// req <id>
+    /// provenance <doc>[@<rev>][#<section>[:<kind>=<value>]]
+    /// unresolved <id>            (or `assumed <id>`)
+    ///   reason <text>
+    ///   candidates <a> <b> ...
+    /// ```
+    ///
+    /// Each value runs to the end of its line. ⚠ An assignment is also
+    /// `<word> = <expr>` — `req = 1` assigns a variable called `req` — so
+    /// a value may not begin with `=`, and one that does is refused by
+    /// name rather than written into the shape the reader would take for
+    /// an assignment. A provenance anchor with no compact spelling is
+    /// refused the same way ([`crate::provenance::SpecProvenance::to_compact`]).
+    fn traceability(&mut self, t: &Traced<'_>) {
+        for id in t.req {
+            self.trace_line(Word::Req, &id.0);
+        }
+        for anchor in t.provenance {
+            match anchor.to_compact() {
+                Some(compact) => self.trace_line(Word::Provenance, &compact),
+                None => self.refuse("a provenance anchor the compact form cannot spell"),
+            }
+        }
+        for marker in t.unresolved {
+            let word = match marker.kind {
+                crate::provenance::MarkerKind::Unresolved => Word::Unresolved,
+                crate::provenance::MarkerKind::Assumed => Word::Assumed,
+            };
+            self.trace_line(word, &marker.id);
+            if marker.reason.is_none() && marker.candidates.is_empty() {
+                continue;
+            }
+            self.nested(|out| {
+                if let Some(reason) = &marker.reason {
+                    if reason.is_empty() {
+                        out.refuse("a marker whose reason is empty");
+                    }
+                    out.line_of(vec![
+                        Part::Word(Word::Reason),
+                        Part::Text(text(reason).into_owned()),
+                    ]);
+                }
+                if !marker.candidates.is_empty() {
+                    // Candidates share one line, separated by spaces, so
+                    // an entry that is empty or holds whitespace cannot be
+                    // told apart from its neighbours on the way back.
+                    if marker
+                        .candidates
+                        .iter()
+                        .any(|c| c.is_empty() || c.chars().any(char::is_whitespace))
+                    {
+                        out.refuse("a marker candidate that is empty or holds whitespace");
+                    }
+                    let candidates: Vec<String> = marker
+                        .candidates
+                        .iter()
+                        .map(|c| text(c).into_owned())
+                        .collect();
+                    out.line_of(vec![
+                        Part::Word(Word::Candidates),
+                        Part::Text(candidates.join(" ")),
+                    ]);
+                }
+            });
+        }
+    }
+
+    fn trace_line(&mut self, word: Word, value: &str) {
+        if value.is_empty() || value.starts_with('=') {
+            self.refuse("a traceability value that is empty or begins with `=`");
+        }
+        self.line_of(vec![Part::Word(word), Part::Text(text(value).into_owned())]);
+    }
+
+    /// Render one node with `render`, then put its traceability as the
+    /// first lines of the block its head line opens — for a node whose
+    /// renderer is one of many shapes (an action) and should not have to
+    /// know where the family goes.
+    fn traced_block(&mut self, t: &Traced<'_>, render: impl FnOnce(&mut Self)) {
+        let head = self.nodes.len();
+        render(self);
+        if t.is_empty() {
+            return;
+        }
+        if head == self.nodes.len() {
+            self.refuse("an annotated node that renders no line");
+            return;
+        }
+        let tail = self.nodes.split_off(head + 1);
+        let saved = self.depth;
+        self.depth = self.nodes[head].depth + 1;
+        self.traceability(t);
+        self.depth = saved;
+        self.nodes.extend(tail);
     }
 
     /// One line at the current depth, in words this module has not been
@@ -1700,6 +1825,32 @@ fn statechart_gap(m: &crate::model::SCXMLModel) -> Option<&'static str> {
     // single word. Neither occurs in this tree — refusing by name is
     // what keeps that "neither occurs" from turning into silent
     // corruption the first time one does.
+    // Each state is written under its parent, so one its parent does not
+    // list among its children would not be written at all.
+    for s in m.states.values() {
+        if let Some(parent) = &s.parent {
+            if !m
+                .states
+                .get(parent)
+                .is_some_and(|p| p.children.contains(&s.id))
+            {
+                return Some("a state its parent does not list as a child");
+            }
+        }
+    }
+    // A history is written under its parent state, for the same reason.
+    if m.history_states
+        .values()
+        .any(|h| !m.states.contains_key(&h.parent))
+    {
+        return Some("a history whose parent is not a state");
+    }
+    // The head's clause list is `(<key>: <value>, ...)`, so a name that
+    // spells the separator or the closing parenthesis cannot be found
+    // again.
+    if m.scxml_name.contains(", ") || m.scxml_name.ends_with(')') {
+        return Some("an <scxml name> the head clause list cannot delimit");
+    }
     for s in m.states.values() {
         if s.initial_children
             .iter()
@@ -1728,10 +1879,16 @@ fn render_statechart(
 
     let mut out = Out::with_deployment(deployment);
     let datamodel = m.datamodel.as_str();
-    let mut clauses = vec![
-        format!("datamodel: {datamodel}"),
-        format!("initial: {}", text(&m.initial)),
-    ];
+    let mut clauses = Vec::new();
+    // The name the author gave the machine (§scxml-3.2 `name`), which is
+    // not the file name the head line leads with — a document may carry
+    // one, the other, or two different ones. Until 2026-09-28 only the
+    // file name reached the page.
+    if !m.scxml_name.is_empty() {
+        clauses.push(format!("name: {}", text(&m.scxml_name)));
+    }
+    clauses.push(format!("datamodel: {datamodel}"));
+    clauses.push(format!("initial: {}", text(&m.initial)));
     if !m.binding.is_empty() {
         clauses.push(format!("binding: {}", text(&m.binding)));
     }
@@ -1799,10 +1956,20 @@ fn render_statechart(
         // States are held in a map, so the order a reviewer reads must
         // come from `document_order` — the field the model keeps
         // precisely because the container lost it.
-        let mut states: Vec<&crate::model::State> = m.states.values().collect();
+        //
+        // ⚠ Only the top level here: each state renders its own
+        // children, indented under it (§scxml-3.3 — a compound state
+        // CONTAINS its children, and which state a transition leaves
+        // depends on it). Until 2026-09-28 every state was written at
+        // the top level, so the page could not say which state was
+        // inside which, and the reader built a flat machine from it — a
+        // round trip that passed because both halves dropped the same
+        // thing.
+        let mut states: Vec<&crate::model::State> =
+            m.states.values().filter(|s| s.parent.is_none()).collect();
         states.sort_by_key(|s| (s.document_order, s.id.clone()));
         for s in states {
-            if let Err(e) = render_scxml_state(s, out) {
+            if let Err(e) = render_scxml_state(s, m, out) {
                 nested = Err(e);
             }
         }
@@ -1812,6 +1979,9 @@ fn render_statechart(
         out.annotate_unplaced();
     });
     nested?;
+    if let Some(gap) = out.refused {
+        return Err(Unsupported::feature("statechart", gap));
+    }
 
     Ok(out.nodes)
 }
@@ -1859,9 +2029,11 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
         for p in &base.params {
             render_param_into(Word::Param, p, out);
         }
-        for id in &base.req {
-            out.line(&format!("req {}", text(&id.to_string())));
-        }
+        out.traceability(&Traced {
+            req: &base.req,
+            provenance: &base.provenance,
+            unresolved: &base.unresolved,
+        });
 
         match inv {
             Invoke::Scxml(i) => {
@@ -2000,6 +2172,15 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
 }
 
 fn render_variable(v: &crate::model::Variable, out: &mut Out<'_>) {
+    let traced = Traced {
+        req: &v.req,
+        provenance: &v.provenance,
+        unresolved: &v.unresolved,
+    };
+    out.traced_block(&traced, |out| render_variable_body(v, out));
+}
+
+fn render_variable_body(v: &crate::model::Variable, out: &mut Out<'_>) {
     let mut line = text(&v.id).into_owned();
     if !v.var_type.is_empty() {
         let _ = write!(line, ": {}", text(&v.var_type));
@@ -2060,7 +2241,11 @@ fn head_inlinable(value: &str) -> bool {
         )
 }
 
-fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), Unsupported> {
+fn render_scxml_state(
+    s: &crate::model::State,
+    m: &crate::model::SCXMLModel,
+    out: &mut Out<'_>,
+) -> Result<(), Unsupported> {
     let keyword = if s.is_final {
         Word::Final
     } else if s.is_parallel {
@@ -2114,9 +2299,11 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), 
         for line in deferred {
             out.line_of(line);
         }
-        for id in &s.req {
-            out.line(&format!("req {}", text(&id.to_string())));
-        }
+        out.traceability(&Traced {
+            req: &s.req,
+            provenance: &s.provenance,
+            unresolved: &s.unresolved,
+        });
         for v in &s.datamodel {
             render_variable(v, out);
         }
@@ -2183,8 +2370,57 @@ fn render_scxml_state(s: &crate::model::State, out: &mut Out<'_>) -> Result<(), 
         if let Some(d) = &s.donedata {
             render_donedata(d, out);
         }
+        // §scxml-3.10: the `<history>` pseudo-states this state holds,
+        // before its states. The model keeps them apart from the states
+        // and in no document order, so they come in id order — the one
+        // order the map gives. Until 2026-09-28 none reached the page: a
+        // transition to `h` was written and `h` itself — its type, its
+        // default and the actions on the way there — was not.
+        for (id, h) in m.history_states.iter().filter(|(_, h)| h.parent == s.id) {
+            render_history(id, h, out);
+        }
+        // The children last, in document order (`children` is it). The
+        // model does not keep how a child interleaved with its parent's
+        // transitions in the source, and neither order changes what the
+        // machine does, so one fixed place is the whole of the rule.
+        for child in &s.children {
+            match m.states.get(child) {
+                Some(c) => {
+                    if let Err(e) = render_scxml_state(c, m, out) {
+                        nested = Err(e);
+                    }
+                }
+                None => out.refuse("a child state the machine does not hold"),
+            }
+        }
     });
     nested
+}
+
+/// `history <id> <shallow|deep> -> <default target>`, and under it the
+/// actions of its default transition (§scxml-3.10.2).
+///
+/// ⚠ `leaf_target` is not written: the parser derives it from the
+/// default target (`resolve_history_targets`), so it is SCE's arithmetic
+/// rather than the author's.
+fn render_history(id: &str, h: &crate::model::HistoryInfo, out: &mut Out<'_>) {
+    // The id and the type sit mid-line, so each must be one word; the
+    // default target runs to the end, where a list of ids may.
+    if !head_inlinable(&text(id)) || !head_inlinable(&text(&h.history_type)) {
+        out.refuse("a history whose id or type is not a single word");
+    }
+    out.line_of(vec![
+        Part::Word(Word::History),
+        Part::Text(text(id).into_owned()),
+        Part::Text(text(&h.history_type).into_owned()),
+        Part::Word(Word::Arrow),
+        Part::Text(text(&h.default_target).into_owned()),
+    ]);
+    out.nested(|out| {
+        for a in &h.default_actions {
+            render_scxml_action(a, out);
+        }
+    });
 }
 
 fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out<'_>) {
@@ -2218,9 +2454,11 @@ fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out<'_>) {
     out.line_of(line);
 
     out.nested(|out| {
-        for id in &t.req {
-            out.line(&format!("req {}", text(&id.to_string())));
-        }
+        out.traceability(&Traced {
+            req: &t.req,
+            provenance: &t.provenance,
+            unresolved: &t.unresolved,
+        });
         for a in &t.actions {
             render_scxml_action(a, out);
         }
@@ -2261,7 +2499,24 @@ fn render_donedata(d: &crate::model::DoneData, out: &mut Out<'_>) {
 /// The field each tag reads is `Action::authored_fields`, measured over
 /// 587 documents; the derived half is deliberately absent, because a
 /// reviewer approving `cond_cpp` would be approving SCE's lowering.
+/// One action, with its traceability as the first lines under its head.
+///
+/// ⚠ An `<onentry>` / `<onexit>` block has no node of its own in the
+/// model: the parser copies the block's `sce:req` and `sce:provenance`
+/// onto every action inside it (`parse_annotated_block`). So a block's
+/// requirement reaches the page here, once per action it covers — which
+/// is what the model says, and until 2026-09-28 it reached the page not
+/// at all, because no action's family was written.
 fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
+    let traced = Traced {
+        req: &a.req,
+        provenance: &a.provenance,
+        unresolved: &a.unresolved,
+    };
+    out.traced_block(&traced, |out| render_scxml_action_body(a, out));
+}
+
+fn render_scxml_action_body(a: &crate::model::Action, out: &mut Out<'_>) {
     match a.action_type.as_str() {
         "assign" => {
             // The common shape is one line with the expression last. An
