@@ -17,6 +17,10 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
 
     testImplementation(kotlin("test"))
+    // The Mesh host core, for the tests that run a generated machine's
+    // `<invoke type="sce:mesh-rpc">` through the router a host actually
+    // registers rather than a stand-in (SCE_MESH.md §mesh-9.5, §mesh-19).
+    testImplementation(project(":sce-kotlin-mesh"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.junit.jupiter)
     // `EcmaScriptSemanticsTest` reads the shared ECMA-262 table that the C++

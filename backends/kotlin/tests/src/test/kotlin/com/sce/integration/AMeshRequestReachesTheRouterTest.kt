@@ -12,8 +12,20 @@
 
 package com.sce.integration
 
+import com.sce.forge.runtime.SceCursor
+import com.sce.generated.envelope.Envelope
+import com.sce.generated.pattern_kind.PatternKind
+import com.sce.generated.payload_codec.PayloadCodec
+import com.sce.generated.rpc_status.RpcStatus
 import com.sce.integration.a_mesh_request_reaches_the_router.AMeshRequestReachesTheRouterState
 import com.sce.integration.a_mesh_request_reaches_the_router.AMeshRequestReachesTheRouterStateMachine
+import com.sce.mesh.Delivery
+import com.sce.mesh.Endpoint
+import com.sce.mesh.Environment
+import com.sce.mesh.PeerConfig
+import com.sce.mesh.Router
+import com.sce.mesh.applyTo
+import com.sce.mesh.register
 import com.sce.runtime.MESH_RPC_INVOKE_TYPE
 import com.sce.runtime.StateMachineEngine
 import com.sce.w3c.W3CTestBase
@@ -106,6 +118,105 @@ class AMeshRequestReachesTheRouterTest {
             )
             sm.tick()
             assertEnded(sm, answered = 0, failed = 1, refused = 0)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // ── The same document through the Kotlin host core itself (sce-kotlin-mesh) ──
+
+    /** A clock that stands still and ids that count. */
+    private class Fixed : Environment {
+        private var ids = 0
+
+        override fun nowMs(): Long = 0
+
+        override fun nowUnixMs(): Long = 1_000_000
+
+        override fun envelopeId(): ByteArray {
+            ids += 1
+            return ByteArray(16) { ids.toByte() }
+        }
+
+        override fun jitterDraw(): Long = 0
+    }
+
+    /** The requester's endpoint, bound to `motor` when [bound], sending into [sent]. */
+    private fun endpoint(bound: Boolean, sent: MutableList<Pair<String, ByteArray>>): Endpoint {
+        val router = Router("brake", 8u, 50)
+        if (bound) {
+            router.addPeer(
+                "motor",
+                PeerConfig(
+                    transport = "wss",
+                    buffer = null,
+                    retry = null,
+                    stampSequence = false,
+                    delivery = Delivery(dedup = true, ordered = false),
+                    responders = listOf("motor"),
+                    deadlineMs = null,
+                ),
+            )
+        }
+        return Endpoint(router, { peer, bytes -> sent += peer to bytes; null }, Fixed())
+    }
+
+    /** Runs the machine into `asking` with [endpoint] serving its Mesh traffic. */
+    private fun startedThrough(endpoint: Endpoint): AMeshRequestReachesTheRouterStateMachine {
+        val sm = AMeshRequestReachesTheRouterStateMachine(W3CTestBase.createEngine())
+        register(sm, endpoint)
+        sm.initialize()
+        sm.tick()
+        return sm
+    }
+
+    /** The request reaches `motor` as an `RpcRequest`, and motor's `Ok` reply ends the invoke with `done.invoke.ask`. */
+    @Test
+    fun aReplyThroughTheHostCoreAnswersTheDocument() {
+        val sent = mutableListOf<Pair<String, ByteArray>>()
+        val endpoint = endpoint(true, sent)
+        val sm = startedThrough(endpoint)
+        try {
+            val (peer, bytes) = sent.single()
+            assertEquals("motor", peer)
+            val request = Envelope.decode(SceCursor(bytes)) ?: error("not an envelope")
+            assertEquals(PatternKind.RPC_REQUEST, request.pattern)
+            assertEquals("service.request.force", request.event_type)
+            assertEquals("""{"force":3,"speed":"3"}""", request.data.decodeToString())
+            // The document's own deadline, on the wall clock.
+            assertEquals(1_000_250uL, request.deadline_unix_ms)
+
+            val reply = Envelope(
+                id = ByteArray(16) { 0xAA.toByte() },
+                source = "motor",
+                event_type = "service.response.force",
+                pattern = PatternKind.RPC_REPLY,
+                datacontenttype = PayloadCodec.JSON,
+                data = "\"ok\"".encodeToByteArray(),
+                invoke_id = request.invoke_id,
+                rpc_status = RpcStatus.OK,
+            ).encodeToByteArray() ?: error("reply did not encode")
+            endpoint.receive("motor", reply)
+            applyTo(sm, endpoint.takeCalls())
+            sm.tick()
+            assertEnded(sm, answered = 1, failed = 0, refused = 0)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * A target the host core has no binding for cannot reach the wire: the
+     * invocation is refused, and the document sees error.execution (SCE_MESH.md
+     * §mesh-9.5's pre-envelope tier).
+     */
+    @Test
+    fun anUnboundTargetThroughTheHostCoreIsErrorExecution() {
+        val sent = mutableListOf<Pair<String, ByteArray>>()
+        val sm = startedThrough(endpoint(false, sent))
+        try {
+            assertTrue(sent.isEmpty(), "nothing reached the wire")
+            assertEnded(sm, answered = 0, failed = 0, refused = 1)
         } finally {
             sm.cleanup()
         }
