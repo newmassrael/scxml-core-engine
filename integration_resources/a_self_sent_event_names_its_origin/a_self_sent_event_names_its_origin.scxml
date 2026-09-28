@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML C.1: an event a session sends to itself names its origin, and a
+  target expression that evaluates to nothing reaches no one.
+
+  C.1 gives `_event.origin` one meaning for every event the SCXML Event I/O
+  Processor delivers — the location the SENDER published, the address a reply
+  goes back to — and a session that sends to itself is such a sender. Measured
+  2026-09-28: Go, Rust and Python delivered self-sent events with an empty
+  origin, and then read an EMPTY target string as "this session" so that W3C
+  test336's `targetexpr="_event.origin"` reply still arrived; the C++ AOT lost
+  the origin of every delayed send. The Interpreter, Kotlin and C11 stamped it.
+  An empty target is unreachable (C.1, `SendHelper::isUnreachableTarget`) on
+  the Interpreter, the C++ AOT and Kotlin, and was "this session" on the other
+  four.
+
+  `immediate`   a self-sent `ping` carries this session's published location
+  `replying`    and a reply to `_event.origin` arrives — test336's shape
+  `delayed`     a delayed self-send carries the same location
+  `blankTarget` `targetexpr` evaluating to '' raises error.communication and
+                delivers nothing. The send and the `settle` that ends the
+                phase are in two `<onentry>` blocks, because the error ends
+                the block it is raised in (§4.9): a `nowhere` that WAS
+                delivered arrives ahead of `settle` and is counted.
+
+    immediateOk 1, replied 1, delayedOk 1, unreachable 1, strayed 0
+    and the run ends in `done`.
+
+  This fixture is the canonical source for all 7 channels — see
+  docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test locations.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="run"
+       name="a_self_sent_event_names_its_origin">
+  <datamodel>
+    <data id="blank" expr="''"/>
+    <data id="immediateOk" expr="0"/>
+    <data id="replied" expr="0"/>
+    <data id="delayedOk" expr="0"/>
+    <data id="unreachable" expr="0"/>
+    <data id="strayed" expr="0"/>
+  </datamodel>
+
+  <state id="run" initial="immediate">
+    <transition event="nowhere">
+      <assign location="strayed" expr="strayed + 1"/>
+    </transition>
+
+    <state id="immediate">
+      <onentry>
+        <send event="ping"/>
+      </onentry>
+      <transition event="ping" target="replying">
+        <if cond="_event.origin === _ioprocessors['scxml'].location">
+          <assign location="immediateOk" expr="1"/>
+        </if>
+        <send event="pong" targetexpr="_event.origin"/>
+      </transition>
+    </state>
+
+    <state id="replying">
+      <transition event="pong" target="delayed">
+        <assign location="replied" expr="1"/>
+      </transition>
+    </state>
+
+    <state id="delayed">
+      <onentry>
+        <send event="later" delay="10ms"/>
+      </onentry>
+      <transition event="later" target="blankTarget">
+        <if cond="_event.origin === _ioprocessors['scxml'].location">
+          <assign location="delayedOk" expr="1"/>
+        </if>
+      </transition>
+    </state>
+
+    <state id="blankTarget">
+      <onentry>
+        <send event="nowhere" targetexpr="blank"/>
+      </onentry>
+      <onentry>
+        <send event="settle"/>
+      </onentry>
+      <transition event="error.communication">
+        <assign location="unreachable" expr="unreachable + 1"/>
+      </transition>
+      <transition event="settle" target="done"/>
+    </state>
+  </state>
+
+  <final id="done"/>
+</scxml>

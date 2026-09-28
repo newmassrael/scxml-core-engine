@@ -1160,6 +1160,8 @@ add_executable(integration_tests
     integration/ABadSendArgumentDiscardsItsMessageAotTest.cpp
     integration/ADelayIsACss2TimeTest.cpp
     integration/ADelayIsACss2TimeAotTest.cpp
+    integration/ASelfSentEventNamesItsOriginTest.cpp
+    integration/ASelfSentEventNamesItsOriginAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
     integration/EventDataArrivesAsSentAotTest.cpp
     integration/XmlDataIsADomTreeTest.cpp
@@ -1709,6 +1711,10 @@ sce_generate_static_integration_test(a_bad_send_param_ends_its_block ${STATIC_IN
 # W3C SCXML 5.10 + 6.2: a <send>'s payload is the data of the event it sends,
 # and a data-less event dequeued before it carries none.
 sce_generate_static_integration_test(a_payload_rides_on_its_own_event ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML C.1: an event a session sends to itself names its origin — now
+# and after a delay — and a target that evaluates to nothing reaches no one.
+sce_generate_static_integration_test(a_self_sent_event_names_its_origin ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.4: an invoked child's replies reach the parent's external queue
 # when sent, ahead of the host's later events, with no clock advanced.

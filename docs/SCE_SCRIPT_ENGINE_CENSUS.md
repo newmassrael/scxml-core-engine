@@ -98,22 +98,22 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 254
+engine-documents 256
 native-prefix-documents 2
-datamodel-variable-init 374
+datamodel-variable-init 384
 transition-guard 232
-assign-action 320
+assign-action 327
 child-invoke-needs-script-engine 52
 log-expr 46
 send-param-expr 49
-send-dynamic-attr 39
+send-dynamic-attr 43
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
 donedata-content 9
 inline-script-action 3
 send-namelist 8
-if-condition 10
+if-condition 12
 elseif-condition 3
 global-script 3
 mesh-rpc-srcexpr 2
@@ -264,11 +264,21 @@ never spelled correctly.
   `assign-action` by six, `send-param-expr` by four, `if-condition` by two
   and `hybrid-invoke` by three — and `child-invoke-needs-script-engine` by
   three, because a candidate that runs an engine is now the same cause a
-  static child is.
+  static child is. Then
+  `integration_resources/a_peer_named_at_run_time_reaches_the_router/` (one
+  engine document: four data items, two assigns and two `targetexpr` sends)
+  and `integration_resources/a_self_sent_event_names_its_origin/` (one engine
+  document: six data items, five assigns, two `<if>`s over `_event.origin` and
+  two `targetexpr` sends) raised `engine-documents` by two,
+  `datamodel-variable-init` by ten, `assign-action` by seven,
+  `send-dynamic-attr` by four and `if-condition` by two. ⚠ The first landed
+  just before the second-to-last entry above was measured on a tree without
+  it, so the ceilings that shipped with that entry were already short on
+  `main` — which is how a ledger ahead of its own tree reads.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
-- **50% of judged documents need an engine** (254 of 508). The remaining
+- **50% of judged documents need an engine** (256 of 510). The remaining
   50% already compile without one, which is what makes "the engine is a
   fallback" a description of the tree rather than an aspiration.
   ⚠ This figure was previously stated as 32%, taken over the 736 walked

@@ -1,0 +1,66 @@
+# Mutation cases for §scxml-C-1 — an event a session sends to itself names its
+# origin, and a target expression that evaluates to nothing reaches no one.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_self_sent_event_names_its_origin.cases`.
+#
+# Measured 2026-09-28: Go, Rust and Python delivered self-sent events with an
+# empty origin and then read an EMPTY target string as "this session", so W3C
+# test336's `targetexpr="_event.origin"` reply still arrived; the C++ AOT lost
+# the origin (and the sendid) of every delayed send on the way to the queue;
+# C11 stamped the origin but still delivered a blank target to itself. The
+# Interpreter is the reference: it creates the sender's target once, before
+# the delay decision, and `SendHelper::isUnreachableTarget` refuses a blank one.
+#
+# The C++ AOT and C11 targets are the TEMPLATES and the engine header the built
+# binaries carry. The Rust, Go and Python halves have no round here (the harness
+# reaches cargo and ctest only); the same fixture holds them in their suites.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_a_self_sent_event_names_its_origin)$'
+mutation_targets sce/src/runtime/ActionExecutorImpl.cpp sce/include/static/StaticExecutionEngine.h tools/codegen/templates/actions/send.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles tests/integration/ASelfSentEventNamesItsOriginTest.cpp tests/integration/ASelfSentEventNamesItsOriginAotTest.cpp backends/c/tests/integration/test_a_self_sent_event_names_its_origin.c
+
+# ── Interpreter: a blank target reaches this session ───────────────
+
+mutation_case "the interpreter delivers a blank target expression to itself" <<'PY'
+edit("sce/src/runtime/ActionExecutorImpl.cpp",
+     "if (!action.getTargetExpr().empty() && SendHelper::isUnreachableTarget(target))",
+     "if (!action.getTargetExpr().empty() && target == \"undefined\")")
+PY
+
+# ── C++ AOT: a delayed send forgets who sent it ────────────────────
+#
+# Two halves, each on its own: the template not handing the origin over, and
+# the engine not putting it back when the wait ends.
+
+mutation_case "the C++ AOT schedules a delayed send without its origin" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     """engine.scheduleEvent({{ event_enum_cpp }}, delayMs, sendId, eventData{% if model.needs_script_engine or model.needs_event_origin %}, sessionId_.value_or(""){% endif %});""",
+     """engine.scheduleEvent({{ event_enum_cpp }}, delayMs, sendId, eventData);""")
+PY
+
+mutation_case "the C++ AOT engine delivers a scheduled event without its origin" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     "raiseExternal(EventWithMetadata(event, eventData, origin, sendId, \"external\",",
+     "raiseExternal(EventWithMetadata(event, eventData, \"\", sendId, \"external\",")
+PY
+
+# ── C11: a blank target reaches this session ───────────────────────
+#
+# Without the check a blank buffer falls to the chain's last arm, which
+# dispatches onto this machine's own external queue — so `nowhere` arrives.
+
+mutation_case "C11 delivers a blank target expression to itself" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """            } else if (_send_target_buf[0] == '\\0' ||
+                       strcmp(_send_target_buf, "undefined") == 0 ||
+                       strcmp(_send_target_buf, "nil") == 0) {
+                /* W3C SCXML C.1 (test496/test521): unreachable target
+                   evaluation result raises error.communication and stops""",
+     """            } else if (strcmp(_send_target_buf, "undefined") == 0 ||
+                       strcmp(_send_target_buf, "nil") == 0) {
+                /* W3C SCXML C.1 (test496/test521): unreachable target
+                   evaluation result raises error.communication and stops""")
+PY

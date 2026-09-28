@@ -518,6 +518,21 @@ must start nothing. `keeper` reports from an eventless transition so every
 backend has seeded it first. Expected: `errors` 2, `started` 2, `paramsOk` 1,
 `namelistOk` 1, ending in `done`.
 
+`a_self_sent_event_names_its_origin` covers W3C §C.1 from the sender's own
+side: an event a session sends to itself carries that session's published
+location as `_event.origin`, now and after a delay, and a reply sent to it
+arrives — W3C test336's shape, which the public suite asks only once. Its last
+phase is the other half of the same clause: a `targetexpr` that evaluates to
+`''` names no session, so it raises `error.communication` and delivers
+nothing. The send and the `settle` that ends that phase sit in two `<onentry>`
+blocks, because the error ends the block it is raised in (§4.9); a `nowhere`
+that WAS delivered arrives ahead of `settle` and is counted as `strayed`.
+Measured 2026-09-28, three engines could only pass test336 by reading an EMPTY
+target as "this session", because their self-sent events carried no origin
+at all — two defects that cancel on the one test that sees them. Expected:
+`immediateOk` 1, `replied` 1, `delayedOk` 1, `unreachable` 1, `strayed` 0,
+ending in `done`.
+
 `invoke_expression_failure_is_reported` covers W3C §6.4.3: an `<invoke>` that
 names its target through an expression must evaluate that expression when the
 element fires, and raise `error.execution` when it cannot. The axis is the
