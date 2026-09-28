@@ -3681,6 +3681,11 @@
           "file": "sce/src/parsing/ActionParser.cpp",
           "symbol": "SCE::ActionParser::parseActionNode",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/parsing/ActionParser.h",
+          "symbol": "appendExecutableContent",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -4013,6 +4018,11 @@
         {
           "file": "sce/include/core/ForeachHelper.h",
           "symbol": "ForeachOutcome",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/parsing/ActionParser.h",
+          "symbol": "appendExecutableContent",
           "kind": "implements"
         }
       ],

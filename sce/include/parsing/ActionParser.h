@@ -104,6 +104,20 @@ private:
                                        std::vector<std::shared_ptr<SCE::IActionNode>> &actions);
 
     /**
+     * @brief Append the action(s) one child of a block of executable content reads as
+     *
+     * The single reading of a block's child, shared by every place that reads
+     * a block — `parseActionsInElement` and the partitions of an `<if>` — so a
+     * nested `<if>` or `<foreach>` cannot be read in one and dropped in the
+     * other (§scxml-4.3, §scxml-4.6). Anything that is not executable content
+     * appends nothing.
+     * @param element The child element
+     * @param actions List of parsed actions (appended to)
+     */
+    void appendExecutableContent(const std::shared_ptr<IXMLElement> &element,
+                                 std::vector<std::shared_ptr<SCE::IActionNode>> &actions);
+
+    /**
      * @brief Handle namespace matching
      * @param nodeName Node name
      * @param searchName Name to search for

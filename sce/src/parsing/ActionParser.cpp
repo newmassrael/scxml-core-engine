@@ -175,37 +175,42 @@ SCE::ActionParser::parseActionsInElement(const std::shared_ptr<IXMLElement> &par
     SCE_LOG_DEBUG("ActionParser: Found {} child elements in {}", children.size(), parentElement->getName());
 
     for (const auto &element : children) {
-        SCE_LOG_DEBUG("ActionParser: Processing child element: '{}'", element->getName());
-
-        // Check action node
-        if (isActionNode(element)) {
-            SCE_LOG_DEBUG("ActionParser: '{}' is recognized as action node", element->getName());
-            auto action = parseActionNode(element);
-            if (action) {
-                SCE_LOG_DEBUG("ActionParser: Successfully parsed action node: '{}'", element->getName());
-                actions.push_back(action);
-            } else {
-                SCE_LOG_ERROR("ActionParser: Failed to parse action node: '{}'", element->getName());
-            }
-        } else {
-            SCE_LOG_DEBUG("ActionParser: '{}' is NOT recognized as action node", element->getName());
-        }
-        // Check external executable action node
-        if (isExternalActionNode(element)) {
-            auto action = parseExternalActionNode(element);
-            if (action) {
-                actions.push_back(action);
-            }
-        }
-        // SCXML elements requiring special processing (if/elseif/else, foreach, etc.)
-        else if (isSpecialExecutableContent(element)) {
-            // Process special elements - recursively parse child elements
-            parseSpecialExecutableContent(element, actions);
-        }
+        appendExecutableContent(element, actions);
     }
 
     SCE_LOG_DEBUG("ActionParser: Parsed {} actions", actions.size());
     return actions;
+}
+
+void SCE::ActionParser::appendExecutableContent(const std::shared_ptr<IXMLElement> &element,
+                                                std::vector<std::shared_ptr<SCE::IActionNode>> &actions) {
+    SCE_LOG_DEBUG("ActionParser: Processing child element: '{}'", element->getName());
+
+    // Check action node
+    if (isActionNode(element)) {
+        SCE_LOG_DEBUG("ActionParser: '{}' is recognized as action node", element->getName());
+        auto action = parseActionNode(element);
+        if (action) {
+            SCE_LOG_DEBUG("ActionParser: Successfully parsed action node: '{}'", element->getName());
+            actions.push_back(action);
+        } else {
+            SCE_LOG_ERROR("ActionParser: Failed to parse action node: '{}'", element->getName());
+        }
+    } else {
+        SCE_LOG_DEBUG("ActionParser: '{}' is NOT recognized as action node", element->getName());
+    }
+    // Check external executable action node
+    if (isExternalActionNode(element)) {
+        auto action = parseExternalActionNode(element);
+        if (action) {
+            actions.push_back(action);
+        }
+    }
+    // SCXML elements requiring special processing (if/elseif/else, foreach, etc.)
+    else if (isSpecialExecutableContent(element)) {
+        // Process special elements - recursively parse child elements
+        parseSpecialExecutableContent(element, actions);
+    }
 }
 
 std::shared_ptr<SCE::IActionNode>
@@ -423,9 +428,14 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
             } else if (scxmlOwn && childName == "else") {
                 currentBranch = &ifAction->addElseBranch();
                 SCE_LOG_DEBUG("    Added else branch");
-            } else if (isActionNode(element)) {
-                auto childAction = parseActionNode(element);
-                if (childAction) {
+            } else {
+                // §scxml-4.3: a partition holds executable content — an <if> or a
+                // <foreach> as much as an <assign> — so it is read as any block
+                // is. Until 2026-09-28 only the simple elements were, and an
+                // <if> or <foreach> nested in a branch was dropped in silence.
+                std::vector<std::shared_ptr<SCE::IActionNode>> parsed;
+                appendExecutableContent(element, parsed);
+                for (const auto &childAction : parsed) {
                     if (currentBranch) {
                         // Add to current elseif/else branch
                         currentBranch->actions.push_back(childAction);
@@ -436,11 +446,7 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
                         ifAction->addIfAction(childAction);
                         SCE_LOG_DEBUG("    Added {} action to main if branch", childName);
                     }
-                } else {
-                    SCE_LOG_WARN("    parseActionNode returned nullptr for '{}'", childName);
                 }
-            } else {
-                SCE_LOG_DEBUG("    Skipping non-action element '{}'", childName);
             }
             childIndex++;
         }
