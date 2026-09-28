@@ -1107,6 +1107,63 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) DeliverToInvocation(invokeID, 
 	return false
 }
 
+// IsInvocationRunning reports whether `#_<invokeid>` names an invocation running
+// now (W3C SCXML 6.4 + C.1) — one whose session has reached its final state has
+// ended, and a send naming it is reported when it is made.
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) IsInvocationRunning(invokeID string) bool {
+	if invokeID == "inv_shadow" {
+		child := p.childInvShadow
+		return child != nil && !child.IsInFinalState()
+	}
+	if invokeID == "inv_sole" {
+		child := p.childInvSole
+		return child != nil && !child.IsInFinalState()
+	}
+	if invokeID == "inv_unmatched" {
+		child := p.childInvUnmatched
+		return child != nil && !child.IsInFinalState()
+	}
+	if invokeID == "inv_namelist" {
+		child := p.childInvNamelist
+		return child != nil && !child.IsInFinalState()
+	}
+	if invokeID == "inv_infinite" {
+		child := p.childInvInfinite
+		return child != nil && !child.IsInFinalState()
+	}
+	return false
+}
+
+// IsChildSessionRunning reports whether a session id names a child of this
+// machine that is running now (W3C SCXML C.1) — the test DeliverToChildSession
+// makes.
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) IsChildSessionRunning(childSessionID string) bool {
+	if childSessionID == "" {
+		return false
+	}
+	if cs, ok := p.activeInvokes["inv_shadow"]; ok && cs.SessionID == childSessionID {
+		child := p.childInvShadow
+		return child != nil && !child.IsInFinalState()
+	}
+	if cs, ok := p.activeInvokes["inv_sole"]; ok && cs.SessionID == childSessionID {
+		child := p.childInvSole
+		return child != nil && !child.IsInFinalState()
+	}
+	if cs, ok := p.activeInvokes["inv_unmatched"]; ok && cs.SessionID == childSessionID {
+		child := p.childInvUnmatched
+		return child != nil && !child.IsInFinalState()
+	}
+	if cs, ok := p.activeInvokes["inv_namelist"]; ok && cs.SessionID == childSessionID {
+		child := p.childInvNamelist
+		return child != nil && !child.IsInFinalState()
+	}
+	if cs, ok := p.activeInvokes["inv_infinite"]; ok && cs.SessionID == childSessionID {
+		child := p.childInvInfinite
+		return child != nil && !child.IsInFinalState()
+	}
+	return false
+}
+
 // DeliverToChildSession delivers an event addressed to a child's published
 // location (W3C SCXML C.1).
 //
@@ -1117,38 +1174,28 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) DeliverToInvocation(invokeID, 
 // normal external path — the routing half of C.1 is what makes the published
 // location a usable target rather than a string that merely compares equal.
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) DeliverToChildSession(childSessionID, eventName, eventData string) bool {
-	if childSessionID == "" {
+	if !p.IsChildSessionRunning(childSessionID) {
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_shadow"]; ok && cs.SessionID == childSessionID {
-		if p.childInvShadow != nil {
-			p.childInvShadow.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childInvShadow.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	if cs, ok := p.activeInvokes["inv_sole"]; ok && cs.SessionID == childSessionID {
-		if p.childInvSole != nil {
-			p.childInvSole.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childInvSole.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	if cs, ok := p.activeInvokes["inv_unmatched"]; ok && cs.SessionID == childSessionID {
-		if p.childInvUnmatched != nil {
-			p.childInvUnmatched.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childInvUnmatched.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	if cs, ok := p.activeInvokes["inv_namelist"]; ok && cs.SessionID == childSessionID {
-		if p.childInvNamelist != nil {
-			p.childInvNamelist.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childInvNamelist.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	if cs, ok := p.activeInvokes["inv_infinite"]; ok && cs.SessionID == childSessionID {
-		if p.childInvInfinite != nil {
-			p.childInvInfinite.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childInvInfinite.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	return false
 }
@@ -1235,6 +1282,12 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) DeliverToParent(eventName, eve
 	}
 	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
 	return true
+}
+
+// HasParentSession answers whether a session invoked this one (W3C SCXML C.1):
+// the queue the invoking parent installs is the link to it.
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) HasParentSession() bool {
+	return p.ParentExternalQueue != nil
 }
 
 // ======================================================================

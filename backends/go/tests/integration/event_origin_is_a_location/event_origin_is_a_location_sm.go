@@ -544,6 +544,31 @@ func (p *EventOriginIsALocationPolicy) DeliverToInvocation(invokeID, eventName, 
 	return false
 }
 
+// IsInvocationRunning reports whether `#_<invokeid>` names an invocation running
+// now (W3C SCXML 6.4 + C.1) — one whose session has reached its final state has
+// ended, and a send naming it is reported when it is made.
+func (p *EventOriginIsALocationPolicy) IsInvocationRunning(invokeID string) bool {
+	if invokeID == "inv_peer" {
+		child := p.childInvPeer
+		return child != nil && !child.IsInFinalState()
+	}
+	return false
+}
+
+// IsChildSessionRunning reports whether a session id names a child of this
+// machine that is running now (W3C SCXML C.1) — the test DeliverToChildSession
+// makes.
+func (p *EventOriginIsALocationPolicy) IsChildSessionRunning(childSessionID string) bool {
+	if childSessionID == "" {
+		return false
+	}
+	if cs, ok := p.activeInvokes["inv_peer"]; ok && cs.SessionID == childSessionID {
+		child := p.childInvPeer
+		return child != nil && !child.IsInFinalState()
+	}
+	return false
+}
+
 // DeliverToChildSession delivers an event addressed to a child's published
 // location (W3C SCXML C.1).
 //
@@ -554,14 +579,12 @@ func (p *EventOriginIsALocationPolicy) DeliverToInvocation(invokeID, eventName, 
 // normal external path — the routing half of C.1 is what makes the published
 // location a usable target rather than a string that merely compares equal.
 func (p *EventOriginIsALocationPolicy) DeliverToChildSession(childSessionID, eventName, eventData string) bool {
-	if childSessionID == "" {
+	if !p.IsChildSessionRunning(childSessionID) {
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_peer"]; ok && cs.SessionID == childSessionID {
-		if p.childInvPeer != nil {
-			p.childInvPeer.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childInvPeer.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	return false
 }
@@ -596,6 +619,12 @@ func (p *EventOriginIsALocationPolicy) DeliverToParent(eventName, eventData stri
 	}
 	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
 	return true
+}
+
+// HasParentSession answers whether a session invoked this one (W3C SCXML C.1):
+// the queue the invoking parent installs is the link to it.
+func (p *EventOriginIsALocationPolicy) HasParentSession() bool {
+	return p.ParentExternalQueue != nil
 }
 
 // ======================================================================
@@ -1031,20 +1060,24 @@ func (p *EventOriginIsALocationPolicy) ExecuteTransitionContent(source EventOrig
 	}
 	} else {
 	// W3C SCXML 6.2: External send
+	// W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+	// the same value written in `target` is, at once or after the delay, by
+	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		// W3C SCXML C.1: a target that decodes to one of our children's
-		// published locations is addressed to that child. Without this the
-		// address a peer was told to answer at routes back into the
-		// sender's own queue, so the location compares equal and still
-		// reaches nobody.
-		addressedChild := sce.SessionIDFromScxmlLocation(sendTarget)
-		if !p.DeliverToChildSession(addressedChild, "reply", eventDataStr) {
-		if sendEvt, sendOk := p.GetEventFromName("reply"); sendOk {
-			meta := sce.NewEventWithMetadata(sendEvt)
-			meta.Metadata = sce.ExternalMetadata("__send_0", p.SessionID)
-			meta.Metadata.Data = eventDataStr
-			engine.RaiseExternalWithMeta(meta)
+		sendEvt, sendHasEvt := p.GetEventFromName("reply")
+		routed := engine.SendToTarget(sendEvt, sendHasEvt, "reply", sendTarget, p.SessionID,
+0, "__send_0", eventDataStr, p.SessionID)
+		if routed == sce.TargetNotSupported {
+			errEvt := sce.NewPlatformError(EventOriginIsALocationEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt.Metadata.SendID = "__send_0"
+			engine.Raise(errEvt)
+			return // W3C SCXML 4.9: the error ends the block
 		}
+		if routed == sce.TargetNotReachable {
+			errEvt := sce.NewPlatformError(EventOriginIsALocationEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt.Metadata.SendID = "__send_0"
+			engine.Raise(errEvt)
+			return // W3C SCXML 4.9: the error ends the block
 		}
 	}
 	} // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)

@@ -573,40 +573,6 @@ impl EventOriginIsALocationPolicy {
             }
         }
     }
-
-    // W3C SCXML C.1: deliver an event addressed to a child's published
-    // location.
-    //
-    // The parent mints `parentSession.invokeId` for each child and that id is
-    // what the child's `_ioprocessors` entry names, so a `<send>` whose target
-    // decodes to one of them is addressed to that child rather than to this
-    // machine. A false return means the address names no live child of ours
-    // and the event takes the normal external path — the routing half of C.1
-    // is what makes the published location a usable target rather than a
-    // string that merely compares equal.
-    fn deliver_to_child_session(
-        &mut self,
-        child_session_id: &str,
-        event_name: &str,
-        event_data: &str,
-    ) -> bool {
-        if child_session_id.is_empty() {
-            return false;
-        }
-        {
-            let addressed = self
-                .active_invokes
-                .get("inv_peer")
-                .map_or(false, |cs| cs.session_id == child_session_id);
-            if addressed {
-                if let Some(ref mut child) = self.child_inv_peer {
-                    child.raise_external_by_name(event_name, event_data);
-                    return true;
-                }
-            }
-        }
-        false
-    }
 }
 
 // ======================================================================
@@ -1172,41 +1138,44 @@ impl StatePolicy for EventOriginIsALocationPolicy {
                                                 }
                                             }
                                         } else {
-                                            // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
-                                            if _rt == "#_internal" {
-                                                {
-                                                    let mut meta =
-                                                        sce_rust_runtime::EventWithMetadata::new(
-                                                            EventOriginIsALocationEvent::Reply,
-                                                        );
-                                                    meta.set_event_data(event_data);
-                                                    engine.raise(meta);
-                                                }
-                                            } else {
-                                                {
-                                                    // W3C SCXML C.1: a target that decodes to one of our children's
-                                                    // published locations is addressed to that child. Without this the
-                                                    // address a peer was told to answer at routes back into the
-                                                    // sender's own queue, so the location compares equal and still
-                                                    // reaches nobody.
-                                                    let __sce_addressed_child =
-                sce_rust_runtime::helpers::io_processors::session_id_from_scxml_location(&_rt);
-                                                    if !self.deliver_to_child_session(
-                                                        &__sce_addressed_child,
+                                            // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+                                            // the same value written in `target` is, at once or after the delay, by
+                                            // the table `helpers::send::classify_target` holds (C++
+                                            // `SendHelper::classifyTarget`).
+                                            {
+                                                let __sce_routed =
+                                                    sce_rust_runtime::Engine::send_to_target(
+                                                        self,
+                                                        engine,
+                                                        Some(EventOriginIsALocationEvent::Reply),
                                                         "reply",
+                                                        _rt,
+                                                        &::sce_rust_runtime::sce_string_from_str(
+                                                            self.session_id
+                                                                .as_deref()
+                                                                .unwrap_or(""),
+                                                        ),
+                                                        None,
+                                                        &send_id,
                                                         &event_data,
-                                                    ) {
-                                                        let __sce_external_event = Some(
-                                                            EventOriginIsALocationEvent::Reply,
-                                                        );
-                                                        if let Some(evt) = __sce_external_event {
-                                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
-                                                            meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::sce_string_from_str(self.session_id.as_deref().unwrap_or("")));
-                                                            meta.set_event_data(event_data);
-                                                            engine.raise_external_with_meta(meta);
-                                                        }
-                                                    }
-                                                }
+                                                        &::sce_rust_runtime::sce_string_from_str(
+                                                            self.session_id
+                                                                .as_deref()
+                                                                .unwrap_or(""),
+                                                        ),
+                                                    );
+                                                if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(EventOriginIsALocationEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+            err_meta.metadata.send_id = send_id.clone();
+            engine.raise(err_meta);
+            break 'action_block;  // W3C SCXML 4.9: the error ends the block
+        }
+                                                if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(EventOriginIsALocationEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+            err_meta.metadata.send_id = send_id.clone();
+            engine.raise(err_meta);
+            break 'action_block;  // W3C SCXML 4.9: the error ends the block
+        }
                                             }
                                         } // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
 
@@ -1255,6 +1224,68 @@ impl StatePolicy for EventOriginIsALocationPolicy {
         false
     }
 
+    // W3C SCXML 6.4 + C.1: whether `#_<invokeid>` names an invocation running
+    // now — one whose session has reached its final state has ended.
+    fn is_invocation_running(&self, invoke_id: &str) -> bool {
+        if invoke_id == "inv_peer" {
+            if let Some(ref child) = self.child_inv_peer {
+                if !child.is_in_final_state() {
+                    return true;
+                }
+            }
+            return false;
+        }
+        false
+    }
+
+    // W3C SCXML C.1: deliver an event addressed to a child's published
+    // location. The parent mints each child's session id, and that id is what
+    // the child's `_ioprocessors` entry names, so a `<send>` whose target
+    // decodes to one of them is addressed to that child rather than to this
+    // machine — the routing half of C.1, which makes the published location a
+    // usable target rather than a string that merely compares equal.
+    fn deliver_to_child_session(
+        &mut self,
+        child_session_id: &str,
+        event_name: &str,
+        event_data: &str,
+    ) -> bool {
+        if !self.is_child_session_running(child_session_id) {
+            return false;
+        }
+        if self
+            .active_invokes
+            .get("inv_peer")
+            .map_or(false, |cs| cs.session_id == child_session_id)
+        {
+            if let Some(ref mut child) = self.child_inv_peer {
+                child.raise_external_by_name(event_name, event_data);
+                return true;
+            }
+        }
+        false
+    }
+
+    // W3C SCXML C.1: whether a session id names a child of this machine that
+    // is running now — the test `deliver_to_child_session` makes.
+    fn is_child_session_running(&self, child_session_id: &str) -> bool {
+        if child_session_id.is_empty() {
+            return false;
+        }
+        if self
+            .active_invokes
+            .get("inv_peer")
+            .map_or(false, |cs| cs.session_id == child_session_id)
+        {
+            if let Some(ref child) = self.child_inv_peer {
+                if !child.is_in_final_state() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_parent">` whose wait is
     // over, with the payload an immediate one carries. It waited in this
     // machine's own queue, so `<cancel>` reached it and a child that ended
@@ -1267,6 +1298,12 @@ impl StatePolicy for EventOriginIsALocationPolicy {
             }
         }
         false
+    }
+
+    // W3C SCXML C.1: whether a session invoked this one — the queue the
+    // invoking parent installs is the link to it.
+    fn has_parent_session(&self) -> bool {
+        self.parent_external_queue.is_some()
     }
 
     // W3C SCXML 6.4: Tick child state machines

@@ -455,7 +455,8 @@ class Test332StateMachine(
             // so a member path lands. A location that cannot take the id is an
             // argument that cannot be evaluated (W3C SCXML 5.9.2).
             if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), "__send_0", "<send>")) return@send true
-            // W3C SCXML 6.2 (test194): Invalid target raises error.execution
+            // W3C SCXML 6.2.4 (test194): a target this processor cannot address
+            // — `Action::target_unsupported`, decided once at build time.
             raisePlatformError(Test332Event.Error.Execution, "<send target='!invalid'> is not a target this processor can address", "__send_0")
             true  // W3C SCXML 5.10: discarded; the block stops below
             }) {

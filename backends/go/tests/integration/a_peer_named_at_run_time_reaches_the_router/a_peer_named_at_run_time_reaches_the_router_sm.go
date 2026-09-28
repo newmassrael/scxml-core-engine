@@ -504,6 +504,12 @@ func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) DeliverToParent(eventName, e
 	return true
 }
 
+// HasParentSession answers whether a session invoked this one (W3C SCXML C.1):
+// the queue the invoking parent installs is the link to it.
+func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) HasParentSession() bool {
+	return p.ParentExternalQueue != nil
+}
+
 // ======================================================================
 // StatePolicy interface implementation
 // ======================================================================
@@ -793,12 +799,24 @@ func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) ExecuteEntryActions(state AP
 	}
 	} else {
 	// W3C SCXML 6.2: External send
+	// W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+	// the same value written in `target` is, at once or after the delay, by
+	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		if sendEvt, sendOk := p.GetEventFromName("ping"); sendOk {
-			meta := sce.NewEventWithMetadata(sendEvt)
-			meta.Metadata = sce.ExternalMetadata("__send_0", p.SessionID)
-			meta.Metadata.Data = eventDataStr
-			engine.RaiseExternalWithMeta(meta)
+		sendEvt, sendHasEvt := p.GetEventFromName("ping")
+		routed := engine.SendToTarget(sendEvt, sendHasEvt, "ping", sendTarget, p.SessionID,
+0, "__send_0", eventDataStr, p.SessionID)
+		if routed == sce.TargetNotSupported {
+			errEvt := sce.NewPlatformError(APeerNamedAtRunTimeReachesTheRouterEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt.Metadata.SendID = "__send_0"
+			engine.Raise(errEvt)
+			return // W3C SCXML 4.9: the error ends the block
+		}
+		if routed == sce.TargetNotReachable {
+			errEvt := sce.NewPlatformError(APeerNamedAtRunTimeReachesTheRouterEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt.Metadata.SendID = "__send_0"
+			engine.Raise(errEvt)
+			return // W3C SCXML 4.9: the error ends the block
 		}
 	}
 	} // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
@@ -886,12 +904,24 @@ func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) ExecuteEntryActions(state AP
 	}
 	} else {
 	// W3C SCXML 6.2: External send
+	// W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+	// the same value written in `target` is, at once or after the delay, by
+	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		if sendEvt, sendOk := p.GetEventFromName("loopback"); sendOk {
-			meta := sce.NewEventWithMetadata(sendEvt)
-			meta.Metadata = sce.ExternalMetadata("__send_1", p.SessionID)
-			meta.Metadata.Data = eventDataStr
-			engine.RaiseExternalWithMeta(meta)
+		sendEvt, sendHasEvt := p.GetEventFromName("loopback")
+		routed := engine.SendToTarget(sendEvt, sendHasEvt, "loopback", sendTarget, p.SessionID,
+0, "__send_1", eventDataStr, p.SessionID)
+		if routed == sce.TargetNotSupported {
+			errEvt := sce.NewPlatformError(APeerNamedAtRunTimeReachesTheRouterEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt.Metadata.SendID = "__send_1"
+			engine.Raise(errEvt)
+			return // W3C SCXML 4.9: the error ends the block
+		}
+		if routed == sce.TargetNotReachable {
+			errEvt := sce.NewPlatformError(APeerNamedAtRunTimeReachesTheRouterEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt.Metadata.SendID = "__send_1"
+			engine.Raise(errEvt)
+			return // W3C SCXML 4.9: the error ends the block
 		}
 	}
 	} // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)

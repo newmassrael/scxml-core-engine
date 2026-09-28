@@ -790,33 +790,42 @@ impl StatePolicy for Test190Policy {
                                         }
                                     }
                                 } else {
-                                    // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
-                                    if _rt == "#_internal" {
+                                    // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+                                    // the same value written in `target` is, at once or after the delay, by
+                                    // the table `helpers::send::classify_target` holds (C++
+                                    // `SendHelper::classifyTarget`).
+                                    {
+                                        let __sce_routed = sce_rust_runtime::Engine::send_to_target(
+                                            self,
+                                            engine,
+                                            Some(Test190Event::Event2),
+                                            "event2",
+                                            _rt,
+                                            &::sce_rust_runtime::sce_string_from_str(
+                                                self.session_id.as_deref().unwrap_or(""),
+                                            ),
+                                            None,
+                                            &send_id,
+                                            &event_data,
+                                            &::sce_rust_runtime::sce_string_from_str(
+                                                self.session_id.as_deref().unwrap_or(""),
+                                            ),
+                                        );
+                                        if __sce_routed
+                                            == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                                Test190Event::Event2,
-                                            );
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test190Event::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            err_meta.metadata.send_id = send_id.clone();
+                                            engine.raise(err_meta);
+                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         }
-                                    } else {
+                                        if __sce_routed
+                                            == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let __sce_external_event = Some(Test190Event::Event2);
-                                            if let Some(evt) = __sce_external_event {
-                                                let mut meta =
-                                                    sce_rust_runtime::EventWithMetadata::new(evt);
-                                                meta.metadata =
-                                                    sce_rust_runtime::EventMetadata::external(
-                                                        send_id.clone(),
-                                                        ::sce_rust_runtime::sce_string_from_str(
-                                                            self.session_id
-                                                                .as_deref()
-                                                                .unwrap_or(""),
-                                                        ),
-                                                    );
-                                                meta.set_event_data(event_data);
-                                                engine.raise_external_with_meta(meta);
-                                            }
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test190Event::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            err_meta.metadata.send_id = send_id.clone();
+                                            engine.raise(err_meta);
+                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         }
                                     }
                                 } // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
@@ -1033,5 +1042,11 @@ impl StatePolicy for Test190Policy {
             }
         }
         false
+    }
+
+    // W3C SCXML C.1: whether a session invoked this one — the queue the
+    // invoking parent installs is the link to it.
+    fn has_parent_session(&self) -> bool {
+        self.parent_external_queue.is_some()
     }
 }

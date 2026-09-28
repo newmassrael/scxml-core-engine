@@ -638,6 +638,39 @@ func (p *DonedataLocalInvokePolicy) DeliverToInvocation(invokeID, eventName, eve
 	return false
 }
 
+// IsInvocationRunning reports whether `#_<invokeid>` names an invocation running
+// now (W3C SCXML 6.4 + C.1) — one whose session has reached its final state has
+// ended, and a send naming it is reported when it is made.
+func (p *DonedataLocalInvokePolicy) IsInvocationRunning(invokeID string) bool {
+	if invokeID == "inv_param" {
+		child := p.childInvParam
+		return child != nil && !child.IsInFinalState()
+	}
+	if invokeID == "inv_content" {
+		child := p.childInvContent
+		return child != nil && !child.IsInFinalState()
+	}
+	return false
+}
+
+// IsChildSessionRunning reports whether a session id names a child of this
+// machine that is running now (W3C SCXML C.1) — the test DeliverToChildSession
+// makes.
+func (p *DonedataLocalInvokePolicy) IsChildSessionRunning(childSessionID string) bool {
+	if childSessionID == "" {
+		return false
+	}
+	if cs, ok := p.activeInvokes["inv_param"]; ok && cs.SessionID == childSessionID {
+		child := p.childInvParam
+		return child != nil && !child.IsInFinalState()
+	}
+	if cs, ok := p.activeInvokes["inv_content"]; ok && cs.SessionID == childSessionID {
+		child := p.childInvContent
+		return child != nil && !child.IsInFinalState()
+	}
+	return false
+}
+
 // DeliverToChildSession delivers an event addressed to a child's published
 // location (W3C SCXML C.1).
 //
@@ -648,20 +681,16 @@ func (p *DonedataLocalInvokePolicy) DeliverToInvocation(invokeID, eventName, eve
 // normal external path — the routing half of C.1 is what makes the published
 // location a usable target rather than a string that merely compares equal.
 func (p *DonedataLocalInvokePolicy) DeliverToChildSession(childSessionID, eventName, eventData string) bool {
-	if childSessionID == "" {
+	if !p.IsChildSessionRunning(childSessionID) {
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_param"]; ok && cs.SessionID == childSessionID {
-		if p.childInvParam != nil {
-			p.childInvParam.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childInvParam.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	if cs, ok := p.activeInvokes["inv_content"]; ok && cs.SessionID == childSessionID {
-		if p.childInvContent != nil {
-			p.childInvContent.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childInvContent.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	return false
 }
@@ -709,6 +738,12 @@ func (p *DonedataLocalInvokePolicy) DeliverToParent(eventName, eventData string)
 	}
 	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
 	return true
+}
+
+// HasParentSession answers whether a session invoked this one (W3C SCXML C.1):
+// the queue the invoking parent installs is the link to it.
+func (p *DonedataLocalInvokePolicy) HasParentSession() bool {
+	return p.ParentExternalQueue != nil
 }
 
 // ======================================================================

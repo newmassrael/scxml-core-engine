@@ -890,4 +890,10 @@ impl StatePolicy for Test534Policy {
         }
         false
     }
+
+    // W3C SCXML C.1: whether a session invoked this one — the queue the
+    // invoking parent installs is the link to it.
+    fn has_parent_session(&self) -> bool {
+        self.parent_external_queue.is_some()
+    }
 }

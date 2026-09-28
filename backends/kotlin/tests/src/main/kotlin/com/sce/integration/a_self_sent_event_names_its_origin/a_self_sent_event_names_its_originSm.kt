@@ -658,22 +658,28 @@ class ASelfSentEventNamesItsOriginStateMachine(
                 raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_3")
             }
             } else {
-            // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
-            if (_rt == "#_internal") {
-                raiseInternal(ASelfSentEventNamesItsOriginEvent.Nowhere, EventMetadata.internal(sendData))
-            } else if (_rt == "#_parent") {
-                onSendToParent?.invoke("nowhere", sendData)
-            } else if (deliverToChildSession(
-                    com.sce.runtime.IoProcessors.sessionIdFromScxmlLocation(_rt),
+            // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is
+            // routed as the same value written in `target` is, at once or after
+            // the delay, by the table SendHelper.classifyTarget holds (C++
+            // `SendHelper::classifyTarget`).
+            when (sendToTarget(
+                _rt,
+ASelfSentEventNamesItsOriginEvent.Nowhere,
 "nowhere",
-                    sendData)) {
-                // W3C SCXML C.1: the target decoded to one of our children's
-                // published locations, so it is addressed to that child.
-                // Without this arm the address a peer was told to answer at
-                // routes back into the sender's own queue, so the location
-                // compares equal and still reaches nobody.
-            } else {
-                send(ASelfSentEventNamesItsOriginEvent.Nowhere, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
+                sendData,
+0L,
+                "__send_3",
+                ASelfSentEventNamesItsOriginEvent.Error.Communication,
+            )) {
+                com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
+                    raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_3")
+                    return@send true
+                }
+                com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
+                    raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_3")
+                    return@send true
+                }
+                com.sce.runtime.TargetSendOutcome.SENT -> {}
             }
             } // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
             false
@@ -882,22 +888,28 @@ class ASelfSentEventNamesItsOriginStateMachine(
                 raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_0")
             }
             } else {
-            // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
-            if (_rt == "#_internal") {
-                raiseInternal(ASelfSentEventNamesItsOriginEvent.Pong, EventMetadata.internal(sendData))
-            } else if (_rt == "#_parent") {
-                onSendToParent?.invoke("pong", sendData)
-            } else if (deliverToChildSession(
-                    com.sce.runtime.IoProcessors.sessionIdFromScxmlLocation(_rt),
+            // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is
+            // routed as the same value written in `target` is, at once or after
+            // the delay, by the table SendHelper.classifyTarget holds (C++
+            // `SendHelper::classifyTarget`).
+            when (sendToTarget(
+                _rt,
+ASelfSentEventNamesItsOriginEvent.Pong,
 "pong",
-                    sendData)) {
-                // W3C SCXML C.1: the target decoded to one of our children's
-                // published locations, so it is addressed to that child.
-                // Without this arm the address a peer was told to answer at
-                // routes back into the sender's own queue, so the location
-                // compares equal and still reaches nobody.
-            } else {
-                send(ASelfSentEventNamesItsOriginEvent.Pong, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+                sendData,
+0L,
+                "__send_0",
+                ASelfSentEventNamesItsOriginEvent.Error.Communication,
+            )) {
+                com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
+                    raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_0")
+                    return@send true
+                }
+                com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
+                    raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_0")
+                    return@send true
+                }
+                com.sce.runtime.TargetSendOutcome.SENT -> {}
             }
             } // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
             false

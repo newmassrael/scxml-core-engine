@@ -517,6 +517,12 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) DeliverToParent(eventName, ev
 	return true
 }
 
+// HasParentSession answers whether a session invoked this one (W3C SCXML C.1):
+// the queue the invoking parent installs is the link to it.
+func (p *ABadSendArgumentDiscardsItsMessagePolicy) HasParentSession() bool {
+	return p.ParentExternalQueue != nil
+}
+
 // ======================================================================
 // StatePolicy interface implementation
 // ======================================================================
@@ -917,12 +923,24 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	}
 	} else {
 	// W3C SCXML 6.2: External send
+	// W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+	// the same value written in `target` is, at once or after the delay, by
+	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		if sendEvt, sendOk := p.GetEventFromName("sent"); sendOk {
-			meta := sce.NewEventWithMetadata(sendEvt)
-			meta.Metadata = sce.ExternalMetadata("__send_2", p.SessionID)
-			meta.Metadata.Data = eventDataStr
-			engine.RaiseExternalWithMeta(meta)
+		sendEvt, sendHasEvt := p.GetEventFromName("sent")
+		routed := engine.SendToTarget(sendEvt, sendHasEvt, "sent", sendTarget, p.SessionID,
+0, "__send_2", eventDataStr, p.SessionID)
+		if routed == sce.TargetNotSupported {
+			errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt.Metadata.SendID = "__send_2"
+			engine.Raise(errEvt)
+			return // W3C SCXML 4.9: the error ends the block
+		}
+		if routed == sce.TargetNotReachable {
+			errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt.Metadata.SendID = "__send_2"
+			engine.Raise(errEvt)
+			return // W3C SCXML 4.9: the error ends the block
 		}
 	}
 	} // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)

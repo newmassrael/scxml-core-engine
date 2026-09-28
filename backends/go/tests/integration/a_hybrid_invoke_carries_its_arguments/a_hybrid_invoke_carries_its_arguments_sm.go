@@ -1334,6 +1334,25 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) DeliverToInvocation(invokeID, e
 	return false
 }
 
+// IsInvocationRunning reports whether `#_<invokeid>` names an invocation running
+// now (W3C SCXML 6.4 + C.1) — one whose session has reached its final state has
+// ended, and a send naming it is reported when it is made.
+func (p *AHybridInvokeCarriesItsArgumentsPolicy) IsInvocationRunning(invokeID string) bool {
+	if invokeID == "_invoke_0" {
+		child := p.childInvoke0
+		return child != nil && !child.IsInFinalState()
+	}
+	if invokeID == "_invoke_1" {
+		child := p.childInvoke1
+		return child != nil && !child.IsInFinalState()
+	}
+	if invokeID == "_invoke_2" {
+		child := p.childInvoke2
+		return child != nil && !child.IsInFinalState()
+	}
+	return false
+}
+
 
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
@@ -1430,6 +1449,12 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) DeliverToParent(eventName, even
 	}
 	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
 	return true
+}
+
+// HasParentSession answers whether a session invoked this one (W3C SCXML C.1):
+// the queue the invoking parent installs is the link to it.
+func (p *AHybridInvokeCarriesItsArgumentsPolicy) HasParentSession() bool {
+	return p.ParentExternalQueue != nil
 }
 
 // ======================================================================

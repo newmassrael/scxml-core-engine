@@ -585,40 +585,6 @@ impl Test338Policy {
             }
         }
     }
-
-    // W3C SCXML C.1: deliver an event addressed to a child's published
-    // location.
-    //
-    // The parent mints `parentSession.invokeId` for each child and that id is
-    // what the child's `_ioprocessors` entry names, so a `<send>` whose target
-    // decodes to one of them is addressed to that child rather than to this
-    // machine. A false return means the address names no live child of ours
-    // and the event takes the normal external path — the routing half of C.1
-    // is what makes the published location a usable target rather than a
-    // string that merely compares equal.
-    fn deliver_to_child_session(
-        &mut self,
-        child_session_id: &str,
-        event_name: &str,
-        event_data: &str,
-    ) -> bool {
-        if child_session_id.is_empty() {
-            return false;
-        }
-        {
-            let addressed = self
-                .active_invokes
-                .get("_invoke_0")
-                .map_or(false, |cs| cs.session_id == child_session_id);
-            if addressed {
-                if let Some(ref mut child) = self.child_invoke_0 {
-                    child.raise_external_by_name(event_name, event_data);
-                    return true;
-                }
-            }
-        }
-        false
-    }
 }
 
 // ======================================================================
@@ -1164,6 +1130,68 @@ impl StatePolicy for Test338Policy {
         false
     }
 
+    // W3C SCXML 6.4 + C.1: whether `#_<invokeid>` names an invocation running
+    // now — one whose session has reached its final state has ended.
+    fn is_invocation_running(&self, invoke_id: &str) -> bool {
+        if invoke_id == "_invoke_0" {
+            if let Some(ref child) = self.child_invoke_0 {
+                if !child.is_in_final_state() {
+                    return true;
+                }
+            }
+            return false;
+        }
+        false
+    }
+
+    // W3C SCXML C.1: deliver an event addressed to a child's published
+    // location. The parent mints each child's session id, and that id is what
+    // the child's `_ioprocessors` entry names, so a `<send>` whose target
+    // decodes to one of them is addressed to that child rather than to this
+    // machine — the routing half of C.1, which makes the published location a
+    // usable target rather than a string that merely compares equal.
+    fn deliver_to_child_session(
+        &mut self,
+        child_session_id: &str,
+        event_name: &str,
+        event_data: &str,
+    ) -> bool {
+        if !self.is_child_session_running(child_session_id) {
+            return false;
+        }
+        if self
+            .active_invokes
+            .get("_invoke_0")
+            .map_or(false, |cs| cs.session_id == child_session_id)
+        {
+            if let Some(ref mut child) = self.child_invoke_0 {
+                child.raise_external_by_name(event_name, event_data);
+                return true;
+            }
+        }
+        false
+    }
+
+    // W3C SCXML C.1: whether a session id names a child of this machine that
+    // is running now — the test `deliver_to_child_session` makes.
+    fn is_child_session_running(&self, child_session_id: &str) -> bool {
+        if child_session_id.is_empty() {
+            return false;
+        }
+        if self
+            .active_invokes
+            .get("_invoke_0")
+            .map_or(false, |cs| cs.session_id == child_session_id)
+        {
+            if let Some(ref child) = self.child_invoke_0 {
+                if !child.is_in_final_state() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_parent">` whose wait is
     // over, with the payload an immediate one carries. It waited in this
     // machine's own queue, so `<cancel>` reached it and a child that ended
@@ -1176,6 +1204,12 @@ impl StatePolicy for Test338Policy {
             }
         }
         false
+    }
+
+    // W3C SCXML C.1: whether a session invoked this one — the queue the
+    // invoking parent installs is the link to it.
+    fn has_parent_session(&self) -> bool {
+        self.parent_external_queue.is_some()
     }
 
     // W3C SCXML 6.4: Tick child state machines

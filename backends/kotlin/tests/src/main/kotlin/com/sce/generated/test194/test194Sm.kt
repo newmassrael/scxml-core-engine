@@ -147,7 +147,8 @@ class Test194StateMachine(
 
 
             if (run send@{
-            // W3C SCXML 6.2 (test194): Invalid target raises error.execution
+            // W3C SCXML 6.2.4 (test194): a target this processor cannot address
+            // — `Action::target_unsupported`, decided once at build time.
             raisePlatformError(Test194Event.Error.Execution, "<send target='!invalid'> is not a target this processor can address", "__send_0")
             true  // W3C SCXML 5.10: discarded; the block stops below
             }) {

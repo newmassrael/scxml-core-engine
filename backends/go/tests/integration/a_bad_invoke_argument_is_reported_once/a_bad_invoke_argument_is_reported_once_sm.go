@@ -959,6 +959,47 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) DeliverToInvocation(invokeID, e
 	return false
 }
 
+// IsInvocationRunning reports whether `#_<invokeid>` names an invocation running
+// now (W3C SCXML 6.4 + C.1) — one whose session has reached its final state has
+// ended, and a send naming it is reported when it is made.
+func (p *ABadInvokeArgumentIsReportedOncePolicy) IsInvocationRunning(invokeID string) bool {
+	if invokeID == "inv1" {
+		child := p.childInv1
+		return child != nil && !child.IsInFinalState()
+	}
+	if invokeID == "inv2" {
+		child := p.childInv2
+		return child != nil && !child.IsInFinalState()
+	}
+	if invokeID == "inv3" {
+		child := p.childInv3
+		return child != nil && !child.IsInFinalState()
+	}
+	return false
+}
+
+// IsChildSessionRunning reports whether a session id names a child of this
+// machine that is running now (W3C SCXML C.1) — the test DeliverToChildSession
+// makes.
+func (p *ABadInvokeArgumentIsReportedOncePolicy) IsChildSessionRunning(childSessionID string) bool {
+	if childSessionID == "" {
+		return false
+	}
+	if cs, ok := p.activeInvokes["inv1"]; ok && cs.SessionID == childSessionID {
+		child := p.childInv1
+		return child != nil && !child.IsInFinalState()
+	}
+	if cs, ok := p.activeInvokes["inv2"]; ok && cs.SessionID == childSessionID {
+		child := p.childInv2
+		return child != nil && !child.IsInFinalState()
+	}
+	if cs, ok := p.activeInvokes["inv3"]; ok && cs.SessionID == childSessionID {
+		child := p.childInv3
+		return child != nil && !child.IsInFinalState()
+	}
+	return false
+}
+
 // DeliverToChildSession delivers an event addressed to a child's published
 // location (W3C SCXML C.1).
 //
@@ -969,26 +1010,20 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) DeliverToInvocation(invokeID, e
 // normal external path — the routing half of C.1 is what makes the published
 // location a usable target rather than a string that merely compares equal.
 func (p *ABadInvokeArgumentIsReportedOncePolicy) DeliverToChildSession(childSessionID, eventName, eventData string) bool {
-	if childSessionID == "" {
+	if !p.IsChildSessionRunning(childSessionID) {
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv1"]; ok && cs.SessionID == childSessionID {
-		if p.childInv1 != nil {
-			p.childInv1.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childInv1.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	if cs, ok := p.activeInvokes["inv2"]; ok && cs.SessionID == childSessionID {
-		if p.childInv2 != nil {
-			p.childInv2.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childInv2.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	if cs, ok := p.activeInvokes["inv3"]; ok && cs.SessionID == childSessionID {
-		if p.childInv3 != nil {
-			p.childInv3.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childInv3.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	return false
 }
@@ -1049,6 +1084,12 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) DeliverToParent(eventName, even
 	}
 	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
 	return true
+}
+
+// HasParentSession answers whether a session invoked this one (W3C SCXML C.1):
+// the queue the invoking parent installs is the link to it.
+func (p *ABadInvokeArgumentIsReportedOncePolicy) HasParentSession() bool {
+	return p.ParentExternalQueue != nil
 }
 
 // ======================================================================

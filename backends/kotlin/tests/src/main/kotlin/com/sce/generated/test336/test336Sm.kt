@@ -520,22 +520,28 @@ class Test336StateMachine(
                 return@send true
             }
             val sendData = ""
-            // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
-            if (_rt == "#_internal") {
-                raiseInternal(Test336Event.Bar, EventMetadata.internal(sendData))
-            } else if (_rt == "#_parent") {
-                onSendToParent?.invoke("bar", sendData)
-            } else if (deliverToChildSession(
-                    com.sce.runtime.IoProcessors.sessionIdFromScxmlLocation(_rt),
+            // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is
+            // routed as the same value written in `target` is, at once or after
+            // the delay, by the table SendHelper.classifyTarget holds (C++
+            // `SendHelper::classifyTarget`).
+            when (sendToTarget(
+                _rt,
+Test336Event.Bar,
 "bar",
-                    sendData)) {
-                // W3C SCXML C.1: the target decoded to one of our children's
-                // published locations, so it is addressed to that child.
-                // Without this arm the address a peer was told to answer at
-                // routes back into the sender's own queue, so the location
-                // compares equal and still reaches nobody.
-            } else {
-                send(Test336Event.Bar, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+                sendData,
+0L,
+                "__send_0",
+                Test336Event.Error.Communication,
+            )) {
+                com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
+                    raisePlatformError(Test336Event.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_0")
+                    return@send true
+                }
+                com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
+                    raisePlatformError(Test336Event.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_0")
+                    return@send true
+                }
+                com.sce.runtime.TargetSendOutcome.SENT -> {}
             }
             false
             }) {

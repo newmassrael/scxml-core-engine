@@ -462,6 +462,13 @@ func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) DeliverToInvocation(invo
 	return false
 }
 
+// IsInvocationRunning reports whether `#_<invokeid>` names an invocation running
+// now (W3C SCXML 6.4 + C.1) — one whose session has reached its final state has
+// ended, and a send naming it is reported when it is made.
+func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) IsInvocationRunning(invokeID string) bool {
+	return false
+}
+
 
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
@@ -480,6 +487,12 @@ func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) DeliverToParent(eventNam
 	}
 	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
 	return true
+}
+
+// HasParentSession answers whether a session invoked this one (W3C SCXML C.1):
+// the queue the invoking parent installs is the link to it.
+func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) HasParentSession() bool {
+	return p.ParentExternalQueue != nil
 }
 
 // ======================================================================

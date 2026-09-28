@@ -536,6 +536,31 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) DeliverToInvocation(invokeID, e
 	return false
 }
 
+// IsInvocationRunning reports whether `#_<invokeid>` names an invocation running
+// now (W3C SCXML 6.4 + C.1) — one whose session has reached its final state has
+// ended, and a send naming it is reported when it is made.
+func (p *AChildMaySendManyEventsInOneTickPolicy) IsInvocationRunning(invokeID string) bool {
+	if invokeID == "chatty" {
+		child := p.childChatty
+		return child != nil && !child.IsInFinalState()
+	}
+	return false
+}
+
+// IsChildSessionRunning reports whether a session id names a child of this
+// machine that is running now (W3C SCXML C.1) — the test DeliverToChildSession
+// makes.
+func (p *AChildMaySendManyEventsInOneTickPolicy) IsChildSessionRunning(childSessionID string) bool {
+	if childSessionID == "" {
+		return false
+	}
+	if cs, ok := p.activeInvokes["chatty"]; ok && cs.SessionID == childSessionID {
+		child := p.childChatty
+		return child != nil && !child.IsInFinalState()
+	}
+	return false
+}
+
 // DeliverToChildSession delivers an event addressed to a child's published
 // location (W3C SCXML C.1).
 //
@@ -546,14 +571,12 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) DeliverToInvocation(invokeID, e
 // normal external path — the routing half of C.1 is what makes the published
 // location a usable target rather than a string that merely compares equal.
 func (p *AChildMaySendManyEventsInOneTickPolicy) DeliverToChildSession(childSessionID, eventName, eventData string) bool {
-	if childSessionID == "" {
+	if !p.IsChildSessionRunning(childSessionID) {
 		return false
 	}
 	if cs, ok := p.activeInvokes["chatty"]; ok && cs.SessionID == childSessionID {
-		if p.childChatty != nil {
-			p.childChatty.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childChatty.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	return false
 }
@@ -588,6 +611,12 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) DeliverToParent(eventName, even
 	}
 	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
 	return true
+}
+
+// HasParentSession answers whether a session invoked this one (W3C SCXML C.1):
+// the queue the invoking parent installs is the link to it.
+func (p *AChildMaySendManyEventsInOneTickPolicy) HasParentSession() bool {
+	return p.ParentExternalQueue != nil
 }
 
 // ======================================================================

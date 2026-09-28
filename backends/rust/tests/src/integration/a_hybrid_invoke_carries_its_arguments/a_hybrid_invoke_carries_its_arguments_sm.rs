@@ -2800,6 +2800,51 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
         false
     }
 
+    // W3C SCXML 6.4 + C.1: whether `#_<invokeid>` names an invocation running
+    // now — one whose session has reached its final state has ended.
+    fn is_invocation_running(&self, invoke_id: &str) -> bool {
+        if invoke_id == "_invoke_0" {
+            if let Some(ref child) = self.child_invoke_0_keeper {
+                if !child.is_in_final_state() {
+                    return true;
+                }
+            }
+            if let Some(ref child) = self.child_invoke_0_bare {
+                if !child.is_in_final_state() {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if invoke_id == "_invoke_1" {
+            if let Some(ref child) = self.child_invoke_1_keeper {
+                if !child.is_in_final_state() {
+                    return true;
+                }
+            }
+            if let Some(ref child) = self.child_invoke_1_bare {
+                if !child.is_in_final_state() {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if invoke_id == "_invoke_2" {
+            if let Some(ref child) = self.child_invoke_2_keeper {
+                if !child.is_in_final_state() {
+                    return true;
+                }
+            }
+            if let Some(ref child) = self.child_invoke_2_bare {
+                if !child.is_in_final_state() {
+                    return true;
+                }
+            }
+            return false;
+        }
+        false
+    }
+
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_parent">` whose wait is
     // over, with the payload an immediate one carries. It waited in this
     // machine's own queue, so `<cancel>` reached it and a child that ended
@@ -2812,6 +2857,12 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
             }
         }
         false
+    }
+
+    // W3C SCXML C.1: whether a session invoked this one — the queue the
+    // invoking parent installs is the link to it.
+    fn has_parent_session(&self) -> bool {
+        self.parent_external_queue.is_some()
     }
 
     // W3C SCXML 6.4: Tick child state machines

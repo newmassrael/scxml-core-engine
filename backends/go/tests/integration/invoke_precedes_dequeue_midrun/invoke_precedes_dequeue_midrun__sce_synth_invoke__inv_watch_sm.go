@@ -240,6 +240,12 @@ func (p *InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy) DeliverToParen
 	return true
 }
 
+// HasParentSession answers whether a session invoked this one (W3C SCXML C.1):
+// the queue the invoking parent installs is the link to it.
+func (p *InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy) HasParentSession() bool {
+	return p.ParentExternalQueue != nil
+}
+
 // ======================================================================
 // StatePolicy interface implementation
 // ======================================================================

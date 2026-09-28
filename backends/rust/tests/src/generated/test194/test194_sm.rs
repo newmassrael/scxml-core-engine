@@ -366,7 +366,8 @@ impl StatePolicy for Test194Policy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        // W3C SCXML 6.2: Invalid target "!invalid" raises error.execution
+                        // W3C SCXML 6.2.4: "!invalid" is not a target this processor can
+                        // address — `Action::target_unsupported`, decided once at build time.
                         {
                             // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test194Event::ErrorExecution, "<send target='!invalid'> is not a target this processor can address");
@@ -498,5 +499,11 @@ impl StatePolicy for Test194Policy {
             }
         }
         false
+    }
+
+    // W3C SCXML C.1: whether a session invoked this one — the queue the
+    // invoking parent installs is the link to it.
+    fn has_parent_session(&self) -> bool {
+        self.parent_external_queue.is_some()
     }
 }

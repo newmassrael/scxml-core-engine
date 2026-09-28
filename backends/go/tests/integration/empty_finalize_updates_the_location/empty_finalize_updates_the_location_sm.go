@@ -881,6 +881,47 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) DeliverToInvocation(invokeID, ev
 	return false
 }
 
+// IsInvocationRunning reports whether `#_<invokeid>` names an invocation running
+// now (W3C SCXML 6.4 + C.1) — one whose session has reached its final state has
+// ended, and a send naming it is reported when it is made.
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) IsInvocationRunning(invokeID string) bool {
+	if invokeID == "inv_empty" {
+		child := p.childInvEmpty
+		return child != nil && !child.IsInFinalState()
+	}
+	if invokeID == "inv_absent" {
+		child := p.childInvAbsent
+		return child != nil && !child.IsInFinalState()
+	}
+	if invokeID == "inv_unmatched" {
+		child := p.childInvUnmatched
+		return child != nil && !child.IsInFinalState()
+	}
+	return false
+}
+
+// IsChildSessionRunning reports whether a session id names a child of this
+// machine that is running now (W3C SCXML C.1) — the test DeliverToChildSession
+// makes.
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) IsChildSessionRunning(childSessionID string) bool {
+	if childSessionID == "" {
+		return false
+	}
+	if cs, ok := p.activeInvokes["inv_empty"]; ok && cs.SessionID == childSessionID {
+		child := p.childInvEmpty
+		return child != nil && !child.IsInFinalState()
+	}
+	if cs, ok := p.activeInvokes["inv_absent"]; ok && cs.SessionID == childSessionID {
+		child := p.childInvAbsent
+		return child != nil && !child.IsInFinalState()
+	}
+	if cs, ok := p.activeInvokes["inv_unmatched"]; ok && cs.SessionID == childSessionID {
+		child := p.childInvUnmatched
+		return child != nil && !child.IsInFinalState()
+	}
+	return false
+}
+
 // DeliverToChildSession delivers an event addressed to a child's published
 // location (W3C SCXML C.1).
 //
@@ -891,26 +932,20 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) DeliverToInvocation(invokeID, ev
 // normal external path — the routing half of C.1 is what makes the published
 // location a usable target rather than a string that merely compares equal.
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) DeliverToChildSession(childSessionID, eventName, eventData string) bool {
-	if childSessionID == "" {
+	if !p.IsChildSessionRunning(childSessionID) {
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_empty"]; ok && cs.SessionID == childSessionID {
-		if p.childInvEmpty != nil {
-			p.childInvEmpty.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childInvEmpty.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	if cs, ok := p.activeInvokes["inv_absent"]; ok && cs.SessionID == childSessionID {
-		if p.childInvAbsent != nil {
-			p.childInvAbsent.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childInvAbsent.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	if cs, ok := p.activeInvokes["inv_unmatched"]; ok && cs.SessionID == childSessionID {
-		if p.childInvUnmatched != nil {
-			p.childInvUnmatched.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.childInvUnmatched.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 	return false
 }
@@ -1014,6 +1049,12 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) DeliverToParent(eventName, event
 	}
 	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
 	return true
+}
+
+// HasParentSession answers whether a session invoked this one (W3C SCXML C.1):
+// the queue the invoking parent installs is the link to it.
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) HasParentSession() bool {
+	return p.ParentExternalQueue != nil
 }
 
 // ======================================================================
