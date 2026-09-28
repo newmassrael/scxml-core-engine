@@ -169,7 +169,7 @@ pub fn print(model: &SCXMLModel, lexicon: &Lexicon, page: Page) -> Result<Vec<Pr
     let mut out = Vec::new();
     for figure in &diagram.figures {
         let sized = boxes::boxes(model, &diagram, figure, lexicon, style).map_err(Refusal::Box)?;
-        let laid = layout::lay_out(model, figure, sized, style);
+        let laid = layout::lay_out(model, figure, sized, style).map_err(Refusal::Box)?;
         let title = words::figure_title(lexicon, &figure.name)
             .ok_or(Refusal::Box(BoxError::NoPhrases(lexicon.name)))?;
 
