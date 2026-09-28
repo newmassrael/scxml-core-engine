@@ -717,7 +717,7 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteTransitionContent(source Autoforw
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(AutoforwardDequeuePointEventFirst)
-		meta.Metadata = sce.ExternalMetadata("__send_0", "")
+		meta.Metadata = sce.ExternalMetadata("__send_0", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
@@ -732,7 +732,7 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteTransitionContent(source Autoforw
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(AutoforwardDequeuePointEventSecond)
-		meta.Metadata = sce.ExternalMetadata("__send_1", "")
+		meta.Metadata = sce.ExternalMetadata("__send_1", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}

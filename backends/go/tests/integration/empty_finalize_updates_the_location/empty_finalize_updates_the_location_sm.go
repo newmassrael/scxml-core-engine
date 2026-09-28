@@ -1205,7 +1205,8 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 		// shares (ARCHITECTURE.md, "Durations").
 		delayDur := time.Duration(3000) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("timeoutAbsent"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr, p.SessionID)
 		}
 	}
 	}
@@ -1237,7 +1238,8 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 		// shares (ARCHITECTURE.md, "Durations").
 		delayDur := time.Duration(3000) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("timeoutEmpty"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr, p.SessionID)
 		}
 	}
 	}
@@ -1269,7 +1271,8 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 		// shares (ARCHITECTURE.md, "Durations").
 		delayDur := time.Duration(3000) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("timeoutUnmatched"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr, p.SessionID)
 		}
 	}
 	}

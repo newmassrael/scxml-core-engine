@@ -40,6 +40,7 @@ pub mod a_delay_is_a_css2_time;
 pub mod a_hybrid_invoke_carries_its_arguments;
 pub mod a_payload_rides_on_its_own_event;
 pub mod a_peer_named_at_run_time_reaches_the_router;
+pub mod a_self_sent_event_names_its_origin;
 pub mod ai_loop;
 pub mod an_error_ends_the_block_it_was_raised_in;
 pub mod an_error_inside_a_foreach_ends_its_block;

@@ -605,6 +605,9 @@ impl StatePolicy for Test509Policy {
                                     core::time::Duration::from_millis(delay_ms),
                                     &send_id,
                                     event_data,
+                                    &::sce_rust_runtime::sce_string_from_str(
+                                        self.session_id.as_deref().unwrap_or(""),
+                                    ),
                                 );
                             }
                         }
@@ -662,13 +665,15 @@ impl StatePolicy for Test509Policy {
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
                             // §scxml-C-1: a target expression's value is read as text — the same
-                            // reading C++ `resultToString` gives it. A value that is not there names
-                            // no target; an empty STRING is not that case here, because a self-sent
-                            // event carries no origin on this backend, so `targetexpr="_event.origin"`
-                            // reads "" and must reach this session (test336).
+                            // reading C++ `resultToString` gives it. A value that is not there, or
+                            // text that names nothing (`SendHelper::isUnreachableTarget`: empty or
+                            // "undefined"), is no target. A self-sent event names its origin, so
+                            // `targetexpr="_event.origin"` (test336) reads this session's location,
+                            // never "".
                             let _resolved_target: Option<String> = match _send_target_value {
         Some(sce_rust_runtime::ScriptValue::Null) | Some(sce_rust_runtime::ScriptValue::Undefined) | None => None,
-        Some(ref val) => Some(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)),
+        Some(ref val) => Some(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val))
+            .filter(|t| !::sce_rust_runtime::helpers::send::is_unreachable_target(t)),
     };
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises

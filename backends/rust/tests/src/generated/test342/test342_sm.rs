@@ -667,7 +667,9 @@ impl StatePolicy for Test342Policy {
                                 let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
                                 meta.metadata = sce_rust_runtime::EventMetadata::external(
                                     send_id.clone(),
-                                    ::sce_rust_runtime::SceString::new(),
+                                    ::sce_rust_runtime::sce_string_from_str(
+                                        self.session_id.as_deref().unwrap_or(""),
+                                    ),
                                 );
                                 meta.set_event_data(event_data);
                                 engine.raise_external_with_meta(meta);

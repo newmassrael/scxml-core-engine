@@ -735,7 +735,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(ABadSendArgumentDiscardsItsMessageEventSent)
-		meta.Metadata = sce.ExternalMetadata("__send_0", "")
+		meta.Metadata = sce.ExternalMetadata("__send_0", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
@@ -781,7 +781,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	// W3C SCXML 6.2: External send
 	if sendEvt, sendOk := p.GetEventFromName(sendEventName); sendOk {
 		meta := sce.NewEventWithMetadata(sendEvt)
-		meta.Metadata = sce.ExternalMetadata("__send_1", "")
+		meta.Metadata = sce.ExternalMetadata("__send_1", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
@@ -829,13 +829,13 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
 	}
-	if sendArgError == "" && sendTargetVal == nil {
-		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value
-		// is not reachable — error.communication, nothing delivered, and the
-		// error ends the block as any other would (W3C SCXML 4.9). An empty
-		// STRING is not this case here: a self-sent event carries no origin
-		// on this backend, so `targetexpr="_event.origin"` reads "" and must
-		// reach this session (test336).
+	if sendArgError == "" && (sendTargetVal == nil || sce.IsUnreachableTarget(sendTarget)) {
+		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value,
+		// or to text that names nothing (empty or "undefined"), is not
+		// reachable — error.communication, nothing delivered, and the error
+		// ends the block as any other would (W3C SCXML 4.9). A self-sent
+		// event names its origin, so `targetexpr="_event.origin"` (test336)
+		// reads this session's location, never "".
 		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
@@ -878,7 +878,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	{
 		if sendEvt, sendOk := p.GetEventFromName("sent"); sendOk {
 			meta := sce.NewEventWithMetadata(sendEvt)
-			meta.Metadata = sce.ExternalMetadata("__send_2", "")
+			meta.Metadata = sce.ExternalMetadata("__send_2", p.SessionID)
 			meta.Metadata.Data = eventDataStr
 			engine.RaiseExternalWithMeta(meta)
 		}
@@ -929,7 +929,8 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	{
 		delayDur := time.Duration(sendDelayMs) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("sent"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_3", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "__send_3", eventDataStr, p.SessionID)
 		}
 	}
 	}
@@ -969,7 +970,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(ABadSendArgumentDiscardsItsMessageEventSent)
-		meta.Metadata = sce.ExternalMetadata("__send_4", "")
+		meta.Metadata = sce.ExternalMetadata("__send_4", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
@@ -1012,7 +1013,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(ABadSendArgumentDiscardsItsMessageEventSent)
-		meta.Metadata = sce.ExternalMetadata("__send_5", "")
+		meta.Metadata = sce.ExternalMetadata("__send_5", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}

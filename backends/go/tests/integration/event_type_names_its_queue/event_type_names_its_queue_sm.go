@@ -662,7 +662,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteEntryActions(state EventTypeNamesI
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(EventTypeNamesItsQueueEventExt)
-		meta.Metadata = sce.ExternalMetadata("__send_0", "")
+		meta.Metadata = sce.ExternalMetadata("__send_0", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}

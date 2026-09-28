@@ -881,7 +881,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(ABadSendParamEndsItsBlockEventBare)
-		meta.Metadata = sce.ExternalMetadata("__send_2", "")
+		meta.Metadata = sce.ExternalMetadata("__send_2", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}

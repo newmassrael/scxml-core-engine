@@ -706,13 +706,13 @@ func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) ExecuteEntryActions(state AP
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
 	}
-	if sendArgError == "" && sendTargetVal == nil {
-		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value
-		// is not reachable — error.communication, nothing delivered, and the
-		// error ends the block as any other would (W3C SCXML 4.9). An empty
-		// STRING is not this case here: a self-sent event carries no origin
-		// on this backend, so `targetexpr="_event.origin"` reads "" and must
-		// reach this session (test336).
+	if sendArgError == "" && (sendTargetVal == nil || sce.IsUnreachableTarget(sendTarget)) {
+		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value,
+		// or to text that names nothing (empty or "undefined"), is not
+		// reachable — error.communication, nothing delivered, and the error
+		// ends the block as any other would (W3C SCXML 4.9). A self-sent
+		// event names its origin, so `targetexpr="_event.origin"` (test336)
+		// reads this session's location, never "".
 		errEvt := sce.NewPlatformError(APeerNamedAtRunTimeReachesTheRouterEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
@@ -755,7 +755,7 @@ func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) ExecuteEntryActions(state AP
 	{
 		if sendEvt, sendOk := p.GetEventFromName("ping"); sendOk {
 			meta := sce.NewEventWithMetadata(sendEvt)
-			meta.Metadata = sce.ExternalMetadata("__send_0", "")
+			meta.Metadata = sce.ExternalMetadata("__send_0", p.SessionID)
 			meta.Metadata.Data = eventDataStr
 			engine.RaiseExternalWithMeta(meta)
 		}
@@ -794,13 +794,13 @@ func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) ExecuteEntryActions(state AP
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
 	}
-	if sendArgError == "" && sendTargetVal == nil {
-		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value
-		// is not reachable — error.communication, nothing delivered, and the
-		// error ends the block as any other would (W3C SCXML 4.9). An empty
-		// STRING is not this case here: a self-sent event carries no origin
-		// on this backend, so `targetexpr="_event.origin"` reads "" and must
-		// reach this session (test336).
+	if sendArgError == "" && (sendTargetVal == nil || sce.IsUnreachableTarget(sendTarget)) {
+		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value,
+		// or to text that names nothing (empty or "undefined"), is not
+		// reachable — error.communication, nothing delivered, and the error
+		// ends the block as any other would (W3C SCXML 4.9). A self-sent
+		// event names its origin, so `targetexpr="_event.origin"` (test336)
+		// reads this session's location, never "".
 		errEvt := sce.NewPlatformError(APeerNamedAtRunTimeReachesTheRouterEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
@@ -843,7 +843,7 @@ func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) ExecuteEntryActions(state AP
 	{
 		if sendEvt, sendOk := p.GetEventFromName("loopback"); sendOk {
 			meta := sce.NewEventWithMetadata(sendEvt)
-			meta.Metadata = sce.ExternalMetadata("__send_1", "")
+			meta.Metadata = sce.ExternalMetadata("__send_1", p.SessionID)
 			meta.Metadata.Data = eventDataStr
 			engine.RaiseExternalWithMeta(meta)
 		}

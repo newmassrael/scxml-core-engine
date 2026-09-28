@@ -774,7 +774,8 @@ func (p *ADelayIsACss2TimePolicy) ExecuteEntryActions(state ADelayIsACss2TimeSta
 	{
 		delayDur := time.Duration(sendDelayMs) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("bad"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr, p.SessionID)
 		}
 	}
 	}
@@ -822,7 +823,8 @@ func (p *ADelayIsACss2TimePolicy) ExecuteEntryActions(state ADelayIsACss2TimeSta
 	{
 		delayDur := time.Duration(sendDelayMs) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("a"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr, p.SessionID)
 		}
 	}
 	}
@@ -839,7 +841,8 @@ func (p *ADelayIsACss2TimePolicy) ExecuteEntryActions(state ADelayIsACss2TimeSta
 		// shares (ARCHITECTURE.md, "Durations").
 		delayDur := time.Duration(569) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("b"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_3", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "__send_3", eventDataStr, p.SessionID)
 		}
 	}
 	}

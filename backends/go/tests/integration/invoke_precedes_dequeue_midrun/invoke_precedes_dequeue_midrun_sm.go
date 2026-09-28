@@ -601,7 +601,7 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteEntryActions(state InvokePrec
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(InvokePrecedesDequeueMidrunEventGo)
-		meta.Metadata = sce.ExternalMetadata("__send_0", "")
+		meta.Metadata = sce.ExternalMetadata("__send_0", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
@@ -622,7 +622,7 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteEntryActions(state InvokePrec
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(InvokePrecedesDequeueMidrunEventKick)
-		meta.Metadata = sce.ExternalMetadata("__send_2", "")
+		meta.Metadata = sce.ExternalMetadata("__send_2", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}

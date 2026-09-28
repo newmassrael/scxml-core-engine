@@ -599,6 +599,9 @@ impl StatePolicy for Test237Policy {
                                     core::time::Duration::from_millis(delay_ms),
                                     &send_id,
                                     event_data,
+                                    &::sce_rust_runtime::sce_string_from_str(
+                                        self.session_id.as_deref().unwrap_or(""),
+                                    ),
                                 );
                             }
                         }
@@ -644,6 +647,9 @@ impl StatePolicy for Test237Policy {
                                     core::time::Duration::from_millis(delay_ms),
                                     &send_id,
                                     event_data,
+                                    &::sce_rust_runtime::sce_string_from_str(
+                                        self.session_id.as_deref().unwrap_or(""),
+                                    ),
                                 );
                             }
                         }

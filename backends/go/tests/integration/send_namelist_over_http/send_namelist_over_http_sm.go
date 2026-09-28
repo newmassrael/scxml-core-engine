@@ -741,7 +741,8 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 		// shares (ARCHITECTURE.md, "Durations").
 		delayDur := time.Duration(2000) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("timeoutDiscard"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr, p.SessionID)
 		}
 	}
 	}
@@ -790,13 +791,13 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
 	}
-	if sendArgError == "" && sendTargetVal == nil {
-		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value
-		// is not reachable — error.communication, nothing delivered, and the
-		// error ends the block as any other would (W3C SCXML 4.9). An empty
-		// STRING is not this case here: a self-sent event carries no origin
-		// on this backend, so `targetexpr="_event.origin"` reads "" and must
-		// reach this session (test336).
+	if sendArgError == "" && (sendTargetVal == nil || sce.IsUnreachableTarget(sendTarget)) {
+		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value,
+		// or to text that names nothing (empty or "undefined"), is not
+		// reachable — error.communication, nothing delivered, and the error
+		// ends the block as any other would (W3C SCXML 4.9). A self-sent
+		// event names its origin, so `targetexpr="_event.origin"` (test336)
+		// reads this session's location, never "".
 		errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_3"
 		engine.Raise(errEvt)
@@ -850,7 +851,8 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 		// shares (ARCHITECTURE.md, "Durations").
 		delayDur := time.Duration(3000) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("timeoutMap"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr, p.SessionID)
 		}
 	}
 	}
@@ -899,13 +901,13 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
 	}
-	if sendArgError == "" && sendTargetVal == nil {
-		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value
-		// is not reachable — error.communication, nothing delivered, and the
-		// error ends the block as any other would (W3C SCXML 4.9). An empty
-		// STRING is not this case here: a self-sent event carries no origin
-		// on this backend, so `targetexpr="_event.origin"` reads "" and must
-		// reach this session (test336).
+	if sendArgError == "" && (sendTargetVal == nil || sce.IsUnreachableTarget(sendTarget)) {
+		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value,
+		// or to text that names nothing (empty or "undefined"), is not
+		// reachable — error.communication, nothing delivered, and the error
+		// ends the block as any other would (W3C SCXML 4.9). A self-sent
+		// event names its origin, so `targetexpr="_event.origin"` (test336)
+		// reads this session's location, never "".
 		errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)

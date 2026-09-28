@@ -2001,7 +2001,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(StatechartHostInvokerEventPing)
-		meta.Metadata = sce.ExternalMetadata("__send_0", "")
+		meta.Metadata = sce.ExternalMetadata("__send_0", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
@@ -2031,7 +2031,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(StatechartHostInvokerEventLeak)
-		meta.Metadata = sce.ExternalMetadata("__send_1", "")
+		meta.Metadata = sce.ExternalMetadata("__send_1", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}

@@ -820,7 +820,7 @@ func (p *AutoforwardDoneInvokePolicy) ExecuteTransitionContent(source Autoforwar
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(AutoforwardDoneInvokeEventProbe)
-		meta.Metadata = sce.ExternalMetadata("__send_0", "")
+		meta.Metadata = sce.ExternalMetadata("__send_0", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}

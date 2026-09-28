@@ -433,7 +433,8 @@ func (p *LateTickHonoursCancelPolicy) ExecuteEntryActions(state LateTickHonoursC
 		// shares (ARCHITECTURE.md, "Durations").
 		delayDur := time.Duration(100) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("finish"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr, p.SessionID)
 		}
 	}
 	}
@@ -456,7 +457,8 @@ func (p *LateTickHonoursCancelPolicy) ExecuteEntryActions(state LateTickHonoursC
 		// shares (ARCHITECTURE.md, "Durations").
 		delayDur := time.Duration(200) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("settle"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "s1", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "s1", eventDataStr, p.SessionID)
 		}
 	}
 	}
@@ -473,7 +475,8 @@ func (p *LateTickHonoursCancelPolicy) ExecuteEntryActions(state LateTickHonoursC
 		// shares (ARCHITECTURE.md, "Durations").
 		delayDur := time.Duration(100) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("poke"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr, p.SessionID)
 		}
 	}
 	}

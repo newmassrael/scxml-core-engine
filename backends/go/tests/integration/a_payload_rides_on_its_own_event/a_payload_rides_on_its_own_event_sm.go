@@ -776,7 +776,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(APayloadRidesOnItsOwnEventEventExtV)
-		meta.Metadata = sce.ExternalMetadata("__send_1", "")
+		meta.Metadata = sce.ExternalMetadata("__send_1", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
@@ -832,7 +832,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(APayloadRidesOnItsOwnEventEventExtN)
-		meta.Metadata = sce.ExternalMetadata("__send_2", "")
+		meta.Metadata = sce.ExternalMetadata("__send_2", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
@@ -864,7 +864,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(APayloadRidesOnItsOwnEventEventExtC)
-		meta.Metadata = sce.ExternalMetadata("__send_3", "")
+		meta.Metadata = sce.ExternalMetadata("__send_3", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}

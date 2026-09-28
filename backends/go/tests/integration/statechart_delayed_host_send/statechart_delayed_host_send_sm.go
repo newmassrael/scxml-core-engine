@@ -518,7 +518,8 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 		// shares (ARCHITECTURE.md, "Durations").
 		delayDur := time.Duration(100) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("settle"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr, p.SessionID)
 		}
 	}
 	}
@@ -544,7 +545,8 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 		// shares (ARCHITECTURE.md, "Durations").
 		delayDur := time.Duration(200) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("finish"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_3", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "__send_3", eventDataStr, p.SessionID)
 		}
 	}
 	}
@@ -601,7 +603,8 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 		// shares (ARCHITECTURE.md, "Durations").
 		delayDur := time.Duration(100) * time.Millisecond
 		if delayEvt, delayOk := p.GetEventFromName("probe"); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr, p.SessionID)
 		}
 	}
 	}
