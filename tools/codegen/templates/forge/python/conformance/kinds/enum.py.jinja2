@@ -23,4 +23,10 @@
             variants[{{ loop.index0 }}]["value"],
             "{{ f.name }}.{{ v.name }}",
         )
+        # The name the declaration answers is the one the document wrote.
+        self.assertEqual(
+            {{ f.name }}.{{ f.name | to_pascal_case }}.{{ v.ident }}.declared_name(),
+            "{{ v.name }}",
+            "{{ f.name }}.{{ v.name }} declared name",
+        )
 {% endfor %}

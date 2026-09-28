@@ -3397,6 +3397,25 @@ constructed before a decode fills it starts at the first variant
 the document declares, never at the carrier's zero — a closed set
 does not hold a value it never declared.
 
+**Declared names at run time.** Every backend's generated enum answers
+which `<sce:variant name>` a value carries, spelled exactly as the
+document spells it (`deadlineExceeded`, not the backend's identifier
+`DeadlineExceeded` / `DEADLINE_EXCEEDED`), so a consumer that writes an
+enum into a log line or a JSON field reads the name from the vocabulary
+of record instead of keeping a second list that can drift from it:
+Rust `declared_name()`, Kotlin `declaredName()`, Python
+`declared_name()`, Go `DeclaredName()`, C++ `declared_name(v)` and C11
+`<snake_name>_declared_name(v)`. A value no variant names has no
+declared name, and each backend says so in its own absent form — Rust
+`None`, Kotlin and Python `null`/`None`, Go `("", false)`, C++
+`nullptr`, C11 `NULL`. On Rust, Kotlin and Python that absence exists
+only for an open set (`sce:strict-variants="false"`), since only an
+open set's generated type can hold such a value; a closed set's
+accessor returns the name unconditionally. C++, C11 and Go types hold
+every carrier value whatever the set, so their accessor is always the
+fallible form. The conformance harness pins the accessor against the
+document's names on all six backends.
+
 ---
 
 ## Appendix — `DiagnosticCode` index (384 codes)

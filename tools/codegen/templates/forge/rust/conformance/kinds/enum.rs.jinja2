@@ -33,5 +33,13 @@
             variants[{{ loop.index0 }}]["value"].as_i64().unwrap(),
             "{{ f.name }}::{{ v.name }}"
         );
+        // The name the declaration answers is the one the document wrote.
+        // `Option::from` reads both shapes: a closed set answers `&str`, an
+        // open one `Option<&str>`.
+        assert_eq!(
+            Option::<&str>::from(fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}::{{ v.ident }}.declared_name()),
+            Some("{{ v.name }}"),
+            "{{ f.name }}::{{ v.name }} declared name"
+        );
 {% endfor %}
     }

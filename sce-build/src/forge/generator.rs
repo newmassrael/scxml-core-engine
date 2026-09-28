@@ -1991,7 +1991,12 @@ fn render_enum(
                 Language::Kotlin => kotlin_literal(&value_text, &m.underlying_type),
                 _ => value_text,
             };
-            serde_json::json!({"name": name, "value": value})
+            // `declared` is the variant's name as the document wrote it
+            // (`sce:variant name`), which every backend returns from its
+            // variant-name accessor: the one spelling of a value's name that
+            // is the same in all six, because it is the document's rather than
+            // any backend's identifier convention.
+            serde_json::json!({"name": name, "value": value, "declared": v.name})
         })
         .collect();
 
@@ -2037,7 +2042,7 @@ fn render_enum(
     // functions carry, since C has no namespace to put them in.
     ctx.insert(
         "snake_name".into(),
-        filters::to_snake_case(m.name.clone()).into(),
+        crate::forge::enum_naming::c11_function_prefix(&m.name).into(),
     );
     l.insert_imports(&mut ctx, imports);
 

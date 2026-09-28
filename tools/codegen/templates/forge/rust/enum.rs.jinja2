@@ -35,6 +35,17 @@ impl {{ enum_name }} {
     pub const fn from_underlying(raw: {{ underlying_type }}) -> Self {
         Self(raw)
     }
+
+    /// The name the document declares for this value, or `None` for a
+    /// value the open set holds without naming.
+    pub const fn declared_name(self) -> Option<&'static str> {
+        match self.0 {
+{% for v in variants %}
+            {{ v.value }} => Some("{{ v.declared | escape_rust }}"),
+{% endfor %}
+            _ => None,
+        }
+    }
 }
 {% else %}
 #[repr({{ underlying_type }})]
@@ -62,6 +73,15 @@ impl {{ enum_name }} {
             {{ v.value }} => Some(Self::{{ v.name }}),
 {% endfor %}
             _ => None,
+        }
+    }
+
+    /// The name the document declares for this variant.
+    pub const fn declared_name(self) -> &'static str {
+        match self {
+{% for v in variants %}
+            Self::{{ v.name }} => "{{ v.declared | escape_rust }}",
+{% endfor %}
         }
     }
 }

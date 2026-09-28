@@ -26,6 +26,19 @@ func (v {{ enum_name }}) ToUnderlying() {{ underlying_type }} {
 	return {{ underlying_type }}(v)
 }
 
+// DeclaredName returns the name the document declares for this value, and
+// false for a value no variant names — one the type can hold whether or not
+// its set is open, since a defined integer type holds every carrier value.
+func (v {{ enum_name }}) DeclaredName() (string, bool) {
+	switch v {
+{% for v in variants %}
+	case {{ v.name }}:
+		return "{{ v.declared | escape_go }}", true
+{% endfor %}
+	}
+	return "", false
+}
+
 {% if is_open %}
 // {{ enum_name }}FromUnderlying returns the value raw stands for. Total:
 // sce:strict-variants="false" leaves the declared set open, so every carrier

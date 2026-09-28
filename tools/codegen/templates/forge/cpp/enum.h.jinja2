@@ -33,6 +33,19 @@ constexpr {{ underlying_type }} to_underlying({{ enum_name }} value) noexcept {
     return static_cast<{{ underlying_type }}>(value);
 }
 
+/// The name the document declares for this value, or `nullptr` for a value
+/// no variant names — one an `enum class` can hold whether or not its set is
+/// open, since it holds every carrier value.
+constexpr const char *declared_name({{ enum_name }} value) noexcept {
+    switch (value) {
+{% for v in variants %}
+    case {{ enum_name }}::{{ v.name }}:
+        return "{{ v.declared | escape_cpp }}";
+{% endfor %}
+    }
+    return nullptr;
+}
+
 {% if is_open %}
 /// The value `raw` stands for. Total: `sce:strict-variants="false"` leaves
 /// the declared set open, so every carrier value is one of this type's.

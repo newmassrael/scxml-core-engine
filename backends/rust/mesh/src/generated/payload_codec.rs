@@ -36,4 +36,15 @@ impl PayloadCodec {
             _ => None,
         }
     }
+
+    /// The name the document declares for this variant.
+    pub const fn declared_name(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Json => "json",
+            Self::Cbor => "cbor",
+            Self::Typed => "typed",
+            Self::Raw => "raw",
+        }
+    }
 }

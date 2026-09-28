@@ -27,4 +27,10 @@
             {{ f.name | to_pascal_case }}.{{ v.ident }}.raw.toLong(),
             "{{ f.name }}.{{ v.name }}",
         )
+        // The name the declaration answers is the one the document wrote.
+        assertEquals(
+            "{{ v.name }}",
+            {{ f.name | to_pascal_case }}.{{ v.ident }}.declaredName(),
+            "{{ f.name }}.{{ v.name }} declared name",
+        )
 {% endfor %}

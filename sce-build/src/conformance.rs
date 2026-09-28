@@ -2421,6 +2421,14 @@ fn fold_enum_identifiers(
     let FixtureSpec::Enum { variants } = &fixture.spec else {
         return Ok(());
     };
+    // The prefix of C11's free functions for this enum, from the same owner
+    // the declaration reads it from.
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "c11_prefix".into(),
+            crate::forge::enum_naming::c11_function_prefix(&fixture.name).into(),
+        );
+    }
     let rows = value
         .get_mut("variants")
         .and_then(|v| v.as_array_mut())

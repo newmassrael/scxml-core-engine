@@ -20,6 +20,15 @@ enum class PayloadCodec(val raw: UByte) {
     /** The carrier value this variant declares. */
     fun toUnderlying(): UByte = raw
 
+    /** The name the document declares for this variant. */
+    fun declaredName(): String = when (this) {
+        NONE -> "none"
+        JSON -> "json"
+        CBOR -> "cbor"
+        TYPED -> "typed"
+        RAW -> "raw"
+    }
+
     companion object {
         /**
          * The variant [raw] declares, or null — the declared set is closed,

@@ -23,6 +23,18 @@ enum class RpcStatus(val raw: UByte) {
     /** The carrier value this variant declares. */
     fun toUnderlying(): UByte = raw
 
+    /** The name the document declares for this variant. */
+    fun declaredName(): String = when (this) {
+        OK -> "ok"
+        CANCELLED -> "cancelled"
+        INVALID_ARGUMENT -> "invalidArgument"
+        DEADLINE_EXCEEDED -> "deadlineExceeded"
+        NOT_FOUND -> "notFound"
+        UNIMPLEMENTED -> "unimplemented"
+        INTERNAL -> "internal"
+        UNAVAILABLE -> "unavailable"
+    }
+
     companion object {
         /**
          * The variant [raw] declares, or null — the declared set is closed,

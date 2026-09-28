@@ -10,9 +10,7 @@
 # Do not edit — regenerate from the source SCXML file.
 
 from enum import IntEnum
-{% if not is_open %}
 from typing import Optional
-{% endif %}
 
 
 class {{ enum_name }}(IntEnum):
@@ -23,6 +21,17 @@ class {{ enum_name }}(IntEnum):
     def to_underlying(self) -> int:
         """The carrier value this holds."""
         return int(self)
+
+{% if is_open %}
+    def declared_name(self) -> Optional[str]:
+        """The name the document declares for this value, or None for a
+        value the open set holds without naming."""
+        return _{{ enum_name }}_DECLARED.get(int(self))
+{% else %}
+    def declared_name(self) -> str:
+        """The name the document declares for this variant."""
+        return _{{ enum_name }}_DECLARED[int(self)]
+{% endif %}
 
 {% if is_open %}
     @classmethod
@@ -50,3 +59,10 @@ class {{ enum_name }}(IntEnum):
         except ValueError:
             return None
 {% endif %}
+
+
+_{{ enum_name }}_DECLARED = {
+{% for v in variants %}
+    {{ v.value }}: "{{ v.declared | escape_python }}",
+{% endfor %}
+}

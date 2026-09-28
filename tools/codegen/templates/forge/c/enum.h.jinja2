@@ -24,10 +24,24 @@ typedef enum {
 } {{ enum_name }}_t;
 
 #include <stdbool.h>
+#include <stddef.h>
 
 /* The carrier value this holds. */
 static inline {{ underlying_type }} {{ snake_name }}_to_underlying({{ enum_name }}_t value) {
     return ({{ underlying_type }})value;
+}
+
+/* The name the document declares for this value, or NULL for a value no
+ * variant names — one a C enumerated type can hold whether or not its set is
+ * open, since it holds every carrier value. */
+static inline const char *{{ snake_name }}_declared_name({{ enum_name }}_t value) {
+    switch (value) {
+{% for v in variants %}
+    case {{ v.name }}:
+        return "{{ v.declared | escape_cpp }}";
+{% endfor %}
+    }
+    return NULL;
 }
 
 {% if is_open %}

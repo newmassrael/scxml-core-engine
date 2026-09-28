@@ -25,5 +25,9 @@
 				int64({{ f.name }}.{{ v.ident }}),
 				spec.Variants[{{ loop.index0 }}].Value)
 		}
+		// The name the declaration answers is the one the document wrote.
+		if declared, ok := {{ f.name }}.{{ v.ident }}.DeclaredName(); !ok || declared != "{{ v.name }}" {
+			t.Errorf("{{ f.name }}.{{ v.name }} declares its name as %q (%v)", declared, ok)
+		}
 {% endfor %}
 	}

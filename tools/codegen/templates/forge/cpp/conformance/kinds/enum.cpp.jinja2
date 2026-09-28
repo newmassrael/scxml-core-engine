@@ -34,6 +34,10 @@
                   "{{ f.name }}::{{ v.name }} = %lld, expected %lld",
                   static_cast<long long>(G::{{ f.name | to_pascal_case }}::{{ v.ident }}),
                   o["value"].get<long long>());
+            // The name the declaration answers is the one the document wrote.
+            const char *declared = G::declared_name(G::{{ f.name | to_pascal_case }}::{{ v.ident }});
+            CHECK(declared != nullptr && o["name"].get<std::string>() == declared,
+                  "{{ f.name }}::{{ v.name }} declares its name as '%s'", declared != nullptr ? declared : "(none)");
         }
 {% endfor %}
     }

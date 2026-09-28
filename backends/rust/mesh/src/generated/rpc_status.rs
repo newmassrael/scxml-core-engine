@@ -42,4 +42,18 @@ impl RpcStatus {
             _ => None,
         }
     }
+
+    /// The name the document declares for this variant.
+    pub const fn declared_name(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Cancelled => "cancelled",
+            Self::InvalidArgument => "invalidArgument",
+            Self::DeadlineExceeded => "deadlineExceeded",
+            Self::NotFound => "notFound",
+            Self::Unimplemented => "unimplemented",
+            Self::Internal => "internal",
+            Self::Unavailable => "unavailable",
+        }
+    }
 }

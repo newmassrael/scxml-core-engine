@@ -29,6 +29,17 @@ value class {{ enum_name }}(val raw: {{ underlying_type }}) {
 
     /** The carrier value this holds. */
     fun toUnderlying(): {{ underlying_type }} = raw
+
+    /**
+     * The name the document declares for this value, or null for a value
+     * the open set holds without naming.
+     */
+    fun declaredName(): String? = when (this) {
+{% for v in variants %}
+        {{ v.name }} -> "{{ v.declared | escape_kotlin }}"
+{% endfor %}
+        else -> null
+    }
 }
 {% else %}
 @OptIn(ExperimentalUnsignedTypes::class)
@@ -40,6 +51,13 @@ enum class {{ enum_name }}(val raw: {{ underlying_type }}) {
 
     /** The carrier value this variant declares. */
     fun toUnderlying(): {{ underlying_type }} = raw
+
+    /** The name the document declares for this variant. */
+    fun declaredName(): String = when (this) {
+{% for v in variants %}
+        {{ v.name }} -> "{{ v.declared | escape_kotlin }}"
+{% endfor %}
+    }
 
     companion object {
         /**

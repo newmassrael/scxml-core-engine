@@ -32,6 +32,27 @@ enum class PatternKind(val raw: UShort) {
     /** The carrier value this variant declares. */
     fun toUnderlying(): UShort = raw
 
+    /** The name the document declares for this variant. */
+    fun declaredName(): String = when (this) {
+        FIRE_FORGET -> "fireForget"
+        RPC_REQUEST -> "rpcRequest"
+        RPC_REPLY -> "rpcReply"
+        EVENT_SUBSCRIBE -> "eventSubscribe"
+        EVENT_UNSUBSCRIBE -> "eventUnsubscribe"
+        EVENT_NOTIFY -> "eventNotify"
+        FIELD_READ -> "fieldRead"
+        FIELD_WRITE -> "fieldWrite"
+        FIELD_NOTIFY -> "fieldNotify"
+        INVOKE_START -> "invokeStart"
+        INVOKE_STARTED -> "invokeStarted"
+        CHILD_EVENT -> "childEvent"
+        PARENT_EVENT -> "parentEvent"
+        INVOKE_DONE -> "invokeDone"
+        INVOKE_CANCEL -> "invokeCancel"
+        INVOKE_ERROR -> "invokeError"
+        PARALLEL_REGION_DONE -> "parallelRegionDone"
+    }
+
     companion object {
         /**
          * The variant [raw] declares, or null — the declared set is closed,

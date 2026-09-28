@@ -40,6 +40,49 @@ constexpr uint16_t to_underlying(PatternKind value) noexcept {
     return static_cast<uint16_t>(value);
 }
 
+/// The name the document declares for this value, or `nullptr` for a value
+/// no variant names — one an `enum class` can hold whether or not its set is
+/// open, since it holds every carrier value.
+constexpr const char *declared_name(PatternKind value) noexcept {
+    switch (value) {
+    case PatternKind::FireForget:
+        return "fireForget";
+    case PatternKind::RpcRequest:
+        return "rpcRequest";
+    case PatternKind::RpcReply:
+        return "rpcReply";
+    case PatternKind::EventSubscribe:
+        return "eventSubscribe";
+    case PatternKind::EventUnsubscribe:
+        return "eventUnsubscribe";
+    case PatternKind::EventNotify:
+        return "eventNotify";
+    case PatternKind::FieldRead:
+        return "fieldRead";
+    case PatternKind::FieldWrite:
+        return "fieldWrite";
+    case PatternKind::FieldNotify:
+        return "fieldNotify";
+    case PatternKind::InvokeStart:
+        return "invokeStart";
+    case PatternKind::InvokeStarted:
+        return "invokeStarted";
+    case PatternKind::ChildEvent:
+        return "childEvent";
+    case PatternKind::ParentEvent:
+        return "parentEvent";
+    case PatternKind::InvokeDone:
+        return "invokeDone";
+    case PatternKind::InvokeCancel:
+        return "invokeCancel";
+    case PatternKind::InvokeError:
+        return "invokeError";
+    case PatternKind::ParallelRegionDone:
+        return "parallelRegionDone";
+    }
+    return nullptr;
+}
+
 /// The variant `raw` declares, or `std::nullopt` — the declared set is
 /// closed, so a value outside it is not a value of this type.
 constexpr std::optional<PatternKind> from_underlying(uint16_t raw) noexcept {

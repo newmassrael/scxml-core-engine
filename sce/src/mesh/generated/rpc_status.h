@@ -31,6 +31,31 @@ constexpr uint8_t to_underlying(RpcStatus value) noexcept {
     return static_cast<uint8_t>(value);
 }
 
+/// The name the document declares for this value, or `nullptr` for a value
+/// no variant names — one an `enum class` can hold whether or not its set is
+/// open, since it holds every carrier value.
+constexpr const char *declared_name(RpcStatus value) noexcept {
+    switch (value) {
+    case RpcStatus::Ok:
+        return "ok";
+    case RpcStatus::Cancelled:
+        return "cancelled";
+    case RpcStatus::InvalidArgument:
+        return "invalidArgument";
+    case RpcStatus::DeadlineExceeded:
+        return "deadlineExceeded";
+    case RpcStatus::NotFound:
+        return "notFound";
+    case RpcStatus::Unimplemented:
+        return "unimplemented";
+    case RpcStatus::Internal:
+        return "internal";
+    case RpcStatus::Unavailable:
+        return "unavailable";
+    }
+    return nullptr;
+}
+
 /// The variant `raw` declares, or `std::nullopt` — the declared set is
 /// closed, so a value outside it is not a value of this type.
 constexpr std::optional<RpcStatus> from_underlying(uint8_t raw) noexcept {

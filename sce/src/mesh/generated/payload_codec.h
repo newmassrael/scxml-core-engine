@@ -28,6 +28,25 @@ constexpr uint8_t to_underlying(PayloadCodec value) noexcept {
     return static_cast<uint8_t>(value);
 }
 
+/// The name the document declares for this value, or `nullptr` for a value
+/// no variant names — one an `enum class` can hold whether or not its set is
+/// open, since it holds every carrier value.
+constexpr const char *declared_name(PayloadCodec value) noexcept {
+    switch (value) {
+    case PayloadCodec::None:
+        return "none";
+    case PayloadCodec::Json:
+        return "json";
+    case PayloadCodec::Cbor:
+        return "cbor";
+    case PayloadCodec::Typed:
+        return "typed";
+    case PayloadCodec::Raw:
+        return "raw";
+    }
+    return nullptr;
+}
+
 /// The variant `raw` declares, or `std::nullopt` — the declared set is
 /// closed, so a value outside it is not a value of this type.
 constexpr std::optional<PayloadCodec> from_underlying(uint8_t raw) noexcept {

@@ -72,6 +72,15 @@ pub fn variant_ident(lang: Language, enum_name: &str, variant: &str) -> String {
     }
 }
 
+/// The prefix C11's functions for this enum carry (`<prefix>_to_underlying`,
+/// `<prefix>_declared_name`, …), since C has no namespace to put them in.
+/// `enum_name` is the document's `name`, unconverted. Owned here beside the
+/// variant spelling so the declaration and every caller of its functions — the
+/// conformance fragment among them — derive it once.
+pub fn c11_function_prefix(enum_name: &str) -> String {
+    filters::to_snake_case(enum_name.to_string())
+}
+
 /// How an expression in ANOTHER document refers to that variant.
 ///
 /// `qualified_type` is the importing side's
@@ -210,5 +219,20 @@ mod tests {
     fn c11_has_no_qualifier_because_a_typedef_is_not_a_scope() {
         let r = variant_ref(Language::C11, "Result_t", "Result", "error");
         assert_eq!(r, "RESULT_ERROR");
+    }
+
+    /// C11 functions take their namespace from the enum's snake-cased
+    /// name — the generated header and the conformance fragment both call
+    /// through this, so a drift here would be a link error in one and not
+    /// the other. Pinned on the same casing spread as the variant tests.
+    #[test]
+    fn c11_function_prefix_is_the_snake_cased_document_name() {
+        for (enum_name, expected) in [
+            ("Result", "result"),
+            ("InterConfigFuelType", "inter_config_fuel_type"),
+            ("inter_config_fuel_type", "inter_config_fuel_type"),
+        ] {
+            assert_eq!(c11_function_prefix(enum_name), expected, "{enum_name}");
+        }
     }
 }

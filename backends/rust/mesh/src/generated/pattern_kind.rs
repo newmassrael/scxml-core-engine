@@ -60,4 +60,27 @@ impl PatternKind {
             _ => None,
         }
     }
+
+    /// The name the document declares for this variant.
+    pub const fn declared_name(self) -> &'static str {
+        match self {
+            Self::FireForget => "fireForget",
+            Self::RpcRequest => "rpcRequest",
+            Self::RpcReply => "rpcReply",
+            Self::EventSubscribe => "eventSubscribe",
+            Self::EventUnsubscribe => "eventUnsubscribe",
+            Self::EventNotify => "eventNotify",
+            Self::FieldRead => "fieldRead",
+            Self::FieldWrite => "fieldWrite",
+            Self::FieldNotify => "fieldNotify",
+            Self::InvokeStart => "invokeStart",
+            Self::InvokeStarted => "invokeStarted",
+            Self::ChildEvent => "childEvent",
+            Self::ParentEvent => "parentEvent",
+            Self::InvokeDone => "invokeDone",
+            Self::InvokeCancel => "invokeCancel",
+            Self::InvokeError => "invokeError",
+            Self::ParallelRegionDone => "parallelRegionDone",
+        }
+    }
 }
