@@ -117,6 +117,7 @@ if-condition 14
 elseif-condition 3
 global-script 3
 mesh-rpc-srcexpr 2
+mesh-rpc-request-expr 1
 hybrid-invoke 7
 cancel-expr 3
 ```
@@ -286,8 +287,8 @@ never spelled correctly.
   document: three counters, the two guards on `done.invoke.ask` and
   `error.invoke.ask`, three assigns) raised `engine-documents` by one,
   `datamodel-variable-init` and `assign-action` by three and
-  `transition-guard` by two. Its Mesh request's `<param>`s are literals, so
-  the new `mesh-rpc-request-expr` cause has no population in the tree yet.
+  `transition-guard` by two. Its Mesh request's `<param>`s were literals, so
+  the new `mesh-rpc-request-expr` cause had no population in the tree yet.
   Then
   `integration_resources/a_send_content_expr_is_the_payload/` (one engine
   document: eight data items, seven assigns, three guards over `_event.data`,
@@ -301,7 +302,9 @@ never spelled correctly.
   carries a third) raised `engine-documents` by one,
   `datamodel-variable-init` by eight, `assign-action` by eight,
   `child-invoke-needs-script-engine` by one, `if-condition` by one and
-  `send-dynamic-attr` by two.
+  `send-dynamic-attr` by two. Then the Mesh request fixture's `force` param,
+  computed so the request's event data is pinned as typed, gave the
+  `mesh-rpc-request-expr` cause its first population: 1.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.

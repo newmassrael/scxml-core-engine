@@ -418,21 +418,32 @@
                 # invocation starts; one that cannot be evaluated or does not
                 # fit starts nothing. A string literal was held to its field
                 # at build time, so it passes as written.
+                # The params as text and the same pairs as the data model holds
+                # them, for the request's event data — one evaluation of each.
                 _host_params: dict = {}
+                _host_payload: dict = {}
+                _host_repeats: dict = {}
                 _request_refused = False
 {% for param in inv.params %}
 {% if param.name in request_checks and param.is_static_literal %}
                 _host_params.setdefault({{ param.name | py_string_literal }}, []).append({{ param.static_value | py_string_literal }})
+{% if not param.envelope_metadata %}
+                self._put_param(_host_payload, _host_repeats, {{ param.name | py_string_literal }}, {{ param.static_value | py_string_literal }})
+{% endif %}
 {% elif param.name in request_checks %}
                 if not _request_refused:
                     try:
+                        _value = engine._script_engine.evaluate_expression(
+                            self._session_id, {% if param.expr %}{{ param.expr | to_lua_expr | py_string_literal }}{% else %}{{ param.location | py_string_literal }}{% endif %}
+                        )
                         _host_params.setdefault({{ param.name | py_string_literal }}, []).append(_request_field_wire(
-                            engine._script_engine.evaluate_expression(
-                                self._session_id, {% if param.expr %}{{ param.expr | to_lua_expr | py_string_literal }}{% else %}{{ param.location | py_string_literal }}{% endif %}
-                            ),
+                            _value,
                             {{ param.name | py_string_literal }},
                             {{ request_checks[param.name] }},
                         ))
+{% if not param.envelope_metadata %}
+                        self._put_param(_host_payload, _host_repeats, {{ param.name | py_string_literal }}, _value.to_python())
+{% endif %}
                     except (_ScriptError, _RequestRefusal) as _refusal:
                         self._raise_error_execution(
                             engine,
@@ -441,37 +452,60 @@
                         _request_refused = True
 {% else %}
                 try:
-                    for _name, _values in self._build_http_params(engine, [({{ param.name | py_string_literal }}, {% if param.expr %}{{ param.expr | to_lua_expr | py_string_literal }}{% else %}{{ param.location | py_string_literal }}{% endif %})], "", "<invoke>").items():
-                        _host_params.setdefault(_name, []).extend(_values)
+                    _one = self._eval_send_payload(engine, [({{ param.name | py_string_literal }}, {% if param.expr %}{{ param.expr | to_lua_expr | py_string_literal }}{% else %}{{ param.location | py_string_literal }}{% endif %})], "", "", "", "<invoke>")
                 except _ActionAbort:
                     continue
+                for _name, _values in self._wire_params_from_payload(_one).items():
+                    _host_params.setdefault(_name, []).extend(_values)
+{% if not param.envelope_metadata %}
+                if isinstance(_one, dict):
+                    for _name, _value in _one.items():
+                        self._put_param(_host_payload, _host_repeats, _name, _value)
+{% endif %}
 {% endif %}
 {% endfor %}
                 if _request_refused:
                     continue
+                _host_event_data = self._event_data_text(_host_payload, "", bool(_host_payload))
 {% else %}
+{% set payload_params = inv.params | rejectattr('envelope_metadata') | list %}
+{% set metadata_params = inv.params | selectattr('envelope_metadata') | list %}
                 try:
-                    # The same collection a `<send>` over BasicHTTP makes: text
-                    # under a name that may repeat, namelist entries first.
-                    _host_params = self._build_http_params(engine, [
-{%- for param in inv.params -%}
+                    # The same evaluation a `<send>` makes, rendered twice:
+                    # form text under a name that may repeat, namelist entries
+                    # first, and the `_event.data` text.
+                    _host_params, _host_event_data = self._host_invoke_request_data(engine, [
+{%- for param in payload_params -%}
 ({{ param.name | py_string_literal }}, {% if param.expr %}{{ param.expr | to_lua_expr | py_string_literal }}{% else %}{{ param.location | py_string_literal }}{% endif %}),
 {%- endfor -%}
-], {{ inv.namelist | default('', true) | py_string_literal }}, "<invoke>")
+], {{ inv.namelist | default('', true) | py_string_literal }}, [
+{%- for param in metadata_params -%}
+({{ param.name | py_string_literal }}, {{ param.static_value | py_string_literal }}),
+{%- endfor -%}
+])
                 except _ActionAbort:
                     continue
 {% endif %}
 {% else %}
+                # Every param is a literal, so both renderings are finished
+                # here, without a script engine.
                 _host_params: dict = {}
+                _host_payload: dict = {}
+                _host_repeats: dict = {}
 {% for param in inv.params %}
                 _host_params.setdefault({{ param.name | py_string_literal }}, []).append({{ param.static_value | py_string_literal }})
+{% if not param.envelope_metadata %}
+                self._put_param(_host_payload, _host_repeats, {{ param.name | py_string_literal }}, {{ param.static_value | py_string_literal }})
+{% endif %}
 {% endfor %}
+                _host_event_data = self._event_data_text(_host_payload, "", bool(_host_payload))
 {% endif %}
                 if not engine.perform_host_invoke(_HostInvokeRequest(
                     processor_type={{ inv.invoke_type | py_string_literal }},
                     invoke_id={{ inv.invoke_id | py_string_literal }},
                     src=_host_src,
                     params=_host_params,
+                    event_data=_host_event_data,
                     content=_host_content,
                 )):
                     # W3C SCXML 6.4.1: declared but no invoker registered. The

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: b5e304e43459e031ce8e0b15f100f14a5b3fe5867dcfdea6a317d515a1e5bd16
+// source-hash: bae55c00c59af0099cacfb1e5bf15b491196bff2c0662186afef67106e400ec8
 
 
 // SPDX-License-Identifier: MIT
@@ -18,7 +18,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine
+// SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine
 
 package a_mesh_request_reaches_the_router
 
@@ -474,15 +474,37 @@ func (p *AMeshRequestReachesTheRouterPolicy) ExecutePendingInvokes(engine *sce.E
 			// that cannot is reported and left out (W3C SCXML 5.7.1).
 			hostInvokeSrc := "#motor"
 			hostInvokeContent := ""
+			p.ensureScriptEngine()
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
 			hostInvokeParams["_mesh_event"] = append(hostInvokeParams["_mesh_event"], "service.request.force")
 			hostInvokeParams["_mesh_deadline_ms"] = append(hostInvokeParams["_mesh_deadline_ms"], "250")
+			if paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `(1 + 2)`); paramErr == nil {
+				// W3C SCXML C.2: the value crosses as text, rendered by the
+				// neutral helper — an engine literal would put this machine's
+				// language on the wire.
+				hostInvokeParams["force"] = append(hostInvokeParams["force"], sce.ToWireString(paramVal))
+				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "force", Value: paramVal})
+			} else {
+				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
+				// reported.
+				engine.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, "<invoke> <param name='force'> expr failed to evaluate"))
+			}
 			hostInvokeParams["speed"] = append(hostInvokeParams["speed"], "3")
+			hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "speed", Value: "3"})
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
+			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "sce:mesh-rpc",
 				InvokeID:      "ask",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The
@@ -718,12 +740,12 @@ func (p *AMeshRequestReachesTheRouterPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line a_mesh_request_reaches_the_router.scxml:24
+//line a_mesh_request_reaches_the_router.scxml:30
 func (p *AMeshRequestReachesTheRouterPolicy) ExecuteEntryActions(state AMeshRequestReachesTheRouterState, engine *sce.Engine[AMeshRequestReachesTheRouterState, AMeshRequestReachesTheRouterEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case AMeshRequestReachesTheRouterStateAsking:
-		//line a_mesh_request_reaches_the_router.scxml:34
+		//line a_mesh_request_reaches_the_router.scxml:40
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -746,7 +768,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) ExecuteEntryActions(state AMeshRequ
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line a_mesh_request_reaches_the_router.scxml:24
+//line a_mesh_request_reaches_the_router.scxml:30
 func (p *AMeshRequestReachesTheRouterPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[AMeshRequestReachesTheRouterState, AMeshRequestReachesTheRouterEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -754,7 +776,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) ExecuteHistoryDefaultContent(histor
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line a_mesh_request_reaches_the_router.scxml:24
+//line a_mesh_request_reaches_the_router.scxml:30
 func (p *AMeshRequestReachesTheRouterPolicy) ExecuteExitActions(state AMeshRequestReachesTheRouterState, engine *sce.Engine[AMeshRequestReachesTheRouterState, AMeshRequestReachesTheRouterEvent], configurationBeforeExit []AMeshRequestReachesTheRouterState) {
 	p.ensureScriptEngine()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
@@ -783,7 +805,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) ExecuteExitActions(state AMeshReque
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line a_mesh_request_reaches_the_router.scxml:24
+//line a_mesh_request_reaches_the_router.scxml:30
 func (p *AMeshRequestReachesTheRouterPolicy) BindCurrentEvent(event AMeshRequestReachesTheRouterEvent, engine *sce.Engine[AMeshRequestReachesTheRouterState, AMeshRequestReachesTheRouterEvent]) {
 	if event != AMeshRequestReachesTheRouterEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
@@ -798,7 +820,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) BindCurrentEvent(event AMeshRequest
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line a_mesh_request_reaches_the_router.scxml:24
+//line a_mesh_request_reaches_the_router.scxml:30
 func (p *AMeshRequestReachesTheRouterPolicy) FirstEnabledTransition(state AMeshRequestReachesTheRouterState, event AMeshRequestReachesTheRouterEvent, engine *sce.Engine[AMeshRequestReachesTheRouterState, AMeshRequestReachesTheRouterEvent]) (sce.EnabledTransition[AMeshRequestReachesTheRouterState, sce.HistoryID], bool) {
 	switch state {
 	case AMeshRequestReachesTheRouterStateAsking:
@@ -841,14 +863,14 @@ func (p *AMeshRequestReachesTheRouterPolicy) FirstEnabledTransition(state AMeshR
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line a_mesh_request_reaches_the_router.scxml:24
+//line a_mesh_request_reaches_the_router.scxml:30
 func (p *AMeshRequestReachesTheRouterPolicy) ExecuteTransitionContent(source AMeshRequestReachesTheRouterState, transitionIndex int, engine *sce.Engine[AMeshRequestReachesTheRouterState, AMeshRequestReachesTheRouterEvent]) {
 	p.ensureScriptEngine()
 	switch source {
 	case AMeshRequestReachesTheRouterStateAsking:
 		switch transitionIndex {
 		case 0:
-			//line a_mesh_request_reaches_the_router.scxml:41
+			//line a_mesh_request_reaches_the_router.scxml:48
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -860,7 +882,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) ExecuteTransitionContent(source AMe
 
 			}()
 		case 1:
-			//line a_mesh_request_reaches_the_router.scxml:44
+			//line a_mesh_request_reaches_the_router.scxml:51
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -872,7 +894,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) ExecuteTransitionContent(source AMe
 
 			}()
 		case 2:
-			//line a_mesh_request_reaches_the_router.scxml:49
+			//line a_mesh_request_reaches_the_router.scxml:56
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

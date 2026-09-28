@@ -23,11 +23,23 @@
    `params` is the element's `<param>` list; `element` is how a refusal names
    the element (`<send>`, `<invoke>`) and `label` how the log line does
    (`send`, `invoke`). `machine_name` is a parameter rather than a global
-   because a macro body does not see the render context. #}
-{% macro collect_params_into(params, model, map, machine_name, element, label) %}
+   because a macro body does not see the render context.
+
+   `typed_map`, when given, names a BTreeMap<String, Vec<ScriptValue>> that
+   also receives each value as the data model holds it — the one evaluation
+   read twice, once as text and once typed — so a consumer that needs the
+   pairs as JSON (`build_json_from_typed_params`) has them without a second
+   evaluation or a second, lossy parse of the text. A param the build marked
+   `envelope_metadata` is text only: it is not a value the author sent.
+   Written as a block at each site rather than a helper macro, so a site with
+   no typed map renders exactly what it rendered before. #}
+{% macro collect_params_into(params, model, map, machine_name, element, label, typed_map=none) %}
 {% for param in params %}
 {% if param.is_static_literal %}
         {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push("{{ param.static_value | escape_rust }}".to_string());
+{% if typed_map and not param.envelope_metadata %}
+        {{ typed_map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::String("{{ param.static_value | escape_rust }}".to_string()));
+{% endif %}
 {% elif param.expr and model.needs_script_engine %}
         {
             self.ensure_script_engine();
@@ -41,6 +53,9 @@
                     // put this sender's language on the wire.
                     let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
                     {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(s);
+{% if typed_map and not param.envelope_metadata %}
+                    {{ typed_map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(val);
+{% endif %}
                 }
                 Err(e) => {
                     // W3C SCXML 5.7.1: report the failure and omit the pair.
@@ -61,6 +76,9 @@
                 Ok(val) => {
                     let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
                     {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(s);
+{% if typed_map and not param.envelope_metadata %}
+                    {{ typed_map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(val);
+{% endif %}
                 }
                 Err(e) => {
                     // W3C SCXML 5.7.1: a location naming nothing is the same
@@ -93,9 +111,12 @@
    `request_refused` and stops after the first refusal. A string literal was
    held to its field at build time (`validation/typed-invoke-request`), so it
    passes as written. #}
-{% macro collect_typed_param_into(param, field_type, model, map, machine_name) %}
+{% macro collect_typed_param_into(param, field_type, model, map, machine_name, typed_map=none) %}
 {% if param.is_static_literal %}
         {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push("{{ param.static_value | escape_rust }}".to_string());
+{% if typed_map and not param.envelope_metadata %}
+        {{ typed_map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::String("{{ param.static_value | escape_rust }}".to_string()));
+{% endif %}
 {% elif (param.expr or param.location) and model.needs_script_engine %}
         if !request_refused {
             self.ensure_script_engine();
@@ -113,9 +134,15 @@
                     "{{ param.name | escape_rust }}",
                     ::sce_rust_runtime::RequestFieldType::{{ field_type }},
                 )
+                .map(|s| (s, val))
                 .map_err(|refusal| refusal.to_string())
             }) {
-                Ok(s) => {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(s),
+                {% if typed_map and not param.envelope_metadata %}Ok((s, val)){% else %}Ok((s, _)){% endif %} => {
+                    {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(s);
+{% if typed_map and not param.envelope_metadata %}
+                    {{ typed_map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(val);
+{% endif %}
+                }
                 Err(why) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param '{{ param.name | escape_rust }}' refused: {}", why);
 {% if 'error.execution' in model.events %}

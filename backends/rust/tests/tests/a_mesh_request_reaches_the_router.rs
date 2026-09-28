@@ -53,7 +53,11 @@ fn the_request(requests: &Arc<Mutex<Vec<HostInvokeRequest>>>) -> HostInvokeReque
     let param = |name: &str| request.params.get(name).cloned().unwrap_or_default();
     assert_eq!(param("_mesh_event"), ["service.request.force"]);
     assert_eq!(param("_mesh_deadline_ms"), ["250"]);
+    assert_eq!(param("force"), ["3"]);
     assert_eq!(param("speed"), ["3"]);
+    // The author's pairs alone, typed: `force` was computed, `speed` was
+    // written as a string, and the envelope fields are not payload.
+    assert_eq!(request.event_data, r#"{"force":3,"speed":"3"}"#);
     request
 }
 

@@ -319,6 +319,15 @@ type HostInvokeRequest struct {
 	// Params are `<param>` values keyed by name; a repeated name keeps every
 	// value in document order.
 	Params map[string][]string
+	// EventData is the namelist and `<param>` pairs as JSON, typed as the data
+	// model holds them — the text a local `<send>` with the same pairs would
+	// carry in `_event.data` (§scxml-5.10) — or empty when there are none.
+	// Params the build marked as envelope metadata (SCE_MESH.md §mesh-9.5's
+	// `_mesh_*`) are left out. Computed once by the generated invoke site, so a
+	// host that forwards the request — the Mesh router puts it in an envelope —
+	// forwards the engine's serialisation rather than a second one made from
+	// Params, which are text and have lost their types.
+	EventData string
 	// Content is inline `<content>`, empty when the document carried none.
 	Content string
 	// Token says which start of this invoke this is. The engine assigns it,

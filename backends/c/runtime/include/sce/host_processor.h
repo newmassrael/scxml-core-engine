@@ -517,6 +517,16 @@ typedef struct sce_host_invoke_event_s {
     const char *src;
     /** Inline `<content>`, empty when the document carried none. */
     const char *content;
+    /** The namelist and `<param>` pairs as JSON, typed as the data model
+        holds them — the text a local `<send>` with the same pairs would
+        carry in `_event.data` (§scxml-5.10) — or empty when there are none.
+        Params the build marked as envelope metadata (SCE_MESH.md
+        §mesh-9.5's `_mesh_*`) are left out. Computed once by the generated
+        invoke site, so a host that forwards the request — the Mesh router
+        puts it in an envelope — forwards the machine's serialisation rather
+        than a second one made from `params`, which are text and have lost
+        their types. NULL on a cancel. */
+    const char *event_data;
     /** `<param>` values in document order, repeats included. Shares the
         send half's pair type: a name and a value is the same shape here,
         and two structs would be two spellings of one fact. */

@@ -6,11 +6,17 @@
   so the router the host registers through the runtime's mesh-rpc door is
   started with the request when `asking` is entered:
 
-    type    sce:mesh-rpc
-    src     #motor
-    params  _mesh_event = service.request.force   (the envelope type)
-            _mesh_deadline_ms = 250                (the router's deadline)
-            speed = 3                              (the author's payload)
+    type        sce:mesh-rpc
+    src         #motor
+    params      _mesh_event = service.request.force   (the envelope type)
+                _mesh_deadline_ms = 250                (the router's deadline)
+                force = 3, speed = 3                   (the author's payload)
+    event data  {"force":3,"speed":"3"} — the author's pairs alone, typed as
+                the data model holds them: `force` was computed, so it is a
+                number, and `speed` was written as a string. The two
+                envelope fields are not in it (SCE_MESH.md §mesh-9.5). The
+                names are in document order and in name order at once, so
+                every engine's JSON is the same bytes.
 
   The router answers through the runtime's completion or failure call, and
   each ends the run in `done`:
@@ -35,6 +41,7 @@
     <invoke id="ask" type="sce:mesh-rpc" src="#motor">
       <param name="_mesh_event" expr="'service.request.force'"/>
       <param name="_mesh_deadline_ms" expr="250"/>
+      <param name="force" expr="1 + 2"/>
       <param name="speed" expr="'3'"/>
     </invoke>
 

@@ -763,6 +763,7 @@ fn host_served_mesh_request(
         expr: quote_literal(&value),
         is_static_literal: true,
         static_value: value,
+        envelope_metadata: true,
         source_location: info.base.source_location.clone(),
         ..Param::default()
     };

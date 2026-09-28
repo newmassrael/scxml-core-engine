@@ -327,10 +327,22 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             }
 {% endif %}
 {% endfor %}
+{# The request's event data is the pairs the author sent, as JSON, typed as
+   the data model holds them (W3C SCXML 5.10: the text a local `<send>` with
+   the same pairs would carry in `_event.data`). With a script engine, every
+   evaluation below also records its value in `_sce_invoke_pairs`, so the JSON
+   is built from the same evaluation as the text; without one, every value is
+   a literal and the JSON is finished here. Params the build marked as
+   envelope metadata (SCE_MESH.md §mesh-9.5) are left out. #}
+{% set record_pairs = model.needs_script_engine %}
+{% set payload_params = invoke_info.params | rejectattr('envelope_metadata') | list %}
+{% if record_pairs %}
+            (void)luaL_dostring(sm->L, "_sce_invoke_pairs = {}");
+{% endif %}
 {% for var_name in host_namelist %}
             char _host_inv_nl_value_{{ loop.index0 }}[SCE_MAX_DATA_LEN];
             bool _host_inv_nl_ok_{{ loop.index0 }} = false;
-{{ se.lua_namelist_var_to_wire_string(var_name, '_host_inv_nl_value_' ~ loop.index0, 'sizeof(_host_inv_nl_value_' ~ loop.index0 ~ ')', '_host_inv_nl_ok_' ~ loop.index0) }}
+{{ se.lua_namelist_var_to_wire_string(var_name, '_host_inv_nl_value_' ~ loop.index0, 'sizeof(_host_inv_nl_value_' ~ loop.index0 ~ ')', '_host_inv_nl_ok_' ~ loop.index0, var_name if record_pairs else none) }}
             if (!_host_inv_nl_ok_{{ loop.index0 }}) {
                 /* W3C SCXML 5.9.2: a namelist item that names no readable
                    location is an error, and the invocation does not start. */
@@ -356,7 +368,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if param.name in request_checks and not param.is_static_literal %}
             char _host_inv_typed_{{ loop.index0 }}[SCE_MAX_DATA_LEN];
             const char *_host_inv_refusal_{{ loop.index0 }} = NULL;
-{{ se.lua_eval_to_request_field(param.expr or param.location, request_checks[param.name], '_host_inv_typed_' ~ loop.index0, 'sizeof(_host_inv_typed_' ~ loop.index0 ~ ')', '_host_inv_refusal_' ~ loop.index0) }}
+{{ se.lua_eval_to_request_field(param.expr or param.location, request_checks[param.name], '_host_inv_typed_' ~ loop.index0, 'sizeof(_host_inv_typed_' ~ loop.index0 ~ ')', '_host_inv_refusal_' ~ loop.index0, param.name if (record_pairs and not param.envelope_metadata) else none) }}
             if (_host_inv_refusal_{{ loop.index0 }} != NULL) {
 {% if 'error.execution' in model.events %}
                 char _host_inv_message[SCE_MAX_DATA_LEN];
@@ -372,11 +384,38 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             _host_inv_params[_host_inv_param_count].value = _host_inv_typed_{{ loop.index0 }};
             _host_inv_param_count++;
 {% else %}
-{{ param_macros.collect_host_params_into([param], model, csym_prefix, '_host_inv_params', '_host_inv_param_count', '_host_inv_param_' ~ loop.index0, '<invoke>', '            ') -}}
+{{ param_macros.collect_host_params_into([param], model, csym_prefix, '_host_inv_params', '_host_inv_param_count', '_host_inv_param_' ~ loop.index0, '<invoke>', '            ', '', record_pairs) -}}
 {% endif %}
 {% endfor %}
 {% else %}
-{{ param_macros.collect_host_params_into(invoke_info.params, model, csym_prefix, '_host_inv_params', '_host_inv_param_count', '_host_inv_param', '<invoke>', '            ') -}}
+{{ param_macros.collect_host_params_into(invoke_info.params, model, csym_prefix, '_host_inv_params', '_host_inv_param_count', '_host_inv_param', '<invoke>', '            ', '', record_pairs) -}}
+{% endif %}
+{% if record_pairs %}
+            char _host_inv_event_data[SCE_MAX_DATA_LEN];
+            _host_inv_event_data[0] = '\0';
+            if (luaL_dostring(sm->L,
+                "local p = _sce_invoke_pairs or {}; _sce_invoke_pairs = nil; "
+                "if #p == 0 then return '' end; "
+                "return JSON.stringify(_scxml_params(table.unpack(p)))") == 0) {
+                size_t _host_inv_ed_len = 0u;
+                const char *_host_inv_ed = lua_tolstring(sm->L, -1, &_host_inv_ed_len);
+                if (_host_inv_ed == NULL || _host_inv_ed_len >= sizeof(_host_inv_event_data)) {
+                    /* Truncated JSON does not parse, so it would arrive as some
+                       other value: an argument this platform cannot marshal is
+                       one the invocation cannot start with (W3C SCXML 6.4.1). */
+                    lua_pop(sm->L, 1);
+{% if 'error.execution' in model.events %}
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        "<invoke>'s request does not fit the event's data, so nothing was started");
+{% endif %}
+                    continue;
+                }
+                memcpy(_host_inv_event_data, _host_inv_ed, _host_inv_ed_len + 1u);
+            }
+            lua_pop(sm->L, 1);
+{% else %}
+            static const char _host_inv_event_data[] = "{% if payload_params %}{{ payload_params | static_params_json | escape_c }}{% endif %}";
 {% endif %}
             {
                 sce_host_invoke_event_t _host_inv;
@@ -386,6 +425,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 _host_inv.invoke_id = "{{ invoke_info.invoke_id | escape_c }}";
                 _host_inv.src = {% if invoke_info.srcexpr %}_host_inv_src{% else %}"{{ invoke_info.src | default('', true) | escape_c }}"{% endif %};
                 _host_inv.content = {% if invoke_info.contentexpr %}_host_inv_content{% else %}"{{ invoke_info.content | default('', true) | escape_c }}"{% endif %};
+                _host_inv.event_data = _host_inv_event_data;
                 /* W3C SCXML 6.4.1: the machine's one start path records the
                    invocation, reads its deadline and runs the handler; this
                    site only says what the document wrote. */

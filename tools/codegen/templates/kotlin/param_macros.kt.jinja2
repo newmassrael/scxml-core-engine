@@ -25,12 +25,24 @@
    error was raised while the element was processed, so the block stops once
    the message has gone (W3C SCXML 4.9). The host-run `<invoke>` passes none:
    a failed `<param>` there costs the error and the pair, and the child still
-   starts. Both refuse an empty `location=""`, which names no location. #}
-{% macro collect_wire_params_into(params, model, map, eng, sid, machine_name, element, indent, failed_flag='') %}
+   starts. Both refuse an empty `location=""`, which names no location.
+
+   `typed`, when given, names a `MutableMap<String, Any?>` that also receives
+   each value as the data model holds it, through `putParam` — the one
+   evaluation read twice, once as text and once typed — so a consumer that
+   needs the pairs as JSON (`buildJsonFromParams`) has them without a second
+   evaluation. A param the build marked `envelope_metadata` is text only: it
+   is not a value the author sent. Written as a block at each site rather
+   than a helper macro, so a site with no typed map renders exactly what it
+   rendered before. #}
+{% macro collect_wire_params_into(params, model, map, eng, sid, machine_name, element, indent, failed_flag='', typed='') %}
 {% for param in params %}
 {% if param.is_static_literal %}
 {{ indent }}{{ map }}["{{ param.name | escape_kotlin }}"] =
 {{ indent }}    ({{ map }}["{{ param.name | escape_kotlin }}"] ?: emptyList()) + "{{ param.static_value | escape_kotlin }}"
+{% if typed and not param.envelope_metadata %}
+{{ indent }}putParam({{ typed }}, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
+{% endif %}
 {% elif (param.expr or param.location) and model.needs_script_engine %}
 {{ indent }}try {
 {{ indent }}    // The param crosses as text, and `toString()` is the platform's
@@ -38,6 +50,9 @@
 {{ indent }}    val v = {{ eng }}.evaluateExpr({{ sid }}, {% if param.expr %}{{ param.expr | to_script_source_expr }}{% else %}{{ param.location | to_script_source_expr }}{% endif %})
 {{ indent }}    {{ map }}["{{ param.name | escape_kotlin }}"] =
 {{ indent }}        ({{ map }}["{{ param.name | escape_kotlin }}"] ?: emptyList()) + valueToWireString(v)
+{% if typed and not param.envelope_metadata %}
+{{ indent }}    putParam({{ typed }}, "{{ param.name | escape_kotlin }}", v)
+{% endif %}
 {{ indent }}} catch (_: Exception) {
 {{ indent }}    // W3C SCXML 5.7.1: report the failure and omit the name and the
 {{ indent }}    // value — the act still happens, without a field the document
@@ -68,16 +83,22 @@
    error.execution, and the invocation starts nothing (the enclosing deferred
    closure returns). A string literal was held to its field at build time
    (`validation/typed-invoke-request`), so it passes as written. #}
-{% macro collect_typed_wire_param_into(param, field_type, model, map, eng, sid, machine_name, indent) %}
+{% macro collect_typed_wire_param_into(param, field_type, model, map, eng, sid, machine_name, indent, typed='') %}
 {% if param.is_static_literal %}
 {{ indent }}{{ map }}["{{ param.name | escape_kotlin }}"] =
 {{ indent }}    ({{ map }}["{{ param.name | escape_kotlin }}"] ?: emptyList()) + "{{ param.static_value | escape_kotlin }}"
+{% if typed and not param.envelope_metadata %}
+{{ indent }}putParam({{ typed }}, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
+{% endif %}
 {% elif (param.expr or param.location) and model.needs_script_engine %}
 {{ indent }}try {
 {{ indent }}    val v = {{ eng }}.evaluateExpr({{ sid }}, {% if param.expr %}{{ param.expr | to_script_source_expr }}{% else %}{{ param.location | to_script_source_expr }}{% endif %})
 {{ indent }}    {{ map }}["{{ param.name | escape_kotlin }}"] =
 {{ indent }}        ({{ map }}["{{ param.name | escape_kotlin }}"] ?: emptyList()) +
 {{ indent }}            TypedRequest.wire(v, "{{ param.name | escape_kotlin }}", {{ field_type }}, ::valueToWireString)
+{% if typed and not param.envelope_metadata %}
+{{ indent }}    putParam({{ typed }}, "{{ param.name | escape_kotlin }}", v)
+{% endif %}
 {{ indent }}} catch (refusal: Exception) {
 {{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> cannot be its request field: ${refusal.message}")
 {{ indent }}    return@deferInvoke

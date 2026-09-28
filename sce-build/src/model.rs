@@ -876,6 +876,15 @@ pub struct Param {
     pub is_static_literal: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub static_value: String,
+    /// `true` when this pair is envelope metadata the build put on a lowered
+    /// request rather than a value the author sent — SCE_MESH.md §mesh-9.5's
+    /// `_mesh_event` and `_mesh_deadline_ms` on a host-served
+    /// `<invoke type="sce:mesh-rpc">`. The host still receives it among the
+    /// params; it is left out of the request's payload, which §mesh-9.5 says
+    /// excludes the reserved names. Decided here, at build time, so no engine
+    /// has to know which names are reserved.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub envelope_metadata: bool,
     /// The `<param>` element's own position.
     ///
     /// Distinct from `location` above, which is the W3C

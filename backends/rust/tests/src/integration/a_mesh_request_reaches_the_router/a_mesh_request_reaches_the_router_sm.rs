@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: b5e304e43459e031ce8e0b15f100f14a5b3fe5867dcfdea6a317d515a1e5bd16
+// source-hash: bae55c00c59af0099cacfb1e5bf15b491196bff2c0662186afef67106e400ec8
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine"]
-// SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine
+#![doc = "SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine"]
+// SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -511,6 +511,14 @@ impl AMeshRequestReachesTheRouterPolicy {
                 let mut host_invoke_content = "".to_string();
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
                 host_invoke_params
                     .entry("_mesh_event".to_string())
                     .or_default()
@@ -519,16 +527,60 @@ impl AMeshRequestReachesTheRouterPolicy {
                     .entry("_mesh_deadline_ms".to_string())
                     .or_default()
                     .push("250".to_string());
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                    match se.evaluate_expression(&sid, "(1 + 2)") {
+                        Ok(val) => {
+                            // W3C SCXML C.2: the param crosses as text, so the value is
+                            // rendered by the neutral helper — an engine literal would
+                            // put this sender's language on the wire.
+                            let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                            host_invoke_params
+                                .entry("force".to_string())
+                                .or_default()
+                                .push(s);
+                            host_invoke_payload
+                                .entry("force".to_string())
+                                .or_default()
+                                .push(val);
+                        }
+                        Err(e) => {
+                            // W3C SCXML 5.7.1: report the failure and omit the pair.
+                            ::sce_rust_runtime::sce_log_error!(
+                                "invoke param 'force' eval failed: {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                AMeshRequestReachesTheRouterEvent::ErrorExecution,
+                                "<invoke> <param name='force'> expr failed to evaluate",
+                            ));
+                        }
+                    }
+                }
                 host_invoke_params
                     .entry("speed".to_string())
                     .or_default()
                     .push("3".to_string());
+                host_invoke_payload
+                    .entry("speed".to_string())
+                    .or_default()
+                    .push(::sce_rust_runtime::ScriptValue::String("3".to_string()));
 
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "sce:mesh-rpc".to_string(),
                     invoke_id: "ask".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
@@ -769,8 +821,8 @@ impl StatePolicy for AMeshRequestReachesTheRouterPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine"]
-    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine
+    #[doc = "SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine"]
+    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -779,7 +831,7 @@ impl StatePolicy for AMeshRequestReachesTheRouterPolicy {
     ) {
         match state {
             AMeshRequestReachesTheRouterState::Asking => {
-                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:34 :: asking :: _state_body
+                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:40 :: asking :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -810,8 +862,8 @@ impl StatePolicy for AMeshRequestReachesTheRouterPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine"]
-    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine
+    #[doc = "SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine"]
+    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -848,8 +900,8 @@ impl StatePolicy for AMeshRequestReachesTheRouterPolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine"]
-    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine
+    #[doc = "SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine"]
+    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -893,8 +945,8 @@ impl StatePolicy for AMeshRequestReachesTheRouterPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine"]
-    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine
+    #[doc = "SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine"]
+    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -953,8 +1005,8 @@ impl StatePolicy for AMeshRequestReachesTheRouterPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine"]
-    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine
+    #[doc = "SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine"]
+    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -965,7 +1017,7 @@ impl StatePolicy for AMeshRequestReachesTheRouterPolicy {
             AMeshRequestReachesTheRouterState::Asking => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: a_mesh_request_reaches_the_router.scxml:41 :: asking :: _transition_0
+                        // SCE-MAP: a_mesh_request_reaches_the_router.scxml:48 :: asking :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -999,7 +1051,7 @@ impl StatePolicy for AMeshRequestReachesTheRouterPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: a_mesh_request_reaches_the_router.scxml:44 :: asking :: _transition_1
+                        // SCE-MAP: a_mesh_request_reaches_the_router.scxml:51 :: asking :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1033,7 +1085,7 @@ impl StatePolicy for AMeshRequestReachesTheRouterPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: a_mesh_request_reaches_the_router.scxml:49 :: asking :: _transition_2
+                        // SCE-MAP: a_mesh_request_reaches_the_router.scxml:56 :: asking :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {

@@ -25,14 +25,24 @@
    was raised while the element was processed, so the block stops once the
    message has gone (W3C SCXML 4.9). A `<send>` also refuses an empty
    `location=""`, which names no location. The host-run `<invoke>` passes
-   none, and its reading of a failed `<param>` is left as it was. #}
-{% macro collect_host_params_into(params, model, csym_prefix, arr, count, prefix, element, indent, failed_flag='') %}
+   none, and its reading of a failed `<param>` is left as it was.
+
+   `record`, when true, also keeps each value the author sent in
+   `_sce_invoke_pairs` as the data model holds it (`se.lua_record_pair`), for
+   the host-run `<invoke>`'s event data — the one evaluation read twice. A
+   param the build marked `envelope_metadata` is text only. #}
+{% macro collect_host_params_into(params, model, csym_prefix, arr, count, prefix, element, indent, failed_flag='', record=false) %}
 {% for param in params %}
+{% set record_as = param.name if (record and not param.envelope_metadata) else none %}
 {% if param.is_static_literal %}
 {{ indent }}static const char {{ prefix }}_value_{{ loop.index0 }}[] = "{{ param.static_value | escape_c }}";
 {{ indent }}{{ arr }}[{{ count }}].name = "{{ param.name | escape_c }}";
 {{ indent }}{{ arr }}[{{ count }}].value = {{ prefix }}_value_{{ loop.index0 }};
 {{ indent }}{{ count }}++;
+{% if record_as %}
+{{ indent }}(void)luaL_dostring(sm->L,
+{{ indent }}    "table.insert(_sce_invoke_pairs, {\"{{ param.name | escape_lua | escape_c }}\", \"{{ param.static_value | escape_lua | escape_c }}\"})");
+{% endif %}
 {% elif failed_flag and not (param.expr or param.location) %}
 {{ indent }}/* W3C SCXML 5.7.1: an empty location names no location in the data
 {{ indent }}   model — reported, and the pair left out. */
@@ -45,7 +55,7 @@
 {% else %}
 {{ indent }}char {{ prefix }}_value_{{ loop.index0 }}[SCE_MAX_DATA_LEN];
 {{ indent }}bool {{ prefix }}_ok_{{ loop.index0 }} = false;
-{{ se.lua_eval_to_wire_string(param.expr or param.location, prefix ~ '_value_' ~ loop.index0, 'sizeof(' ~ prefix ~ '_value_' ~ loop.index0 ~ ')', prefix ~ '_ok_' ~ loop.index0) }}
+{{ se.lua_eval_to_wire_string(param.expr or param.location, prefix ~ '_value_' ~ loop.index0, 'sizeof(' ~ prefix ~ '_value_' ~ loop.index0 ~ ')', prefix ~ '_ok_' ~ loop.index0, record_as) }}
 {{ indent }}if ({{ prefix }}_ok_{{ loop.index0 }}) {
 {{ indent }}    {{ arr }}[{{ count }}].name = "{{ param.name | escape_c }}";
 {{ indent }}    {{ arr }}[{{ count }}].value = {{ prefix }}_value_{{ loop.index0 }};

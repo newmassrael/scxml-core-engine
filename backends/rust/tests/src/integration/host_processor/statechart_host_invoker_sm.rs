@@ -1447,12 +1447,27 @@ impl StatechartHostInvokerPolicy {
                 let mut host_invoke_content = "".to_string();
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
 
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "x-sce-host".to_string(),
                     invoke_id: "done._invoke_0".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
@@ -1508,6 +1523,14 @@ impl StatechartHostInvokerPolicy {
                 }
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
                 {
                     // §scxml-6.4.1: a namelist location that is not declared,
                     // or does not evaluate, starts nothing — the rule the
@@ -1518,10 +1541,22 @@ impl StatechartHostInvokerPolicy {
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                     let mut namelist_failed = false;
                     if !namelist_failed {
-                        match (se.has_variable(&sid, "n"), se.evaluate_expression(&sid, "n")) {
-                            (true, Ok(val)) => host_invoke_params.entry("n".to_string()).or_default().push(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val)),
+                        match (
+                            se.has_variable(&sid, "n"),
+                            se.evaluate_expression(&sid, "n"),
+                        ) {
+                            (true, Ok(val)) => {
+                                host_invoke_params.entry("n".to_string()).or_default().push(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val));
+                                host_invoke_payload
+                                    .entry("n".to_string())
+                                    .or_default()
+                                    .push(val);
+                            }
                             _ => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostInvokerEvent::ErrorExecution, "<invoke> namelist names 'n', which could not be read"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    StatechartHostInvokerEvent::ErrorExecution,
+                                    "<invoke> namelist names 'n', which could not be read",
+                                ));
                                 namelist_failed = true;
                             }
                         }
@@ -1534,6 +1569,10 @@ impl StatechartHostInvokerPolicy {
                     .entry("twice".to_string())
                     .or_default()
                     .push("a".to_string());
+                host_invoke_payload
+                    .entry("twice".to_string())
+                    .or_default()
+                    .push(::sce_rust_runtime::ScriptValue::String("a".to_string()));
                 {
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
@@ -1549,6 +1588,10 @@ impl StatechartHostInvokerPolicy {
                                 .entry("twice".to_string())
                                 .or_default()
                                 .push(s);
+                            host_invoke_payload
+                                .entry("twice".to_string())
+                                .or_default()
+                                .push(val);
                         }
                         Err(e) => {
                             // W3C SCXML 5.7.1: report the failure and omit the pair.
@@ -1578,6 +1621,10 @@ impl StatechartHostInvokerPolicy {
                                 .entry("bad".to_string())
                                 .or_default()
                                 .push(s);
+                            host_invoke_payload
+                                .entry("bad".to_string())
+                                .or_default()
+                                .push(val);
                         }
                         Err(e) => {
                             // W3C SCXML 5.7.1: report the failure and omit the pair.
@@ -1598,6 +1645,13 @@ impl StatechartHostInvokerPolicy {
                     invoke_id: "req".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
@@ -1653,12 +1707,27 @@ impl StatechartHostInvokerPolicy {
                 }
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
 
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "x-sce-host".to_string(),
                     invoke_id: "req2".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
@@ -1714,12 +1783,27 @@ impl StatechartHostInvokerPolicy {
                 }
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
 
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "x-sce-host".to_string(),
                     invoke_id: "req3".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
@@ -1754,12 +1838,27 @@ impl StatechartHostInvokerPolicy {
                 let mut host_invoke_content = "".to_string();
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
 
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "x-sce-host".to_string(),
                     invoke_id: "job".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
@@ -1794,16 +1893,35 @@ impl StatechartHostInvokerPolicy {
                 let mut host_invoke_content = "".to_string();
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
                 host_invoke_params
                     .entry("within".to_string())
                     .or_default()
                     .push("2500".to_string());
+                host_invoke_payload
+                    .entry("within".to_string())
+                    .or_default()
+                    .push(::sce_rust_runtime::ScriptValue::String("2500".to_string()));
 
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "x-sce-host".to_string(),
                     invoke_id: "probe".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
@@ -1838,12 +1956,27 @@ impl StatechartHostInvokerPolicy {
                 let mut host_invoke_content = "".to_string();
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
 
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "x-sce-host".to_string(),
                     invoke_id: "probe2".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
@@ -1903,12 +2036,27 @@ impl StatechartHostInvokerPolicy {
                 let mut host_invoke_content = "".to_string();
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
 
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "x-sce-host".to_string(),
                     invoke_id: "locating._invoke_1".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
@@ -1968,12 +2116,27 @@ impl StatechartHostInvokerPolicy {
                 let mut host_invoke_content = "".to_string();
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
 
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "x-sce-host".to_string(),
                     invoke_id: "locating._invoke_2".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
@@ -2008,12 +2171,27 @@ impl StatechartHostInvokerPolicy {
                 let mut host_invoke_content = "".to_string();
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
 
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "x-sce-host".to_string(),
                     invoke_id: "fleeting".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
@@ -2048,6 +2226,14 @@ impl StatechartHostInvokerPolicy {
                 let mut host_invoke_content = "".to_string();
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
                 {
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
@@ -2063,6 +2249,10 @@ impl StatechartHostInvokerPolicy {
                                 .entry("_sce_deadline_ms".to_string())
                                 .or_default()
                                 .push(s);
+                            host_invoke_payload
+                                .entry("_sce_deadline_ms".to_string())
+                                .or_default()
+                                .push(val);
                         }
                         Err(e) => {
                             // W3C SCXML 5.7.1: report the failure and omit the pair.
@@ -2083,6 +2273,13 @@ impl StatechartHostInvokerPolicy {
                     invoke_id: "slow".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
@@ -2117,16 +2314,35 @@ impl StatechartHostInvokerPolicy {
                 let mut host_invoke_content = "".to_string();
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
                 host_invoke_params
                     .entry("_sce_deadline_ms".to_string())
                     .or_default()
                     .push("soon".to_string());
+                host_invoke_payload
+                    .entry("_sce_deadline_ms".to_string())
+                    .or_default()
+                    .push(::sce_rust_runtime::ScriptValue::String("soon".to_string()));
 
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "x-sce-host".to_string(),
                     invoke_id: "undated".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
@@ -2161,6 +2377,14 @@ impl StatechartHostInvokerPolicy {
                 let mut host_invoke_content = "".to_string();
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
                 // SCE Accepted Subset 2.12: `sce:request` makes the params a
                 // record, so each value is held to its field here, where the
                 // invocation starts; one that does not fit starts nothing.
@@ -2178,12 +2402,19 @@ impl StatechartHostInvokerPolicy {
                             "scope",
                             ::sce_rust_runtime::RequestFieldType::String,
                         )
+                        .map(|s| (s, val))
                         .map_err(|refusal| refusal.to_string())
                     }) {
-                        Ok(s) => host_invoke_params
-                            .entry("scope".to_string())
-                            .or_default()
-                            .push(s),
+                        Ok((s, val)) => {
+                            host_invoke_params
+                                .entry("scope".to_string())
+                                .or_default()
+                                .push(s);
+                            host_invoke_payload
+                                .entry("scope".to_string())
+                                .or_default()
+                                .push(val);
+                        }
                         Err(why) => {
                             ::sce_rust_runtime::sce_log_error!(
                                 "invoke typed param 'scope' refused: {}",
@@ -2207,12 +2438,19 @@ impl StatechartHostInvokerPolicy {
                             "level",
                             ::sce_rust_runtime::RequestFieldType::Uint8,
                         )
+                        .map(|s| (s, val))
                         .map_err(|refusal| refusal.to_string())
                     }) {
-                        Ok(s) => host_invoke_params
-                            .entry("level".to_string())
-                            .or_default()
-                            .push(s),
+                        Ok((s, val)) => {
+                            host_invoke_params
+                                .entry("level".to_string())
+                                .or_default()
+                                .push(s);
+                            host_invoke_payload
+                                .entry("level".to_string())
+                                .or_default()
+                                .push(val);
+                        }
                         Err(why) => {
                             ::sce_rust_runtime::sce_log_error!(
                                 "invoke typed param 'level' refused: {}",
@@ -2232,6 +2470,13 @@ impl StatechartHostInvokerPolicy {
                     invoke_id: "perm".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.

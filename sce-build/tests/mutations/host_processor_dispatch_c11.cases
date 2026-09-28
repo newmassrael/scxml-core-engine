@@ -88,11 +88,11 @@ mutation_case "the param value does not cross" <<'PY'
 edit("tools/codegen/templates/c/param_macros.jinja2",
      """{{ indent }}{{ arr }}[{{ count }}].value = {{ prefix }}_value_{{ loop.index0 }};
 {{ indent }}{{ count }}++;
-{% elif failed_flag and not (param.expr or param.location) %}""",
+{% if record_as %}""",
      """{{ indent }}(void){{ prefix }}_value_{{ loop.index0 }};
 {{ indent }}{{ arr }}[{{ count }}].value = "";
 {{ indent }}{{ count }}++;
-{% elif failed_flag and not (param.expr or param.location) %}""")
+{% if record_as %}""")
 PY
 
 # ── The host's wiring does not reach the machine ────────────────────

@@ -515,6 +515,13 @@
                         hostInvoke.invokeId = "{{ invoke_info.invoke_id }}";
                         hostInvoke.src = "{{ invoke_info.src | default('', true) | escape_cpp }}";
                         hostInvoke.content = "{{ invoke_info.content | default('', true) | escape_cpp }}";
+                        // The pairs the author sent, as text and as the data
+                        // model holds them, for the request's eventData — the
+                        // `<send>`'s pair of maps, from the same one evaluation
+                        // that fills `params`. Envelope metadata the build put on
+                        // the request (SCE_MESH.md §mesh-9.5) is in `params` only.
+                        [[maybe_unused]] std::map<std::string, std::vector<std::string>> payloadText;
+                        [[maybe_unused]] std::map<std::string, std::vector<ScriptValue>> payloadTyped;
 {% set host_evaluates = invoke_info.srcexpr or invoke_info.namelist or invoke_info.contentexpr or invoke_info.idlocation or (invoke_info.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) %}
 {% if host_evaluates %}
                         // W3C SCXML 6.4.1: what the request says is evaluated
@@ -572,13 +579,16 @@
                                 hostScript, sessionId_.value(), "{{ invoke_info.namelist | escape_cpp }}", namelistValues,
                                 [&engine](const std::string& errorMsg) {
                                     engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
-                                });
+                                },
+                                &payloadTyped);
                             if (!namelistValid) {
                                 return;
                             }
                             for (auto& [name, values] : namelistValues) {
                                 auto& slot = hostInvoke.params[name];
                                 slot.insert(slot.end(), values.begin(), values.end());
+                                auto& text = payloadText[name];
+                                text.insert(text.end(), values.begin(), values.end());
                             }
                         }
 {% endif %}
@@ -586,6 +596,10 @@
                         {% for param in invoke_info.params %}
                         {% if param.is_static_literal %}
                         hostInvoke.params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
+                        {% if not param.envelope_metadata %}
+                        payloadText["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
+                        payloadTyped["{{ param.name | escape_cpp }}"].push_back(ScriptValue(std::string("{{ param.static_value | escape_cpp }}")));
+                        {% endif %}
                         {% elif request_checks and param.name in request_checks %}
                         {
                             // SCE Accepted Subset 2.12: `sce:request` makes the
@@ -610,6 +624,10 @@
                                 return;
                             }
                             hostInvoke.params["{{ param.name | escape_cpp }}"].push_back(*text);
+                            {% if not param.envelope_metadata %}
+                            payloadText["{{ param.name | escape_cpp }}"].push_back(*text);
+                            payloadTyped["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
+                            {% endif %}
                         }
                         {% elif not (param.expr or param.location) %}
                         // W3C SCXML 5.7.1: `location=""` names no location — the same
@@ -625,6 +643,10 @@
                             auto paramResult = hostScript.evaluateExpression(sessionId_.value(), {% if param.expr %}{{ param.expr | to_script_source_expr }}{% else %}{{ param.location | to_script_source_expr }}{% endif %}).get();
                             if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
                                 hostInvoke.params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+                                {% if not param.envelope_metadata %}
+                                payloadText["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+                                payloadTyped["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
+                                {% endif %}
                             } else {
                                 engine.raise(typename Engine::EventWithMetadata(
                                     Event::Error_execution,
@@ -633,6 +655,9 @@
                         }
                         {% endif %}
                         {% endfor %}
+                        if (!payloadText.empty()) {
+                            hostInvoke.eventData = ::SCE::EventDataHelper::buildEventDataJson(payloadText, payloadTyped);
+                        }
                         if (!engine.performHostInvoke(hostInvoke)) {
                             // W3C SCXML 6.4.1: declared but no invoker
                             // registered. The document asked for a process to

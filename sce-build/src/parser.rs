@@ -3414,6 +3414,7 @@ impl SCXMLParser {
                 location_spelling: AttributeSpelling::of(&param_elem, None, "location"),
                 is_static_literal,
                 static_value,
+                envelope_metadata: false,
                 source_location: source_location_of(&param_elem, source_name),
             });
         }
@@ -3559,6 +3560,7 @@ impl SCXMLParser {
                 location_spelling: None,
                 is_static_literal: false,
                 static_value: String::new(),
+                envelope_metadata: false,
                 source_location: source_location_of(&arg, source_name),
             });
         }
@@ -3995,6 +3997,7 @@ impl SCXMLParser {
                 } else {
                     String::new()
                 },
+                envelope_metadata: false,
                 source_location: param_at.clone(),
             });
             hybrid_params.push(Param {
@@ -4508,6 +4511,7 @@ impl SCXMLParser {
                     } else {
                         String::new()
                     },
+                    envelope_metadata: false,
                     source_location: source_location_of(&param, source_name),
                 });
             }

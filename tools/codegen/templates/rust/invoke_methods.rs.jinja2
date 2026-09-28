@@ -553,6 +553,12 @@
 {% endif %}
 {% endfor %}
                 let mut host_invoke_params = std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload =
+                    ::std::collections::BTreeMap::<String, Vec<::sce_rust_runtime::ScriptValue>>::new();
 {% if invoke_info.namelist %}
                 {
                     // §scxml-6.4.1: a namelist location that is not declared,
@@ -566,7 +572,10 @@
 {% for name in invoke_info.namelist | split %}
                     if !namelist_failed {
                         match (se.has_variable(&sid, "{{ name }}"), se.evaluate_expression(&sid, "{{ name }}")) {
-                            (true, Ok(val)) => host_invoke_params.entry("{{ name }}".to_string()).or_default().push(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val)),
+                            (true, Ok(val)) => {
+                                host_invoke_params.entry("{{ name }}".to_string()).or_default().push(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val));
+                                host_invoke_payload.entry("{{ name }}".to_string()).or_default().push(val);
+                            }
                             _ => {
 {% if 'error.execution' in model.events %}
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> namelist names '{{ name }}', which could not be read"));
@@ -590,22 +599,27 @@
                 let mut request_refused = false;
 {% for param in invoke_info.params %}
 {% if param.name in request_checks %}
-{{ collect_typed_param_into(param, request_checks[param.name], model, 'host_invoke_params', machine_name) }}
+{{ collect_typed_param_into(param, request_checks[param.name], model, 'host_invoke_params', machine_name, 'host_invoke_payload') }}
 {% else %}
-{{ collect_params_into([param], model, 'host_invoke_params', machine_name, '<invoke>', 'invoke') }}
+{{ collect_params_into([param], model, 'host_invoke_params', machine_name, '<invoke>', 'invoke', 'host_invoke_payload') }}
 {% endif %}
 {% endfor %}
                 if request_refused {
                     continue;
                 }
 {% else %}
-{{ collect_params_into(invoke_info.params, model, 'host_invoke_params', machine_name, '<invoke>', 'invoke') }}
+{{ collect_params_into(invoke_info.params, model, 'host_invoke_params', machine_name, '<invoke>', 'invoke', 'host_invoke_payload') }}
 {% endif %}
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "{{ invoke_info.invoke_type | escape_rust }}".to_string(),
                     invoke_id: "{{ invoke_info.invoke_id }}".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(&host_invoke_payload)
+                    },
                     content: host_invoke_content,
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.

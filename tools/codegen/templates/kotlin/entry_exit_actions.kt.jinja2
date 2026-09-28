@@ -199,6 +199,10 @@
 {% endfor %}
 {% endif %}
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
 {% if inv.namelist and model.needs_script_engine %}
 {% for var_name in inv.namelist.split() %}
                         if (!hostEngine.hasVariable(hostSid, "{{ var_name }}")) {
@@ -206,8 +210,10 @@
                             return@deferInvoke
                         }
                         try {
+                            val namelistValue = hostEngine.getVariable(hostSid, "{{ var_name }}")
                             hostInvokeParams["{{ var_name }}"] =
-                                (hostInvokeParams["{{ var_name }}"] ?: emptyList()) + valueToWireString(hostEngine.getVariable(hostSid, "{{ var_name }}"))
+                                (hostInvokeParams["{{ var_name }}"] ?: emptyList()) + valueToWireString(namelistValue)
+                            putParam(hostInvokePayload, "{{ var_name }}", namelistValue)
                         } catch (_: Exception) {
                             raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> namelist entry '{{ var_name }}' failed to evaluate")
                             return@deferInvoke
@@ -222,13 +228,13 @@
                         // be evaluated or does not fit starts nothing.
 {% for param in inv.params %}
 {% if param.name in request_checks %}
-{{ param_macros.collect_typed_wire_param_into(param, request_checks[param.name], model, 'hostInvokeParams', 'hostEngine', 'hostSid', machine_name, '                        ') -}}
+{{ param_macros.collect_typed_wire_param_into(param, request_checks[param.name], model, 'hostInvokeParams', 'hostEngine', 'hostSid', machine_name, '                        ', 'hostInvokePayload') -}}
 {% else %}
-{{ param_macros.collect_wire_params_into([param], model, 'hostInvokeParams', 'hostEngine', 'hostSid', machine_name, '<invoke>', '                        ') -}}
+{{ param_macros.collect_wire_params_into([param], model, 'hostInvokeParams', 'hostEngine', 'hostSid', machine_name, '<invoke>', '                        ', '', 'hostInvokePayload') -}}
 {% endif %}
 {% endfor %}
 {% else %}
-{{ param_macros.collect_wire_params_into(inv.params, model, 'hostInvokeParams', 'hostEngine', 'hostSid', machine_name, '<invoke>', '                        ') -}}
+{{ param_macros.collect_wire_params_into(inv.params, model, 'hostInvokeParams', 'hostEngine', 'hostSid', machine_name, '<invoke>', '                        ', '', 'hostInvokePayload') -}}
 {% endif %}
                         val started = performHostInvoke(
                             HostInvokeRequest(
@@ -236,6 +242,7 @@
                                 invokeId = "{{ inv.invoke_id | escape_kotlin }}",
                                 src = {% if inv.srcexpr %}hostInvokeSrc{% else %}"{{ inv.src | default('', true) | escape_kotlin }}"{% endif %},
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = {% if inv.contentexpr %}hostInvokeContent{% else %}"{{ inv.content | default('', true) | escape_kotlin }}"{% endif %}
                             )
                         )

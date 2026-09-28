@@ -1401,12 +1401,17 @@ class StatechartHostInvokerStateMachine(
                         // location that cannot take the id starts nothing.
                         if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("doneId", "doneId"), "done._invoke_0", "<invoke>")) return@deferInvoke
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
                         val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "done._invoke_0",
                                 src = "",
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = ""                            )
                         )
                         if (!started) {
@@ -1450,25 +1455,33 @@ class StatechartHostInvokerStateMachine(
                             return@deferInvoke
                         }
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
                         if (!hostEngine.hasVariable(hostSid, "n")) {
                             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> namelist names 'n', which is not declared")
                             return@deferInvoke
                         }
                         try {
+                            val namelistValue = hostEngine.getVariable(hostSid, "n")
                             hostInvokeParams["n"] =
-                                (hostInvokeParams["n"] ?: emptyList()) + valueToWireString(hostEngine.getVariable(hostSid, "n"))
+                                (hostInvokeParams["n"] ?: emptyList()) + valueToWireString(namelistValue)
+                            putParam(hostInvokePayload, "n", namelistValue)
                         } catch (_: Exception) {
                             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> namelist entry 'n' failed to evaluate")
                             return@deferInvoke
                         }
                         hostInvokeParams["twice"] =
                             (hostInvokeParams["twice"] ?: emptyList()) + "a"
+                        putParam(hostInvokePayload, "twice", "a")
                         try {
                             // The param crosses as text, and `toString()` is the platform's
                             // spelling of the value; this is the document's.
                             val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("_scxml_add(n, 1)", "n + 1"))
                             hostInvokeParams["twice"] =
                                 (hostInvokeParams["twice"] ?: emptyList()) + valueToWireString(v)
+                            putParam(hostInvokePayload, "twice", v)
                         } catch (_: Exception) {
                             // W3C SCXML 5.7.1: report the failure and omit the name and the
                             // value — the act still happens, without a field the document
@@ -1481,6 +1494,7 @@ class StatechartHostInvokerStateMachine(
                             val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper"))
                             hostInvokeParams["bad"] =
                                 (hostInvokeParams["bad"] ?: emptyList()) + valueToWireString(v)
+                            putParam(hostInvokePayload, "bad", v)
                         } catch (_: Exception) {
                             // W3C SCXML 5.7.1: report the failure and omit the name and the
                             // value — the act still happens, without a field the document
@@ -1493,6 +1507,7 @@ class StatechartHostInvokerStateMachine(
                                 invokeId = "req",
                                 src = hostInvokeSrc,
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = ""                            )
                         )
                         if (!started) {
@@ -1533,12 +1548,17 @@ class StatechartHostInvokerStateMachine(
                             return@deferInvoke
                         }
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
                         val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "req2",
                                 src = "",
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = hostInvokeContent                            )
                         )
                         if (!started) {
@@ -1579,12 +1599,17 @@ class StatechartHostInvokerStateMachine(
                             return@deferInvoke
                         }
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
                         val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "req3",
                                 src = hostInvokeSrc,
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = ""                            )
                         )
                         if (!started) {
@@ -1614,12 +1639,17 @@ class StatechartHostInvokerStateMachine(
                     val generatedInvokeId = "failing.${System.identityHashCode(this)}.job"
                     deferInvoke(state, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
                         val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "job",
                                 src = "",
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = ""                            )
                         )
                         if (!started) {
@@ -1657,14 +1687,20 @@ class StatechartHostInvokerStateMachine(
                     val generatedInvokeId = "invoking.${System.identityHashCode(this)}.probe"
                     deferInvoke(state, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
                         hostInvokeParams["within"] =
                             (hostInvokeParams["within"] ?: emptyList()) + "2500"
+                        putParam(hostInvokePayload, "within", "2500")
                         val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "probe",
                                 src = "pane://turn",
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = ""                            )
                         )
                         if (!started) {
@@ -1691,12 +1727,17 @@ class StatechartHostInvokerStateMachine(
                     val generatedInvokeId = "invoking.${System.identityHashCode(this)}.probe2"
                     deferInvoke(state, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
                         val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "probe2",
                                 src = "pane://other",
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = ""                            )
                         )
                         if (!started) {
@@ -1786,12 +1827,17 @@ class StatechartHostInvokerStateMachine(
                         // location that cannot take the id starts nothing.
                         if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("slot.id", "slot.id"), "locating._invoke_1", "<invoke>")) return@deferInvoke
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
                         val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "locating._invoke_1",
                                 src = "",
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = ""                            )
                         )
                         if (!started) {
@@ -1833,12 +1879,17 @@ class StatechartHostInvokerStateMachine(
                         // location that cannot take the id starts nothing.
                         if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper"), "locating._invoke_2", "<invoke>")) return@deferInvoke
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
                         val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "locating._invoke_2",
                                 src = "",
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = ""                            )
                         )
                         if (!started) {
@@ -1868,12 +1919,17 @@ class StatechartHostInvokerStateMachine(
                     val generatedInvokeId = "passing.${System.identityHashCode(this)}.fleeting"
                     deferInvoke(state, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
                         val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "fleeting",
                                 src = "",
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = ""                            )
                         )
                         if (!started) {
@@ -1911,12 +1967,17 @@ class StatechartHostInvokerStateMachine(
                         val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                         val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
                         try {
                             // The param crosses as text, and `toString()` is the platform's
                             // spelling of the value; this is the document's.
                             val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("50", "50"))
                             hostInvokeParams["_sce_deadline_ms"] =
                                 (hostInvokeParams["_sce_deadline_ms"] ?: emptyList()) + valueToWireString(v)
+                            putParam(hostInvokePayload, "_sce_deadline_ms", v)
                         } catch (_: Exception) {
                             // W3C SCXML 5.7.1: report the failure and omit the name and the
                             // value — the act still happens, without a field the document
@@ -1929,6 +1990,7 @@ class StatechartHostInvokerStateMachine(
                                 invokeId = "slow",
                                 src = "",
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = ""                            )
                         )
                         if (!started) {
@@ -1955,14 +2017,20 @@ class StatechartHostInvokerStateMachine(
                     val generatedInvokeId = "timed.${System.identityHashCode(this)}.undated"
                     deferInvoke(state, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
                         hostInvokeParams["_sce_deadline_ms"] =
                             (hostInvokeParams["_sce_deadline_ms"] ?: emptyList()) + "soon"
+                        putParam(hostInvokePayload, "_sce_deadline_ms", "soon")
                         val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "undated",
                                 src = "",
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = ""                            )
                         )
                         if (!started) {
@@ -2000,6 +2068,10 @@ class StatechartHostInvokerStateMachine(
                         val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                         val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
                         // SCE Accepted Subset 2.12: `sce:request` makes the
                         // params a record, so each value is held to its field
                         // here, where the invocation starts; one that cannot
@@ -2009,6 +2081,7 @@ class StatechartHostInvokerStateMachine(
                             hostInvokeParams["scope"] =
                                 (hostInvokeParams["scope"] ?: emptyList()) +
                                     TypedRequest.wire(v, "scope", TypedRequest.FieldType.STRING, ::valueToWireString)
+                            putParam(hostInvokePayload, "scope", v)
                         } catch (refusal: Exception) {
                             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='scope'> cannot be its request field: ${refusal.message}")
                             return@deferInvoke
@@ -2018,6 +2091,7 @@ class StatechartHostInvokerStateMachine(
                             hostInvokeParams["level"] =
                                 (hostInvokeParams["level"] ?: emptyList()) +
                                     TypedRequest.wire(v, "level", TypedRequest.FieldType.UINT8, ::valueToWireString)
+                            putParam(hostInvokePayload, "level", v)
                         } catch (refusal: Exception) {
                             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='level'> cannot be its request field: ${refusal.message}")
                             return@deferInvoke
@@ -2028,6 +2102,7 @@ class StatechartHostInvokerStateMachine(
                                 invokeId = "perm",
                                 src = "",
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = ""                            )
                         )
                         if (!started) {

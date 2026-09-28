@@ -63,10 +63,16 @@ func theRequest(t *testing.T, requests []sce.HostInvokeRequest) sce.HostInvokeRe
 	want := map[string][]string{
 		"_mesh_event":       {"service.request.force"},
 		"_mesh_deadline_ms": {"250"},
+		"force":             {"3"},
 		"speed":             {"3"},
 	}
 	if !reflect.DeepEqual(request.Params, want) {
 		t.Errorf("params = %v, want %v", request.Params, want)
+	}
+	// The author's pairs alone, typed: `force` was computed, `speed` was
+	// written as a string, and the envelope fields are not payload.
+	if want := `{"force":3,"speed":"3"}`; request.EventData != want {
+		t.Errorf("EventData = %s, want %s", request.EventData, want)
 	}
 	return request
 }

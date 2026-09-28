@@ -5138,6 +5138,26 @@
           "file": "sce/src/events/EventDescriptor.cpp",
           "symbol": "EventDescriptor::payload",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/host_processor.py",
+          "symbol": "HostInvokeRequest",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "symbol": "HostInvokeRequest",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "HostInvokeRequest",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "HostInvokeRequest",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {

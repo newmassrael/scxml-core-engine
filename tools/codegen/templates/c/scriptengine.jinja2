@@ -790,12 +790,23 @@
         "  return tostring(v)\n"
         "end\n"
 {% endmacro %}
-{% macro lua_eval_to_wire_string(expr, out_buf, out_cap, out_ok) %}
+{# `record_as`, when given, is the name the evaluated value is also kept under
+   in `_sce_invoke_pairs`, as the data model holds it: a host-run `<invoke>`
+   reads its request's event data (the pairs as JSON) from that table, so the
+   one evaluation that renders the text also supplies the typed value. #}
+{% macro lua_record_pair(record_as) %}{% if record_as %}"table.insert(_sce_invoke_pairs, {\"{{ record_as | escape_lua | escape_c }}\", v})\n"{% endif %}{% endmacro %}
+{% macro lua_eval_to_wire_string(expr, out_buf, out_cap, out_ok, record_as=none) %}
     {{ out_ok }} = false;
     {{ out_buf }}[0] = '\0';
     if (luaL_dostring(sm->L,
 {{ lua_wire_string_fn() }}
+{% if record_as %}
+        "local v = ({{ expr | to_lua_expr | escape_c }})\n"
+        {{ lua_record_pair(record_as) }}
+        "return _w(v)") == 0) {
+{% else %}
         "return _w(({{ expr | to_lua_expr | escape_c }}))") == 0) {
+{% endif %}
         size_t _wire_len = 0u;
         const char *_wire_str = lua_tolstring(sm->L, -1, &_wire_len);
         if (_wire_str != NULL) {
@@ -820,9 +831,16 @@
    neutral scalar and judged by the runtime header, so the rule is written
    once for every C11 machine. `out_refusal` is NULL when the value fits, else
    the sentence the caller raises. #}
-{% macro lua_eval_to_request_field(expr, field_type, out_buf, out_cap, out_refusal) %}
+{% macro lua_eval_to_request_field(expr, field_type, out_buf, out_cap, out_refusal, record_as=none) %}
     {{ out_refusal }} = "could not be evaluated";
+{% if record_as %}
+    if (luaL_dostring(sm->L,
+        "local v = ({{ expr | to_lua_expr | escape_c }})\n"
+        {{ lua_record_pair(record_as) }}
+        "return v") == 0) {
+{% else %}
     if (luaL_dostring(sm->L, "return ({{ expr | to_lua_expr | escape_c }})") == 0) {
+{% endif %}
         sce_script_scalar_t _scalar;
         memset(&_scalar, 0, sizeof(_scalar));
         switch (lua_type(sm->L, -1)) {
@@ -876,7 +894,7 @@
    (`_scxml_declared` for the document's own declarations, `rawget` for what
    the running machine has bound since). A miss leaves `out_ok` false and the
    caller discards the message, per §scxml-6.2.3. #}
-{% macro lua_namelist_var_to_wire_string(var_name, out_buf, out_cap, out_ok) %}
+{% macro lua_namelist_var_to_wire_string(var_name, out_buf, out_cap, out_ok, record_as=none) %}
     {{ out_ok }} = false;
     {{ out_buf }}[0] = '\0';
     if (luaL_dostring(sm->L,
@@ -885,6 +903,9 @@
           "error('namelist variable not declared: {{ var_name | escape_c }}') "
         "end\n"
         "local v = ({{ var_name | escape_c }})\n"
+{% if record_as %}
+        {{ lua_record_pair(record_as) }}
+{% endif %}
         "if v == nil then return '' end\n"
         "local t = type(v)\n"
         "if t == 'string' then return v end\n"

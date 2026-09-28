@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: b5e304e43459e031ce8e0b15f100f14a5b3fe5867dcfdea6a317d515a1e5bd16
+// source-hash: bae55c00c59af0099cacfb1e5bf15b491196bff2c0662186afef67106e400ec8
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/a_mesh_request_reaches_the_router/a_mesh_request_reaches_the_router.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine
+// SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine
 
 package com.sce.integration.a_mesh_request_reaches_the_router
 
@@ -436,11 +436,11 @@ class AMeshRequestReachesTheRouterStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine
+    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine
     override fun onEntry(state: AMeshRequestReachesTheRouterState, isDefaultEntry: Boolean) {
         when (state) {
             is AMeshRequestReachesTheRouterState.Asking -> {
-                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:34 :: asking :: _state_body
+                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:40 :: asking :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
                 // it. Deferred like its sibling so §scxml-6.4 ordering holds —
@@ -454,19 +454,46 @@ class AMeshRequestReachesTheRouterStateMachine(
                 run {
                     val generatedInvokeId = "asking.${System.identityHashCode(this)}.ask"
                     deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4.1: what the request says is evaluated
+                        // now, when the invocation starts. An attribute that
+                        // cannot be evaluated raises error.execution and starts
+                        // nothing; a `<param>` that cannot is reported and
+                        // dropped (W3C SCXML 5.7.1) while the invocation starts.
+                        ensureScriptEngine()
+                        val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
                         hostInvokeParams["_mesh_event"] =
                             (hostInvokeParams["_mesh_event"] ?: emptyList()) + "service.request.force"
                         hostInvokeParams["_mesh_deadline_ms"] =
                             (hostInvokeParams["_mesh_deadline_ms"] ?: emptyList()) + "250"
+                        try {
+                            // The param crosses as text, and `toString()` is the platform's
+                            // spelling of the value; this is the document's.
+                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("(1 + 2)", "1 + 2"))
+                            hostInvokeParams["force"] =
+                                (hostInvokeParams["force"] ?: emptyList()) + valueToWireString(v)
+                            putParam(hostInvokePayload, "force", v)
+                        } catch (_: Exception) {
+                            // W3C SCXML 5.7.1: report the failure and omit the name and the
+                            // value — the act still happens, without a field the document
+                            // could not produce.
+                            raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, "<invoke> <param name='force'> expr failed to evaluate")
+                        }
                         hostInvokeParams["speed"] =
                             (hostInvokeParams["speed"] ?: emptyList()) + "3"
+                        putParam(hostInvokePayload, "speed", "3")
                         val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "sce:mesh-rpc",
                                 invokeId = "ask",
                                 src = "#motor",
                                 params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = ""                            )
                         )
                         if (!started) {
@@ -481,7 +508,7 @@ class AMeshRequestReachesTheRouterStateMachine(
                 }
             }
             is AMeshRequestReachesTheRouterState.Done -> {
-                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:54 :: done :: _state_body
+                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:61 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -489,11 +516,11 @@ class AMeshRequestReachesTheRouterStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine
+    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine
     override fun onExit(state: AMeshRequestReachesTheRouterState) {
         when (state) {
             is AMeshRequestReachesTheRouterState.Asking -> {
-                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:34 :: asking :: _state_body
+                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:40 :: asking :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: the host's invocation ends with the state
@@ -503,19 +530,19 @@ class AMeshRequestReachesTheRouterStateMachine(
                 cancelHostInvoke("sce:mesh-rpc", "ask")
             }
             is AMeshRequestReachesTheRouterState.Done -> {
-                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:54 :: done :: _state_body
+                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:61 :: done :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:24 :: _machine
+    // SCE-MAP: a_mesh_request_reaches_the_router.scxml:30 :: _machine
     override fun executeTransitionContent(source: AMeshRequestReachesTheRouterState, transitionIndex: Int) {
         when (source) {
         is AMeshRequestReachesTheRouterState.Asking -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:41 :: asking :: _transition_0
+                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:48 :: asking :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("answered", "answered"), com.sce.runtime.ScriptSource.lua("_scxml_add(answered, 1)", "answered + 1"))) {
@@ -523,7 +550,7 @@ class AMeshRequestReachesTheRouterStateMachine(
             }
             }
             1 -> {
-                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:44 :: asking :: _transition_1
+                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:51 :: asking :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("failed", "failed"), com.sce.runtime.ScriptSource.lua("_scxml_add(failed, 1)", "failed + 1"))) {
@@ -531,7 +558,7 @@ class AMeshRequestReachesTheRouterStateMachine(
             }
             }
             2 -> {
-                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:49 :: asking :: _transition_2
+                // SCE-MAP: a_mesh_request_reaches_the_router.scxml:56 :: asking :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("refused", "refused"), com.sce.runtime.ScriptSource.lua("_scxml_add(refused, 1)", "refused + 1"))) {

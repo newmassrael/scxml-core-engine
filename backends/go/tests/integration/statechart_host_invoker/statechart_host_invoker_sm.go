@@ -1184,11 +1184,20 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
+			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "done._invoke_0",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The
@@ -1219,6 +1228,10 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
 			// W3C SCXML 6.4.1: a namelist location that is not declared, or
 			// does not evaluate, starts nothing — the rule the scxml invoke
 			// reads its namelist by.
@@ -1228,6 +1241,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 					namelistFailed = true
 				} else if val, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `n`); err == nil {
 					hostInvokeParams["n"] = append(hostInvokeParams["n"], sce.ToWireString(val))
+					hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "n", Value: val})
 				} else {
 					namelistFailed = true
 				}
@@ -1237,11 +1251,13 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				continue
 			}
 			hostInvokeParams["twice"] = append(hostInvokeParams["twice"], "a")
+			hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "twice", Value: "a"})
 			if paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `_scxml_add(n, 1)`); paramErr == nil {
 				// W3C SCXML C.2: the value crosses as text, rendered by the
 				// neutral helper — an engine literal would put this machine's
 				// language on the wire.
 				hostInvokeParams["twice"] = append(hostInvokeParams["twice"], sce.ToWireString(paramVal))
+				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "twice", Value: paramVal})
 			} else {
 				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
 				// reported.
@@ -1252,16 +1268,22 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// neutral helper — an engine literal would put this machine's
 				// language on the wire.
 				hostInvokeParams["bad"] = append(hostInvokeParams["bad"], sce.ToWireString(paramVal))
+				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "bad", Value: paramVal})
 			} else {
 				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
 				// reported.
 				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='bad'> expr failed to evaluate"))
+			}
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
 			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "req",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The
@@ -1292,11 +1314,20 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
+			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "req2",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The
@@ -1327,11 +1358,20 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
+			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "req3",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The
@@ -1355,11 +1395,20 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			hostInvokeSrc := ""
 			hostInvokeContent := ""
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
+			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "job",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The
@@ -1383,12 +1432,22 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			hostInvokeSrc := "pane://turn"
 			hostInvokeContent := ""
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
 			hostInvokeParams["within"] = append(hostInvokeParams["within"], "2500")
+			hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "within", Value: "2500"})
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
+			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "probe",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The
@@ -1412,11 +1471,20 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			hostInvokeSrc := "pane://other"
 			hostInvokeContent := ""
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
+			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "probe2",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The
@@ -1451,11 +1519,20 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
+			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "locating._invoke_1",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The
@@ -1490,11 +1567,20 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
+			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "locating._invoke_2",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The
@@ -1518,11 +1604,20 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			hostInvokeSrc := ""
 			hostInvokeContent := ""
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
+			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "fleeting",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The
@@ -1547,21 +1642,31 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			hostInvokeContent := ""
 			p.ensureScriptEngine()
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
 			if paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `50`); paramErr == nil {
 				// W3C SCXML C.2: the value crosses as text, rendered by the
 				// neutral helper — an engine literal would put this machine's
 				// language on the wire.
 				hostInvokeParams["_sce_deadline_ms"] = append(hostInvokeParams["_sce_deadline_ms"], sce.ToWireString(paramVal))
+				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "_sce_deadline_ms", Value: paramVal})
 			} else {
 				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
 				// reported.
 				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='_sce_deadline_ms'> expr failed to evaluate"))
+			}
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
 			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "slow",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The
@@ -1585,12 +1690,22 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			hostInvokeSrc := ""
 			hostInvokeContent := ""
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
 			hostInvokeParams["_sce_deadline_ms"] = append(hostInvokeParams["_sce_deadline_ms"], "soon")
+			hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "_sce_deadline_ms", Value: "soon"})
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
+			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "undated",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The
@@ -1615,6 +1730,10 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			hostInvokeContent := ""
 			p.ensureScriptEngine()
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
 			// SCE Accepted Subset 2.12: `sce:request` makes the params a record,
 			// so each value is held to its field here, where the invocation
 			// starts; one that does not fit starts nothing.
@@ -1627,6 +1746,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				}
 				if paramErr == nil {
 					hostInvokeParams["scope"] = append(hostInvokeParams["scope"], paramText)
+				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "scope", Value: paramVal})
 				} else {
 					engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='scope'> cannot be its request field: "+paramErr.Error()))
 					requestRefused = true
@@ -1640,6 +1760,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				}
 				if paramErr == nil {
 					hostInvokeParams["level"] = append(hostInvokeParams["level"], paramText)
+				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "level", Value: paramVal})
 				} else {
 					engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='level'> cannot be its request field: "+paramErr.Error()))
 					requestRefused = true
@@ -1648,11 +1769,16 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			if requestRefused {
 				continue
 			}
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
+			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "x-sce-host",
 				InvokeID:      "perm",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The

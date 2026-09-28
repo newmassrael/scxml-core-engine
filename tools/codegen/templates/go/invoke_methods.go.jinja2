@@ -323,6 +323,10 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% endif %}
 {% endfor %}
 			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
 {% if invoke_info.namelist %}
 			// W3C SCXML 6.4.1: a namelist location that is not declared, or
 			// does not evaluate, starts nothing — the rule the scxml invoke
@@ -334,6 +338,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 					namelistFailed = true
 				} else if val, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ name }}`); err == nil {
 					hostInvokeParams["{{ name }}"] = append(hostInvokeParams["{{ name }}"], sce.ToWireString(val))
+					hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "{{ name }}", Value: val})
 				} else {
 					namelistFailed = true
 				}
@@ -354,22 +359,27 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			requestRefused := false
 {% for param in invoke_info.params %}
 {% if param.name in request_checks %}
-{{ param_macros.collect_typed_param_into(param, request_checks[param.name], model, 'hostInvokeParams', machine_name) -}}
+{{ param_macros.collect_typed_param_into(param, request_checks[param.name], model, 'hostInvokeParams', machine_name, 'hostInvokePayload') -}}
 {% else %}
-{{ param_macros.collect_params_into([param], model, 'hostInvokeParams', machine_name, '<invoke>') -}}
+{{ param_macros.collect_params_into([param], model, 'hostInvokeParams', machine_name, '<invoke>', 'hostInvokePayload') -}}
 {% endif %}
 {% endfor %}
 			if requestRefused {
 				continue
 			}
 {% else %}
-{{ param_macros.collect_params_into(invoke_info.params, model, 'hostInvokeParams', machine_name, '<invoke>') -}}
+{{ param_macros.collect_params_into(invoke_info.params, model, 'hostInvokeParams', machine_name, '<invoke>', 'hostInvokePayload') -}}
 {% endif %}
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
+			}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "{{ invoke_info.invoke_type | escape_go }}",
 				InvokeID:      "{{ invoke_info.invoke_id }}",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
 				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The

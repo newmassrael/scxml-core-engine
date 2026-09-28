@@ -16,17 +16,32 @@
 
    `element` is how a refusal names the element (`<send>`, `<invoke>`).
    `machine_name` is a parameter rather than a global because a macro body does
-   not see the render context. #}
-{% macro collect_params_into(params, model, map, machine_name, element) %}
+   not see the render context.
+
+   `typed`, when given, names a `[]sce.EventDataParam` that also receives each
+   value as the data model holds it — the one evaluation read twice, once as
+   text and once typed — so a consumer that needs the pairs as JSON
+   (`sce.BuildJSONFromTypedParams`) has them without a second evaluation. A
+   param the build marked `envelope_metadata` is text only: it is not a value
+   the author sent. Written as a block at each site rather than a helper
+   macro, so a site with no typed slice renders exactly what it rendered
+   before. #}
+{% macro collect_params_into(params, model, map, machine_name, element, typed=none) %}
 {% for param in params %}
 {% if param.is_static_literal %}
 			{{ map }}["{{ param.name | escape_go }}"] = append({{ map }}["{{ param.name | escape_go }}"], "{{ param.static_value | escape_go }}")
+{% if typed and not param.envelope_metadata %}
+			{{ typed }} = append({{ typed }}, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: "{{ param.static_value | escape_go }}"})
+{% endif %}
 {% elif param.expr and model.needs_script_engine %}
 			if paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); paramErr == nil {
 				// W3C SCXML C.2: the value crosses as text, rendered by the
 				// neutral helper — an engine literal would put this machine's
 				// language on the wire.
 				{{ map }}["{{ param.name | escape_go }}"] = append({{ map }}["{{ param.name | escape_go }}"], sce.ToWireString(paramVal))
+{% if typed and not param.envelope_metadata %}
+				{{ typed }} = append({{ typed }}, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: paramVal})
+{% endif %}
 			} else {
 				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
 				// reported.
@@ -37,6 +52,9 @@
 {% elif param.location and model.needs_script_engine %}
 			if paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.location }}`); paramErr == nil {
 				{{ map }}["{{ param.name | escape_go }}"] = append({{ map }}["{{ param.name | escape_go }}"], sce.ToWireString(paramVal))
+{% if typed and not param.envelope_metadata %}
+				{{ typed }} = append({{ typed }}, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: paramVal})
+{% endif %}
 			} else {
 {% if 'error.execution' in model.events %}
 				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_go }}'> location could not be read"))
@@ -63,9 +81,12 @@
    `requestRefused` and stops after the first refusal. A string literal was
    held to its field at build time (`validation/typed-invoke-request`), so it
    passes as written. #}
-{% macro collect_typed_param_into(param, field_type, model, map, machine_name) %}
+{% macro collect_typed_param_into(param, field_type, model, map, machine_name, typed=none) %}
 {% if param.is_static_literal %}
 			{{ map }}["{{ param.name | escape_go }}"] = append({{ map }}["{{ param.name | escape_go }}"], "{{ param.static_value | escape_go }}")
+{% if typed and not param.envelope_metadata %}
+			{{ typed }} = append({{ typed }}, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: "{{ param.static_value | escape_go }}"})
+{% endif %}
 {% elif (param.expr or param.location) and model.needs_script_engine %}
 			if !requestRefused {
 {% if param.expr %}
@@ -79,6 +100,9 @@
 				}
 				if paramErr == nil {
 					{{ map }}["{{ param.name | escape_go }}"] = append({{ map }}["{{ param.name | escape_go }}"], paramText)
+{% if typed and not param.envelope_metadata %}
+				{{ typed }} = append({{ typed }}, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: paramVal})
+{% endif %}
 				} else {
 {% if 'error.execution' in model.events %}
 					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> cannot be its request field: "+paramErr.Error()))

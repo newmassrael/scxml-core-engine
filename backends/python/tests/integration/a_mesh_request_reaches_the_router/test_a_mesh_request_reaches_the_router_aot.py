@@ -59,8 +59,12 @@ def _the_request(requests: List[HostInvokeRequest]) -> HostInvokeRequest:
     assert request.params == {
         "_mesh_event": ["service.request.force"],
         "_mesh_deadline_ms": ["250"],
+        "force": ["3"],
         "speed": ["3"],
     }
+    # The author's pairs alone, typed: `force` was computed, `speed` was
+    # written as a string, and the envelope fields are not payload.
+    assert request.event_data == '{"force":3,"speed":"3"}'
     return request
 
 

@@ -33,6 +33,7 @@ typedef struct {
     char invoke_id[64];
     char src[64];
     char params[256];
+    char event_data[256];
 } request_t;
 
 // Keeps what it is started with and answers nothing, so the test decides how
@@ -48,6 +49,7 @@ static void router(void *user_data, const sce_host_invoke_event_t *event, sce_ho
     (void)snprintf(request->processor_type, sizeof(request->processor_type), "%s", event->processor_type);
     (void)snprintf(request->invoke_id, sizeof(request->invoke_id), "%s", event->invoke_id);
     (void)snprintf(request->src, sizeof(request->src), "%s", event->src);
+    (void)snprintf(request->event_data, sizeof(request->event_data), "%s", event->event_data);
     request->params[0] = '\0';
     for (int i = 0; i < event->param_count; i++) {
         size_t used = strlen(request->params);
@@ -72,13 +74,17 @@ static void start_with_router(sm_t *sm, request_t *request) {
 // The one request the router was started with, checked against what the
 // document wrote.
 static int check_request(const request_t *request, const char *scenario) {
-    const char *want_params = "_mesh_event=service.request.force;_mesh_deadline_ms=250;speed=3;";
+    const char *want_params = "_mesh_event=service.request.force;_mesh_deadline_ms=250;force=3;speed=3;";
+    /* The author's pairs alone, typed: `force` was computed, `speed` was
+       written as a string, and the envelope fields are not payload. */
+    const char *want_event_data = "{\"force\":3,\"speed\":\"3\"}";
     if (request->starts != 1 || strcmp(request->processor_type, SCE_MESH_RPC_INVOKE_TYPE) != 0 ||
         strcmp(request->invoke_id, "ask") != 0 || strcmp(request->src, "#motor") != 0 ||
-        strcmp(request->params, want_params) != 0) {
-        (void)fprintf(stderr, "FAIL [%s]: router saw %d start(s), last %s %s %s [%s]; want 1 %s ask #motor [%s]\n",
+        strcmp(request->params, want_params) != 0 || strcmp(request->event_data, want_event_data) != 0) {
+        (void)fprintf(stderr,
+                      "FAIL [%s]: router saw %d start(s), last %s %s %s [%s] %s; want 1 %s ask #motor [%s] %s\n",
                       scenario, request->starts, request->processor_type, request->invoke_id, request->src,
-                      request->params, SCE_MESH_RPC_INVOKE_TYPE, want_params);
+                      request->params, request->event_data, SCE_MESH_RPC_INVOKE_TYPE, want_params, want_event_data);
         return 1;
     }
     return 0;

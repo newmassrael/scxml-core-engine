@@ -56,10 +56,14 @@ class AMeshRequestReachesTheRouterTest {
             mapOf(
                 "_mesh_event" to listOf("service.request.force"),
                 "_mesh_deadline_ms" to listOf("250"),
+                "force" to listOf("3"),
                 "speed" to listOf("3"),
             ),
             request.params,
         )
+        // The author's pairs alone, typed: `force` was computed, `speed` was
+        // written as a string, and the envelope fields are not payload.
+        assertEquals("""{"force":3,"speed":"3"}""", request.eventData)
         return request
     }
 

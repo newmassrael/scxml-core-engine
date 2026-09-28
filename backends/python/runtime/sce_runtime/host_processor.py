@@ -131,6 +131,15 @@ class HostInvokeRequest:
     #: ``<param>`` values keyed by name; a repeated name keeps every value
     #: in document order.
     params: Dict[str, List[str]] = field(default_factory=dict)
+    #: The namelist and ``<param>`` pairs as JSON, typed as the data model
+    #: holds them — the text a local ``<send>`` with the same pairs would
+    #: carry in ``_event.data`` (§scxml-5.10) — or empty when there are none.
+    #: Params the build marked as envelope metadata (SCE_MESH.md §mesh-9.5's
+    #: ``_mesh_*``) are left out. Computed once by the generated invoke site,
+    #: so a host that forwards the request — the Mesh router puts it in an
+    #: envelope — forwards the engine's serialisation rather than a second one
+    #: made from ``params``, which are text and have lost their types.
+    event_data: str = ""
     #: Inline ``<content>``, empty when the document carried none.
     content: str = ""
     #: Which start of this invoke this is. The engine assigns it, and a host
