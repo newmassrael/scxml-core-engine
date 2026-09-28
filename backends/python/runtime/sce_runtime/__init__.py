@@ -16,6 +16,7 @@ from .event import Event, EventMetadata, EventWithMetadata
 from .host_processor import (
     HOST_INVOKE_DEADLINE_PARAM,
     MESH_PROCESSOR_TYPE,
+    MESH_RPC_INVOKE_TYPE,
     RESERVED_TYPE_PREFIX,
     is_reserved_type,
     HostInvokeCancel,
@@ -82,6 +83,7 @@ __all__ = [
     "Invoke",
     "LuaScriptEngine",
     "MESH_PROCESSOR_TYPE",
+    "MESH_RPC_INVOKE_TYPE",
     "PendingInvoke",
     "RESERVED_TYPE_PREFIX",
     "RequestFieldType",

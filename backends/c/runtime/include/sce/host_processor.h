@@ -262,6 +262,13 @@ typedef struct sce_host_processor_registry_s {
 #define SCE_MESH_PROCESSOR_TYPE "sce:mesh"
 
 /**
+ * The `<invoke type>` a Mesh request is lowered to on every backend whose
+ * Mesh router the host registers — see
+ * `sce_host_invoker_register_mesh_rpc_invoker`.
+ */
+#define SCE_MESH_RPC_INVOKE_TYPE "sce:mesh-rpc"
+
+/**
  * Whether a host may not register `type`: it starts with
  * `SCE_RESERVED_HOST_TYPE_PREFIX`, spelled exactly.
  *
@@ -579,17 +586,14 @@ typedef struct sce_host_invoker_registry_s {
 } sce_host_invoker_registry_t;
 
 /**
- * Register `handler` for `type`, replacing any handler already there.
- *
- * Returns false when the registry is full, the type does not fit its slot,
- * or the type is under `SCE_RESERVED_HOST_TYPE_PREFIX`, because a
- * registration that did not happen must not read as one that did.
+ * Put `handler` under `type` with no reserved-prefix check: the one path
+ * both the host's door and the runtime's own Mesh door share.
  */
-static inline bool sce_host_invoker_register(sce_host_invoker_registry_t *registry, const char *type,
-                                             sce_host_invoke_handler_fn handler, void *user_data) {
+static inline bool sce_host_invoker_put(sce_host_invoker_registry_t *registry, const char *type,
+                                        sce_host_invoke_handler_fn handler, void *user_data) {
     int i;
     sce_host_invoker_entry_t *slot;
-    if (registry == NULL || type == NULL || handler == NULL || sce_is_reserved_host_type(type)) {
+    if (registry == NULL || type == NULL || handler == NULL) {
         return false;
     }
     if (strlen(type) >= (size_t)SCE_MAX_ID_LEN) {
@@ -611,6 +615,34 @@ static inline bool sce_host_invoker_register(sce_host_invoker_registry_t *regist
     slot->user_data = user_data;
     registry->count++;
     return true;
+}
+
+/**
+ * Register `handler` for `type`, replacing any handler already there.
+ *
+ * Returns false when the registry is full, the type does not fit its slot,
+ * or the type is under `SCE_RESERVED_HOST_TYPE_PREFIX`, because a
+ * registration that did not happen must not read as one that did.
+ */
+static inline bool sce_host_invoker_register(sce_host_invoker_registry_t *registry, const char *type,
+                                             sce_host_invoke_handler_fn handler, void *user_data) {
+    if (type == NULL || sce_is_reserved_host_type(type)) {
+        return false;
+    }
+    return sce_host_invoker_put(registry, type, handler, user_data);
+}
+
+/**
+ * SCE Mesh §9.5: register the Mesh router's request half as the runner of
+ * `SCE_MESH_RPC_INVOKE_TYPE`, the type a Mesh `<invoke>` is lowered to.
+ *
+ * `sce:` is reserved so a host cannot claim it by accident; this is the one
+ * door that fills it, the invoke twin of
+ * `sce_host_registry_register_mesh_router`.
+ */
+static inline bool sce_host_invoker_register_mesh_rpc_invoker(sce_host_invoker_registry_t *registry,
+                                                              sce_host_invoke_handler_fn router, void *user_data) {
+    return sce_host_invoker_put(registry, SCE_MESH_RPC_INVOKE_TYPE, router, user_data);
 }
 
 /** The entry running `type`, or NULL when nothing is registered. */

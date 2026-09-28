@@ -5013,6 +5013,14 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_register_invoker({{ csym_prefix
     return sce_host_invoker_register(&sm->host_invokers, processor_type, handler, user_data);
 }
 
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_register_mesh_rpc_invoker({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                          sce_host_invoke_handler_fn router, void *user_data) {
+    if (sm == NULL) {
+        return false;
+    }
+    return sce_host_invoker_register_mesh_rpc_invoker(&sm->host_invokers, router, user_data);
+}
+
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_has_invoker(const {{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type) {
     if (sm == NULL) {
         return false;

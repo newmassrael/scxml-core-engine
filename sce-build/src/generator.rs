@@ -300,9 +300,9 @@ impl Language {
     /// beside the templates and free to disagree with them — the failure this
     /// field already had once, as a hard-coded `"lua"`. It now reads
     /// [`Self::lowers_expressions_at_build_time`], so moving a backend across
-    /// the seam is a template edit and nothing else. Same shape as the
-    /// mesh-rpc refusal, which reads `templates/mesh/<lang>/` rather than
-    /// asserting which backends have a mesh arm.
+    /// the seam is a template edit and nothing else. Same shape as
+    /// `mesh_templates_exist_for`, which reads `templates/mesh/<lang>/`
+    /// rather than asserting which backends have a generated Mesh router.
     pub fn script_engine_language(self) -> &'static str {
         self.default_script_engine_target().wire_name()
     }
@@ -453,7 +453,8 @@ impl Language {
     /// others, in one session"* — and the mixed artifact would carry no
     /// diagnostic saying so. A half-migrated backend must therefore refuse the
     /// flag, and the refusal lifts by itself when the last site moves, the way
-    /// the mesh-rpc refusal lifts when `templates/mesh/<lang>/` appears.
+    /// a backend gains a generated Mesh router when `templates/mesh/<lang>/`
+    /// appears.
     pub fn supports_script_engine_target(self, target: ScriptEngineTarget) -> bool {
         if target == self.default_script_engine_target() {
             return true;
@@ -1505,94 +1506,42 @@ pub(crate) fn render_error(e: minijinja::Error) -> GenerateError {
     GenerateError::TemplateRender(msg)
 }
 
-// ── Mesh-rpc backend gate ────────────────────────────────────────
+// ── Mesh-rpc: who serves it ──────────────────────────────────────
 //
-// SCE_MESH.md §9.5 (`<invoke type="sce:mesh-rpc">`) has codegen
-// emission only where `templates/mesh/<lang>/` exists. Other backends
-// parse the invoke happily (the parser is language-agnostic) but
-// produce no transport routing for it — the state's onentry would
-// silently ignore the invoke at runtime, which is exactly the "fail
-// clearly" inversion CLAUDE.md forbids. This helper turns the silent
-// skip into an explicit codegen-time refusal so an operator who picks
-// the wrong `--lang` sees the gap immediately, not at runtime.
+// SCE_MESH.md §9.5 `<invoke type="sce:mesh-rpc">` is served on every
+// backend, by one of two routes, so the former
+// `reject_mesh_rpc_in_unsupported_lang` fail-fast gate is retired — no
+// backend can reach its templates with a Mesh request it drops.
 //
-// The refusal is NOT retired the way `<sce:action>`'s was below: mesh
-// being C++-only is a stated design constraint, not an accident of
-// unfinished work — ARCHITECTURE.md Principle 8 says per-language mesh
-// expansion is case-by-case and not a parity obligation. So the gate
-// stays and is *split* instead: which languages it refuses is now read
-// from the embedded template tree rather than asserted by this
-// function. Adding `templates/mesh/<lang>/` is what lifts a refusal,
-// so the gate and the templates cannot drift into disagreeing — a
-// hand-written "C++-only" could outlive the tree it described.
+// - A backend whose embedded tree carries `templates/mesh/<lang>/` (C++)
+//   generates its own `TransportRouter`, and its templates lower the
+//   invoke into that router's `performMeshInvoke`.
+// - Every other backend lowers it to a host-served invoke of the same
+//   type (`host_processor_analyzer::lower_mesh`), which the host's Mesh
+//   router runs through the runtime's dedicated mesh-rpc door — the
+//   route §mesh-19 already gave `<send target="#peer">`.
 //
-// WHERE THE OTHER HALF OF THAT SPLIT IS WRITTEN. A gate deriving its
-// own answer is only half a contract; the other half is the roster an
-// author reads before picking `--lang`, and it lives in exactly one
-// place — SCE_MESH.md §9.5's backend-coverage table, under the
-// `sce:mesh-rpc-backends` anchor. Principle 8 deliberately does NOT
-// name the set any more: it used to assert "contains only `cpp/`",
-// which is a claim about this tree written where this tree cannot
-// correct it, and the same hand-written roster had already gone stale
-// in SCE_MESH.md §1 (it listed five non-mesh backends and omitted
-// C11). `sce-build/tests/mesh_rpc_backend_contract.rs` holds that
-// table to the template tree AND to what this function actually
-// answers per `--lang`, and it also reads THIS comment — so a pointer
-// that rots is a red rather than something only a reader would
-// notice.
+// The gate had been kept, not retired the way `<sce:action>`'s was
+// below, because ARCHITECTURE.md Principle 8 made C++-only Mesh a scope
+// rule. §mesh-19's host router is the per-backend expansion that rule
+// allows on demand; once it served requests as well as sends, the gate
+// had nothing left to refuse, and a gate that cannot fire is a claim
+// nothing checks.
+//
+// Removing it is the claim that a path exists, and it is paid for in
+// `sce-build/tests/mesh_rpc_backend_contract.rs`: SCE_MESH.md §9.5's
+// table (anchor `sce:mesh-rpc-backends`) names each backend's route, and
+// the test holds every row to the template tree, to the lowering, and
+// to the binary — each backend must generate §9.5's fixture, and a host
+// route must say so on its manifest and carry the type in its output.
+
+/// Whether `language` renders Mesh through a generated transport router:
+/// its embedded tree carries `templates/mesh/<lang>/`.
 pub(crate) fn mesh_templates_exist_for(language: Language) -> bool {
     let prefix = format!("mesh/{}/", language.feature_tree_subdir());
     crate::template_registry::EMBEDDED_TEMPLATES
         .iter()
         .any(|(name, _)| name.starts_with(&prefix))
-}
-
-fn reject_mesh_rpc_in_unsupported_lang(
-    model: &SCXMLModel,
-    language: Language,
-) -> Result<(), GenerateError> {
-    if !model.has_mesh_rpc_invoke() || mesh_templates_exist_for(language) {
-        return Ok(());
-    }
-    // Named from the tree, so the operator is pointed at the backends
-    // that actually carry a mesh arm today rather than at a spelling
-    // this message happened to be written with.
-    let served: Vec<&'static str> = Language::ALL
-        .iter()
-        .filter(|candidate| mesh_templates_exist_for(**candidate))
-        .map(|candidate| candidate.canonical_name())
-        .collect();
-    // The remedy is derived for the same reason the diagnosis is. This
-    // sentence used to read "generate this machine for `--lang cpp`",
-    // three lines under a comment promising the message names no
-    // spelling of its own — so a second backend gaining a mesh arm
-    // would have widened the "exists for" list and still sent every
-    // operator to C++.
-    let remedy = served
-        .iter()
-        .map(|lang| format!("`--lang {lang}`"))
-        .collect::<Vec<_>>()
-        .join(" / ");
-    Err(GenerateError::unsupported_at(
-        format!(
-            "<invoke type=\"sce:mesh-rpc\"> in '{}' has no {:?} codegen path \
-             (mesh transport emission exists for: {}). \
-             Either generate this machine with {} or remove the \
-             mesh-rpc invokes from the SCXML.",
-            model.name,
-            language,
-            served.join(", "),
-            remedy
-        ),
-        // The first mesh-rpc `<invoke>` — the element the message
-        // already names. `Invoke::base()` answers for every kind, so a
-        // sixth invoke kind cannot quietly lose its row here.
-        model
-            .invokes
-            .iter()
-            .find(|invoke| matches!(invoke, crate::model::Invoke::MeshRpc(_)))
-            .and_then(|invoke| invoke.base().source_location.clone()),
-    ))
 }
 
 /// The backends whose templates lower `datamodel="sce-static"`: a
@@ -2252,9 +2201,8 @@ pub fn generate_with_options(
     template_dir: &Path,
     options: &StatechartCodegenOptions,
 ) -> Result<String, GenerateError> {
-    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Rust);
+    let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Rust);
     let model = lowered.as_ref();
-    reject_mesh_rpc_in_unsupported_lang(model, Language::Rust)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
@@ -2346,9 +2294,8 @@ pub fn generate_with_templates(
     templates: &[(&str, &str)],
     no_std: bool,
 ) -> Result<String, GenerateError> {
-    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Rust);
+    let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Rust);
     let model = lowered.as_ref();
-    reject_mesh_rpc_in_unsupported_lang(model, Language::Rust)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
@@ -2894,9 +2841,8 @@ fn render_c11(
     input_stem: &str,
     c_symbol_prefix: Option<&str>,
 ) -> Result<GeneratedOutput, GenerateError> {
-    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::C11);
+    let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::C11);
     let model = lowered.as_ref();
-    reject_mesh_rpc_in_unsupported_lang(model, Language::C11)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::C11)?;
     // Neither host refusal here: the C11 backend carries
     // `sce_host_processor_registry_t` for §scxml-6.2.5 and
@@ -3056,9 +3002,8 @@ pub fn generate_kotlin_for_engine(
     package_prefix: Option<&str>,
     script_engine: ScriptEngineTarget,
 ) -> Result<String, GenerateError> {
-    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Kotlin);
+    let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Kotlin);
     let model = lowered.as_ref();
-    reject_mesh_rpc_in_unsupported_lang(model, Language::Kotlin)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Kotlin)?;
     // Neither host refusal here: the Kotlin runtime carries
     // `StateMachineEngine.registerEventProcessor` for §scxml-6.2.5 and
@@ -3082,9 +3027,8 @@ pub fn generate_kotlin_with_templates(
     templates: &[(&str, &str)],
     package_prefix: Option<&str>,
 ) -> Result<String, GenerateError> {
-    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Kotlin);
+    let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Kotlin);
     let model = lowered.as_ref();
-    reject_mesh_rpc_in_unsupported_lang(model, Language::Kotlin)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Kotlin)?;
     // See `generate_kotlin` above: the Kotlin backend carries both host
     // registries.
@@ -3251,9 +3195,8 @@ fn render_kotlin(
 
 /// Generate Go code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
-    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Go);
+    let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Go);
     let model = lowered.as_ref();
-    reject_mesh_rpc_in_unsupported_lang(model, Language::Go)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Go)?;
     // Neither host refusal here any more: the Go runtime carries
     // `Engine.RegisterEventProcessor` for §scxml-6.2.5 and
@@ -3274,9 +3217,8 @@ pub fn generate_go_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
-    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Go);
+    let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Go);
     let model = lowered.as_ref();
-    reject_mesh_rpc_in_unsupported_lang(model, Language::Go)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Go)?;
     // See `generate_go` above: the Go backend carries both host registries.
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
@@ -3301,9 +3243,8 @@ pub fn generate_go_with_templates(
 
 /// Generate Python code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
-    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Python);
+    let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Python);
     let model = lowered.as_ref();
-    reject_mesh_rpc_in_unsupported_lang(model, Language::Python)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Python)?;
     // Neither host refusal here: the Python runtime carries
     // `Engine.register_event_processor` for §scxml-6.2.5 and
@@ -3323,9 +3264,8 @@ pub fn generate_python_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
-    let lowered = crate::host_processor_analyzer::lower_mesh_sends(model, Language::Python);
+    let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Python);
     let model = lowered.as_ref();
-    reject_mesh_rpc_in_unsupported_lang(model, Language::Python)?;
     reject_static_datamodel_in_unsupported_lang(model, Language::Python)?;
     // See `generate_python` above: the Python backend carries both host
     // registries.
@@ -3350,11 +3290,9 @@ pub fn generate_python_with_templates(
 /// `<invoke type="scxml">` (static src=/inline) and `<invoke
 /// srcexpr/contentexpr>` (hybrid) lower the same way — the hybrid stub
 /// `generate_hybrid_child_scxmls` writes produces a child whose immediate
-/// `<final>` raises `done.invoke.<id>`. A mesh-rpc invoke is refused
-/// before this runs, by `reject_mesh_rpc_in_unsupported_lang`, whose
-/// answer is read from the template tree: a second, hand-written refusal
-/// here could only ever disagree with it — it would keep refusing Python
-/// after `templates/mesh/python/` landed.
+/// `<final>` raises `done.invoke.<id>`. A mesh-rpc invoke has been lowered
+/// to a host-served invoke before this runs (`host_processor_analyzer::
+/// lower_mesh`, SCE_MESH.md §mesh-19), which Python runs like any other.
 fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateError> {
     // §scxml-5.3 — Python AOT used to reject `<data id>` names that
     // collide with Python keywords (`class`, `lambda`, …) because the
@@ -3421,7 +3359,7 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
                 // leaves a target's meaning to the processor that serves
                 // the send, and the generated code hands it to that
                 // processor uninterpreted — a Mesh send's `#peer` among
-                // them (`host_processor_analyzer::lower_mesh_sends`).
+                // them (`host_processor_analyzer::lower_mesh`).
                 if !action.send_type_host_served
                     && !action.target.is_empty()
                     && !action.target.starts_with("#_")
@@ -4139,8 +4077,8 @@ mod tests {
     }
 
     /// Document with a single `<invoke type="sce:mesh-rpc">` site —
-    /// triggers `model.has_mesh_rpc_invoke()` and exercises the
-    /// rejection path on backends without mesh codegen.
+    /// triggers `model.has_mesh_rpc_invoke()` and exercises each
+    /// backend's route for it.
     const MESH_RPC_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        datamodel="ecmascript" name="brake" initial="idle">
@@ -4402,95 +4340,86 @@ mod tests {
         assert_ne!(Language::C11, Language::Python);
     }
 
-    /// SCE_MESH.md §9.5 mesh-rpc invokes only have a C++ codegen path
-    /// today. `generate` (Rust) MUST refuse — silent skipping would
-    /// hand the operator a state machine where an `<invoke>` quietly
-    /// does nothing at runtime.
+    /// The tests below asserted the OPPOSITE until the Mesh request joined
+    /// §mesh-19's host route: that Rust, Kotlin, Go and C11 each refused
+    /// this document with `generate/unsupported-feature`. Re-aimed, as the
+    /// native-action tests further down were, at what is true at THIS
+    /// layer: with an empty template list the document reaches each
+    /// backend's emitter, and whatever stops it there is about a missing
+    /// template, never about the construct. The positive half, with real
+    /// templates, is `sce-build/tests/mesh_rpc_backend_contract.rs`.
     #[test]
-    fn rust_generate_rejects_mesh_rpc_invoke() {
+    fn rust_generate_reaches_the_emitter_for_a_mesh_request() {
         let model = parse(MESH_RPC_SCXML);
-        let templates: &[(&str, &str)] = &[];
-        let err = generate_with_templates(&model, templates, false).unwrap_err();
-        match err {
-            GenerateError::UnsupportedFeature { detail: msg, .. } => {
-                assert!(msg.contains("sce:mesh-rpc"), "msg names the feature: {msg}");
-                assert!(msg.contains("Rust"), "msg names the language: {msg}");
-                assert!(msg.contains("brake"), "msg names the machine: {msg}");
-            }
-            other => panic!("expected UnsupportedFeature, got {other:?}"),
+        let err = generate_with_templates(&model, &[], false).unwrap_err();
+        assert_reaches_the_emitter(err, "Rust", "sce:mesh-rpc");
+    }
+
+    #[test]
+    fn kotlin_generate_reaches_the_emitter_for_a_mesh_request() {
+        let model = parse(MESH_RPC_SCXML);
+        let err = generate_kotlin_with_templates(&model, &[], None).unwrap_err();
+        assert_reaches_the_emitter(err, "Kotlin", "sce:mesh-rpc");
+    }
+
+    #[test]
+    fn go_generate_reaches_the_emitter_for_a_mesh_request() {
+        let model = parse(MESH_RPC_SCXML);
+        let err = generate_go_with_templates(&model, &[]).unwrap_err();
+        assert_reaches_the_emitter(err, "Go", "sce:mesh-rpc");
+    }
+
+    #[test]
+    fn python_generate_reaches_the_emitter_for_a_mesh_request() {
+        let model = parse(MESH_RPC_SCXML);
+        let err = generate_python_with_templates(&model, &[]).unwrap_err();
+        assert_reaches_the_emitter(err, "Python", "sce:mesh-rpc");
+    }
+
+    #[test]
+    fn c11_generate_reaches_the_emitter_for_a_mesh_request() {
+        let model = parse(MESH_RPC_SCXML);
+        match generate_c11_with_templates(&model, &[], "fixture") {
+            Ok(_) => panic!("an empty template list cannot produce output"),
+            Err(e) => assert_reaches_the_emitter(e, "C11", "sce:mesh-rpc"),
         }
     }
 
+    /// Every backend serves a Mesh request by exactly one route: a generated
+    /// router (`templates/mesh/<lang>/`) or the host's (the request lowered
+    /// to a host-served invoke). Neither is the silent drop the retired gate
+    /// refused; both is a request two routers would each think is theirs.
     #[test]
-    fn kotlin_generate_rejects_mesh_rpc_invoke() {
+    fn every_backend_serves_a_mesh_request_by_exactly_one_route() {
         let model = parse(MESH_RPC_SCXML);
-        let templates: &[(&str, &str)] = &[];
-        let err = generate_kotlin_with_templates(&model, templates, None).unwrap_err();
-        assert!(matches!(err, GenerateError::UnsupportedFeature { .. }));
-    }
-
-    #[test]
-    fn go_generate_rejects_mesh_rpc_invoke() {
-        let model = parse(MESH_RPC_SCXML);
-        let templates: &[(&str, &str)] = &[];
-        let err = generate_go_with_templates(&model, templates).unwrap_err();
-        assert!(matches!(err, GenerateError::UnsupportedFeature { .. }));
-    }
-
-    #[test]
-    fn c11_generate_rejects_mesh_rpc_invoke() {
-        let model = parse(MESH_RPC_SCXML);
-        let templates: &[(&str, &str)] = &[];
-        match generate_c11_with_templates(&model, templates, "fixture") {
-            Ok(_) => panic!("expected UnsupportedFeature, got Ok"),
-            Err(GenerateError::UnsupportedFeature { detail: msg, .. }) => {
-                assert!(msg.contains("sce:mesh-rpc"), "msg names the feature: {msg}");
-                assert!(msg.contains("C11"), "msg names the language: {msg}");
-            }
-            Err(other) => panic!("expected UnsupportedFeature, got {other:?}"),
-        }
-    }
-
-    /// The refusal set is derived from the template tree, not asserted.
-    ///
-    /// A backend is refused exactly when the embedded tree carries no
-    /// `mesh/<lang>/` arm for it, so adding that directory is what lifts
-    /// a refusal. The sibling tests above pin the *messages*; this one
-    /// pins the *rule*, which is the half a hand-written "C++-only"
-    /// string could outlive — the gate would keep refusing a backend the
-    /// tree had since learned to emit, and nothing would disagree.
-    #[test]
-    fn mesh_rpc_refusal_is_derived_from_the_template_tree() {
-        let model = parse(MESH_RPC_SCXML);
-        let (mut served, mut refused) = (0usize, 0usize);
+        let (mut generated, mut hosted) = (0usize, 0usize);
         for &language in Language::ALL {
             let arm = language.feature_tree_subdir();
-            let verdict = reject_mesh_rpc_in_unsupported_lang(&model, language);
-            if mesh_templates_exist_for(language) {
-                served += 1;
-                assert!(
-                    verdict.is_ok(),
-                    "{language:?} has templates/mesh/{arm}/ but the gate refused it"
-                );
-            } else {
-                refused += 1;
-                assert!(
-                    verdict.is_err(),
-                    "{language:?} has no templates/mesh/{arm}/ arm, so codegen \
-                     would drop the invoke silently — the gate must refuse"
-                );
-            }
+            let router_tree = mesh_templates_exist_for(language);
+            let host = crate::host_processor_analyzer::routes_mesh_through_host(language);
+            assert!(
+                router_tree != host,
+                "{language:?}: templates/mesh/{arm}/ present = {router_tree}, host route = \
+                 {host} — a Mesh request needs exactly one router"
+            );
+            let lowered = crate::host_processor_analyzer::lower_mesh(&model, language);
+            assert_eq!(
+                lowered.has_mesh_rpc_invoke(),
+                router_tree,
+                "{language:?}: a Mesh request must reach the templates as one only where a \
+                 generated router takes it"
+            );
+            generated += usize::from(router_tree);
+            hosted += usize::from(host);
         }
-        // Both bounds, because either side alone makes the equivalence
-        // vacuous: a tree with no mesh arm at all satisfies the loop by
-        // refusing everything, and one with every arm by refusing nothing.
+        // Both bounds, because either side alone makes the partition vacuous.
         assert!(
-            served >= 1,
-            "no backend has a mesh arm — this case read nothing"
+            generated >= 1,
+            "no backend has a generated router — this case read nothing"
         );
         assert!(
-            refused >= 1,
-            "every backend has a mesh arm — the gate is dead code"
+            hosted >= 1,
+            "no backend routes through the host — this case read nothing"
         );
     }
 
@@ -4516,15 +4445,15 @@ mod tests {
     /// is about a missing template, never about the construct. The positive
     /// half, with real templates, is
     /// `sce-build/tests/native_action_backend_parity.rs`.
-    fn assert_reaches_the_emitter(err: GenerateError, lang: &str) {
+    fn assert_reaches_the_emitter(err: GenerateError, lang: &str, construct: &str) {
         match err {
             // Template loading is as far as an empty template list goes.
             GenerateError::TemplateLoad(_) | GenerateError::TemplateRender(_) => {}
-            GenerateError::UnsupportedFeature { detail: msg, .. } if msg.contains("sce:action") => {
+            GenerateError::UnsupportedFeature { detail: msg, .. } if msg.contains(construct) => {
                 panic!(
-                    "{lang} still refuses <sce:action> as an unsupported feature. That \
-                 backend-coverage refusal was retired when every backend grew a \
-                 native-action path; a refusal here means one of them lost it: {msg}"
+                    "{lang} still refuses {construct} as an unsupported feature. That \
+                 refusal was retired when every backend grew a path for it; a refusal \
+                 here means one of them lost it: {msg}"
                 )
             }
             other => panic!(
@@ -4540,7 +4469,7 @@ mod tests {
         // `GeneratedOutput` is not `Debug`, so match rather than `unwrap_err`.
         match generate_cpp_with_templates(&model, &[], "fixture") {
             Ok(_) => panic!("an empty template list cannot produce output"),
-            Err(e) => assert_reaches_the_emitter(e, "C++"),
+            Err(e) => assert_reaches_the_emitter(e, "C++", "sce:action"),
         }
     }
 
@@ -4548,21 +4477,21 @@ mod tests {
     fn kotlin_generate_reaches_the_emitter_for_a_native_action() {
         let model = parse(NATIVE_ACTION_SCXML);
         let err = generate_kotlin_with_templates(&model, &[], None).unwrap_err();
-        assert_reaches_the_emitter(err, "Kotlin");
+        assert_reaches_the_emitter(err, "Kotlin", "sce:action");
     }
 
     #[test]
     fn go_generate_reaches_the_emitter_for_a_native_action() {
         let model = parse(NATIVE_ACTION_SCXML);
         let err = generate_go_with_templates(&model, &[]).unwrap_err();
-        assert_reaches_the_emitter(err, "Go");
+        assert_reaches_the_emitter(err, "Go", "sce:action");
     }
 
     #[test]
     fn python_generate_reaches_the_emitter_for_a_native_action() {
         let model = parse(NATIVE_ACTION_SCXML);
         let err = generate_python_with_templates(&model, &[]).unwrap_err();
-        assert_reaches_the_emitter(err, "Python");
+        assert_reaches_the_emitter(err, "Python", "sce:action");
     }
 
     #[test]
@@ -4570,7 +4499,7 @@ mod tests {
         let model = parse(NATIVE_ACTION_SCXML);
         match generate_c11_with_templates(&model, &[], "fixture") {
             Ok(_) => panic!("an empty template list cannot produce output"),
-            Err(e) => assert_reaches_the_emitter(e, "C11"),
+            Err(e) => assert_reaches_the_emitter(e, "C11", "sce:action"),
         }
     }
 

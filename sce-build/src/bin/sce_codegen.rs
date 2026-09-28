@@ -901,10 +901,11 @@ struct GenerateReport {
     /// beside the two flags above because it answers the same kind of
     /// question about the same set.
     needs_host_processor: Option<bool>,
-    /// Whether the document sends to a Mesh peer (`<send target="#peer">`).
-    /// A document fact; the manifest qualifies it by the run's one target
-    /// language to answer whether the host must register a Mesh router.
-    sends_to_a_mesh_peer: bool,
+    /// Whether the document sends to a Mesh peer (`<send target="#peer">`)
+    /// or requests one (`<invoke type="sce:mesh-rpc">`). A document fact;
+    /// the manifest qualifies it by the run's one target language to answer
+    /// whether the host must register a Mesh router.
+    talks_to_a_mesh_peer: bool,
     host_processor_causes: Vec<sce_build::host_processor_analyzer::HostProcessorCauseRecord>,
     /// The `--host-processor` declarations this run was given, echoed so
     /// a consumer can check the build's half of the contract against the
@@ -1005,7 +1006,7 @@ fn build_manifest<'a>(
         // host must register a Mesh router depends on the backend (C++
         // generates its own), so a run spanning backends reports none.
         needs_mesh_router: target.map(|language| {
-            report.sends_to_a_mesh_peer
+            report.talks_to_a_mesh_peer
                 && sce_build::host_processor_analyzer::routes_mesh_through_host(language)
         }),
         host_processor_causes: &report.host_processor_causes,
@@ -3852,8 +3853,8 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());
             report.script_engine_causes = model.script_engine_cause_records();
             report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
-            report.sends_to_a_mesh_peer =
-                sce_build::host_processor_analyzer::sends_to_a_mesh_peer(&model);
+            report.talks_to_a_mesh_peer =
+                sce_build::host_processor_analyzer::talks_to_a_mesh_peer(&model);
             report.host_processor_causes = model.host_processor_cause_records();
             report
                 .unreadable_variables
@@ -4887,8 +4888,8 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         // Same projection, same reason, for the sibling question: which
         // `<send>` / `<invoke>` types this build has no path for.
         report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
-        report.sends_to_a_mesh_peer =
-            sce_build::host_processor_analyzer::sends_to_a_mesh_peer(&model);
+        report.talks_to_a_mesh_peer =
+            sce_build::host_processor_analyzer::talks_to_a_mesh_peer(&model);
         report.host_processor_causes = model.host_processor_cause_records();
         report
             .unreadable_variables

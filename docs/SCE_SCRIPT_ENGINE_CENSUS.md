@@ -98,11 +98,11 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 256
+engine-documents 257
 native-prefix-documents 2
-datamodel-variable-init 386
-transition-guard 233
-assign-action 329
+datamodel-variable-init 389
+transition-guard 235
+assign-action 332
 child-invoke-needs-script-engine 52
 log-expr 46
 send-param-expr 49
@@ -281,10 +281,17 @@ never spelled correctly.
   `_event.origintype` together, and two assigns) raised
   `datamodel-variable-init` by two, `transition-guard` by one and
   `assign-action` by two.
+  ⚠ **2026-09-28, deliberately:**
+  `integration_resources/a_mesh_request_reaches_the_router/` (one engine
+  document: three counters, the two guards on `done.invoke.ask` and
+  `error.invoke.ask`, three assigns) raised `engine-documents` by one,
+  `datamodel-variable-init` and `assign-action` by three and
+  `transition-guard` by two. Its Mesh request's `<param>`s are literals, so
+  the new `mesh-rpc-request-expr` cause has no population in the tree yet.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
-- **50% of judged documents need an engine** (256 of 510). The remaining
+- **50% of judged documents need an engine** (257 of 513). The remaining
   50% already compile without one, which is what makes "the engine is a
   fallback" a description of the tree rather than an aspiration.
   ⚠ This figure was previously stated as 32%, taken over the 736 walked

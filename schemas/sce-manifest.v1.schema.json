@@ -60,7 +60,7 @@
       "type": "boolean"
     },
     "needs_mesh_router": {
-      "description": "Whether the host must register a Mesh router — the Event I/O Processor sce:mesh — for this machine: it sends to a Mesh peer (<send target=\"#peer\">, SCE_MESH.md 18), and on this run's target language the peer is reached through a router the host supplies. false on C++, whose generated TransportRouter carries the send itself. The same kind of answer as needs_host_processor: without it a host learns that the machine talks to other machines from the first error.execution. Present exactly when the run has one target language; a run that spans backends has no single answer and omits it.",
+      "description": "Whether the host must register a Mesh router — the Event I/O Processor sce:mesh and the invoker sce:mesh-rpc — for this machine: it sends to a Mesh peer (<send target=\"#peer\">, SCE_MESH.md 18) or requests one (<invoke type=\"sce:mesh-rpc\">, SCE_MESH.md 9.5), and on this run's target language the peer is reached through a router the host supplies. false on C++, whose generated TransportRouter carries both itself. The same kind of answer as needs_host_processor: without it a host learns that the machine talks to other machines from the first error.execution. Present exactly when the run has one target language; a run that spans backends has no single answer and omits it.",
       "type": "boolean"
     },
     "host_processor_causes": {

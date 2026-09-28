@@ -548,6 +548,18 @@ route is the deploy-built `TransportRouter` the integration lane does not
 build (`channel_cannot_host` in `sce-build/tests/integration_stem_registration.rs`
 says so, and why).
 
+`a_mesh_request_reaches_the_router` covers SCE_MESH.md §9.5's request half
+on the same route: an `<invoke type="sce:mesh-rpc">` is lowered to a
+host-served invoke of that type, which the host's Mesh router runs through
+the runtime's mesh-rpc door. Each driver registers a router that records the
+start and answers nothing, and checks the request — type `sce:mesh-rpc`, id
+`ask`, src `#motor`, and the params `_mesh_event`, `_mesh_deadline_ms` and
+`speed` in that order — then ends it three ways: completed, `answered` 1;
+failed with the data `'unreachable'`, `failed` 1; no router registered, the
+invoke names a type nobody runs, `refused` 1 (W3C §6.4.1). Each ends in
+`done`. Run on Rust, Go, Kotlin, Python and C11; not on C++, whose generated
+router takes the request itself and is built only from a `deploy.yaml`.
+
 `invoke_expression_failure_is_reported` covers W3C §6.4.3: an `<invoke>` that
 names its target through an expression must evaluate that expression when the
 element fires, and raise `error.execution` when it cannot. The axis is the

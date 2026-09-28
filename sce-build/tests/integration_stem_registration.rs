@@ -223,6 +223,15 @@ fn channel_cannot_host(stem: &str, channel: &str) -> bool {
         // would make an unserved Mesh send error.execution. A C++ mesh lane
         // that drives the `TransportRouter` is where that belongs.
         "a_peer_named_at_run_time_reaches_the_router" => channel.starts_with("C++"),
+        // SCE_MESH.md §9.5, §mesh-19: the fixture asks whether an `<invoke
+        // type="sce:mesh-rpc">` reaches the host's Mesh router through the
+        // runtime's mesh-rpc door. C++ is the one backend that has no such
+        // door to observe: its generated `TransportRouter` takes the request
+        // itself (§9.5's `generated` route), and the build emits that router
+        // only from a `deploy.yaml`, which the integration lane does not
+        // pass. The C++ route is exercised where its router is built — the
+        // `mesh_*` lanes over `tests/mesh/brake_invoke.scxml`.
+        "a_mesh_request_reaches_the_router" => channel.starts_with("C++"),
         _ => false,
     }
 }

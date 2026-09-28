@@ -2532,6 +2532,34 @@ impl<P: StatePolicy> Engine<P> {
             .register(crate::host_processor::MESH_PROCESSOR_TYPE, Box::new(router));
     }
 
+    /// Register `router` as the invoker Mesh request/replies reach — the
+    /// build lowers `<invoke type="sce:mesh-rpc">` (SCE_MESH.md §mesh-9.5)
+    /// to a host-run invoke of
+    /// [`crate::host_processor::MESH_RPC_INVOKE_TYPE`], with the request's
+    /// event in the reserved `_mesh_event` param and its deadline, when the
+    /// document gave one, in `_mesh_deadline_ms`.
+    ///
+    /// The invoke half of [`Engine::register_mesh_router`], and for the same
+    /// reason the one way to serve the type: [`Engine::register_invoker`]
+    /// refuses the reserved prefix. Unregistered, a Mesh request raises
+    /// `error.execution` as any host-run invoke without an invoker does; the
+    /// router answers with [`Engine::complete_host_invoke_from`] or
+    /// [`Engine::fail_host_invoke`], naming the peer that answered.
+    #[cfg(not(feature = "no_std"))]
+    pub fn register_mesh_rpc_invoker<F>(&mut self, router: F)
+    where
+        F: FnMut(
+                crate::host_processor::HostInvokeEvent,
+            ) -> Option<crate::host_processor::HostInvokeResponse>
+            + Send
+            + 'static,
+    {
+        self.host_processors.register_invoker(
+            crate::host_processor::MESH_RPC_INVOKE_TYPE,
+            Box::new(router),
+        );
+    }
+
     /// §scxml-6.4.1: register `handler` as the invoker for
     /// `processor_type`, so `<invoke type="processor_type">` starts a
     /// host-run process instead of raising `error.execution`.

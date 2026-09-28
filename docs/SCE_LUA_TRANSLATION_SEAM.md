@@ -170,9 +170,9 @@ OWNS applies `to_lua_guard`. Ownership is `Language::template_owned_subdir`,
 already the tree's answer to "whose templates are these": five backends own a
 subdirectory and C++ owns whatever no other backend claims. So the table above
 and the field cannot drift: moving a backend across the seam is a template
-edit and nothing else. This is the shape the mesh-rpc refusal uses, which
-reads `templates/mesh/<lang>/` rather than asserting which backends have a
-mesh arm.
+edit and nothing else. This is the shape `mesh_templates_exist_for` uses,
+which reads `templates/mesh/<lang>/` rather than asserting which backends
+have a generated Mesh router.
 
 ⚠ Jinja comments are stripped before that search, because a template may
 *mention* the filter while emitting source — the C++ tree's only mention of
@@ -446,8 +446,8 @@ surface is where that pairing already has a home.
 **So the order is: seam, then templates.** The seam is a contract about *what
 language the string is*, which means an engine that cannot evaluate that
 language must refuse rather than try — QuickJS handed Lua is the case, and the
-mesh-rpc refusal in `sce-build/src/generator.rs` is the shape that refusal
-should take. Only once an engine can be handed lowered text safely does
+refusal should name what is missing and what would satisfy it, as the
+since-retired mesh-rpc refusal in `sce-build/src/generator.rs` did. Only once an engine can be handed lowered text safely does
 `--script-engine lua` have anywhere to send it.
 
 ## Landed 2026-08-28: the seam exists on `IScriptEngine`
@@ -687,8 +687,8 @@ repair:
   the engine would receive Lua from some sites and ECMAScript from others **in
   one session**, with no diagnostic anywhere saying so. So a half-migrated
   backend must refuse, and the refusal is derived from a count taken off the
-  template tree — it lifts by itself when the last site moves, the way the
-  mesh-rpc refusal lifts when `templates/mesh/<lang>/` appears.
+  template tree — it lifts by itself when the last site moves, the way a
+  backend gains a generated Mesh router when `templates/mesh/<lang>/` appears.
 
 ### 29 sites, and why that is not 38
 

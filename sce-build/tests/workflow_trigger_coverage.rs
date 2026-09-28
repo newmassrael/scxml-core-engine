@@ -192,7 +192,7 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "hybrid_stubs_are_tracked_as_generated",
     // Asks `git ls-files` which backends own a `tools/codegen/templates/mesh/
     // <dir>/` tree, and that answer IS the gate: a directory appearing there
-    // is what lifts the mesh-rpc refusal, so SCE_MESH.md §9.5's roster has to
+    // gives a backend a generated router, so SCE_MESH.md §9.5's roster has to
     // flip with it. A `paths:` filter written over the tree as it stands
     // enumerates `mesh/cpp/` — the answer this gate already knows — and by
     // construction cannot name the directory whose arrival it exists to

@@ -95,6 +95,12 @@ pub enum ScriptEngineCauseKind {
     /// SCE Mesh §9.5 — `<invoke type="sce:mesh-rpc">` with `srcexpr`
     /// target; the generated entry block calls `evaluateExpression`.
     MeshRpcSrcExpr { invoke_id: String },
+    /// SCE Mesh §9.5 — `<invoke type="sce:mesh-rpc">` whose request carries
+    /// something evaluated when it starts: a `<param>` that is not a static
+    /// literal, or an `idlocation` the invoke id is written to. The same
+    /// reads `HostInvokeExpr` counts, named for the construct the author
+    /// wrote, since every backend but C++ runs this invoke through the host.
+    MeshRpcRequestExpr { invoke_id: String },
     /// §scxml-6.4.1 — an `<invoke>` the HOST runs whose request carries
     /// something evaluated when it starts: `srcexpr`, `namelist`,
     /// `<content expr>`, or a `<param>` that is not a static literal. Only a
@@ -164,6 +170,7 @@ impl ScriptEngineCauseKind {
             | C::HybridInvoke { .. }
             | C::StaticInvokeNamelist { .. }
             | C::MeshRpcSrcExpr { .. }
+            | C::MeshRpcRequestExpr { .. }
             | C::HostInvokeExpr { .. }
             | C::DonedataContent { .. }
             | C::ChildInvokeNeedsScriptEngine { .. } => false,
@@ -316,6 +323,9 @@ impl ScriptEngineCauseKind {
             }
             C::MeshRpcSrcExpr { invoke_id } => {
                 ScriptEngineCauseRecord::at_invoke("mesh-rpc-srcexpr", invoke_id)
+            }
+            C::MeshRpcRequestExpr { invoke_id } => {
+                ScriptEngineCauseRecord::at_invoke("mesh-rpc-request-expr", invoke_id)
             }
             C::HostInvokeExpr { invoke_id } => {
                 ScriptEngineCauseRecord::at_invoke("host-invoke-expr", invoke_id)
@@ -667,6 +677,16 @@ fn collect_invoke_causes(invoke: &Invoke, out: &mut Vec<NeedsScriptEngineCause>)
             if matches!(&info.target, MeshRpcTarget::SrcExpr { .. }) {
                 out.push(NeedsScriptEngineCause::new(
                     ScriptEngineCauseKind::MeshRpcSrcExpr {
+                        invoke_id: info.base.invoke_id.clone(),
+                    },
+                    info.base.source_location.as_ref(),
+                ));
+            }
+            if !info.base.idlocation.is_empty()
+                || info.base.params.iter().any(|p| !p.is_static_literal)
+            {
+                out.push(NeedsScriptEngineCause::new(
+                    ScriptEngineCauseKind::MeshRpcRequestExpr {
                         invoke_id: info.base.invoke_id.clone(),
                     },
                     info.base.source_location.as_ref(),
@@ -1121,6 +1141,24 @@ mod tests {
             matches!(
                 c,
                 ScriptEngineCauseKind::MeshRpcSrcExpr { invoke_id } if invoke_id == "m1"
+            )
+        });
+    }
+
+    #[test]
+    fn mesh_rpc_request_expr_triggers() {
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke id="m1" type="sce:mesh-rpc" src="#motor">
+                    <param name="_mesh_event" expr="'service.request.ping'"/>
+                    <param name="speed" expr="1 + 1"/>
+                </invoke>
+            </state>
+        </scxml>"##;
+        contains_cause(scxml, |c| {
+            matches!(
+                c,
+                ScriptEngineCauseKind::MeshRpcRequestExpr { invoke_id } if invoke_id == "m1"
             )
         });
     }

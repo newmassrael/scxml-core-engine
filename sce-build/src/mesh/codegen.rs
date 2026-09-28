@@ -1205,12 +1205,12 @@ type MeshBackend = fn(MeshCodegenInputs<'_>) -> Result<GeneratedOutput, CodegenE
 
 /// The mesh emitter each backend carries, or `None` for a backend with no
 /// mesh arm. This is the implementation half of the backend roster; the
-/// refusal half is `generator::mesh_templates_exist_for`, which reads
-/// `templates/mesh/<lang>/` from the embedded tree. The two are held to
-/// one answer per language by `mesh_backend_matches_the_template_tree`,
-/// so a template directory landing without an emitter here (or the
-/// reverse) is a red rather than a document the refusal accepts and this
-/// function then rejects.
+/// route half is `generator::mesh_templates_exist_for` (a generated
+/// router) and `host_peer_table_template` (a host one), which read the
+/// embedded tree. They are held to one answer per language by
+/// `mesh_backend_matches_the_template_tree`, so a template directory
+/// landing without an emitter here (or the reverse) is a red rather than
+/// a document the generator accepts and this function then rejects.
 fn mesh_backend(language: Language) -> Option<MeshBackend> {
     match language {
         Language::Cpp => Some(generate_cpp_mesh),
@@ -2155,9 +2155,10 @@ enum HostLinkContext {
 
 /// The peer-table template for a host-core backend, under
 /// `templates/mesh_router/<lang>/`. Deliberately not under
-/// `templates/mesh/<lang>/`: that tree is what lifts the §mesh-9.5
-/// mesh-rpc refusal (`generator::mesh_templates_exist_for`), and a host
-/// core does not lower `<invoke type="sce:mesh-rpc">`.
+/// `templates/mesh/<lang>/`: that tree is what gives a backend a generated
+/// router (`generator::mesh_templates_exist_for`), which takes
+/// `<invoke type="sce:mesh-rpc">` itself, and a host-core backend's
+/// requests are lowered to its host's router instead (§mesh-19).
 fn host_peer_table_template(language: crate::generator::Language) -> Option<&'static str> {
     match language {
         crate::generator::Language::Rust => Some("mesh_router/rust/mesh_peers.rs.jinja2"),
@@ -2374,12 +2375,11 @@ mod tests {
     #[test]
     fn mesh_backend_matches_the_template_tree() {
         // Two template trees, one per core (§mesh-10.4.2 `served_by`):
-        // `templates/mesh/<lang>/` is the C++ router — and what lifts the
-        // §mesh-9.5 mesh-rpc refusal — and `templates/mesh_router/<lang>/`
-        // is a host core's peer table. A backend has an emitter exactly
-        // when one of them exists for it, and never both: a backend in both
-        // would pass the mesh-rpc refusal with an emitter that drops the
-        // invoke.
+        // `templates/mesh/<lang>/` is the C++ router — §mesh-9.5's
+        // `generated` route — and `templates/mesh_router/<lang>/` is a host
+        // core's peer table. A backend has an emitter exactly when one of
+        // them exists for it, and never both: a backend in both would have
+        // two routers each taking its requests.
         let host_template_embedded = |language: Language| {
             host_peer_table_template(language).is_some_and(|name| {
                 crate::template_registry::EMBEDDED_TEMPLATES

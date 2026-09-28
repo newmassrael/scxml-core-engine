@@ -115,6 +115,11 @@ const ReservedTypePrefix = "sce:"
 // backend whose Mesh router the host registers — see RegisterMeshRouter.
 const MeshProcessorType = "sce:mesh"
 
+// MeshRPCInvokeType is the `<invoke type>` a Mesh request/reply is: SCE_MESH.md
+// §mesh-9.5's `sce:mesh-rpc`, run by the host's Mesh router like any host-run
+// invoke — see RegisterMeshRPCInvoker.
+const MeshRPCInvokeType = "sce:mesh-rpc"
+
 // IsReservedType reports whether a host may not register processorType: it
 // starts with ReservedTypePrefix, spelled exactly.
 //
@@ -133,8 +138,8 @@ func IsReservedType(processorType string) bool {
 func refuseReservedType(call, processorType string) {
 	if IsReservedType(processorType) {
 		panic(fmt.Sprintf("%s(%q): the `%s` prefix is reserved for the processors SCE defines "+
-			"itself; register a Mesh router with RegisterMeshRouter, and give a host type "+
-			"another prefix, such as `x-`", call, processorType, ReservedTypePrefix))
+			"itself; register a Mesh router with RegisterMeshRouter and RegisterMeshRPCInvoker, "+
+			"and give a host type another prefix, such as `x-`", call, processorType, ReservedTypePrefix))
 	}
 }
 
@@ -169,6 +174,24 @@ func (e *Engine[S, E]) RegisterEventProcessor(processorType string, handler Host
 // peer raises `error.communication` itself.
 func (e *Engine[S, E]) RegisterMeshRouter(router HostSendHandler) {
 	e.registerEventProcessor(MeshProcessorType, router)
+}
+
+// RegisterMeshRPCInvoker registers router as the invoker Mesh request/replies
+// reach — the build lowers `<invoke type="sce:mesh-rpc">` (SCE_MESH.md
+// §mesh-9.5) to a host-run invoke of MeshRPCInvokeType, with the request's
+// event in the reserved `_mesh_event` param and its deadline, when the document
+// gave one, in `_mesh_deadline_ms`.
+//
+// The invoke half of RegisterMeshRouter, and for the same reason the one way to
+// serve the type: RegisterInvoker refuses the reserved prefix. Unregistered, a
+// Mesh request raises `error.execution` as any host-run invoke without an
+// invoker does; the router answers with CompleteHostInvokeFrom or
+// FailHostInvoke, naming the peer that answered.
+func (e *Engine[S, E]) RegisterMeshRPCInvoker(router HostInvokeHandler) {
+	if e.hostInvokers == nil {
+		e.hostInvokers = make(map[string]HostInvokeHandler)
+	}
+	e.hostInvokers[MeshRPCInvokeType] = router
 }
 
 func (e *Engine[S, E]) registerEventProcessor(processorType string, handler HostSendHandler) {

@@ -552,6 +552,22 @@ fn walk_actions(actions: &[Action], visit: &mut impl FnMut(&Action)) {
 /// mesh-send hook.
 pub const MESH_PROCESSOR_TYPE: &str = "sce:mesh";
 
+/// The `<invoke type>` a Mesh request is served under on the same backends
+/// (SCE_MESH.md §9.5, §mesh-19): the type the author wrote, run by the
+/// host's router instead of a generated one.
+pub const MESH_RPC_INVOKE_TYPE: &str = "sce:mesh-rpc";
+
+/// The `<param>` a lowered Mesh request carries its envelope `type` in —
+/// the name the author wrote it under, which the parser took out of the
+/// payload and the lowering puts back for the router.
+pub const MESH_EVENT_PARAM: &str = "_mesh_event";
+
+/// The `<param>` a lowered Mesh request carries its deadline in. Not
+/// [`HOST_INVOKE_DEADLINE_PARAM`]: that one the engine arms itself, and a
+/// Mesh request's deadline belongs to the router, which alone can tell a
+/// peer that has not answered from one that cannot be reached (§10.7).
+pub const MESH_DEADLINE_PARAM: &str = "_mesh_deadline_ms";
+
 /// The peer a `<send target>` names, when it names one: `#` followed by at
 /// least one character, where `#_` stays reserved for the targets
 /// §scxml-6.2.4 defines (`#_internal`, `#_parent`, `#_<invokeid>`, ...).
@@ -589,10 +605,7 @@ fn may_name_a_mesh_peer(action: &Action) -> bool {
 /// same thing on C11 as elsewhere: without the branch, a `targetexpr` naming a
 /// peer reaches no router on C11 and the router on every other engine.
 fn routes_dynamic_mesh(language: Language) -> bool {
-    matches!(
-        language,
-        Language::Rust | Language::Go | Language::Kotlin | Language::Python | Language::C11
-    )
+    routes_mesh_through_host(language)
 }
 
 /// Whether `action` is a `<send>` to a Mesh peer that the build can see as
@@ -607,20 +620,33 @@ fn is_static_mesh_send(action: &Action) -> bool {
         && mesh_peer(&action.target).is_some()
 }
 
-/// Whether `language` delivers a Mesh send through a host-registered router
-/// rather than a generated one.
+/// Whether `language` delivers Mesh traffic through a host-registered router
+/// rather than a generated one: exactly when its embedded tree carries no
+/// `templates/mesh/<lang>/` to generate one from.
+///
+/// Derived from the tree rather than naming C++, so a backend has one route
+/// by construction — a generated router appearing for it is what moves it
+/// off the host's, and SCE_MESH.md §9.5's table is held to the same answer.
 pub fn routes_mesh_through_host(language: Language) -> bool {
-    !matches!(language, Language::Cpp)
+    !crate::generator::mesh_templates_exist_for(language)
 }
 
 /// Whether a machine generated for `language` needs its host to register a
-/// Mesh router: it sends to a peer, and the peer is reached through the host.
+/// Mesh router: it sends to a peer or requests one, and the peer is reached
+/// through the host.
 ///
 /// Published on the manifest beside `needs_host_processor`, so a host learns
 /// from the build — not from a first `error.execution` — that this machine
 /// talks to other machines.
 pub fn needs_mesh_router(model: &SCXMLModel, language: Language) -> bool {
-    routes_mesh_through_host(language) && sends_to_a_mesh_peer(model)
+    routes_mesh_through_host(language) && talks_to_a_mesh_peer(model)
+}
+
+/// Whether `model` sends to a Mesh peer the build can see or requests one
+/// (`<invoke type="sce:mesh-rpc">`) — the document fact
+/// [`needs_mesh_router`] qualifies by language. One router serves both.
+pub fn talks_to_a_mesh_peer(model: &SCXMLModel) -> bool {
+    sends_to_a_mesh_peer(model) || model.has_mesh_rpc_invoke()
 }
 
 /// Whether any `<send>` in `model` names a Mesh peer the build can see — the
@@ -630,18 +656,33 @@ pub fn sends_to_a_mesh_peer(model: &SCXMLModel) -> bool {
 }
 
 /// `model` as `language` renders it: on a backend whose Mesh router is a host
-/// processor, every `<send target="#peer">` becomes a host-served
-/// `sce:mesh` send.
+/// processor, the Mesh constructs become the host-served forms every backend
+/// already carries — [`lower_mesh_sends`] for `<send target="#peer">` and
+/// [`lower_mesh_invokes`] for `<invoke type="sce:mesh-rpc">`.
+///
+/// Lowered per language rather than once after the parse because C++ keeps
+/// its own route; the model is borrowed untouched when there is nothing to
+/// lower.
+pub fn lower_mesh(model: &SCXMLModel, language: Language) -> Cow<'_, SCXMLModel> {
+    let sends = lower_mesh_sends(model, language);
+    if !routes_mesh_through_host(language) || !model.has_mesh_rpc_invoke() {
+        return sends;
+    }
+    let mut lowered = sends.into_owned();
+    lower_mesh_invokes(&mut lowered);
+    Cow::Owned(lowered)
+}
+
+/// Every `<send target="#peer">` in `model` as a host-served `sce:mesh` send.
 ///
 /// The send templates already carry a host-served send the whole way — its
 /// arguments evaluated once, its `_event.data` as a local delivery would have
 /// had it, its delay honoured and its `<cancel>` reached — so a Mesh send
-/// is one more of them rather than a second path. Lowered per language
-/// rather than once after the parse because C++ keeps its own route; the
-/// model is borrowed untouched when there is nothing to lower.
-pub fn lower_mesh_sends(model: &SCXMLModel, language: Language) -> Cow<'_, SCXMLModel> {
+/// is one more of them rather than a second path.
+fn lower_mesh_sends(model: &SCXMLModel, language: Language) -> Cow<'_, SCXMLModel> {
     let dynamic = routes_dynamic_mesh(language) && any_action(model, &mut may_name_a_mesh_peer);
-    if !needs_mesh_router(model, language) && !dynamic {
+    let lowers = routes_mesh_through_host(language) && sends_to_a_mesh_peer(model);
+    if !lowers && !dynamic {
         return Cow::Borrowed(model);
     }
     let mut lowered = model.clone();
@@ -671,6 +712,89 @@ pub fn lower_mesh_sends(model: &SCXMLModel, language: Language) -> Cow<'_, SCXML
     // host-served send does, so the queue's storage is sized with it.
     record_delayed_host_sends(&mut lowered);
     Cow::Owned(lowered)
+}
+
+/// Every `<invoke type="sce:mesh-rpc">` in `model` as a host-served invoke of
+/// the same type, run by the router the host registers through the
+/// runtime's mesh-rpc door (SCE_MESH.md §mesh-19).
+///
+/// The host-invoke templates already carry an invocation the whole way —
+/// started at the end of the macrostep that entered its state, its request
+/// evaluated once, cancelled when the state exits, and ended by exactly one
+/// `done.invoke.<id>` or `error.invoke.<id>` — so a Mesh request is one more
+/// of them. The two envelope fields the parser took out of the payload go
+/// back in as the reserved literal `<param>`s the router reads, ahead of the
+/// author's own; the target travels as `src`, or as `srcexpr` evaluated
+/// when the invocation starts.
+///
+/// What this costs the machine is already on the model: analysis registers
+/// the events a Mesh request raises and counts what its request evaluates
+/// (`MeshRpcRequestExpr`, `MeshRpcSrcExpr`), so none of it is re-derived.
+fn lower_mesh_invokes(model: &mut SCXMLModel) {
+    for state in model.states.values_mut() {
+        for invoke in &mut state.invokes {
+            if let Invoke::MeshRpc(info) = invoke {
+                *invoke = Invoke::Unsupported(host_served_mesh_request(info));
+            }
+        }
+    }
+    model.refresh_invokes_view();
+    // Recorded on the lowered copy only, as `lower_mesh_sends` records
+    // `sce:mesh`: the C11 invoker registry and its entry points are gated on
+    // this list, and the manifest still echoes what the host declared.
+    if !model
+        .host_invoker_types
+        .iter()
+        .any(|t| t == MESH_RPC_INVOKE_TYPE)
+    {
+        model
+            .host_invoker_types
+            .push(MESH_RPC_INVOKE_TYPE.to_string());
+    }
+}
+
+/// One Mesh request as the host-served invoke [`lower_mesh_invokes`] makes it.
+fn host_served_mesh_request(
+    info: &crate::model::MeshRpcInvokeInfo,
+) -> crate::model::UnsupportedInvokeInfo {
+    use crate::model::{MeshRpcTarget, Param, UnsupportedInvokeInfo};
+    let literal = |name: &str, value: String| Param {
+        name: name.to_string(),
+        expr: quote_literal(&value),
+        is_static_literal: true,
+        static_value: value,
+        source_location: info.base.source_location.clone(),
+        ..Param::default()
+    };
+    let mut base = info.base.clone();
+    let mut params = vec![literal(MESH_EVENT_PARAM, info.mesh_event.clone())];
+    if let Some(deadline_ms) = info.deadline_ms {
+        params.push(literal(MESH_DEADLINE_PARAM, deadline_ms.to_string()));
+    }
+    params.append(&mut base.params);
+    base.params = params;
+    let (src, srcexpr) = match &info.target {
+        MeshRpcTarget::Src { src } => (src.clone(), String::new()),
+        MeshRpcTarget::SrcExpr { srcexpr } => (String::new(), srcexpr.clone()),
+    };
+    UnsupportedInvokeInfo {
+        base,
+        invoke_type: MESH_RPC_INVOKE_TYPE.to_string(),
+        src,
+        srcexpr,
+        host_served: true,
+        ..UnsupportedInvokeInfo::default()
+    }
+}
+
+/// `value` as a string literal of the data model: quoted with the quote it
+/// does not contain, which the parser's literal reader strips back off.
+fn quote_literal(value: &str) -> String {
+    if value.contains('\'') {
+        format!("\"{value}\"")
+    } else {
+        format!("'{value}'")
+    }
 }
 
 /// Whether `pred` holds for any action in `model`, nested ones included.
@@ -985,6 +1109,96 @@ mod tests {
         let lowered = lower_mesh_sends(&model, Language::C11);
         assert!(lowered.has_delayed_host_send);
         assert_eq!(lowered.delayed_host_send_max_params, 1);
+    }
+
+    const MESH_REQUEST: &str = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+         <state id="s">
+           <invoke id="ask" type="sce:mesh-rpc" src="#motor">
+             <param name="_mesh_event" expr="'service.request.force'"/>
+             <param name="_mesh_deadline_ms" expr="50"/>
+             <param name="speed" expr="'3'"/>
+           </invoke>
+         </state>
+       </scxml>"##;
+
+    /// SCE_MESH.md §mesh-19: a Mesh request becomes the host-served invoke
+    /// the host's router runs, carrying the envelope fields the parser took
+    /// out of the payload back in, ahead of the author's own.
+    #[test]
+    fn a_mesh_request_is_lowered_to_a_host_served_invoke() {
+        let model = parse(MESH_REQUEST);
+        assert!(needs_mesh_router(&model, Language::Go));
+        let lowered = lower_mesh(&model, Language::Go);
+        assert!(
+            !lowered.has_mesh_rpc_invoke(),
+            "a Mesh request survived the lowering"
+        );
+        assert!(lowered
+            .host_invoker_types
+            .iter()
+            .any(|t| t == MESH_RPC_INVOKE_TYPE));
+        // The manifest echoes the host's declaration, not the lowering's.
+        assert!(model.host_invoker_types.is_empty());
+        let [Invoke::Unsupported(info)] = lowered.invokes.as_slice() else {
+            panic!("expected one host-served invoke, got {:?}", lowered.invokes);
+        };
+        assert!(info.host_served);
+        assert_eq!(info.invoke_type, MESH_RPC_INVOKE_TYPE);
+        assert_eq!(info.src, "#motor");
+        let params: Vec<(&str, &str, bool)> = info
+            .base
+            .params
+            .iter()
+            .map(|p| {
+                (
+                    p.name.as_str(),
+                    p.static_value.as_str(),
+                    p.is_static_literal,
+                )
+            })
+            .collect();
+        assert_eq!(
+            params,
+            [
+                (MESH_EVENT_PARAM, "service.request.force", true),
+                (MESH_DEADLINE_PARAM, "50", true),
+                ("speed", "3", true),
+            ]
+        );
+        // The engine never arms a Mesh deadline; the router keeps it.
+        assert!(!lowered.has_host_invoke_deadline);
+    }
+
+    /// C++ generates its own router, which takes the request itself.
+    #[test]
+    fn a_mesh_request_is_left_to_the_generated_router_on_cpp() {
+        let model = parse(MESH_REQUEST);
+        assert!(!needs_mesh_router(&model, Language::Cpp));
+        assert!(matches!(
+            lower_mesh(&model, Language::Cpp),
+            Cow::Borrowed(_)
+        ));
+    }
+
+    /// A run-time target travels as `srcexpr`, evaluated when the invocation
+    /// starts, exactly as a host-served invoke's own would be.
+    #[test]
+    fn a_mesh_request_to_a_run_time_target_keeps_its_expression() {
+        let model = parse(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+                 <state id="s">
+                   <invoke id="ask" type="sce:mesh-rpc" srcexpr="'#' + 'motor'">
+                     <param name="_mesh_event" expr="'service.request.force'"/>
+                   </invoke>
+                 </state>
+               </scxml>"##,
+        );
+        let lowered = lower_mesh(&model, Language::Rust);
+        let [Invoke::Unsupported(info)] = lowered.invokes.as_slice() else {
+            panic!("expected one host-served invoke, got {:?}", lowered.invokes);
+        };
+        assert!(info.src.is_empty());
+        assert_eq!(info.srcexpr, "'#' + 'motor'");
     }
 
     /// The build reads a deadline by the grammar every runtime reads it by,

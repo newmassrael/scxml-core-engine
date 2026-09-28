@@ -50,6 +50,7 @@ from .event import EventMetadata, EventWithMetadata, is_error_event
 from .host_processor import (
     HOST_INVOKE_DEADLINE_PARAM,
     MESH_PROCESSOR_TYPE,
+    MESH_RPC_INVOKE_TYPE,
     HostInvokeCancel,
     HostInvokeDeadline,
     HostInvokeEvent,
@@ -975,6 +976,21 @@ class Engine(Generic[S, E]):
         handler does; a registered router that cannot reach the peer raises
         ``error.communication`` itself."""
         self._host_processors[MESH_PROCESSOR_TYPE] = router
+
+    def register_mesh_rpc_invoker(self, router: HostInvokeHandler) -> None:
+        """Register `router` as the invoker Mesh request/replies reach — the
+        build lowers ``<invoke type="sce:mesh-rpc">`` (SCE_MESH.md §mesh-9.5)
+        to a host-run invoke of `MESH_RPC_INVOKE_TYPE`, with the request's
+        event in the reserved ``_mesh_event`` param and its deadline, when the
+        document gave one, in ``_mesh_deadline_ms``.
+
+        The invoke half of `register_mesh_router`, and for the same reason the
+        one way to serve the type: `register_invoker` refuses the reserved
+        prefix. Unregistered, a Mesh request raises ``error.execution`` as any
+        host-run invoke without an invoker does; the router answers with
+        `complete_host_invoke` or `fail_host_invoke`, naming the peer that
+        answered."""
+        self._host_invokers[MESH_RPC_INVOKE_TYPE] = router
 
     def has_event_processor(self, processor_type: str) -> bool:
         """Whether a handler is registered for `processor_type`.

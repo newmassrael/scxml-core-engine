@@ -404,8 +404,8 @@ TEST(ScriptLanguageSeam, LuaEngineIsNativeLuaAndAdaptsEcmaScript) {
  * The refusal is the half of the seam that makes `--script-engine lua` safe to
  * add: once generated code can emit Lua, an engine that cannot read it has to
  * say so rather than report a syntax error in a language the author never
- * chose. The shape follows `sce-build`'s mesh-rpc refusal — name what is
- * missing, and name what would satisfy it.
+ * chose. The shape follows `sce-build`'s since-retired mesh-rpc refusal — name
+ * what is missing, and name what would satisfy it.
  */
 TEST(ScriptLanguageSeam, QuickJsRefusesLoweredLuaRatherThanTryingIt) {
     auto &engine = SCE::JSEngine::instance();

@@ -310,10 +310,11 @@ pub struct Manifest<'a> {
     /// than as a field it has to guess the absence of.
     pub needs_host_processor: bool,
     /// Whether the host must register a Mesh router — the Event I/O
-    /// Processor `sce:mesh` — for this machine: it sends to a Mesh peer
-    /// (`<send target="#peer">`), and on this run's target language the peer
-    /// is reached through a router the host supplies. `false` on C++, whose
-    /// generated `TransportRouter` carries the send itself.
+    /// Processor `sce:mesh` and the invoker `sce:mesh-rpc` — for this
+    /// machine: it sends to a Mesh peer (`<send target="#peer">`) or requests
+    /// one (`<invoke type="sce:mesh-rpc">`), and on this run's target
+    /// language the peer is reached through a router the host supplies.
+    /// `false` on C++, whose generated `TransportRouter` carries both itself.
     ///
     /// The same kind of answer as [`Self::needs_host_processor`], and
     /// published for the same reason: without it a host learns that the

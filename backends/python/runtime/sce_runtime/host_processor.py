@@ -250,6 +250,11 @@ RESERVED_TYPE_PREFIX = "sce:"
 #: router the host registers — see `Engine.register_mesh_router`.
 MESH_PROCESSOR_TYPE = "sce:mesh"
 
+#: The ``<invoke type>`` a Mesh request/reply is: SCE_MESH.md §mesh-9.5's
+#: ``sce:mesh-rpc``, run by the host's Mesh router like any host-run invoke —
+#: see `Engine.register_mesh_rpc_invoker`.
+MESH_RPC_INVOKE_TYPE = "sce:mesh-rpc"
+
 
 def is_reserved_type(processor_type: str) -> bool:
     """Whether a host may not register `processor_type`: it starts with
@@ -269,8 +274,8 @@ def refuse_reserved_type(call: str, processor_type: str) -> None:
         raise ValueError(
             f"{call}({processor_type!r}): the `{RESERVED_TYPE_PREFIX}` prefix is "
             "reserved for the processors SCE defines itself; register a Mesh "
-            "router with register_mesh_router, and give a host type another "
-            "prefix, such as `x-`"
+            "router with register_mesh_router and register_mesh_rpc_invoker, "
+            "and give a host type another prefix, such as `x-`"
         )
 
 

@@ -744,6 +744,12 @@ bool {{ csym_prefix }}{{ model.name }}_register_invoker({{ csym_prefix }}{{ mode
                                   sce_host_invoke_handler_fn handler, void *user_data);
 bool {{ csym_prefix }}{{ model.name }}_has_invoker(const {{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type);
 
+/* SCE Mesh §9.5: register `router` as the runner of SCE_MESH_RPC_INVOKE_TYPE,
+   the type a Mesh `<invoke>` is lowered to — the one type `_register_invoker`
+   refuses by name. See `sce_host_invoker_register_mesh_rpc_invoker`. */
+bool {{ csym_prefix }}{{ model.name }}_register_mesh_rpc_invoker({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                sce_host_invoke_handler_fn router, void *user_data);
+
 /* W3C SCXML 6.4: stop a host-run invocation from outside the exit chain, for a
    host that tears its own session down. Returns whether a cancel was
    delivered — false when this invocation never started, which is the question

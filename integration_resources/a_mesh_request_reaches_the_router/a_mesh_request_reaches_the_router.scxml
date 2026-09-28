@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_MESH.md §9.5, §mesh-19: an `<invoke type="sce:mesh-rpc">` reaches the
+  host's Mesh router on every backend but C++, whose generated router takes
+  it itself. The build lowers it to a host-served invoke of the same type,
+  so the router the host registers through the runtime's mesh-rpc door is
+  started with the request when `asking` is entered:
+
+    type    sce:mesh-rpc
+    src     #motor
+    params  _mesh_event = service.request.force   (the envelope type)
+            _mesh_deadline_ms = 250                (the router's deadline)
+            speed = 3                              (the author's payload)
+
+  The router answers through the runtime's completion or failure call, and
+  each ends the run in `done`:
+
+    answered  1 — done.invoke.ask arrived, naming `ask`.
+    failed    1 — error.invoke.ask arrived, naming `ask`, with the data
+                  'unreachable' the router failed it with.
+    refused   1 — no router was registered, so the invoke names a type
+                  nobody runs: error.execution (W3C SCXML 6.4.1).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="a_mesh_request_reaches_the_router" datamodel="ecmascript"
+       initial="asking">
+
+  <datamodel>
+    <data id="answered" expr="0"/>
+    <data id="failed" expr="0"/>
+    <data id="refused" expr="0"/>
+  </datamodel>
+
+  <state id="asking">
+    <invoke id="ask" type="sce:mesh-rpc" src="#motor">
+      <param name="_mesh_event" expr="'service.request.force'"/>
+      <param name="_mesh_deadline_ms" expr="250"/>
+      <param name="speed" expr="'3'"/>
+    </invoke>
+
+    <transition event="done.invoke.ask" cond="_event.invokeid === 'ask'" target="done">
+      <assign location="answered" expr="answered + 1"/>
+    </transition>
+    <transition event="error.invoke.ask"
+                cond="_event.invokeid === 'ask' &amp;&amp; _event.data === 'unreachable'"
+                target="done">
+      <assign location="failed" expr="failed + 1"/>
+    </transition>
+    <transition event="error.execution" target="done">
+      <assign location="refused" expr="refused + 1"/>
+    </transition>
+  </state>
+
+  <final id="done"/>
+</scxml>

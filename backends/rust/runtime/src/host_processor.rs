@@ -176,6 +176,11 @@ pub const RESERVED_TYPE_PREFIX: &str = "sce:";
 /// router the host registers — see `Engine::register_mesh_router`.
 pub const MESH_PROCESSOR_TYPE: &str = "sce:mesh";
 
+/// The `<invoke type>` a Mesh request/reply is: SCE_MESH.md §mesh-9.5's
+/// `sce:mesh-rpc`, run by the host's Mesh router like any host-run invoke —
+/// see `Engine::register_mesh_rpc_invoker`.
+pub const MESH_RPC_INVOKE_TYPE: &str = "sce:mesh-rpc";
+
 /// Whether a host may not register `processor_type`: it starts with
 /// [`RESERVED_TYPE_PREFIX`], spelled exactly.
 ///
@@ -192,8 +197,8 @@ pub(crate) fn refuse_reserved_type(call: &str, processor_type: &str) {
     assert!(
         !is_reserved_type(processor_type),
         "{call}({processor_type:?}): the `{RESERVED_TYPE_PREFIX}` prefix is reserved for the \
-         processors SCE defines itself; register a Mesh router with register_mesh_router, and \
-         give a host type another prefix, such as `x-`"
+         processors SCE defines itself; register a Mesh router with register_mesh_router and \
+         register_mesh_rpc_invoker, and give a host type another prefix, such as `x-`"
     );
 }
 

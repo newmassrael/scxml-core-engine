@@ -112,6 +112,13 @@ const val RESERVED_TYPE_PREFIX = "sce:"
 const val MESH_PROCESSOR_TYPE = "sce:mesh"
 
 /**
+ * The `<invoke type>` a Mesh request/reply is: SCE_MESH.md §mesh-9.5's
+ * `sce:mesh-rpc`, run by the host's Mesh router like any host-run invoke —
+ * see [StateMachineEngine.registerMeshRpcInvoker].
+ */
+const val MESH_RPC_INVOKE_TYPE = "sce:mesh-rpc"
+
+/**
  * Whether a host may not register [processorType]: it starts with
  * [RESERVED_TYPE_PREFIX], spelled exactly.
  *
@@ -129,8 +136,8 @@ fun isReservedType(processorType: String): Boolean = processorType.startsWith(RE
 private fun refuseReservedType(call: String, processorType: String) {
     require(!isReservedType(processorType)) {
         "$call(\"$processorType\"): the `$RESERVED_TYPE_PREFIX` prefix is reserved for the " +
-            "processors SCE defines itself; register a Mesh router with registerMeshRouter, " +
-            "and give a host type another prefix, such as `x-`"
+            "processors SCE defines itself; register a Mesh router with registerMeshRouter and " +
+            "registerMeshRpcInvoker, and give a host type another prefix, such as `x-`"
     }
 }
 
@@ -754,6 +761,23 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     fun registerMeshRouter(router: (HostSendRequest) -> List<HostSendResponse>) {
         hostProcessors[MESH_PROCESSOR_TYPE] = router
+    }
+
+    /**
+     * Register [router] as the invoker Mesh request/replies reach — the build
+     * lowers `<invoke type="sce:mesh-rpc">` (SCE_MESH.md §mesh-9.5) to a
+     * host-run invoke of [MESH_RPC_INVOKE_TYPE], with the request's event in
+     * the reserved `_mesh_event` param and its deadline, when the document gave
+     * one, in `_mesh_deadline_ms`.
+     *
+     * The invoke half of [registerMeshRouter], and for the same reason the one
+     * way to serve the type: [registerInvoker] refuses the reserved prefix.
+     * Unregistered, a Mesh request raises `error.execution` as any host-run
+     * invoke without an invoker does; the router answers with
+     * [completeHostInvoke] or [failHostInvoke], naming the peer that answered.
+     */
+    fun registerMeshRpcInvoker(router: (HostInvokeEvent) -> HostInvokeResponse?) {
+        hostInvokers[MESH_RPC_INVOKE_TYPE] = router
     }
 
     /**
