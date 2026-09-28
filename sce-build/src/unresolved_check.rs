@@ -309,13 +309,37 @@ fn forge_markers(
             None,
         )
     })?;
-    let mut out = Vec::new();
-    for node in doc.descendants().filter(|n| n.is_element()) {
-        for mut marker in crate::parser::collect_sce_unresolved(&node, source_name) {
+    Ok(markers_in(&doc.root_element(), source_name)
+        .into_iter()
+        .map(|(label, mut marker)| {
             marker.location = marker
                 .location
                 .as_ref()
                 .map(|at| positions.authored_location(at));
+            (label, marker)
+        })
+        .collect())
+}
+
+/// Every unresolved / assumed marker on `root` and the elements under it,
+/// each with the label of the element that carries it — the forge
+/// document's marker channel, which reads EVERY element.
+///
+/// The one walk both readers of that channel take: the forge parse calls
+/// it before it refuses unread `sce:` attributes, so the marker family it
+/// records as read is exactly the family this channel reads, and
+/// [`forge_markers`] calls it to report and gate. Two walks would let the
+/// parse refuse a marker the report lists — which is what happened on
+/// 2026-09-28, when the unread-attribute rule refused `<data
+/// sce:unresolved>` in forge documents that `--strict-unresolved` and
+/// `sce-codegen unresolved` both read.
+pub(crate) fn markers_in(
+    root: &roxmltree::Node,
+    source_name: &str,
+) -> Vec<(String, UnresolvedMarker)> {
+    let mut out = Vec::new();
+    for node in root.descendants().filter(|n| n.is_element()) {
+        for marker in crate::parser::collect_sce_unresolved(&node, source_name) {
             // `<data id="x">` reads better in a refusal than `data`,
             // and the id is what the author named the thing.
             let label = match node.attribute("id") {
@@ -325,7 +349,7 @@ fn forge_markers(
             out.push((label, marker));
         }
     }
-    Ok(out)
+    out
 }
 
 /// `--strict-unresolved` for a forge document: refuse the build when any

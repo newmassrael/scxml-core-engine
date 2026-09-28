@@ -428,6 +428,13 @@ pub fn parse_forge_with_imports_and_plugin(
     }
 
     let cycles = parse_cycles(&root, diag)?;
+    // A forge document's markers are read on EVERY element, by the
+    // channel `sce-codegen unresolved` and `--strict-unresolved` read them
+    // through. Walked here, through that channel's own function, so the
+    // reads land on this parse's ledger before it refuses what nothing
+    // read — otherwise a `<data sce:unresolved>` the report lists would be
+    // refused as unread by the parse that precedes it.
+    crate::unresolved_check::markers_in(&root, diag);
     let ledger = refuse_unread(recording, &root, diag)?;
     // ⚠ The schema admits any `sce:` attribute on a W3C element laxly, so
     // one nothing reads was dropped without a word until 2026-09-28
