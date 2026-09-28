@@ -3436,7 +3436,7 @@ impl SCXMLParser {
             // derived post-parse by [`crate::script_engine_analyzer`].
         }
 
-        if !action.targetexpr.is_empty() {
+        if !action.targetexpr.is_empty() || static_target_may_be_unreachable(&action.target) {
             model.events.insert("error.communication".to_string());
         }
 
@@ -5394,6 +5394,21 @@ impl SCXMLParser {
 }
 
 // ── Helper functions ────────────────────────────────
+
+/// Whether a static `<send target>` names a destination only the running
+/// session can find — so that a send to it may raise `error.communication`.
+///
+/// W3C SCXML C.1 + 6.4: `#_scxml_<sessionid>` names a session, which is this
+/// one or none this processor can reach, and `#_<invokeid>` names an
+/// invocation, which may not exist or may not be running. The bare
+/// `#_scxml_` names this session's own queue (test 190) and `#_internal` /
+/// `#_parent` are the reserved spellings; none of those three can miss.
+fn static_target_may_be_unreachable(target: &str) -> bool {
+    let Some(name) = target.strip_prefix("#_") else {
+        return false;
+    };
+    !matches!(name, "internal" | "parent" | "scxml_")
+}
 
 /// Recursively check if any if/elseif conditions within actions reference _event.*.
 fn actions_contain_event_metadata(actions: &[Action]) -> bool {

@@ -133,6 +133,47 @@
 {% endif %}
 {{ indent }}    raise _ActionAbort
 {% endif %}
+{# ── The refusals a build-time value decides ── W3C SCXML 6.2: a type or a
+   target the processor cannot use is one of the element's own arguments, so
+   it is refused before the payload is read — one error, nothing delivered,
+   the block ended — as the Interpreter refuses it before it reads a <param>.
+   Refused after the payload, a failing <param> or <content expr> raised its
+   own error first and the element cost two. #}
+{% set static_target = action.target if (action.target and not action.targetexpr) else '' %}
+{% set child_ns = namespace(named=false) %}
+{% for invoke_info in model.invokes | scxml_family %}
+{% if static_target == '#_' ~ invoke_info.invoke_id %}
+{% set child_ns.named = true %}
+{% endif %}
+{% endfor %}
+{% set names_no_invocation = static_target.startswith('#_') and static_target not in ['#_parent', '#_internal'] and not static_target.startswith('#_scxml_') and not child_ns.named %}
+{% set static_refused = not action.send_type_host_served and (action.send_type_unsupported or static_target.startswith('!') or (is_http and not action.target and not action.targetexpr) or names_no_invocation) %}
+{% if static_refused %}
+{% if action.send_type_unsupported %}
+{# W3C SCXML 6.2 (test199) — a processor the platform does not support. #}
+{% if 'error.execution' in model.events %}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
+{% elif static_target.startswith('!') %}
+{# W3C SCXML 6.2 (test194) — `target="!…"` is the test suite's
+   deliberate-invalid sentinel. The sendid rides on the error so the matching
+   transition's `<assign expr="_event.sendid">` reads it back (test332). #}
+{% if 'error.execution' in model.events %}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
+{% elif names_no_invocation %}
+{# W3C SCXML C.1 + 6.4 — no invocation of this document is called
+   `{{ static_target | slice_from(2) }}`, so the target reaches nobody. #}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% else %}
+{# W3C SCXML C.2.2 — "If neither the 'target' nor the 'targetexpr' attribute
+   is specified, the SCXML Processor MUST add the event error.communication". #}
+{% if 'error.communication' in model.events %}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
+{% endif %}
+{{ indent }}raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
+{% else %}
 {# ── The payload ── W3C SCXML 5.10: evaluated once, by the helper every arm
    reads. #}
 {% if has_payload %}
@@ -166,27 +207,6 @@
    the host serves owns delivery, so falling through would also enqueue the
    event locally and the document would see the act twice. #}
 {{ host_send_request(action, indent, action.send_type, has_payload, has_delay, delay_py, machine_name, model) }}
-{% elif action.send_type_unsupported %}
-{# W3C SCXML 6.2 (test199) — a processor the platform does not support. #}
-{% if 'error.execution' in model.events %}
-{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
-{% endif %}
-{{ indent }}raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
-{% elif not action.targetexpr and action.target.startswith('!') %}
-{# W3C SCXML 6.2 (test194) — `target="!…"` is the test suite's
-   deliberate-invalid sentinel. The sendid rides on the error so the matching
-   transition's `<assign expr="_event.sendid">` reads it back (test332). #}
-{% if 'error.execution' in model.events %}
-{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
-{% endif %}
-{{ indent }}raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
-{% elif is_http and not action.target and not action.targetexpr %}
-{# W3C SCXML C.2.2 — "If neither the 'target' nor the 'targetexpr' attribute
-   is specified, the SCXML Processor MUST add the event error.communication". #}
-{% if 'error.communication' in model.events %}
-{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
-{% endif %}
-{{ indent }}raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
 {% elif not action.targetexpr and (action.target.startswith('http://') or action.target.startswith('https://')) %}
 {# W3C SCXML C.2 — BasicHTTP send to a statically-known absolute URL. The form
    is a rendering of the payload evaluated above. #}
@@ -225,14 +245,35 @@
 {% else %}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }})
 {% endif %}
-{% elif not action.targetexpr and action.target.startswith('#_') %}
+{% elif static_target.startswith('#_scxml_') %}
+{# W3C SCXML C.1 — `#_scxml_<sessionid>` names a session, and the only one
+   this processor reaches by that name is its own; the bare prefix names it
+   too (test 190). Any other is not reachable: error.communication, nothing
+   delivered, the block ended (W3C SCXML 4.9). #}
+{% if static_target != '#_scxml_' %}
+{{ indent }}if self._session_id !={{ static_target | slice_from(8) | py_string_literal }}:
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
+{% endif %}
+{% if dyn_event %}
+{{ indent }}_evt = self.get_event_from_name(_evt_name)
+{{ indent }}if _evt is not None:
+{{ indent }}    engine.send_to_self(_evt, _sid, _data)
+{% else %}
+{{ indent }}engine.send_to_self({{ machine_name }}Event.{{ action.event | to_python_const }}, _sid, _data)
+{% endif %}
+{% elif static_target.startswith('#_') %}
 {# W3C SCXML 6.4 — parent-to-child send. The active `Invoke` looks up the
    wire-format event name on the child policy's enum and pushes into the
-   child's external queue, payload included. Unknown invoke ids drop
-   silently (W3C 5.10.1 "if no transition is enabled the event is lost"). #}
+   child's external queue, payload included. The build refused a target that
+   names no invocation above; one that is not running is not there to reach
+   (W3C SCXML C.1). #}
 {{ indent }}_inv_target = engine._active_invokes.get({{ action.target | slice_from(2) | py_string_literal }})
 {{ indent }}if _inv_target is not None and not _inv_target.is_done():
 {{ indent }}    _inv_target.forward_event(_evt_name, EventMetadata(event_type="external", data=_data))
+{{ indent }}else:
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
 {% elif action.targetexpr and has_delay %}
 {# W3C SCXML 6.2: a delayed send to a dynamic target is scheduled locally (C++
    pattern: delay before target routing), as on every other backend — except
@@ -313,5 +354,6 @@
 {{ indent }}if _param_failures:
 {{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the <param> / <content> error ends the block
 {% endif %}
+{% endif %}{# end of the build-time refusals #}
 {% endif -%}
 {% endmacro -%}

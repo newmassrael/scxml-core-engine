@@ -222,6 +222,46 @@
             }
 {% endif %}
 {% endif %}
+{# ── The refusals a build-time value decides ── W3C SCXML 6.2: a type or a
+   target the processor cannot use is one of the element's own arguments, so
+   it is refused before the payload is read — one error, nothing delivered,
+   the block ended — as the Interpreter refuses it before it reads a <param>.
+   Refused after the payload, a failing <param> or <content expr> raised its
+   own error first and the element cost two. They are arms wrapping the
+   payload and the delivery, so nothing is emitted after the refusal. #}
+{# `static_target` decides arms and is never emitted: its condition names
+   `targetexpr`, so an emitted copy would read to the script-engine seam's
+   scan as a value that could be the author's expression. The arms it selects
+   emit `action.target`, which is the same literal there. #}
+{% set static_target = action.target if (action.target and not action.targetexpr) else '' %}
+{% set child_ns = namespace(named=false) %}
+{% for invoke_info in model.invokes | scxml_family %}
+{% if static_target == '#_' ~ invoke_info.invoke_id %}
+{% set child_ns.named = true %}
+{% endif %}
+{% endfor %}
+{% set names_no_invocation = static_target.startswith('#_') and static_target not in ['#_parent', '#_internal'] and not static_target.startswith('#_scxml_') and not child_ns.named %}
+{% set static_refused = not action.send_type_host_served and (action.send_type_unsupported or static_target.startswith('!') or (is_http and not action.target and not action.targetexpr) or names_no_invocation) %}
+{% if not static_refused %}
+{% elif action.send_type_unsupported %}
+            // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<send type='{{ action.send_type }}'> names a processor this platform does not support", "{{ send_id_kt }}")
+            true  // W3C SCXML 5.10: discarded; the block stops below
+{% elif static_target.startswith('!') %}
+            // W3C SCXML 6.2 (test194): Invalid target raises error.execution
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<send target='{{ action.target }}'> is not a target this processor can address", "{{ send_id_kt }}")
+            true  // W3C SCXML 5.10: discarded; the block stops below
+{% elif is_http and not action.target and not action.targetexpr %}
+            // W3C SCXML C.2 (test577): BasicHTTP requires target, missing raises error.communication
+            raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> over BasicHTTPEventProcessor has no target to post to", "{{ send_id_kt }}")
+            true  // W3C SCXML 5.10: discarded; the block stops below
+{% else %}
+            // W3C SCXML C.1 + 6.4: no invocation of this document is called
+            // "{{ action.target[2:] }}", so the target reaches nobody.
+            raisePlatformError({{ machine_name }}Event.Error.Communication, "<send target='{{ action.target | escape_kotlin }}'> names no invocation of this session", "{{ send_id_kt }}")
+            true  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+{% if not static_refused %}
 {# ── The payload ──
    W3C SCXML 5.10 / C.1: the namelist and `<param>` pairs, in the shape
    `buildJsonFromParams` serialises into `_event.data`; or the `<content>`.
@@ -306,18 +346,6 @@
 {% endif %}
 {% if action.send_type_host_served %}
 {{ host_send_arm(action, machine_name, action.send_type, dyn_event, dyn_target, dyn_delay, delay_kt, send_id_kt) }}
-{% elif action.send_type_unsupported %}
-            // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "<send type='{{ action.send_type }}'> names a processor this platform does not support", "{{ send_id_kt }}")
-            return@send true  // W3C SCXML 5.10: discarded; the block stops below
-{% elif not action.targetexpr and action.target and action.target.startswith('!') %}
-            // W3C SCXML 6.2 (test194): Invalid target raises error.execution
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "<send target='{{ action.target }}'> is not a target this processor can address", "{{ send_id_kt }}")
-            return@send true  // W3C SCXML 5.10: discarded; the block stops below
-{% elif is_http and not action.target and not action.targetexpr %}
-            // W3C SCXML C.2 (test577): BasicHTTP requires target, missing raises error.communication
-            raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> over BasicHTTPEventProcessor has no target to post to", "{{ send_id_kt }}")
-            return@send true  // W3C SCXML 5.10: discarded; the block stops below
 {% elif is_http and (dyn_target or (action.target and (action.target.startswith('http://') or action.target.startswith('https://')))) %}
             // W3C SCXML C.2: BasicHTTP send — one arm for a static and a dynamic target
 {% if dyn_target %}
@@ -354,9 +382,30 @@
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke({% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %}, sendData)
 {% endif %}
-{% elif not action.targetexpr and action.target and action.target.startswith('#_') %}
-            // W3C SCXML 6.4 (test192): Send event to invoked child
-            sendToChild("{{ action.target[2:] | escape_kotlin }}", {% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %}, sendData)
+{% elif static_target.startswith('#_scxml_') %}
+            // W3C SCXML C.1: `#_scxml_<sessionid>` names a session, and the only
+            // one this processor reaches by that name is its own — the bare
+            // prefix names it too (test 190). Any other is not reachable:
+            // error.communication, nothing delivered, the block ended (4.9).
+{% if static_target != '#_scxml_' %}
+            if (scriptSessionId != "{{ action.target[8:] | escape_kotlin }}") {
+                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send target='{{ action.target | escape_kotlin }}'> names a session this processor cannot reach", "{{ send_id_kt }}")
+                return@send true
+            }
+{% endif %}
+{% if dyn_event %}
+            if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData))
+{% else %}
+            send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData))
+{% endif %}
+{% elif static_target.startswith('#_') %}
+            // W3C SCXML 6.4 (test192): Send event to invoked child. The build
+            // refused a target naming no invocation above; one that is not
+            // running is not there to reach (W3C SCXML C.1).
+            if (!sendToChild("{{ action.target[2:] | escape_kotlin }}", {% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %}, sendData)) {
+                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send target='{{ action.target | escape_kotlin }}'> names an invocation that is not running", "{{ send_id_kt }}")
+                return@send true
+            }
 {% elif dyn_target and has_delay %}
             // W3C SCXML 6.2: a delayed send to a dynamic target is scheduled
             // locally (C++ pattern: delay before target routing).
@@ -414,6 +463,7 @@
 {% else %}
             false
 {% endif %}
+{% endif %}{# end of the build-time refusals #}
 {% endif %}{# end of the static-delay refusal #}
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

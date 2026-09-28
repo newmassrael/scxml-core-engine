@@ -369,7 +369,7 @@ TEST_F(ActionExecutorImplTest, SCXMLComplianceTargetValidation) {
     // Test various target formats
     std::vector<std::string> validTargets = {
         "",                           // Empty (session-scoped)
-        "#_scxml_test_session",       // Session-scoped format
+        "#_scxml_" + sessionId,       // Session-scoped format, naming this session
         "http://example.com/target",  // HTTP target
         "scxml:another_session"       // SCXML target
     };
@@ -379,6 +379,11 @@ TEST_F(ActionExecutorImplTest, SCXMLComplianceTargetValidation) {
         bool result = executor->executeSendAction(sendAction);
         EXPECT_TRUE(result) << "Target should be valid: " << target;
     }
+
+    // W3C SCXML C.1: a well-formed session target that names no session this
+    // processor runs is not reachable — the send fails, and so ends its block.
+    sendAction.setTarget("#_scxml_no_such_session");
+    EXPECT_FALSE(executor->executeSendAction(sendAction)) << "a session nobody runs was reported reachable";
 }
 
 TEST_F(ActionExecutorImplTest, SCXMLComplianceFireAndForgetSemantics) {

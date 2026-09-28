@@ -13310,6 +13310,11 @@
           "file": "sce/include/common/SendSchedulingHelper.h",
           "symbol": "origin",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "sendToChild",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {

@@ -419,6 +419,20 @@ void ActionExecutorImpl::setEventDispatcher(std::shared_ptr<IEventDispatcher> ev
     SCE_LOG_DEBUG("ActionExecutorImpl: Event dispatcher set for session: {}", sessionId_);
 }
 
+bool ActionExecutorImpl::isAddressedSessionReachable(const std::string &target) const {
+    // ARCHITECTURE.md Zero Duplication: the spellings are SendHelper's; this
+    // asks only whether what they name is running now.
+    if (SendHelper::isSessionTarget(target)) {
+        const std::string addressed = SendHelper::extractSessionId(target);
+        return addressed.empty() || addressed == sessionId_ ||
+               EventRaiserService::getInstance().getEventRaiser(addressed) != nullptr;
+    }
+    if (SendHelper::isChildInvokeTarget(target)) {
+        return !SessionRegistry::instance().getInvokeSessionId(sessionId_, SendHelper::extractInvokeId(target)).empty();
+    }
+    return true;
+}
+
 bool ActionExecutorImpl::isValidLocation(const std::string &location) const {
     if (location.empty()) {
         return false;
@@ -1008,6 +1022,21 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         }
 
         // ALL script engine operations complete - now safe to call EventDispatcher
+
+        // W3C SCXML C.1 + 6.4: a target naming a session or an invocation that
+        // is not there is decided here, when the send is, as every generated
+        // engine decides it — error.communication, nothing delivered, and the
+        // error ends the block (W3C SCXML 4.9). Left to the dispatcher, the
+        // same error arrived after the rest of the block had already run.
+        if (!isAddressedSessionReachable(target)) {
+            SCE_LOG_ERROR("ActionExecutorImpl: <send> target '{}' names a session this processor cannot reach", target);
+            if (eventRaiser_) {
+                eventRaiser_->raiseEvent("error.communication",
+                                         "<send target='" + target + "'> names a session this processor cannot reach",
+                                         sendId, false /* overload discriminator for sendId variant */);
+            }
+            return false;
+        }
 
         if (eventDispatcher_) {
             SCE_LOG_DEBUG("ActionExecutorImpl: Using event dispatcher for send action");

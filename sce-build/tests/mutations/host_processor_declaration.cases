@@ -157,8 +157,8 @@ PY
 
 mutation_case "the template emits no host dispatch" <<'PY'
 edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
-     "{% elif action.send_type_host_served %}",
-     "{% elif false %}")
+     "{% if action.send_type_host_served %}",
+     "{% if false %}")
 PY
 
 mutation_case "the template refuses a served type as well as dispatching" <<'PY'

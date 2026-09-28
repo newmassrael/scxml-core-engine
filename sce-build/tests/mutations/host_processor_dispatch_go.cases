@@ -47,8 +47,8 @@ mutation_oracles sce-build/tests/host_processor_declaration.rs
 
 mutation_case "the go template emits no host dispatch" <<'PY'
 edit("tools/codegen/templates/go/actions/send.go.jinja2",
-     "{% elif action.send_type_host_served %}",
-     "{% elif false and action.send_type_host_served %}")
+     "{% if action.send_type_host_served %}",
+     "{% if false and action.send_type_host_served %}")
 PY
 
 # ── …or is emitted alongside the refusal it replaced ────────────────

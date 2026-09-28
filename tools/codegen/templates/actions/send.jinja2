@@ -415,11 +415,14 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
     {{ block_end or 'return;' }}
 }
 {% endif %}
-{# ── The payload ── #}
-{{ send_event_data(action, model, block_end) }}
-{# ── The delivery ── The refusals a build-time value decides are arms of this
-   chain rather than statements before it, so nothing is emitted after the
-   `return` they end in. #}
+{# ── The refusals a build-time value decides ── W3C SCXML 6.2: a type or a
+   target the processor cannot use is one of the element's own arguments, so
+   it is refused before the payload is read — one error.execution, nothing
+   delivered, the block ended — as the Interpreter refuses it before it reads
+   a <param>. Refused after the payload, a failing <param> raised its own
+   error first and the element cost two. They are arms wrapping the payload
+   and the delivery rather than statements before them, so nothing is emitted
+   after the `return` they end in. #}
 {% if action.send_type_unsupported and not action.typeexpr %}
 // §scxml-6.2 (test 199): the accepted set is decided at build time and read
 // here, not re-spelled. `Action::send_type_unsupported` is the one answer
@@ -435,7 +438,26 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
 engine.raise(typename Engine::EventWithMetadata(
     Event::Error_communication, "<send> over BasicHTTPEventProcessor has no target to post to", "", sendId));
 {{ block_end or 'return;' }}  // W3C SCXML 4.9: the error ends the block
-{% elif not action.targetexpr and action.target == '#_parent' %}
+{% else %}
+{# ── The payload ── #}
+{{ send_event_data(action, model, block_end) }}
+{% set session_target = not action.targetexpr and action.target.startswith('#_scxml_') %}
+{% if session_target and action.target != '#_scxml_' %}
+// W3C SCXML C.1: `#_scxml_<sessionid>` names a session, and the only one this
+// processor reaches by that name is its own. Any other is not reachable:
+// error.communication, nothing delivered, the block ended (W3C SCXML 4.9).
+{% if has_script %}
+if (sessionId_.value_or("") != "{{ action.target | slice_from(8) | escape_cpp }}") {
+{% else %}
+{
+{% endif %}
+    engine.raise(typename Engine::EventWithMetadata(
+        Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names a session this processor cannot reach", "", sendId));
+    {{ block_end or 'return;' }}
+}
+{% endif %}
+{# ── The delivery ── #}
+{% if not action.targetexpr and action.target == '#_parent' %}
 {% if model.is_remote_invoke_target %}
 {# SCE_MESH.md §9.6 remote invoke worker — `<send target="#_parent">` routes
    through the mesh callback installed by `ChildSessionAdapter<Engine>`,
@@ -493,67 +515,54 @@ if (parent_) {
 );
 {% endif %}
 {% endif %}
-{% elif not action.targetexpr and action.target == '#_child' %}
-// W3C SCXML 6.4.1: Send to invoked child state machine (test347)
-{% set scxml_list = model.invokes | scxml %}
-{% if scxml_list %}
-{% set invoke_id = scxml_list[0].invoke_id %}
-{% set field_suffix = scxml_list[0].field_suffix %}
-{% set child_name = scxml_list[0].child_name %}
-if (child_{{ field_suffix }}_) {
-    // W3C SCXML 6.4.1: Send event to child using child's Event enum.
-    // SCE_MESH §14 arch-debt #4 caveat: partition-naive namespace
-    // ref — assumes child machine emits to the flat
-    // `SCE::Generated::<child_name>` shape, not the partitioned
-    // `::P_<part>` form. No cross-partition invoke consumer today;
-    // a future consumer threads `child_partition` through the
-    // model + gates a `::P_<part>` segment here.
-    using ChildEvent = ::SCE::Generated::{{ cpp_ns_prefix }}{{ child_name }}::Event;
-    AOT_DEBUG("Sending event {{ action.event }} to child {{ invoke_id }}");
-    child_{{ field_suffix }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
-    AOT_DEBUG("Processing child {{ invoke_id }} event queues");
-    // W3C SCXML 6.4: Process child's event queues immediately (synchronous communication)
-    child_{{ field_suffix }}_->step();
-    AOT_DEBUG("Child {{ invoke_id }} processing complete, isInFinalState={}", child_{{ field_suffix }}_->isInFinalState());
-} else {
-    SCE_LOG_WARN("Child {{ invoke_id }} not initialized, cannot send event");
-}
-{% else %}
-// No static invokes found - this should not happen for #_child target
-SCE_LOG_ERROR("Cannot send to #_child: no static invokes in model");
+{% elif not action.targetexpr and action.target.startswith('#_') and action.target != '#_internal' and not session_target %}
+{# W3C SCXML 6.4: `#_<invokeid>` names an invocation, and the target is
+   written, so which invocation it names is decided here. `#_child` is not a
+   reserved spelling — test 347's invocation is simply called `child` — so it
+   takes this arm like any other id rather than meaning "the first one". #}
+{% set child_ns = namespace(invoke=none) %}
+{% for invoke in model.invokes | scxml_family %}
+{% if invoke.invoke_id == action.target | slice_from(2) %}
+{% set child_ns.invoke = invoke %}
 {% endif %}
-{% elif not action.targetexpr and action.target.startswith('#_') and action.target != '#_internal' %}
-// W3C SCXML 6.4: Send to child invoke via #_<invokeid> target (test192)
-// ARCHITECTURE.md Zero Duplication: Uses SendHelper::isChildInvokeTarget() (Single Source of Truth)
-if (::SCE::SendHelper::isChildInvokeTarget("{{ action.target }}")) {
-    std::string invokeId = ::SCE::SendHelper::extractInvokeId("{{ action.target }}");
-{% if model.invokes | scxml %}
-{% for invoke in model.invokes | scxml %}
-    {{ 'if' if loop.first else '} else if' }} (invokeId == "{{ invoke.invoke_id }}") {
-        if (child_{{ invoke.field_suffix }}_) {
-            // W3C SCXML 6.4: Send event to child using child's Event enum.
-            // SCE_MESH §14 arch-debt #4 caveat: partition-naive ref —
-            // see the `#_child` site above for the lift path.
-            using ChildEvent = ::SCE::Generated::{{ cpp_ns_prefix }}{{ invoke.child_name }}::Event;
-            AOT_DEBUG("Sending event {{ action.event }} to child {}", invokeId);
-            child_{{ invoke.field_suffix }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
-            // W3C SCXML 6.4: Process child's event queues immediately (synchronous communication)
-            child_{{ invoke.field_suffix }}_->step();
-            AOT_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.field_suffix }}_->isInFinalState());
-        } else {
-            SCE_LOG_WARN("Child {} not initialized, cannot send event", invokeId);
-        }
 {% endfor %}
-    } else {
-        SCE_LOG_ERROR("Child invoke target #{} not found in static invokes", invokeId);
-    }
+{% if child_ns.invoke %}
+{# The slots the invocation's session may occupy: one, or one per document
+   `sce:candidates` declares, at most one of them filled. #}
+{% if child_ns.invoke.candidates %}
+{% set child_slots = [] %}
+{% for candidate in child_ns.invoke.candidates %}
+{% set child_slots = child_slots + ['child_' ~ child_ns.invoke.field_suffix ~ '_' ~ candidate.stem ~ '_'] %}
+{% endfor %}
 {% else %}
-    SCE_LOG_ERROR("Cannot send to child invoke: no static invokes in model");
+{% set child_slots = ['child_' ~ child_ns.invoke.field_suffix ~ '_'] %}
 {% endif %}
+// W3C SCXML 6.4: to the invocation "{{ child_ns.invoke.invoke_id }}", carrying the payload
+// evaluated above. By name rather than by the child's enumerator: a child need
+// not declare every event its parent sends, and one it does not declare is
+// delivered and matches nothing.
+{% for slot in child_slots %}
+{{ 'if' if loop.first else '} else if' }} ({{ slot }}) {
+    {{ slot }}->raiseExternal({{ event_name_cpp }}, eventData);
+    // W3C SCXML 6.4: Process child's event queues immediately (synchronous communication)
+    {{ slot }}->step();
+{% endfor %}
 } else {
-    SCE_LOG_ERROR("Invalid child invoke target: {{ action.target }}");
+    // W3C SCXML C.1: the invocation is not running, so the session the target
+    // names is not there to reach.
+    engine.raise(typename Engine::EventWithMetadata(
+        Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names an invocation that is not running", "", sendId));
+    {{ block_end or 'return;' }}
 }
-{% elif not action.targetexpr and action.target.startswith('#') and action.target != '#_internal' %}
+{% else %}
+// W3C SCXML C.1 + 6.4: no invocation of this document is called
+// "{{ action.target | slice_from(2) }}", so the target reaches
+// nobody: error.communication, nothing delivered, the block ended.
+engine.raise(typename Engine::EventWithMetadata(
+    Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", "", sendId));
+{{ block_end or 'return;' }}
+{% endif %}
+{% elif not action.targetexpr and action.target.startswith('#') and not action.target.startswith('#_') %}
 // SCE Mesh: send to mesh target "{{ action.target }}". Validated at
 // build time by the deploy.yaml topology pipeline — no runtime
 // isInvalidTarget check needed (avoids requiring Event::Error_execution
@@ -634,5 +643,6 @@ if (paramFailed) {
     {{ block_end }}
 }
 {% endif %}
+{% endif %}{# end of the build-time refusals #}
 {% endif %}{# end of the static-delay refusal #}
 {{ '}' }}

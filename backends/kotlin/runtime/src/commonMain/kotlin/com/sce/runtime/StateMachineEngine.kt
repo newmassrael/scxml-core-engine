@@ -3162,10 +3162,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * [eventData] is the send's payload: a `<param>` or
      * namelist addressed to a child reaches its `_event.data` as it would a
      * local delivery's, rather than being dropped at the routing step.
+     *
+     * §scxml-C-1: returns whether the invocation was there to reach. One that
+     * is not running cannot take the event, and the send that addressed it
+     * reports error.communication rather than losing the message unseen.
      */
-    protected fun sendToChild(invokeId: String, eventName: String, eventData: String = "") {
-        val child = activeInvokes[invokeId]?.child ?: return
+    protected fun sendToChild(invokeId: String, eventName: String, eventData: String = ""): Boolean {
+        val child = activeInvokes[invokeId]?.child ?: return false
         if (eventData.isEmpty()) child.sendByName(eventName) else child.sendByNameWithData(eventName, eventData)
+        return true
     }
 
     /**

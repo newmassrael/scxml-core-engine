@@ -432,9 +432,15 @@ fn smoke_cpp_namespace_prefix() {
     // The prefixed namespace must reach the `.inl` definitions, not only
     // the `.h` declarations. The qualified name may be wrapped across
     // lines by the formatter, so assert on the namespace token alone
-    // rather than a contiguous `make_shared<...>` span. `make_shared` and
-    // `ChildEvent` confirm the two distinct definition sites are present
-    // in this fixture; the `PREFIX::` token confirms both are nested.
+    // rather than a contiguous `make_shared<...>` span. `make_shared` is the
+    // definition site that names the child's type; the `PREFIX::` token
+    // confirms it is nested.
+    //
+    // A `<send target="#_<invokeid>">` used to be a second such site, through
+    // a `using ChildEvent = …::Event` alias. It delivers by NAME now (W3C
+    // SCXML 6.4: a child need not declare every event its parent sends), so
+    // it names no child type, prefixed or not — and an alias left behind
+    // would be the regression, which the last assertion says.
     let pref_inl = read_ext(&pref_dir, "inl");
     let ns_token = format!("SCE::Generated::{PREFIX}::");
     assert!(
@@ -442,8 +448,8 @@ fn smoke_cpp_namespace_prefix() {
         "prefixed make_shared (.inl) does not carry the namespace prefix {PREFIX:?}",
     );
     assert!(
-        pref_inl.contains("using ChildEvent") && pref_inl.contains(&ns_token),
-        "prefixed ChildEvent send alias (.inl) does not carry the namespace prefix {PREFIX:?}",
+        !pref_inl.contains("using ChildEvent"),
+        "a send to a child names the child's Event type again; it delivers by name",
     );
 
     // --- unset: byte-shape preserved ---------------------------------

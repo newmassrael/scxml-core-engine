@@ -151,6 +151,18 @@ private:
     bool isValidLocation(const std::string &location) const;
 
     /**
+     * @brief Whether a `<send>` target that names a session can reach it
+     *
+     * W3C SCXML C.1 + 6.4: `#_scxml_<sessionid>` names a session, found by
+     * id among the sessions this processor runs — the bare prefix names the
+     * sender's own — and `#_<invokeid>` names an invocation of the sending
+     * session, which reaches nothing once it has not started or has ended.
+     * Every other target is some other layer's to judge, and reads as
+     * reachable here.
+     */
+    bool isAddressedSessionReachable(const std::string &target) const;
+
+    /**
      * @brief Transform SCXML variable names to valid JavaScript identifiers
      * @param name Original SCXML variable name (may be numeric like "1", "2")
      * @return JavaScript-compatible variable name (e.g., "1" -> "var1")

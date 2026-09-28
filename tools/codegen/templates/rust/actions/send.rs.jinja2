@@ -18,6 +18,27 @@
    immediate or delayed. Under no_std no session identity exists and origin
    metadata is elided, so the value is empty there. #}
 {% macro self_origin(no_std) %}{% if no_std %}::sce_rust_runtime::SceString::new(){% else %}::sce_rust_runtime::sce_string_from_str(self.session_id.as_deref().unwrap_or("")){% endif %}{% endmacro %}
+{# W3C SCXML 6.2 / C.1: deliver the event to this session's own external
+   queue, carrying this session as its origin. One body for the send with no
+   target and the one whose target names this session. #}
+{% macro raise_external_here(action, machine_name, dyn_event, no_std) %}
+{% if action.event %}
+    {
+        let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
+        // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), {{ self_origin(no_std) }});
+        meta.set_event_data(event_data);
+        engine.raise_external_with_meta(meta);
+    }
+{% elif dyn_event %}
+    if let Some(evt) = Self::get_event_from_name(&_send_event_name) {
+        let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
+        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), {{ self_origin(no_std) }});
+        meta.set_event_data(event_data);
+        engine.raise_external_with_meta(meta);
+    }
+{% endif %}
+{%- endmacro %}
 {# §scxml-6.2.5: the act a host-served send performs, for `processor_type`.
    One body for the two ways a send reaches it: a type the build saw served by
    the host (`send_type_host_served`, a Mesh send the build lowered among them)
@@ -315,6 +336,71 @@
     }
     if let Some(ref _rt) = _resolved_target {
 {% endif %}
+{# ── The refusals a build-time value decides ── W3C SCXML 6.2: a type or a
+   target the processor cannot use is one of the element's own arguments, so
+   it is refused before the payload is read — one error, nothing delivered,
+   the block ended — as the Interpreter refuses it before it reads a <param>.
+   Refused after the payload, a failing <param> or <content expr> raised its
+   own error first and the element cost two. They are arms wrapping the
+   payload and the delivery, so nothing is emitted after the refusal. #}
+{% set static_target = action.target if (action.target and not action.targetexpr) else '' %}
+{% set child_ns = namespace(invoke=none) %}
+{% for invoke_info in model.invokes | scxml_family %}
+{% if static_target == '#_' ~ invoke_info.invoke_id %}
+{% set child_ns.invoke = invoke_info %}
+{% endif %}
+{% endfor %}
+{% set names_no_invocation = static_target is startingwith('#_') and static_target not in ['#_parent', '#_internal'] and not static_target is startingwith('#_scxml_') and not child_ns.invoke %}
+{% if action.send_type_unsupported %}
+    // W3C SCXML 6.2: Unsupported send type "{{ action.send_type }}" raises error.execution
+{% if 'error.execution' in model.events %}
+    {
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send type='{{ action.send_type }}'> names a processor this platform does not support");
+        {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
+        engine.raise(err_meta);
+    }
+{% endif %}
+{% if in_block %}
+    break 'action_block;
+{% endif %}
+{% elif not action.send_type_host_served and static_target is startingwith('!') %}
+    // W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
+{% if 'error.execution' in model.events %}
+    {
+        // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send target='{{ action.target }}'> is not a target this processor can address");
+        {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
+        engine.raise(err_meta);
+    }
+{% endif %}
+{% if in_block %}
+    break 'action_block;
+{% endif %}
+{% elif not action.send_type_host_served and action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.target and not action.targetexpr %}
+    // W3C SCXML C.2: BasicHTTP without target raises error.communication
+{% if 'error.communication' in model.events %}
+    {
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to");
+        {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
+        engine.raise(err_meta);
+    }
+{% endif %}
+{% if in_block %}
+    break 'action_block;
+{% endif %}
+{% elif not action.send_type_host_served and names_no_invocation %}
+    // W3C SCXML C.1 + 6.4: no invocation of this document is called
+    // "{{ static_target | slice_from(2) }}", so the target reaches nobody:
+    // error.communication, nothing delivered, the block ended.
+    {
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, "<send target='{{ static_target | escape_rust }}'> names no invocation of this session");
+        {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
+        engine.raise(err_meta);
+    }
+{% if in_block %}
+    break 'action_block;
+{% endif %}
+{% else %}
 {# W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
    pair left out, and the message still goes; the error ends the block once
    it has. `_param_failed` is what the check after the dispatch reads. #}
@@ -501,45 +587,8 @@
 {{ host_send_arm(action, model, machine_name, 'sce:mesh', dyn_event, has_params, has_dynamic_params, has_namelist) }}
     } else {
 {% endif %}
-{% if action.send_type_unsupported %}
-    // W3C SCXML 6.2: Unsupported send type "{{ action.send_type }}" raises error.execution
-{% if 'error.execution' in model.events %}
-    {
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send type='{{ action.send_type }}'> names a processor this platform does not support");
-        {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
-        engine.raise(err_meta);
-    }
-{% endif %}
-{% if in_block %}
-    break 'action_block;
-{% endif %}
-{% elif action.send_type_host_served %}
+{% if action.send_type_host_served %}
 {{ host_send_arm(action, model, machine_name, action.send_type, dyn_event, has_params, has_dynamic_params, has_namelist) }}
-{% elif not action.targetexpr and action.target and action.target is startingwith('!') %}
-    // W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
-{% if 'error.execution' in model.events %}
-    {
-        // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send target='{{ action.target }}'> is not a target this processor can address");
-        {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
-        engine.raise(err_meta);
-    }
-{% endif %}
-{% if in_block %}
-    break 'action_block;
-{% endif %}
-{% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.target and not action.targetexpr %}
-    // W3C SCXML C.2: BasicHTTP without target raises error.communication
-{% if 'error.communication' in model.events %}
-    {
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to");
-        {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
-        engine.raise(err_meta);
-    }
-{% endif %}
-{% if in_block %}
-    break 'action_block;
-{% endif %}
 {% elif not action.targetexpr and action.target == '#_internal' %}
     // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event
 {% if action.event %}
@@ -698,44 +747,60 @@
     }
 {% endif %}
 {% endif %}
-{% elif not action.targetexpr and action.target and action.target is startingwith('#_') and action.target != '#_internal' and action.target != '#_parent' and model.invokes | scxml is defined and model.invokes | scxml | selectattr('invoke_id', 'equalto', action.target | slice_from(2)) | list %}
-{# W3C SCXML 6.4: Send to child invoke via #_<invokeId> target #}
-{% set child_invoke_id = action.target | slice_from(2) %}
-    // W3C SCXML 6.4: Send to child invoke '{{ child_invoke_id }}' via #_{{ child_invoke_id }}
+{% elif child_ns.invoke %}
+{# W3C SCXML 6.4: `#_<invokeid>` names an invocation of this session. The slots
+   its session may occupy: one, or one per document `sce:candidates` declares,
+   at most one of them filled. #}
+{% if child_ns.invoke.candidates %}
+{% set child_slots = [] %}
+{% for candidate in child_ns.invoke.candidates %}
+{% set child_slots = child_slots + ['self.child_' ~ child_ns.invoke.field_suffix ~ '_' ~ candidate.stem] %}
+{% endfor %}
+{% else %}
+{% set child_slots = ['self.child_' ~ child_ns.invoke.field_suffix] %}
+{% endif %}
+    // W3C SCXML 6.4: Send to child invoke '{{ child_ns.invoke.invoke_id }}' via {{ static_target }}
+{% for slot in child_slots %}
+    {{ '' if loop.first else '} else ' }}if let Some(ref mut child) = {{ slot }} {
 {% if action.event or dyn_event %}
-    if let Some(ref mut child) = self.child_{{ child_invoke_id | to_field_suffix }} {
         child.raise_external_by_name({% if dyn_event %}&_send_event_name{% else %}"{{ action.event }}"{% endif %}, &event_data);
+{% endif %}
+{% endfor %}
+    } else {
+        // W3C SCXML C.1: the invocation is not running, so the session the
+        // target names is not there to reach.
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, "<send target='{{ static_target | escape_rust }}'> names an invocation that is not running");
+        {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
+        engine.raise(err_meta);
+{% if in_block %}
+        break 'action_block;
+{% endif %}
     }
+{% elif static_target is startingwith('#_scxml_') %}
+    // W3C SCXML C.1: `#_scxml_<sessionid>` names a session, and the only one
+    // this processor reaches by that name is its own — the bare prefix names
+    // it too (test 190). Any other is not reachable: error.communication,
+    // nothing delivered, the block ended (W3C SCXML 4.9).
+{% if static_target != '#_scxml_' %}
+    if {% if no_std %}true{% else %}self.session_id.as_deref() != Some("{{ static_target | slice_from(8) | escape_rust }}"){% endif %} {
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, "<send target='{{ static_target | escape_rust }}'> names a session this processor cannot reach");
+        {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
+        engine.raise(err_meta);
+{% if in_block %}
+        break 'action_block;
+{% endif %}
+    } else {
+{{ raise_external_here(action, machine_name, dyn_event, no_std) }}
+    }
+{% else %}
+{{ raise_external_here(action, machine_name, dyn_event, no_std) }}
 {% endif %}
 {% elif not action.targetexpr and action.target and action.target != '#_internal' %}
     // W3C SCXML 6.2: External send to target "{{ action.target }}"
-{% if action.event %}
-    {
-        let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
-        // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), {{ self_origin(no_std) }});
-        meta.set_event_data(event_data);
-        engine.raise_external_with_meta(meta);
-    }
-{% endif %}
+{{ raise_external_here(action, machine_name, false, no_std) }}
 {% else %}
     // W3C SCXML 6.2: Default send (no target = external event)
-{% if action.event %}
-    {
-        let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
-        // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), {{ self_origin(no_std) }});
-        meta.set_event_data(event_data);
-        engine.raise_external_with_meta(meta);
-    }
-{% elif dyn_event %}
-    if let Some(evt) = Self::get_event_from_name(&_send_event_name) {
-        let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
-        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), {{ self_origin(no_std) }});
-        meta.set_event_data(event_data);
-        engine.raise_external_with_meta(meta);
-    }
-{% endif %}
+{{ raise_external_here(action, machine_name, dyn_event, no_std) }}
 {% endif %}
 {% if dynamic_mesh %}
     } // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
@@ -755,6 +820,7 @@
 {% endif %}
 {% endif %}
     let _ = event_data;  // suppress unused warning in branches that skip dispatch
+{% endif %}{# end of the build-time refusals #}
 {% if action.targetexpr and model.needs_script_engine %}
     } // end of if let Some(ref _rt) = _resolved_target
 {% endif %}

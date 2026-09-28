@@ -67,6 +67,26 @@
 {% endif %}
 	}
 {%- endmacro %}
+{# W3C SCXML 6.2 / C.1: deliver the event to this session's own external
+   queue, carrying this session as its origin. One body for the send with no
+   target and the one whose target names this session. #}
+{% macro raise_external_here(action, model, machine_name, send_id, event_name_go) %}
+{% if action.eventexpr and model.needs_script_engine %}
+	if sendEvt, sendOk := p.GetEventFromName({{ event_name_go }}); sendOk {
+		meta := sce.NewEventWithMetadata(sendEvt)
+		meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", p.SessionID)
+		meta.Metadata.Data = eventDataStr
+		engine.RaiseExternalWithMeta(meta)
+	}
+{% elif action.event %}
+	{
+		meta := sce.NewEventWithMetadata({{ machine_name }}Event{{ action.event | to_event_variant }})
+		meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", p.SessionID)
+		meta.Metadata.Data = eventDataStr
+		engine.RaiseExternalWithMeta(meta)
+	}
+{%- endif %}
+{%- endmacro %}
 {% set send_id = action.id if action.id else action.auto_send_id %}
 {% set in_block = in_action_block is defined and in_action_block %}
 {% set has_params = action.params and action.params | length > 0 %}
@@ -239,6 +259,81 @@
 {% if wraps_rest %}
 	if sendArgError == "" {
 {% endif %}
+{# ── The refusals a build-time value decides ── W3C SCXML 6.2: a type or a
+   target the processor cannot use is one of the element's own arguments, so
+   it is refused before the payload is read — one error, nothing delivered,
+   the block ended — as the Interpreter refuses it before it reads a <param>.
+   Refused after the payload, a failing <param> or <content expr> raised its
+   own error first and the element cost two. They are arms wrapping the
+   payload and the delivery, so nothing is emitted after the refusal. #}
+{% set static_target = action.target if (action.target and not action.targetexpr) else '' %}
+{% set is_http = action.send_type and 'BasicHTTPEventProcessor' in action.send_type %}
+{% set child_ns = namespace(named=false) %}
+{% if static_target is startingwith('#_') and static_target not in ['#_parent', '#_internal'] and not static_target is startingwith('#_scxml_') %}
+{% for invoke_info in model.invokes | scxml_family %}
+{% if invoke_info.invoke_id == static_target | slice_from(2) %}
+{% set child_ns.named = true %}
+{% endif %}
+{% endfor %}
+{% set names_no_invocation = not child_ns.named %}
+{% else %}
+{% set names_no_invocation = false %}
+{% endif %}
+{% if action.send_type_unsupported %}
+	// W3C SCXML 6.2: Unsupported send type "{{ action.send_type }}" raises error.execution
+{% if 'error.execution' in model.events %}
+	{
+		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send type='{{ action.send_type }}'> names a processor this platform does not support")
+		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		engine.Raise(errEvt)
+	}
+{% endif %}
+{% if in_block %}
+	return  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+{% elif static_target is startingwith('!') and not action.send_type_host_served %}
+	// W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
+{% if 'error.execution' in model.events %}
+	{
+		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send target='{{ action.target }}'> is not a target this processor can address")
+		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		engine.Raise(errEvt)
+	}
+{% endif %}
+{% if in_block %}
+	return  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+{% elif is_http and not action.target and not action.targetexpr and not action.send_type_host_served %}
+	// W3C SCXML C.2 (test 577): BasicHTTP names no target to post to.
+{% if 'error.communication' in model.events %}
+	{
+		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to")
+		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		engine.Raise(errEvt)
+	}
+{% elif 'error.execution' in model.events %}
+	{
+		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to")
+		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		engine.Raise(errEvt)
+	}
+{% endif %}
+{% if in_block %}
+	return  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+{% elif names_no_invocation and not action.send_type_host_served %}
+	// W3C SCXML C.1 + 6.4: no invocation of this document is called
+	// "{{ static_target | slice_from(2) }}", so the target reaches nobody:
+	// error.communication, nothing delivered, the block ended.
+	{
+		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send target='{{ static_target | escape_go }}'> names no invocation of this session")
+		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		engine.Raise(errEvt)
+	}
+{% if in_block %}
+	return  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+{% else %}
 {# ── Build event data from <param>, namelist, or <content> ── #}
 {% if has_dynamic_params or has_namelist %}
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
@@ -385,34 +480,9 @@
 {{ host_send_arm(action, model, machine_name, 'sce:mesh', event_name_go, send_id, has_params, has_dynamic_params, has_namelist) }}
 	} else {
 {% endif %}
-{# ── Unsupported send type check ── #}
-{% if action.send_type_unsupported %}
-	// W3C SCXML 6.2: Unsupported send type "{{ action.send_type }}" raises error.execution
-{% if 'error.execution' in model.events %}
-	{
-		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send type='{{ action.send_type }}'> names a processor this platform does not support")
-		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
-		engine.Raise(errEvt)
-	}
-{% endif %}
-{% if in_block %}
-	return  // W3C SCXML 4.9: the error ends the block
-{% endif %}
-{% elif action.send_type_host_served %}
+{% if action.send_type_host_served %}
 {{ host_send_arm(action, model, machine_name, action.send_type, event_name_go, send_id, has_params, has_dynamic_params, has_namelist) }}
-{% elif action.target and action.target is startingwith('!') %}
-	// W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
-{% if 'error.execution' in model.events %}
-	{
-		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send target='{{ action.target }}'> is not a target this processor can address")
-		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
-		engine.Raise(errEvt)
-	}
-{% endif %}
-{% if in_block %}
-	return  // W3C SCXML 4.9: the error ends the block
-{% endif %}
-{% elif action.send_type and 'BasicHTTPEventProcessor' in action.send_type %}
+{% elif is_http %}
 	// W3C SCXML C.2: BasicHTTP send
 	{
 {% if action.targetexpr and model.needs_script_engine %}
@@ -486,26 +556,43 @@
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "{{ action.event | escape_go }}", Data: eventDataStr})
 	}
 {% endif %}
-{% elif action.target and action.target is startingwith('#_') and action.target != '#_parent' and action.target != '#_internal' %}
-{% set invoke_target_id = action.target | slice_from(2) %}
-	// W3C SCXML 6.4: Send to invoked child "{{ invoke_target_id }}"
-{% set ns_found = namespace(v=false) %}
-{% for invoke_info in model.invokes | scxml %}
+{% elif static_target is startingwith('#_scxml_') %}
+	// W3C SCXML C.1: `#_scxml_<sessionid>` names a session, and the only one
+	// this processor reaches by that name is its own — the bare prefix names
+	// it too (test 190). Any other is not reachable: error.communication,
+	// nothing delivered, the block ended (W3C SCXML 4.9).
+{% if static_target != '#_scxml_' %}
+	if p.SessionID != "{{ static_target | slice_from(8) | escape_go }}" {
+		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send target='{{ static_target | escape_go }}'> names a session this processor cannot reach")
+		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		engine.Raise(errEvt)
+{% if in_block %}
+		return
+{% endif %}
+	} else {
+{% endif %}
+{{ raise_external_here(action, model, machine_name, send_id, event_name_go) }}
+{% if static_target != '#_scxml_' %}
+	}
+{% endif %}
+{% elif static_target is startingwith('#_') and static_target != '#_parent' and static_target != '#_internal' %}
+{% set invoke_target_id = static_target | slice_from(2) %}
+	// W3C SCXML 6.4: Send to invoked child "{{ invoke_target_id }}". The build
+	// refused a target naming no invocation above, so one matches here.
+{% for invoke_info in model.invokes | scxml_family %}
 {% if invoke_info.invoke_id == invoke_target_id %}
-{% set ns_found.v = true %}
 	if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
 {% if action.event or (action.eventexpr and model.needs_script_engine) %}
 		p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName({{ event_name_go }}, eventDataStr)
 {% endif %}
-	}
-{% endif %}
-{% endfor %}
-{% for invoke_info in model.invokes | hybrid %}
-{% if invoke_info.invoke_id == invoke_target_id %}
-{% set ns_found.v = true %}
-	if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
-{% if action.event %}
-		p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName("{{ action.event | escape_go }}", eventDataStr)
+	} else {
+		// W3C SCXML C.1: the invocation is not running, so the session the
+		// target names is not there to reach.
+		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send target='{{ static_target | escape_go }}'> names an invocation that is not running")
+		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		engine.Raise(errEvt)
+{% if in_block %}
+		return
 {% endif %}
 	}
 {% endif %}
@@ -533,20 +620,8 @@
 		}
 {% endif %}
 	}
-{% elif action.eventexpr and model.needs_script_engine %}
-	if sendEvt, sendOk := p.GetEventFromName(sendEventName); sendOk {
-		meta := sce.NewEventWithMetadata(sendEvt)
-		meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", p.SessionID)
-		meta.Metadata.Data = eventDataStr
-		engine.RaiseExternalWithMeta(meta)
-	}
-{% elif action.event %}
-	{
-		meta := sce.NewEventWithMetadata({{ machine_name }}Event{{ action.event | to_event_variant }})
-		meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", p.SessionID)
-		meta.Metadata.Data = eventDataStr
-		engine.RaiseExternalWithMeta(meta)
-	}
+{% else %}
+{{ raise_external_here(action, model, machine_name, send_id, event_name_go) }}
 {% endif %}
 {% endif %}
 {% if dynamic_mesh %}
@@ -564,6 +639,7 @@
 {% endif %}
 {% endif %}
 	}
+{% endif %}{# end of the build-time refusals #}
 {% if wraps_rest %}
 	}
 {% endif %}
