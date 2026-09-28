@@ -98,22 +98,22 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 259
+engine-documents 260
 native-prefix-documents 2
-datamodel-variable-init 407
-transition-guard 239
-assign-action 349
-child-invoke-needs-script-engine 53
+datamodel-variable-init 416
+transition-guard 240
+assign-action 360
+child-invoke-needs-script-engine 54
 log-expr 46
 send-param-expr 49
-send-dynamic-attr 49
+send-dynamic-attr 50
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
 donedata-content 9
 inline-script-action 3
 send-namelist 8
-if-condition 14
+if-condition 17
 elseif-condition 3
 global-script 3
 mesh-rpc-srcexpr 2
@@ -308,11 +308,18 @@ never spelled correctly.
   invoker fixture's `refusing` state (a start the host refuses: two
   counters, the guard on `_event.data.reason`, two assigns) raised
   `datamodel-variable-init` by two, `transition-guard` by one and
-  `assign-action` by two.
+  `assign-action` by two. Then
+  `integration_resources/a_delayed_send_reaches_what_its_target_names/` (one
+  engine document with two inline children: nine data items, eleven assigns,
+  three `<if>`s, the guard on the second `hello`, and one delayed
+  `<content expr>` send to a child) raised `engine-documents` by one,
+  `datamodel-variable-init` by nine, `assign-action` by eleven,
+  `if-condition` by three, and `transition-guard`,
+  `child-invoke-needs-script-engine` and `send-dynamic-attr` by one each.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
-- **50% of judged documents need an engine** (259 of 515). The remaining
+- **50% of judged documents need an engine** (260 of 516). The remaining
   50% already compile without one, which is what makes "the engine is a
   fallback" a description of the tree rather than an aspiration.
   ⚠ This figure was previously stated as 32%, taken over the 736 walked
