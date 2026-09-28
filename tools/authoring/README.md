@@ -705,6 +705,17 @@ with a `when_nothing_sent` its map leaves out, is read at the moment it wrote.
 modelled; another is added when `verify` can model it and a platform's own
 acceptance run agrees with the model.
 
+⚠ `check` refuses the shape that gets this wrong in a statechart: an output
+written in every round (its `when_nothing_sent` has a value) that is either
+sent with a delay itself, or whose sends ask `In(…)` about — or sit inside — a
+state a delayed event enters, following the events that round raises to a
+fixpoint. The round that starts the wait announces the value from before it,
+first. Measured 2026-09-28: two of three documents written for one component
+from the same sentence ("popup on after a 2 s hold") had the shape and failed
+the platform's test at 2 ms; the third, bound `hold_last` and sent only when
+decided, passed. The difference was no reading of the specification, so it
+was no recorded guess — nothing reported it until this rule.
+
 ### examples
 
 The second thing that can expect something, and therefore the second thing that

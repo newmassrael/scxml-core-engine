@@ -733,6 +733,141 @@ def stale_when_fields(rule: dict) -> str:
             f"marked `assumed` if the specification does not give it")
 
 
+_IN_STATE = re.compile(r"""\bIn\(\s*['"]([^'"]+)['"]\s*\)""")
+
+
+def _descriptor_matches(token: str, name: str) -> bool:
+    """W3C SCXML 5.9.3: a transition's event descriptor matches an event
+    whose name is the descriptor, or starts with it followed by a dot."""
+    return token == "*" or name == token or name.startswith(token + ".")
+
+
+def announced_before_a_delay(path: pathlib.Path, outputs: dict) -> list:
+    """[(output, delayed event)] for every statechart output written in every
+    round whose sent value depends on a state a DELAYED event enters.
+
+    The host writes such an output in each round -- its `when_nothing_sent`
+    answers when nothing was sent -- and every write is announced. So the
+    round that STARTS the wait announces the value from before it, and only
+    the delayed round announces the value the specification gives for after.
+    A test reading the first announcement after the drive reads the old one.
+
+    ⚠ Measured 2026-09-28: two of three documents written for one component
+    from the same specification ("popup on after a 2 s hold") had this shape
+    and failed the platform's test at 2 ms; the third bound the popup
+    `hold_last` with a `when_nothing_sent` its map leaves out and sent it
+    only when decided, and passed. The difference was not in the reading of
+    the specification, so it was not a recorded guess -- nothing reported it.
+    """
+    try:
+        root = ET.parse(path).getroot()
+    except (ET.ParseError, OSError):
+        return []
+    parent = {child: node for node in root.iter() for child in node}
+    delayed = {send.get("event") for send in root.iter(f"{SCXML_NS}send")
+               if send.get("event") and (send.get("delay") or send.get("delayexpr"))
+               and send.get("type") in (None, "", "http://www.w3.org/TR/scxml/#SCXMLEventProcessor")}
+    # The simpler form: the output itself sent with a delay to its host
+    # processor, so the rounds before it write `when_nothing_sent`.
+    sent_late = {send.get("type") for send in root.iter(f"{SCXML_NS}send")
+                 if send.get("type") and (send.get("delay") or send.get("delayexpr"))
+                 and send.get("type") not in ("", "http://www.w3.org/TR/scxml/#SCXMLEventProcessor")}
+    if not delayed and not sent_late:
+        return []
+    states = {s.get("id"): s for tag in ("state", "parallel", "final")
+              for s in root.iter(f"{SCXML_NS}{tag}") if s.get("id")}
+
+    def within(state_id: str) -> set:
+        node = states.get(state_id)
+        if node is None:
+            return {state_id}
+        return {s.get("id") for tag in ("state", "parallel", "final")
+                for s in node.iter(f"{SCXML_NS}{tag}") if s.get("id")}
+
+    transitions = list(root.iter(f"{SCXML_NS}transition"))
+
+    def raised_in(node) -> set:
+        """Events a transition body or an `<onentry>` puts on the internal
+        queue at once: `<raise>`, and a `<send>` with no delay to the
+        session itself (W3C SCXML 6.2.4) -- both are handled in the SAME
+        macrostep, so whatever they enter is entered by the delayed round."""
+        found = {r.get("event") for r in node.iter(f"{SCXML_NS}raise") if r.get("event")}
+        found |= {s.get("event") for s in node.iter(f"{SCXML_NS}send")
+                  if s.get("event") and not (s.get("delay") or s.get("delayexpr"))
+                  and s.get("type") in (None, "", "http://www.w3.org/TR/scxml/#SCXMLEventProcessor")
+                  and s.get("target") in (None, "#_internal")}
+        return found
+
+    # What each delayed event can make active within its own round: its
+    # transitions' targets and everything inside them, and -- to a fixpoint --
+    # whatever the events those transitions and entries raise go on to enter.
+    # ⚠ Direct targets alone missed the case that prompted this: the delayed
+    # event entered a hold-off state whose transition raised the event that
+    # entered the popup state.
+    entered: dict = {}
+    for event in delayed:
+        active, queue, seen = set(), [event], set()
+        while queue:
+            current = queue.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            for transition in transitions:
+                tokens = (transition.get("event") or "").split()
+                if not any(_descriptor_matches(t, current) for t in tokens):
+                    continue
+                queue.extend(raised_in(transition))
+                for target in (transition.get("target") or "").split():
+                    reached = within(target)
+                    active |= reached
+                    for state_id in reached:
+                        node = states.get(state_id)
+                        for entry in (node.findall(f"{SCXML_NS}onentry") if node is not None else ()):
+                            queue.extend(raised_in(entry))
+        entered[event] = active
+
+    def governing(send) -> tuple[set, set]:
+        """(states the send's conditions ask about, states it sits inside)."""
+        asked, inside, node = set(), set(), parent.get(send)
+        while node is not None:
+            tag = node.tag.replace(SCXML_NS, "")
+            if tag in ("transition", "if"):
+                asked.update(_IN_STATE.findall(node.get("cond") or ""))
+            if tag == "if":
+                for branch in node:
+                    if branch.tag == f"{SCXML_NS}elseif":
+                        asked.update(_IN_STATE.findall(branch.get("cond") or ""))
+            if tag in ("state", "parallel", "final") and node.get("id"):
+                inside.add(node.get("id"))
+            node = parent.get(node)
+        return asked, inside
+
+    out = []
+    for name, rule in sorted(outputs.items()):
+        sent = (rule or {}).get("sent") or {}
+        processor = sent.get("processor")
+        if not processor or "when_nothing_sent" not in rule:
+            continue
+        # Written only when sent: a `hold_last` rule whose nothing-sent value
+        # its map leaves out writes nothing in the rounds between.
+        if rule.get("hold_last") and not landing.mapped(rule.get("map") or {},
+                                                          rule["when_nothing_sent"])[0]:
+            continue
+        if processor in sent_late:
+            out.append((name, f"(its own send to {processor}, delayed)"))
+            continue
+        for send in root.iter(f"{SCXML_NS}send"):
+            if send.get("type") != processor:
+                continue
+            asked, inside = governing(send)
+            hit = next((e for e, active in sorted(entered.items())
+                        if active & (asked | inside)), None)
+            if hit:
+                out.append((name, hit))
+                break
+    return out
+
+
 def clock_refusals(binding: dict, activation: str | None, kind: str) -> list:
     """[(input, why)] for every clock input a computation's host cannot feed.
 
@@ -1051,6 +1186,18 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
         stale = stale_when_fields(rule)
         if stale:
             out.append(Finding(f"output {name}", stale))
+
+    if document.kind in STATECHART_KINDS:
+        for name, event in announced_before_a_delay(document.path, declared_outputs):
+            out.append(Finding(f"output {name}", (
+                f"is written in every round (its `when_nothing_sent` has a "
+                f"value), and what the document sends it depends on a state "
+                f"the delayed event {event!r} enters: the round that starts "
+                f"the wait announces its value from before it, first. If the "
+                f"specification says this output takes its value only when "
+                f"the wait ends, bind it `hold_last: true` with a "
+                f"`when_nothing_sent` its map leaves out and send it only "
+                f"then")))
 
     # ⚠ A document can declare itself one thing and be another, and neither
     # the document nor the platform model can tell. The binding can.
