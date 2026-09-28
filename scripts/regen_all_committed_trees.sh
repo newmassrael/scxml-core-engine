@@ -232,6 +232,12 @@ cargo fmt -p sce-rust-tests
 # whole tree rather than for the parts it happened to enumerate. The
 # conformance test is the generator: with UPDATE_GOLDEN set it writes the
 # expectation instead of asserting against it.
+#
+# ⚠ It writes only the goldens a test still reads. Those two files are gone:
+# `c8d25c2f920` replaced the inline-kind goldens with a comparison against the
+# standalone document path, after which nothing read or wrote them, and the
+# sixteen `inline_*` files were deleted on 2026-09-28. A golden no test names
+# is not refreshed by this stage, so it goes stale without failing anything.
 stage "Regenerating the forge conformance goldens"
 UPDATE_GOLDEN=1 cargo test -p sce-build --features cli --test forge_conformance --quiet
 
