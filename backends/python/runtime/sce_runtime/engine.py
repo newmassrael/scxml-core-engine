@@ -979,8 +979,8 @@ class Engine(Generic[S, E]):
 
     def register_mesh_rpc_invoker(self, router: HostInvokeHandler) -> None:
         """Register `router` as the invoker Mesh request/replies reach — the
-        build lowers ``<invoke type="sce:mesh-rpc">`` (SCE_MESH.md §mesh-9.5)
-        to a host-run invoke of `MESH_RPC_INVOKE_TYPE`, with the request's
+        build lowers ``<invoke type="sce:mesh-rpc">`` to a host-run invoke of
+        `MESH_RPC_INVOKE_TYPE`, with the request's
         event in the reserved ``_mesh_event`` param and its deadline, when the
         document gave one, in ``_mesh_deadline_ms``.
 
@@ -990,6 +990,7 @@ class Engine(Generic[S, E]):
         host-run invoke without an invoker does; the router answers with
         `complete_host_invoke` or `fail_host_invoke`, naming the peer that
         answered."""
+        # SCE_MESH.md §mesh-9.5: the one door that fills the reserved type.
         self._host_invokers[MESH_RPC_INVOKE_TYPE] = router
 
     def has_event_processor(self, processor_type: str) -> bool:
@@ -1154,9 +1155,8 @@ class Engine(Generic[S, E]):
         `origin` and `origin_type` are the completion's ``_event.origin`` and
         ``_event.origintype`` (W3C SCXML 5.10.1), for a host whose invocation
         stands for another party it can name — as a Mesh router's
-        ``sce:mesh-rpc`` stands for the peer that answered (``mesh://<peer>``,
-        SCE_MESH.md §mesh-9.5). Empty keeps what every host completion has
-        carried."""
+        ``sce:mesh-rpc`` stands for the peer that answered (``mesh://<peer>``).
+        Empty keeps what every host completion has carried."""
         return self._end_host_invoke(
             processor_type,
             invoke_id,
