@@ -66,18 +66,10 @@ std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
 
         // Prepare event data
         std::string eventName = event.eventName;
-        std::string eventData = event.data;
-
-        // W3C SCXML: Format params as JSON object to match ECMAScript data model
-        // This enables _event.data.paramName access (Test 233, 178 compliance)
-        //
-        // Through EventDataHelper rather than inline, for the reason spelled
-        // out in ParentEventTarget: the inline copy ignored `typedParams` and
-        // stringified every value, so a numeric `<param>` reaching an invoked
-        // child compared unequal to its own literal.
-        if (!event.params.empty() || !event.typedParams.empty()) {
-            eventData = EventDataHelper::buildEventDataJson(event.params, event.typedParams);
-        }
+        // W3C SCXML 5.6.2 + 5.10: the payload is assembled by the one rule
+        // every SCXML-processor target shares, so a `<content>` or a typed
+        // `<param>` reaches an invoked child as it reaches this session.
+        std::string eventData = event.payload();
 
         // §scxml-5.10: Raise event with origin tracking and origintype (test 253)
         // Origin is parent session, origintype is SCXML processor

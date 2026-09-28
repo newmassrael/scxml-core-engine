@@ -50,13 +50,6 @@ private:
      * @return Resolved event name, or original name if no expression
      */
     std::string resolveEventName(const EventDescriptor &event) const;
-
-    /**
-     * @brief Convert event descriptor to internal event data
-     * @param event Event descriptor
-     * @return JSON string with event data
-     */
-    std::string buildEventData(const EventDescriptor &event) const;
 };
 
 }  // namespace SCE

@@ -533,6 +533,7 @@ add_library(sce_runtime
     src/actions/ForeachAction.cpp
 
     # Events implementation
+    src/events/EventDescriptor.cpp
     src/events/InternalEventTarget.cpp
     src/events/ParentEventTarget.cpp
     src/events/InvokeEventTarget.cpp

@@ -46,7 +46,7 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
         }
 
         // Build event data
-        std::string eventData = buildEventData(event);
+        std::string eventData = event.payload();
 
         // SCXML "fire and forget": Queue event and return immediate success
         // EventRaiser uses async processing, so queueing success = operation success
@@ -153,40 +153,6 @@ std::string InternalEventTarget::resolveEventName(const EventDescriptor &event) 
     }
 
     return event.eventName;
-}
-
-std::string InternalEventTarget::buildEventData(const EventDescriptor &event) const {
-    // §scxml-B-2 test 561: Content element takes precedence over data attribute
-    if (!event.content.empty()) {
-        return event.content;
-    }
-
-    if (event.data.empty() && event.params.empty() && event.typedParams.empty()) {
-        return "";
-    }
-
-    // SCXML Compliance: "processor MUST reformat this data to match its data model,
-    // but MUST NOT otherwise modify it"
-
-    // For simple data without parameters, return data directly (SCXML compliant)
-    if (!event.data.empty() && event.params.empty() && event.typedParams.empty()) {
-        return event.data;
-    }
-
-    // §scxml-5.10: Build event data from params (Single Source of Truth)
-    // Use EventDataHelper for consistent JSON construction (Interpreter + AOT)
-    //
-    // `buildEventDataJson`, not `buildJsonFromParams`: the latter stringifies
-    // every value, which is how `<param expr="42"/>` reached a receiver as
-    // `"42"`. The typed map is what carries the number.
-    if (event.data.empty()) {
-        return EventDataHelper::buildEventDataJson(event.params, event.typedParams);
-    }
-
-    // For complex data with both data and parameters, the same helper composes
-    // both halves, so the presence of a `data` attribute cannot change a
-    // param's type.
-    return EventDataHelper::buildEventDataJson(event.data, event.params, event.typedParams);
 }
 
 }  // namespace SCE

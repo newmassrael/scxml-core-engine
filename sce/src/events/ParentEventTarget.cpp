@@ -114,21 +114,11 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
 
         // Create event with parent session as target
         std::string eventName = event.eventName;
-        std::string eventData = event.data;
-
-        // W3C SCXML: Format params as JSON object to match ECMAScript data model
-        // This enables _event.data.paramName access in finalize handlers (Test 233, 178)
-        //
-        // Through EventDataHelper rather than inline: this block used to
-        // rebuild the string-only serializer the helper already owns, and in
-        // rebuilding it dropped `event.typedParams` — so `<param expr="42"/>`
-        // crossed to the parent as `{"value":"42"}` and an ECMAScript receiver
-        // read `_event.data.value === 42` as false. The AOT send path has
-        // always called the helper, so the two engines answered differently
-        // for the same document.
-        if (!event.params.empty() || !event.typedParams.empty()) {
-            eventData = EventDataHelper::buildEventDataJson(event.params, event.typedParams);
-        }
+        // W3C SCXML 5.6.2 + 5.10: the payload is assembled by the one rule
+        // every SCXML-processor target shares (Test 233, 178). A copy of it
+        // here once dropped `typedParams` — `<param expr="42"/>` crossed as
+        // `{"value":"42"}` — and a later one dropped `<content>`.
+        std::string eventData = event.payload();
 
         // §scxml-5.10 test 338: Get invoke ID for this child session
         std::string invokeId = SessionRegistry::instance().getInvokeIdForChildSession(actualChildSessionId);

@@ -5133,6 +5133,11 @@
           "file": "backends/c/runtime/include/sce/host_processor.h",
           "symbol": "event_data",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/events/EventDescriptor.cpp",
+          "symbol": "EventDescriptor::payload",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
