@@ -185,9 +185,10 @@ PY
 
 mutation_case "check stops judging declarations without the flag" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     """            if let Err(e) = sce_build::validate_unhandled_declarations(&model, scxml_path) {
-                error_format.emit_and_exit(&e, "");
-            }""",
+     """            error_format.emit_all_and_exit(
+                &sce_build::unhandled_declaration_findings(&model, scxml_path),
+                "",
+            );""",
      "")
 PY
 
@@ -224,7 +225,8 @@ edit("sce-build/src/scxml_exhaustiveness.rs",
     check_declarations(model, &found.inconsistent, source)
 }""",
      """    let found = collect_gaps(model);
-    check_declarations(model, &found.inconsistent, source)?;
-    report_uncovered_gaps(model, &found.reportable, source)
+    let mut out = check_declarations(model, &found.inconsistent, source);
+    out.extend(report_uncovered_gaps(model, &found.reportable, source));
+    out
 }""")
 PY

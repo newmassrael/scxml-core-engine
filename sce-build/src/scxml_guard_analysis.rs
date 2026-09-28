@@ -40,10 +40,23 @@ use crate::forge::error::{ForgeError, Located};
 use crate::model::{SCXMLModel, State};
 use crate::scxml_semantic::ScxmlSemanticError;
 
-/// Reject the document on the first guard-analysis violation.
-/// Mirrors the short-circuit convention of the semantic and
-/// exhaustiveness validators that run before this one.
+/// Reject the document on its first guard-analysis violation — the first
+/// of [`findings`], for callers whose result carries one error.
 pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeError>> {
+    findings(model, source)
+        .into_iter()
+        .next()
+        .map_or(Ok(()), Err)
+}
+
+/// Every guard-analysis violation, state by state in document order: a
+/// state's always-false guards first, then its shadowed transitions.
+///
+/// A transition shadowed by several earlier unconditional siblings is
+/// reported once, against the first of them — deleting or guarding the
+/// shadowed transition is one repair however many siblings hide it.
+pub fn findings(model: &SCXMLModel, source: &str) -> Vec<Located<ForgeError>> {
+    let mut out = Vec::new();
     let mut states: Vec<&State> = model.states.values().collect();
     states.sort_by_key(|s| s.document_order);
 
@@ -54,48 +67,55 @@ pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeErr
                 // The guard lives on this `<transition>`, so that is
                 // the coordinate the record carries and the one
                 // §2.1.2 resolves the enclosing anchor from.
-                return Err(model.locate(
-                    ScxmlSemanticError::AlwaysFalseGuard {
-                        state: state.id.clone(),
-                        cond,
-                    }
-                    .into(),
-                    trans.source_location.as_ref(),
-                    source,
-                ));
+                out.push(
+                    model.locate(
+                        ScxmlSemanticError::AlwaysFalseGuard {
+                            state: state.id.clone(),
+                            cond,
+                        }
+                        .into(),
+                        trans.source_location.as_ref(),
+                        source,
+                    ),
+                );
             }
         }
 
         // Second-pass: shadowed transitions. The first unconditional
         // transition seen for each event descriptor wins; any later
-        // same-event sibling is dead.
+        // same-event sibling is dead. `i` ascends, so the first sibling
+        // to claim a shadowed `j` is the earliest one that hides it.
+        let mut shadowed = vec![false; state.transitions.len()];
         for (i, earlier) in state.transitions.iter().enumerate() {
             if !is_unconditional(&earlier.cond) {
                 continue;
             }
             for (j, later) in state.transitions.iter().enumerate().skip(i + 1) {
-                if event_descriptors_match(&earlier.event, &later.event) {
+                if !shadowed[j] && event_descriptors_match(&earlier.event, &later.event) {
+                    shadowed[j] = true;
                     // The shadowed transition, not the shadowing one:
                     // the dead element is what the author deletes or
                     // guards, and the record's position is what a
                     // consumer jumps to.
-                    return Err(model.locate(
-                        ScxmlSemanticError::ShadowedTransition {
-                            state: state.id.clone(),
-                            event: later.event.clone(),
-                            shadowing_index: i,
-                            shadowed_index: j,
-                        }
-                        .into(),
-                        later.source_location.as_ref(),
-                        source,
-                    ));
+                    out.push(
+                        model.locate(
+                            ScxmlSemanticError::ShadowedTransition {
+                                state: state.id.clone(),
+                                event: later.event.clone(),
+                                shadowing_index: i,
+                                shadowed_index: j,
+                            }
+                            .into(),
+                            later.source_location.as_ref(),
+                            source,
+                        ),
+                    );
                 }
             }
         }
     }
 
-    Ok(())
+    out
 }
 
 /// Classify a guard expression. Returns the raw `cond` text the

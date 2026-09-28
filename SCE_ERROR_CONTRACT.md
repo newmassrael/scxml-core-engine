@@ -215,7 +215,7 @@ site that raises one. `analyzer::can_generate_static` — the gate both
 pipelines share, and the only route to
 `scxml_references::validate` — resolves every rejection it returns.
 `lint_statechart` is the second such boundary, covering the three
-design-time lints; `validate_unhandled_declarations` resolves as well,
+design-time lints; `unhandled_declaration_findings` resolves as well,
 because it is a second door onto two of those rejections rather than a
 step inside the first. `validate_no_std_compatibility` is the third,
 covering the four `codegen/no-std-*` axes. One call covers every code

@@ -31,10 +31,10 @@
 //            * every `<transition>`'s `target` (split on whitespace
 //              for the multi-target parallel-entry case §scxml-3.13).
 //   3. After the closure stabilises, walk every state in
-//      `model.states` in document order and short-circuit on the
-//      first orphan. The per-transition variant outranks the bare
-//      state form when the orphan carries at least one transition
-//      with a non-empty target.
+//      `model.states` in document order and record one finding per
+//      orphan. The per-transition variant outranks the bare state
+//      form when the orphan carries at least one transition with a
+//      non-empty target.
 //
 // This pass runs after `analyzer::analyze` (the analyzer pipeline is
 // infallible and only enriches derived fields) and after
@@ -61,18 +61,33 @@ use crate::forge::error::{ForgeError, Located};
 use crate::model::SCXMLModel;
 use crate::scxml_semantic::ScxmlSemanticError;
 
-/// Reject the document on the first reachability violation. Mirrors
-/// the short-circuit convention used by sibling validators
-/// (`validate_axis3_accept_side_state_naming`,
-/// `validate_on_sample_*`) — emitting every orphan in a single pass
-/// would require collecting multiple `Located<ForgeError>` records,
-/// which the wire layer (`Result<_, Located<ForgeError>>`) does not
-/// model today.
+/// Reject the document on its first reachability violation — the first
+/// of [`findings`], for callers whose result carries one error.
 pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeError>> {
+    findings(model, source)
+        .into_iter()
+        .next()
+        .map_or(Ok(()), Err)
+}
+
+/// Every reachability violation, one per unreachable state, in document
+/// order.
+///
+/// One record per STATE, not per edge: an unreachable state's outgoing
+/// transitions are dead because the state is, so the repair is one
+/// decision about the state. The record still names the first dead edge
+/// when there is one, because that is where the author looks.
+///
+/// All of them, not the first: an author repairing a document decides
+/// about every orphan, and a report that stops at one costs a build
+/// round per orphan. The streams already carry several records per run
+/// (SCE_ERROR_CONTRACT.md §1); it was only this producer that stopped.
+pub fn findings(model: &SCXMLModel, source: &str) -> Vec<Located<ForgeError>> {
+    let mut out = Vec::new();
     // Empty graph short-circuit: `ScxmlSemanticError::NoStates` fires
     // earlier in the pipeline; reachability has nothing to walk.
     if model.states.is_empty() {
-        return Ok(());
+        return out;
     }
 
     let reach = compute_reach_set(model);
@@ -84,7 +99,7 @@ pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeErr
     let mut ordered: Vec<&crate::model::State> = model.states.values().collect();
     ordered.sort_by_key(|s| s.document_order);
 
-    for state in ordered {
+    'states: for state in ordered {
         if reach.contains(&state.id) {
             continue;
         }
@@ -100,28 +115,33 @@ pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeErr
                 // anchored state still answers with that state, while
                 // a transition carrying its own anchor answers with
                 // the nearer one.
-                return Err(model.locate(
-                    ScxmlSemanticError::DeadTransition {
-                        state: state.id.clone(),
-                        target,
-                    }
-                    .into(),
-                    trans.source_location.as_ref(),
-                    source,
-                ));
+                out.push(
+                    model.locate(
+                        ScxmlSemanticError::DeadTransition {
+                            state: state.id.clone(),
+                            target,
+                        }
+                        .into(),
+                        trans.source_location.as_ref(),
+                        source,
+                    ),
+                );
+                continue 'states;
             }
         }
-        return Err(model.locate(
-            ScxmlSemanticError::UnreachableState {
-                state_id: state.id.clone(),
-            }
-            .into(),
-            state.source_location.as_ref(),
-            source,
-        ));
+        out.push(
+            model.locate(
+                ScxmlSemanticError::UnreachableState {
+                    state_id: state.id.clone(),
+                }
+                .into(),
+                state.source_location.as_ref(),
+                source,
+            ),
+        );
     }
 
-    Ok(())
+    out
 }
 
 /// First whitespace-separated non-empty target on a transition's

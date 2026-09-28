@@ -68,30 +68,39 @@ use crate::forge::error::{ForgeError, Located};
 use crate::model::{SCXMLModel, State, Transition};
 use crate::scxml_semantic::ScxmlSemanticError;
 
-/// Reject the document on the first exhaustiveness violation.
-/// Mirrors the short-circuit convention of `scxml_reachability::validate`
-/// — emitting every gap in one pass would require collecting multiple
-/// `Located<ForgeError>` records, which the wire layer does not model.
-///
-/// Two passes, in this order:
+/// Reject the document on its first exhaustiveness violation — the first
+/// of [`findings`], for callers whose result carries one error.
+pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeError>> {
+    findings(model, source)
+        .into_iter()
+        .next()
+        .map_or(Ok(()), Err)
+}
+
+/// Every exhaustiveness violation, from two passes in this order:
 ///
 ///   1. Every `sce:unhandled` declaration in the document is checked
 ///      against the gap set. A declaration is the author telling the
-///      build a fact about their machine; validating it before
-///      consuming it means a gap report is never suppressed by a
-///      declaration that turns out to be untrue.
-///   2. Gaps that no declaration covers are reported.
+///      build a fact about their machine, so an untrue one is reported
+///      before the gaps it might be mistaken for covering.
+///   2. Every compound with a gap no declaration covers — one record per
+///      compound, its first open event leading and the rest in `also`,
+///      because the author repairs the compound's dispatch table once.
 ///
-/// Both walk in document order, so which violation surfaces first is
-/// stable across re-runs.
-pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeError>> {
+/// An untrue declaration cannot hide a real gap in pass 2: a stale one
+/// names an event that is no gap for its state, and a contradictory one
+/// sits on a state that handles the event, so neither is a non-handler
+/// the gap would have listed. Both passes run, and both walk in document
+/// order, so the records and their order are stable across re-runs.
+pub fn findings(model: &SCXMLModel, source: &str) -> Vec<Located<ForgeError>> {
     if model.states.is_empty() {
-        return Ok(());
+        return Vec::new();
     }
 
     let found = collect_gaps(model);
-    check_declarations(model, &found.inconsistent, source)?;
-    report_uncovered_gaps(model, &found.reportable, source)
+    let mut out = check_declarations(model, &found.inconsistent, source);
+    out.extend(report_uncovered_gaps(model, &found.reportable, source));
+    out
 }
 
 /// Pass 1 alone: every `sce:unhandled` declaration checked against the
@@ -99,20 +108,19 @@ pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeErr
 ///
 /// The two passes are one call for a library consumer and two entry points
 /// for the CLI, because only one of them is a lint. See
-/// [`crate::validate_unhandled_declarations`] for why a declaration's truth
-/// is not design advice — and note that running this and then [`validate`]
-/// re-checks the declarations, which is a pure walk over the same model and
-/// yields the same first error, so the order of the two is not a decision
-/// anyone has to get right.
-pub fn validate_declarations(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeError>> {
+/// [`crate::unhandled_declaration_findings`] for why a declaration's truth
+/// is not design advice. The CLI runs this stage before the lints and
+/// refuses on any record it yields, so when [`findings`] runs after it,
+/// pass 1 there is empty and no declaration is reported twice.
+pub fn declaration_findings(model: &SCXMLModel, source: &str) -> Vec<Located<ForgeError>> {
     if model.states.is_empty() {
-        return Ok(());
+        return Vec::new();
     }
     // Short-circuit before the walk when the document declares nothing. The
     // walk is O(parents x events x children) and every document in the W3C
     // corpus would pay it on every build for an attribute none of them use.
     if model.states.values().all(|s| s.unhandled.is_empty()) {
-        return Ok(());
+        return Vec::new();
     }
     let found = collect_gaps(model);
     check_declarations(model, &found.inconsistent, source)
@@ -287,7 +295,7 @@ fn collect_gaps(model: &SCXMLModel) -> Inconsistencies {
 }
 
 /// Check every `sce:unhandled` declaration in the document against the
-/// inconsistency FACTS, rejecting the first that is untrue.
+/// inconsistency FACTS, yielding one record per untrue (state, event).
 ///
 /// `gaps_by_parent` here is `Inconsistencies::inconsistent`, not the
 /// reportable subset: a declaration is the author stating something
@@ -303,7 +311,8 @@ fn check_declarations(
     model: &SCXMLModel,
     gaps_by_parent: &GapsByParent,
     source: &str,
-) -> Result<(), Located<ForgeError>> {
+) -> Vec<Located<ForgeError>> {
+    let mut out = Vec::new();
     let mut declarers: Vec<&State> = model
         .states
         .values()
@@ -326,15 +335,18 @@ fn check_declarations(
             if state_handles_event(state, event) {
                 // The declaring `<state>` is the subject — the
                 // `sce:unhandled` attribute the author wrote is on it.
-                return Err(model.locate(
-                    ScxmlSemanticError::ContradictoryUnhandledDeclaration {
-                        state: state.id.clone(),
-                        event: event.clone(),
-                    }
-                    .into(),
-                    state.source_location.as_ref(),
-                    source,
-                ));
+                out.push(
+                    model.locate(
+                        ScxmlSemanticError::ContradictoryUnhandledDeclaration {
+                            state: state.id.clone(),
+                            event: event.clone(),
+                        }
+                        .into(),
+                        state.source_location.as_ref(),
+                        source,
+                    ),
+                );
+                continue;
             }
 
             let covers = parent_gaps.is_some_and(|gaps| {
@@ -345,32 +357,36 @@ fn check_declarations(
                 // Same subject as the contradiction above, and for the
                 // same reason: the stale claim is the attribute on
                 // this `<state>`.
-                return Err(model.locate(
-                    ScxmlSemanticError::StaleUnhandledDeclaration {
-                        state: state.id.clone(),
-                        parent: state.parent.clone().unwrap_or_else(|| "(none)".to_string()),
-                        event: event.clone(),
-                        gaps: parent_gaps
-                            .map(|gaps| {
-                                gaps.iter()
-                                    .filter(|(_, non_handlers)| non_handlers.contains(&state.id))
-                                    .map(|(e, _)| e.clone())
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                    }
-                    .into(),
-                    state.source_location.as_ref(),
-                    source,
-                ));
+                out.push(
+                    model.locate(
+                        ScxmlSemanticError::StaleUnhandledDeclaration {
+                            state: state.id.clone(),
+                            parent: state.parent.clone().unwrap_or_else(|| "(none)".to_string()),
+                            event: event.clone(),
+                            gaps: parent_gaps
+                                .map(|gaps| {
+                                    gaps.iter()
+                                        .filter(|(_, non_handlers)| {
+                                            non_handlers.contains(&state.id)
+                                        })
+                                        .map(|(e, _)| e.clone())
+                                        .collect()
+                                })
+                                .unwrap_or_default(),
+                        }
+                        .into(),
+                        state.source_location.as_ref(),
+                        source,
+                    ),
+                );
             }
         }
     }
 
-    Ok(())
+    out
 }
 
-/// Report the first gap no `sce:unhandled` declaration covers.
+/// Report every compound with a gap no `sce:unhandled` declaration covers.
 ///
 /// A gap survives only for the children that did not declare it, so a
 /// compound where two of three non-handlers declared the event is
@@ -380,7 +396,8 @@ fn report_uncovered_gaps(
     model: &SCXMLModel,
     gaps_by_parent: &GapsByParent,
     source: &str,
-) -> Result<(), Located<ForgeError>> {
+) -> Vec<Located<ForgeError>> {
+    let mut out = Vec::new();
     let mut parents: Vec<&State> = model
         .states
         .values()
@@ -423,21 +440,23 @@ fn report_uncovered_gaps(
         // property of the dispatch table, not of any one child, and the
         // author repairs it by deciding what the compound does with the
         // event.
-        return Err(model.locate(
-            ScxmlSemanticError::NonExhaustiveEventHandling {
-                parent: parent.id.clone(),
-                event,
-                handlers,
-                non_handlers,
-                also,
-            }
-            .into(),
-            parent.source_location.as_ref(),
-            source,
-        ));
+        out.push(
+            model.locate(
+                ScxmlSemanticError::NonExhaustiveEventHandling {
+                    parent: parent.id.clone(),
+                    event,
+                    handlers,
+                    non_handlers,
+                    also,
+                }
+                .into(),
+                parent.source_location.as_ref(),
+                source,
+            ),
+        );
     }
 
-    Ok(())
+    out
 }
 
 /// Does the named state declare `event` in its `sce:unhandled`?

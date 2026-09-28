@@ -524,21 +524,40 @@ pub type CompileError = forge::error::Located<forge::error::ForgeError>;
 /// otherwise report as a consequence; exhaustiveness before guard
 /// analysis, because a missing sibling handler explains a guard that
 /// looks dead.
+///
+/// The first of [`lint_statechart_findings`], so a library caller whose
+/// result carries one error rejects on exactly the record the CLI lists
+/// first.
 pub fn lint_statechart(model: &model::SCXMLModel, source: &str) -> Result<(), CompileError> {
+    lint_statechart_findings(model, source)
+        .into_iter()
+        .next()
+        .map_or(Ok(()), Err)
+}
+
+/// Every design-time lint finding, in the order [`lint_statechart`]
+/// documents: all of reachability's, then exhaustiveness's, then guard
+/// analysis's, each in document order.
+///
+/// All three run whatever the first finds. The ordering rationale above
+/// is about which record an author reads FIRST, not about which walkers
+/// may run: an orphan region and an unrelated always-false guard are two
+/// repairs, and stopping at the first cost the author a build round per
+/// finding (SCE_ERROR_CONTRACT.md §1 already lets one run carry several
+/// records).
+pub fn lint_statechart_findings(model: &model::SCXMLModel, source: &str) -> Vec<CompileError> {
     // NL→IR Mapping Roadmap Item 8 — the second resolver boundary,
     // after `analyzer::can_generate_static`. Every lint rejection
     // leaves through here, so one call gives all seven of their codes
     // the anchors enclosing the node each names, and gives the eighth
     // added next year the same without anyone remembering to
     // (SCE_ERROR_CONTRACT.md §2.1.2).
-    lint_statechart_impl(model, source).map_err(|err| model.with_enclosing_anchor(err))
-}
-
-fn lint_statechart_impl(model: &model::SCXMLModel, source: &str) -> Result<(), CompileError> {
-    scxml_reachability::validate(model, source)?;
-    scxml_exhaustiveness::validate(model, source)?;
-    scxml_guard_analysis::validate(model, source)?;
-    Ok(())
+    scxml_reachability::findings(model, source)
+        .into_iter()
+        .chain(scxml_exhaustiveness::findings(model, source))
+        .chain(scxml_guard_analysis::findings(model, source))
+        .map(|err| model.with_enclosing_anchor(err))
+        .collect()
 }
 
 /// Reject a `sce:unhandled` declaration the document contradicts.
@@ -566,10 +585,13 @@ fn lint_statechart_impl(model: &model::SCXMLModel, source: &str) -> Result<(), C
 /// `scxml_exhaustiveness::validate` runs the declaration check first — so
 /// this entry point exists for the CLI, whose lints are opt-in and whose
 /// always-on stage had no way to ask the question.
-pub fn validate_unhandled_declarations(
+///
+/// Every untrue declaration, not the first, for the reason the lints give
+/// every finding: each is a separate attribute the author corrects.
+pub fn unhandled_declaration_findings(
     model: &model::SCXMLModel,
     source: &str,
-) -> Result<(), CompileError> {
+) -> Vec<CompileError> {
     // Resolved here as well as in `lint_statechart`, because this is a
     // second door onto the same rejections rather than a step inside
     // that one — the CLI's always-on stage reaches
@@ -577,8 +599,10 @@ pub fn validate_unhandled_declarations(
     // calls, not two mechanisms: enrichment leaves an already-anchored
     // record alone, so the door a rejection happens to leave by cannot
     // change what it carries.
-    scxml_exhaustiveness::validate_declarations(model, source)
-        .map_err(|err| model.with_enclosing_anchor(err))
+    scxml_exhaustiveness::declaration_findings(model, source)
+        .into_iter()
+        .map(|err| model.with_enclosing_anchor(err))
+        .collect()
 }
 
 /// Promote the `analyzer::can_generate_static` precondition into a

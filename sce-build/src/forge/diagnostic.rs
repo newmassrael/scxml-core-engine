@@ -17088,7 +17088,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // through the one `SCXMLModel::locate` that
             // `scxml_references` was already using.
             //
-            // `validate_unhandled_declarations` is a second door onto
+            // `unhandled_declaration_findings` is a second door onto
             // two of these for the CLI's always-on stage, and resolves
             // as well; enrichment leaves an anchored record alone, so
             // the door a rejection leaves by does not change what it

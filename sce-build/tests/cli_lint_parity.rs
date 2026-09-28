@@ -450,3 +450,90 @@ fn the_always_on_entry_does_not_report_gaps() {
          naming it would mean pass 1 never read the declaration: {lint_stderr}"
     );
 }
+
+/// Every wire `code` `check --lint --error-format=json` emits, in order,
+/// with the exit status.
+fn cli_check_wire_codes(path: &Path) -> (i32, Vec<String>) {
+    let out = Command::new(sce_codegen_bin())
+        .args(["--error-format", "json", "check"])
+        .arg(path)
+        .args(["-l", "rust", "--lint"])
+        .output()
+        .expect("run sce-codegen check");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let codes = stderr
+        .lines()
+        .filter(|l| l.starts_with('{'))
+        .map(|l| {
+            let value: serde_json::Value =
+                serde_json::from_str(l).unwrap_or_else(|e| panic!("NDJSON line {l}: {e}"));
+            value["code"]
+                .as_str()
+                .expect("record has a code")
+                .to_string()
+        })
+        .collect();
+    (out.status.code().unwrap_or(-1), codes)
+}
+
+/// `--lint` reports every finding, not the first.
+///
+/// Until 2026-09-28 each lint returned on its first violation and the
+/// chain returned on the first lint that found one, so a document with
+/// two orphans, a dispatch gap and a dead guard took four build rounds to
+/// learn about — and an author reached through an MCP tool saw one
+/// problem and fixed one. The streams always allowed several records per
+/// run (SCE_ERROR_CONTRACT.md §1); the producers stopped.
+///
+/// The fixture carries a finding for EACH walker, and two for one of
+/// them, so a regression to "first per walker" and a regression to "first
+/// overall" each lose records this compares. The first record must still
+/// be the library's rejection: the single-error entry point is defined as
+/// the first of this list, which is what keeps the two from disagreeing
+/// about why a document is refused.
+#[test]
+fn lint_reports_every_finding_in_one_run() {
+    let scratch = ScratchDir::new("lint-all");
+    let path = scratch.write(
+        "several.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="several" initial="dispatch" datamodel="ecmascript">
+  <state id="dispatch" initial="idle">
+    <state id="idle">
+      <transition event="cmd.start" target="active"/>
+      <transition event="cmd.stop" target="idle"/>
+    </state>
+    <state id="active">
+      <transition event="cmd.start" target="active"/>
+      <transition event="tick" cond="1==2" target="idle"/>
+      <transition event="tick" target="active"/>
+    </state>
+  </state>
+  <final id="orphan_a"/>
+  <final id="orphan_b"/>
+</scxml>
+"#,
+    );
+
+    let (status, codes) = cli_check_wire_codes(&path);
+    assert_ne!(
+        status, 0,
+        "a document with findings is refused under --lint"
+    );
+    assert_eq!(
+        codes,
+        [
+            "scxml/unreachable-state",
+            "scxml/unreachable-state",
+            "scxml/non-exhaustive-event-handling",
+            "scxml/always-false-guard",
+        ],
+        "every finding, reachability then exhaustiveness then guards"
+    );
+    assert_eq!(
+        library_wire_code(&path).as_deref(),
+        Some(codes[0].as_str()),
+        "the library rejects on the record the CLI lists first"
+    );
+}

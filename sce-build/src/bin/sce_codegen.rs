@@ -737,6 +737,27 @@ impl ErrorFormat {
     fn emit_forge_and_exit(self, err: &sce_build::forge::error::Located<ForgeError>) -> ! {
         self.emit_and_exit(err, "Forge codegen error: ")
     }
+
+    /// Emit every record of a producer that found several, then exit with
+    /// the first one's code; return when there are none.
+    ///
+    /// The first decides the status because it is the one the library's
+    /// single-error entry point rejects on, so the CLI and the library
+    /// cannot disagree about why a document was refused — only about how
+    /// much else the CLI also said.
+    fn emit_all_and_exit<E: ToDiagnostics + std::fmt::Display>(
+        self,
+        errs: &[E],
+        human_prefix: &str,
+    ) {
+        let Some((first, _)) = errs.split_first() else {
+            return;
+        };
+        for err in errs {
+            self.report(err, human_prefix);
+        }
+        std::process::exit(first.exit_code());
+    }
 }
 
 /// Emit a CLI-level error under the currently-installed format and
@@ -3798,11 +3819,14 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             // Document axis, opt-in: the design-time lints reject legal
             // SCXML, so the operator asks for them. Same call the
             // library entry points make, so a document cannot pass here
-            // and fail there.
+            // and fail there. Every finding, not the first: the author
+            // repairs all of them, and the library's single error is the
+            // first of this list.
             if lint {
-                if let Err(e) = sce_build::lint_statechart(&model, scxml_path) {
-                    error_format.emit_forge_and_exit(&e);
-                }
+                error_format.emit_all_and_exit(
+                    &sce_build::lint_statechart_findings(&model, scxml_path),
+                    "Forge codegen error: ",
+                );
             }
 
             // Always reported, fatal only under `--lint`. Placed beside
@@ -3826,9 +3850,10 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             // refused unconditionally by the parser; only its TRUTH was
             // behind `--lint`, so the half that could rot silently was the
             // half that says something.
-            if let Err(e) = sce_build::validate_unhandled_declarations(&model, scxml_path) {
-                error_format.emit_and_exit(&e, "");
-            }
+            error_format.emit_all_and_exit(
+                &sce_build::unhandled_declaration_findings(&model, scxml_path),
+                "",
+            );
 
             if no_std && langs.contains(&Language::Rust) {
                 if let Err(err) =
@@ -4566,11 +4591,12 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
 
     // Document axis, opt-in — see `CheckArgs::lint`. Placed on the same
     // side of `can_generate_static` as the `check` call site so the two
-    // subcommands report the same diagnostic for the same document.
+    // subcommands report the same diagnostics for the same document.
     if lint {
-        if let Err(e) = sce_build::lint_statechart(&model, scxml_path) {
-            error_format.emit_forge_and_exit(&e);
-        }
+        error_format.emit_all_and_exit(
+            &sce_build::lint_statechart_findings(&model, scxml_path),
+            "Forge codegen error: ",
+        );
     }
 
     // Always reported, fatal only under `--lint` — see the `check` call
@@ -4587,9 +4613,10 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // Not a lint — see the `check` call site. Placed beside its sibling so
     // the two commands cannot acquire the check at different points and
     // start disagreeing about a document again.
-    if let Err(e) = sce_build::validate_unhandled_declarations(&model, scxml_path) {
-        error_format.emit_and_exit(&e, "");
-    }
+    error_format.emit_all_and_exit(
+        &sce_build::unhandled_declaration_findings(&model, scxml_path),
+        "",
+    );
 
     resolve_source_path(&mut model, Path::new(scxml_path));
 
