@@ -272,6 +272,15 @@ fn push_transport(name: &str, state: &TransportState, out: &mut Vec<Fact>) {
             out.push(Fact::new(at("topic"), topic));
             push_nested(&at("extra"), extra, out);
         }
+        TransportState::Wss { url, keepalive_ms } => {
+            // No `url` is not a default: it makes this side the one that
+            // accepts (§mesh-18.1).
+            match url {
+                Some(url) => out.push(Fact::new(at("url"), url)),
+                None => out.push(Fact::new(at("url"), "(accepts)")),
+            }
+            push_optional_scalar(&at("keepalive-ms"), keepalive_ms.as_ref(), out);
+        }
         TransportState::Unimplemented { transport_name } => {
             out.push(Fact::new(at("unimplemented"), transport_name));
         }

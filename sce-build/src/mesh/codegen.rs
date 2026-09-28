@@ -420,6 +420,10 @@ impl TargetStateView {
                 "TargetStateView::from_topology: unimplemented transport '{transport_name}' \
                  should have been rejected by the registry-lookup stage in generate_cpp_mesh"
             ),
+            TransportState::Wss { .. } => unreachable!(
+                "TargetStateView::from_topology: 'wss' is served by the host cores and \
+                 should have been rejected by refuse_transports_not_served_by in generate_cpp_mesh"
+            ),
         }
     }
 }
@@ -1317,6 +1321,30 @@ fn classify_pool_rpc_client_conflict(
     None
 }
 
+/// Refuse the first target whose transport the core named by `served`
+/// does not carry — unknown, unimplemented, or served by the other core.
+/// Every mesh emitter calls this before it renders, so a registry entry
+/// that is missing, half-finished or for the other core is one refusal
+/// with one diagnostic on every backend.
+fn refuse_transports_not_served_by(
+    targets: &[ResolvedTarget],
+    served: transport::ServiceKind,
+) -> Result<(), CodegenError> {
+    for t in targets {
+        let name = t.state.transport_name();
+        let carried = transport::lookup(name)
+            .is_some_and(|desc| desc.implemented && desc.served_by.is(served));
+        if !carried {
+            return Err(CodegenError::UnsupportedTransport {
+                transport: name.to_string(),
+                target: t.target.clone(),
+                served,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, CodegenError> {
     let MeshCodegenInputs {
         machine_name,
@@ -1343,30 +1371,14 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         template_base,
     } = inputs;
     // Validate: every target's transport must be in the registry AND
-    // have a template implementation. Two distinct failure modes:
+    // carried by the C++ template. Three failure modes, one refusal:
     //   - Unknown transport (not in registry at all)
     //   - Known but not implemented (capabilities known, no template yet)
-    // Both fail here at the Rust level — no deferred C++ #error. This is
+    //   - Served by a host core (§mesh-10.4.2 `served_by`), so no arm here
+    // All fail here at the Rust level — no deferred C++ #error. This is
     // what makes the §mesh-6.4 add-a-transport procedure enforceable: a
     // registry entry missing or half-finished is rejected before codegen.
-    for t in targets {
-        let name = t.state.transport_name();
-        match transport::lookup(name) {
-            None => {
-                return Err(CodegenError::UnsupportedTransport {
-                    transport: name.to_string(),
-                    target: t.target.clone(),
-                });
-            }
-            Some(desc) if !desc.implemented => {
-                return Err(CodegenError::UnsupportedTransport {
-                    transport: name.to_string(),
-                    target: t.target.clone(),
-                });
-            }
-            Some(_) => {}
-        }
-    }
+    refuse_transports_not_served_by(targets, transport::ServiceKind::CppTemplate)?;
 
     // Fail fast on event-name collisions: two SCXML events on the same
     // target that collapse to the same C++ constant suffix would emit
@@ -1526,7 +1538,11 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
                 target_pascal: filters::to_pascal_case(stripped.to_string()),
                 events: t.events.clone(),
                 state: TargetStateView::from_topology(&t.state),
-                has_per_target_field: desc.shape.has_per_target_field,
+                has_per_target_field: desc
+                    .served_by
+                    .cpp_shape()
+                    .expect("refuse_transports_not_served_by admitted only C++-served transports")
+                    .has_per_target_field,
                 buffers_outbound: desc.buffers_outbound,
                 needs_dedup,
                 needs_ordering,

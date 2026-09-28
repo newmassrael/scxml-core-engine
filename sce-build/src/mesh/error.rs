@@ -2497,11 +2497,16 @@ pub enum CodegenError {
     #[error("mesh codegen not yet supported for language '{0}'")]
     UnsupportedLanguage(String),
 
-    /// Transport type is not yet implemented.
-    #[error("transport '{transport}' not yet supported (target '{target}')")]
+    /// The core generating this machine does not carry the transport: it
+    /// is unknown, not yet implemented, or served by the other core
+    /// (§mesh-10.4.2 `served_by`).
+    #[error("transport '{transport}' has no {served} arm (target '{target}')")]
     UnsupportedTransport {
         transport: String,
         target: super::target::TargetId,
+        /// The core that was asked — the diagnostic offers the transports
+        /// it does carry.
+        served: super::transport::ServiceKind,
     },
 
     /// Cannot read the mesh Jinja2 template file.
@@ -4433,18 +4438,22 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             }),
             key_fragments: vec![lang.clone()],
         },
-        CodegenError::UnsupportedTransport { transport, target } => DiagnosticPayload {
+        CodegenError::UnsupportedTransport {
+            transport,
+            target,
+            served,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshCodegenUnsupportedTransport,
             stage: Stage::MeshCodegen,
             actual: Some(transport.clone()),
             expected: None,
-            // Implemented transports live in a single registry
-            // (`mesh::transport::implemented_names`). The repair path
-            // is authoritative; consumers don't parse error prose.
+            // What the asked core carries lives in a single registry
+            // (`mesh::transport::implemented_names_served_by`). The repair
+            // path is authoritative; consumers don't parse error prose.
             fix: Some(Fix::ReplaceOneOf {
-                candidates: super::transport::implemented_names()
-                    .iter()
-                    .map(|s| (*s).to_string())
+                candidates: super::transport::implemented_names_served_by(*served)
+                    .into_iter()
+                    .map(str::to_string)
                     .collect(),
             }),
             key_fragments: vec![transport.clone(), target.as_str().to_string()],

@@ -1897,13 +1897,15 @@ impl DedupConfig {
     /// the machine name — the caller wraps it into
     /// [`DeployError::InvalidDedupWindow`].
     ///
-    /// Zero is the only rejected value, and it is rejected because it is
-    /// not a small window but *no* window: every duplicate the §mesh-10.5
-    /// layer exists to suppress would be admitted, while the deployment
-    /// still reads as having duplicate suppression configured. There is
-    /// deliberately no upper bound — the cost of a large window is linear
-    /// and stated, and any ceiling picked here would be a guess at
-    /// someone's sender rate.
+    /// Zero is rejected because it is not a small window but *no* window:
+    /// every duplicate the §mesh-10.5 layer exists to suppress would be
+    /// admitted, while the deployment still reads as having duplicate
+    /// suppression configured. There is deliberately no ceiling below the
+    /// representable one — the cost of a large window is linear and
+    /// stated, and any smaller ceiling would be a guess at someone's
+    /// sender rate. The representable one is `u32::MAX`: the rule every
+    /// host core runs (`stdlib/mesh/dedup_admit.scxml`) takes the window as
+    /// a `uint32`, so a larger value is one no core could be handed.
     fn validation_error(&self) -> Option<String> {
         if self.window_size == 0 {
             return Some(
@@ -1912,6 +1914,14 @@ impl DedupConfig {
                  `dedup:` section to take the default of 256 entries."
                     .to_string(),
             );
+        }
+        if u32::try_from(self.window_size).is_err() {
+            return Some(format!(
+                "window_size ({}) exceeds {} — the §mesh-10.5 rule every Mesh core \
+                 runs takes the window as a uint32",
+                self.window_size,
+                u32::MAX,
+            ));
         }
         None
     }
@@ -1968,6 +1978,15 @@ impl OrderingTimings {
                 "tick_period_ms ({}) must be strictly less than gap_timeout_ms ({}) \
                  so a missed sequence is detected within `gap_timeout + tick_period`",
                 self.tick_period_ms, self.gap_timeout_ms,
+            ));
+        }
+        // `tick_period_ms < gap_timeout_ms` holds by now, so bounding the
+        // timeout bounds both.
+        if self.gap_timeout_ms > MAX_MESH_MILLIS {
+            return Some(format!(
+                "gap_timeout_ms ({}) exceeds {MAX_MESH_MILLIS} — every Mesh core \
+                 counts milliseconds in a signed 64-bit integer",
+                self.gap_timeout_ms,
             ));
         }
         None
@@ -2133,9 +2152,25 @@ impl OutboundBufferConfig {
                     .to_string(),
             );
         }
+        if let Some(age) = self.max_age_ms.filter(|age| *age > MAX_MESH_MILLIS) {
+            return Some(format!(
+                "max_age_ms ({age}) exceeds {MAX_MESH_MILLIS} — every Mesh core \
+                 counts milliseconds in a signed 64-bit integer, so a longer bound \
+                 has no value any core could compare an age against; omit the \
+                 field to hold envelopes without an age bound"
+            ));
+        }
         None
     }
 }
+
+/// The longest duration, in milliseconds, a deploy.yaml timing field may
+/// name. Every Mesh core counts time as signed 64-bit milliseconds — the
+/// C++ router's `std::chrono::milliseconds`, and the `i64` / `Long` clock
+/// the generated `sce:std/mesh` rules take on every host core — so a
+/// larger value is one no core can represent. The fields stay unbounded
+/// below this on purpose (see [`OutboundBufferConfig::max_age_ms`]).
+pub const MAX_MESH_MILLIS: u64 = i64::MAX as u64;
 
 /// Minimum `max_retries` accepted in a per-binding `retry:` section.
 ///
@@ -2453,6 +2488,16 @@ impl RetryPolicyConfig {
                 "max_backoff_ms ({}) must be >= initial_backoff_ms ({}) — \
                  the cap cannot be smaller than the first interval",
                 self.max_backoff_ms, self.initial_backoff_ms,
+            ));
+        }
+        // `initial_backoff_ms <= max_backoff_ms` holds by now, so bounding
+        // the cap bounds both.
+        if self.max_backoff_ms > MAX_MESH_MILLIS {
+            return Some(format!(
+                "max_backoff_ms ({}) exceeds {MAX_MESH_MILLIS} — every Mesh core \
+                 counts milliseconds in a signed 64-bit integer, so a longer \
+                 interval has no value any core could wait for",
+                self.max_backoff_ms,
             ));
         }
         if self.backoff_jitter_pct > 100 {
@@ -8423,6 +8468,70 @@ topology:
             }
             other => panic!("expected InvalidRetryPolicy, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_timing_no_core_can_count_is_rejected() {
+        // Every core counts signed 64-bit milliseconds; one past that
+        // parses as a u64 and reaches no core as the same value.
+        let past = MAX_MESH_MILLIS + 1;
+        let retry = format!(
+            "version: \"1.0\"\ntopology:\n  ecu1:\n    machines:\n      brake:\n        \
+             source: brake.scxml\n        bindings:\n          \"#motor\":\n            \
+             transport: zenoh\n            retry:\n              max_retries: 2\n              \
+             max_backoff_ms: {past}\n"
+        );
+        match parse_deploy_str(&retry) {
+            Err(DeployError::InvalidRetryPolicy { reason, .. }) => {
+                assert!(reason.contains("max_backoff_ms"), "{reason}");
+            }
+            other => panic!("expected InvalidRetryPolicy, got {other:?}"),
+        }
+        let buffer = format!(
+            "version: \"1.0\"\ntopology:\n  ecu1:\n    machines:\n      brake:\n        \
+             source: brake.scxml\n        outbound_buffer:\n          max_pending_per_target: 8\n          \
+             max_age_ms: {past}\n        bindings:\n          \"#motor\":\n            \
+             transport: zenoh\n            key: \"vehicle/motor\"\n"
+        );
+        match parse_deploy_str(&buffer) {
+            Err(DeployError::InvalidOutboundBuffer { reason, .. }) => {
+                assert!(reason.contains("max_age_ms"), "{reason}");
+            }
+            other => panic!("expected InvalidOutboundBuffer, got {other:?}"),
+        }
+        // The bound itself is a value every core holds.
+        let at = buffer.replace(&past.to_string(), &MAX_MESH_MILLIS.to_string());
+        parse_deploy_str(&at).expect("the largest representable bound is accepted");
+
+        let ordering = format!(
+            "version: \"1.0\"\ntopology:\n  ecu1:\n    machines:\n      brake:\n        \
+             source: brake.scxml\n        ordering:\n          gap_timeout_ms: {past}\n          \
+             tick_period_ms: 10\n"
+        );
+        match parse_deploy_str(&ordering) {
+            Err(DeployError::InvalidOrderingTimings { reason, .. }) => {
+                assert!(reason.contains("gap_timeout_ms"), "{reason}");
+            }
+            other => panic!("expected InvalidOrderingTimings, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_dedup_window_no_core_can_be_handed_is_rejected() {
+        // `dedup_admit` takes the window as a uint32 on every core.
+        let over = u64::from(u32::MAX) + 1;
+        let yaml = format!(
+            "version: \"1.0\"\ntopology:\n  ecu1:\n    machines:\n      brake:\n        \
+             source: brake.scxml\n        dedup:\n          window_size: {over}\n"
+        );
+        match parse_deploy_str(&yaml) {
+            Err(DeployError::InvalidDedupWindow { reason, .. }) => {
+                assert!(reason.contains("uint32"), "{reason}");
+            }
+            other => panic!("expected InvalidDedupWindow, got {other:?}"),
+        }
+        let at = yaml.replace(&over.to_string(), &u32::MAX.to_string());
+        parse_deploy_str(&at).expect("the largest window a core can hold is accepted");
     }
 
     #[test]

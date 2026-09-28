@@ -178,6 +178,14 @@
           "file": "sce-build/src/mesh/transport/mod.rs",
           "symbol": "TransportDescriptor",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction"
@@ -2752,6 +2760,14 @@
         {
           "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/CrossLanguageLoopbackTest.kt",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/mod.rs",
+          "kind": "references"
         }
       ]
     },
@@ -2771,6 +2787,18 @@
         },
         {
           "file": "backends/kotlin/mesh/src/jvmMain/kotlin/com/sce/mesh/WssClient.kt",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/review.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/mod.rs",
           "kind": "references"
         }
       ]
@@ -2812,6 +2840,14 @@
         {
           "file": "backends/kotlin/mesh/src/jvmMain/kotlin/com/sce/mesh/WssClient.kt",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/mod.rs",
+          "kind": "references"
         }
       ]
     },
@@ -2824,7 +2860,13 @@
     "mesh-19": {
       "title": "Host Mesh Router",
       "parent_doc": "mesh",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/mesh/transport/mod.rs",
+          "kind": "references"
+        }
+      ]
     },
     "mesh-2": {
       "title": "Architecture",
@@ -3564,6 +3606,10 @@
         {
           "file": "sce-build/src/mesh/topology.rs",
           "symbol": "TargetContributions",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/mod.rs",
           "kind": "references"
         }
       ]

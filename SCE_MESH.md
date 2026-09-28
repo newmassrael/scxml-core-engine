@@ -803,7 +803,7 @@ Because shape and capabilities live in one descriptor rather than two parallel f
 
 ```
 // Unknown transport in Rust pipeline:
-// "transport 'my_transport' not yet supported (target '#motor')"
+// "transport 'my_transport' has no C++ template arm (target '#motor')"
 //
 // Unknown transport in generated C++ code:
 // #error "SCE Mesh: unsupported transport 'my_transport' for target '#motor'..."
@@ -1211,15 +1211,16 @@ on the wire at all (CAN broadcast has no such notion), which is a different
 question from whether the transport *supplies* ordering.
 
 <!-- BEGIN transport-capability-matrix (generated from the registry) -->
-| Transport | Impl | Patterns | Required fields | Dedup | Ordering | Order-repr | Pool shape | Pool member | §13 subscribe | §10.10 buffer | Multi-inst server | Inter-partition IPC | Cross-target reply | Server deadline |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `local` | yes | RFPA | — | yes | yes | yes | None | None | no | no | no | no | yes | Unsupported |
-| `shm` | yes | F | — | yes | yes | yes | None | None | no | no | no | yes | no | Unsupported |
-| `custom_tcp` | yes | RFPA | `connect:` | yes | yes | yes | None | None | yes | no | no | yes | no | ActiveError |
-| `someip` | yes | RFPA | — | no | no | yes | Bounded | TypedInstanceId | yes | yes | yes | no | yes | ActiveError |
-| `zenoh` | yes | RFPA | `key:` | no | no | yes | Open | StringSegment | yes | yes | no | no | no | DropSilently |
-| `dds` | yes | RFPA | `topic:` | no | no | yes | Bounded | StringSegment | yes | no | no | no | no | ActiveError |
-| `can` | no | FA | — | no | no | no | None | None | no | no | no | no | no | Unsupported |
+| Transport | Core | Impl | Patterns | Required fields | Dedup | Ordering | Order-repr | Pool shape | Pool member | §13 subscribe | §10.10 buffer | Multi-inst server | Inter-partition IPC | Cross-target reply | Server deadline |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `local` | C++ template | yes | RFPA | — | yes | yes | yes | None | None | no | no | no | no | yes | Unsupported |
+| `shm` | C++ template | yes | F | — | yes | yes | yes | None | None | no | no | no | yes | no | Unsupported |
+| `custom_tcp` | C++ template | yes | RFPA | `connect:` | yes | yes | yes | None | None | yes | no | no | yes | no | ActiveError |
+| `someip` | C++ template | yes | RFPA | — | no | no | yes | Bounded | TypedInstanceId | yes | yes | yes | no | yes | ActiveError |
+| `zenoh` | C++ template | yes | RFPA | `key:` | no | no | yes | Open | StringSegment | yes | yes | no | no | no | DropSilently |
+| `dds` | C++ template | yes | RFPA | `topic:` | no | no | yes | Bounded | StringSegment | yes | no | no | no | no | ActiveError |
+| `can` | C++ template | no | FA | — | no | no | no | None | None | no | no | no | no | no | Unsupported |
+| `wss` | host core | yes | F | — | no | no | yes | None | None | no | yes | no | no | no | Unsupported |
 <!-- END transport-capability-matrix -->
 
 If SCXML uses a pattern that the bound transport does not support, sce-build emits a **build error** with the specific pattern/transport mismatch. The same holds for every other column: a deploy.yaml asking for something the row does not offer is rejected at parse or codegen time, never silently degraded.
@@ -1858,9 +1859,9 @@ Every transport implementation must honour the following lifecycle phases. The g
 
 | Field | Type | Purpose |
 |---|---|---|
-| `shape` | `TransportShape` | Codegen layout: per-target field vs device-shared session. |
+| `served_by` | `CppTemplate(TransportShape) \| HostCore` | Which Mesh core carries the transport. `CppTemplate` is an arm of the generated C++ `TransportRouter`, and its `TransportShape` is that arm's layout (per-target field vs device-shared session). `HostCore` is a host-level core (§18, §19) that is one library for every transport it speaks; the build emits only the machine's peer table for it, so there is no layout to carry. Each mesh emitter refuses a transport the other core serves (`mesh/codegen-unsupported-transport`, whose candidates are the transports the asking core does carry). |
 | `capabilities` | `[TransportCapability]` | Supported communication patterns. Build-time validation rejects pattern/transport mismatches (§8.2). |
-| `implemented` | `bool` | Template exists. `false` → build error at codegen stage (not deferred to C++ `#error`). |
+| `implemented` | `bool` | The core named by `served_by` carries it yet. `false` → build error at codegen stage (not deferred to C++ `#error`). |
 | `required_binding_fields` | `[&str]` | deploy.yaml fields that must be present. `[]` for transports with no binding-level config (local, shm). |
 | `optional_binding_fields` | `[&str]` | deploy.yaml keys the transport *may* carry — transport-native tunables that reach codegen through the binding's flattened catch-all rather than a typed field. With `required_binding_fields` this is the closed set: a binding key outside it is a parse-time reject (`mesh/deploy-unknown-binding-field`, §14.4), because a key nothing reads is indistinguishable from one that took effect. |
 | `supplies_dedup` | `bool` | Transport suppresses envelope duplicates itself. When every transport on a receiver sets it, codegen omits the `DedupRouter` member (§10.5). |
@@ -4190,7 +4191,9 @@ Each deployment is a different `deploy.yaml` against the **same SCXML source** a
 
 The binding a host-level Mesh core — the Rust `sce-rust-mesh` crate and the Kotlin `sce-kotlin-mesh` module — uses to join a machine on a phone or in a browser to a machine on a server: one WebSocket (RFC 6455) connection per pair of machines, carrying envelopes both ways. It exists because every platform has a native WebSocket client, and a connection that starts as HTTPS on 443 passes the proxies and firewalls a phone meets.
 
-It is not a generated C++ transport: `mesh_transport.h.jinja2` has no arm for it, and the §10.4.2 registry does not list it until a build reads it from `deploy.yaml` (§6.4 step 1). What this section fixes is the wire, so that any two implementations of it interoperate.
+It is not a generated C++ transport: `mesh_transport.h.jinja2` has no arm for it, and the §10.4.2 registry lists it as `served_by: HostCore`, so a machine generated for C++ with a `wss` binding is refused. What this section fixes is the wire, so that any two implementations of it interoperate.
+
+A binding names it as `transport: wss`. The side that dials carries `url: wss://<host>[:<port>][<base>]`, with no query or fragment, because the core appends the §18.1 path after it. `ws://` is accepted only for a loopback host. The side that accepts carries no `url`, so which side dials is read from the binding and cannot disagree with a second key. `keepalive_ms` sets the §18.3 ping interval. What the host cores route over it today is a `<send>` and its delivery (`FireForget`, §8.2): a pattern that needs a reply, a subscription or a field is refused at build time, rather than delivered as a plain event by a core that keeps no correlation for it.
 
 ### 18.1 Connection and Peer Identity
 

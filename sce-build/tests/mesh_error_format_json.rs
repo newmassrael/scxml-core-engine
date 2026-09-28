@@ -69,6 +69,16 @@ fn run_with_deploy(
     deploy: &std::path::Path,
     out_dir: &std::path::Path,
 ) -> std::process::Output {
+    run_with_deploy_for("rust", scxml, deploy, out_dir)
+}
+
+/// [`run_with_deploy`] for the backend named by `language`.
+fn run_with_deploy_for(
+    language: &str,
+    scxml: &std::path::Path,
+    deploy: &std::path::Path,
+    out_dir: &std::path::Path,
+) -> std::process::Output {
     Command::new(sce_codegen_bin())
         .args([
             "--error-format",
@@ -76,7 +86,7 @@ fn run_with_deploy(
             "generate",
             scxml.to_str().unwrap(),
             "--language",
-            "rust",
+            language,
             "--output-dir",
             out_dir.to_str().unwrap(),
             "--deploy",
@@ -179,6 +189,78 @@ topology:
     );
     // Spec anchor: deploy.yaml schema lives in SCE_MESH.md §14.
     assert_eq!(rec["spec"], "SCE Mesh §14", "record: {rec}");
+}
+
+/// A client that sends one fire-and-forget event to `#server` — the one
+/// pattern every implemented transport carries, so a refusal below is
+/// about which core serves the transport and never about the pattern.
+const CLIENT_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="client" initial="idle">
+  <state id="idle">
+    <onentry><send target="#server" event="ping"/></onentry>
+  </state>
+</scxml>
+"##;
+
+/// The machine [`CLIENT_SCXML`] sends to, which receives its `ping`.
+const SERVER_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="server" initial="idle">
+  <state id="idle">
+    <transition event="ping" target="idle"/>
+  </state>
+</scxml>
+"##;
+
+#[test]
+fn a_transport_the_other_core_serves_is_refused_with_the_asking_cores_set() {
+    // SCE_MESH.md §mesh-10.4.2 `served_by`: `wss` is carried by the host
+    // cores, so the C++ router has no arm for it. The repair offers what
+    // the C++ core does carry — naming `wss` there would send the author
+    // back to the transport that was just refused.
+    let dir = ScratchDir::new("mesh-served-by");
+    let scxml = dir.write("client.scxml", CLIENT_SCXML);
+    dir.write("server.scxml", SERVER_SCXML);
+    let deploy = dir.write(
+        "deploy.yaml",
+        r##"
+version: "1.0"
+topology:
+  phone:
+    machines:
+      client:
+        source: client.scxml
+        bindings:
+          "#server": { transport: wss, url: "wss://cal.example" }
+  cloud:
+    machines:
+      server: { source: server.scxml }
+"##,
+    );
+    let out = run_with_deploy_for("cpp", &scxml, &deploy, dir.path());
+    assert!(
+        !out.status.success(),
+        "C++ must refuse a host-served transport"
+    );
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let rec = sole_ndjson_record(&stderr);
+    assert_core_shape(&rec);
+    assert_eq!(
+        rec["code"], "mesh/codegen-unsupported-transport",
+        "record: {rec}"
+    );
+    assert_eq!(rec["actual"], "wss", "record: {rec}");
+    let candidates: Vec<&str> = rec["fix"]["candidates"]
+        .as_array()
+        .expect("fix.candidates")
+        .iter()
+        .filter_map(|c| c.as_str())
+        .collect();
+    assert!(
+        candidates.contains(&"zenoh") && !candidates.contains(&"wss"),
+        "the candidates are the C++ core's own: {candidates:?}"
+    );
 }
 
 #[test]

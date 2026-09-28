@@ -6,8 +6,8 @@
 // Each transport declares its codegen shape (field layout in TransportRouter)
 // and communication capabilities (pattern validation) in ONE entry.
 //
-// Adding a new transport starts with one entry in `lookup()` below (shape +
-// capabilities) and its name in `implemented_names()` / `known_names()`, but
+// Adding a new transport starts with one entry in `lookup()` below (core +
+// capabilities) and its name in `known_names()`, but
 // does not end there: typed topology state, codegen inputs, template arms,
 // the runtime, and the registry-derived tests follow. The full procedure is
 // kept in one place rather than restated here: the module docs of
@@ -54,6 +54,69 @@ pub struct TransportShape {
     /// `true` for zenoh. The template emits the shared field once per
     /// transport (not per target) and initializes it in `init()`.
     pub has_shared_session: bool,
+}
+
+/// Which Mesh core carries a transport's envelopes (SCE_MESH.md §mesh-10.4.2).
+///
+/// Two cores exist and they are built differently, so a transport is served
+/// by exactly one of them. The generated C++ `TransportRouter` has an arm per
+/// transport in `mesh_transport.h.jinja2`, laid out by the transport's
+/// [`TransportShape`]. A host-level core — `sce-rust-mesh`, `sce-kotlin-mesh`
+/// (§mesh-18, §mesh-19) — is one library for every transport it speaks: the
+/// build emits only the machine's peer table for it, and a hand-written
+/// adapter moves bytes between a socket and the core.
+///
+/// The shape lives inside the C++ arm because it is a statement about C++
+/// router fields and means nothing for a host core; a host-served transport
+/// carrying one would be a layout no template reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransportService {
+    /// The generated C++ `TransportRouter` has an arm for this transport.
+    CppTemplate(TransportShape),
+    /// A host-level Mesh core speaks this transport; no C++ arm exists.
+    HostCore,
+}
+
+impl TransportService {
+    /// The C++ field layout, or `None` for a host-served transport.
+    pub fn cpp_shape(self) -> Option<TransportShape> {
+        match self {
+            Self::CppTemplate(shape) => Some(shape),
+            Self::HostCore => None,
+        }
+    }
+
+    /// Whether this is the core named by `kind`.
+    pub fn is(self, kind: ServiceKind) -> bool {
+        self.kind() == kind
+    }
+
+    /// The core, without the layout.
+    pub fn kind(self) -> ServiceKind {
+        match self {
+            Self::CppTemplate(_) => ServiceKind::CppTemplate,
+            Self::HostCore => ServiceKind::HostCore,
+        }
+    }
+}
+
+/// [`TransportService`] without its payload, for asking which transports one
+/// core serves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ServiceKind {
+    /// The generated C++ `TransportRouter`.
+    CppTemplate,
+    /// A host-level Mesh core (§mesh-19).
+    HostCore,
+}
+
+impl fmt::Display for ServiceKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CppTemplate => write!(f, "C++ template"),
+            Self::HostCore => write!(f, "host core"),
+        }
+    }
 }
 
 // ── Communication capabilities ──────────────────────────────
@@ -371,16 +434,18 @@ pub struct TransportDescriptor {
     // tabulates. Adding a capability dimension means a field here plus the
     // row that documents it — the registry stays the single place a
     // transport's build-time properties are declared.
-    /// C++ TransportRouter field layout.
-    pub shape: TransportShape,
+    /// Which Mesh core carries this transport, and for the C++ one the
+    /// `TransportRouter` field layout.
+    pub served_by: TransportService,
     /// Communication patterns this transport supports.
     pub capabilities: &'static [TransportCapability],
-    /// Does the Jinja2 template have `{% elif %}` blocks for this transport?
+    /// Does the core named by [`Self::served_by`] carry this transport yet?
     ///
-    /// `true` for transports with full codegen support (local, shm, someip,
-    /// zenoh). `false` for transports whose capabilities are known (enabling
-    /// pattern validation) but whose template has not been added yet (dds,
-    /// can). Codegen rejects `implemented == false` at the Rust level —
+    /// For a C++-served transport this is whether `mesh_transport.h.jinja2`
+    /// has its `{% elif %}` blocks; for a host-served one, whether the host
+    /// cores speak it. `false` for transports whose capabilities are known
+    /// (enabling pattern validation) but whose core arm has not been added
+    /// yet (can). Codegen rejects `implemented == false` at the Rust level —
     /// users get a clear build error instead of a deferred C++ `#error`.
     pub implemented: bool,
     /// Per-binding fields that deploy.yaml MUST provide for this transport.
@@ -427,6 +492,8 @@ pub struct TransportDescriptor {
     ///   application-level dedup runs
     /// - multicast bus transports (dds, can) have no single source
     ///   ordering
+    /// - wss re-sends across a reconnect, so a duplicate can arrive on
+    ///   the new connection
     pub supplies_dedup: bool,
     /// Does this transport inherently deliver per-(source, target)
     /// envelopes in send order?
@@ -444,6 +511,8 @@ pub struct TransportDescriptor {
     /// - UDP-capable transports (someip default, zenoh, dds) may reorder
     ///   across routers or datagrams
     /// - CAN frame arbitration is priority-based, not sender-FIFO
+    /// - wss is FIFO within one connection only; a retry sent after a
+    ///   reconnect can land behind an envelope queued after it
     pub supplies_ordering: bool,
     /// Can a receiver, given a sender-stamped per-(source, target)
     /// `sequence_no`, reconstruct send order?
@@ -566,6 +635,9 @@ pub struct TransportDescriptor {
     ///   that solves it there is the bounded pool's build-time endpoint
     ///   construction, not a buffer.
     /// - `can`: unimplemented; set `false`.
+    /// - `wss`: `true`. The upgrade completing is the ready edge and a
+    ///   close ends it (§mesh-18.3); the host core's `Outbound` gates on
+    ///   it rather than a generated member.
     ///
     /// Two consumers, which is the point of having the flag rather than a
     /// transport-name list in each: `mesh_transport.h.jinja2` iterates
@@ -755,10 +827,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
     use TransportCapability::*;
 
     static LOCAL: TransportDescriptor = TransportDescriptor {
-        shape: TransportShape {
+        served_by: TransportService::CppTemplate(TransportShape {
             has_per_target_field: true,
             has_shared_session: false,
-        },
+        }),
         capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
         required_binding_fields: &[],
@@ -800,10 +872,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
     static SHM: TransportDescriptor = TransportDescriptor {
-        shape: TransportShape {
+        served_by: TransportService::CppTemplate(TransportShape {
             has_per_target_field: true,
             has_shared_session: false,
-        },
+        }),
         // FireForget only. A `ShmChannel` is a per-target one-way ring
         // (sender SM → receiver SM, ShmChannel.h) with no reverse path,
         // so every pattern requiring a reply leg is unrealisable here:
@@ -852,10 +924,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
     static SOMEIP: TransportDescriptor = TransportDescriptor {
-        shape: TransportShape {
+        served_by: TransportService::CppTemplate(TransportShape {
             has_per_target_field: true,
             has_shared_session: false,
-        },
+        }),
         capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
         // SOME/IP identity (`service_id` + `instance_id`) and per-event IDs
@@ -938,10 +1010,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         server_deadline_notice: ServerDeadlineNotice::ActiveError,
     };
     static ZENOH: TransportDescriptor = TransportDescriptor {
-        shape: TransportShape {
+        served_by: TransportService::CppTemplate(TransportShape {
             has_per_target_field: false,
             has_shared_session: true,
-        },
+        }),
         // Zenoh supports RPC via queryable/query primitives — `session.get()`
         // against a `declare_queryable()` endpoint. Correlation is handled
         // natively by the Zenoh runtime (reply callbacks), so no per-router
@@ -1013,10 +1085,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
     // or the subscribe, so no pattern needs a reversed connection to a peer
     // that may have dialed from an ephemeral port, and none needs a broker.
     static CUSTOM_TCP: TransportDescriptor = TransportDescriptor {
-        shape: TransportShape {
+        served_by: TransportService::CppTemplate(TransportShape {
             has_per_target_field: true,
             has_shared_session: true,
-        },
+        }),
         capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
         required_binding_fields: &["connect"],
@@ -1071,10 +1143,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         server_deadline_notice: ServerDeadlineNotice::ActiveError,
     };
     static DDS: TransportDescriptor = TransportDescriptor {
-        shape: TransportShape {
+        served_by: TransportService::CppTemplate(TransportShape {
             has_per_target_field: true,
             has_shared_session: false,
-        },
+        }),
         // All four are realised (SCE_MESH.md section 8.2). `RequestReply`
         // joins the set that was already advertised: the reply leg is a
         // topic derived from the request topic, and `FieldAccess` was
@@ -1149,10 +1221,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         server_deadline_notice: ServerDeadlineNotice::ActiveError,
     };
     static CAN: TransportDescriptor = TransportDescriptor {
-        shape: TransportShape {
+        served_by: TransportService::CppTemplate(TransportShape {
             has_per_target_field: true,
             has_shared_session: false,
-        },
+        }),
         capabilities: &[FireForget, FieldAccess],
         implemented: false,
         required_binding_fields: &[],
@@ -1187,6 +1259,50 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Unimplemented, and a broadcast bus carries no server arm.
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
+    // SCE_MESH.md §mesh-18: one WebSocket connection per (client, server)
+    // pair, spoken by the host cores and by no C++ arm.
+    static WSS: TransportDescriptor = TransportDescriptor {
+        served_by: TransportService::HostCore,
+        // What the host cores route today: a `<send>` to a peer and its
+        // delivery. They keep no reply correlation (§mesh-9.5 mesh-rpc is
+        // not lowered for them) and no subscription or field state, so a
+        // pattern needing one is refused at build time rather than sent
+        // into a core that would deliver it as a plain event.
+        capabilities: &[FireForget],
+        implemented: true,
+        // A server binding names nothing (the client dials it, §mesh-18.1),
+        // so no key is required; a client binding names the server's `url`.
+        required_binding_fields: &[],
+        // Read by `topology::build_transport_state` (TransportState::Wss)
+        // and emitted into the machine's peer table for the host core.
+        optional_binding_fields: &["url", "keepalive_ms"],
+        // A reconnect re-sends what a retry policy holds, and a send that
+        // failed on the old connection can be retried after one queued
+        // behind it went out on the new one: neither order nor
+        // at-most-once survives the reconnect, so the core's dedup and
+        // ordering rules run.
+        supplies_dedup: false,
+        supplies_ordering: false,
+        // Point to point: each connection is its own sequence domain.
+        ordering_representable: true,
+        // A binding names one server; the core keeps no discovery.
+        pool_shape: PoolShape::None,
+        pool_member_carrier: PoolMemberCarrier::None,
+        // No pub/sub capability; machine-lifetime path does not apply.
+        supports_machine_lifetime_subscribe: false,
+        // §mesh-18.3: the upgrade completing is the ready edge and a close
+        // ends it, which is the signal a §10.10 buffer gates on.
+        buffers_outbound: true,
+        // The server learns one client per connection from its path; it
+        // hosts one identity per machine.
+        supports_multi_instance_server: false,
+        // Inter-machine by design (§mesh-18: a phone and a server).
+        supports_inter_partition_ipc: false,
+        // No RequestReply capability; the question does not arise.
+        supports_cross_target_reply: false,
+        // No server arm holds a request handle.
+        server_deadline_notice: ServerDeadlineNotice::Unsupported,
+    };
 
     match transport {
         "local" => Some(&LOCAL),
@@ -1196,6 +1312,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         "custom_tcp" => Some(&CUSTOM_TCP),
         "dds" => Some(&DDS),
         "can" => Some(&CAN),
+        "wss" => Some(&WSS),
         _ => None,
     }
 }
@@ -1210,13 +1327,27 @@ pub fn supports(transport: &str, capability: TransportCapability) -> bool {
     }
 }
 
-/// Wire-facing list of currently-implemented transport names. Used by
-/// diagnostic emission (`MeshCodegenUnsupportedTransport`) so upstream
-/// consumers receive a structured candidate list instead of having to
-/// parse the error prose. Order matches the `lookup()` dispatch so
-/// drift between the two is obvious in code review.
-pub fn implemented_names() -> &'static [&'static str] {
-    &["local", "shm", "someip", "zenoh", "custom_tcp", "dds"]
+/// Every transport some core carries today, in `lookup()` dispatch order.
+/// Derived from the registry, so a descriptor flipping `implemented` moves
+/// every list that reads this with no second edit.
+pub fn implemented_names() -> Vec<&'static str> {
+    known_names()
+        .iter()
+        .filter(|name| lookup(name).is_some_and(|d| d.implemented))
+        .copied()
+        .collect()
+}
+
+/// The transports the core named by `kind` carries today. Used by
+/// diagnostic emission (`MeshCodegenUnsupportedTransport`) so a consumer
+/// told a transport is unsupported for its backend receives the ones that
+/// backend does support, rather than parsing the error prose.
+pub fn implemented_names_served_by(kind: ServiceKind) -> Vec<&'static str> {
+    known_names()
+        .iter()
+        .filter(|name| lookup(name).is_some_and(|d| d.implemented && d.served_by.is(kind)))
+        .copied()
+        .collect()
 }
 
 /// Every transport name the registry resolves, in `lookup()` dispatch
@@ -1236,6 +1367,7 @@ pub fn known_names() -> &'static [&'static str] {
         "custom_tcp",
         "dds",
         "can",
+        "wss",
     ]
 }
 
@@ -1300,39 +1432,57 @@ mod tests {
 
     // ── shape ───────────────────────────────────────────────
 
+    /// The C++ layout of a transport the C++ core serves.
+    fn shape(d: &TransportDescriptor) -> TransportShape {
+        d.served_by
+            .cpp_shape()
+            .expect("a transport with a C++ arm carries its layout")
+    }
+
+    #[test]
+    fn wss_is_served_by_the_host_cores_and_has_no_cpp_layout() {
+        // §mesh-18: `mesh_transport.h.jinja2` has no arm for it, so a C++
+        // layout here would be one no template reads.
+        let d = lookup("wss").expect("known");
+        assert_eq!(d.served_by, TransportService::HostCore);
+        assert!(d.implemented);
+        assert_eq!(implemented_names_served_by(ServiceKind::HostCore), ["wss"]);
+        assert!(!implemented_names_served_by(ServiceKind::CppTemplate).contains(&"wss"));
+    }
+
     #[test]
     fn local_is_per_target() {
         let d = lookup("local").expect("known");
-        assert!(d.shape.has_per_target_field);
-        assert!(!d.shape.has_shared_session);
+        assert!(shape(d).has_per_target_field);
+        assert!(!shape(d).has_shared_session);
     }
 
     #[test]
     fn someip_is_per_target() {
         let d = lookup("someip").expect("known");
-        assert!(d.shape.has_per_target_field);
-        assert!(!d.shape.has_shared_session);
+        assert!(shape(d).has_per_target_field);
+        assert!(!shape(d).has_shared_session);
     }
 
     #[test]
     fn zenoh_is_shared() {
         let d = lookup("zenoh").expect("known");
-        assert!(!d.shape.has_per_target_field);
-        assert!(d.shape.has_shared_session);
+        assert!(!shape(d).has_per_target_field);
+        assert!(shape(d).has_shared_session);
     }
 
     #[test]
     fn dds_is_per_target() {
         let d = lookup("dds").expect("known");
-        assert!(d.shape.has_per_target_field);
-        assert!(!d.shape.has_shared_session);
+        assert!(shape(d).has_per_target_field);
+        assert!(!shape(d).has_shared_session);
     }
 
     #[test]
     fn can_is_per_target() {
         let d = lookup("can").expect("known");
-        assert!(d.shape.has_per_target_field);
-        assert!(!d.shape.has_shared_session);
+        assert!(shape(d).has_per_target_field);
+        assert!(!shape(d).has_shared_session);
     }
 
     #[test]
@@ -1357,8 +1507,8 @@ mod tests {
         // §mesh-16.8.3 reference transport: per-binding `connect:` (client field)
         // + device-level `transports.custom_tcp.listen:` (shared server).
         let d = lookup("custom_tcp").expect("known");
-        assert!(d.shape.has_per_target_field);
-        assert!(d.shape.has_shared_session);
+        assert!(shape(d).has_per_target_field);
+        assert!(shape(d).has_shared_session);
     }
 
     #[test]
@@ -1400,20 +1550,13 @@ mod tests {
         //   shm    → `topology::build_transport_state` (TransportState::Shm)
         //   someip → `mesh_transport.h.jinja2` reliability flag
         //   zenoh/custom_tcp/dds → the address each arm bakes in
-        let with_fields: Vec<(&str, Vec<&str>)> = [
-            "local",
-            "shm",
-            "someip",
-            "zenoh",
-            "custom_tcp",
-            "dds",
-            "can",
-        ]
-        .iter()
-        .copied()
-        .map(|n| (n, lookup(n).unwrap().known_binding_fields().collect()))
-        .filter(|(_, f): &(_, Vec<&str>)| !f.is_empty())
-        .collect();
+        //   wss    → the host core's peer table (`templates/mesh_router/`)
+        let with_fields: Vec<(&str, Vec<&str>)> = known_names()
+            .iter()
+            .copied()
+            .map(|n| (n, lookup(n).unwrap().known_binding_fields().collect()))
+            .filter(|(_, f): &(_, Vec<&str>)| !f.is_empty())
+            .collect();
 
         assert_eq!(
             with_fields,
@@ -1423,6 +1566,7 @@ mod tests {
                 ("zenoh", vec!["key"]),
                 ("custom_tcp", vec!["connect"]),
                 ("dds", vec!["topic"]),
+                ("wss", vec!["url", "keepalive_ms"]),
             ]
         );
     }
@@ -1629,22 +1773,17 @@ mod tests {
     }
 
     #[test]
-    fn exactly_three_implemented_transports_require_runtime_ordering() {
+    fn exactly_four_implemented_transports_require_runtime_ordering() {
         // Regression guard mirroring the dedup counterpart below: today
-        // SOME/IP, Zenoh and DDS are the implemented transports that may
-        // reorder. local/shm/custom_tcp preserve order by construction.
-        // If this count changes, the classification table in
+        // SOME/IP, Zenoh, DDS and wss are the implemented transports that
+        // may reorder. local/shm/custom_tcp preserve order by construction.
+        // If this set changes, the classification table in
         // supplies_ordering comments MUST be updated in the same commit.
-        let unordered_impls: Vec<&&str> = implemented_names()
-            .iter()
+        let unordered_impls: Vec<&str> = implemented_names()
+            .into_iter()
             .filter(|name| !lookup(name).unwrap().supplies_ordering)
             .collect();
-        assert_eq!(
-            unordered_impls.len(),
-            3,
-            "expected exactly three implemented transports to require runtime ordering \
-             (someip + zenoh + dds); got {unordered_impls:?}"
-        );
+        assert_eq!(unordered_impls, ["someip", "zenoh", "dds", "wss"]);
     }
 
     #[test]
@@ -1653,19 +1792,11 @@ mod tests {
         // semantics make sender-stamped sequence meaningless at the
         // receiver. Adding another such transport would force this test
         // to update alongside the topology reject path.
-        let nonrepresentable: Vec<&str> = [
-            "local",
-            "shm",
-            "someip",
-            "zenoh",
-            "custom_tcp",
-            "dds",
-            "can",
-        ]
-        .iter()
-        .copied()
-        .filter(|n| !lookup(n).unwrap().ordering_representable)
-        .collect();
+        let nonrepresentable: Vec<&str> = known_names()
+            .iter()
+            .copied()
+            .filter(|n| !lookup(n).unwrap().ordering_representable)
+            .collect();
         assert_eq!(nonrepresentable, vec!["can"]);
     }
 
@@ -1684,19 +1815,11 @@ mod tests {
         // (e.g. iceoryx2, a local unix socket) must flip this flag in
         // the same commit that adds the registry entry — this guard
         // fails loudly instead of the addition landing silently.
-        let ipc_true: Vec<&str> = [
-            "local",
-            "shm",
-            "someip",
-            "zenoh",
-            "custom_tcp",
-            "dds",
-            "can",
-        ]
-        .iter()
-        .copied()
-        .filter(|n| lookup(n).unwrap().supports_inter_partition_ipc)
-        .collect();
+        let ipc_true: Vec<&str> = known_names()
+            .iter()
+            .copied()
+            .filter(|n| lookup(n).unwrap().supports_inter_partition_ipc)
+            .collect();
         assert_eq!(ipc_true, vec!["shm", "custom_tcp"]);
     }
 
@@ -1710,39 +1833,27 @@ mod tests {
         // A future addition must update this regression guard in the
         // same commit that flips the flag, so the transport registry
         // and the parse-time reject stay synchronised.
-        let multi_instance_true: Vec<&str> = [
-            "local",
-            "shm",
-            "someip",
-            "zenoh",
-            "custom_tcp",
-            "dds",
-            "can",
-        ]
-        .iter()
-        .copied()
-        .filter(|n| lookup(n).unwrap().supports_multi_instance_server)
-        .collect();
+        let multi_instance_true: Vec<&str> = known_names()
+            .iter()
+            .copied()
+            .filter(|n| lookup(n).unwrap().supports_multi_instance_server)
+            .collect();
         assert_eq!(multi_instance_true, vec!["someip"]);
     }
 
     #[test]
-    fn exactly_three_implemented_transports_require_runtime_dedup() {
-        // Regression guard: today SOME/IP, Zenoh and DDS are the
+    fn exactly_four_implemented_transports_require_runtime_dedup() {
+        // Regression guard: today SOME/IP, Zenoh, DDS and wss are the
         // implemented transports that admit duplicates. local/shm/
-        // custom_tcp are duplicate-free by construction. If this count
+        // custom_tcp are duplicate-free by construction. If this set
         // changes, the classification table in supplies_dedup comments
         // MUST be updated in the same commit — this test fails loudly
         // instead of the change landing silently.
-        let undeduped_impls: Vec<&&str> = implemented_names()
-            .iter()
+        let undeduped_impls: Vec<&str> = implemented_names()
+            .into_iter()
             .filter(|name| !lookup(name).unwrap().supplies_dedup)
             .collect();
-        assert_eq!(
-            undeduped_impls.len(),
-            3,
-            "expected exactly three implemented transports to lack inherent dedup (someip + zenoh + dds); got {undeduped_impls:?}"
-        );
+        assert_eq!(undeduped_impls, ["someip", "zenoh", "dds", "wss"]);
     }
 
     // ── capabilities ────────────────────────────────────────
@@ -1889,7 +2000,8 @@ mod tests {
         }
 
         // Author-facing order: the three that need no middleware, then the
-        // three that route through one, then the unimplemented bus.
+        // three that route through one, then the unimplemented bus, then
+        // the one the host cores serve.
         const ORDER: &[&str] = &[
             "local",
             "shm",
@@ -1898,6 +2010,7 @@ mod tests {
             "zenoh",
             "dds",
             "can",
+            "wss",
         ];
         assert_eq!(
             ORDER.len(),
@@ -1910,15 +2023,16 @@ mod tests {
 
         let mut rendered = String::new();
         rendered.push_str(
-            "| Transport | Impl | Patterns | Required fields | Dedup | Ordering | Order-repr \
+            "| Transport | Core | Impl | Patterns | Required fields | Dedup | Ordering | Order-repr \
              | Pool shape | Pool member | §13 subscribe | §10.10 buffer | Multi-inst server \
              | Inter-partition IPC | Cross-target reply | Server deadline |\n",
         );
-        rendered.push_str("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n");
+        rendered.push_str("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n");
         for name in ORDER {
             let d = lookup(name).unwrap_or_else(|| panic!("{name} is not in the registry"));
             rendered.push_str(&format!(
-                "| `{name}` | {} | {} | {} | {} | {} | {} | {:?} | {:?} | {} | {} | {} | {} | {} | {:?} |\n",
+                "| `{name}` | {} | {} | {} | {} | {} | {} | {} | {:?} | {:?} | {} | {} | {} | {} | {} | {:?} |\n",
+                d.served_by.kind(),
                 yn(d.implemented),
                 patterns(d),
                 fields(d.required_binding_fields),

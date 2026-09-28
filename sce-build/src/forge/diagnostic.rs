@@ -14355,9 +14355,10 @@ mod tests {
                 CodegenError::UnsupportedTransport {
                     transport: "carrier_pigeon".into(),
                     target: TargetId::new("#motor").unwrap(),
+                    served: crate::mesh::transport::ServiceKind::CppTemplate,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:aa145685cde035e6","code":"mesh/codegen-unsupported-transport","stage":"mesh-codegen","spec":"SCE Mesh §8","message":"transport 'carrier_pigeon' not yet supported (target '#motor')","actual":"carrier_pigeon","fix":{"kind":"replace_one_of","candidates":["local","shm","someip","zenoh","custom_tcp","dds"]}}"#,
+                r#"{"v":1,"id":"fnv1a:aa145685cde035e6","code":"mesh/codegen-unsupported-transport","stage":"mesh-codegen","spec":"SCE Mesh §8","message":"transport 'carrier_pigeon' has no C++ template arm (target '#motor')","actual":"carrier_pigeon","fix":{"kind":"replace_one_of","candidates":["local","shm","someip","zenoh","custom_tcp","dds"]}}"#,
             ),
             (
                 "mesh/codegen-template-read",
@@ -16027,6 +16028,7 @@ mod tests {
             MeshCodegen::UnsupportedTransport {
                 transport: "carrier_pigeon".into(),
                 target: crate::mesh::target::TargetId::new("#motor").unwrap(),
+                served: crate::mesh::transport::ServiceKind::CppTemplate,
             }
             .into(),
         ];

@@ -295,6 +295,18 @@ pub enum TransportState {
         /// `extra.<key>` with `is defined` even on empty bindings.
         extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
     },
+    /// WebSocket binding to a host Mesh core (SCE_MESH.md §mesh-18). The
+    /// side holding `url` dials; the side without one accepts, so the role
+    /// is the binding's own shape rather than a second key to agree with.
+    Wss {
+        /// `wss://<host>[:<port>][<base>]` the client dials; `None` on the
+        /// server, which the client reaches.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
+        /// Ping interval (§mesh-18.3); `None` keeps the core's 30 s.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        keepalive_ms: Option<u32>,
+    },
     /// Recognised in the registry but not yet implemented (can, …).
     /// Codegen rejects with `UnsupportedTransport` before this variant
     /// reaches the template — the variant exists so the sum type
@@ -318,6 +330,7 @@ impl TransportState {
             Self::Zenoh { .. } => "zenoh",
             Self::CustomTcp { .. } => "custom_tcp",
             Self::Dds { .. } => "dds",
+            Self::Wss { .. } => "wss",
             Self::Unimplemented { transport_name } => transport_name,
         }
     }
@@ -1922,6 +1935,9 @@ pub(crate) fn contribute_send_partials(
         if pt.transport == "shm" {
             validate_shm_extras_partial(machine_name, pt)?;
         }
+        if pt.transport == "wss" {
+            validate_wss_extras_partial(machine_name, pt)?;
+        }
 
         // SCE_MESH.md §mesh-10.6.2: `ordering: required` on a transport whose
         // broadcast semantics leave no per-(sender, receiver) sequence
@@ -2373,6 +2389,102 @@ pub(crate) fn validate_someip_event_fields(
     Ok(())
 }
 
+/// Validate a wss binding's optional fields (SCE_MESH.md §mesh-18).
+///
+///   - `url`, on the dialing side only: `wss://<host>[:<port>][<base>]`, or
+///     `ws://` to a loopback host — §mesh-18.1 keeps TLS-less connections to
+///     loopback tests. No query or fragment: the core appends
+///     `/sce-mesh/1/<client>` to it, and either would land after that path.
+///     The dialing machine's name must then be one path segment of
+///     unreserved characters (RFC 3986 §2.3), since it IS the last one.
+///   - `keepalive_ms`: a positive integer that fits a u32 (§mesh-18.3).
+fn validate_wss_extras_partial(
+    machine_name: &str,
+    pt: &PartialTarget,
+) -> Result<(), TopologyError> {
+    let invalid = |field: &str, reason: String| TopologyError::InvalidBindingField {
+        machine: machine_name.to_string(),
+        target: pt.target.clone(),
+        transport: pt.transport.clone(),
+        field: field.to_string(),
+        reason,
+    };
+
+    if let Some(v) = pt.extra.get("url") {
+        let url = v.as_str().ok_or_else(|| {
+            invalid(
+                "url",
+                format!("must be a string (got {})", render_yaml_value(v)),
+            )
+        })?;
+        let (tls, rest) = if let Some(rest) = url.strip_prefix("wss://") {
+            (true, rest)
+        } else if let Some(rest) = url.strip_prefix("ws://") {
+            (false, rest)
+        } else {
+            return Err(invalid(
+                "url",
+                format!("must start with `wss://` (got '{url}')"),
+            ));
+        };
+        if rest.contains(['?', '#']) {
+            return Err(invalid(
+                "url",
+                format!(
+                    "must carry no query or fragment: the core appends \
+                     `/sce-mesh/1/<client>` after it (got '{url}')"
+                ),
+            ));
+        }
+        let authority = rest.split('/').next().unwrap_or_default();
+        let host = match authority.strip_prefix('[') {
+            Some(bracketed) => bracketed.split(']').next().unwrap_or_default(),
+            None => authority.rsplit_once(':').map_or(authority, |(h, _)| h),
+        };
+        if host.is_empty() {
+            return Err(invalid("url", format!("names no host (got '{url}')")));
+        }
+        if !tls && !matches!(host, "localhost" | "127.0.0.1" | "::1") {
+            return Err(invalid(
+                "url",
+                format!(
+                    "`ws://` without TLS is for a loopback test only (§mesh-18.1); \
+                     use `wss://` for host '{host}'"
+                ),
+            ));
+        }
+        let segment_safe = machine_name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~'));
+        if !segment_safe {
+            return Err(invalid(
+                "url",
+                format!(
+                    "machine '{machine_name}' dials as `/sce-mesh/1/{machine_name}`, \
+                     and a name outside A-Z a-z 0-9 - . _ ~ is not one path segment \
+                     (§mesh-18.1)"
+                ),
+            ));
+        }
+    }
+
+    if let Some(v) = pt.extra.get("keepalive_ms") {
+        let n = v.as_u64().ok_or_else(|| {
+            invalid(
+                "keepalive_ms",
+                format!("must be a positive integer (got {})", render_yaml_value(v)),
+            )
+        })?;
+        if n == 0 || n > u64::from(u32::MAX) {
+            return Err(invalid(
+                "keepalive_ms",
+                format!("must be between 1 and {} (got {n})", u32::MAX),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Validate optional shm binding fields (partial stage — runs before
 /// external IDs are attached, so there is no `ResolvedTarget` yet):
 ///   - `shm_arena_bytes`   positive integer, must fit in u32 (offset/length
@@ -2772,6 +2884,19 @@ fn build_transport_state(
                 .collect();
             TransportState::Dds { topic, extra }
         }
+        // Both fields were proven well-formed by `validate_wss_extras_partial`.
+        "wss" => TransportState::Wss {
+            url: pt
+                .extra
+                .get("url")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            keepalive_ms: pt
+                .extra
+                .get("keepalive_ms")
+                .and_then(|v| v.as_u64())
+                .and_then(|n| u32::try_from(n).ok()),
+        },
         other => TransportState::Unimplemented {
             transport_name: other.to_string(),
         },
@@ -4525,6 +4650,112 @@ topology:
                 assert!(reason.contains("exceeds u32"), "reason: {reason}");
             }
             other => panic!("expected InvalidBindingField, got {other:?}"),
+        }
+    }
+
+    /// A `sender` machine with one wss binding to `#receiver` carrying
+    /// `fields` (YAML flow-map entries, possibly empty).
+    fn resolve_wss(sender: &str, fields: &str) -> Result<Vec<ResolvedTarget>, TopologyError> {
+        let yaml = format!(
+            "version: \"1.0\"\ntopology:\n  ecu1:\n    machines:\n      {sender}:\n        \
+             source: s.scxml\n        bindings:\n          \"#receiver\": {{ transport: wss{fields} }}\n      \
+             receiver: {{ source: r.scxml }}\n"
+        );
+        let deploy = parse_deploy_str(&yaml).unwrap();
+        let model = parse_model(
+            &SHM_SCXML.replace("name=\"sender\"", &format!("name=\"{sender}\"")),
+            sender,
+        );
+        build_resolved_targets(
+            &TargetContributions {
+                send_summary: &summary_for(&model),
+                subscriptions: &[],
+            },
+            &deploy,
+            sender,
+            &super::super::external::ExternalResolution::default(),
+        )
+        .map(|r| r.targets)
+    }
+
+    #[test]
+    fn a_wss_binding_carries_its_role_in_whether_it_names_a_url() {
+        // §mesh-18.1: the side that dials names the server; the side that
+        // accepts names nothing.
+        let dial = resolve_wss(
+            "sender",
+            ", url: \"wss://cal.example:8443/api\", keepalive_ms: 15000",
+        )
+        .expect("a well-formed client binding");
+        assert!(
+            matches!(
+                &dial[0].state,
+                TransportState::Wss { url: Some(url), keepalive_ms: Some(15000) }
+                    if url == "wss://cal.example:8443/api"
+            ),
+            "{:?}",
+            dial[0].state
+        );
+        let accept = resolve_wss("sender", "").expect("a server binding names nothing");
+        assert!(
+            matches!(
+                accept[0].state,
+                TransportState::Wss {
+                    url: None,
+                    keepalive_ms: None
+                }
+            ),
+            "{:?}",
+            accept[0].state
+        );
+        let loopback = resolve_wss("sender", ", url: \"ws://127.0.0.1:9000\"");
+        assert!(
+            loopback.is_ok(),
+            "ws:// to loopback is the test carve-out: {loopback:?}"
+        );
+    }
+
+    #[test]
+    fn a_wss_binding_that_no_core_could_dial_is_refused() {
+        // (machine, fields, the field refused, a fragment of why)
+        let cases = [
+            ("sender", ", url: \"https://cal.example\"", "url", "wss://"),
+            ("sender", ", url: \"ws://cal.example\"", "url", "loopback"),
+            (
+                "sender",
+                ", url: \"wss://cal.example/api?v=1\"",
+                "url",
+                "query or fragment",
+            ),
+            ("sender", ", url: \"wss:///api\"", "url", "no host"),
+            ("sender", ", url: 7", "url", "string"),
+            ("sender", ", keepalive_ms: 0", "keepalive_ms", "between 1"),
+            (
+                "sender",
+                ", keepalive_ms: 4294967296",
+                "keepalive_ms",
+                "between 1",
+            ),
+            // The dialing machine's name is the path's last segment.
+            (
+                "cal:app",
+                ", url: \"wss://cal.example\"",
+                "url",
+                "path segment",
+            ),
+        ];
+        for (machine, fields, field, why) in cases {
+            match resolve_wss(machine, fields) {
+                Err(TopologyError::InvalidBindingField {
+                    field: refused,
+                    reason,
+                    ..
+                }) => {
+                    assert_eq!(refused, field, "{fields}");
+                    assert!(reason.contains(why), "{fields}: {reason}");
+                }
+                other => panic!("{fields}: expected InvalidBindingField, got {other:?}"),
+            }
         }
     }
 
