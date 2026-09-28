@@ -37,8 +37,8 @@ PY
 
 mutation_case "the C++ AOT schedules a delayed send without its origin" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",
-     """engine.scheduleEvent({{ event_enum_cpp }}, delayMs, sendId, eventData{% if model.needs_script_engine or model.needs_event_origin %}, sessionId_.value_or(""){% endif %});""",
-     """engine.scheduleEvent({{ event_enum_cpp }}, delayMs, sendId, eventData);""")
+     """{% set delayed_origin_cpp = 'sessionId_.value_or("")' if""",
+     """{% set delayed_origin_cpp = '""' if""")
 PY
 
 mutation_case "the C++ AOT engine delivers a scheduled event without its origin" <<'PY'
