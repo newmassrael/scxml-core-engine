@@ -54,13 +54,9 @@ PY
 
 mutation_case "C11 delivers a blank target expression to itself" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """            } else if (_send_target_buf[0] == '\\0' ||
-                       strcmp(_send_target_buf, "undefined") == 0 ||
-                       strcmp(_send_target_buf, "nil") == 0) {
-                /* W3C SCXML C.1 (test496/test521): unreachable target
-                   evaluation result raises error.communication and stops""",
-     """            } else if (strcmp(_send_target_buf, "undefined") == 0 ||
-                       strcmp(_send_target_buf, "nil") == 0) {
-                /* W3C SCXML C.1 (test496/test521): unreachable target
-                   evaluation result raises error.communication and stops""")
+     """            if (_send_target_buf[0] == '\\0' ||
+                strcmp(_send_target_buf, "undefined") == 0 ||
+                strcmp(_send_target_buf, "nil") == 0) {""",
+     """            if (strcmp(_send_target_buf, "undefined") == 0 ||
+                strcmp(_send_target_buf, "nil") == 0) {""")
 PY

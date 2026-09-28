@@ -566,10 +566,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
     literal the request carries. `resolved_target` names a buffer that already
     holds the evaluated `targetexpr` — the dynamic Mesh branch evaluates it to
     decide that this is a Mesh send at all, and evaluating it twice would run
-    the expression's side effects twice. -#}
-{% macro host_send_arm(action, processor_type, resolved_target=none) %}
+    the expression's side effects twice. `resolved_event` and `resolved_delay`
+    name the buffer and the millisecond count the same evaluation already
+    left, for the same reason. -#}
+{% macro host_send_arm(action, processor_type, resolved_target=none, resolved_event=none, resolved_delay=none) %}
             {
-{% if action.eventexpr %}
+{% if action.eventexpr and not resolved_event %}
                 char _host_event[SCE_MAX_ID_LEN];
                 bool _host_event_ok = false;
 {{ se.lua_eval_to_string(action.eventexpr, '_host_event', 'sizeof(_host_event)', '_host_event_ok') }}
@@ -624,7 +626,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% endif %}
                 sce_host_send_request_t _host_req;
                 _host_req.processor_type = {{ processor_type }};
-                _host_req.event_name = {% if action.eventexpr %}_host_event{% else %}"{{ action.event | default('', true) | escape_c }}"{% endif %};
+                _host_req.event_name = {% if resolved_event %}{{ resolved_event }}{% elif action.eventexpr %}_host_event{% else %}"{{ action.event | default('', true) | escape_c }}"{% endif %};
                 _host_req.target = {% if resolved_target %}{{ resolved_target }}{% elif action.targetexpr %}_host_target{% else %}"{{ action.target | default('', true) | escape_c }}"{% endif %};
                 _host_req.content = "{{ action.content | default('', true) | escape_c }}";
                 _host_req.send_id = "{% if action.id %}{{ action.id | escape_c }}{% else %}{{ action.auto_send_id | default('', true) | escape_c }}{% endif %}";
@@ -651,7 +653,9 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                    W3C SCXML 6.3: it lands in the delayed-send queue under
                    this send's id, so a `<cancel>` reaches it and the host
                    never sees the act. */
-{% if action.delayexpr %}
+{% if resolved_delay %}
+                const uint64_t _host_delay_ms = {{ resolved_delay }};
+{% elif action.delayexpr %}
                 /* The wait is read by the one duration reader every engine
                    shares (ARCHITECTURE.md, "Durations"); an expression that
                    fails, or a value that is not a CSS2 time, is the W3C
@@ -677,6 +681,468 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 {{ csym_prefix }}{{ model.name }}_perform_host_send(sm, &_host_req);
 {% endif %}
             }
+{%- endmacro %}
+{#- W3C SCXML 5.7.1 + 4.9: a `<param>` that cannot be read is reported and its
+    pair left out, and the message still goes; the error ends the block once
+    it has. A failing `<content expr>` costs the same (5.6.2). The flag is
+    declared where a payload is read — any `<param>`, a literal included,
+    since some readers evaluate a literal through Lua too — and read once the
+    message has gone. -#}
+{% macro send_param_failed_open(action) %}
+{% if action.params or action.contentexpr %}
+            bool _param_failed = false;
+{% endif %}
+{%- endmacro %}
+{% macro send_param_failed_close(action) %}
+{% if action.params or action.contentexpr %}
+            if (_param_failed) {
+                return;
+            }
+{% endif %}
+{%- endmacro %}
+{#- W3C SCXML 6.2: a `<send>` the host does not serve, composed from the four
+    parts every other backend composes it from, each decided once — the
+    element's own arguments, the refusals a build-time value decides, the
+    payload, and the delivery. It used to be one arm per combination of
+    attributes, so a combination nobody had enumerated — a `<content expr>`
+    sent to a child, an unsupported type carrying a payload — fell to a
+    catch-all that refused a well-formed document, and each arm restated the
+    payload and the delivery its neighbours had. What still reaches the
+    catch-all is a delivery this backend has no route for, which it says
+    rather than guesses at.
+
+    `action.auto_send_id` is the id the send is known by — to `<cancel>`, to
+    `idlocation`, and to the error a failed send raises (W3C SCXML 5.10.1). The
+    delivered event carries a send id only when the author could know it: one
+    written as `id`, or one `idlocation` handed over. -#}
+{% macro send_lowered(action, in_foreach) %}
+{% set P = csym_prefix ~ model.name %}
+{% set PU = csym_prefix | upper ~ model.name | upper %}
+{% set send_id_c = action.auto_send_id | escape_c %}
+{% set meta_send_id = action.id if action.id else (action.auto_send_id if action.idlocation else '') %}
+{% set is_http = action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' %}
+{% set static_target = action.target if (action.target and not action.targetexpr) else '' %}
+{% set child_ns = namespace(invoke=none) %}
+{% for invoke_info in model.invokes | scxml_family %}
+{% if static_target == '#_' ~ invoke_info.invoke_id %}
+{% set child_ns.invoke = invoke_info %}
+{% endif %}
+{% endfor %}
+{% set names_no_invocation = static_target.startswith('#_') and static_target not in ['#_parent', '#_internal'] and not static_target.startswith('#_scxml_') and not child_ns.invoke %}
+{% set has_delay = action.delay or action.delayexpr %}
+{% set has_payload = action.params or action.namelist or action.content or action.contentexpr %}
+{% set has_event = action.event or action.eventexpr %}
+{% set event_name_c = '_send_evt_name' if action.eventexpr else '"' ~ (action.event | default('', true) | escape_c) ~ '"' %}
+{# Where the event goes, decided at build time. `dynamic` is a `targetexpr`
+   the delivery resolves once it is evaluated. #}
+{% if is_http and (action.targetexpr or static_target.startswith('http://') or static_target.startswith('https://')) %}
+{% set route = 'http' %}
+{% elif action.targetexpr %}
+{% set route = 'dynamic' %}
+{% elif not static_target %}
+{% set route = 'self' %}
+{% elif static_target == '#_internal' %}
+{% set route = 'internal' %}
+{% elif static_target == '#_parent' %}
+{% set route = 'parent' %}
+{% elif static_target.startswith('#_scxml_') %}
+{% set route = 'session' %}
+{% elif child_ns.invoke %}
+{% set route = 'child' %}
+{% else %}
+{% set route = 'none' %}
+{% endif %}
+{% set refused_at_build = action.send_type_unsupported or static_target.startswith('!') or (is_http and not action.target and not action.targetexpr) or names_no_invocation %}
+{# The deliveries this backend has no route for. A delay is honoured where
+   the event lands in a queue this machine drains — its own, or its parent's
+   through the scheduled-to-parent entry, which carries no payload — and
+   BasicHTTP posts synchronously, so it takes neither a delay nor an
+   evaluated event name. #}
+{% set no_route = (not refused_at_build) and (
+      route == 'none'
+      or (not has_event and route != 'http')
+      or (has_delay and route not in ['self', 'session', 'parent'])
+      or (has_delay and route == 'parent' and has_payload)
+      or (route == 'http' and (action.eventexpr or has_delay or in_foreach))) %}
+{% if no_route %}
+            /* W3C SCXML 6.2: a delivery this backend has no route for. Said
+               at run time rather than refused at build time, so a document
+               the author can fix at the SCXML layer never blocks the build,
+               and never guessed at: an event delivered somewhere its target
+               did not name is a silent misdelivery. */
+            {{ P }}_raise_platform_error_with_send_id(
+                sm, {{ PU }}_EVENT_ERROR_EXECUTION,
+                "<send> uses a combination of attributes this backend cannot emit",
+                "{{ send_id_c }}");
+            return;
+{% else %}
+{# ── The element's own arguments, evaluated once ── W3C SCXML 6.2: "The
+   Processor MUST evaluate all arguments to <send> when the <send> element is
+   evaluated", and "if the evaluation of <send>'s arguments produces an error,
+   the Processor MUST discard the message without attempting to deliver it":
+   one error.execution carrying the send id, and — the error having been
+   raised while the element was processed — the block ends (W3C SCXML 4.9).
+   The id goes to `idlocation` first, so it is there even when a later
+   argument fails (test 183, 332). #}
+{% if action.idlocation %}
+            {
+                bool _idloc_ok = false;
+{{ se.lua_store_id_in_location(action.idlocation, '"' ~ send_id_c ~ '"', '_idloc_ok') }}
+                if (!_idloc_ok) {
+                    {{ P }}_raise_platform_error_with_send_id(
+                        sm, {{ PU }}_EVENT_ERROR_EXECUTION,
+                        "<send idlocation='{{ action.idlocation | escape_c }}'> could not take the send id",
+                        "{{ send_id_c }}");
+                    return;
+                }
+            }
+{% endif %}
+{% if action.typeexpr %}
+            {
+                /* W3C SCXML 6.2 (test174): a type the platform does not
+                   support is the same error as one that cannot be
+                   evaluated. */
+                char _send_type_buf[256];
+                bool _send_type_ok;
+{{ se.lua_eval_to_string(action.typeexpr, '_send_type_buf', '256', '_send_type_ok') }}
+                if (!_send_type_ok) {
+                    {{ P }}_raise_platform_error_with_send_id(
+                        sm, {{ PU }}_EVENT_ERROR_EXECUTION,
+                        "<send> typeexpr could not be evaluated",
+                        "{{ send_id_c }}");
+                    return;
+                }
+{% if is_http %}
+                if (strcmp(_send_type_buf, "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor") != 0) {
+{% else %}
+                if (_send_type_buf[0] != '\0'
+                    && strcmp(_send_type_buf, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor") != 0) {
+{% endif %}
+                    {{ P }}_raise_platform_error_with_send_id(
+                        sm, {{ PU }}_EVENT_ERROR_EXECUTION,
+                        "<send> typeexpr names a processor this platform does not support",
+                        "{{ send_id_c }}");
+                    return;
+                }
+            }
+{% endif %}
+{% if action.eventexpr %}
+            /* W3C SCXML 6.2 (test172): an event name that evaluates to nothing
+               names no event — the same failure as one that does not
+               evaluate. */
+            char _send_evt_name[SCE_MAX_ID_LEN];
+            bool _send_evt_ok;
+{{ se.lua_eval_to_string(action.eventexpr, '_send_evt_name', 'sizeof(_send_evt_name)', '_send_evt_ok') }}
+            if (!_send_evt_ok || _send_evt_name[0] == '\0') {
+                {{ P }}_raise_platform_error_with_send_id(
+                    sm, {{ PU }}_EVENT_ERROR_EXECUTION,
+                    "<send> eventexpr could not be evaluated to an event name",
+                    "{{ send_id_c }}");
+                return;
+            }
+{% endif %}
+{% if action.targetexpr %}
+            /* W3C SCXML 6.2 (test173): the target is computed now. A resolved
+               target can be an `_ioprocessors` location, so the buffer is
+               sized as a URI — at 64 bytes a session address was truncated
+               mid-string and matched nothing. */
+            char _send_target_buf[SCE_MAX_URI_LEN];
+            bool _send_target_ok;
+{{ se.lua_eval_to_string(action.targetexpr, '_send_target_buf', 'SCE_MAX_URI_LEN', '_send_target_ok') }}
+            if (!_send_target_ok) {
+                {{ P }}_raise_platform_error_with_send_id(
+                    sm, {{ PU }}_EVENT_ERROR_EXECUTION,
+                    "<send> targetexpr failed to evaluate",
+                    "{{ send_id_c }}");
+                return;
+            }
+            if (_send_target_buf[0] == '!') {
+                /* W3C SCXML 6.2 (test 159, 194): a target this processor
+                   cannot address is refused as a static one is. */
+                {{ P }}_raise_platform_error_with_send_id(
+                    sm, {{ PU }}_EVENT_ERROR_EXECUTION,
+                    "<send> targetexpr produced a target this processor cannot address",
+                    "{{ send_id_c }}");
+                return;
+            }
+            if (_send_target_buf[0] == '\0' ||
+                strcmp(_send_target_buf, "undefined") == 0 ||
+                strcmp(_send_target_buf, "nil") == 0) {
+                /* W3C SCXML C.1 (test496/test521): a target that names
+                   nothing is not reachable — error.communication, nothing
+                   delivered, the block ended. The ECMAScript `undefined` and
+                   its Lua transpile `nil` are both that. A self-sent event
+                   names its origin, so `targetexpr="_event.origin"` (test336)
+                   never reads "". */
+                {{ P }}_raise_platform_error_with_send_id(
+                    sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
+                    "<send> targetexpr evaluated to nothing, so there is no target to reach",
+                    "{{ send_id_c }}");
+                return;
+            }
+{% if route == 'http' %}
+            if (strncmp(_send_target_buf, "http://", 7) != 0 &&
+                strncmp(_send_target_buf, "https://", 8) != 0) {
+                /* W3C SCXML C.2: BasicHTTP resolved a target that is not an
+                   http(s) URL (`SendHelper::isHttpTarget`). */
+                {{ P }}_raise_platform_error_with_send_id(
+                    sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
+                    "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL",
+                    "{{ send_id_c }}");
+                return;
+            }
+{% endif %}
+{% endif %}
+{% if action.delayexpr %}
+            /* W3C SCXML 6.2 (test175): the wait is named by an expression
+               evaluated now and read by the one duration reader every engine
+               shares (ARCHITECTURE.md, "Durations"). An expression that
+               fails, and a value that is not a CSS2 time, are both the
+               argument error: nothing is scheduled under some default wait. */
+            uint64_t _send_delay_ms;
+            bool _send_delay_evaluated;
+            bool _send_delay_is_time;
+{{ se.lua_eval_delayexpr(action.delayexpr, '_send_delay_ms', '_send_delay_evaluated', '_send_delay_is_time') }}
+            if (!_send_delay_evaluated || !_send_delay_is_time) {
+                {{ P }}_raise_platform_error_with_send_id(
+                    sm, {{ PU }}_EVENT_ERROR_EXECUTION,
+                    _send_delay_evaluated ? "<send> delayexpr is not a CSS2 time"
+                                          : "<send> delayexpr could not be evaluated",
+                    "{{ send_id_c }}");
+                return;
+            }
+{% endif %}
+{% set delay_c = '_send_delay_ms' if action.delayexpr else '(uint64_t)' ~ (action.delay_ms | default(0, true)) ~ 'u' %}
+{# ── The refusals a build-time value decides ── W3C SCXML 6.2: a type or a
+   target the processor cannot use is one of the element's own arguments, so
+   it is refused before the payload is read — one error, nothing delivered,
+   the block ended. Refused after the payload, a failing <param> or
+   <content expr> raised its own error first and the element cost two. #}
+{% if action.send_type_unsupported %}
+            /* W3C SCXML 6.2 (test199): the accepted set is decided once, in
+               `host_processor_analyzer::is_supported_send_type`, and read
+               here. */
+            {{ P }}_raise_platform_error_with_send_id(
+                sm, {{ PU }}_EVENT_ERROR_EXECUTION,
+                "<send type='{{ action.send_type | escape_c }}'> names a processor this platform does not support",
+                "{{ send_id_c }}");
+            return;
+{% elif static_target.startswith('!') %}
+            /* W3C SCXML 6.2 (test159, 194, 332): a target this processor
+               cannot address, the send id riding on the error. */
+            {{ P }}_raise_platform_error_with_send_id(
+                sm, {{ PU }}_EVENT_ERROR_EXECUTION,
+                "<send target='{{ action.target | escape_c }}'> is not a target this processor can address",
+                "{{ send_id_c }}");
+            return;
+{% elif is_http and not action.target and not action.targetexpr %}
+            /* W3C SCXML C.2 (test577): BasicHTTP names no target to post to. */
+            {{ P }}_raise_platform_error_with_send_id(
+                sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
+                "<send> over BasicHTTPEventProcessor has no target to post to",
+                "{{ send_id_c }}");
+            return;
+{% elif names_no_invocation %}
+            /* W3C SCXML C.1 + 6.4: no invocation of this document is called
+               "{{ static_target[2:] }}", so the target reaches
+               nobody: error.communication, nothing delivered, the block
+               ended. */
+            {{ P }}_raise_platform_error_with_send_id(
+                sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
+                "<send target='{{ static_target | escape_c }}'> names no invocation of this session",
+                "{{ send_id_c }}");
+            return;
+{% else %}
+{{ send_param_failed_open(action) }}
+{% if route == 'http' %}
+{{ caller() }}
+{% else %}
+{% set dynamic_mesh = route == 'dynamic' and 'sce:mesh' in (model.host_processor_types or []) and not action.typeexpr %}
+{% if dynamic_mesh %}
+            if (sce_is_mesh_target(_send_target_buf)) {
+                /* SCE_MESH.md §mesh-19: the evaluated target names a Mesh
+                   peer, so the send goes to the host's Mesh router as a
+                   literal `#peer` does — the build could not lower it,
+                   because the peer is only named now. The arguments already
+                   evaluated are handed over rather than read again. A
+                   `typeexpr` makes the processor a run-time choice, which
+                   `may_name_a_mesh_peer` excludes on every backend. */
+{{ host_send_arm(action, 'SCE_MESH_PROCESSOR_TYPE', '_send_target_buf', '_send_evt_name' if action.eventexpr else none, delay_c if has_delay else none) }}
+            } else
+{% endif %}
+            {
+{# ── The payload ── W3C SCXML 5.10: evaluated once, into `_ed`, which every
+   delivery below reads. #}
+{% if action.params or action.namelist %}
+{{ send_payload_json(action.params, action.namelist, csym_prefix, model.name) }}
+{% elif action.content or action.contentexpr %}
+{{ send_content_json(action, csym_prefix, model.name) }}
+{% endif %}
+{% if route == 'session' and static_target != '#_scxml_' %}
+                /* W3C SCXML C.1: `#_scxml_<sessionid>` names a session, and
+                   the only one this processor reaches by that name is its
+                   own — the bare prefix names it too (test 190). Any other
+                   is not reachable: error.communication, nothing delivered,
+                   the block ended (W3C SCXML 4.9). */
+                if (strcmp(sm->session_id, "{{ static_target[8:] | escape_c }}") != 0) {
+                    {{ P }}_raise_platform_error_with_send_id(
+                        sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
+                        "<send target='{{ static_target | escape_c }}'> names a session this processor cannot reach",
+                        "{{ send_id_c }}");
+                    return;
+                }
+{% endif %}
+{# ── The delivery ── #}
+{% if route == 'parent' and has_delay %}
+                /* W3C SCXML 6.2 + 6.4 (test187): delayed to the parent. It
+                   waits in this child's own queue, so a session that
+                   terminates first drops it — the entry the parent's queue
+                   would otherwise hold past the child's end. */
+                scheduled_push_parent(sm, sched_now_ms(sm) + {{ delay_c }},
+                                      {{ event_name_c }}, "{{ send_id_c }}");
+{% elif route == 'parent' %}
+                /* W3C SCXML 6.4 (test191, 233, 338): to the invoking parent,
+                   carrying the payload; the parent's shim names this child's
+                   invoke id on the event. */
+                if (sm->parent_dispatch != NULL) {
+                    sm->parent_dispatch(sm->parent_sm, {{ event_name_c }}, sm->invoke_id, {% if has_payload %}_ed{% else %}NULL{% endif %});
+                }
+{% elif route == 'child' %}
+{{ send_to_child(action, child_ns.invoke, event_name_c, meta_send_id, has_payload) }}
+{% elif route == 'internal' %}
+                /* W3C SCXML C.1 (test189): `#_internal` is this session's
+                   internal queue, and the event carries its payload there as
+                   an external send does. */
+{{ send_raise_here(action, P ~ '_raise', meta_send_id, has_payload) }}
+{% elif route == 'dynamic' %}
+                if (strcmp(_send_target_buf, "#_internal") == 0) {
+{{ send_raise_here(action, P ~ '_raise', meta_send_id, has_payload) }}
+{% for invoke_info in model.invokes | scxml %}
+                } else if (sm->child_{{ invoke_info.field_suffix }}.scxml_location[0] != '\0' &&
+                           strcmp(_send_target_buf, sm->child_{{ invoke_info.field_suffix }}.scxml_location) == 0) {
+                    /* W3C SCXML C.1: the location our child
+                       `{{ invoke_info.invoke_id }}` publishes in its own
+                       `_ioprocessors`, so it is addressed to that child. The
+                       address is read from the child instance, because it
+                       names THAT run of it; an uninitialised slot publishes
+                       nothing and matches nothing. */
+{{ send_to_child(action, invoke_info, event_name_c, meta_send_id, has_payload, false) }}
+{% endfor %}
+                } else {
+                    /* W3C SCXML 6.2 + C.1 (test190/test336): any other target
+                       names this session — the single-session AOT profile
+                       resolves no other. */
+{{ send_raise_here(action, P ~ '_raise_external', meta_send_id, has_payload) }}
+                }
+{% elif has_delay %}
+                /* W3C SCXML 6.2: delayed to this session. The payload is
+                   stored on the entry as the JSON its event will carry, so
+                   `_tick` raises the event with it and nothing can take it in
+                   between. */
+{% if action.eventexpr %}
+                {{ P }}_event_t _send_delayed = {{ PU }}_EVENT_NONE;
+                {% for event_name in model.events | sort %}
+                if (_send_delayed == {{ PU }}_EVENT_NONE && strcmp(_send_evt_name, "{{ event_name | escape_c }}") == 0) {
+                    _send_delayed = {{ PU }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }};
+                }
+                {% endfor %}
+                if (_send_delayed != {{ PU }}_EVENT_NONE) {
+{% set delayed_event_c = '_send_delayed' %}
+{% else %}
+{% set delayed_event_c = PU ~ '_EVENT_' ~ (action.event | upper | replace('.', '_') | replace('-', '_')) %}
+                {
+{% endif %}
+                    scheduled_push(sm, sched_now_ms(sm) + {{ delay_c }},
+                                   {{ delayed_event_c }},
+                                   "{{ send_id_c }}"
+{%- if model.needs_script_engine %}, {% if has_payload %}_ed{% else %}NULL{% endif %}
+{%- endif %});
+                }
+{% else %}
+                /* W3C SCXML 6.2 (test189): a send with no target — or one
+                   naming this session — goes on this session's external
+                   queue. */
+{{ send_raise_here(action, P ~ '_raise_external', meta_send_id, has_payload) }}
+{% endif %}
+            }
+{% endif %}{# the BasicHTTP post, or every other delivery #}
+{{ send_param_failed_close(action) }}
+{% endif %}{# the build-time refusals #}
+{% endif %}{# a delivery with no route #}
+{%- endmacro %}
+{#- W3C SCXML 6.2 / C.1: deliver the event into one of this session's own
+    queues through `raise_fn`, carrying the payload `_ed` holds. An evaluated
+    event name no transition of this document can match is delivered
+    nowhere, as on every other generated backend. -#}
+{% macro send_raise_here(action, raise_fn, meta_send_id, has_payload) %}
+                {
+                    {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
+                    memset(&_send_evt, 0, sizeof(_send_evt));
+{% if action.eventexpr %}
+                    bool _send_evt_matched = false;
+                    {% for event_name in model.events | sort %}
+                    if (!_send_evt_matched && strcmp(_send_evt_name, "{{ event_name | escape_c }}") == 0) {
+                        _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }};
+                        _send_evt_matched = true;
+                    }
+                    {% endfor %}
+{% else %}
+                    _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+{% endif %}
+{% if meta_send_id %}
+                    /* W3C SCXML 5.10.1 (test351, 183): the id the author
+                       could know rides on the event. */
+                    sce_copy_bounded_id(_send_evt.send_id, "{{ meta_send_id | escape_c }}");
+{% endif %}
+{% if has_payload %}
+                    memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
+{% endif %}
+{% if action.eventexpr %}
+                    if (_send_evt_matched) {
+                        {{ raise_fn }}(sm, &_send_evt);
+                    }
+{% else %}
+                    {{ raise_fn }}(sm, &_send_evt);
+{% endif %}
+                }
+{%- endmacro %}
+{#- W3C SCXML 6.4: deliver the event to the invocation `invoke_info` names,
+    carrying the payload, through the child's forwarded-event door — the one
+    that takes `_event` fields — rather than the by-name one, which takes a
+    name alone and so dropped every payload a parent sent. The slots its
+    session may occupy: one, or one per document `sce:candidates` declares,
+    at most one of them filled. With `report_missing`, an invocation that is
+    not running is not there to reach (W3C SCXML C.1): error.communication and
+    the block ends. -#}
+{% macro send_to_child(action, invoke_info, event_name_c, meta_send_id, has_payload, report_missing=true) %}
+{% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
+                {
+                    sce_forwarded_event_t _send_fwd;
+                    memset(&_send_fwd, 0, sizeof(_send_fwd));
+                    sce_copy_bounded_id(_send_fwd.name, {{ event_name_c }});
+{% if has_payload %}
+                    sce_copy_bounded_data(_send_fwd.data, _ed);
+{% endif %}
+{% if meta_send_id %}
+                    sce_copy_bounded_id(_send_fwd.send_id, "{{ meta_send_id | escape_c }}");
+{% endif %}
+{% for target in child_targets %}
+{% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
+                    {{ 'if' if loop.first else '} else if' }} (sm->{{ slot }}_active) {
+                        {{ csym_prefix }}{{ target.stem }}_raise_external_forwarded(&sm->{{ slot }}, &_send_fwd);
+{% endfor %}
+{% if report_missing %}
+                    } else {
+                        {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
+                            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
+                            "<send target='{{ action.target | escape_c }}'> names an invocation that is not running",
+                            "{{ action.auto_send_id | escape_c }}");
+                        return;
+                    }
+{% else %}
+                    }
+{% endif %}
+                }
 {%- endmacro %}
 {% macro emit_action(action, in_foreach=false, foreach_depth=0) %}
 {% if action.type == 'raise' %}
@@ -782,18 +1248,8 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% endif %}
         }
 {% elif action.type == 'send' %}
-{# Declared for any `<param>`, a literal included: some arms evaluate a
-   literal through Lua too, and their failure branch names the flag. #}
-{% set send_param_ns = namespace(can_fail=(action.params | default([]) | length > 0) or action.contentexpr) %}
         {
             /* W3C SCXML 6.2: <send{% if action.event %} event="{{ action.event }}"{% endif %}{% if action.eventexpr %} eventexpr="{{ action.eventexpr }}"{% endif %}{% if action.target %} target="{{ action.target }}"{% endif %}{% if action.delay %} delay="{{ action.delay }}"{% endif %}> */
-{% if send_param_ns.can_fail %}
-            /* W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-               and its pair left out, and the message still goes; the error
-               ends the block once it has. Set by every arm that evaluates a
-               param, read at the end of this element. */
-            bool _param_failed = false;
-{% endif %}
 {% if action.delay_invalid and not action.delayexpr %}
             /* W3C SCXML 6.2: the written delay is not a CSS2 time
                (ARCHITECTURE.md, "Durations"; the build decided it once). It
@@ -821,712 +1277,15 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                templates place it first: the type decides the destination,
                and falling through would ALSO enqueue the event locally, so
                the document would see the act twice. */
+{{ send_param_failed_open(action) }}
 {{ host_send_arm(action, '"' ~ (action.send_type | escape_c) ~ '"') }}
-{% elif action.eventexpr and not action.target and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 6.2 (test172): dynamic event name via `eventexpr`,
-               no target = external queue. The event name string is matched
-               against the codegen-time event enum. The other <send> dimensions
-               (target / delay / params / namelist / content / typeexpr /
-               idlocation) land with their first force fixture — keeping
-               the C11 send branch minimal until a consumer demands more.
-               Mirrors cpp `actions/send.jinja2` lines 429-458. */
-            char _send_evt_name[64];
-            bool _send_evt_ok;
-{{ se.lua_eval_to_string(action.eventexpr, '_send_evt_name', '64', '_send_evt_ok') }}
-            if (!_send_evt_ok || _send_evt_name[0] == '\0') {
-                /* W3C SCXML 6.2: an argument that cannot be evaluated — or an
-                   event name that evaluates to nothing — discards the message
-                   with error.execution carrying the send id, and (W3C SCXML
-                   4.9) the error ends the block. */
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<send> eventexpr could not be evaluated to an event name",
-                    "{{ action.auto_send_id | escape_c }}");
-                return;
-            } else {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-                memset(&_send_evt, 0, sizeof(_send_evt));
-                bool _send_evt_matched = false;
-                {% for event_name in model.events | sort %}
-                if (!_send_evt_matched && strcmp(_send_evt_name, "{{ event_name | escape_c }}") == 0) {
-                    _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }};
-                    _send_evt_matched = true;
-                }
-                {% endfor %}
-                /* W3C SCXML 6.2: a send with no target goes on the external
-                   queue. A name no transition of this document can match is
-                   delivered nowhere, as on every other generated backend. */
-                if (_send_evt_matched) {
-                    {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
-                }
-            }
-{% elif action.event and action.delay and action.params and not action.delayexpr and not action.target and not action.eventexpr and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation and (not in_foreach) %}
-            /* W3C SCXML 5.10 + 6.2 (test186): static-event + literal delay
-               + `<param>` carry. Per-param `expr` is evaluated against the
-               active datamodel **at send time**, not delivery time — the
-               surrounding onentry's subsequent <assign> may mutate the
-               source variable before the timer fires — and the payload is
-               stored on the scheduled entry as the JSON its event will
-               carry, so `_tick` raises the event with it and nothing else
-               can take it in between. */
-            {
-{{ send_payload_json(action.params, none, csym_prefix, model.name) }}
-                scheduled_push(sm,
-                               sched_now_ms(sm) + (uint64_t){{ action.delay_ms }}u,
-                               {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
-                               "{{ action.auto_send_id | escape_c }}",
-                               _ed);
-            }
-{% elif action.event and action.delay and not action.delayexpr and not action.target and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 6.2: static-event + literal delay (no target / no
-               payload). `action.delay_ms` is the parser-side conversion
-               from the SCXML "1s"/"500ms"/"0.5s" grammar into integer
-               milliseconds (parser.rs `parse_delay_to_ms`); ill-formed
-               grammar yields 0 there, which here schedules an immediately-
-               ready event — same observable shape as the cpp
-               `SendSchedulingHelper::parseDelayString` path. The send id
-               is the parser-generated `auto_send_id` so a future <cancel>
-               variant can target it via the same string the parser stamps.
-               Mirrors cpp `actions/send.jinja2` lines 461-528 collapsed
-               for the no-payload arm. delayexpr (runtime delay parsing)
-               and target/params/namelist combinations land in their own
-               arms below. */
-            scheduled_push(sm,
-                           sched_now_ms(sm) + (uint64_t){{ action.delay_ms }}u,
-                           {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
-                           "{{ action.auto_send_id | escape_c }}"
-{%- if model.needs_script_engine %}, NULL
-{%- endif %});
-{% elif (not in_foreach) and action.event and action.target and action.target.startswith('!') and action.idlocation and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr %}
-            /* W3C SCXML 6.2.4 + 5.10.1 (test332): static-event + invalid
-               target with `idlocation`. The auto-generated `sendid` is
-               first stored to the idlocation variable, then the invalid
-               target raises `error.execution` with the same `sendid`
-               attached to the event metadata so the receiving handler can
-               correlate the failure (`_event.sendid` reads the same value
-               that was captured in the idlocation slot). Mirrors cpp
-               `actions/send.jinja2` (idlocation store via
-               `AssignmentExecutionHelper::storeIdInLocation`, then the
-               invalid-target raise with `Engine::EventWithMetadata(
-               Error_execution, "", "", sendId)`). The store is the
-               assignment `<assign>` makes; a location that cannot take the
-               id is itself the argument error, reported once. */
-            {
-                bool _idloc_ok = false;
-{{ se.lua_store_id_in_location(action.idlocation, '"' ~ (action.auto_send_id | escape_c) ~ '"', '_idloc_ok') }}
-                if (!_idloc_ok) {
-                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<send idlocation='{{ action.idlocation | escape_c }}'> could not take the send id");
-                    return;
-                }
-            }
-            {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<send target='{{ action.target | escape_c }}'> is not a target this processor can address",
-                "{{ action.auto_send_id | escape_c }}");
-            return;
-{% elif action.event and action.idlocation and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr %}
-            /* W3C SCXML 6.2.4 (test183): bare-external static event with
-               `idlocation`. Auto-generated sendid is stored to the lua
-               datamodel variable named by `idlocation` so the receiving
-               state's cond can verify it via `typeof Var !== 'undefined'`.
-               The send proceeds as a regular bare-external dispatch with
-               the same sendid attached to the event metadata, mirroring
-               cpp `actions/send.jinja2` lines 26-35 (idlocation store) +
-               780-812 (bare-external raise paths) — cpp passes sendId
-               through `EventWithMetadata`'s constructor; C11 strncpy's it
-               into the meta struct's send_id field directly (jinja2-inline).
-               The store is the assignment `<assign>` makes; a location that
-               cannot take the id discards the message and raises
-               error.execution (W3C SCXML 6.2, 5.9.2). */
-            {
-                bool _idloc_ok = false;
-{{ se.lua_store_id_in_location(action.idlocation, '"' ~ (action.auto_send_id | escape_c) ~ '"', '_idloc_ok') }}
-                if (!_idloc_ok) {
-{% if 'error.execution' in model.events %}
-                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<send idlocation='{{ action.idlocation | escape_c }}'> could not take the send id");
-{% endif %}
-                    return;  /* W3C SCXML 4.9: the error ends the block */
-                } else {
-                    {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-                    memset(&_send_evt, 0, sizeof(_send_evt));
-                    _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-                    sce_copy_bounded_id(_send_evt.send_id, "{{ action.auto_send_id | escape_c }}");
-                    {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
-                }
-            }
-{% elif (not in_foreach) and action.event and action.target and action.target.startswith('!') and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 6.2 (test159): static-event + invalid target whose
-               literal value starts with `!` per `SendHelper::isInvalidTarget`
-               (`sce/include/common/SendHelper.h:67`). Codegen-time decidable —
-               action.target is parsed verbatim (parser.rs:1146) so the prefix
-               check resolves at template time without a runtime SendHelper
-               call. W3C 5.10 mandates that error.execution stop subsequent
-               executable content; the enclosing `execute_entry_actions` /
-               `execute_exit_actions` / `execute_transition_actions` switch
-               case returns immediately, mirroring cpp
-               `actions/send.jinja2`'s `block_end` exit. The
-               other target shapes (`#_parent`, `#_child`, `#_<invokeid>`,
-               BasicHTTP URI, mesh `#...`, runtime targetexpr) land in
-               their own arms below. The `not in_foreach` guard keeps this
-               arm out of a `<foreach>` body: an invalid-target send there
-               has no fixture on any channel yet, and lands with its own. */
-            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<send target='{{ action.target | escape_c }}'> is not a target this processor can address");
-            return;
-{% elif action.event and action.target == '#_parent' and action.delay and not action.delayexpr and not action.eventexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 6.2 + 6.4 (test187): static-event + target="#_parent"
-               + literal delay. The send is scheduled in the child's own
-               `scheduled_queue` rather than dispatched immediately so the
-               cpp invariant — "session terminates → pending delayed sends
-               drop" — holds: when the child reaches `<final>` before
-               `fire_time_ms` is reached, `_tick`'s `is_in_final_state`
-               early-return prevents promotion (the child's invoke driver
-               also stops calling `_tick` once the child finalises, so
-               the queue is never pumped again). Mirrors cpp's per-child
-               `parentSendScheduler_` (`actions/send.jinja2:189-194`)
-               whose dtor fires when the ParentStateMachine destroys the
-               child SM; C11 collapses to the unified scheduled_queue
-               with a `to_parent` discriminator since a second buffer
-               would duplicate fire-time ordering. */
-            scheduled_push_parent(sm,
-                                  sched_now_ms(sm) + (uint64_t){{ action.delay_ms }}u,
-                                  "{{ action.event }}",
-                                  "{{ action.auto_send_id | escape_c }}");
-{% elif action.event and action.target == '#_parent' and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 6.4: static-event + target="#_parent" routes to
-               the invoking parent's external queue via the dispatch fn
-               pointer + invoke_id stamped by `_init_with_parent`. The
-               parent's auto-generated `dispatch_external_by_name` shim
-               converts the event name to its enum and copies the
-               invoke_id onto the resulting external event so the
-               parent's `_event.invokeid` reads as this child's id
-               (test338). The branch is reachable only when this SM
-               carries `model.has_parent_communication=true`, which the
-               h-template gate ensures the fields exist for. */
-            if (sm->parent_dispatch != NULL) {
-                sm->parent_dispatch(sm->parent_sm, "{{ action.event }}", sm->invoke_id, NULL);
-            }
-{% elif action.event and action.target == '#_parent' and action.params and not action.eventexpr and not action.delay and not action.delayexpr and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 6.4 (test233): static-event + target="#_parent" +
-               <param> children. The payload is serialised in this (child)
-               machine's engine by `send_payload_json`; the JSON travels
-               via the parent_dispatch shim's `event_data` arg, lands on
-               `event_with_meta_t.data` in the parent, and the parent's
-               external dequeue reads it onto `_event.data` before
-               transition matching + finalize. */
-            if (sm->parent_dispatch != NULL) {
-{{ send_payload_json(action.params, none, csym_prefix, model.name) }}
-                sm->parent_dispatch(sm->parent_sm, "{{ action.event }}", sm->invoke_id, _ed);
-            }
-{% elif action.event and action.target and action.target.startswith('#_') and action.target not in ('#_parent', '#_internal') and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-{% set _target_id = action.target[2:] %}
-{% set _matching = namespace(invoke=none) %}
-{% for _state_id, _state in model.states | dictsort %}
-{% for _invoke in _state.invokes | scxml %}
-{% if _invoke.invoke_id == _target_id %}
-{% set _matching.invoke = _invoke %}
-{% endif %}
-{% endfor %}
-{% endfor %}
-{% if _matching.invoke %}
-            /* W3C SCXML 6.4 (test192/253): static-event +
-               target="{{ action.target }}" routes to the embedded
-               child invoked under `id="{{ _target_id }}"`. The
-               literal `#_<id>` resolves at codegen time to a single
-               invoke instance — the call dispatches to the child's
-               public `_raise_external_by_name` shim, which converts
-               the event-name string to the child's event enum and
-               enqueues onto the child's external queue. Mirrors
-               cpp's `SendHelper::resolveSessionTarget` for the
-               session-prefix case, collapsed to a static call
-               (no runtime registry lookup needed
-               because the invoke id is known at codegen time). */
-            {{ _matching.invoke.child_name }}_raise_external_by_name(&sm->child_{{ _matching.invoke.field_suffix }}, "{{ action.event }}");
-{% endif %}
-{% elif action.event and action.target == '#_internal' and not action.eventexpr and not action.delay and not action.delayexpr and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML C.1 (test189): static-event + target="#_internal"
-               routes to the internal (high-priority) queue per
-               `SendHelper::isInternalTarget` (`sce/include/common/SendHelper.h:88`).
-               Codegen-time decidable — action.target is parsed verbatim
-               (parser.rs:1146) so the literal "#_internal" alias resolves
-               at template time without a runtime SendHelper call. Mirrors
-               cpp `actions/send.jinja2` lines 598/628/664/694/784/806
-               (`isInternalTarget(action.target)` true-branch) — cpp emits
-               a runtime if/else around isInternalTarget; C11 inlines the
-               codegen-time decision.
-
-               W3C SCXML 6.2: an internal send carries `<param>` data just
-               as an external one does. `<param>` children used to send
-               this shape to the unenumerated-shape fallback, which raises
-               error.execution — a machine whose author wrote an internal
-               send with params got a runtime error instead of a payload.
-               The payload is built by the same macro every other send
-               uses, so none of them can escape author text differently. */
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-            memset(&_send_evt, 0, sizeof(_send_evt));
-            _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-{% if action.params %}
-            {
-{{ send_payload_json(action.params, none, csym_prefix, model.name) }}
-                memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
-            }
-{% endif %}
-            {{ csym_prefix }}{{ model.name }}_raise(sm, &_send_evt);
-{% elif action.event and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 6.2 (test189): static-event with no `target` attribute
-               defaults to the SCXML processor's external (low-priority) queue
-               (W3C 6.2: "If the send element does not specify a target, the
-               SCXML Processor MUST add the event to the external event
-               queue"). Mirrors cpp `actions/send.jinja2` lines
-               598/628/664/694/784/806 (`isInternalTarget("")` false-branch
-               → `raiseExternal`) — the empty-target literal naturally
-               falls into raiseExternal at runtime in cpp; C11 collapses
-               the runtime branch into a codegen-time choice.
-
-               W3C SCXML 5.10.1 (test351): when the author specified a
-               literal `id="..."` on `<send>`, propagate it through the
-               event metadata so the receiver reads `_event.sendid` as
-               that string. When `id` was omitted (and `idlocation`
-               isn't used either — handled by a sibling arm), W3C 5.10.1
-               mandates `_event.sendid` stay empty, so we leave the
-               zero-initialised `send_id` field alone. parser.rs sets
-               `action.auto_send_id = action.id` when the user gave one
-               (parser.rs:1161); when no id was given, auto_send_id
-               becomes `__send_N` but here we deliberately ignore it
-               because there's no idlocation slot to mirror it into. */
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-            memset(&_send_evt, 0, sizeof(_send_evt));
-            _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-            {% if action.id %}
-            sce_copy_bounded_id(_send_evt.send_id, "{{ action.id | escape_c }}");
-            {% endif %}
-            {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
-{% elif action.event and action.params and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 5.10 + 6.2 (test176/205/560): static-event with
-               `<param>(s)`, no `target` (external queue). The payload rides
-               on the event as JSON (`send_payload_json`), so the receiving
-               transition's `_event.data.{name}` reads the value captured at
-               send time with its own type. Mirrors cpp `actions/send.jinja2`
-               lines 532-577 collapsed for the no-target / no-delay arm. */
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-            memset(&_send_evt, 0, sizeof(_send_evt));
-            _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-            {
-{{ send_payload_json(action.params, none, csym_prefix, model.name) }}
-                memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
-            }
-            {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
-{% elif (not in_foreach) and action.event and action.namelist and action.params and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 5.10 + 6.2 + C.1 (test354): static-event with both
-               `<send namelist>` AND `<param>` children in one payload. cpp
-               `actions/send.jinja2:463-528` evaluates the namelist, then the
-               params, into a single `params` map; `send_payload_json` does
-               the same, namelist first, and the combined payload rides on
-               the event. The BasicHTTP URI literal is served by the
-               BasicHTTP arm further below (W3C C.2 send), and any other type
-               literal lands in the test199-mirror arm that raises
-               error.execution. */
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-            memset(&_send_evt, 0, sizeof(_send_evt));
-            _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-            {
-{{ send_payload_json(action.params, action.namelist, csym_prefix, model.name) }}
-                memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
-            }
-            {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
-{% elif action.event and action.namelist and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 6.2 + C.1 (test553): static-event with
-               `<send namelist>`, no `target` (external queue). Each
-               whitespace-separated variable name is evaluated against
-               the active datamodel; an undeclared name short-circuits
-               the entire dispatch by raising `error.execution` and
-               returning from the surrounding entry/exit/transition
-               function (W3C 5.10 stop-subsequent-content). Mirrors cpp
-               `actions/send.jinja2` lines 463-490 + 533-557 collapsed
-               for the no-target / no-delay arm — cpp delegates to
-               `NamelistHelper::evaluateNamelist`, which calls
-               `hasVariable` per name and returns false on first miss;
-               the C11 path inlines the same two-source check
-               (`_scxml_declared` + `rawget(_G, name)`) inside
-               `send_payload_json`, and the values ride on the event, same
-               shape as the params arm above. */
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-            memset(&_send_evt, 0, sizeof(_send_evt));
-            _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-            {
-{{ send_payload_json([], action.namelist, csym_prefix, model.name) }}
-                memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
-            }
-            {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
-{% elif action.event and action.content and not action.contentexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 5.10 + 6.2 + B.2 (test179, test562, test578):
-               static-event with inline `<content>` (no `expr`), no `target`
-               (external queue). The body takes its §scxml-B-2 reading at
-               build time and rides on the event as JSON — or as the XML it
-               is, which `set_current_event` builds the DOM from (test561) —
-               via `send_content_json` (test179 numeric `123`, test578 JSON
-               object, test562 multi-line text). */
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-            memset(&_send_evt, 0, sizeof(_send_evt));
-            _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-            {
-{{ send_content_json(action, csym_prefix, model.name) }}
-                memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
-            }
-            {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
-{% elif action.event and action.targetexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.idlocation %}
-            /* W3C SCXML 6.2 (test173): runtime `targetexpr` evaluation —
-               the target string is computed at send time from the
-               datamodel, then dispatched to either the internal queue
-               (`#_internal`), the external queue (empty), or raises
-               `error.execution` (`!`-prefix) / `error.communication`
-               (any other unsupported target) per cpp
-               `SendHelper::isInvalidTarget` / `isUnreachableTarget`
-               (`sce/include/common/SendHelper.h:67/88` + lines 85-102).
-               Mirrors cpp `actions/send.jinja2` lines 68-102 — cpp evaluates
-               into `dynamicTarget` then calls SendHelper helpers; the C11
-               port collapses the helper calls into a stack-buffer prefix
-               check (jinja2-inline). The 64-byte buffer matches `_send_evt_name`
-               sizing — fixtures forcing longer targets raise the cap with
-               their first force fixture. Eval failure raises
-               `error.execution` and stops subsequent executable content
-               (W3C 5.10). The `not in_foreach` carve-out is left implicit
-               here; the first force fixture inside a `<foreach>` body
-               revisits it, mirroring the existing invalid-`!` arm. */
-            /* W3C SCXML C.1: a resolved target can be an `_ioprocessors`
-               location, so the buffer is sized as a URI. At 64 bytes a
-               session address was truncated mid-string and then matched
-               nothing — the send fell through to this machine's own
-               external queue and the addressed peer simply never heard,
-               which is the failure C.1's routing half describes. */
-            char _send_target_buf[SCE_MAX_URI_LEN];
-            bool _send_target_ok;
-{{ se.lua_eval_to_string(action.targetexpr, '_send_target_buf', 'SCE_MAX_URI_LEN', '_send_target_ok') }}
-            if (!_send_target_ok) {
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<send> targetexpr failed to evaluate");
-                return;
-            }
-            if (strcmp(_send_target_buf, "#_internal") == 0) {
-                /* `#_internal` alias → internal queue (W3C C.1). */
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-                memset(&_send_evt, 0, sizeof(_send_evt));
-                _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_send_evt);
-            } else if (_send_target_buf[0] == '!') {
-                /* `!`-prefix → invalid target → error.execution and stop
-                   subsequent content. */
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<send> targetexpr produced a target this processor cannot address");
-                return;
-            } else if (_send_target_buf[0] == '\0' ||
-                       strcmp(_send_target_buf, "undefined") == 0 ||
-                       strcmp(_send_target_buf, "nil") == 0) {
-                /* W3C SCXML C.1 (test496/test521): unreachable target
-                   evaluation result raises error.communication and stops
-                   subsequent executable content. Mirrors cpp
-                   `SendHelper::isUnreachableTarget` — empty, and the
-                   ECMAScript identifier (`"undefined"` from
-                   `ScriptResultUtils::resultToString`) with its lua transpile
-                   counterpart (`"nil"` from `tostring((nil))`). An empty
-                   target used to reach this session instead; a self-sent
-                   event names its origin, so `targetexpr="_event.origin"`
-                   (test336) never reads "". */
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
-                    "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                return;
-{% if 'sce:mesh' in (model.host_processor_types or []) %}
-            } else if (sce_is_mesh_target(_send_target_buf)) {
-                /* SCE_MESH.md §mesh-19: the evaluated target names a Mesh
-                   peer, so the send goes to the host's Mesh router as a
-                   literal `#peer` does — the build could not lower it,
-                   because the peer is only named now. The machine carries
-                   the host-send surface because `lower_mesh_sends` saw a
-                   `targetexpr` that could name one. The typeexpr arm below
-                   has no such branch: a `typeexpr` makes the processor a
-                   run-time choice, which `may_name_a_mesh_peer` excludes on
-                   every backend. */
-{{ host_send_arm(action, 'SCE_MESH_PROCESSOR_TYPE', '_send_target_buf') }}
-{% endif %}
-{% for invoke_info in model.invokes | scxml %}
-            } else if (sm->child_{{ invoke_info.field_suffix }}.scxml_location[0] != '\0' &&
-                       strcmp(_send_target_buf, sm->child_{{ invoke_info.field_suffix }}.scxml_location) == 0) {
-                /* W3C SCXML C.1: the target is the location our child
-                   `{{ invoke_info.invoke_id }}` publishes in its own
-                   `_ioprocessors`, so it is addressed to that child. This is
-                   the routing half of the clause: the location a session
-                   publishes has to be a usable `<send>` target, and without
-                   this arm the address a peer was told to answer at falls
-                   through to the sender's own external queue — the string
-                   compares equal and still reaches nobody.
-
-                   The address is read from the child instance rather than
-                   spelled here, because a session's address names the
-                   session: it exists once that child is initialised and
-                   names THAT run of it. A codegen-time literal was only
-                   comparable because the address was derived from the
-                   document, which is the same reason two runs of one child
-                   used to be indistinguishable. An uninitialised slot
-                   publishes nothing and matches nothing — a send to a
-                   session that has not started reaches no one, which is
-                   what the empty-address guard says. */
-                {{ invoke_info.child_name }}_raise_external_by_name(&sm->child_{{ invoke_info.field_suffix }}, "{{ action.event }}");
-{% endfor %}
-            } else {
-                /* W3C SCXML 6.2 + C.1 (test190/test336): every other
-                   dynamic target is treated as a session URI and
-                   dispatched onto the external queue, mirroring cpp
-                   `actions/send.jinja2`'s fall-through to
-                   `engine.raiseExternal(...)` after the
-                   `isInvalidTarget`/`isUnreachableTarget`/`isInternalTarget`
-                   checks. cpp's `raiseExternal` collapses any unrecognised
-                   single-session URI (the deterministic
-                   `<model.name>_session` literal this machine publishes for
-                   itself, the `#_scxml_<sessionid>` form per W3C C.1.5, or
-                   any other future cross-session URI) into the same external
-                   pop, so the C11 mirror does the same. The arms above take
-                   the addresses this machine's own children publish, which is
-                   the only cross-session case the AOT profile can resolve. */
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-                memset(&_send_evt, 0, sizeof(_send_evt));
-                _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-                {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
-            }
-{% elif action.event and action.typeexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 6.2 (test174): runtime `typeexpr` evaluation —
-               the send type is computed at send time and validated against
-               the supported processor list. cpp `SendHelper::isSupportedSendType`
-               (`sce/include/common/SendHelper.h`) returns true for the
-               SCXMLEventProcessor URI plus the empty string default; the
-               C11 port inlines the literal compare. Eval failure is an
-               argument error (W3C SCXML 6.2): the message is discarded with
-               error.execution and the block ends. Unsupported types raise
-               `error.execution` and stop subsequent executable content
-               (W3C 5.10). On a supported type the send proceeds as a bare
-               external (the C11 fixtures so far always pair typeexpr with
-               no target). */
-            char _send_type_buf[256];
-            bool _send_type_ok;
-{{ se.lua_eval_to_string(action.typeexpr, '_send_type_buf', '256', '_send_type_ok') }}
-            if (!_send_type_ok) {
-                /* W3C SCXML 6.2: a typeexpr that cannot be evaluated is an
-                   argument error — the message is discarded, not sent under
-                   a default type, and (W3C SCXML 4.9) the block ends. */
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<send> typeexpr could not be evaluated",
-                    "{{ action.auto_send_id | escape_c }}");
-                return;
-            }
-            if (_send_type_buf[0] != '\0'
-                && strcmp(_send_type_buf,
-                          "http://www.w3.org/TR/scxml/#SCXMLEventProcessor") != 0) {
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<send> typeexpr names a processor this platform does not support");
-                return;
-            }
-            {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-                memset(&_send_evt, 0, sizeof(_send_evt));
-                _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-                {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
-            }
-{% elif action.event and action.typeexpr and action.targetexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.idlocation %}
-            /* W3C SCXML 6.2 (test336): runtime `typeexpr` + `targetexpr`
-               pair — cpp `actions/send.jinja2` lines 37-86 emits two
-               independent prologues (`dynamicType` from the typeexpr
-               eval, `dynamicTarget` from the targetexpr eval) before
-               the dispatch decision. The C11 mirror walks the same
-               two evals back-to-back: type first to short-circuit
-               unsupported processors with `error.execution` (the spec
-               says a processor that cannot send via the requested type
-               must raise that error, W3C 6.2.1), then target to pick
-               between empty/external, `#_internal`, self-session URI
-               (round-trips through the external queue), `!`-prefix
-               invalid, or the unreachable fallback that raises
-               `error.communication`. The buffer sizes match the
-               typeexpr-only arm (256 bytes) and the targetexpr-only
-               arm (64 bytes) verbatim — fixtures that force longer
-               buffers raise the cap on both sites together. */
-            char _send_type_buf[256];
-            bool _send_type_ok;
-{{ se.lua_eval_to_string(action.typeexpr, '_send_type_buf', '256', '_send_type_ok') }}
-            if (!_send_type_ok) {
-                /* W3C SCXML 6.2: an argument error, as in the typeexpr-only
-                   arm above (kept synchronised). */
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<send> typeexpr could not be evaluated",
-                    "{{ action.auto_send_id | escape_c }}");
-                return;
-            }
-            if (_send_type_buf[0] != '\0'
-                && strcmp(_send_type_buf,
-                          "http://www.w3.org/TR/scxml/#SCXMLEventProcessor") != 0) {
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<send> typeexpr names a processor this platform does not support");
-                return;
-            }
-            /* W3C SCXML C.1: a resolved target can be an `_ioprocessors`
-               location, so the buffer is sized as a URI. At 64 bytes a
-               session address was truncated mid-string and then matched
-               nothing — the send fell through to this machine's own
-               external queue and the addressed peer simply never heard,
-               which is the failure C.1's routing half describes. */
-            char _send_target_buf[SCE_MAX_URI_LEN];
-            bool _send_target_ok;
-{{ se.lua_eval_to_string(action.targetexpr, '_send_target_buf', 'SCE_MAX_URI_LEN', '_send_target_ok') }}
-            if (!_send_target_ok) {
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<send> targetexpr failed to evaluate");
-                return;
-            }
-            if (strcmp(_send_target_buf, "#_internal") == 0) {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-                memset(&_send_evt, 0, sizeof(_send_evt));
-                _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_send_evt);
-            } else if (_send_target_buf[0] == '!') {
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<send> targetexpr produced a target this processor cannot address");
-                return;
-            } else if (_send_target_buf[0] == '\0' ||
-                       strcmp(_send_target_buf, "undefined") == 0 ||
-                       strcmp(_send_target_buf, "nil") == 0) {
-                /* W3C SCXML C.1 (test496/test521): unreachable target
-                   evaluation result — mirrors cpp
-                   `SendHelper::isUnreachableTarget`. Same shape as the
-                   targetexpr-only arm above (kept synchronised: any
-                   future relaxation must touch both). */
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
-                    "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                return;
-{% for invoke_info in model.invokes | scxml %}
-            } else if (sm->child_{{ invoke_info.field_suffix }}.scxml_location[0] != '\0' &&
-                       strcmp(_send_target_buf, sm->child_{{ invoke_info.field_suffix }}.scxml_location) == 0) {
-                /* W3C SCXML C.1: our child `{{ invoke_info.invoke_id }}`'s
-                   published location, addressed. Present here because the
-                   targetexpr-only arm has it and the two are kept
-                   synchronised — a `typeexpr` names the PROCESSOR, and the
-                   processor named here is the SCXML one either way, so it
-                   cannot change where the target resolves. Leaving it out
-                   would make the same address reach a child in one send
-                   shape and the sender's own queue in the other. */
-                {{ invoke_info.child_name }}_raise_external_by_name(&sm->child_{{ invoke_info.field_suffix }}, "{{ action.event }}");
-{% endfor %}
-            } else {
-                /* W3C SCXML 6.2 + C.1 (test190/test336 mirror): any other
-                   dynamic target falls through to the external queue —
-                   same fall-through as the targetexpr-only arm. cpp
-                   `actions/send.jinja2` reaches `engine.raiseExternal`
-                   after the helper checks regardless of whether typeexpr
-                   was present, so the typeexpr-presence does not change
-                   the dispatch shape. */
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-                memset(&_send_evt, 0, sizeof(_send_evt));
-                _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-                {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
-            }
-{% elif action.event and action.delayexpr and not action.target and not action.eventexpr and not action.delay and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 6.2 (test175): runtime `delayexpr` evaluation — the
-               value is computed at send time from the datamodel and read by
-               the one duration reader every engine shares (ARCHITECTURE.md,
-               "Durations"). An expression that fails, and a value that is not
-               a CSS2 time, are both the argument error: error.execution with
-               the send id, nothing scheduled, and the block ends (W3C 4.9).
-               A 0 ms result is kept verbatim, a ready-now entry. */
-            uint64_t _send_delay_ms;
-            bool _send_delay_evaluated;
-            bool _send_delay_is_time;
-{{ se.lua_eval_delayexpr(action.delayexpr, '_send_delay_ms', '_send_delay_evaluated', '_send_delay_is_time') }}
-            if (!_send_delay_evaluated || !_send_delay_is_time) {
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    _send_delay_evaluated ? "<send> delayexpr is not a CSS2 time"
-                                          : "<send> delayexpr could not be evaluated",
-                    "{{ action.auto_send_id | escape_c }}");
-                return;
-            }
-            scheduled_push(sm,
-                           sched_now_ms(sm) + _send_delay_ms,
-                           {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
-                           "{{ action.auto_send_id | escape_c }}"
-{%- if model.needs_script_engine %}, NULL
-{%- endif %});
-{% elif action.event and action.contentexpr and not action.content and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 5.10 + 6.2: static-event with `<content expr="...">`,
-               no `target`. The expression is evaluated against the active
-               datamodel and its value rides on the event as JSON
-               (`send_content_json`). Mirrors cpp `actions/send.jinja2`
-               lines 710-769 collapsed for the no-target / no-delay arm. */
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-            memset(&_send_evt, 0, sizeof(_send_evt));
-            _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-            {
-{{ send_content_json(action, csym_prefix, model.name) }}
-                memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
-            }
-            {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
-{% elif (not in_foreach) and action.event and action.send_type_unsupported and not action.eventexpr and not action.target and not action.targetexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.typeexpr and not action.idlocation %}
-            /* W3C SCXML 6.2 (test199): unsupported send_type literal raises
-               error.execution and stops the surrounding entry/exit/transition
-               body. cpp `actions/send.jinja2:16-25` uses a runtime call to
-               `SendHelper::isSupportedSendType` (sce/include/common/SendHelper.h:301-312)
-               that returns false for any literal that is neither empty,
-               SCXMLEventProcessor, nor BasicHTTPEventProcessor; the false-fall
-               raises Error_execution and returns from the enclosing executor.
-               C11 lowers the decision to codegen time (inline-only
-               lock-in) — the literal is known before this template runs,
-               so `action.send_type_unsupported` already carries the
-               verdict and this arm only emits the raise + return. The set
-               itself is spelled once, in
-               `host_processor_analyzer::is_supported_send_type`; it used
-               to be spelled again in each of five templates, this one
-               included. The BasicHTTP branch with target/targetexpr is
-               served by the lifted arm below (RFC §2.1 dim coverage:
-               idlocation / typeexpr / targetexpr / contentexpr in
-               addition to the existing namelist + dynamic-params lifts);
-               the targetless BasicHTTP arm is the next sibling and
-               handles test577 in isolation. */
-            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<send type='{{ action.send_type | escape_c }}'> names a processor this platform does not support");
-            return;
-{% elif (not in_foreach) and action.event and action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.eventexpr and not action.target and not action.targetexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.typeexpr and not action.idlocation %}
-            /* W3C SCXML C.2 (test577): BasicHTTPEventProcessor send_type
-               with no `target` and no `targetexpr` raises
-               `error.communication` on the internal queue.
-               `SendHelper::requiresTargetAttribute`
-               (`sce/include/common/SendHelper.h:275-277`) returns true for
-               the BasicHTTPEventProcessor URI; cpp `actions/send.jinja2:337-343`
-               emits a runtime check inside the no-target arm. With a
-               literal BasicHTTP `send_type` and no `target`/`targetexpr`,
-               the check is decidable at codegen time, so C11 inlines the
-               raise + return inline (mirrors the test159 invalid-
-               target arm above). The W3C 5.10 mandate to halt subsequent
-               executable content is satisfied by the `return` from the
-               enclosing entry/exit/transition executor. The BasicHTTP
-               arms with a target/targetexpr (with optional params /
-               namelist / content / contentexpr / typeexpr / idlocation)
-               are served by the lifted arm below per RFC §2.1. */
-            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
-                "<send> over BasicHTTPEventProcessor has no target to post to");
-            return;
-{% elif (not in_foreach) and action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and (action.targetexpr or (action.target and (action.target.startswith('http://') or action.target.startswith('https://')))) and not action.eventexpr and not action.delay and not action.delayexpr %}
+{{ send_param_failed_close(action) }}
+{% else %}
+{# The BasicHTTP post is the one delivery `send_lowered` hands back here:
+   its body is a form or text rather than the JSON payload every other
+   delivery carries, so it reads the arguments `send_lowered` evaluated —
+   the target in `_send_target_buf` — and builds its own body. #}
+{% call send_lowered(action, in_foreach) %}
             /* W3C SCXML C.2: BasicHTTP send to HTTP target (literal `target`
                or runtime `targetexpr`). Synchronous POST against the
                standalone server, followed by
@@ -1536,23 +1295,10 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                rust `rust/actions/send.rs.jinja2:252-315`, and
                `backends/go/tests/harness/harness.go::SetupHTTPTest`.
 
-               Dimension coverage (RFC §2.1 c11 guard #1):
-                 * idlocation (W3C 6.2.4) — store `auto_send_id` into the
-                   datamodel slot via lua dostring, mirroring the existing
-                   SCXMLEventProcessor idlocation arms above and cpp
-                   `actions/send.jinja2:26-35`.
-                 * typeexpr (W3C 6.2) — runtime-evaluate and verify the
-                   result equals BasicHTTPEventProcessor URI; the static
-                   `send_type` already gates this arm so typeexpr is the
-                   dynamic-redundant case (W3C allows either, not both).
-                   Mismatch raises error.execution per cpp's
-                   `SendHelper::isSupportedSendType` contract
-                   (sce/include/common/SendHelper.h:301-312).
-                 * targetexpr (W3C 6.2) — runtime-evaluate then check the
-                   result starts with `http://`/`https://` (mirroring
-                   `SendHelper::isHttpTarget`, SendHelper.h:181-184); a
-                   non-HTTP result raises error.communication and stops
-                   the action per W3C 5.10 + C.1 (test 496).
+               The element's own arguments — idlocation, typeexpr and a
+               targetexpr checked to be an http(s) URL — were evaluated by
+               `send_lowered` before this body was reached. What is decided
+               here is the body:
                  * contentexpr (W3C 5.10) — runtime-evaluate the body
                    literal and ship as text/plain, mirroring cpp lines
                    395-404 and the donedata `lua_eval_donedata_content_expr`
@@ -1586,78 +1332,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                local error.communication (which the cpp lane also
                doesn't). */
             {
-{% if action.idlocation %}
-                /* W3C SCXML 6.2.4: store the parser-generated `auto_send_id`
-                   into the datamodel slot named by `idlocation` so the
-                   surrounding SCXML can later read it (e.g. for a
-                   pre-emptive `<cancel>`). Mirrors the existing
-                   SCXMLEventProcessor idlocation arms above and cpp
-                   `actions/send.jinja2:26-35`. A location that cannot take
-                   the id discards the message (W3C SCXML 6.2, 5.9.2). */
-                {
-                    bool _idloc_ok = false;
-{{ se.lua_store_id_in_location(action.idlocation, '"' ~ (action.auto_send_id | escape_c) ~ '"', '_idloc_ok') }}
-                    if (!_idloc_ok) {
-{% if 'error.execution' in model.events %}
-                        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                            "<send idlocation='{{ action.idlocation | escape_c }}'> could not take the send id");
-{% endif %}
-                        return;
-                    }
-                }
-{% endif %}
-{% if action.typeexpr %}
-                /* W3C SCXML 6.2: runtime typeexpr evaluation. The static
-                   send_type already pinned this arm to BasicHTTP; the
-                   typeexpr is the dynamic-redundant case (test corpus
-                   either uses static `type` or `typeexpr`, not both, but
-                   the parser admits both per W3C). Validate the runtime
-                   result equals the BasicHTTP URI so a mismatched typeexpr
-                   raises error.execution per `SendHelper::isSupportedSendType`
-                   (sce/include/common/SendHelper.h:301-312). Stops the
-                   surrounding entry/exit/transition body per W3C 5.10. */
-                {
-                    char _type_buf[256];
-                    bool _type_ok;
-{{ se.lua_eval_to_string(action.typeexpr, '_type_buf', '256', '_type_ok') }}
-                    if (!_type_ok ||
-                        strcmp(_type_buf,
-                               "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor") != 0) {
-                        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                            "<send> typeexpr names a processor this platform does not support");
-                        return;
-                    }
-                }
-{% endif %}
-{% if action.targetexpr %}
-                /* W3C SCXML 6.2: targetexpr → dynamic target. Eval failure
-                   or non-HTTP result raises error.communication per W3C
-                   C.1 (test 496) + cpp `SendHelper::isHttpTarget`
-                   (sce/include/common/SendHelper.h:181-184). The buf is
-                   threaded through the URL parse below in place of the
-                   static literal. */
-                char _target_buf[256];
-                {
-                    bool _target_ok;
-{{ se.lua_eval_to_string(action.targetexpr, '_target_buf', '256', '_target_ok') }}
-                    if (!_target_ok ||
-                        (strncmp(_target_buf, "http://", 7) != 0 &&
-                         strncmp(_target_buf, "https://", 8) != 0)) {
-                        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
-                            "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
-                        return;
-                    }
-                }
-{% endif %}
                 /* W3C SCXML C.2: parse target URL. Literal `target` is
                    decided at codegen time (jinja2-inline);
-                   `targetexpr` reads the runtime-populated `_target_buf`
-                   above. */
+                   `targetexpr` reads the `_send_target_buf` the element's
+                   arguments were evaluated into. */
                 sce_test_http_url_t _http_url;
-                if (sce_test_http_url_parse({% if action.targetexpr %}_target_buf{% else %}"{{ action.target }}"{% endif %}, &_http_url)) {
+                if (sce_test_http_url_parse({% if action.targetexpr %}_send_target_buf{% else %}"{{ action.target }}"{% endif %}, &_http_url)) {
                     /* W3C SCXML C.2: build POST body. The discriminator
                        (form vs text/plain) follows cpp's "event or
                        params non-empty → form-urlencoded" rule. */
@@ -1854,32 +1534,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     sce_test_http_response_free(&_http_resp);
                 }
             }
-{% else %}
-            /* W3C SCXML 6.2: unenumerated `<send>` shape. The elif chain
-               above covers every shape the C11 corpus + RFC §2.1 BasicHTTP
-               lift currently emit; an unmatched shape (e.g. BasicHTTP +
-               eventexpr / delay / delayexpr — out of RFC §2.1 dim scope —
-               or a future SCXML attribute combination) lands here. Mirror
-               the test199 unsupported-send-type arm above and the cpp
-               `SendHelper::isSupportedSendType` fallback semantics: raise
-               error.execution and stop the surrounding entry/exit/
-               transition body per W3C 5.10. Fail loud at runtime rather
-               than silent emit (`feedback_silently_broken_hooks.md`),
-               and avoid codegen-time preprocessor failure so the build
-               never blocks on a fixture the SM author can fix at the
-               SCXML layer. */
-            {
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<send> uses a combination of attributes this backend cannot emit");
-                return;
-            }
-{% endif %}
-{% if send_param_ns.can_fail %}
-            /* W3C SCXML 4.9: the <param> error ends the block. */
-            if (_param_failed) {
-                return;
-            }
+{% endcall %}
 {% endif %}
         }
 {% elif action.type == 'if' %}
