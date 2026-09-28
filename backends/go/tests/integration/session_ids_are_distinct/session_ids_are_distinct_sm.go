@@ -465,6 +465,7 @@ func (p *SessionIdsAreDistinctPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 	for _, pending := range invokesToExecute {
 		if pending.DocumentID == "inv_a" {
 
+
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 
@@ -525,6 +526,7 @@ func (p *SessionIdsAreDistinctPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			continue
 		}
 		if pending.DocumentID == "inv_b" {
+
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)

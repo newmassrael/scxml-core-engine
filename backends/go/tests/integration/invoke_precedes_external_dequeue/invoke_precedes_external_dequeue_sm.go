@@ -233,6 +233,7 @@ func (p *InvokePrecedesExternalDequeuePolicy) ExecutePendingInvokes(engine *sce.
 	for _, pending := range invokesToExecute {
 		if pending.DocumentID == "inv_watch" {
 
+
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 

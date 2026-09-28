@@ -493,6 +493,21 @@ impl InvokeCandidateSelectsTheChildPolicy {
                     }
                 }
 
+                // A value naming none of the declared candidates is the failure
+                // the Interpreter reports when a document will not load: nothing
+                // is created, and — as there — the arguments are not read.
+                if !["chosen", "other"].contains(&__sce_selected.as_str()) {
+                    ::sce_rust_runtime::sce_log_error!(
+                        "Hybrid invoke: '{}' names no declared candidate",
+                        __sce_selected
+                    );
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        InvokeCandidateSelectsTheChildEvent::ErrorExecution,
+                        "<invoke srcexpr='pick'> evaluated to a document it did not declare",
+                    ));
+                    continue;
+                }
+
                 // W3C SCXML 6.5: Generate child session ID
                 let child_session_id = format!(
                     "{}.{}",
@@ -658,16 +673,6 @@ impl InvokeCandidateSelectsTheChildPolicy {
 
                     continue;
                 }
-                // A value naming none of them is the failure the Interpreter
-                // reports when a document will not load: nothing to create.
-                ::sce_rust_runtime::sce_log_error!(
-                    "Hybrid invoke: '{}' names no declared candidate",
-                    __sce_selected
-                );
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                    InvokeCandidateSelectsTheChildEvent::ErrorExecution,
-                    "<invoke srcexpr='pick'> evaluated to a document it did not declare",
-                ));
                 continue;
             }
         }

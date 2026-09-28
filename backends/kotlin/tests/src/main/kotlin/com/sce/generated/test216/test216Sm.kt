@@ -442,6 +442,7 @@ class Test216StateMachine(
                             // path does not honour (SCE_ACCEPTED_SUBSET.md §2.13).
                             @Suppress("UNUSED_VARIABLE") val _evaluated = filePath
                             val childSM = Test216Hybrid0StateMachine()
+
                             startInvoke("_invoke_0", childSM, false, Test216Event.Done.Invoke, "", generatedInvokeId)
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation

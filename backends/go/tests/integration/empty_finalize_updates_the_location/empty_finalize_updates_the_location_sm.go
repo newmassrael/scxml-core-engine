@@ -536,14 +536,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 
 	for _, pending := range invokesToExecute {
 		if pending.DocumentID == "inv_absent" {
-			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 			{
-				// W3C SCXML 6.4: "if the evaluation of its arguments produces an
-				// error, the SCXML Processor MUST terminate the processing of the
-				// element without further action". A name that is not a readable
-				// location is such an error: ONE error.execution for the element,
-				// however many names are bad, no child, and its <param>s are not
-				// evaluated.
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 				namelistValid := true
@@ -555,6 +548,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 					continue
 				}
 			}
+
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -625,14 +619,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			continue
 		}
 		if pending.DocumentID == "inv_empty" {
-			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 			{
-				// W3C SCXML 6.4: "if the evaluation of its arguments produces an
-				// error, the SCXML Processor MUST terminate the processing of the
-				// element without further action". A name that is not a readable
-				// location is such an error: ONE error.execution for the element,
-				// however many names are bad, no child, and its <param>s are not
-				// evaluated.
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 				namelistValid := true
@@ -644,6 +631,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 					continue
 				}
 			}
+
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -714,14 +702,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			continue
 		}
 		if pending.DocumentID == "inv_unmatched" {
-			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 			{
-				// W3C SCXML 6.4: "if the evaluation of its arguments produces an
-				// error, the SCXML Processor MUST terminate the processing of the
-				// element without further action". A name that is not a readable
-				// location is such an error: ONE error.execution for the element,
-				// however many names are bad, no child, and its <param>s are not
-				// evaluated.
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 				namelistValid := true
@@ -733,6 +714,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 					continue
 				}
 			}
+
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)

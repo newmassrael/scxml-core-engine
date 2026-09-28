@@ -403,18 +403,7 @@ impl Test554Policy {
 
         for pending in &invokes_to_execute {
             if pending.document_id == "_invoke_0" {
-                // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
-                // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
                 {
-                    // §scxml-6.4: "if the evaluation of its arguments produces an
-                    // error, the SCXML Processor MUST terminate the processing of
-                    // the element without further action". A name that is not a
-                    // readable location is such an error: ONE error.execution for
-                    // the element, however many names are bad, no child, and its
-                    // <param>s are not evaluated. A name is read only once it is
-                    // known to be declared, so the name itself is never lowered as
-                    // an expression — an undeclared one would be refused at build
-                    // time instead of raising here.
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
@@ -465,9 +454,6 @@ impl Test554Policy {
                 if child_policy.session_id.is_none() {
                     child_policy.session_id = Some(child_session_id.clone());
                 }
-
-                // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
-                // W3C SCXML 6.3.2: Only set if variable is declared in child's datamodel
 
                 // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
                 self.active_invokes.insert(

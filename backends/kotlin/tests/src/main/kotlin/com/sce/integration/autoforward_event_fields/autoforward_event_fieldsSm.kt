@@ -401,6 +401,7 @@ class AutoforwardEventFieldsStateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "phase.${System.identityHashCode(this)}.inv_echo"
                     deferInvoke(state, generatedInvokeId) {
+
                         val childSM = AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("inv_echo", childSM, true, AutoforwardEventFieldsEvent.Done.Invoke, "", generatedInvokeId)

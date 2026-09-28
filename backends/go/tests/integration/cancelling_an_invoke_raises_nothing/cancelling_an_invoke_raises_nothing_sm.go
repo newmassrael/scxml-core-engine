@@ -432,6 +432,7 @@ func (p *CancellingAnInvokeRaisesNothingPolicy) ExecutePendingInvokes(engine *sc
 	for _, pending := range invokesToExecute {
 		if pending.DocumentID == "child" {
 
+
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 

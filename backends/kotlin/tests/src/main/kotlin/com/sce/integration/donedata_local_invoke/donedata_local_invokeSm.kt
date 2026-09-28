@@ -448,6 +448,7 @@ class DonedataLocalInvokeStateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "phase_content.${System.identityHashCode(this)}.inv_content"
                     deferInvoke(state, generatedInvokeId) {
+
                         val childSM = DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("inv_content", childSM, false, DonedataLocalInvokeEvent.Done.Invoke.InvContent, "", generatedInvokeId)
@@ -461,6 +462,7 @@ class DonedataLocalInvokeStateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "phase_param.${System.identityHashCode(this)}.inv_param"
                     deferInvoke(state, generatedInvokeId) {
+
                         val childSM = DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("inv_param", childSM, false, DonedataLocalInvokeEvent.Done.Invoke.InvParam, "", generatedInvokeId)

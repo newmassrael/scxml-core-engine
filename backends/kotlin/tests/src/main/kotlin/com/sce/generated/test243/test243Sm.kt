@@ -412,6 +412,7 @@ class Test243StateMachine(
                         } catch (_: Exception) {
                             raisePlatformError(Test243Event.Error.Execution, "<invoke> <param name='Var1'> could not be read")
                         }
+
                         val childSM = Test243SceSynthInvokeInvoke0StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events

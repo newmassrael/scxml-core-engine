@@ -425,6 +425,7 @@ func (p *EventOriginIsALocationPolicy) ExecutePendingInvokes(engine *sce.Engine[
 	for _, pending := range invokesToExecute {
 		if pending.DocumentID == "inv_peer" {
 
+
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 

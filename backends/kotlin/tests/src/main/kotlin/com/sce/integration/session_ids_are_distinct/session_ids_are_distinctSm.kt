@@ -473,6 +473,7 @@ class SessionIdsAreDistinctStateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "phase.${System.identityHashCode(this)}.inv_a"
                     deferInvoke(state, generatedInvokeId) {
+
                         val childSM = SessionIdsAreDistinctSceSynthInvokeInvAStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("inv_a", childSM, false, SessionIdsAreDistinctEvent.Done.Invoke, "", generatedInvokeId)
@@ -483,6 +484,7 @@ class SessionIdsAreDistinctStateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "phase.${System.identityHashCode(this)}.inv_b"
                     deferInvoke(state, generatedInvokeId) {
+
                         val childSM = SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("inv_b", childSM, false, SessionIdsAreDistinctEvent.Done.Invoke, "", generatedInvokeId)

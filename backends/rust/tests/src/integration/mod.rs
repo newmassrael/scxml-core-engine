@@ -37,6 +37,7 @@ pub mod a_bad_send_param_ends_its_block;
 pub mod a_child_may_send_many_events_in_one_tick;
 pub mod a_child_reply_arrives_without_a_tick;
 pub mod a_delay_is_a_css2_time;
+pub mod a_hybrid_invoke_carries_its_arguments;
 pub mod a_payload_rides_on_its_own_event;
 pub mod a_peer_named_at_run_time_reaches_the_router;
 pub mod ai_loop;

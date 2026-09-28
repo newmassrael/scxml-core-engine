@@ -243,6 +243,7 @@ class HostEventReachesTheChildStateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "phase.${System.identityHashCode(this)}.inv_probe"
                     deferInvoke(state, generatedInvokeId) {
+
                         val childSM = HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine()
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("inv_probe", childSM, true, HostEventReachesTheChildEvent.Done.Invoke, "", generatedInvokeId)

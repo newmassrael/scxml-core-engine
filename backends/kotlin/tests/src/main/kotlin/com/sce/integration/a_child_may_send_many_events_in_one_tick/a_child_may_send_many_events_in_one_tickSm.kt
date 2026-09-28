@@ -390,6 +390,7 @@ class AChildMaySendManyEventsInOneTickStateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "s0.${System.identityHashCode(this)}.chatty"
                     deferInvoke(state, generatedInvokeId) {
+
                         val childSM = AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("chatty", childSM, false, AChildMaySendManyEventsInOneTickEvent.Done.Invoke, "", generatedInvokeId)

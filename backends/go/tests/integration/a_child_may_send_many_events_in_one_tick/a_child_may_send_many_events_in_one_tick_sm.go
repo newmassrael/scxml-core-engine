@@ -417,6 +417,7 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) ExecutePendingInvokes(engine *s
 	for _, pending := range invokesToExecute {
 		if pending.DocumentID == "chatty" {
 
+
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 

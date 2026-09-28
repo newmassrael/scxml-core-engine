@@ -508,6 +508,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
                         } catch (_: Exception) {
                             raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<invoke> <param name='broken'> could not be read")
                         }
+
                         val childSM = InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events

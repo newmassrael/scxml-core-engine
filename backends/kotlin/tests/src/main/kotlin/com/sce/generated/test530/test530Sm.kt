@@ -434,6 +434,7 @@ class Test530StateMachine(
                             // The stub, for the reason the srcexpr arm above states.
                             @Suppress("UNUSED_VARIABLE") val _evaluated = scxmlContent
                             val childSM = Test530Hybrid0StateMachine()
+
                             startInvoke("_invoke_0", childSM, false, Test530Event.Done.Invoke, "", generatedInvokeId)
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation

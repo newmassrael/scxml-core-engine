@@ -620,6 +620,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         } catch (_: Exception) {
                             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='notInChild'> could not be read")
                         }
+
                         val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
@@ -641,18 +642,13 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                         val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         val invokeParams = mutableMapOf<String, Any?>()
-                        // W3C SCXML 6.4: "if the evaluation of its arguments produces an
-                        // error, the SCXML Processor MUST terminate the processing of the
-                        // element without further action". A name that is not a readable
-                        // location is such an error: ONE error.execution for the element,
-                        // however many names are bad, no child, and its <param>s are not
-                        // evaluated.
                         if (!(engineInv.hasVariable(sidInv, "undeclaredA") && engineInv.hasVariable(sidInv, "undeclaredB"))) {
                             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
                             return@deferInvoke
                         }
                         invokeParams["undeclaredA"] = engineInv.getVariable(sidInv, "undeclaredA")
                         invokeParams["undeclaredB"] = engineInv.getVariable(sidInv, "undeclaredB")
+
                         val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2StateMachine()
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
@@ -671,12 +667,6 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                         val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         val invokeParams = mutableMapOf<String, Any?>()
-                        // W3C SCXML 6.4: "if the evaluation of its arguments produces an
-                        // error, the SCXML Processor MUST terminate the processing of the
-                        // element without further action". A name that is not a readable
-                        // location is such an error: ONE error.execution for the element,
-                        // however many names are bad, no child, and its <param>s are not
-                        // evaluated.
                         if (!(engineInv.hasVariable(sidInv, "obj.missing.deep"))) {
                             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
                             return@deferInvoke
@@ -691,6 +681,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         } catch (_: Exception) {
                             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='alsoBroken'> could not be read")
                         }
+
                         val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events

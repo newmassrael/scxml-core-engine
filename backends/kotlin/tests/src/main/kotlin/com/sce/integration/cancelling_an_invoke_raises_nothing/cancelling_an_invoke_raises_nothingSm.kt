@@ -427,6 +427,7 @@ class CancellingAnInvokeRaisesNothingStateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "p.${System.identityHashCode(this)}.child"
                     deferInvoke(state, generatedInvokeId) {
+
                         val childSM = CancellingAnInvokeRaisesNothingSceSynthInvokeChildStateMachine()
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("child", childSM, false, CancellingAnInvokeRaisesNothingEvent.Done.Invoke, "", generatedInvokeId)

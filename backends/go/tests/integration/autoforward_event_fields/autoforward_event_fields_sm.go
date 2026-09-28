@@ -406,6 +406,7 @@ func (p *AutoforwardEventFieldsPolicy) ExecutePendingInvokes(engine *sce.Engine[
 	for _, pending := range invokesToExecute {
 		if pending.DocumentID == "inv_echo" {
 
+
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 

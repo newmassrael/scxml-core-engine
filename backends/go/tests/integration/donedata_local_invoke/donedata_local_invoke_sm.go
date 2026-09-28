@@ -438,6 +438,7 @@ func (p *DonedataLocalInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[Don
 	for _, pending := range invokesToExecute {
 		if pending.DocumentID == "inv_content" {
 
+
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 
@@ -498,6 +499,7 @@ func (p *DonedataLocalInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[Don
 			continue
 		}
 		if pending.DocumentID == "inv_param" {
+
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)

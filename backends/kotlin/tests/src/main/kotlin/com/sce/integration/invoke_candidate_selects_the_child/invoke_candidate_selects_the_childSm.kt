@@ -449,6 +449,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
                                     return@deferInvoke
                                 }
                             }
+
                             startInvoke("_invoke_0", childSM, false, null, "", generatedInvokeId)
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation

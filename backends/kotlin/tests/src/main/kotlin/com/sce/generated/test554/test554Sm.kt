@@ -397,17 +397,12 @@ class Test554StateMachine(
                         val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                         val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         val invokeParams = mutableMapOf<String, Any?>()
-                        // W3C SCXML 6.4: "if the evaluation of its arguments produces an
-                        // error, the SCXML Processor MUST terminate the processing of the
-                        // element without further action". A name that is not a readable
-                        // location is such an error: ONE error.execution for the element,
-                        // however many names are bad, no child, and its <param>s are not
-                        // evaluated.
                         if (!(engineInv.hasVariable(sidInv, "__undefined_variable_for_error__"))) {
                             raisePlatformError(Test554Event.Error.Execution, "<invoke> namelist names a location that cannot be read")
                             return@deferInvoke
                         }
                         invokeParams["__undefined_variable_for_error__"] = engineInv.getVariable(sidInv, "__undefined_variable_for_error__")
+
                         val childSM = Test554SceSynthInvokeInvoke0StateMachine()
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events

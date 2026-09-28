@@ -250,6 +250,7 @@ func (p *HostEventReachesTheChildPolicy) ExecutePendingInvokes(engine *sce.Engin
 	for _, pending := range invokesToExecute {
 		if pending.DocumentID == "inv_probe" {
 
+
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 

@@ -453,18 +453,7 @@ impl Test240Policy {
 
         for pending in &invokes_to_execute {
             if pending.document_id == "_invoke_0" {
-                // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
-                // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
                 {
-                    // §scxml-6.4: "if the evaluation of its arguments produces an
-                    // error, the SCXML Processor MUST terminate the processing of
-                    // the element without further action". A name that is not a
-                    // readable location is such an error: ONE error.execution for
-                    // the element, however many names are bad, no child, and its
-                    // <param>s are not evaluated. A name is read only once it is
-                    // known to be declared, so the name itself is never lowered as
-                    // an expression — an undeclared one would be refused at build
-                    // time instead of raising here.
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
@@ -640,17 +629,10 @@ impl Test240Policy {
                         }
                         Err(e) => {
                             // §scxml-5.7.1: BOTH halves — `error.execution` on the
-                            // internal queue AND the name and value ignored. Only
-                            // the silent half was here: an `if let Ok` dropped the
-                            // failure, so a document that miscomputed one `<param>`
-                            // of an `<invoke>` got a child with a `<data>` nothing
-                            // explained and no event to act on.
-                            //
-                            // The clause delegates only the SUCCESSFUL name and
-                            // value to the context — "Otherwise the use of the name
-                            // and value depends on the context in which the <param>
-                            // element occurs. See 5.5 <donedata>, 6.2 <send> and 6.4
-                            // <invoke>" — so §scxml-6.4.2's "terminate the
+                            // internal queue AND the name and value ignored. The
+                            // clause delegates only the SUCCESSFUL name and value to
+                            // the context ("See 5.5 <donedata>, 6.2 <send> and 6.4
+                            // <invoke>"), so §scxml-6.4.2's "terminate the
                             // processing of the element" is not what a failing
                             // `<param>` costs: the child still starts, one pair
                             // short. W3C test343 settles the same clause from the

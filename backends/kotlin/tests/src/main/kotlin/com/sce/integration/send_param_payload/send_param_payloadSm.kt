@@ -670,6 +670,7 @@ class SendParamPayloadStateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "awaitChild.${System.identityHashCode(this)}.inv_emitter"
                     deferInvoke(state, generatedInvokeId) {
+
                         val childSM = SendParamPayloadSceSynthInvokeInvEmitterStateMachine()
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("inv_emitter", childSM, false, SendParamPayloadEvent.Done.Invoke, "", generatedInvokeId)

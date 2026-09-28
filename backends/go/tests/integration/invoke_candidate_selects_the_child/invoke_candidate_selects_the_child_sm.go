@@ -451,6 +451,17 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 				}
 			}
 
+			// A value naming none of the declared candidates is the failure the
+			// Interpreter reports when a document will not load: nothing is
+			// created, and — as there — the arguments are not read.
+			switch __sceSelected {
+			case "chosen", "other":
+			default:
+				engine.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, "<invoke srcexpr='pick'> evaluated to a document it did not declare"))
+				continue
+			}
+
+
 			// §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value chooses among
 			// the declared candidates. The slot is one `sce.ChildEngine`, so only
 			// the construction differs per candidate.
@@ -471,6 +482,8 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 			// session that can never be compared — which is exactly what C.1
 			// requires of them.
 			childPolicy.SessionID = childSessionID
+
+
 
 			p.activeInvokes["_invoke_0"] = &sce.ChildSession{
 				SessionID:       childSessionID,
@@ -524,6 +537,8 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 			// requires of them.
 			childPolicy.SessionID = childSessionID
 
+
+
 			p.activeInvokes["_invoke_0"] = &sce.ChildSession{
 				SessionID:       childSessionID,
 				InvokeID:        "_invoke_0",
@@ -558,9 +573,6 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 
 				continue
 			}
-			// A value naming none of them is the failure the Interpreter reports
-			// when a document will not load: there is nothing to create.
-			engine.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, "<invoke srcexpr='pick'> evaluated to a document it did not declare"))
 			continue
 		}
 	}

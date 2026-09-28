@@ -458,6 +458,7 @@ class Test224StateMachine(
                     // error.execution and the invocation is never deferred.
                     if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), generatedInvokeId, "<invoke>")) return@run
                     deferInvoke(state, generatedInvokeId) {
+
                         val childSM = Test224SceSynthInvokeInvoke0StateMachine()
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_0", childSM, false, Test224Event.Done.Invoke, "", generatedInvokeId)

@@ -576,6 +576,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 	for _, pending := range invokesToExecute {
 		if pending.DocumentID == "inv1" {
 
+
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 
@@ -595,7 +596,6 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 			// requires of them.
 			childPolicy.SessionID = childSessionID
 
-
 			// W3C SCXML 6.4.1: Pass params to child datamodel before initialization
 			{
 				p.ensureScriptEngine()
@@ -606,16 +606,12 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 					childPolicy.SetParamValueInScriptEngine("fromLoc", val)
 				} else {
 					// §scxml-5.7.1: BOTH halves — `error.execution` on the internal
-					// queue AND the name and value ignored. Only the silent half was
-					// here, so a document that miscomputed one `<param>` got a child
-					// with a `<data>` nothing explained and no event to act on.
-					//
-					// The clause delegates only the SUCCESSFUL name and value to the
-					// context ("Otherwise the use of the name and value depends on
-					// the context ... See 5.5 <donedata>, 6.2 <send> and 6.4
-					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
-					// element" is not what a failing `<param>` costs: the child
-					// still starts, one pair short.
+					// queue AND the name and value ignored. The clause delegates
+					// only the SUCCESSFUL name and value to the context ("See 5.5
+					// <donedata>, 6.2 <send> and 6.4 <invoke>"), so §scxml-6.4.2's
+					// "terminate the processing of the element" is not what a
+					// failing `<param>` costs: the child still starts, one pair
+					// short.
 					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<invoke> <param name='fromLoc'> could not be read"))
 				}
 				engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<invoke> <param name='emptyLoc'> names no location"))
@@ -625,16 +621,12 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 					childPolicy.SetParamValueInScriptEngine("broken", val)
 				} else {
 					// §scxml-5.7.1: BOTH halves — `error.execution` on the internal
-					// queue AND the name and value ignored. Only the silent half was
-					// here, so a document that miscomputed one `<param>` got a child
-					// with a `<data>` nothing explained and no event to act on.
-					//
-					// The clause delegates only the SUCCESSFUL name and value to the
-					// context ("Otherwise the use of the name and value depends on
-					// the context ... See 5.5 <donedata>, 6.2 <send> and 6.4
-					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
-					// element" is not what a failing `<param>` costs: the child
-					// still starts, one pair short.
+					// queue AND the name and value ignored. The clause delegates
+					// only the SUCCESSFUL name and value to the context ("See 5.5
+					// <donedata>, 6.2 <send> and 6.4 <invoke>"), so §scxml-6.4.2's
+					// "terminate the processing of the element" is not what a
+					// failing `<param>` costs: the child still starts, one pair
+					// short.
 					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<invoke> <param name='broken'> could not be read"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `obj.missing.deep`); err == nil {
@@ -643,19 +635,16 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 					childPolicy.SetParamValueInScriptEngine("notInChild", val)
 				} else {
 					// §scxml-5.7.1: BOTH halves — `error.execution` on the internal
-					// queue AND the name and value ignored. Only the silent half was
-					// here, so a document that miscomputed one `<param>` got a child
-					// with a `<data>` nothing explained and no event to act on.
-					//
-					// The clause delegates only the SUCCESSFUL name and value to the
-					// context ("Otherwise the use of the name and value depends on
-					// the context ... See 5.5 <donedata>, 6.2 <send> and 6.4
-					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
-					// element" is not what a failing `<param>` costs: the child
-					// still starts, one pair short.
+					// queue AND the name and value ignored. The clause delegates
+					// only the SUCCESSFUL name and value to the context ("See 5.5
+					// <donedata>, 6.2 <send> and 6.4 <invoke>"), so §scxml-6.4.2's
+					// "terminate the processing of the element" is not what a
+					// failing `<param>` costs: the child still starts, one pair
+					// short.
 					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<invoke> <param name='notInChild'> could not be read"))
 				}
 			}
+
 
 			// W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
 			p.activeInvokes["inv1"] = &sce.ChildSession{
@@ -696,14 +685,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 			continue
 		}
 		if pending.DocumentID == "inv2" {
-			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 			{
-				// W3C SCXML 6.4: "if the evaluation of its arguments produces an
-				// error, the SCXML Processor MUST terminate the processing of the
-				// element without further action". A name that is not a readable
-				// location is such an error: ONE error.execution for the element,
-				// however many names are bad, no child, and its <param>s are not
-				// evaluated.
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 				namelistValid := true
@@ -718,6 +700,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 					continue
 				}
 			}
+
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -737,7 +720,6 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 			// requires of them.
 			childPolicy.SessionID = childSessionID
 
-			// W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
 
 
 			// W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
@@ -779,14 +761,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 			continue
 		}
 		if pending.DocumentID == "inv3" {
-			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 			{
-				// W3C SCXML 6.4: "if the evaluation of its arguments produces an
-				// error, the SCXML Processor MUST terminate the processing of the
-				// element without further action". A name that is not a readable
-				// location is such an error: ONE error.execution for the element,
-				// however many names are bad, no child, and its <param>s are not
-				// evaluated.
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 				namelistValid := true
@@ -798,6 +773,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 					continue
 				}
 			}
+
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -827,7 +803,6 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 					childPolicy.SetParamValueInScriptEngine("obj.missing.deep", val)
 				}
 			}
-
 			// W3C SCXML 6.4.1: Pass params to child datamodel before initialization
 			{
 				p.ensureScriptEngine()
@@ -838,19 +813,16 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 					childPolicy.SetParamValueInScriptEngine("alsoBroken", val)
 				} else {
 					// §scxml-5.7.1: BOTH halves — `error.execution` on the internal
-					// queue AND the name and value ignored. Only the silent half was
-					// here, so a document that miscomputed one `<param>` got a child
-					// with a `<data>` nothing explained and no event to act on.
-					//
-					// The clause delegates only the SUCCESSFUL name and value to the
-					// context ("Otherwise the use of the name and value depends on
-					// the context ... See 5.5 <donedata>, 6.2 <send> and 6.4
-					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
-					// element" is not what a failing `<param>` costs: the child
-					// still starts, one pair short.
+					// queue AND the name and value ignored. The clause delegates
+					// only the SUCCESSFUL name and value to the context ("See 5.5
+					// <donedata>, 6.2 <send> and 6.4 <invoke>"), so §scxml-6.4.2's
+					// "terminate the processing of the element" is not what a
+					// failing `<param>` costs: the child still starts, one pair
+					// short.
 					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<invoke> <param name='alsoBroken'> could not be read"))
 				}
 			}
+
 
 			// W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
 			p.activeInvokes["inv3"] = &sce.ChildSession{

@@ -613,6 +613,7 @@ func (p *SendParamPayloadPolicy) ExecutePendingInvokes(engine *sce.Engine[SendPa
 	for _, pending := range invokesToExecute {
 		if pending.DocumentID == "inv_emitter" {
 
+
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 

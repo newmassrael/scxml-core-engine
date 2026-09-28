@@ -415,6 +415,7 @@ func (p *InvokeExpressionFailureIsReportedPolicy) ExecutePendingInvokes(engine *
 				}
 			}
 
+
 			// W3C SCXML 6.5: Generate child session ID
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 
@@ -431,6 +432,8 @@ func (p *InvokeExpressionFailureIsReportedPolicy) ExecutePendingInvokes(engine *
 			// session that can never be compared — which is exactly what C.1
 			// requires of them.
 			childPolicy.SessionID = childSessionID
+
+
 
 			p.activeInvokes["_invoke_0"] = &sce.ChildSession{
 				SessionID:       childSessionID,
