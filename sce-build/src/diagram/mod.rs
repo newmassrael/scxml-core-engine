@@ -30,6 +30,7 @@
 
 use crate::model::SCXMLModel;
 
+pub mod boxes;
 pub mod metrics;
 pub mod words;
 
@@ -106,6 +107,17 @@ pub struct Figure {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Diagram {
     pub figures: Vec<Figure>,
+}
+
+impl Diagram {
+    /// The figure where `state` is drawn as itself — what a box standing for
+    /// it elsewhere names, so the reader knows which figure to turn to.
+    pub fn home_of(&self, state: &str) -> Option<&FigureName> {
+        self.figures
+            .iter()
+            .find(|f| f.states.iter().any(|s| s == state))
+            .map(|f| &f.name)
+    }
 }
 
 /// Split `model` into figures. Every figure is one CONTAINER — the document,
