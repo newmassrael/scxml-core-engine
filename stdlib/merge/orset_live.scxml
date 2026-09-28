@@ -12,6 +12,21 @@
   orset_union's does.
 
   adds {1@(100,0,7), 1@(102,0,9)}, tombstones {1@(100,0,7)} → {1@(102,0,9)}.
+
+  The same difference is how a set forgets. Tombstones are never dropped by
+  merging, so a set that is added to and removed from keeps growing until it
+  passes the 256-entry bound. Once every replica has observed a set S of
+  tombstones — the host's to decide; a server that tracks each device's
+  read cursor knows it — both lists shrink by it:
+
+    adds'       = orset_live(adds, S)        the adds S covers go
+    tombstones' = orset_live(tombstones, S)  and so do S's own entries
+
+  and orset_live(adds', tombstones') is orset_live(adds, tombstones) for any
+  S ⊆ tombstones, so the set's value is unchanged. The precondition is the
+  whole of the rule: a replica that had not seen a pruned tombstone still
+  holds its add, and merging that replica in afterwards brings the element
+  back, because nothing any longer says it was removed.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
