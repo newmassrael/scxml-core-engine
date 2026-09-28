@@ -43,6 +43,7 @@ pub mod a_payload_rides_on_its_own_event;
 pub mod a_peer_named_at_run_time_reaches_the_router;
 pub mod a_self_sent_event_names_its_origin;
 pub mod a_send_content_expr_is_the_payload;
+pub mod a_send_reaches_only_what_its_target_names;
 pub mod ai_loop;
 pub mod an_error_ends_the_block_it_was_raised_in;
 pub mod an_error_inside_a_foreach_ends_its_block;

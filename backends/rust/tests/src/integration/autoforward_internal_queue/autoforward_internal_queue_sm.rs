@@ -776,16 +776,12 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
                             {
                                 let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                                let event_data: &str = "";
-
                                 // W3C SCXML 6.2: Unsupported send type "urn:x-sce-unsupported-processor" raises error.execution
                                 {
                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AutoforwardInternalQueueEvent::ErrorExecution, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support");
                                     engine.raise(err_meta);
                                 }
                                 break 'action_block;
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
                                 let _ = send_id; // suppress unused warning when no send operation
                             }
                         }

@@ -96,6 +96,7 @@ pub enum AutoforwardDequeuePointState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AutoforwardDequeuePointEvent {
     DoneInvoke,
+    ErrorCommunication,
     ErrorExecution,
     First,
     Mark,
@@ -541,6 +542,7 @@ impl StatePolicy for AutoforwardDequeuePointPolicy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             AutoforwardDequeuePointEvent::DoneInvoke => "done.invoke",
+            AutoforwardDequeuePointEvent::ErrorCommunication => "error.communication",
             AutoforwardDequeuePointEvent::ErrorExecution => "error.execution",
             AutoforwardDequeuePointEvent::First => "first",
             AutoforwardDequeuePointEvent::Mark => "mark",
@@ -555,6 +557,7 @@ impl StatePolicy for AutoforwardDequeuePointPolicy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "done.invoke" => Some(AutoforwardDequeuePointEvent::DoneInvoke),
+            "error.communication" => Some(AutoforwardDequeuePointEvent::ErrorCommunication),
             "error.execution" => Some(AutoforwardDequeuePointEvent::ErrorExecution),
             "first" => Some(AutoforwardDequeuePointEvent::First),
             "mark" => Some(AutoforwardDequeuePointEvent::Mark),
@@ -841,6 +844,12 @@ impl StatePolicy for AutoforwardDequeuePointPolicy {
                                 // W3C SCXML 6.4: Send to child invoke 'inv_probe' via #_inv_probe
                                 if let Some(ref mut child) = self.child_inv_probe {
                                     child.raise_external_by_name("mark", &event_data);
+                                } else {
+                                    // W3C SCXML C.1: the invocation is not running, so the session the
+                                    // target names is not there to reach.
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AutoforwardDequeuePointEvent::ErrorCommunication, "<send target='#_inv_probe'> names an invocation that is not running");
+                                    engine.raise(err_meta);
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

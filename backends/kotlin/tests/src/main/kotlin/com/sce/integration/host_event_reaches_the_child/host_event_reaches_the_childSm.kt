@@ -28,6 +28,7 @@ sealed interface HostEventReachesTheChildEvent : Event {
         data object Invoke : Done
     }
     sealed interface Error : HostEventReachesTheChildEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     data object HostPing : HostEventReachesTheChildEvent
@@ -169,6 +170,7 @@ class HostEventReachesTheChildStateMachine(
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): HostEventReachesTheChildEvent? = when (name) {
         "done.invoke" -> HostEventReachesTheChildEvent.Done.Invoke
+        "error.communication" -> HostEventReachesTheChildEvent.Error.Communication
         "error.execution" -> HostEventReachesTheChildEvent.Error.Execution
         "hostPing" -> HostEventReachesTheChildEvent.HostPing
         "marker" -> HostEventReachesTheChildEvent.Marker
@@ -181,6 +183,7 @@ class HostEventReachesTheChildStateMachine(
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: HostEventReachesTheChildEvent): String? = when (event) {
         is HostEventReachesTheChildEvent.Done.Invoke -> "done.invoke"
+        is HostEventReachesTheChildEvent.Error.Communication -> "error.communication"
         is HostEventReachesTheChildEvent.Error.Execution -> "error.execution"
         is HostEventReachesTheChildEvent.HostPing -> "hostPing"
         is HostEventReachesTheChildEvent.Marker -> "marker"
@@ -294,8 +297,13 @@ class HostEventReachesTheChildStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test192): Send event to invoked child
-            sendToChild("inv_probe", "marker", sendData)
+            // W3C SCXML 6.4 (test192): Send event to invoked child. The build
+            // refused a target naming no invocation above; one that is not
+            // running is not there to reach (W3C SCXML C.1).
+            if (!sendToChild("inv_probe", "marker", sendData)) {
+                raisePlatformError(HostEventReachesTheChildEvent.Error.Communication, "<send target='#_inv_probe'> names an invocation that is not running", "__send_0")
+                return@send true
+            }
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

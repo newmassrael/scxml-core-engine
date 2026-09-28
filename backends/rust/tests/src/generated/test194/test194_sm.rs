@@ -364,8 +364,6 @@ impl StatePolicy for Test194Policy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        let event_data: &str = "";
-
                         // W3C SCXML 6.2: Invalid target "!invalid" raises error.execution
                         {
                             // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
@@ -373,8 +371,6 @@ impl StatePolicy for Test194Policy {
                             engine.raise(err_meta);
                         }
                         break 'action_block;
-
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 

@@ -149,20 +149,23 @@ type InvokePrecedesExternalDequeueEvent int
 
 const (
 	InvokePrecedesExternalDequeueEventDoneInvoke InvokePrecedesExternalDequeueEvent = 0
-	InvokePrecedesExternalDequeueEventErrorExecution InvokePrecedesExternalDequeueEvent = 1
-	InvokePrecedesExternalDequeueEventKick InvokePrecedesExternalDequeueEvent = 2
-	InvokePrecedesExternalDequeueEventProbe InvokePrecedesExternalDequeueEvent = 3
-	InvokePrecedesExternalDequeueEventReady InvokePrecedesExternalDequeueEvent = 4
-	InvokePrecedesExternalDequeueEventSawKick InvokePrecedesExternalDequeueEvent = 5
-	InvokePrecedesExternalDequeueEventSawNoKick InvokePrecedesExternalDequeueEvent = 6
+	InvokePrecedesExternalDequeueEventErrorCommunication InvokePrecedesExternalDequeueEvent = 1
+	InvokePrecedesExternalDequeueEventErrorExecution InvokePrecedesExternalDequeueEvent = 2
+	InvokePrecedesExternalDequeueEventKick InvokePrecedesExternalDequeueEvent = 3
+	InvokePrecedesExternalDequeueEventProbe InvokePrecedesExternalDequeueEvent = 4
+	InvokePrecedesExternalDequeueEventReady InvokePrecedesExternalDequeueEvent = 5
+	InvokePrecedesExternalDequeueEventSawKick InvokePrecedesExternalDequeueEvent = 6
+	InvokePrecedesExternalDequeueEventSawNoKick InvokePrecedesExternalDequeueEvent = 7
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	InvokePrecedesExternalDequeueEventNull InvokePrecedesExternalDequeueEvent = 7
+	InvokePrecedesExternalDequeueEventNull InvokePrecedesExternalDequeueEvent = 8
 )
 
 func (e InvokePrecedesExternalDequeueEvent) String() string {
 	switch e {
 	case InvokePrecedesExternalDequeueEventDoneInvoke:
 		return "done.invoke"
+	case InvokePrecedesExternalDequeueEventErrorCommunication:
+		return "error.communication"
 	case InvokePrecedesExternalDequeueEventErrorExecution:
 		return "error.execution"
 	case InvokePrecedesExternalDequeueEventKick:
@@ -464,6 +467,8 @@ func (p *InvokePrecedesExternalDequeuePolicy) GetEventFromName(name string) (Inv
 	switch name {
 	case "done.invoke":
 		return InvokePrecedesExternalDequeueEventDoneInvoke, true
+	case "error.communication":
+		return InvokePrecedesExternalDequeueEventErrorCommunication, true
 	case "error.execution":
 		return InvokePrecedesExternalDequeueEventErrorExecution, true
 	case "kick":
@@ -728,9 +733,17 @@ func (p *InvokePrecedesExternalDequeuePolicy) ExecuteTransitionContent(source In
 	{
 		eventDataStr := ""
 		_ = eventDataStr
-	// W3C SCXML 6.4: Send to invoked child "inv_watch"
+	// W3C SCXML 6.4: Send to invoked child "inv_watch". The build
+	// refused a target naming no invocation above, so one matches here.
 	if p.childInvWatch != nil {
 		p.childInvWatch.RaiseExternalByName("probe", eventDataStr)
+	} else {
+		// W3C SCXML C.1: the invocation is not running, so the session the
+		// target names is not there to reach.
+		errEvt := sce.NewPlatformError(InvokePrecedesExternalDequeueEventErrorCommunication, "<send target='#_inv_watch'> names an invocation that is not running")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return
 	}
 	}
 	}

@@ -29,6 +29,7 @@ sealed interface DonedataLateCompletionEvent : Event {
         }
     }
     sealed interface Error : DonedataLateCompletionEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     data object Finish : DonedataLateCompletionEvent
@@ -138,6 +139,7 @@ class DonedataLateCompletionStateMachine(
     override fun resolveEventByName(name: String): DonedataLateCompletionEvent? = when (name) {
         "done.invoke" -> DonedataLateCompletionEvent.Done.Invoke.Self
         "done.invoke.inv_late" -> DonedataLateCompletionEvent.Done.Invoke.InvLate
+        "error.communication" -> DonedataLateCompletionEvent.Error.Communication
         "error.execution" -> DonedataLateCompletionEvent.Error.Execution
         "finish" -> DonedataLateCompletionEvent.Finish
         "ready" -> DonedataLateCompletionEvent.Ready
@@ -148,6 +150,7 @@ class DonedataLateCompletionStateMachine(
     override fun eventNameOf(event: DonedataLateCompletionEvent): String? = when (event) {
         is DonedataLateCompletionEvent.Done.Invoke.Self -> "done.invoke"
         is DonedataLateCompletionEvent.Done.Invoke.InvLate -> "done.invoke.inv_late"
+        is DonedataLateCompletionEvent.Error.Communication -> "error.communication"
         is DonedataLateCompletionEvent.Error.Execution -> "error.execution"
         is DonedataLateCompletionEvent.Finish -> "finish"
         is DonedataLateCompletionEvent.Ready -> "ready"
@@ -445,8 +448,13 @@ class DonedataLateCompletionStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test192): Send event to invoked child
-            sendToChild("inv_late", "finish", sendData)
+            // W3C SCXML 6.4 (test192): Send event to invoked child. The build
+            // refused a target naming no invocation above; one that is not
+            // running is not there to reach (W3C SCXML C.1).
+            if (!sendToChild("inv_late", "finish", sendData)) {
+                raisePlatformError(DonedataLateCompletionEvent.Error.Communication, "<send target='#_inv_late'> names an invocation that is not running", "__send_0")
+                return@send true
+            }
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

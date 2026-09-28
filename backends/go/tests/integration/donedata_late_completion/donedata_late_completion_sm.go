@@ -151,11 +151,12 @@ type DonedataLateCompletionEvent int
 const (
 	DonedataLateCompletionEventDoneInvoke DonedataLateCompletionEvent = 0
 	DonedataLateCompletionEventDoneInvokeInvLate DonedataLateCompletionEvent = 1
-	DonedataLateCompletionEventErrorExecution DonedataLateCompletionEvent = 2
-	DonedataLateCompletionEventFinish DonedataLateCompletionEvent = 3
-	DonedataLateCompletionEventReady DonedataLateCompletionEvent = 4
+	DonedataLateCompletionEventErrorCommunication DonedataLateCompletionEvent = 2
+	DonedataLateCompletionEventErrorExecution DonedataLateCompletionEvent = 3
+	DonedataLateCompletionEventFinish DonedataLateCompletionEvent = 4
+	DonedataLateCompletionEventReady DonedataLateCompletionEvent = 5
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	DonedataLateCompletionEventNull DonedataLateCompletionEvent = 5
+	DonedataLateCompletionEventNull DonedataLateCompletionEvent = 6
 )
 
 func (e DonedataLateCompletionEvent) String() string {
@@ -164,6 +165,8 @@ func (e DonedataLateCompletionEvent) String() string {
 		return "done.invoke"
 	case DonedataLateCompletionEventDoneInvokeInvLate:
 		return "done.invoke.inv_late"
+	case DonedataLateCompletionEventErrorCommunication:
+		return "error.communication"
 	case DonedataLateCompletionEventErrorExecution:
 		return "error.execution"
 	case DonedataLateCompletionEventFinish:
@@ -620,6 +623,8 @@ func (p *DonedataLateCompletionPolicy) GetEventFromName(name string) (DonedataLa
 		return DonedataLateCompletionEventDoneInvoke, true
 	case "done.invoke.inv_late":
 		return DonedataLateCompletionEventDoneInvokeInvLate, true
+	case "error.communication":
+		return DonedataLateCompletionEventErrorCommunication, true
 	case "error.execution":
 		return DonedataLateCompletionEventErrorExecution, true
 	case "finish":
@@ -883,9 +888,17 @@ func (p *DonedataLateCompletionPolicy) ExecuteTransitionContent(source DonedataL
 	{
 		eventDataStr := ""
 		_ = eventDataStr
-	// W3C SCXML 6.4: Send to invoked child "inv_late"
+	// W3C SCXML 6.4: Send to invoked child "inv_late". The build
+	// refused a target naming no invocation above, so one matches here.
 	if p.childInvLate != nil {
 		p.childInvLate.RaiseExternalByName("finish", eventDataStr)
+	} else {
+		// W3C SCXML C.1: the invocation is not running, so the session the
+		// target names is not there to reach.
+		errEvt := sce.NewPlatformError(DonedataLateCompletionEventErrorCommunication, "<send target='#_inv_late'> names an invocation that is not running")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return
 	}
 	}
 	}

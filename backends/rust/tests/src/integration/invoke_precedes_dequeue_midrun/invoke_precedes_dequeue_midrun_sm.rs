@@ -97,6 +97,7 @@ pub enum InvokePrecedesDequeueMidrunState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InvokePrecedesDequeueMidrunEvent {
     DoneInvoke,
+    ErrorCommunication,
     ErrorExecution,
     Go,
     Kick,
@@ -544,6 +545,7 @@ impl StatePolicy for InvokePrecedesDequeueMidrunPolicy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             InvokePrecedesDequeueMidrunEvent::DoneInvoke => "done.invoke",
+            InvokePrecedesDequeueMidrunEvent::ErrorCommunication => "error.communication",
             InvokePrecedesDequeueMidrunEvent::ErrorExecution => "error.execution",
             InvokePrecedesDequeueMidrunEvent::Go => "go",
             InvokePrecedesDequeueMidrunEvent::Kick => "kick",
@@ -558,6 +560,7 @@ impl StatePolicy for InvokePrecedesDequeueMidrunPolicy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "done.invoke" => Some(InvokePrecedesDequeueMidrunEvent::DoneInvoke),
+            "error.communication" => Some(InvokePrecedesDequeueMidrunEvent::ErrorCommunication),
             "error.execution" => Some(InvokePrecedesDequeueMidrunEvent::ErrorExecution),
             "go" => Some(InvokePrecedesDequeueMidrunEvent::Go),
             "kick" => Some(InvokePrecedesDequeueMidrunEvent::Kick),
@@ -865,6 +868,12 @@ impl StatePolicy for InvokePrecedesDequeueMidrunPolicy {
                                 // W3C SCXML 6.4: Send to child invoke 'inv_watch' via #_inv_watch
                                 if let Some(ref mut child) = self.child_inv_watch {
                                     child.raise_external_by_name("probe", &event_data);
+                                } else {
+                                    // W3C SCXML C.1: the invocation is not running, so the session the
+                                    // target names is not there to reach.
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(InvokePrecedesDequeueMidrunEvent::ErrorCommunication, "<send target='#_inv_watch'> names an invocation that is not running");
+                                    engine.raise(err_meta);
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

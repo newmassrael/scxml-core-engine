@@ -29,6 +29,7 @@ sealed interface Test192Event : Event {
         data object Invoke : Done
     }
     sealed interface Error : Test192Event {
+        data object Communication : Error
         data object Execution : Error
     }
     data object EventReceived : Test192Event
@@ -169,6 +170,7 @@ class Test192StateMachine(
     override fun resolveEventByName(name: String): Test192Event? = when (name) {
         "childToParent" -> Test192Event.ChildToParent
         "done.invoke" -> Test192Event.Done.Invoke
+        "error.communication" -> Test192Event.Error.Communication
         "error.execution" -> Test192Event.Error.Execution
         "eventReceived" -> Test192Event.EventReceived
         "parentToChild" -> Test192Event.ParentToChild
@@ -180,6 +182,7 @@ class Test192StateMachine(
     override fun eventNameOf(event: Test192Event): String? = when (event) {
         is Test192Event.ChildToParent -> "childToParent"
         is Test192Event.Done.Invoke -> "done.invoke"
+        is Test192Event.Error.Communication -> "error.communication"
         is Test192Event.Error.Execution -> "error.execution"
         is Test192Event.EventReceived -> "eventReceived"
         is Test192Event.ParentToChild -> "parentToChild"
@@ -306,8 +309,13 @@ class Test192StateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test192): Send event to invoked child
-            sendToChild("invokedChild", "parentToChild", sendData)
+            // W3C SCXML 6.4 (test192): Send event to invoked child. The build
+            // refused a target naming no invocation above; one that is not
+            // running is not there to reach (W3C SCXML C.1).
+            if (!sendToChild("invokedChild", "parentToChild", sendData)) {
+                raisePlatformError(Test192Event.Error.Communication, "<send target='#_invokedChild'> names an invocation that is not running", "__send_1")
+                return@send true
+            }
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

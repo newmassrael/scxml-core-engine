@@ -27,6 +27,7 @@ sealed interface InvokePrecedesDequeueMidrunEvent : Event {
         data object Invoke : Done
     }
     sealed interface Error : InvokePrecedesDequeueMidrunEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     data object Go : InvokePrecedesDequeueMidrunEvent
@@ -144,6 +145,7 @@ class InvokePrecedesDequeueMidrunStateMachine(
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokePrecedesDequeueMidrunEvent? = when (name) {
         "done.invoke" -> InvokePrecedesDequeueMidrunEvent.Done.Invoke
+        "error.communication" -> InvokePrecedesDequeueMidrunEvent.Error.Communication
         "error.execution" -> InvokePrecedesDequeueMidrunEvent.Error.Execution
         "go" -> InvokePrecedesDequeueMidrunEvent.Go
         "kick" -> InvokePrecedesDequeueMidrunEvent.Kick
@@ -157,6 +159,7 @@ class InvokePrecedesDequeueMidrunStateMachine(
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokePrecedesDequeueMidrunEvent): String? = when (event) {
         is InvokePrecedesDequeueMidrunEvent.Done.Invoke -> "done.invoke"
+        is InvokePrecedesDequeueMidrunEvent.Error.Communication -> "error.communication"
         is InvokePrecedesDequeueMidrunEvent.Error.Execution -> "error.execution"
         is InvokePrecedesDequeueMidrunEvent.Go -> "go"
         is InvokePrecedesDequeueMidrunEvent.Kick -> "kick"
@@ -293,8 +296,13 @@ class InvokePrecedesDequeueMidrunStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test192): Send event to invoked child
-            sendToChild("inv_watch", "probe", sendData)
+            // W3C SCXML 6.4 (test192): Send event to invoked child. The build
+            // refused a target naming no invocation above; one that is not
+            // running is not there to reach (W3C SCXML C.1).
+            if (!sendToChild("inv_watch", "probe", sendData)) {
+                raisePlatformError(InvokePrecedesDequeueMidrunEvent.Error.Communication, "<send target='#_inv_watch'> names an invocation that is not running", "__send_1")
+                return@send true
+            }
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

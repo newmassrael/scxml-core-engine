@@ -391,8 +391,6 @@ impl StatePolicy for Test577Policy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
 
-                        let event_data: &str = "";
-
                         // W3C SCXML C.2: BasicHTTP without target raises error.communication
                         {
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
@@ -402,8 +400,6 @@ impl StatePolicy for Test577Policy {
                             engine.raise(err_meta);
                         }
                         break 'action_block;
-
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
                         let _ = send_id; // suppress unused warning when no send operation
                     }
                 }

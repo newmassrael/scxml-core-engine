@@ -147,11 +147,9 @@ class Test199StateMachine(
 
 
             if (run send@{
-            val sendData = ""
             // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
             raisePlatformError(Test199Event.Error.Execution, "<send type='unsupported_type'> names a processor this platform does not support", "__send_0")
-            return@send true  // W3C SCXML 5.10: discarded; the block stops below
-            false
+            true  // W3C SCXML 5.10: discarded; the block stops below
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.

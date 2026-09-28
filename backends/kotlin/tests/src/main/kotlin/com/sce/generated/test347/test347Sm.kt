@@ -30,6 +30,7 @@ sealed interface Test347Event : Event {
     }
     sealed interface Error : Test347Event {
         data object Self : Error
+        data object Communication : Error
         data object Execution : Error
     }
     data object ParentToChild : Test347Event
@@ -170,6 +171,7 @@ class Test347StateMachine(
         "childToParent" -> Test347Event.ChildToParent
         "done.invoke" -> Test347Event.Done.Invoke
         "error" -> Test347Event.Error.Self
+        "error.communication" -> Test347Event.Error.Communication
         "error.execution" -> Test347Event.Error.Execution
         "parentToChild" -> Test347Event.ParentToChild
         "timeout" -> Test347Event.Timeout
@@ -181,6 +183,7 @@ class Test347StateMachine(
         is Test347Event.ChildToParent -> "childToParent"
         is Test347Event.Done.Invoke -> "done.invoke"
         is Test347Event.Error.Self -> "error"
+        is Test347Event.Error.Communication -> "error.communication"
         is Test347Event.Error.Execution -> "error.execution"
         is Test347Event.ParentToChild -> "parentToChild"
         is Test347Event.Timeout -> "timeout"
@@ -209,7 +212,7 @@ class Test347StateMachine(
         }
         is Test347State.S02 -> when {
             event is Test347Event.Done.Invoke -> transitionS02At0
-            (event is Test347Event.Error || event is Test347Event.Error.Execution) -> transitionS02At1
+            (event is Test347Event.Error || event is Test347Event.Error.Communication || event is Test347Event.Error.Execution) -> transitionS02At1
             else -> null
         }
         else -> null
@@ -270,8 +273,13 @@ class Test347StateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test192): Send event to invoked child
-            sendToChild("child", "parentToChild", sendData)
+            // W3C SCXML 6.4 (test192): Send event to invoked child. The build
+            // refused a target naming no invocation above; one that is not
+            // running is not there to reach (W3C SCXML C.1).
+            if (!sendToChild("child", "parentToChild", sendData)) {
+                raisePlatformError(Test347Event.Error.Communication, "<send target='#_child'> names an invocation that is not running", "__send_1")
+                return@send true
+            }
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

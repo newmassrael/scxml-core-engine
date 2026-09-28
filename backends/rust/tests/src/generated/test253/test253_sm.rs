@@ -100,6 +100,7 @@ pub enum Test253State {
 pub enum Test253Event {
     ChildRunning,
     DoneInvoke,
+    ErrorCommunication,
     ErrorExecution,
     Fail,
     Failure,
@@ -737,6 +738,7 @@ impl StatePolicy for Test253Policy {
         match event {
             Test253Event::ChildRunning => "childRunning",
             Test253Event::DoneInvoke => "done.invoke",
+            Test253Event::ErrorCommunication => "error.communication",
             Test253Event::ErrorExecution => "error.execution",
             Test253Event::Fail => "fail",
             Test253Event::Failure => "failure",
@@ -751,6 +753,7 @@ impl StatePolicy for Test253Policy {
         match name {
             "childRunning" => Some(Test253Event::ChildRunning),
             "done.invoke" => Some(Test253Event::DoneInvoke),
+            "error.communication" => Some(Test253Event::ErrorCommunication),
             "error.execution" => Some(Test253Event::ErrorExecution),
             "fail" => Some(Test253Event::Fail),
             "failure" => Some(Test253Event::Failure),
@@ -1162,6 +1165,13 @@ impl StatePolicy for Test253Policy {
                                 // W3C SCXML 6.4: Send to child invoke 'foo' via #_foo
                                 if let Some(ref mut child) = self.child_foo {
                                     child.raise_external_by_name("parentToChild", &event_data);
+                                } else {
+                                    // W3C SCXML C.1: the invocation is not running, so the session the
+                                    // target names is not there to reach.
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test253Event::ErrorCommunication, "<send target='#_foo'> names an invocation that is not running");
+                                    err_meta.metadata.send_id = send_id.clone();
+                                    engine.raise(err_meta);
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1182,6 +1192,13 @@ impl StatePolicy for Test253Policy {
                                 // W3C SCXML 6.4: Send to child invoke 'foo' via #_foo
                                 if let Some(ref mut child) = self.child_foo {
                                     child.raise_external_by_name("parentToChild", &event_data);
+                                } else {
+                                    // W3C SCXML C.1: the invocation is not running, so the session the
+                                    // target names is not there to reach.
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test253Event::ErrorCommunication, "<send target='#_foo'> names an invocation that is not running");
+                                    err_meta.metadata.send_id = send_id.clone();
+                                    engine.raise(err_meta);
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

@@ -166,20 +166,23 @@ type HostEventReachesTheChildEvent int
 
 const (
 	HostEventReachesTheChildEventDoneInvoke HostEventReachesTheChildEvent = 0
-	HostEventReachesTheChildEventErrorExecution HostEventReachesTheChildEvent = 1
-	HostEventReachesTheChildEventHostPing HostEventReachesTheChildEvent = 2
-	HostEventReachesTheChildEventMarker HostEventReachesTheChildEvent = 3
-	HostEventReachesTheChildEventReady HostEventReachesTheChildEvent = 4
-	HostEventReachesTheChildEventSawHostPing HostEventReachesTheChildEvent = 5
-	HostEventReachesTheChildEventSawMarkerOnly HostEventReachesTheChildEvent = 6
+	HostEventReachesTheChildEventErrorCommunication HostEventReachesTheChildEvent = 1
+	HostEventReachesTheChildEventErrorExecution HostEventReachesTheChildEvent = 2
+	HostEventReachesTheChildEventHostPing HostEventReachesTheChildEvent = 3
+	HostEventReachesTheChildEventMarker HostEventReachesTheChildEvent = 4
+	HostEventReachesTheChildEventReady HostEventReachesTheChildEvent = 5
+	HostEventReachesTheChildEventSawHostPing HostEventReachesTheChildEvent = 6
+	HostEventReachesTheChildEventSawMarkerOnly HostEventReachesTheChildEvent = 7
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	HostEventReachesTheChildEventNull HostEventReachesTheChildEvent = 7
+	HostEventReachesTheChildEventNull HostEventReachesTheChildEvent = 8
 )
 
 func (e HostEventReachesTheChildEvent) String() string {
 	switch e {
 	case HostEventReachesTheChildEventDoneInvoke:
 		return "done.invoke"
+	case HostEventReachesTheChildEventErrorCommunication:
+		return "error.communication"
 	case HostEventReachesTheChildEventErrorExecution:
 		return "error.execution"
 	case HostEventReachesTheChildEventHostPing:
@@ -489,6 +492,8 @@ func (p *HostEventReachesTheChildPolicy) GetEventFromName(name string) (HostEven
 	switch name {
 	case "done.invoke":
 		return HostEventReachesTheChildEventDoneInvoke, true
+	case "error.communication":
+		return HostEventReachesTheChildEventErrorCommunication, true
 	case "error.execution":
 		return HostEventReachesTheChildEventErrorExecution, true
 	case "hostPing":
@@ -737,9 +742,17 @@ func (p *HostEventReachesTheChildPolicy) ExecuteTransitionContent(source HostEve
 	{
 		eventDataStr := ""
 		_ = eventDataStr
-	// W3C SCXML 6.4: Send to invoked child "inv_probe"
+	// W3C SCXML 6.4: Send to invoked child "inv_probe". The build
+	// refused a target naming no invocation above, so one matches here.
 	if p.childInvProbe != nil {
 		p.childInvProbe.RaiseExternalByName("marker", eventDataStr)
+	} else {
+		// W3C SCXML C.1: the invocation is not running, so the session the
+		// target names is not there to reach.
+		errEvt := sce.NewPlatformError(HostEventReachesTheChildEventErrorCommunication, "<send target='#_inv_probe'> names an invocation that is not running")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return
 	}
 	}
 	}

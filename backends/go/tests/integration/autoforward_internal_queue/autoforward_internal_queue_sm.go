@@ -706,9 +706,6 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionContent(source Autofor
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
-	{
-		eventDataStr := ""
-		_ = eventDataStr
 	// W3C SCXML 6.2: Unsupported send type "urn:x-sce-unsupported-processor" raises error.execution
 	{
 		errEvt := sce.NewPlatformError(AutoforwardInternalQueueEventErrorExecution, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support")
@@ -716,7 +713,6 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionContent(source Autofor
 		engine.Raise(errEvt)
 	}
 	return  // W3C SCXML 4.9: the error ends the block
-	}
 	}
 			}()
 		case 1:

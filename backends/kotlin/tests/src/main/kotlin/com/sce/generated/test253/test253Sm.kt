@@ -30,6 +30,7 @@ sealed interface Test253Event : Event {
         data object Invoke : Done
     }
     sealed interface Error : Test253Event {
+        data object Communication : Error
         data object Execution : Error
     }
     data object Fail : Test253Event
@@ -210,6 +211,7 @@ class Test253StateMachine(
     override fun resolveEventByName(name: String): Test253Event? = when (name) {
         "childRunning" -> Test253Event.ChildRunning
         "done.invoke" -> Test253Event.Done.Invoke
+        "error.communication" -> Test253Event.Error.Communication
         "error.execution" -> Test253Event.Error.Execution
         "fail" -> Test253Event.Fail
         "failure" -> Test253Event.Failure
@@ -223,6 +225,7 @@ class Test253StateMachine(
     override fun eventNameOf(event: Test253Event): String? = when (event) {
         is Test253Event.ChildRunning -> "childRunning"
         is Test253Event.Done.Invoke -> "done.invoke"
+        is Test253Event.Error.Communication -> "error.communication"
         is Test253Event.Error.Execution -> "error.execution"
         is Test253Event.Fail -> "fail"
         is Test253Event.Failure -> "failure"
@@ -584,8 +587,13 @@ class Test253StateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test192): Send event to invoked child
-            sendToChild("foo", "parentToChild", sendData)
+            // W3C SCXML 6.4 (test192): Send event to invoked child. The build
+            // refused a target naming no invocation above; one that is not
+            // running is not there to reach (W3C SCXML C.1).
+            if (!sendToChild("foo", "parentToChild", sendData)) {
+                raisePlatformError(Test253Event.Error.Communication, "<send target='#_foo'> names an invocation that is not running", "__send_1")
+                return@send true
+            }
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -599,8 +607,13 @@ class Test253StateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test192): Send event to invoked child
-            sendToChild("foo", "parentToChild", sendData)
+            // W3C SCXML 6.4 (test192): Send event to invoked child. The build
+            // refused a target naming no invocation above; one that is not
+            // running is not there to reach (W3C SCXML C.1).
+            if (!sendToChild("foo", "parentToChild", sendData)) {
+                raisePlatformError(Test253Event.Error.Communication, "<send target='#_foo'> names an invocation that is not running", "__send_2")
+                return@send true
+            }
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

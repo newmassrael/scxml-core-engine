@@ -99,6 +99,7 @@ pub enum Test192State {
 pub enum Test192Event {
     ChildToParent,
     DoneInvoke,
+    ErrorCommunication,
     ErrorExecution,
     EventReceived,
     ParentToChild,
@@ -520,6 +521,7 @@ impl StatePolicy for Test192Policy {
         match event {
             Test192Event::ChildToParent => "childToParent",
             Test192Event::DoneInvoke => "done.invoke",
+            Test192Event::ErrorCommunication => "error.communication",
             Test192Event::ErrorExecution => "error.execution",
             Test192Event::EventReceived => "eventReceived",
             Test192Event::ParentToChild => "parentToChild",
@@ -532,6 +534,7 @@ impl StatePolicy for Test192Policy {
         match name {
             "childToParent" => Some(Test192Event::ChildToParent),
             "done.invoke" => Some(Test192Event::DoneInvoke),
+            "error.communication" => Some(Test192Event::ErrorCommunication),
             "error.execution" => Some(Test192Event::ErrorExecution),
             "eventReceived" => Some(Test192Event::EventReceived),
             "parentToChild" => Some(Test192Event::ParentToChild),
@@ -794,6 +797,12 @@ impl StatePolicy for Test192Policy {
                                 // W3C SCXML 6.4: Send to child invoke 'invokedChild' via #_invokedChild
                                 if let Some(ref mut child) = self.child_invokedChild {
                                     child.raise_external_by_name("parentToChild", &event_data);
+                                } else {
+                                    // W3C SCXML C.1: the invocation is not running, so the session the
+                                    // target names is not there to reach.
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test192Event::ErrorCommunication, "<send target='#_invokedChild'> names an invocation that is not running");
+                                    engine.raise(err_meta);
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

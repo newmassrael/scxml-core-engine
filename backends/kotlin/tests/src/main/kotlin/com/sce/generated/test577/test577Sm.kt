@@ -160,12 +160,9 @@ class Test577StateMachine(
 
 
             if (run send@{
-            val sendData = ""
-            val sendWireParams = emptyMap<String, List<String>>()
             // W3C SCXML C.2 (test577): BasicHTTP requires target, missing raises error.communication
             raisePlatformError(Test577Event.Error.Communication, "<send> over BasicHTTPEventProcessor has no target to post to", "__send_1")
-            return@send true  // W3C SCXML 5.10: discarded; the block stops below
-            false
+            true  // W3C SCXML 5.10: discarded; the block stops below
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.

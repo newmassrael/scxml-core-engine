@@ -96,6 +96,7 @@ pub enum InvokePrecedesExternalDequeueState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InvokePrecedesExternalDequeueEvent {
     DoneInvoke,
+    ErrorCommunication,
     ErrorExecution,
     Kick,
     Probe,
@@ -540,6 +541,7 @@ impl StatePolicy for InvokePrecedesExternalDequeuePolicy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             InvokePrecedesExternalDequeueEvent::DoneInvoke => "done.invoke",
+            InvokePrecedesExternalDequeueEvent::ErrorCommunication => "error.communication",
             InvokePrecedesExternalDequeueEvent::ErrorExecution => "error.execution",
             InvokePrecedesExternalDequeueEvent::Kick => "kick",
             InvokePrecedesExternalDequeueEvent::Probe => "probe",
@@ -553,6 +555,7 @@ impl StatePolicy for InvokePrecedesExternalDequeuePolicy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "done.invoke" => Some(InvokePrecedesExternalDequeueEvent::DoneInvoke),
+            "error.communication" => Some(InvokePrecedesExternalDequeueEvent::ErrorCommunication),
             "error.execution" => Some(InvokePrecedesExternalDequeueEvent::ErrorExecution),
             "kick" => Some(InvokePrecedesExternalDequeueEvent::Kick),
             "probe" => Some(InvokePrecedesExternalDequeueEvent::Probe),
@@ -810,6 +813,12 @@ impl StatePolicy for InvokePrecedesExternalDequeuePolicy {
                                 // W3C SCXML 6.4: Send to child invoke 'inv_watch' via #_inv_watch
                                 if let Some(ref mut child) = self.child_inv_watch {
                                     child.raise_external_by_name("probe", &event_data);
+                                } else {
+                                    // W3C SCXML C.1: the invocation is not running, so the session the
+                                    // target names is not there to reach.
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(InvokePrecedesExternalDequeueEvent::ErrorCommunication, "<send target='#_inv_watch'> names an invocation that is not running");
+                                    engine.raise(err_meta);
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

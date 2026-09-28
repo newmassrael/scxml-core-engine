@@ -97,6 +97,7 @@ pub enum DonedataLateCompletionState {
 pub enum DonedataLateCompletionEvent {
     DoneInvoke,
     DoneInvokeInvLate,
+    ErrorCommunication,
     ErrorExecution,
     Finish,
     Ready,
@@ -709,6 +710,7 @@ impl StatePolicy for DonedataLateCompletionPolicy {
         match event {
             DonedataLateCompletionEvent::DoneInvoke => "done.invoke",
             DonedataLateCompletionEvent::DoneInvokeInvLate => "done.invoke.inv_late",
+            DonedataLateCompletionEvent::ErrorCommunication => "error.communication",
             DonedataLateCompletionEvent::ErrorExecution => "error.execution",
             DonedataLateCompletionEvent::Finish => "finish",
             DonedataLateCompletionEvent::Ready => "ready",
@@ -720,6 +722,7 @@ impl StatePolicy for DonedataLateCompletionPolicy {
         match name {
             "done.invoke" => Some(DonedataLateCompletionEvent::DoneInvoke),
             "done.invoke.inv_late" => Some(DonedataLateCompletionEvent::DoneInvokeInvLate),
+            "error.communication" => Some(DonedataLateCompletionEvent::ErrorCommunication),
             "error.execution" => Some(DonedataLateCompletionEvent::ErrorExecution),
             "finish" => Some(DonedataLateCompletionEvent::Finish),
             "ready" => Some(DonedataLateCompletionEvent::Ready),
@@ -1019,6 +1022,13 @@ impl StatePolicy for DonedataLateCompletionPolicy {
                                 // W3C SCXML 6.4: Send to child invoke 'inv_late' via #_inv_late
                                 if let Some(ref mut child) = self.child_inv_late {
                                     child.raise_external_by_name("finish", &event_data);
+                                } else {
+                                    // W3C SCXML C.1: the invocation is not running, so the session the
+                                    // target names is not there to reach.
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(DonedataLateCompletionEvent::ErrorCommunication, "<send target='#_inv_late'> names an invocation that is not running");
+                                    err_meta.metadata.send_id = send_id.clone();
+                                    engine.raise(err_meta);
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

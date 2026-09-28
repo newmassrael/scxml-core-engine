@@ -98,6 +98,7 @@ pub enum HostEventReachesTheChildState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HostEventReachesTheChildEvent {
     DoneInvoke,
+    ErrorCommunication,
     ErrorExecution,
     HostPing,
     Marker,
@@ -554,6 +555,7 @@ impl StatePolicy for HostEventReachesTheChildPolicy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             HostEventReachesTheChildEvent::DoneInvoke => "done.invoke",
+            HostEventReachesTheChildEvent::ErrorCommunication => "error.communication",
             HostEventReachesTheChildEvent::ErrorExecution => "error.execution",
             HostEventReachesTheChildEvent::HostPing => "hostPing",
             HostEventReachesTheChildEvent::Marker => "marker",
@@ -567,6 +569,7 @@ impl StatePolicy for HostEventReachesTheChildPolicy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "done.invoke" => Some(HostEventReachesTheChildEvent::DoneInvoke),
+            "error.communication" => Some(HostEventReachesTheChildEvent::ErrorCommunication),
             "error.execution" => Some(HostEventReachesTheChildEvent::ErrorExecution),
             "hostPing" => Some(HostEventReachesTheChildEvent::HostPing),
             "marker" => Some(HostEventReachesTheChildEvent::Marker),
@@ -808,6 +811,12 @@ impl StatePolicy for HostEventReachesTheChildPolicy {
                                 // W3C SCXML 6.4: Send to child invoke 'inv_probe' via #_inv_probe
                                 if let Some(ref mut child) = self.child_inv_probe {
                                     child.raise_external_by_name("marker", &event_data);
+                                } else {
+                                    // W3C SCXML C.1: the invocation is not running, so the session the
+                                    // target names is not there to reach.
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(HostEventReachesTheChildEvent::ErrorCommunication, "<send target='#_inv_probe'> names an invocation that is not running");
+                                    engine.raise(err_meta);
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

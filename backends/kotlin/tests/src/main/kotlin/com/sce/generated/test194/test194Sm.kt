@@ -147,11 +147,9 @@ class Test194StateMachine(
 
 
             if (run send@{
-            val sendData = ""
             // W3C SCXML 6.2 (test194): Invalid target raises error.execution
             raisePlatformError(Test194Event.Error.Execution, "<send target='!invalid'> is not a target this processor can address", "__send_0")
-            return@send true  // W3C SCXML 5.10: discarded; the block stops below
-            false
+            true  // W3C SCXML 5.10: discarded; the block stops below
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.

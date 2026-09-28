@@ -785,6 +785,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
+
 	}
 	}
 

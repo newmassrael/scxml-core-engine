@@ -149,21 +149,24 @@ type AutoforwardDequeuePointEvent int
 
 const (
 	AutoforwardDequeuePointEventDoneInvoke AutoforwardDequeuePointEvent = 0
-	AutoforwardDequeuePointEventErrorExecution AutoforwardDequeuePointEvent = 1
-	AutoforwardDequeuePointEventFirst AutoforwardDequeuePointEvent = 2
-	AutoforwardDequeuePointEventMark AutoforwardDequeuePointEvent = 3
-	AutoforwardDequeuePointEventReady AutoforwardDequeuePointEvent = 4
-	AutoforwardDequeuePointEventSawMarkFirst AutoforwardDequeuePointEvent = 5
-	AutoforwardDequeuePointEventSawSecondEarly AutoforwardDequeuePointEvent = 6
-	AutoforwardDequeuePointEventSecond AutoforwardDequeuePointEvent = 7
+	AutoforwardDequeuePointEventErrorCommunication AutoforwardDequeuePointEvent = 1
+	AutoforwardDequeuePointEventErrorExecution AutoforwardDequeuePointEvent = 2
+	AutoforwardDequeuePointEventFirst AutoforwardDequeuePointEvent = 3
+	AutoforwardDequeuePointEventMark AutoforwardDequeuePointEvent = 4
+	AutoforwardDequeuePointEventReady AutoforwardDequeuePointEvent = 5
+	AutoforwardDequeuePointEventSawMarkFirst AutoforwardDequeuePointEvent = 6
+	AutoforwardDequeuePointEventSawSecondEarly AutoforwardDequeuePointEvent = 7
+	AutoforwardDequeuePointEventSecond AutoforwardDequeuePointEvent = 8
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	AutoforwardDequeuePointEventNull AutoforwardDequeuePointEvent = 8
+	AutoforwardDequeuePointEventNull AutoforwardDequeuePointEvent = 9
 )
 
 func (e AutoforwardDequeuePointEvent) String() string {
 	switch e {
 	case AutoforwardDequeuePointEventDoneInvoke:
 		return "done.invoke"
+	case AutoforwardDequeuePointEventErrorCommunication:
+		return "error.communication"
 	case AutoforwardDequeuePointEventErrorExecution:
 		return "error.execution"
 	case AutoforwardDequeuePointEventFirst:
@@ -467,6 +470,8 @@ func (p *AutoforwardDequeuePointPolicy) GetEventFromName(name string) (Autoforwa
 	switch name {
 	case "done.invoke":
 		return AutoforwardDequeuePointEventDoneInvoke, true
+	case "error.communication":
+		return AutoforwardDequeuePointEventErrorCommunication, true
 	case "error.execution":
 		return AutoforwardDequeuePointEventErrorExecution, true
 	case "first":
@@ -749,9 +754,17 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteTransitionContent(source Autoforw
 	{
 		eventDataStr := ""
 		_ = eventDataStr
-	// W3C SCXML 6.4: Send to invoked child "inv_probe"
+	// W3C SCXML 6.4: Send to invoked child "inv_probe". The build
+	// refused a target naming no invocation above, so one matches here.
 	if p.childInvProbe != nil {
 		p.childInvProbe.RaiseExternalByName("mark", eventDataStr)
+	} else {
+		// W3C SCXML C.1: the invocation is not running, so the session the
+		// target names is not there to reach.
+		errEvt := sce.NewPlatformError(AutoforwardDequeuePointEventErrorCommunication, "<send target='#_inv_probe'> names an invocation that is not running")
+		errEvt.Metadata.SendID = "__send_2"
+		engine.Raise(errEvt)
+		return
 	}
 	}
 	}

@@ -100,6 +100,7 @@ pub enum Test347Event {
     ChildToParent,
     DoneInvoke,
     Error,
+    ErrorCommunication,
     ErrorExecution,
     ParentToChild,
     Timeout,
@@ -523,6 +524,7 @@ impl StatePolicy for Test347Policy {
             Test347Event::ChildToParent => "childToParent",
             Test347Event::DoneInvoke => "done.invoke",
             Test347Event::Error => "error",
+            Test347Event::ErrorCommunication => "error.communication",
             Test347Event::ErrorExecution => "error.execution",
             Test347Event::ParentToChild => "parentToChild",
             Test347Event::Timeout => "timeout",
@@ -535,6 +537,7 @@ impl StatePolicy for Test347Policy {
             "childToParent" => Some(Test347Event::ChildToParent),
             "done.invoke" => Some(Test347Event::DoneInvoke),
             "error" => Some(Test347Event::Error),
+            "error.communication" => Some(Test347Event::ErrorCommunication),
             "error.execution" => Some(Test347Event::ErrorExecution),
             "parentToChild" => Some(Test347Event::ParentToChild),
             "timeout" => Some(Test347Event::Timeout),
@@ -655,6 +658,15 @@ impl StatePolicy for Test347Policy {
                         // W3C SCXML 6.4: Send to child invoke 'child' via #_child
                         if let Some(ref mut child) = self.child_child {
                             child.raise_external_by_name("parentToChild", &event_data);
+                        } else {
+                            // W3C SCXML C.1: the invocation is not running, so the session the
+                            // target names is not there to reach.
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                Test347Event::ErrorCommunication,
+                                "<send target='#_child'> names an invocation that is not running",
+                            );
+                            engine.raise(err_meta);
+                            break 'action_block;
                         }
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -773,7 +785,10 @@ impl StatePolicy for Test347Policy {
                         });
                     }
                 }
-                if event == Test347Event::Error || event == Test347Event::ErrorExecution {
+                if event == Test347Event::Error
+                    || event == Test347Event::ErrorCommunication
+                    || event == Test347Event::ErrorExecution
+                {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,

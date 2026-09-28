@@ -158,21 +158,24 @@ type InvokePrecedesDequeueMidrunEvent int
 
 const (
 	InvokePrecedesDequeueMidrunEventDoneInvoke InvokePrecedesDequeueMidrunEvent = 0
-	InvokePrecedesDequeueMidrunEventErrorExecution InvokePrecedesDequeueMidrunEvent = 1
-	InvokePrecedesDequeueMidrunEventGo InvokePrecedesDequeueMidrunEvent = 2
-	InvokePrecedesDequeueMidrunEventKick InvokePrecedesDequeueMidrunEvent = 3
-	InvokePrecedesDequeueMidrunEventProbe InvokePrecedesDequeueMidrunEvent = 4
-	InvokePrecedesDequeueMidrunEventReady InvokePrecedesDequeueMidrunEvent = 5
-	InvokePrecedesDequeueMidrunEventSawKick InvokePrecedesDequeueMidrunEvent = 6
-	InvokePrecedesDequeueMidrunEventSawNoKick InvokePrecedesDequeueMidrunEvent = 7
+	InvokePrecedesDequeueMidrunEventErrorCommunication InvokePrecedesDequeueMidrunEvent = 1
+	InvokePrecedesDequeueMidrunEventErrorExecution InvokePrecedesDequeueMidrunEvent = 2
+	InvokePrecedesDequeueMidrunEventGo InvokePrecedesDequeueMidrunEvent = 3
+	InvokePrecedesDequeueMidrunEventKick InvokePrecedesDequeueMidrunEvent = 4
+	InvokePrecedesDequeueMidrunEventProbe InvokePrecedesDequeueMidrunEvent = 5
+	InvokePrecedesDequeueMidrunEventReady InvokePrecedesDequeueMidrunEvent = 6
+	InvokePrecedesDequeueMidrunEventSawKick InvokePrecedesDequeueMidrunEvent = 7
+	InvokePrecedesDequeueMidrunEventSawNoKick InvokePrecedesDequeueMidrunEvent = 8
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	InvokePrecedesDequeueMidrunEventNull InvokePrecedesDequeueMidrunEvent = 8
+	InvokePrecedesDequeueMidrunEventNull InvokePrecedesDequeueMidrunEvent = 9
 )
 
 func (e InvokePrecedesDequeueMidrunEvent) String() string {
 	switch e {
 	case InvokePrecedesDequeueMidrunEventDoneInvoke:
 		return "done.invoke"
+	case InvokePrecedesDequeueMidrunEventErrorCommunication:
+		return "error.communication"
 	case InvokePrecedesDequeueMidrunEventErrorExecution:
 		return "error.execution"
 	case InvokePrecedesDequeueMidrunEventGo:
@@ -478,6 +481,8 @@ func (p *InvokePrecedesDequeueMidrunPolicy) GetEventFromName(name string) (Invok
 	switch name {
 	case "done.invoke":
 		return InvokePrecedesDequeueMidrunEventDoneInvoke, true
+	case "error.communication":
+		return InvokePrecedesDequeueMidrunEventErrorCommunication, true
 	case "error.execution":
 		return InvokePrecedesDequeueMidrunEventErrorExecution, true
 	case "go":
@@ -777,9 +782,17 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteTransitionContent(source Invo
 	{
 		eventDataStr := ""
 		_ = eventDataStr
-	// W3C SCXML 6.4: Send to invoked child "inv_watch"
+	// W3C SCXML 6.4: Send to invoked child "inv_watch". The build
+	// refused a target naming no invocation above, so one matches here.
 	if p.childInvWatch != nil {
 		p.childInvWatch.RaiseExternalByName("probe", eventDataStr)
+	} else {
+		// W3C SCXML C.1: the invocation is not running, so the session the
+		// target names is not there to reach.
+		errEvt := sce.NewPlatformError(InvokePrecedesDequeueMidrunEventErrorCommunication, "<send target='#_inv_watch'> names an invocation that is not running")
+		errEvt.Metadata.SendID = "__send_1"
+		engine.Raise(errEvt)
+		return
 	}
 	}
 	}

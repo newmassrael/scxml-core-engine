@@ -26,6 +26,7 @@ sealed interface AutoforwardDequeuePointEvent : Event {
         data object Invoke : Done
     }
     sealed interface Error : AutoforwardDequeuePointEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     data object First : AutoforwardDequeuePointEvent
@@ -131,6 +132,7 @@ class AutoforwardDequeuePointStateMachine(
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AutoforwardDequeuePointEvent? = when (name) {
         "done.invoke" -> AutoforwardDequeuePointEvent.Done.Invoke
+        "error.communication" -> AutoforwardDequeuePointEvent.Error.Communication
         "error.execution" -> AutoforwardDequeuePointEvent.Error.Execution
         "first" -> AutoforwardDequeuePointEvent.First
         "mark" -> AutoforwardDequeuePointEvent.Mark
@@ -144,6 +146,7 @@ class AutoforwardDequeuePointStateMachine(
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AutoforwardDequeuePointEvent): String? = when (event) {
         is AutoforwardDequeuePointEvent.Done.Invoke -> "done.invoke"
+        is AutoforwardDequeuePointEvent.Error.Communication -> "error.communication"
         is AutoforwardDequeuePointEvent.Error.Execution -> "error.execution"
         is AutoforwardDequeuePointEvent.First -> "first"
         is AutoforwardDequeuePointEvent.Mark -> "mark"
@@ -267,8 +270,13 @@ class AutoforwardDequeuePointStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test192): Send event to invoked child
-            sendToChild("inv_probe", "mark", sendData)
+            // W3C SCXML 6.4 (test192): Send event to invoked child. The build
+            // refused a target naming no invocation above; one that is not
+            // running is not there to reach (W3C SCXML C.1).
+            if (!sendToChild("inv_probe", "mark", sendData)) {
+                raisePlatformError(AutoforwardDequeuePointEvent.Error.Communication, "<send target='#_inv_probe'> names an invocation that is not running", "__send_2")
+                return@send true
+            }
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

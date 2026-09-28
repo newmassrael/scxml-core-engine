@@ -1,53 +1,39 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c004aa6d76072d31e9273eed0dc88dc847e351ce7e35f90cc9d56908f01328bd
+// source-hash: ae446b53b64317c75fdba49276558fc5f0277a910a2be095ed0ddb59d9b43e5f
 
 // GENERATED CODE — DO NOT EDIT
-// Source: resources/376/test376.scxml
+// Source: integration_resources/a_send_reaches_only_what_its_target_names/a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test376.scxml:6 :: _machine
+// SCE-MAP: a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:3 :: _machine
 
-package com.sce.generated.test376
+package com.sce.integration.a_send_reaches_only_what_its_target_names
 
 import com.sce.runtime.*
 
 
 // --- States (W3C SCXML 3.2) ---
 
-sealed interface Test376State : State {
-    data object Fail : Test376State
-    data object Pass : Test376State
-    data object S0 : Test376State
+sealed interface ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState : State {
+    data object Wait : ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState
 }
 
 // --- Events (W3C SCXML 3.12.1) ---
 
-sealed interface Test376Event : Event {
-    sealed interface Error : Test376Event {
+sealed interface ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent : Event {
+    sealed interface Error : ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent {
         data object Execution : Error
     }
-    data object Event1 : Test376Event
+    data object Hello : ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent
+    data object Ping : ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent
+    data object Pong : ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent
 }
 // --- State Machine (W3C SCXML) ---
 
-class Test376StateMachine(
+class ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateMachine(
     scriptEngine: ScxmlScriptEngine,
-) : StateMachineEngine<Test376State, Test376Event>(scriptEngine) {
+) : StateMachineEngine<ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState, ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent>(scriptEngine) {
 
-    // ── §scxml-5.3: read the datamodel this machine is holding ──────────
-
-    /**
-     * §scxml-5.3: what the `Var1` datamodel variable is holding now.
-     *
-     * The live value, not the authored one: `<assign>` writes into the
-     * session, so a reader frozen at generation time would answer the
-     * document's literal for the whole run. `null` means the machine cannot
-     * answer — no script engine is set, the session is not initialised yet,
-     * `Var1` was assigned a value of another type, or the engine refused.
-     */
-    fun Var1(): Long? =
-        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "Var1")
-
-    override val initialState: Test376State = Test376State.S0
+    override val initialState: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState = ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState.Wait
 
     // W3C SCXML 6.2: which entry point a host must drive this machine with in
     // the synchronous mode. The same verdict the generate manifest publishes
@@ -67,73 +53,56 @@ class Test376StateMachine(
     // object below, because the structure is a fact about the document and
     // not about a run.
 
-    // W3C SCXML 3.7: Check if state is a <final> element
-    override fun isFinalState(state: Test376State): Boolean = when (state) {
-        is Test376State.Fail, is Test376State.Pass -> true
-        else -> false
-    }
-
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
-    override val documentInitialTargets: List<EntryTarget<Test376State, HistoryId>>
+    override val documentInitialTargets: List<EntryTarget<ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState, HistoryId>>
         get() = documentInitialTargetList
 
     private companion object {
-        val documentInitialTargetList: List<EntryTarget<Test376State, HistoryId>> =
-            listOf(StateTarget(Test376State.S0))
+        val documentInitialTargetList: List<EntryTarget<ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState, HistoryId>> =
+            listOf(StateTarget(ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState.Wait))
 
-        // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
-        val transitionS0At0 = EnabledTransition<Test376State, HistoryId>(
-            Test376State.S0,
-            listOf(StateTarget(Test376State.Pass)),
+        // W3C SCXML 3.13: wait's transition 0, as the microstep reads it.
+        val transitionWaitAt0 = EnabledTransition<ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState, HistoryId>(
+            ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState.Wait,
+            emptyList(),
             0,
-            hasActions = false,
-            isInternal = false,
-        )
-
-        // W3C SCXML 3.13: s0's transition 1, as the microstep reads it.
-        val transitionS0At1 = EnabledTransition<Test376State, HistoryId>(
-            Test376State.S0,
-            listOf(StateTarget(Test376State.Fail)),
-            1,
-            hasActions = false,
+            hasActions = true,
             isInternal = false,
         )
     }
 
     // W3C SCXML: Resolve state ID string to State object
-    override fun resolveState(stateId: String): Test376State? = when (stateId) {
-        "fail" -> Test376State.Fail
-        "pass" -> Test376State.Pass
-        "s0" -> Test376State.S0
+    override fun resolveState(stateId: String): ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState? = when (stateId) {
+        "wait" -> ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState.Wait
         else -> null
     }
 
     // W3C SCXML: Get state ID string from State object
-    override fun stateIdOf(state: Test376State): String = when (state) {
-        is Test376State.Fail -> "fail"
-        is Test376State.Pass -> "pass"
-        is Test376State.S0 -> "s0"
+    override fun stateIdOf(state: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState): String = when (state) {
+        is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState.Wait -> "wait"
     }
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
-    override fun documentOrderOf(state: Test376State): Int = when (state) {
-        is Test376State.Fail -> 2
-        is Test376State.Pass -> 1
-        is Test376State.S0 -> 0
+    override fun documentOrderOf(state: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState): Int = when (state) {
+        is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState.Wait -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
-    override fun resolveEventByName(name: String): Test376Event? = when (name) {
-        "error.execution" -> Test376Event.Error.Execution
-        "event1" -> Test376Event.Event1
+    override fun resolveEventByName(name: String): ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent? = when (name) {
+        "error.execution" -> ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution
+        "hello" -> ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Hello
+        "ping" -> ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Ping
+        "pong" -> ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Pong
         else -> null
     }
 
     // W3C SCXML 6.4: Resolve Event object to event name string
-    override fun eventNameOf(event: Test376Event): String? = when (event) {
-        is Test376Event.Error.Execution -> "error.execution"
-        is Test376Event.Event1 -> "event1"
+    override fun eventNameOf(event: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent): String? = when (event) {
+        is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution -> "error.execution"
+        is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Hello -> "hello"
+        is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Ping -> "ping"
+        is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Pong -> "pong"
     }
 
 
@@ -160,17 +129,10 @@ class Test376StateMachine(
         // entry names and the same addresses whichever one runs it.
         engine.setupSystemVariables(
             sid,
-            "test376",
+            "a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid",
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.3: Initialize variable 'Var1' with expr
-        try {
-            val initResult_Var1 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
-            engine.setVariable(sid, "Var1", initResult_Var1)
-        } catch (e: Exception) {
-            raisePlatformError(Test376Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
-        }
 
 
 
@@ -205,7 +167,7 @@ class Test376StateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(Test376Event.Error.Execution, "a <transition> cond failed to evaluate")
+            raisePlatformError(ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -246,7 +208,7 @@ class Test376StateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(Test376Event.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -267,7 +229,7 @@ class Test376StateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test376Event.Error.Execution, "<assign> failed")
+            raisePlatformError(ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, "<assign> failed")
             false
         }
     }
@@ -283,13 +245,13 @@ class Test376StateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test376Event.Error.Execution, "<script> failed to execute")
+            raisePlatformError(ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, "<script> failed to execute")
             false
         }
     }
 
     // W3C SCXML 5.10: Set _event before event processing
-    private fun setCurrentEventInScriptEngine(event: Test376Event) {
+    private fun setCurrentEventInScriptEngine(event: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -348,7 +310,7 @@ class Test376StateMachine(
     // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
     // read — once, before the first guard runs, and not for an eventless
     // selection, which has no event of its own.
-    override fun bindCurrentEvent(event: Test376Event) {
+    override fun bindCurrentEvent(event: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent) {
         setCurrentEventInScriptEngine(event)
     }
 
@@ -358,82 +320,90 @@ class Test376StateMachine(
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
     override fun firstEnabledTransition(
-        state: Test376State,
-        event: Test376Event?
-    ): EnabledTransition<Test376State, HistoryId>? = when (state) {
-        is Test376State.S0 -> when {
-            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 2)", "Var1 == 2")) -> transitionS0At0
-            event == null -> transitionS0At1
+        state: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState,
+        event: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent?
+    ): EnabledTransition<ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState, HistoryId>? = when (state) {
+        is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState.Wait -> when {
+            event is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Ping && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == 7)", "_event.data === 7")) -> transitionWaitAt0
             else -> null
         }
-        else -> null
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test376.scxml:6 :: _machine
-    override fun onEntry(state: Test376State, isDefaultEntry: Boolean) {
+    // SCE-MAP: a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:3 :: _machine
+    override fun onEntry(state: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState, isDefaultEntry: Boolean) {
         when (state) {
-            is Test376State.Fail -> {
-                // SCE-MAP: test376.scxml:25 :: fail :: _state_body
-                // W3C SCXML 3.7: Top-level final state reached
-                markFinalStateReached()
-            }
-            is Test376State.Pass -> {
-                // SCE-MAP: test376.scxml:24 :: pass :: _state_body
-                // W3C SCXML 3.7: Top-level final state reached
-                markFinalStateReached()
-            }
-            is Test376State.S0 -> {
-                // SCE-MAP: test376.scxml:11 :: s0 :: _state_body
-                // W3C SCXML 3.8: Onentry block 1/2
+            is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState.Wait -> {
+                // SCE-MAP: a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:5 :: wait :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
 
             if (run send@{
-            // W3C SCXML 6.2 (test194): Invalid target raises error.execution
-            raisePlatformError(Test376Event.Error.Execution, "<send target='!invalid'> is not a target this processor can address", "__send_0")
-            true  // W3C SCXML 5.10: discarded; the block stops below
+            val sendData = ""
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
+            onSendToParent?.invoke("hello", sendData)
+            false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
-                // W3C SCXML 3.8: Onentry block 2/2
-                run {
-
-
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
-                return@run
-            }
-                }
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test376.scxml:6 :: _machine
-    override fun onExit(state: Test376State) {
+    // SCE-MAP: a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:3 :: _machine
+    override fun onExit(state: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState) {
         when (state) {
-            is Test376State.Fail -> {
-                // SCE-MAP: test376.scxml:25 :: fail :: _state_body
-            }
-            is Test376State.Pass -> {
-                // SCE-MAP: test376.scxml:24 :: pass :: _state_body
-            }
-            is Test376State.S0 -> {
-                // SCE-MAP: test376.scxml:11 :: s0 :: _state_body
+            is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState.Wait -> {
+                // SCE-MAP: a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:5 :: wait :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: test376.scxml:6 :: _machine
-    override fun executeTransitionContent(source: Test376State, transitionIndex: Int) {
+    // SCE-MAP: a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:3 :: _machine
+    override fun executeTransitionContent(source: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState, transitionIndex: Int) {
         when (source) {
-        else -> {}
+        is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState.Wait -> when (transitionIndex) {
+            0 -> {
+                // SCE-MAP: a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:9 :: wait :: _transition_0
+
+
+            if (run send@{
+            var paramFailed = false
+            // W3C SCXML 5.6.2: the value of <content expr> is the event's data.
+            // "If the evaluation of 'expr' produces an error, the Processor MUST
+            // place error.execution in the internal event queue and use the
+            // empty string as the value of the <content> element": the message
+            // still goes, carrying "", and — like a failing <param> — the error
+            // ends the block once it has (§scxml-4.9).
+            ensureScriptEngine()
+            val sendData = try {
+                val sendContentValue = (scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)"))
+                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), com.sce.runtime.ScriptSource.lua("_scxml_add(_event.data, 1)", "_event.data + 1"))
+                if (sendContentValue != null) valueToJson(sendContentValue) else ""
+            } catch (_: Exception) {
+                raisePlatformError(ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_0")
+                paramFailed = true
+                valueToJson("")
+            }
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
+            onSendToParent?.invoke("pong", sendData)
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+            else -> {}
+        }
         }
     }
 }
