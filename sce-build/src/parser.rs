@@ -1483,7 +1483,7 @@ pub(crate) fn collect_sce_provenance(
 
     for child in node.children().filter(|c| c.is_element()) {
         if child.tag_name().namespace() != Some(SCE_NAMESPACE)
-            || child.tag_name().name() != "provenance"
+            || child.tag_name().name() != PROVENANCE_ELEMENT
         {
             continue;
         }
@@ -1616,6 +1616,30 @@ fn stamped_action(
         unresolved: action.unresolved,
     } = read_traceability(node, || format!("<{tag}>"), source_name)?;
     Ok(action)
+}
+
+/// The element form of `sce:provenance`: `<sce:provenance doc-id …/>`.
+const PROVENANCE_ELEMENT: &str = "provenance";
+
+/// Whether `node` is the element form of a §2.10 annotation —
+/// `<sce:provenance>` or one of the marker kinds' `<sce:unresolved>` /
+/// `<sce:assumed>` — and so says something ABOUT its parent rather than
+/// being part of it.
+///
+/// ⚠ A reader that takes an element's children as content has to ask
+/// this. `<data>` does (§scxml-5.4: element children are an in-line
+/// value), and before this existed an annotation written in element form
+/// inside a `<data>` would have been serialised into the variable's
+/// initial value.
+fn is_annotation_element(node: &roxmltree::Node) -> bool {
+    use crate::forge::model::SCE_NAMESPACE;
+    node.is_element() && node.tag_name().namespace() == Some(SCE_NAMESPACE) && {
+        let name = node.tag_name().name();
+        name == PROVENANCE_ELEMENT
+            || crate::provenance::MarkerKind::ALL
+                .iter()
+                .any(|kind| kind.attr() == name)
+    }
 }
 
 /// The three `docs/SCE_ACCEPTED_SUBSET.md` §2.10 families one annotatable
@@ -2686,6 +2710,14 @@ impl SCXMLParser {
                 .and_then(|text| crate::forge::model::Direction::from_attr(text.trim()))
                 .unwrap_or(crate::forge::model::Direction::Internal)
         });
+        // §2.10 annotations, read by the reader every other annotatable
+        // node uses. A variable's initial value is where a guessed
+        // threshold lives, and a marker written there used to be dropped.
+        let Traceability {
+            req,
+            provenance,
+            unresolved,
+        } = read_traceability(data, || format!("<data id=\"{id}\">"), source_name)?;
         // `needs_script_engine` is derived post-parse by
         // [`crate::script_engine_analyzer`] —
         // [`NeedsScriptEngineCause::DatamodelVariableInit`].
@@ -2705,6 +2737,9 @@ impl SCXMLParser {
             // The analyzer names readers, once it knows which variables
             // have one (`reader_names::assign`).
             reader: None,
+            req,
+            provenance,
+            unresolved,
         }))
     }
 
@@ -6411,10 +6446,15 @@ fn inline_data_value(node: &roxmltree::Node) -> String {
     // §scxml-5.4: children are an in-line specification of the same legal
     // data value (§scxml-5.9.3) the element's value-expression attribute
     // would carry, so element children serialise and everything else is
-    // the text.
-    if node.children().any(|c| c.is_element()) {
+    // the text. A §2.10 annotation in element form is about the `<data>`,
+    // not part of its value, and is read by `read_traceability` instead.
+    let value_elements = || {
+        node.children()
+            .filter(|c| c.is_element() && !is_annotation_element(c))
+    };
+    if value_elements().next().is_some() {
         let mut xml = String::new();
-        for child in node.children().filter(|c| c.is_element()) {
+        for child in value_elements() {
             xml.push_str(&serialize_node_c14n(&child));
         }
         xml

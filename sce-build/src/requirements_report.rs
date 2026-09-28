@@ -179,6 +179,19 @@ pub(crate) enum NodeSubject<'a> {
         index: usize,
         action: &'a crate::model::Action,
     },
+    /// A `<data>` — §scxml-5.2. `state` is the state whose `<datamodel>`
+    /// declares it, and `None` for the document's own `<datamodel>`,
+    /// which belongs to no state for the reason a top-level `<script>`
+    /// does not.
+    ///
+    /// ⚠ Absent until 2026-09-28, with the parser dropping the annotation
+    /// too — both halves of the defect `GlobalScript` had (S2). A guessed
+    /// threshold is a variable's initial value, so the node an author most
+    /// often marks was the one no reading could see.
+    Variable {
+        state: Option<&'a crate::model::State>,
+        variable: &'a crate::model::Variable,
+    },
 }
 
 impl<'a> NodeSubject<'a> {
@@ -195,7 +208,31 @@ impl<'a> NodeSubject<'a> {
             NodeSubject::Action { action, .. } => &action.unresolved,
             NodeSubject::Invoke { base, .. } => &base.unresolved,
             NodeSubject::GlobalScript { action, .. } => &action.unresolved,
+            NodeSubject::Variable { variable, .. } => &variable.unresolved,
         }
+    }
+}
+
+/// One row per `<data>` in a `<datamodel>`, in document order.
+fn push_variables<'a>(
+    out: &mut Vec<AnnotatedNode<'a>>,
+    state: Option<&'a crate::model::State>,
+    prefix: &str,
+    variables: &'a [crate::model::Variable],
+) {
+    for (index, variable) in variables.iter().enumerate() {
+        out.push(AnnotatedNode {
+            record: RequirementRecord {
+                node_path: format!("{prefix}[{index}]"),
+                node_type: "data",
+                action_type: None,
+                requirement_ids: refs_of(&variable.req),
+                spec_provenance: &variable.provenance,
+                location: variable.source_location.as_ref(),
+            },
+            unresolved: !variable.unresolved.is_empty(),
+            subject: NodeSubject::Variable { state, variable },
+        });
     }
 }
 
@@ -287,6 +324,9 @@ pub(crate) fn annotated_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
 /// own round rather than being folded into this one.
 pub(crate) fn walk_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
     let mut out = Vec::new();
+    // §scxml-5.2.2: the document's `<datamodel>` is initialised before
+    // anything runs, so its variables lead the walk.
+    push_variables(&mut out, None, "variables", &model.variables);
     // §scxml-5.8: a top-level `<script>` is executable content the
     // document runs before any state is entered, so it leads the walk.
     //
@@ -323,6 +363,14 @@ pub(crate) fn walk_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
             unresolved: !state.unresolved.is_empty(),
             subject: NodeSubject::State(state),
         });
+        // A state's own `<datamodel>`, right after the state that
+        // declares it.
+        push_variables(
+            &mut out,
+            Some(state),
+            &format!("states.{}.datamodel", state.id),
+            &state.datamodel,
+        );
         for (i, transition) in state.transitions.iter().enumerate() {
             out.push(AnnotatedNode {
                 record: RequirementRecord {

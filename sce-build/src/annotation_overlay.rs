@@ -182,6 +182,9 @@ fn coordinates(subject: &NodeSubject<'_>) -> (Option<String>, Option<usize>) {
         ),
         // A top-level <script> sits in no state.
         NodeSubject::GlobalScript { .. } => (None, None),
+        // A <data> belongs to the state whose <datamodel> declares it,
+        // and to no state at the document's top level.
+        NodeSubject::Variable { state, .. } => (state.map(|s| s.id.clone()), None),
     }
 }
 

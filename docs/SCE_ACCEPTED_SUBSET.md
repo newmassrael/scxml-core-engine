@@ -1762,10 +1762,24 @@ NL→IR Mapping Roadmap Items 1, 5, and 6 add three metadata
 attribute families that any IR generator (NL→IR pipeline,
 hand-authored DSL, ARXML transcoder) may attach to `<state>`,
 `<parallel>`, `<final>`, `<transition>`, `<onentry>`, `<onexit>`,
-the executable-content actions inside those blocks, and
-`<invoke>`. The annotations are pure metadata — emitted code is
+the executable-content actions inside those blocks, `<invoke>`, and
+a statechart's `<data>` — in the document's `<datamodel>` and in a
+state's. The annotations are pure metadata — emitted code is
 byte-identical to the unannotated form, byte-stable goldens stay
 unchanged.
+
+⚠ **`<data>` joined the list on 2026-09-28, and it is where a guess
+most often sits**: a threshold a specification names without a number
+is a variable's initial value. Before then the grammar accepted the
+attributes there and the parser dropped them, so `sce-codegen
+unresolved` listed every other marker in a document and not these
+(measured: two of seven markers one document wrote). A marker written
+in element form inside a `<data>` is read as an annotation and is not
+part of the variable's in-line value (§scxml-5.4). What `<data>` does
+not yet have is the generated-source comment the other sites carry
+(see below): its annotations reach `requirements`, `unresolved`, the
+transition table, the manifest comparison and `--strict-unresolved`,
+and no backend echoes them next to the variable's declaration.
 
 **`sce:req`** — whitespace-separated requirement IDs.
 
@@ -1951,7 +1965,7 @@ carrying no position. The bare spelling `#4.4.2:118` is also
 still read as a page: it predates the closed set, and removing it
 would not fail an unmigrated document but silently re-read the
 number as part of a longer division id. Both forms attach to every element `sce:req` does
-(`<state>`, `<final>`, `<parallel>`, `<transition>`, `<onentry>`,
+(`<state>`, `<final>`, `<parallel>`, `<transition>`, `<data>`, `<onentry>`,
 `<onexit>`, executable content, `<invoke>`), compose additively
 in document order, and inherit from `<onentry>` / `<onexit>` onto
 every action in the block exactly as `sce:req` does — matched on

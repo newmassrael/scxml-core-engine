@@ -230,6 +230,27 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     action: what_the_action_does(action),
                     node_path,
                 },
+                // §scxml-5.2: a `<data>` is not event-driven either, so it
+                // takes a pseudo-event for the reason `(global script)`
+                // does. `from` is where it is declared, and the action
+                // cell is the value it starts from — the thing a
+                // requirement on it is usually about.
+                NodeSubject::Variable {
+                    state, variable, ..
+                } => TransitionRow {
+                    source,
+                    from: state.map_or_else(|| "<scxml>".to_string(), |s| s.id.clone()),
+                    event: "(data)".to_string(),
+                    guard: EMPTY_CELL.to_string(),
+                    after: EMPTY_CELL.to_string(),
+                    to: EMPTY_CELL.to_string(),
+                    action: if variable.expr.is_empty() {
+                        or_dash(&variable.id)
+                    } else {
+                        format!("{} = {}", variable.id, variable.expr)
+                    },
+                    node_path,
+                },
             }
         })
         .collect()

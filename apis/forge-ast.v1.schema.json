@@ -6150,6 +6150,13 @@
         "id": {
           "type": "string"
         },
+        "provenance": {
+          "description": "`sce:provenance` spec-document anchors attached to this `<data>`.",
+          "items": {
+            "$ref": "#/definitions/SpecProvenance"
+          },
+          "type": "array"
+        },
         "reader": {
           "anyOf": [
             {
@@ -6165,6 +6172,13 @@
           "description": "A `record:<alias>` variable's initial value: one `<sce:set name expr>` per field of the schema, built whole the way an algorithm's record local is (SCE_FORGE.md §4.12). Empty for any other variable.",
           "items": {
             "$ref": "#/definitions/RecordFieldInit"
+          },
+          "type": "array"
+        },
+        "req": {
+          "description": "`sce:req` requirement IDs attached to this `<data>` — a value the document decides, which a requirement can be the reason for as much as a transition can. See [`Transition::req`] for the wire-format contract.",
+          "items": {
+            "type": "string"
           },
           "type": "array"
         },
@@ -6185,6 +6199,13 @@
         "type": {
           "description": "Classified type: int, string, bool, runtime",
           "type": "string"
+        },
+        "unresolved": {
+          "description": "`sce:unresolved` / `sce:assumed` markers attached to this `<data>`.\n\n⚠ The place an author most often records a guess: a threshold the specification names without a number is a variable's initial value. Until this field existed the marker was accepted by the grammar and dropped by the parser, so `sce-codegen unresolved` listed every other guess in the document and not this one (measured 2026-09-28: two of seven markers one document wrote).",
+          "items": {
+            "$ref": "#/definitions/UnresolvedMarker"
+          },
+          "type": "array"
         },
         "value_type": {
           "anyOf": [

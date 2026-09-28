@@ -116,6 +116,15 @@ fn element_label(subject: &NodeSubject<'_>) -> String {
         NodeSubject::GlobalScript { index, .. } => {
             format!("<script #{index} at the top level of <scxml>>")
         }
+        NodeSubject::Variable {
+            state, variable, ..
+        } => match state {
+            Some(state) => format!(
+                "<data id=\"{}\"> in <state id=\"{}\">",
+                variable.id, state.id
+            ),
+            None => format!("<data id=\"{}\"> at the top level of <scxml>", variable.id),
+        },
     }
 }
 

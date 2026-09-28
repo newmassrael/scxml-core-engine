@@ -956,6 +956,25 @@ pub struct Variable {
     /// this and from nothing else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reader: Option<crate::reader_names::ReaderNames>,
+    /// `sce:req` requirement IDs attached to this `<data>` — a value the
+    /// document decides, which a requirement can be the reason for as
+    /// much as a transition can. See [`Transition::req`] for the
+    /// wire-format contract.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub req: Vec<RequirementId>,
+    /// `sce:provenance` spec-document anchors attached to this `<data>`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provenance: Vec<SpecProvenance>,
+    /// `sce:unresolved` / `sce:assumed` markers attached to this `<data>`.
+    ///
+    /// ⚠ The place an author most often records a guess: a threshold the
+    /// specification names without a number is a variable's initial
+    /// value. Until this field existed the marker was accepted by the
+    /// grammar and dropped by the parser, so `sce-codegen unresolved`
+    /// listed every other guess in the document and not this one
+    /// (measured 2026-09-28: two of seven markers one document wrote).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unresolved: Vec<UnresolvedMarker>,
 }
 
 /// §scxml-3.11: History state information

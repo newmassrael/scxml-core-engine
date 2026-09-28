@@ -2604,6 +2604,11 @@ fn parse_variable(
         direction: None,
         // Named by the analyzer, which a rendering has not been through.
         reader: None,
+        // The statechart page does not write a variable's annotations
+        // yet, so there is nothing on it to read back.
+        req: Vec::new(),
+        provenance: Vec::new(),
+        unresolved: Vec::new(),
     };
     for kid in kids {
         let (name, expr) = kid.text.split_once(" = ").ok_or_else(|| ParseError {

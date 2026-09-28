@@ -64,7 +64,7 @@ const DOC: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0" name="reach" initial="armed" datamodel="ecmascript">
   <datamodel>
     <data id="items" expr="[1, 2]"/>
-    <data id="n" expr="0"/>
+    <data id="n" expr="0" sce:req="R_DATA" sce:unresolved="U_DATA"/>
   </datamodel>
   <script sce:req="R_GLOBAL_SCRIPT" sce:unresolved="U_GLOBAL_SCRIPT">var boot = 1;</script>
   <state id="armed" sce:req="R_STATE" sce:unresolved="U_STATE">
@@ -92,6 +92,9 @@ const DOC: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
       </transition>
     </initial>
     <state id="inner">
+      <datamodel>
+        <data id="limit" expr="15" sce:req="R_STATE_DATA" sce:unresolved="U_STATE_DATA"/>
+      </datamodel>
       <transition event="leave" target="h"/>
     </state>
     <state id="deep">
@@ -201,7 +204,7 @@ fn assert_the_model_holds_what_the_document_writes(attribute: &str, held: &BTree
 /// ⚠ The gate is asked about every marker the model holds, one at a time.
 #[test]
 fn every_unresolved_marker_the_model_holds_reaches_the_report_and_the_gate() {
-    const FLOOR: usize = 10;
+    const FLOOR: usize = 12;
 
     let model = parse(DOC, "reach");
     let (unresolved, _) = held(&model);
@@ -258,7 +261,7 @@ fn every_unresolved_marker_the_model_holds_reaches_the_report_and_the_gate() {
 /// the shared walk: the report, the transition table and the verdict.
 #[test]
 fn every_requirement_the_model_holds_reaches_the_report_the_table_and_the_verdict() {
-    const FLOOR: usize = 11;
+    const FLOOR: usize = 13;
 
     let model = parse(DOC, "reach");
     let (_, req) = held(&model);

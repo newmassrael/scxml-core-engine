@@ -5602,6 +5602,14 @@
           "file": "sce/src/parsing/DataModelParser.cpp",
           "symbol": "SCE::DataModelParser::parseDataModelNode",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/requirements_report.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/transition_table.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -5700,6 +5708,10 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
           "symbol": "loadDataFromSrc",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/requirements_report.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
