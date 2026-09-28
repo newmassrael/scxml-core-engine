@@ -659,6 +659,14 @@ if (sendEvent) {
 // W3C SCXML 6.2 + C.1: delayed to this session's internal queue.
 engine.scheduleRoutedEvent({{ event_enum_cpp }}, delayMs, sendId, eventData, {{ delayed_origin_cpp }},
                            ::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::InternalQueue, "", ""});
+{% elif not action.targetexpr and action.target.startswith('#') and not action.target.startswith('#_') %}
+// W3C SCXML 6.2 + SCE_MESH.md §mesh-9.5: delayed to the Mesh peer
+// "{{ action.target | escape_cpp }}". The peer and the invokeid of the event
+// being processed now (§mesh-10.7) are fixed at the send; the deadline delivers
+// through the Mesh route an immediate `#<peer>` send takes.
+engine.scheduleRoutedEvent({{ event_enum_cpp }}, delayMs, sendId, eventData, {{ delayed_origin_cpp }},
+                           ::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::MeshPeer, "",
+                                                 "{{ action.target | escape_cpp }}", engine.currentEventInvokeId()});
 {% else %}
 {
     // W3C SCXML 6.2: Delayed send to this session's external queue.

@@ -25,6 +25,7 @@
 #include <regex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 namespace SCE {
 
@@ -67,10 +68,26 @@ struct ScheduledRoute {
         Invocation,     ///< `#_<invokeid>`: an invocation of this session
         Parent,         ///< `#_parent`: the session that invoked this one
         Session,        ///< a session named by its id — a child's published location (§scxml-C-1)
+        MeshPeer,       ///< `#<peer>`: a Mesh peer (SCE_MESH.md §mesh-9.5)
     };
+
+    /// Only a Kind::MeshPeer route carries `meshInvokeId`, so every other
+    /// route is written with the three fields it has.
+    ScheduledRoute(Kind routeKind, std::string routeEventName = {}, std::string routeAddress = {},
+                   std::string routeMeshInvokeId = {})
+        : kind(routeKind), eventName(std::move(routeEventName)), address(std::move(routeAddress)),
+          meshInvokeId(std::move(routeMeshInvokeId)) {}
+
     Kind kind;
     std::string eventName;
-    std::string address;  ///< the invoke id (Kind::Invocation) or the session id (Kind::Session)
+    /// The invoke id (Kind::Invocation), the session id (Kind::Session), or
+    /// the `#<peer>` target (Kind::MeshPeer).
+    std::string address;
+    /// SCE_MESH.md §mesh-10.7: for Kind::MeshPeer, the invokeid of the event
+    /// being processed when the send was MADE. Captured then because a reply
+    /// answers the request that was current at the send; at the deadline the
+    /// current event is whatever arrived in between.
+    std::string meshInvokeId;
 };
 
 /**

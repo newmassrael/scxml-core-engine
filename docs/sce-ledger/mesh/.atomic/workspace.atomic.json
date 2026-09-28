@@ -716,6 +716,21 @@
         {
           "file": "sce-build/src/mesh/transport/mod.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "meshInvokeId",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "deliverRouted",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "sendToTarget",
+          "kind": "implements"
         }
       ]
     },
@@ -2662,6 +2677,11 @@
           "file": "sce/include/mesh/CommunicationError.h",
           "symbol": "replyFromUndeclaredPeer",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "deliverRouted",
+          "kind": "implements"
         }
       ]
     },
@@ -3892,6 +3912,21 @@
         {
           "file": "backends/rust/mesh/src/signal.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "Kind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "deliverRouted",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "sendToTarget",
+          "kind": "implements"
         }
       ]
     },
@@ -4460,6 +4495,24 @@
       "target_kind": "section",
       "target_id": "mesh-14.6",
       "reason": "the ledger files no verification run yet, so a test is bound as the other mesh tests are: references"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-9.5",
+      "reason": "bound to the enclosing struct; the resolver names the member the citation sits on"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-10.7",
+      "reason": "bound to the enclosing struct; the resolver names the member the citation sits on"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-9.5",
+      "reason": "the citation moved to deliverRouted when the delivery was unified on rebase"
     }
   ],
   "frames": {},

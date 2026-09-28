@@ -1,0 +1,29 @@
+# SCE Mesh §9.5 round trips whose reply is a delayed <send> to a peer — once
+# with the peer written in `target`, once read from a `targetexpr`.
+# Both machines on one ECU over the local transport, so the test hosts the
+# two routers in one process as test_mesh_invoke_rpc_runtime.cpp does.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake_delayed_reply:
+        source: brake_delayed_reply.scxml
+        bindings:
+          "#motor_delayed_reply":
+            transport: local
+      motor_delayed_reply:
+        source: motor_delayed_reply.scxml
+        bindings:
+          "#brake_delayed_reply":
+            transport: local
+      # The same round trip with the reply's peer named by a targetexpr.
+      brake_delayed_reply_expr:
+        source: brake_delayed_reply_expr.scxml
+        bindings:
+          "#motor_delayed_reply_expr":
+            transport: local
+      motor_delayed_reply_expr:
+        source: motor_delayed_reply_expr.scxml
+        bindings:
+          "#brake_delayed_reply_expr":
+            transport: local

@@ -146,6 +146,12 @@
       ]
     },
     {
+      "file": "tests/mesh/test_mesh_delayed_reply_runtime.cpp",
+      "section_ids": [
+        "mesh-9.5"
+      ]
+    },
+    {
       "file": "tests/mesh/test_mesh_invoke_rpc_runtime.cpp",
       "section_ids": [
         "mesh-9.5"

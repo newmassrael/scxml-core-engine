@@ -1202,6 +1202,16 @@ public:
             raise(EventWithMetadata(event, eventData, origin, sendId));
             return true;
         }
+        if (route.kind == Kind::MeshPeer) {
+            // SCE_MESH.md §mesh-9.5: the delivery an immediate `#<peer>` send
+            // makes — raiseExternal hands a peer-named event to the Mesh router
+            // — with the invokeid captured when the send was made (§mesh-10.7).
+            // The router reports a peer it cannot reach itself (§mesh-16.7).
+            raiseExternal(EventWithMetadata(event, eventData, origin, sendId, "external",
+                                            SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, route.meshInvokeId,
+                                            route.address));
+            return true;
+        }
         SCE::Common::ForwardedEvent forwarded{
             route.eventName, eventData, origin, sendId, "external", SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, ""};
         if (route.kind == Kind::Invocation) {
@@ -1275,6 +1285,13 @@ public:
             }
             return TargetSendOutcome::Sent;
         case Kind::Mesh:
+            if (delayed) {
+                // SCE_MESH.md §mesh-9.5 + §mesh-10.7: the peer and the invokeid
+                // of the event being processed now are fixed at the send; the
+                // deadline delivers them through deliverRouted.
+                route = ::SCE::ScheduledRoute{RouteKind::MeshPeer, "", target, currentEventInvokeId_};
+                break;
+            }
             // A Mesh peer: the external path hands it to the Mesh transport.
             // (Built in place — `reader_names` reads `Type name(...)` in this
             // header as a member the generated machine carries.)

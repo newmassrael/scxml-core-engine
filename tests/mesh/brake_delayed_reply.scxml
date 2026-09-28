@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.5 requester whose responder answers after a delay. The
+     deadline is far above the responder's delay, so reaching `ok` says the
+     delayed reply crossed to this machine, and `failed` (error.invoke on
+     the deadline) says it never did. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" name="brake_delayed_reply" initial="idle">
+    <state id="idle">
+        <transition event="go" target="computing"/>
+    </state>
+    <state id="computing">
+        <invoke type="sce:mesh-rpc" src="#motor_delayed_reply">
+            <param name="_mesh_event" expr="'service.request.compute_force'"/>
+            <param name="_mesh_deadline_ms" expr="5000"/>
+        </invoke>
+        <transition event="done.invoke" target="ok"/>
+        <transition event="error.invoke" target="failed"/>
+        <transition event="error.communication" target="rejected"/>
+    </state>
+    <final id="ok"/>
+    <final id="failed"/>
+    <final id="rejected"/>
+</scxml>

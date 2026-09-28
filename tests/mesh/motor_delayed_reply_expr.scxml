@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- motor_delayed_reply with the reply's peer named by an expression. A
+     `targetexpr` is routed as the same value written in `target` is
+     (§scxml-6.2.4), so a delayed reply to a peer read at run time must also
+     wait and then reach that peer with the invokeid of the request it
+     answers (SCE_MESH.md §10.7).
+
+     The C++ generated router learns its routes and each event's pattern from
+     the sends a document writes in `target`; a `targetexpr` alone declares
+     neither, and the build says so. The immediate `quick` answer below writes
+     the same peer and the same response event, so the expression's value is
+     a route the router has and an event it carries as a reply. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" name="motor_delayed_reply_expr" initial="ready">
+    <state id="ready">
+        <transition event="service.request.compute_force" target="replying"/>
+        <transition event="service.request.quick">
+            <send target="#brake_delayed_reply_expr" event="service.response.compute_force"/>
+        </transition>
+    </state>
+    <state id="replying">
+        <onentry>
+            <send targetexpr="'#brake_delayed_reply_expr'" event="service.response.compute_force" delay="20ms"/>
+        </onentry>
+    </state>
+</scxml>

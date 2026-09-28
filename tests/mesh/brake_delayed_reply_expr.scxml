@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Requester for motor_delayed_reply_expr: brake_delayed_reply, pointed at
+     the responder whose delayed reply names its peer by an expression. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" name="brake_delayed_reply_expr" initial="idle">
+    <state id="idle">
+        <transition event="go" target="computing"/>
+    </state>
+    <state id="computing">
+        <invoke type="sce:mesh-rpc" src="#motor_delayed_reply_expr">
+            <param name="_mesh_event" expr="'service.request.compute_force'"/>
+            <param name="_mesh_deadline_ms" expr="5000"/>
+        </invoke>
+        <transition event="done.invoke" target="ok"/>
+        <transition event="error.invoke" target="failed"/>
+        <transition event="error.communication" target="rejected"/>
+    </state>
+    <final id="ok"/>
+    <final id="failed"/>
+    <final id="rejected"/>
+</scxml>

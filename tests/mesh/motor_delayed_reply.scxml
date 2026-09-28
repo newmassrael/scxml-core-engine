@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Responder for brake_delayed_reply. The reply is a delayed <send> to a
+     Mesh peer: W3C SCXML 6.2 says a delay postpones the send and does not
+     change where it goes, so the reply must reach #brake_delayed_reply
+     when the delay elapses, carrying the invokeid of the request that was
+     current when the send was made (SCE_MESH.md §10.7). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="motor_delayed_reply" initial="ready">
+    <state id="ready">
+        <transition event="service.request.compute_force" target="replying"/>
+    </state>
+    <state id="replying">
+        <onentry>
+            <send target="#brake_delayed_reply" event="service.response.compute_force" delay="20ms"/>
+        </onentry>
+    </state>
+</scxml>

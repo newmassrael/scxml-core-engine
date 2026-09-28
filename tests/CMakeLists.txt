@@ -4378,6 +4378,77 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_test(NAME mesh_invoke_rpc_runtime_verification COMMAND mesh_invoke_rpc_runtime_test)
 
+    # ── SCE_MESH §9.5 round trip whose reply is a delayed <send> to a peer ──
+    # W3C SCXML 6.2: the delay postpones the reply without changing where it
+    # goes. Its own documents, because the reply site is the thing under test
+    # and the immediate pair above must keep its immediate reply: one pair
+    # writes the peer in `target`, the `_expr` pair reads it from `targetexpr`.
+    set(MESH_DELAYED_REPLY_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_delayed_reply_generated")
+    set(MESH_DELAYED_REPLY_DEPLOY "${MESH_TEST_DIR}/deploy_delayed_reply.yaml")
+    set(MESH_DELAYED_REPLY_MACHINES
+        brake_delayed_reply motor_delayed_reply brake_delayed_reply_expr motor_delayed_reply_expr)
+    set(MESH_DELAYED_REPLY_SOURCES "")
+    set(MESH_DELAYED_REPLY_HEADERS "")
+    foreach(_machine ${MESH_DELAYED_REPLY_MACHINES})
+        list(APPEND MESH_DELAYED_REPLY_SOURCES "${MESH_TEST_DIR}/${_machine}.scxml")
+        list(APPEND MESH_DELAYED_REPLY_HEADERS
+             "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_sm.h"
+             "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_transport.h")
+    endforeach()
+
+    foreach(_machine ${MESH_DELAYED_REPLY_MACHINES})
+        add_custom_command(
+            OUTPUT "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DELAYED_REPLY_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_machine}.scxml" -l cpp
+                    -o "${MESH_DELAYED_REPLY_OUTPUT_DIR}"
+                    --deploy "${MESH_DELAYED_REPLY_DEPLOY}"
+                    --write-deps "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/${_machine}.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_sm.h.d"
+            COMMENT "Mesh: Generating ${_machine}_sm.h (§9.5 delayed reply)"
+            VERBATIM
+        )
+        add_custom_command(
+            OUTPUT "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_machine}.scxml" -l cpp
+                    -o "${MESH_DELAYED_REPLY_OUTPUT_DIR}"
+                    --deploy "${MESH_DELAYED_REPLY_DEPLOY}"
+                    --transport-only
+                    --write-deps "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_transport.h.d"
+            DEPENDS ${MESH_DELAYED_REPLY_SOURCES}
+                    "${MESH_DELAYED_REPLY_DEPLOY}" "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_sm.h"
+            DEPFILE "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_transport.h.d"
+            COMMENT "Mesh: Generating ${_machine}_transport.h (§9.5 delayed reply)"
+            VERBATIM
+        )
+    endforeach()
+
+    add_executable(mesh_delayed_reply_runtime_test
+        mesh/test_mesh_delayed_reply_runtime.cpp
+        ${MESH_DELAYED_REPLY_HEADERS}
+    )
+
+    target_include_directories(mesh_delayed_reply_runtime_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_DELAYED_REPLY_OUTPUT_DIR}
+    )
+
+    # sce_runtime for the script engine the `targetexpr` responder evaluates.
+    target_link_libraries(mesh_delayed_reply_runtime_test
+        PRIVATE
+            sce_runtime
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_delayed_reply_runtime_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_delayed_reply_runtime_test)
+
+    add_test(NAME mesh_delayed_reply_runtime_verification COMMAND mesh_delayed_reply_runtime_test)
+
     # §9.5 correlation scope: adjudicates the §14.6 "Same-target
     # constraint" clause against the runtime. A reply carrying a live
     # invoke_id but a source that is not the invoke's target — and not
