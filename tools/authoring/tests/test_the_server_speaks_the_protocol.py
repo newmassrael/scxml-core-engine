@@ -108,7 +108,7 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         names = {t["name"] for t in replies[1]["result"]["tools"]}
         self.assertEqual(
             {"brief", "questions", "review", "check", "coverage", "verify",
-             "gaps", "pseudo", "scaffold"},
+             "gaps", "pseudo", "scaffold", "validate_scxml", "render_scxml_pseudocode"},
             names)
 
     def test_the_two_surfaces_offer_the_same_commands(self):
@@ -139,7 +139,10 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
                     and isinstance(node.args[0], ast.Constant)):
                 commands.add(node.args[0].value)
         self.assertTrue(commands, "no subcommands found -- the scan is broken")
-        self.assertEqual(commands, {t["name"] for t in mcp.TOOLS})
+        # These two MCP-only adapters call the existing sce-codegen CLI; adding
+        # duplicate sce_author CLI commands would give the same action two names.
+        mcp_only = {"validate_scxml", "render_scxml_pseudocode"}
+        self.assertEqual(commands, {t["name"] for t in mcp.TOOLS} - mcp_only)
 
     def test_a_notification_is_answered_with_silence(self):
         """Replying to a notification is a protocol error, and the client that

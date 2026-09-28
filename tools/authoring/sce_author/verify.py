@@ -661,6 +661,28 @@ def withheld_outputs(declared) -> dict:
     return why
 
 
+def validate_scxml(document: pathlib.Path,
+                   codegen: pathlib.Path | None = None) -> tuple[str, str]:
+    """Run the product's SCXML check without a pack or binding.
+
+    Keep subprocess access in this module, as for ``pseudo_page``. The MCP
+    adapter returns the generator's report or refusal without interpreting it
+    as a judgment about whether the document matches its prose specification.
+    """
+    codegen = pathlib.Path(codegen) if codegen else _default_codegen()
+    if not codegen.exists():
+        raise VerifyError(
+            f"{codegen}: the code generator is not there, so no document can "
+            f"be checked. Build sce-codegen before using this tool.")
+    argv = [str(codegen), "check", str(document)]
+    run = subprocess.run(argv, capture_output=True, text=True)
+    if run.returncode != 0:
+        return "", (run.stderr.strip() or run.stdout.strip()
+                    or f"the code generator refused with status "
+                       f"{run.returncode}")
+    return run.stdout, ""
+
+
 def pseudo_page(document: pathlib.Path, codegen: pathlib.Path | None,
                 deploy: pathlib.Path | None, shape: str | None = None,
                 lexicon: str | None = None) -> tuple[str, str]:

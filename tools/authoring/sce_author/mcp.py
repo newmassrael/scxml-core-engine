@@ -17,6 +17,8 @@ So the shape a caller gets is:
     review     whether the PACK those two rest on is worth resting on
     check      whether what was written can reach the platform at all
     verify     whether it BEHAVES, by running it
+    validate_scxml  whether an SCXML document passes the product's structural check
+    render_scxml_pseudocode show that SCXML document as pseudocode, without a binding
 
 ⚠⚠ `review` reached this transport later than the rest, and the gap is worth
 recording rather than quietly closing: a caller reaching this core over MCP
@@ -49,12 +51,13 @@ BRIEF_LIMIT = 60_000
 from .check import check
 from .counterfactual import MAX_RUNS, explore
 from .coverage import coverage as run_coverage
-from .errors import AuthoringError
+from .errors import AuthoringError, describe_path
 from .gaps import ORDER as GAP_ORDER
 from .gaps import report as gap_report
 from .pack import load_pack
 from .pseudo import render as render_pseudo
-from .verify import verify as run_verify
+from .verify import validate_scxml as run_scxml_validation
+from .verify import pseudo_page, verify as run_verify
 from .prose import load_prose
 from .questions import ask
 from .review import review as run_review
@@ -210,6 +213,39 @@ TOOLS = [
                         "filed and read back later."
                     ),
                 },
+            },
+        },
+    },
+    {
+        "name": "validate_scxml",
+        "description": (
+            "Run sce-codegen check on an existing SCXML document. Needs only "
+            "the document path, not a pack or binding. Checks the model's "
+            "structure; a pass does not say it matches the prose specification."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["document"],
+            "properties": {
+                "document": {"type": "string", "description": "Path to the SCXML document."},
+            },
+        },
+    },
+    {
+        "name": "render_scxml_pseudocode",
+        "description": (
+            "Render an existing SCXML document as complete pseudocode for "
+            "the specification owner to review. Needs only the document "
+            "path, not a pack or binding. The owner must compare the page "
+            "with the prose specification."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["document"],
+            "properties": {
+                "document": {"type": "string", "description": "Path to the SCXML document."},
+                "shape": {"type": "string", "description": "Pseudocode layout name, passed to the generator."},
+                "lexicon": {"type": "string", "description": "Pseudocode vocabulary name, passed to the generator."},
             },
         },
     },
@@ -514,6 +550,16 @@ def _prose_arg(args: dict) -> list[pathlib.Path]:
     return [pathlib.Path(p) for p in value]
 
 
+def _scxml_document_arg(args: dict) -> pathlib.Path:
+    value = args.get("document")
+    if not isinstance(value, str) or not value:
+        raise ToolArgumentError("'document' is required: the path to an SCXML file")
+    document = pathlib.Path(value)
+    if not document.is_file():
+        raise ToolArgumentError(describe_path(document))
+    return document
+
+
 class ToolArgumentError(AuthoringError):
     """The client's arguments, described so the client can fix them."""
 
@@ -521,6 +567,19 @@ class ToolArgumentError(AuthoringError):
 def call_tool(name: str, args: dict) -> dict:
     """Run one tool. Every failure comes back as an answer, never a crash."""
     try:
+        if name == "validate_scxml":
+            report, refusal = run_scxml_validation(_scxml_document_arg(args))
+            return _failure(refusal) if refusal else _text(report)
+
+        if name == "render_scxml_pseudocode":
+            document = _scxml_document_arg(args)
+            shape, lexicon = args.get("shape"), args.get("lexicon")
+            for key, value in (("shape", shape), ("lexicon", lexicon)):
+                if value is not None and not isinstance(value, str):
+                    raise ToolArgumentError(f"'{key}' has to be a name, as a string")
+            page, refusal = pseudo_page(document, None, None, shape, lexicon)
+            return _failure(refusal) if refusal else _text(page)
+
         if name == "brief":
             pack = load_pack(_pack_arg(args))
             prose = load_prose(_prose_arg(args))

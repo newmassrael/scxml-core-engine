@@ -41,10 +41,18 @@ for the other case and none of them write it down.
 
 ## What the core does
 
+The MCP server also exposes two tools that accept an SCXML file directly:
+`validate_scxml` runs `sce-codegen check` and returns its structural diagnostic;
+`render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page.
+Both require only the `document` path. Neither checks whether the SCXML agrees
+with the prose specification; the specification owner compares the page with
+the prose. The pack-based `check` and `pseudo` tools below serve the separate
+interface-integration workflow.
+
     python3 -m sce_author brief     --pack <dir> --prose <file>...
     python3 -m sce_author questions --pack <dir> --prose <file>...
     python3 -m sce_author review    --pack <dir> --prose <file>...
-    python3 -m sce_author check     --pack <dir> --document <file.scxml>
+    python3 -m sce_author check     --pack <dir> --binding <file>
     python3 -m sce_author coverage  --pack <dir> --binding <file>...
     python3 -m sce_author pseudo                 --binding <file>
 
