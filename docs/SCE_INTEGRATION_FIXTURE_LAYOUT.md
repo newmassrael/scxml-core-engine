@@ -575,6 +575,23 @@ the message on failure, and the C++ AOT sent it without ending the block.
 Expected: `numberOk`, `objectOk`, `textOk`, `errors`, `badArrived` and
 `badEmpty` 1, `afterBad` 0, ending in `done`.
 
+`a_send_reaches_only_what_its_target_names` covers W3C §6.2, §6.4 and C.1 on
+where a `<send>` goes. A type the platform does not support is one of the
+element's own arguments, refused before the payload is read, so a failing
+`<content expr>` beside it costs nothing more — one error.execution, not two.
+`#_nobody` names no invocation and `#_scxml_stranger` a session this
+processor cannot reach: each raises error.communication, delivers nothing and
+ends its block. The bare `#_scxml_` is this session's own queue (test 190).
+A `<content expr>` sent to `#_kid` arrives there as a value, and the child's
+reply to `#_parent` carries its own `<content expr>` back. Measured
+2026-09-28, the channels disagreed on every row: the C++ AOT, Go, Python,
+Kotlin and C11 dropped the unreachable targets in silence and Rust delivered
+them to itself; the C++ AOT and C11 dropped the bare `#_scxml_`; the C++ AOT
+and C11 sent the child no payload, and the Interpreter carried `<content>` to
+neither end. Expected: `execErrors` 1, `commErrors` 2, `afterRefused`,
+`afterNobody` and `afterStranger` 0, `bareArrived` and `pongOk` 1, ending in
+`done`.
+
 `invoke_expression_failure_is_reported` covers W3C §6.4.3: an `<invoke>` that
 names its target through an expression must evaluate that expression when the
 element fires, and raise `error.execution` when it cannot. The axis is the

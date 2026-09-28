@@ -1830,6 +1830,35 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 6.2 + 6.4 + C.1: a <send> reaches what its target names and
+    # carries its payload there; a target that names nothing is reported.
+    sce_generate_static_integration_c_test(a_send_reaches_only_what_its_target_names "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN kid
+    )
+
+    add_executable(sce_c_integration_a_send_reaches_only_what_its_target_names
+        integration/test_a_send_reaches_only_what_its_target_names.c
+        ${INTEGRATION_C_TEST_a_send_reaches_only_what_its_target_names_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_a_send_reaches_only_what_its_target_names PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_a_send_reaches_only_what_its_target_names PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_send_reaches_only_what_its_target_names PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_send_reaches_only_what_its_target_names
+        COMMAND sce_c_integration_a_send_reaches_only_what_its_target_names
+    )
+    set_tests_properties(c11_integration_a_send_reaches_only_what_its_target_names PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach
     # the datamodel as a value. Every other fixture here leaves the carrier's
     # `data` field zeroed, so this edge — the one a downstream MCU consumer

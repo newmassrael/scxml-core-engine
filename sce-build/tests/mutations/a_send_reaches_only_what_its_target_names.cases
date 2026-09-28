@@ -1,0 +1,99 @@
+# Mutation cases for §scxml-6.2 / §scxml-6.4 / §scxml-C-1 on a `<send>` — it
+# reaches what its target names, carries its payload there, and a target that
+# names nothing reachable is reported.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_send_reaches_only_what_its_target_names.cases`.
+#
+# Measured 2026-09-28, the channels disagreed on every row: the C++ AOT, Go,
+# Python, Kotlin and C11 dropped `#_nobody` and `#_scxml_stranger` in silence
+# and Rust delivered them to itself; the C++ AOT and C11 dropped the bare
+# `#_scxml_`; the C++ AOT and C11 sent a child no payload; the Interpreter
+# carried `<content>` to neither a child nor a parent; and the C++ AOT read a
+# failing payload before refusing an unsupported type, raising two errors.
+#
+# The C++ AOT and C11 targets are the TEMPLATES the built binaries carry. The
+# Rust, Go, Kotlin and Python halves have no round here (the harness reaches
+# cargo and ctest only); the same fixture holds them in their suites.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_a_send_reaches_only_what_its_target_names)$'
+mutation_targets sce/src/runtime/ActionExecutorImpl.cpp sce/src/events/InvokeEventTarget.cpp sce/src/events/ParentEventTarget.cpp tools/codegen/templates/actions/send.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles tests/integration/ASendReachesOnlyWhatItsTargetNamesTest.cpp tests/integration/ASendReachesOnlyWhatItsTargetNamesAotTest.cpp backends/c/tests/integration/test_a_send_reaches_only_what_its_target_names.c
+
+# ── Interpreter: `<content>` does not cross a session boundary ─────
+
+mutation_case "the interpreter sends an invoked child no <content>" <<'PY'
+edit("sce/src/events/InvokeEventTarget.cpp",
+     "        std::string eventData = event.payload();",
+     "        std::string eventData = event.data;")
+PY
+
+mutation_case "the interpreter sends the parent no <content>" <<'PY'
+edit("sce/src/events/ParentEventTarget.cpp",
+     "        std::string eventData = event.payload();",
+     "        std::string eventData = event.data;")
+PY
+
+# ── Interpreter: an unreachable target is left to the dispatcher ───
+#
+# The dispatcher still reports it, but only after the rest of the block ran.
+
+mutation_case "the interpreter runs the rest of the block after an unreachable target" <<'PY'
+edit("sce/src/runtime/ActionExecutorImpl.cpp",
+     "        if (!isAddressedSessionReachable(target)) {",
+     "        if (false) {")
+PY
+
+# ── C++ AOT: the child gets the event but not its payload ──────────
+
+mutation_case "the C++ AOT sends an invoked child no payload" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "    {{ slot }}->raiseExternal({{ event_name_cpp }}, eventData);",
+     "    {{ slot }}->raiseExternal({{ event_name_cpp }}, std::string());")
+PY
+
+# ── C++ AOT: a target naming no invocation does not end the block ──
+
+mutation_case "the C++ AOT runs the rest of the block after a target naming no invocation" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     """    Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", "", sendId));
+{{ block_end or 'return;' }}""",
+     """    Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", "", sendId));""")
+PY
+
+# ── C++ AOT: any session id reads as this one ──────────────────────
+
+mutation_case "the C++ AOT delivers to itself an event addressed to another session" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     """if (sessionId_.value_or("") != "{{ action.target | slice_from(8) | escape_cpp }}") {""",
+     """if (sessionId_.value_or("") == "{{ action.target | slice_from(8) | escape_cpp }}") {""")
+PY
+
+# ── C11: the child gets the event but not its payload ──────────────
+
+mutation_case "C11 sends an invoked child no payload" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "                    sce_copy_bounded_data(_send_fwd.data, _ed);\n",
+     "")
+PY
+
+# ── C11: a target naming no invocation does not end the block ──────
+
+mutation_case "C11 runs the rest of the block after a target naming no invocation" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """                "<send target='{{ static_target | escape_c }}'> names no invocation of this session",
+                "{{ send_id_c }}");
+            return;""",
+     """                "<send target='{{ static_target | escape_c }}'> names no invocation of this session",
+                "{{ send_id_c }}");""")
+PY
+
+# ── C11: the bare `#_scxml_` has no route ──────────────────────────
+
+mutation_case "C11 has no route for a target naming this session" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "{% set route = 'session' %}",
+     "{% set route = 'none' %}")
+PY

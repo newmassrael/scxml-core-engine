@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 6.2 + 6.4 + C.1: a `<send>` reaches what its target names, carries
+  its payload there, and a target that names nothing reachable is reported.
+
+  "If the value of the 'target' attribute is not supported or invalid, the
+  Processor MUST place the error error.execution on the internal event queue."
+  (6.2) "If the SCXML Processor cannot dispatch the event to the target, it
+  MUST place the error error.communication on the internal event queue of the
+  session that attempted to send the event." (C.1) `#_<invokeid>` names an
+  invocation of this session (6.4), `#_scxml_<sessionid>` names a session, and
+  the bare `#_scxml_` names this session's own queue (test 190).
+
+  Measured 2026-09-28, the channels disagreed on each row:
+
+    refused   a type this platform does not support is one of the element's
+              own arguments, refused before the payload is read — one
+              error.execution. The C++ AOT read the failing `<content expr>`
+              first and raised two.
+    nobody    `#_nobody` names no invocation: error.communication, and the
+              `<assign>` after it in the block does not run. Five channels
+              dropped the message without a word; Rust delivered it to itself.
+    stranger  `#_scxml_stranger` names a session this processor cannot
+              reach: error.communication, the block ended.
+    bare      `#_scxml_` arrives in this session's own queue. The C++ AOT
+              dropped it.
+    kid       `<content expr="7"/>` sent to `#_kid` arrives there as 7, and
+              the child's `<content expr="_event.data + 1"/>` to `#_parent`
+              arrives here as 8. The C++ AOT delivered the child no data, and
+              the C++ Interpreter carried `<content>` to neither end.
+
+    execErrors 1, commErrors 2, afterRefused 0, afterNobody 0,
+    afterStranger 0, bareArrived 1, pongOk 1, ending in `done`.
+
+  This fixture is the canonical source for all 7 channels — see
+  docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test locations.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="run"
+       name="a_send_reaches_only_what_its_target_names">
+  <datamodel>
+    <data id="obj" expr="({})"/>
+    <data id="execErrors" expr="0"/>
+    <data id="commErrors" expr="0"/>
+    <data id="afterRefused" expr="0"/>
+    <data id="afterNobody" expr="0"/>
+    <data id="afterStranger" expr="0"/>
+    <data id="bareArrived" expr="0"/>
+    <data id="pongOk" expr="0"/>
+  </datamodel>
+
+  <state id="run">
+    <onentry>
+      <send event="refused" type="http://example.invalid/no-such-processor">
+        <content expr="obj.missing.deep"/>
+      </send>
+      <assign location="afterRefused" expr="1"/>
+    </onentry>
+    <onentry>
+      <send event="lost" target="#_nobody"/>
+      <assign location="afterNobody" expr="1"/>
+    </onentry>
+    <onentry>
+      <send event="lost" target="#_scxml_stranger"/>
+      <assign location="afterStranger" expr="1"/>
+    </onentry>
+    <onentry>
+      <send event="bare" target="#_scxml_"/>
+    </onentry>
+
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+               datamodel="ecmascript" initial="wait">
+          <state id="wait">
+            <onentry>
+              <send target="#_parent" event="hello"/>
+            </onentry>
+            <transition event="ping" cond="_event.data === 7">
+              <send target="#_parent" event="pong">
+                <content expr="_event.data + 1"/>
+              </send>
+            </transition>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+
+    <transition event="error.execution">
+      <assign location="execErrors" expr="execErrors + 1"/>
+    </transition>
+    <transition event="error.communication">
+      <assign location="commErrors" expr="commErrors + 1"/>
+    </transition>
+    <transition event="bare">
+      <assign location="bareArrived" expr="1"/>
+    </transition>
+    <transition event="lost">
+      <assign location="afterNobody" expr="100"/>
+    </transition>
+    <transition event="hello">
+      <send target="#_kid" event="ping">
+        <content expr="7"/>
+      </send>
+    </transition>
+    <transition event="pong">
+      <if cond="_event.data === 8">
+        <assign location="pongOk" expr="1"/>
+      </if>
+      <send event="settle"/>
+    </transition>
+    <transition event="settle" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>

@@ -1164,6 +1164,8 @@ add_executable(integration_tests
     integration/ASelfSentEventNamesItsOriginAotTest.cpp
     integration/ASendContentExprIsThePayloadTest.cpp
     integration/ASendContentExprIsThePayloadAotTest.cpp
+    integration/ASendReachesOnlyWhatItsTargetNamesTest.cpp
+    integration/ASendReachesOnlyWhatItsTargetNamesAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
     integration/EventDataArrivesAsSentAotTest.cpp
     integration/XmlDataIsADomTreeTest.cpp
@@ -1721,6 +1723,10 @@ sce_generate_static_integration_test(a_self_sent_event_names_its_origin ${STATIC
 # W3C SCXML 5.6.2: a <send>'s <content expr> is its payload as a value, and one
 # that fails sends '' and ends the block.
 sce_generate_static_integration_test(a_send_content_expr_is_the_payload ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 6.2 + 6.4 + C.1: a <send> reaches what its target names and carries
+# its payload there; a target that names nothing is reported.
+sce_generate_static_integration_test(a_send_reaches_only_what_its_target_names ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.4: an invoked child's replies reach the parent's external queue
 # when sent, ahead of the host's later events, with no clock advanced.
