@@ -38,6 +38,21 @@ object SendHelper {
     fun isUnreachableTarget(target: String): Boolean = target.isEmpty() || target == "undefined"
 
     /**
+     * The peer a `<send target>` names, when it names one: `#` followed by at
+     * least one character, where `#_` stays reserved for the targets
+     * §scxml-6.2.4 defines (`#_internal`, `#_parent`, ...).
+     *
+     * The Kotlin copy of C++ `SendHelper::isMeshTarget`; every copy reads
+     * `tests/mesh/mesh_target_cases.json`, so a target one of them routes over
+     * Mesh is one they all do. The Kotlin Mesh router reuses it.
+     */
+    fun meshPeer(target: String): String? =
+        target.removePrefix("#").takeIf { target.startsWith("#") && it.isNotEmpty() && !it.startsWith("_") }
+
+    /** Whether a `<send target>` names a Mesh peer (see [meshPeer]). */
+    fun isMeshTarget(target: String): Boolean = meshPeer(target) != null
+
+    /**
      * A `<send>` delay, read as the CSS2 time §scxml-6.2 names, in
      * milliseconds — or `null` when the text is not a time, a bare number
      * included, so the caller raises the argument error rather than choosing

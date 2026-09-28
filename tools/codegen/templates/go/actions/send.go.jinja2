@@ -3,6 +3,70 @@
 
 {# W3C SCXML 6.2: Send event (internal, external, delayed, HTTP) #}
 {% import 'param_macros.go.jinja2' as param_macros %}
+{# §scxml-6.2.5: the act a host-served send performs, for `processor_type`.
+   One body for the two ways a send reaches it: a type the build saw served by
+   the host (`send_type_host_served`, a Mesh send the build lowered among them)
+   and a `targetexpr` that turns out, at run time, to name a Mesh peer. #}
+{% macro host_send_arm(action, model, machine_name, processor_type, event_name_go, send_id, has_params, has_dynamic_params, has_namelist) %}
+	// §scxml-6.2.5: "{{ processor_type }}" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+{% if has_dynamic_params or has_namelist %}
+		hostParams := sce.WireParamsFromTypedParams(parts)
+{% elif has_params %}
+		hostParams := sce.WireParamsFromTypedParams([]sce.EventDataParam{
+{% for param in action.params %}
+			{Name: "{{ param.name | escape_go }}", Value: "{{ param.static_value | escape_go }}"},
+{% endfor %}
+		})
+{% else %}
+		hostParams := map[string][]string{}
+{% endif %}
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "{{ processor_type | escape_go }}",
+			EventName:     {{ event_name_go }},
+			Target:        {% if action.targetexpr and model.needs_script_engine %}sendTarget{% else %}"{{ action.target | default('', true) | escape_go }}"{% endif %},
+			Content:       "{{ action.content | default('', true) | escape_go }}",
+			Params:        hostParams,
+			SendID:        "{{ send_id | default('') | escape_go }}",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+		}
+{% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
+{% if action.delayexpr or host_delay_ms > 0 %}
+{% if action.delayexpr and model.needs_script_engine %}
+		hostDelayMs := int64(sendDelayMs)
+{% else %}
+		hostDelayMs := int64({{ host_delay_ms }})
+{% endif %}
+		// W3C SCXML 6.2.4: arm it. The engine performs the act when the
+		// deadline arrives and reports it there if nobody does, so the
+		// unregistered-handler branch belongs only to the immediate form —
+		// this site has returned long before the deadline. W3C SCXML 6.3: it
+		// lands in the delayed-send queue under SendID, so a <cancel> reaches
+		// it and the host never sees the act.
+		engine.ScheduleHostSend(hostRequest, time.Duration(hostDelayMs)*time.Millisecond, "{{ send_id | default('') | escape_go }}")
+{% else %}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+{% if 'error.execution' in model.events %}
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("{{ processor_type | escape_go }}") {
+			errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send type='{{ processor_type }}'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+			engine.Raise(errEvt)
+		}
+{% else %}
+		_ = hostServed
+{% endif %}
+{% endif %}
+	}
+{%- endmacro %}
 {% set send_id = action.id if action.id else action.auto_send_id %}
 {% set in_block = in_action_block is defined and in_action_block %}
 {% set has_params = action.params and action.params | length > 0 %}
@@ -288,6 +352,16 @@
 {% else %}
 {% set event_name_go = '"' ~ (action.event | default('', true) | escape_go) ~ '"' %}
 {% endif %}
+{# SCE_MESH.md §mesh-19: a `targetexpr` may name a Mesh peer only once it is
+   evaluated, so the build could not lower it. The same act the lowering
+   arranges for a literal `#peer` is chosen here, on the one evaluated target,
+   ahead of every other route — a peer is not a local session. #}
+{% set dynamic_mesh = action.targetexpr and model.needs_script_engine and not action.typeexpr and not action.send_type_host_served and not action.send_type_unsupported and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') %}
+{% if dynamic_mesh %}
+	if sce.IsMeshTarget(sendTarget) {
+{{ host_send_arm(action, model, machine_name, 'sce:mesh', event_name_go, send_id, has_params, has_dynamic_params, has_namelist) }}
+	} else {
+{% endif %}
 {# ── Unsupported send type check ── #}
 {% if action.send_type_unsupported %}
 	// W3C SCXML 6.2: Unsupported send type "{{ action.send_type }}" raises error.execution
@@ -302,64 +376,7 @@
 	return  // W3C SCXML 4.9: the error ends the block
 {% endif %}
 {% elif action.send_type_host_served %}
-	// §scxml-6.2.5: "{{ action.send_type }}" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-{% if has_dynamic_params or has_namelist %}
-		hostParams := sce.WireParamsFromTypedParams(parts)
-{% elif has_params %}
-		hostParams := sce.WireParamsFromTypedParams([]sce.EventDataParam{
-{% for param in action.params %}
-			{Name: "{{ param.name | escape_go }}", Value: "{{ param.static_value | escape_go }}"},
-{% endfor %}
-		})
-{% else %}
-		hostParams := map[string][]string{}
-{% endif %}
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "{{ action.send_type | escape_go }}",
-			EventName:     {{ event_name_go }},
-			Target:        {% if action.targetexpr and model.needs_script_engine %}sendTarget{% else %}"{{ action.target | default('', true) | escape_go }}"{% endif %},
-			Content:       "{{ action.content | default('', true) | escape_go }}",
-			Params:        hostParams,
-			SendID:        "{{ send_id | default('') | escape_go }}",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-		}
-{% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
-{% if action.delayexpr or host_delay_ms > 0 %}
-{% if action.delayexpr and model.needs_script_engine %}
-		hostDelayMs := int64(sendDelayMs)
-{% else %}
-		hostDelayMs := int64({{ host_delay_ms }})
-{% endif %}
-		// W3C SCXML 6.2.4: arm it. The engine performs the act when the
-		// deadline arrives and reports it there if nobody does, so the
-		// unregistered-handler branch belongs only to the immediate form —
-		// this site has returned long before the deadline. W3C SCXML 6.3: it
-		// lands in the delayed-send queue under SendID, so a <cancel> reaches
-		// it and the host never sees the act.
-		engine.ScheduleHostSend(hostRequest, time.Duration(hostDelayMs)*time.Millisecond, "{{ send_id | default('') | escape_go }}")
-{% else %}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-{% if 'error.execution' in model.events %}
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("{{ action.send_type | escape_go }}") {
-			errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send type='{{ action.send_type }}'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
-			engine.Raise(errEvt)
-		}
-{% else %}
-		_ = hostServed
-{% endif %}
-{% endif %}
-	}
+{{ host_send_arm(action, model, machine_name, action.send_type, event_name_go, send_id, has_params, has_dynamic_params, has_namelist) }}
 {% elif action.target and action.target is startingwith('!') %}
 	// W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
 {% if 'error.execution' in model.events %}
@@ -507,6 +524,9 @@
 		engine.RaiseExternalWithMeta(meta)
 	}
 {% endif %}
+{% endif %}
+{% if dynamic_mesh %}
+	} // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
 {% endif %}
 {% if has_dynamic_params %}
 {% if in_block %}

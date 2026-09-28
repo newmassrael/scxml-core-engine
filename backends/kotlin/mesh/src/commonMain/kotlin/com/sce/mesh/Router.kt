@@ -74,13 +74,11 @@ sealed class Routed {
 }
 
 /**
- * The peer a `<send target>` names, when it names one: `#` followed by at
- * least one character, where `#_` stays reserved for the targets §scxml-6.2.4
- * defines. The same predicate as the C++ core's `SendHelper::isMeshTarget` and
- * the Rust core's `mesh_peer`.
+ * The peer a `<send target>` names, when it names one — the runtime's
+ * predicate, so the router and a generated send site's choice to reach it are
+ * one answer rather than two copies of it.
  */
-fun meshPeer(target: String): String? =
-    target.removePrefix("#").takeIf { target.startsWith("#") && it.isNotEmpty() && !it.startsWith("_") }
+fun meshPeer(target: String): String? = com.sce.runtime.SendHelper.meshPeer(target)
 
 /**
  * One machine's Mesh endpoint, with the receive side's dedup window and gap

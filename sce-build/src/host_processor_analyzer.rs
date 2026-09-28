@@ -570,6 +570,30 @@ pub fn mesh_peer(target: &str) -> Option<&str> {
 /// one: a literal `target` naming a peer, through the SCXML Event I/O
 /// Processor (written or defaulted), with no `typeexpr` or `targetexpr` that
 /// could make it something else at run time.
+/// Whether `action` is a `<send>` whose `targetexpr` may name a Mesh peer once
+/// evaluated: the send templates' dynamic Mesh branch (SCE_MESH.md §mesh-19)
+/// asks the evaluated target, and the machine needs the host-send surface
+/// for the branch to call.
+fn may_name_a_mesh_peer(action: &Action) -> bool {
+    action.action_type == "send"
+        && !action.targetexpr.is_empty()
+        && action.typeexpr.is_empty()
+        && !action.send_type_host_served
+        && !action.send_type_unsupported
+        && (action.send_type.is_empty() || action.send_type == SCXML_EVENT_PROCESSOR_TYPE)
+}
+
+/// Whether `language`'s send templates carry the dynamic Mesh branch. C11 does
+/// not: its host registry is emitted only for a machine that serves a host
+/// type, and a registry in every machine with a `targetexpr` is a cost the
+/// MCU profile does not pay for a route it cannot name at build time.
+fn routes_dynamic_mesh(language: Language) -> bool {
+    matches!(
+        language,
+        Language::Rust | Language::Go | Language::Kotlin | Language::Python
+    )
+}
+
 fn is_static_mesh_send(action: &Action) -> bool {
     action.action_type == "send"
         && action.targetexpr.is_empty()
@@ -611,7 +635,8 @@ pub fn sends_to_a_mesh_peer(model: &SCXMLModel) -> bool {
 /// rather than once after the parse because C++ keeps its own route; the
 /// model is borrowed untouched when there is nothing to lower.
 pub fn lower_mesh_sends(model: &SCXMLModel, language: Language) -> Cow<'_, SCXMLModel> {
-    if !needs_mesh_router(model, language) {
+    let dynamic = routes_dynamic_mesh(language) && any_action(model, &mut may_name_a_mesh_peer);
+    if !needs_mesh_router(model, language) && !dynamic {
         return Cow::Borrowed(model);
     }
     let mut lowered = model.clone();
@@ -881,6 +906,38 @@ mod tests {
         // parsed model — what the manifest echoes — is left as declared.
         assert_eq!(lowered.host_processor_types, [MESH_PROCESSOR_TYPE]);
         assert!(model.host_processor_types.is_empty());
+    }
+
+    /// A `targetexpr` that may name a peer once evaluated needs the host-send
+    /// surface behind the send templates' dynamic branch, so the host serves
+    /// `sce:mesh` for the machine on every backend that carries the branch —
+    /// and on none that does not, C11 among them. The sends are left as they
+    /// were: only the evaluated target can make one a Mesh send.
+    #[test]
+    fn a_targetexpr_that_may_name_a_peer_needs_the_host_send_surface() {
+        let model = parse(&doc(r#"<datamodel><data id="t" expr="'#hmi'"/></datamodel>
+               <state id="s"><onentry><send event="e" targetexpr="t"/></onentry></state>"#));
+        assert!(!needs_mesh_router(&model, Language::Python));
+        for language in [
+            Language::Rust,
+            Language::Go,
+            Language::Kotlin,
+            Language::Python,
+        ] {
+            let lowered = lower_mesh_sends(&model, language);
+            assert_eq!(
+                lowered.host_processor_types,
+                [MESH_PROCESSOR_TYPE],
+                "{language:?}"
+            );
+            assert_eq!(sends(&lowered), sends(&model), "{language:?}");
+        }
+        for language in [Language::C11, Language::Cpp] {
+            assert!(
+                matches!(lower_mesh_sends(&model, language), Cow::Borrowed(_)),
+                "{language:?}"
+            );
+        }
     }
 
     #[test]

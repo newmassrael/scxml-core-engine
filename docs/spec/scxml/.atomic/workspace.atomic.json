@@ -8613,6 +8613,16 @@
           "file": "backends/rust/runtime/src/helpers/send.rs",
           "symbol": "mesh_peer",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/send.go",
+          "symbol": "MeshPeer",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
+          "symbol": "meshPeer",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

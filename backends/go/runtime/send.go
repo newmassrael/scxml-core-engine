@@ -87,6 +87,27 @@ func IsUnreachableTarget(target string) bool {
 	return target == "" || target == "undefined"
 }
 
+// MeshPeer returns the peer a <send target> names and true, when it names
+// one: `#` followed by at least one character, where `#_` stays reserved for
+// the targets §scxml-6.2.4 defines (`#_internal`, `#_parent`, ...).
+//
+// Ports Rust send::mesh_peer. Every copy of the predicate reads
+// tests/mesh/mesh_target_cases.json, so a target one of them routes over Mesh
+// is one they all do.
+func MeshPeer(target string) (string, bool) {
+	peer, ok := strings.CutPrefix(target, "#")
+	if !ok || peer == "" || strings.HasPrefix(peer, "_") {
+		return "", false
+	}
+	return peer, true
+}
+
+// IsMeshTarget reports whether a <send target> names a Mesh peer (see MeshPeer).
+func IsMeshTarget(target string) bool {
+	_, ok := MeshPeer(target)
+	return ok
+}
+
 // RequiresTargetAttribute checks if send type requires a target attribute
 // (§scxml-C-2). BasicHTTP Event I/O Processor requires a target URL.
 //

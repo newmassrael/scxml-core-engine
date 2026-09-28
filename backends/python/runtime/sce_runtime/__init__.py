@@ -41,7 +41,13 @@ from .invoke import (
 from .microstep import EnabledTransition, EntryTarget, HistoryTarget, StateTarget
 from .policy import StatePolicy
 from .scheduler import ScheduledEvent, Scheduler
-from .send import is_invalid_target, is_supported_send_type, parse_delay_ms
+from .send import (
+    is_invalid_target,
+    is_mesh_target,
+    is_supported_send_type,
+    mesh_peer,
+    parse_delay_ms,
+)
 from .scripting import (
     IScriptEngine,
     LuaScriptEngine,
@@ -88,9 +94,11 @@ __all__ = [
     "StateTarget",
     "create_done_invoke_event_name",
     "is_invalid_target",
+    "is_mesh_target",
     "is_reserved_type",
     "is_supported_send_type",
     "parse_delay_ms",
+    "mesh_peer",
     "parse_host_invoke_deadline_ms",
     "published_origin",
     "request_field",

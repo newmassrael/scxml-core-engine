@@ -8,6 +8,41 @@
    and the delivery. Every delivery arm reads the parts; none evaluates
    anything itself, so an argument cannot be read one way for one target and
    another way for the next. #}
+{# §scxml-6.2.5 — the act a host-served send performs, for `processor_type`.
+   One body for the two ways a send reaches it: a type the build saw served by
+   the host (`send_type_host_served`, a Mesh send the build lowered among them)
+   and a `targetexpr` that turns out, at run time, to name a Mesh peer. The
+   host's text params are the payload read as the wire reads it, so no
+   `<param>` is evaluated twice, and its event data is the text `_event.data`
+   would hold. #}
+{%- macro host_send_request(action, indent, processor_type, has_payload, has_delay, delay_py, machine_name, model) -%}
+{{ indent }}_host_request = _HostSendRequest(
+{{ indent }}    processor_type={{ processor_type | py_string_literal }},
+{{ indent }}    event_name=_evt_name,
+{{ indent }}    target={% if action.targetexpr %}_target_str{% else %}{{ action.target | py_string_literal }}{% endif %},
+{{ indent }}    content={{ action.content | py_string_literal }},
+{{ indent }}    params=self._wire_params_from_payload(_data),
+{{ indent }}    send_id=_sid,
+{{ indent }}    event_data=self._event_data_text(_data, {{ action.content | to_lua_data_content | py_string_literal }}, {{ 'True' if has_payload else 'False' }}),
+{{ indent }})
+{% if has_delay %}
+{# W3C SCXML 6.2.4: a `delay` is a property of the SEND, not of the processor
+   it named. The engine performs the act from its scheduler drain at the
+   deadline, including the W3C SCXML 6.2 report for an act nobody performed.
+   W3C SCXML 6.3: it lands in the delayed-send queue under `_sid`, so a
+   `<cancel>` reaches it and the host never sees the act. #}
+{{ indent }}engine.schedule_host_send(_host_request, {{ delay_py }}, _sid)
+{% else %}
+{{ indent }}_host_served = engine.perform_host_send(_host_request)
+{% if 'error.execution' in model.events %}
+{# W3C SCXML 6.2 — a declared type with no handler registered is, from the
+   document's side, a processor the platform does not support: the act it
+   asked for was performed by nobody. #}
+{{ indent }}if _host_served is None and not engine.has_event_processor({{ processor_type | py_string_literal }}):
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
+{% endif %}
+{%- endmacro -%}
 {%- macro emit_send(action, indent, machine_name, model) -%}
 {% set has_namelist = action.namelist and action.namelist | trim %}
 {% set has_payload = action.params or has_namelist or action.content or action.contentexpr %}
@@ -117,41 +152,17 @@
 {% else %}
 {% set delay_py = action.delay_ms | string %}
 {% endif %}
+{# SCE_MESH.md §mesh-19: a `targetexpr` may name a Mesh peer only once it is
+   evaluated, so the build could not lower it; the two `targetexpr` arms below
+   choose the same act the lowering arranges for a literal `#peer`. #}
+{% set dynamic_mesh = action.targetexpr and not action.typeexpr and not action.send_type_host_served and not action.send_type_unsupported and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') %}
 {# ── The delivery ── #}
 {% if action.send_type_host_served %}
 {# §scxml-6.2.5 — the `type` is served by the HOST, which declared it to this
    build. Dispatch rather than refuse, and take the whole send: a processor
    the host serves owns delivery, so falling through would also enqueue the
-   event locally and the document would see the act twice. The host's text
-   params are the payload read as the wire reads it, so no `<param>` is
-   evaluated twice, and its event data is the text `_event.data` would
-   hold. #}
-{{ indent }}_host_request = _HostSendRequest(
-{{ indent }}    processor_type={{ action.send_type | py_string_literal }},
-{{ indent }}    event_name=_evt_name,
-{{ indent }}    target={% if action.targetexpr %}_target_str{% else %}{{ action.target | py_string_literal }}{% endif %},
-{{ indent }}    content={{ action.content | py_string_literal }},
-{{ indent }}    params=self._wire_params_from_payload(_data),
-{{ indent }}    send_id=_sid,
-{{ indent }}    event_data=self._event_data_text(_data, {{ action.content | to_lua_data_content | py_string_literal }}, {{ 'True' if has_payload else 'False' }}),
-{{ indent }})
-{% if has_delay %}
-{# W3C SCXML 6.2.4: a `delay` is a property of the SEND, not of the processor
-   it named. The engine performs the act from its scheduler drain at the
-   deadline, including the W3C SCXML 6.2 report for an act nobody performed.
-   W3C SCXML 6.3: it lands in the delayed-send queue under `_sid`, so a
-   `<cancel>` reaches it and the host never sees the act. #}
-{{ indent }}engine.schedule_host_send(_host_request, {{ delay_py }}, _sid)
-{% else %}
-{{ indent }}_host_served = engine.perform_host_send(_host_request)
-{% if 'error.execution' in model.events %}
-{# W3C SCXML 6.2 — a declared type with no handler registered is, from the
-   document's side, a processor the platform does not support: the act it
-   asked for was performed by nobody. #}
-{{ indent }}if _host_served is None and not engine.has_event_processor({{ action.send_type | py_string_literal }}):
-{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
-{% endif %}
-{% endif %}
+   event locally and the document would see the act twice. #}
+{{ host_send_request(action, indent, action.send_type, has_payload, has_delay, delay_py, machine_name, model) }}
 {% elif action.send_type_unsupported %}
 {# W3C SCXML 6.2 (test199) — a processor the platform does not support. #}
 {% if 'error.execution' in model.events %}
@@ -221,10 +232,20 @@
 {{ indent }}    _inv_target.forward_event(_evt_name, EventMetadata(event_type="external", data=_data))
 {% elif action.targetexpr and has_delay %}
 {# W3C SCXML 6.2: a delayed send to a dynamic target is scheduled locally (C++
-   pattern: delay before target routing), as on every other backend. #}
+   pattern: delay before target routing), as on every other backend — except
+   a Mesh peer, whose router takes the delayed send (SCE_MESH.md §mesh-19). #}
+{% if dynamic_mesh %}
+{{ indent }}if _is_mesh_target(_target_str):
+{{ host_send_request(action, indent ~ '    ', 'sce:mesh', has_payload, has_delay, delay_py, machine_name, model) }}
+{{ indent }}else:
+{{ indent }}    _evt = self.get_event_from_name(_evt_name)
+{{ indent }}    if _evt is not None:
+{{ indent }}        engine.schedule_send(_evt, {{ delay_py }}, _sid, _data)
+{% else %}
 {{ indent }}_evt = self.get_event_from_name(_evt_name)
 {{ indent }}if _evt is not None:
 {{ indent }}    engine.schedule_send(_evt, {{ delay_py }}, _sid, _data)
+{% endif %}
 {% elif action.targetexpr %}
 {# W3C SCXML C.1 — the target resolved at action time: empty → this session's
    external queue; `http(s)://...` → `perform_http_send`; `#_internal` →
@@ -235,6 +256,11 @@
 {{ indent }}    _dyn_evt = self.get_event_from_name(_evt_name)
 {{ indent }}    if _dyn_evt is not None:
 {{ indent }}        engine.send_external(_dyn_evt, _sid, _data)
+{% if dynamic_mesh %}
+{# SCE_MESH.md §mesh-19: a Mesh peer is the host router's, never this session's. #}
+{{ indent }}elif _is_mesh_target(_target_str):
+{{ host_send_request(action, indent ~ '    ', 'sce:mesh', has_payload, has_delay, delay_py, machine_name, model) }}
+{% endif %}
 {{ indent }}elif _target_str.startswith("http://") or _target_str.startswith("https://"):
 {{ indent }}    engine.perform_http_send(_target_str, _evt_name, {% if action.contentexpr and not (action.params or has_namelist or action.content) %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %}, self._wire_params_from_payload(_data), _sid)
 {{ indent }}elif _target_str == "#_internal":

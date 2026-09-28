@@ -423,6 +423,32 @@ class Test173StateMachine(
                 return@send true
             }
             val sendData = ""
+            val sendWireParams = emptyMap<String, List<String>>()
+            if (com.sce.runtime.SendHelper.isMeshTarget(_rt)) {
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "event1",
+                target = _rt,
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_0",
+                eventData = sendData
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(Test173Event.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_0")
+            }
+            } else {
             // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
             if (_rt == "#_internal") {
                 raiseInternal(Test173Event.Event1, EventMetadata.internal(sendData))
@@ -440,6 +466,7 @@ class Test173StateMachine(
             } else {
                 send(Test173Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             }
+            } // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

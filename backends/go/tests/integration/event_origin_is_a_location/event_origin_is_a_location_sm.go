@@ -942,6 +942,36 @@ func (p *EventOriginIsALocationPolicy) ExecuteTransitionContent(source EventOrig
 	{
 		eventDataStr := ""
 		_ = eventDataStr
+	if sce.IsMeshTarget(sendTarget) {
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := map[string][]string{}
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "reply",
+			Target:        sendTarget,
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_0",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(EventOriginIsALocationEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_0"
+			engine.Raise(errEvt)
+		}
+	}
+	} else {
 	// W3C SCXML 6.2: External send
 	{
 		// W3C SCXML C.1: a target that decodes to one of our children's
@@ -959,6 +989,7 @@ func (p *EventOriginIsALocationPolicy) ExecuteTransitionContent(source EventOrig
 		}
 		}
 	}
+	} // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
 	}
 	}
 			}()

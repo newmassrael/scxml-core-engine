@@ -41,6 +41,25 @@ def is_invalid_target(target: str) -> bool:
     return target.startswith("!")
 
 
+def mesh_peer(target: str) -> Optional[str]:
+    """The peer a ``<send target>`` names, when it names one: ``#`` followed
+    by at least one character, where ``#_`` stays reserved for the targets
+    §scxml-6.2.4 defines (``#_internal``, ``#_parent``, ...).
+
+    The Python copy of C++ ``SendHelper::isMeshTarget``; every copy reads
+    ``tests/mesh/mesh_target_cases.json``, so a target one of them routes over
+    Mesh is one they all do."""
+    if not target.startswith("#"):
+        return None
+    peer = target[1:]
+    return peer if peer and not peer.startswith("_") else None
+
+
+def is_mesh_target(target: str) -> bool:
+    """Whether a ``<send target>`` names a Mesh peer (see `mesh_peer`)."""
+    return mesh_peer(target) is not None
+
+
 def parse_delay_ms(text: str) -> Optional[int]:
     """A ``<send>`` delay in milliseconds, or ``None`` when the text is not a
     time — a bare number included — so the caller raises the argument error

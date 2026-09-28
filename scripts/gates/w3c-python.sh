@@ -113,11 +113,15 @@ status=0
 # `tests/durations/css2_time.json`), and a table no runner reads here holds
 # this backend to nothing. `json_text/` sat outside this list from the day it
 # was written, 2026-09-28, until it was named.
+#
+# `mesh/` is the eighth, for the same reason: it reads
+# `tests/mesh/mesh_target_cases.json`, the Mesh-peer predicate every engine
+# and the build are held to (SCE_MESH.md §mesh-19).
 PYTHONPATH="$SCE_REPO_ROOT/backends/python/runtime${PYTHONPATH:+:$PYTHONPATH}" \
     python3 -m pytest backends/python/tests/generated/ backends/python/tests/integration/ \
         backends/python/tests/ecmascript/ backends/python/tests/configuration_entry/ \
         backends/python/tests/microstep/ backends/python/tests/json_text/ \
-        backends/python/tests/durations/ \
+        backends/python/tests/durations/ backends/python/tests/mesh/ \
         --no-header -v >"$LOG/pytest.log" 2>&1 || status=$?
 cat "$LOG/pytest.log"
 

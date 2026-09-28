@@ -588,6 +588,32 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
                 return@send true
             }
             val sendData = ""
+            val sendWireParams = emptyMap<String, List<String>>()
+            if (com.sce.runtime.SendHelper.isMeshTarget(_rt)) {
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "sent",
+                target = _rt,
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_2",
+                eventData = sendData
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_2")
+            }
+            } else {
             // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
             if (_rt == "#_internal") {
                 raiseInternal(ABadSendArgumentDiscardsItsMessageEvent.Sent, EventMetadata.internal(sendData))
@@ -605,6 +631,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             } else {
                 send(ABadSendArgumentDiscardsItsMessageEvent.Sent, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
             }
+            } // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
