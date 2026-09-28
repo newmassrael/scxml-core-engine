@@ -106,6 +106,162 @@ fn a_mesh_request_the_router_fails_is_error_invoke() {
     assert_eq!(e.terminal_state(), Some(State::Done));
 }
 
+// ── The same document through the Rust host core itself (sce-rust-mesh) ──
+
+mod through_the_host_core {
+    use super::*;
+    use sce_forge_runtime::codec::SceCursor;
+    use sce_rust_mesh::endpoint::{
+        self, Endpoint, Environment, SharedEndpoint, Transport, TransportFailure,
+    };
+    use sce_rust_mesh::generated::envelope::Envelope;
+    use sce_rust_mesh::generated::pattern_kind::PatternKind;
+    use sce_rust_mesh::generated::payload_codec::PayloadCodec;
+    use sce_rust_mesh::generated::rpc_status::RpcStatus;
+    use sce_rust_mesh::inbound::Delivery;
+    use sce_rust_mesh::router::{PeerConfig, Router};
+
+    /// A transport that keeps what it was handed.
+    #[derive(Default)]
+    struct Recorder {
+        sent: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
+    }
+
+    impl Transport for Recorder {
+        fn transmit(&mut self, peer: &str, bytes: &[u8]) -> Result<(), TransportFailure> {
+            self.sent
+                .lock()
+                .unwrap()
+                .push((peer.to_string(), bytes.to_vec()));
+            Ok(())
+        }
+    }
+
+    /// A clock that stands still and ids that count.
+    #[derive(Default)]
+    struct Fixed {
+        ids: u8,
+    }
+
+    impl Environment for Fixed {
+        fn now_ms(&mut self) -> i64 {
+            0
+        }
+        fn now_unix_ms(&mut self) -> u64 {
+            1_000_000
+        }
+        fn envelope_id(&mut self) -> [u8; 16] {
+            self.ids += 1;
+            [self.ids; 16]
+        }
+        fn jitter_draw(&mut self) -> i64 {
+            0
+        }
+    }
+
+    /// The requester's endpoint, bound to `motor` when `bound`, and what its
+    /// transport sends.
+    fn endpoint(
+        bound: bool,
+    ) -> (
+        SharedEndpoint<Recorder, Fixed>,
+        Arc<Mutex<Vec<(String, Vec<u8>)>>>,
+    ) {
+        let mut router = Router::new("brake", 8, 50).unwrap();
+        if bound {
+            router.add_peer(
+                "motor",
+                PeerConfig {
+                    transport: "wss",
+                    buffer: None,
+                    retry: None,
+                    stamp_sequence: false,
+                    delivery: Delivery {
+                        dedup: true,
+                        ordered: false,
+                    },
+                    responders: &["motor"],
+                    deadline_ms: None,
+                },
+            );
+        }
+        let recorder = Recorder::default();
+        let sent = Arc::clone(&recorder.sent);
+        (
+            Arc::new(Mutex::new(Endpoint::new(
+                router,
+                recorder,
+                Fixed::default(),
+            ))),
+            sent,
+        )
+    }
+
+    /// The request the document sent reaches `motor` as an `RpcRequest`, and
+    /// motor's `Ok` reply ends the invoke with `done.invoke.ask`.
+    #[test]
+    fn a_reply_through_the_host_core_answers_the_document() {
+        let (shared, sent) = endpoint(true);
+        let mut e = engine();
+        endpoint::register(&mut e, &shared);
+        e.initialize();
+        e.step();
+
+        let (peer, bytes) = sent.lock().unwrap().pop().expect("the request was sent");
+        assert_eq!(peer, "motor");
+        let request = Envelope::decode(&mut SceCursor::new(&bytes)).unwrap();
+        assert_eq!(request.pattern, PatternKind::RpcRequest);
+        assert_eq!(request.event_type, "service.request.force");
+        assert_eq!(request.data, br#"{"force":3,"speed":"3"}"#);
+        // The document's own deadline, on the wall clock.
+        assert_eq!(request.deadline_unix_ms, Some(1_000_250));
+
+        let reply = Envelope {
+            id: &[0xAA; 16],
+            source: "motor",
+            event_type: "service.response.force",
+            pattern: PatternKind::RpcReply,
+            datacontenttype: PayloadCodec::Json,
+            data: b"\"ok\"",
+            invoke_id: request.invoke_id,
+            rpc_status: Some(RpcStatus::Ok),
+            ..Envelope::new()
+        }
+        .encode_to_vec()
+        .unwrap();
+        let calls = {
+            let mut endpoint = shared.lock().unwrap();
+            endpoint.receive("motor", reply);
+            endpoint.take_calls()
+        };
+        endpoint::apply_to(&mut e, calls);
+        e.step();
+
+        assert_eq!(e.policy().answered(), Some(1));
+        assert_eq!(e.policy().failed(), Some(0));
+        assert_eq!(e.policy().refused(), Some(0));
+        assert_eq!(e.terminal_state(), Some(State::Done));
+    }
+
+    /// A target the host core has no binding for cannot reach the wire: the
+    /// invocation is refused, and the document sees error.execution
+    /// (SCE_MESH.md §mesh-9.5's pre-envelope tier).
+    #[test]
+    fn an_unbound_target_through_the_host_core_is_error_execution() {
+        let (shared, sent) = endpoint(false);
+        let mut e = engine();
+        endpoint::register(&mut e, &shared);
+        e.initialize();
+        e.step();
+
+        assert!(sent.lock().unwrap().is_empty(), "nothing reached the wire");
+        assert_eq!(e.policy().answered(), Some(0));
+        assert_eq!(e.policy().failed(), Some(0));
+        assert_eq!(e.policy().refused(), Some(1));
+        assert_eq!(e.terminal_state(), Some(State::Done));
+    }
+}
+
 /// With no router registered the invoke names a type nobody runs:
 /// error.execution (W3C SCXML 6.4.1).
 #[test]
