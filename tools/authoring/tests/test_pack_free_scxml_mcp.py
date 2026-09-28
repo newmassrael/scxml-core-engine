@@ -140,8 +140,106 @@ class PackFreeScxmlMcp(unittest.TestCase):
         self.assertEqual([record],
                          json.loads(result["content"][0]["text"])["diagnostics"])
 
+    def _argv_of(self, name: str, stdout: str = "", **arguments):
+        """The generator command line a tool builds, and its answer."""
+        seen = {}
+
+        def fake_run(argv, **kwargs):
+            seen["argv"] = argv
+            return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+        with mock.patch.object(verify.subprocess, "run", fake_run), \
+             mock.patch.object(verify, "_default_codegen",
+                               lambda: pathlib.Path(sys.executable)):
+            result = call(name, **arguments)
+        self.assertFalse(result.get("isError"), result["content"][0]["text"])
+        return seen["argv"][1:], result["content"][0]["text"]
+
+    def test_each_report_tool_reaches_its_product_command(self):
+        # Every one runs under --error-format json, so its refusals come
+        # back as records, and passes its names through unchecked.
+        doc, manifest = str(self.document), str(self.document)
+        cases = [
+            ("render_scxml_diagram",
+             dict(document=doc, out="figs", page="a3-landscape", min_pt=8, lexicon="ko"),
+             ["diagram", doc, "-o", "figs", "--page", "a3-landscape",
+              "--min-pt", "8.0", "--lexicon", "ko"]),
+            ("scxml_unresolved", dict(document=doc), ["unresolved", doc]),
+            ("scxml_requirements", dict(document=doc, manifest=manifest),
+             ["requirements", doc, "--manifest", manifest]),
+            ("scxml_acceptance_report",
+             dict(document=doc, manifest=manifest, variant="base"),
+             ["acceptance-report", doc, "--manifest", manifest, "--variant", "base"]),
+            ("scxml_accept",
+             dict(document=doc, manifest=manifest, variant="base", root=".", out="acc.json"),
+             ["accept", doc, "--manifest", manifest, "--variant", "base",
+              "--root", ".", "--out", "acc.json"]),
+            ("scxml_acceptance_check", dict(record=doc, variant="base", root="."),
+             ["acceptance-check", doc, "--variant", "base", "--root", "."]),
+        ]
+        for name, arguments, expected in cases:
+            with self.subTest(name=name):
+                argv, _ = self._argv_of(name, **arguments)
+                self.assertEqual(["--error-format", "json", *expected], argv)
+
+    def test_ndjson_output_comes_back_as_records(self):
+        marker = {"kind": "unresolved", "id": "T_Idle"}
+        _, text = self._argv_of("scxml_unresolved", stdout=json.dumps(marker) + "\n",
+                                document=str(self.document))
+        self.assertEqual({"verdict": "done", "markers": [marker], "diagnostics": []},
+                         json.loads(text))
+
+    def test_a_lapsed_acceptance_is_an_answer_not_an_error(self):
+        record = {"code": "cli/acceptance-lapsed", "message": "variant moved"}
+
+        def fake_run(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 20, stdout="",
+                                               stderr=json.dumps(record) + "\n")
+
+        with mock.patch.object(verify.subprocess, "run", fake_run), \
+             mock.patch.object(verify, "_default_codegen",
+                               lambda: pathlib.Path(sys.executable)):
+            result = call("scxml_acceptance_check", record=str(self.document),
+                          variant="other", root=".")
+        self.assertFalse(result.get("isError"))
+        report = json.loads(result["content"][0]["text"])
+        self.assertEqual(("lapsed", [record]), (report["verdict"], report["diagnostics"]))
+
+    def test_the_acceptance_tool_says_it_needs_the_owner(self):
+        tool = next(t for t in mcp.TOOLS if t["name"] == "scxml_accept")
+        self.assertIn("owner", tool["description"])
+
+    @unittest.skipUnless(_default_codegen().exists(),
+                         "the product's code generator is not built")
+    def test_real_product_draws_the_figures(self):
+        out = self.document.parent / "figures"
+        result = call("render_scxml_diagram", document=str(self.document), out=str(out))
+        self.assertFalse(result.get("isError"), result["content"][0]["text"])
+        report = json.loads(result["content"][0]["text"])
+        self.assertEqual([str(out / "document.svg")], report["figures"])
+        self.assertTrue((out / "document.svg").is_file())
+
+    @unittest.skipUnless(_default_codegen().exists(),
+                         "the product's code generator is not built")
+    def test_real_product_accepts_and_the_acceptance_holds(self):
+        root = pathlib.Path(__file__).resolve().parents[3]
+        fixtures = root / "sce-build" / "tests" / "fixtures" / "requirement_closure"
+        document = fixtures / "doip_nl_connection_states.scxml"
+        manifest = fixtures / "iso13400_2_nl_socket_handling.manifest.json"
+        record = self.document.parent / "acceptance.json"
+        accepted = call("scxml_accept", document=str(document), manifest=str(manifest),
+                        variant="base", root=str(root), out=str(record))
+        self.assertFalse(accepted.get("isError"), accepted["content"][0]["text"])
+        self.assertTrue(record.is_file())
+        for variant, verdict in (("base", "holds"), ("other", "lapsed")):
+            with self.subTest(variant=variant):
+                checked = call("scxml_acceptance_check", record=str(record),
+                               variant=variant, root=str(root))
+                self.assertFalse(checked.get("isError"), checked["content"][0]["text"])
+                self.assertEqual(verdict, json.loads(checked["content"][0]["text"])["verdict"])
+
     def test_missing_document_is_a_refusal(self):
-        for name in ("validate_scxml", "render_scxml_pseudocode"):
+        for name in ("validate_scxml", "render_scxml_pseudocode", "scxml_unresolved"):
             with self.subTest(name=name):
                 result = call(name, document=str(self.document.parent / "missing.scxml"))
                 self.assertTrue(result.get("isError"))

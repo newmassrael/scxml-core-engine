@@ -19,6 +19,12 @@ So the shape a caller gets is:
     verify     whether it BEHAVES, by running it
     validate_scxml  whether an SCXML document passes the product's structural check
     render_scxml_pseudocode show that SCXML document as pseudocode, without a binding
+    render_scxml_diagram    draw it as print figures, one SVG per container
+    scxml_unresolved        what it marks as not decided yet
+    scxml_requirements      what it claims, or each requirement's outcome
+    scxml_acceptance_report the page the owner reads before accepting
+    scxml_accept            record the OWNER's acceptance, on their word only
+    scxml_acceptance_check  whether that acceptance still holds
 
 ⚠⚠ `review` reached this transport later than the rest, and the gap is worth
 recording rather than quietly closing: a caller reaching this core over MCP
@@ -57,6 +63,8 @@ from .gaps import report as gap_report
 from .pack import load_pack
 from .pseudo import render as render_pseudo
 from .verify import validate_scxml as run_scxml_validation
+from .verify import (accept_design, acceptance_holds, acceptance_page,
+                     diagram_figures, requirement_records, unresolved_markers)
 from .verify import pseudo_page, verify as run_verify
 from .prose import load_prose
 from .questions import ask
@@ -250,6 +258,126 @@ TOOLS = [
                 "document": {"type": "string", "description": "Path to the SCXML document."},
                 "shape": {"type": "string", "description": "Pseudocode layout name, passed to the generator."},
                 "lexicon": {"type": "string", "description": "Pseudocode vocabulary name, passed to the generator."},
+            },
+        },
+    },
+    {
+        "name": "render_scxml_diagram",
+        "description": (
+            "Draw an existing SCXML document as print figures for a "
+            "specification: one SVG per container (the document, each "
+            "compound or parallel state), written into `out`. Every "
+            "transition is described once, numbered on its arrow with its "
+            "row in the table under the figure, in the pseudocode page's "
+            "own words. Returns JSON: verdict, figures (the files written), "
+            "diagnostics. A figure larger than the page at `min_pt` is "
+            "refused with both sizes (cli/diagram-does-not-fit), never "
+            "shrunk: use a larger page or split the container."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["document", "out"],
+            "properties": {
+                "document": {"type": "string", "description": "Path to the SCXML document."},
+                "out": {"type": "string", "description": "Directory the SVG files are written into."},
+                "page": {"type": "string", "description": "Page name, passed to the generator (default a4-portrait)."},
+                "min_pt": {"type": "number", "description": "Smallest type size in points (default 7)."},
+                "lexicon": {"type": "string", "description": "Vocabulary name, passed to the generator."},
+            },
+        },
+    },
+    {
+        "name": "scxml_unresolved",
+        "description": (
+            "List every sce:unresolved marker in an SCXML document -- what "
+            "the author recorded as not decided by the specification. "
+            "Returns JSON: verdict, markers (one record each, with its "
+            "reason and location), diagnostics. An empty list means nothing "
+            "is marked, not that nothing is open."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["document"],
+            "properties": {
+                "document": {"type": "string", "description": "Path to the SCXML document."},
+            },
+        },
+    },
+    {
+        "name": "scxml_requirements",
+        "description": (
+            "Report the requirements an SCXML document claims (sce:req). "
+            "With `manifest` -- the specification's closed requirement set "
+            "-- each requirement gets its outcome, including `missing`, "
+            "which only the manifest can show. Returns JSON: verdict, "
+            "records, diagnostics."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["document"],
+            "properties": {
+                "document": {"type": "string", "description": "Path to the SCXML document."},
+                "manifest": {"type": "string", "description": "Path to the requirement manifest."},
+            },
+        },
+    },
+    {
+        "name": "scxml_acceptance_report",
+        "description": (
+            "Render the acceptance report the specification owner reads in "
+            "one sitting before accepting a design: per requirement, "
+            "everything its behaviour depends on, then the risk surface. "
+            "Returns the page as text."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["document", "manifest", "variant"],
+            "properties": {
+                "document": {"type": "string", "description": "Path to the SCXML document."},
+                "manifest": {"type": "string", "description": "Path to the requirement manifest."},
+                "variant": {"type": "string", "description": "The variant the page is for."},
+                "sidecar": {"type": "string", "description": "Verbatim sentences by requirement id (local only)."},
+            },
+        },
+    },
+    {
+        "name": "scxml_accept",
+        "description": (
+            "Record that the specification OWNER accepted a design: writes "
+            "an acceptance record pinning the manifest, the variant and "
+            "every file the document read, by hash. Call this only when "
+            "the owner has read the acceptance report and said to accept "
+            "-- the record states a person's decision, and a caller that "
+            "writes one on its own turns an unreviewed design into an "
+            "accepted one. Returns JSON: verdict, record, diagnostics."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["document", "manifest", "variant", "root", "out"],
+            "properties": {
+                "document": {"type": "string", "description": "Path to the accepted SCXML document."},
+                "manifest": {"type": "string", "description": "Path to the requirement manifest."},
+                "variant": {"type": "string", "description": "The variant accepted."},
+                "root": {"type": "string", "description": "Directory every pinned path is recorded relative to."},
+                "out": {"type": "string", "description": "Where the acceptance record is written."},
+            },
+        },
+    },
+    {
+        "name": "scxml_acceptance_check",
+        "description": (
+            "Ask whether an acceptance record still holds against the tree. "
+            "Returns JSON: verdict `holds`, or `lapsed` with the product's "
+            "record of what moved (cli/acceptance-lapsed) -- a lapsed "
+            "acceptance is an answer, not an error."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["record", "variant", "root"],
+            "properties": {
+                "record": {"type": "string", "description": "Path to the acceptance record."},
+                "variant": {"type": "string", "description": "The variant being asked about."},
+                "root": {"type": "string", "description": "Directory the record's paths are read against."},
             },
         },
     },
@@ -555,13 +683,37 @@ def _prose_arg(args: dict) -> list[pathlib.Path]:
 
 
 def _scxml_document_arg(args: dict) -> pathlib.Path:
-    value = args.get("document")
+    return _file_arg(args, "document", "the path to an SCXML file")
+
+
+def _file_arg(args: dict, key: str, what: str,
+              required: bool = True) -> pathlib.Path | None:
+    """An argument naming a file that must already exist."""
+    path = _path_arg(args, key, what, required)
+    if path is not None and not path.is_file():
+        raise ToolArgumentError(describe_path(path))
+    return path
+
+
+def _path_arg(args: dict, key: str, what: str,
+              required: bool = True) -> pathlib.Path | None:
+    """An argument naming a path, which need not exist yet."""
+    value = args.get(key)
+    if value is None and not required:
+        return None
     if not isinstance(value, str) or not value:
-        raise ToolArgumentError("'document' is required: the path to an SCXML file")
-    document = pathlib.Path(value)
-    if not document.is_file():
-        raise ToolArgumentError(describe_path(document))
-    return document
+        raise ToolArgumentError(f"'{key}' is required: {what}")
+    return pathlib.Path(value)
+
+
+def _name_arg(args: dict, key: str, what: str, required: bool = False) -> str | None:
+    """An argument that is a name, passed to the product as it stands."""
+    value = args.get(key)
+    if value is None and not required:
+        return None
+    if not isinstance(value, str) or not value:
+        raise ToolArgumentError(f"'{key}' has to be {what}, as a string")
+    return value
 
 
 class ToolArgumentError(AuthoringError):
@@ -583,6 +735,52 @@ def call_tool(name: str, args: dict) -> dict:
                     raise ToolArgumentError(f"'{key}' has to be a name, as a string")
             page, refusal = pseudo_page(document, None, None, shape, lexicon)
             return _failure(refusal) if refusal else _text(page)
+
+        if name == "render_scxml_diagram":
+            min_pt = args.get("min_pt")
+            if min_pt is not None and (isinstance(min_pt, bool)
+                                       or not isinstance(min_pt, (int, float))):
+                raise ToolArgumentError("'min_pt' has to be a number of points")
+            report, refusal = diagram_figures(
+                _scxml_document_arg(args),
+                _path_arg(args, "out", "the directory the figures are written into"),
+                _name_arg(args, "page", "a page name"), min_pt,
+                _name_arg(args, "lexicon", "a lexicon name"))
+            return _failure(refusal) if refusal else _text(report)
+
+        if name == "scxml_unresolved":
+            report, refusal = unresolved_markers(_scxml_document_arg(args))
+            return _failure(refusal) if refusal else _text(report)
+
+        if name == "scxml_requirements":
+            report, refusal = requirement_records(
+                _scxml_document_arg(args),
+                _file_arg(args, "manifest", "the requirement manifest", required=False))
+            return _failure(refusal) if refusal else _text(report)
+
+        if name == "scxml_acceptance_report":
+            page, refusal = acceptance_page(
+                _scxml_document_arg(args),
+                _file_arg(args, "manifest", "the requirement manifest"),
+                _name_arg(args, "variant", "the variant's name", required=True),
+                _file_arg(args, "sidecar", "the sentences sidecar", required=False))
+            return _failure(refusal) if refusal else _text(page)
+
+        if name == "scxml_accept":
+            report, refusal = accept_design(
+                _scxml_document_arg(args),
+                _file_arg(args, "manifest", "the requirement manifest"),
+                _name_arg(args, "variant", "the variant's name", required=True),
+                _path_arg(args, "root", "the directory the record's paths are relative to"),
+                _path_arg(args, "out", "where the acceptance record is written"))
+            return _failure(refusal) if refusal else _text(report)
+
+        if name == "scxml_acceptance_check":
+            report, refusal = acceptance_holds(
+                _file_arg(args, "record", "the acceptance record"),
+                _name_arg(args, "variant", "the variant's name", required=True),
+                _path_arg(args, "root", "the directory the record's paths are relative to"))
+            return _failure(refusal) if refusal else _text(report)
 
         if name == "brief":
             pack = load_pack(_pack_arg(args))

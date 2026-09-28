@@ -41,13 +41,23 @@ for the other case and none of them write it down.
 
 ## What the core does
 
-The MCP server also exposes two tools that accept an SCXML file directly:
+The MCP server also exposes tools that accept an SCXML file directly, with no
+pack or binding:
 `validate_scxml` runs `sce-codegen check --lint --error-format=json` and returns
 every diagnostic record with the verdict and manifest, as JSON;
-`render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page.
-Both require only the `document` path. Neither checks whether the SCXML agrees
-with the prose specification; the specification owner compares the page with
-the prose. The pack-based `check` and `pseudo` tools below serve the separate
+`render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page;
+`render_scxml_diagram` runs `sce-codegen diagram` and writes one print figure
+(SVG) per container, refusing a figure too large for the page rather than
+shrinking it; `scxml_unresolved` and `scxml_requirements` report the document's
+`sce:unresolved` markers and its requirements (their outcomes, given the
+manifest); `scxml_acceptance_report` renders the page the owner reads before
+accepting; `scxml_accept` records that acceptance and `scxml_acceptance_check`
+asks whether it still holds. Each JSON answer carries `verdict`, the command's
+output, and every `diagnostics` record. `scxml_accept` states a person's
+decision: call it only on the owner's word, after they have read the report.
+None of these checks whether the SCXML agrees with the prose specification;
+the specification owner compares the page and the figures with the prose. The
+pack-based `check` and `pseudo` tools below serve the separate
 interface-integration workflow.
 
     python3 -m sce_author brief     --pack <dir> --prose <file>...

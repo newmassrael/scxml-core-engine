@@ -686,21 +686,48 @@ def validate_scxml(document: pathlib.Path,
     (SCE_ERROR_CONTRACT.md §1: records, exit 0, manifest) — reading only a
     refusal's stderr would drop those.
     """
+    return _product_answer(
+        ["check", str(document), "--lint"], codegen,
+        answer="manifest", read=_manifest_line, verdicts=("accepted", "refused"))
+
+
+def _product_answer(args: list[str], codegen: pathlib.Path | None, *,
+                    answer: str, read, verdicts: tuple[str, str] = ("done", "refused"),
+                    lapsed: str | None = None) -> tuple[str, str]:
+    """One run of the generator under `--error-format=json`, as the JSON
+    object every pack-free tool answers with. Returns `(report, refusal)`,
+    exactly one non-empty.
+
+    The object is `verdict`, the run's own output under the key `answer`
+    (read from stdout by `read`; null on a refusal), and every
+    `diagnostics` record stderr carried — the same three fields for every
+    tool, so a caller reads one shape. ⚠ One function, so no second tool
+    can read a run differently: dropping the records of an accepted run, or
+    losing a refusal that carried none.
+
+    `lapsed`, when given, names the verdict for a refusal whose every record
+    is `cli/acceptance-lapsed` — an answer about the record, not a failure
+    of the run.
+    """
     codegen = pathlib.Path(codegen) if codegen else _default_codegen()
     if not codegen.exists():
         raise VerifyError(
             f"{codegen}: the code generator is not there, so no document can "
-            f"be checked. Build sce-codegen before using this tool.")
-    argv = [str(codegen), "--error-format", "json", "check", str(document),
-            "--lint"]
-    run = subprocess.run(argv, capture_output=True, text=True)
+            f"be read. Build sce-codegen before using this tool.")
+    run = subprocess.run([str(codegen), "--error-format", "json", *args],
+                         capture_output=True, text=True)
     refused = run.returncode != 0
+    diagnostics = _diagnostic_records(run.stderr)
+    verdict = verdicts[1] if refused else verdicts[0]
+    if (refused and lapsed and diagnostics
+            and all(d.get("code") == "cli/acceptance-lapsed" for d in diagnostics)):
+        verdict = lapsed
     report = {
-        "verdict": "refused" if refused else "accepted",
-        "manifest": None if refused else _manifest_line(run.stdout),
-        "diagnostics": _diagnostic_records(run.stderr),
+        "verdict": verdict,
+        answer: None if refused else read(run.stdout),
+        "diagnostics": diagnostics,
     }
-    if refused and not report["diagnostics"]:
+    if refused and not diagnostics:
         # SCE_ERROR_CONTRACT.md §6: a non-zero exit with no record is the
         # product's defect. Said, not hidden behind an empty list.
         report["diagnostics"] = [{
@@ -709,6 +736,99 @@ def validate_scxml(document: pathlib.Path,
         }]
     text = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
     return ("", text) if refused else (text, "")
+
+
+def _written_paths(stdout: str) -> list:
+    """The paths a writing subcommand printed, one per line."""
+    return [line for line in stdout.splitlines() if line.strip()]
+
+
+def diagram_figures(document: pathlib.Path, out: pathlib.Path,
+                    page: str | None = None, min_pt: float | None = None,
+                    lexicon: str | None = None,
+                    codegen: pathlib.Path | None = None) -> tuple[str, str]:
+    """Draw the document as print figures (`sce-codegen diagram`): one SVG
+    per container, written into `out`. The answer is the list of files.
+
+    ⚠ `page`, `min_pt` and `lexicon` are passed through unchecked and
+    omitted when not asked for, for `pseudo_page`'s reason: the product's
+    registry is what the names mean, and its defaults are its own. A figure
+    too large for the page comes back as the product's refusal
+    (`cli/diagram-does-not-fit`, with both sizes) — never a smaller figure.
+    """
+    args = ["diagram", str(document), "-o", str(out)]
+    if page is not None:
+        args += ["--page", page]
+    if min_pt is not None:
+        args += ["--min-pt", repr(float(min_pt))]
+    if lexicon is not None:
+        args += ["--lexicon", lexicon]
+    return _product_answer(args, codegen, answer="figures", read=_written_paths)
+
+
+def unresolved_markers(document: pathlib.Path,
+                       codegen: pathlib.Path | None = None) -> tuple[str, str]:
+    """Every `sce:unresolved` marker the document carries
+    (`sce-codegen unresolved`) — what the author has said is not decided
+    yet. An empty list is an answer: nothing is marked."""
+    return _product_answer(["unresolved", str(document)], codegen,
+                           answer="markers", read=_diagnostic_records)
+
+
+def requirement_records(document: pathlib.Path,
+                        manifest: pathlib.Path | None = None,
+                        codegen: pathlib.Path | None = None) -> tuple[str, str]:
+    """The document's requirements (`sce-codegen requirements`): what it
+    claims, or — given the specification's manifest — each requirement's
+    outcome, `missing` included, which only the manifest can show."""
+    args = ["requirements", str(document)]
+    if manifest is not None:
+        args += ["--manifest", str(manifest)]
+    return _product_answer(args, codegen, answer="records", read=_diagnostic_records)
+
+
+def acceptance_page(document: pathlib.Path, manifest: pathlib.Path, variant: str,
+                    sidecar: pathlib.Path | None = None,
+                    codegen: pathlib.Path | None = None) -> tuple[str, str]:
+    """The acceptance report a person reads before accepting
+    (`sce-codegen acceptance-report`). The page comes back byte for byte,
+    for `pseudo_page`'s reason; a refusal as the JSON object."""
+    args = ["acceptance-report", str(document), "--manifest", str(manifest),
+            "--variant", variant]
+    if sidecar is not None:
+        args += ["--sidecar", str(sidecar)]
+    report, refusal = _product_answer(args, codegen, answer="page",
+                                      read=lambda stdout: stdout)
+    return (json.loads(report)["page"], "") if report else ("", refusal)
+
+
+def accept_design(document: pathlib.Path, manifest: pathlib.Path, variant: str,
+                  root: pathlib.Path, out: pathlib.Path,
+                  codegen: pathlib.Path | None = None) -> tuple[str, str]:
+    """Pin what a person accepted (`sce-codegen accept`): the record at
+    `out` names every file the acceptance rests on, by hash, relative to
+    `root`, so `acceptance_holds` can tell when one of them moves."""
+    args = ["accept", str(document), "--manifest", str(manifest),
+            "--variant", variant, "--root", str(root), "--out", str(out)]
+    # The command prints nothing; what it did is the record at `out`.
+    return _product_answer(args, codegen, answer="record",
+                           read=lambda _stdout: str(out))
+
+
+def acceptance_holds(record: pathlib.Path, variant: str, root: pathlib.Path,
+                     codegen: pathlib.Path | None = None) -> tuple[str, str]:
+    """Whether an acceptance record still holds (`sce-codegen
+    acceptance-check`): `holds`, or `lapsed` with the product's record of
+    what moved. A lapsed acceptance is an answer, returned as the report."""
+    args = ["acceptance-check", str(record), "--variant", variant,
+            "--root", str(root)]
+    report, refusal = _product_answer(args, codegen, answer="record",
+                                      read=lambda _stdout: str(record),
+                                      verdicts=("holds", "refused"),
+                                      lapsed="lapsed")
+    if refusal and json.loads(refusal)["verdict"] == "lapsed":
+        return refusal, ""
+    return report, refusal
 
 
 def _manifest_line(stdout: str):
