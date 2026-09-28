@@ -568,7 +568,36 @@ func (p *{{ machine_name }}Policy) DeliverToInvocation(invokeID, eventName, even
 	return false
 }
 
+// IsInvocationRunning reports whether `#_<invokeid>` names an invocation running
+// now (W3C SCXML 6.4 + C.1) — one whose session has reached its final state has
+// ended, and a send naming it is reported when it is made.
+func (p *{{ machine_name }}Policy) IsInvocationRunning(invokeID string) bool {
+{% for invoke_info in model.invokes | scxml_family %}
+	if invokeID == "{{ invoke_info.invoke_id }}" {
+		child := p.child{{ invoke_info.invoke_id | to_pascal_case }}
+		return child != nil && !child.IsInFinalState()
+	}
+{% endfor %}
+	return false
+}
+
 {% if model.invokes | scxml %}
+// IsChildSessionRunning reports whether a session id names a child of this
+// machine that is running now (W3C SCXML C.1) — the test DeliverToChildSession
+// makes.
+func (p *{{ machine_name }}Policy) IsChildSessionRunning(childSessionID string) bool {
+	if childSessionID == "" {
+		return false
+	}
+{% for invoke_info in model.invokes | scxml %}
+	if cs, ok := p.activeInvokes["{{ invoke_info.invoke_id }}"]; ok && cs.SessionID == childSessionID {
+		child := p.child{{ invoke_info.invoke_id | to_pascal_case }}
+		return child != nil && !child.IsInFinalState()
+	}
+{% endfor %}
+	return false
+}
+
 // DeliverToChildSession delivers an event addressed to a child's published
 // location (W3C SCXML C.1).
 //
@@ -579,15 +608,13 @@ func (p *{{ machine_name }}Policy) DeliverToInvocation(invokeID, eventName, even
 // normal external path — the routing half of C.1 is what makes the published
 // location a usable target rather than a string that merely compares equal.
 func (p *{{ machine_name }}Policy) DeliverToChildSession(childSessionID, eventName, eventData string) bool {
-	if childSessionID == "" {
+	if !p.IsChildSessionRunning(childSessionID) {
 		return false
 	}
 {% for invoke_info in model.invokes | scxml %}
 	if cs, ok := p.activeInvokes["{{ invoke_info.invoke_id }}"]; ok && cs.SessionID == childSessionID {
-		if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
-			p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName(eventName, eventData)
-			return true
-		}
+		p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName(eventName, eventData)
+		return true
 	}
 {% endfor %}
 	return false

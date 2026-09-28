@@ -53,6 +53,62 @@ object SendHelper {
     fun isMeshTarget(target: String): Boolean = meshPeer(target) != null
 
     /**
+     * Where a `<send>` to the SCXML Event I/O Processor goes, read from its
+     * target value (§scxml-6.2.4, §scxml-C-1).
+     *
+     * The table C++ `SendHelper::classifyTarget` holds, and every channel's: a
+     * `target` written in the document and a `targetexpr` evaluated at run
+     * time are the same value and go to the same place, sent at once or after
+     * a delay.
+     */
+    sealed interface SendTarget {
+        /** The sending session's own external queue. */
+        data object SelfExternal : SendTarget
+        /** `#_internal`: the sending session's internal queue. */
+        data object Internal : SendTarget
+        /** `#_parent`: the session that invoked this one. */
+        data object Parent : SendTarget
+        /** A session named by `#_scxml_<id>` or by its published location. */
+        data class Session(val sessionId: String) : SendTarget
+        /** `#_<invokeid>`: an invocation of the sending session. */
+        data class Invocation(val invokeId: String) : SendTarget
+        /** `#<name>`: a machine an SCE Mesh deployment binds. */
+        data object Mesh : SendTarget
+        /** A value naming no session: error.communication (§scxml-C-1). */
+        data object Unreachable : SendTarget
+        /**
+         * A value this processor cannot address — `bogus`, `!invalid`, or a
+         * URI of any scheme but its own locations, an http(s) URL included,
+         * which only a BasicHTTP send reaches: error.execution (§scxml-6.2.4).
+         */
+        data object Unsupported : SendTarget
+    }
+
+    /**
+     * Classify [target] (§scxml-6.2.4, §scxml-C-1). A URI of another scheme —
+     * C++'s `Uri` and `Http`, which its Interpreter's target factory may serve
+     * — is [SendTarget.Unsupported] here, as it is for every generated machine.
+     */
+    fun classifyTarget(target: String, ownSessionId: String): SendTarget {
+        if (isUnreachableTarget(target)) return SendTarget.Unreachable
+        if (isInvalidTarget(target)) return SendTarget.Unsupported
+        if (target == "#_internal") return SendTarget.Internal
+        if (target == "#_parent") return SendTarget.Parent
+        if (target.startsWith("#_scxml_")) {
+            val sessionId = target.removePrefix("#_scxml_")
+            return if (sessionId.isEmpty() || sessionId == ownSessionId) SendTarget.SelfExternal
+            else SendTarget.Session(sessionId)
+        }
+        val located = IoProcessors.sessionIdFromScxmlLocation(target)
+        if (located.isNotEmpty()) {
+            return if (located == ownSessionId) SendTarget.SelfExternal else SendTarget.Session(located)
+        }
+        if (target.startsWith("#_")) return SendTarget.Invocation(target.removePrefix("#_"))
+        if (isMeshTarget(target)) return SendTarget.Mesh
+        return SendTarget.Unsupported
+    }
+
+    /**
      * A `<send>` delay, read as the CSS2 time §scxml-6.2 names, in
      * milliseconds — or `null` when the text is not a time, a bare number
      * included, so the caller raises the argument error rather than choosing

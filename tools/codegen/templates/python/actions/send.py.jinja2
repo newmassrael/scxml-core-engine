@@ -47,16 +47,22 @@
 {% endif %}
 {% endif %}
 {%- endmacro -%}
-{#- W3C SCXML 6.2 — a delayed send to a `targetexpr` resolved now: `#_internal`
-    reaches the internal queue when due, anything else this session's
-    external queue, as the immediate send would. -#}
-{%- macro scheduled_to_resolved_target(indent, delay_py) -%}
-{{ indent }}_evt = self.get_event_from_name(_evt_name)
-{{ indent }}if _evt is not None:
-{{ indent }}    if _target_str == "#_internal":
-{{ indent }}        engine.schedule_routed_send(_evt, {{ delay_py }}, _sid, _data, "internal")
-{{ indent }}    else:
-{{ indent }}        engine.schedule_send(_evt, {{ delay_py }}, _sid, _data)
+{#- W3C SCXML 6.2.4 + C.1 — a send to the value a `targetexpr` resolved now,
+    through `engine.send_to_target`; a value that is not a target is
+    error.execution, one naming nothing there error.communication, and either
+    ends the block (W3C SCXML 4.9). -#}
+{%- macro routed_to_target(indent, has_delay, delay_py, machine_name, model) -%}
+{{ indent }}_routed = engine.send_to_target(self.get_event_from_name(_evt_name), _evt_name, _target_str, {% if has_delay %}{{ delay_py }}{% else %}0{% endif %}, _sid, _data)
+{{ indent }}if _routed == "unsupported":
+{% if 'error.execution' in model.events %}
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
+{{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
+{{ indent }}if _routed == "unreachable":
+{% if 'error.communication' in model.events %}
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
+{{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
 {%- endmacro -%}
 {%- macro emit_send(action, indent, machine_name, model) -%}
 {% set has_namelist = action.namelist and action.namelist | trim %}
@@ -66,7 +72,7 @@
 {% set is_http = action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' %}
 {% set has_dynamic = action.delay_invalid or action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or action.idlocation
                      or has_payload or action.send_type_host_served or action.send_type_unsupported
-                     or is_http or action.target.startswith('!') or action.target.startswith('#_')
+                     or is_http or action.target_unsupported or action.target.startswith('#_')
                      or action.target.startswith('http://') or action.target.startswith('https://') %}
 {% if not has_dynamic %}
 {# γ-3b fast path: no dynamic attrs, no payload, no idlocation. #}
@@ -162,17 +168,18 @@
 {% endif %}
 {% endfor %}
 {% set names_no_invocation = static_target.startswith('#_') and static_target not in ['#_parent', '#_internal'] and not static_target.startswith('#_scxml_') and not child_ns.named %}
-{% set static_refused = not action.send_type_host_served and (action.send_type_unsupported or static_target.startswith('!') or (is_http and not action.target and not action.targetexpr) or names_no_invocation) %}
+{% set static_refused = not action.send_type_host_served and (action.send_type_unsupported or action.target_unsupported or (is_http and not action.target and not action.targetexpr) or names_no_invocation) %}
 {% if static_refused %}
 {% if action.send_type_unsupported %}
 {# W3C SCXML 6.2 (test199) — a processor the platform does not support. #}
 {% if 'error.execution' in model.events %}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
 {% endif %}
-{% elif static_target.startswith('!') %}
-{# W3C SCXML 6.2 (test194) — `target="!…"` is the test suite's
-   deliberate-invalid sentinel. The sendid rides on the error so the matching
-   transition's `<assign expr="_event.sendid">` reads it back (test332). #}
+{% elif action.target_unsupported %}
+{# W3C SCXML 6.2.4 (test194) — a target this processor cannot address:
+   `Action::target_unsupported`, decided once at build time. The sendid rides
+   on the error so the matching transition's `<assign expr="_event.sendid">`
+   reads it back (test332). #}
 {% if 'error.execution' in model.events %}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
 {% endif %}
@@ -235,8 +242,10 @@
 {{ indent }}engine.schedule_routed_send(None, {{ delay_py }}, _sid, _data, "parent", event_name=_evt_name)
 {% else %}
 {# W3C SCXML 6.2 (test233/234): the parent receives the same payload any other
-   `<send>` would carry. #}
-{{ indent }}self._parent_queue.append((_evt_name, _data))
+   `<send>` would carry. A session nothing invoked has no queue to take it,
+   and drops it as the literal `#_parent` arm of every channel does. #}
+{{ indent }}if self._parent_queue is not None:
+{{ indent }}    self._parent_queue.append((_evt_name, _data))
 {% endif %}
 {% elif not action.targetexpr and action.target == '#_internal' %}
 {# W3C SCXML 6.2 (test189, test495): `<send target="#_internal">` enqueues onto
@@ -299,62 +308,19 @@
 {{ indent }}else:
 {{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
 {{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
-{% elif action.targetexpr and has_delay %}
-{# W3C SCXML 6.2: the target resolved now decides where the delayed event goes —
-   `#_internal` the internal queue, a Mesh peer the host router
-   (SCE_MESH.md §mesh-19), anything else this session's external queue. #}
-{% if dynamic_mesh %}
-{{ indent }}if _is_mesh_target(_target_str):
-{{ host_send_request(action, indent ~ '    ', 'sce:mesh', has_payload, has_delay, delay_py, machine_name, model) }}
-{{ indent }}else:
-{{ scheduled_to_resolved_target(indent ~ '    ', delay_py) }}
-{% else %}
-{{ scheduled_to_resolved_target(indent, delay_py) }}
-{% endif %}
 {% elif action.targetexpr %}
-{# W3C SCXML C.1 — the target resolved at action time (an empty one was refused
-   above as naming nothing): `http(s)://...` → `perform_http_send`;
-   `#_internal` → internal raise; `#_parent` → the parent; `#_<…>` → an active
-   invoke, else this session; an SCXML processor location → the child it
-   names, else this session; anything else → `error.communication`. #}
+{# W3C SCXML 6.2.4 + C.1 — a targetexpr is a target: the value is routed as the
+   same value written in `target` is, at once or after the delay, by the table
+   `send.classify_target` holds (C++ `SendHelper::classifyTarget`). A Mesh peer
+   is the host router's (SCE_MESH.md §mesh-19), never this session's. #}
 {% if dynamic_mesh %}
-{# SCE_MESH.md §mesh-19: a Mesh peer is the host router's, never this session's. #}
 {{ indent }}if _is_mesh_target(_target_str):
 {{ host_send_request(action, indent ~ '    ', 'sce:mesh', has_payload, has_delay, delay_py, machine_name, model) }}
-{{ indent }}elif _target_str.startswith("http://") or _target_str.startswith("https://"):
-{% else %}
-{{ indent }}if _target_str.startswith("http://") or _target_str.startswith("https://"):
-{% endif %}
-{{ indent }}    engine.perform_http_send(_target_str, _evt_name, {% if action.contentexpr and not (action.params or has_namelist or action.content) %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %}, self._wire_params_from_payload(_data), _sid)
-{{ indent }}elif _target_str == "#_internal":
-{{ indent }}    _dyn_evt = self.get_event_from_name(_evt_name)
-{{ indent }}    if _dyn_evt is not None:
-{{ indent }}        engine.raise_internal(_dyn_evt, EventMetadata(send_id=_sid, data=_data))
-{{ indent }}elif _target_str == "#_parent":
-{{ indent }}    self._parent_queue.append((_evt_name, _data))
-{{ indent }}elif _target_str.startswith("#_"):
-{{ indent }}    _inv_obj = engine._active_invokes.get(_target_str[2:])
-{{ indent }}    if _inv_obj is not None and not _inv_obj.is_done():
-{{ indent }}        _inv_obj.forward_event(_evt_name, EventMetadata(event_type="external", data=_data))
-{{ indent }}    else:
-{{ indent }}        _dyn_evt = self.get_event_from_name(_evt_name)
-{{ indent }}        if _dyn_evt is not None:
-{{ indent }}            engine.send_to_self(_dyn_evt, _sid, _data)
-{{ indent }}elif _session_id_from_scxml_location(_target_str):
-{# W3C SCXML C.1 — an SCXML Event I/O Processor location. When it decodes to
-   one of our own children it is addressed to that child; otherwise it names
-   this session (the AOT engine's single-session execution model). #}
-{{ indent }}    if not engine.deliver_to_child_session(
-{{ indent }}        _session_id_from_scxml_location(_target_str), _evt_name, _data
-{{ indent }}    ):
-{{ indent }}        _dyn_evt = self.get_event_from_name(_evt_name)
-{{ indent }}        if _dyn_evt is not None:
-{{ indent }}            engine.send_to_self(_dyn_evt, _sid, _data)
 {{ indent }}else:
-{% if 'error.communication' in model.events %}
-{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{{ routed_to_target(indent ~ '    ', has_delay, delay_py, machine_name, model) }}
+{% else %}
+{{ routed_to_target(indent, has_delay, delay_py, machine_name, model) }}
 {% endif %}
-{{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
 {% else %}
 {# W3C SCXML 6.2 — this session's external queue, now or after the delay. #}
 {% if dyn_event %}

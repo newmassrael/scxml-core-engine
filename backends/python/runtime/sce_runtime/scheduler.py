@@ -37,6 +37,9 @@ class ScheduledRoute:
     kind: str
     event_name: str = ""
     invoke_id: str = ""
+    session_id: str = ""
+    """The child session, for ``"session"`` — a child's published location
+    (§scxml-C-1)."""
 
 
 @dataclass(order=True)

@@ -108,6 +108,81 @@ func IsMeshTarget(target string) bool {
 	return ok
 }
 
+// SendTargetKind names where a <send> to the SCXML Event I/O Processor goes
+// (§scxml-6.2.4, §scxml-C-1).
+type SendTargetKind int
+
+const (
+	// TargetSelfExternal is the sending session's own external queue.
+	TargetSelfExternal SendTargetKind = iota
+	// TargetInternal is `#_internal`: the sending session's internal queue.
+	TargetInternal
+	// TargetParent is `#_parent`: the session that invoked this one.
+	TargetParent
+	// TargetSession is a session named by `#_scxml_<id>` or its published location.
+	TargetSession
+	// TargetInvocation is `#_<invokeid>`: an invocation of the sending session.
+	TargetInvocation
+	// TargetMesh is `#<name>`: a machine an SCE Mesh deployment binds.
+	TargetMesh
+	// TargetUnreachable is a value naming no session: error.communication (§scxml-C-1).
+	TargetUnreachable
+	// TargetUnsupported is a value this processor cannot address — `bogus`,
+	// `!invalid`, or a URI of any scheme but its own locations, an http(s) URL
+	// included, which only a BasicHTTP send reaches: error.execution
+	// (§scxml-6.2.4).
+	TargetUnsupported
+)
+
+// SendTarget is a classified target value: its kind, and the session id
+// (TargetSession) or invoke id (TargetInvocation) it names.
+type SendTarget struct {
+	Kind SendTargetKind
+	ID   string
+}
+
+// ClassifyTarget reads a target value (§scxml-6.2.4, §scxml-C-1).
+//
+// The table C++ `SendHelper::classifyTarget` holds, and every channel's: a
+// `target` written in the document and a `targetexpr` evaluated at run time
+// are the same value and go to the same place, sent at once or after a delay.
+// A URI of another scheme — C++'s `Uri` and `Http`, which its Interpreter's
+// target factory may serve — is TargetUnsupported here, as it is for every
+// generated machine.
+func ClassifyTarget(target, ownSessionID string) SendTarget {
+	if IsUnreachableTarget(target) {
+		return SendTarget{Kind: TargetUnreachable}
+	}
+	if IsInvalidTarget(target) {
+		return SendTarget{Kind: TargetUnsupported}
+	}
+	if IsInternalTarget(target) {
+		return SendTarget{Kind: TargetInternal}
+	}
+	if target == ParentTarget {
+		return SendTarget{Kind: TargetParent}
+	}
+	if sessionID, ok := strings.CutPrefix(target, SCXMLSessionTargetPrefix); ok {
+		if sessionID == "" || sessionID == ownSessionID {
+			return SendTarget{Kind: TargetSelfExternal}
+		}
+		return SendTarget{Kind: TargetSession, ID: sessionID}
+	}
+	if located := SessionIDFromScxmlLocation(target); located != "" {
+		if located == ownSessionID {
+			return SendTarget{Kind: TargetSelfExternal}
+		}
+		return SendTarget{Kind: TargetSession, ID: located}
+	}
+	if IsChildInvokeTarget(target) {
+		return SendTarget{Kind: TargetInvocation, ID: ExtractInvokeID(target)}
+	}
+	if IsMeshTarget(target) {
+		return SendTarget{Kind: TargetMesh}
+	}
+	return SendTarget{Kind: TargetUnsupported}
+}
+
 // RequiresTargetAttribute checks if send type requires a target attribute
 // (§scxml-C-2). BasicHTTP Event I/O Processor requires a target URL.
 //

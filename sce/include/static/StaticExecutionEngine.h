@@ -1258,8 +1258,11 @@ public:
         switch (resolved.kind) {
         case Kind::Unsupported:
         case Kind::Uri:
+        case Kind::Http:
             // A generated machine registers no target schemes: a URI of any
-            // scheme but http(s) and its own locations is one it cannot address.
+            // scheme but its own locations — an http(s) URL included, which
+            // only a BasicHTTP send reaches — is one the SCXML Event I/O
+            // Processor cannot address here.
             return TargetSendOutcome::Unsupported;
         case Kind::Unreachable:
             return TargetSendOutcome::Unreachable;
@@ -1272,8 +1275,7 @@ public:
             }
             return TargetSendOutcome::Sent;
         case Kind::Mesh:
-        case Kind::Http:
-            // Another processor's address: the external path hands it over.
+            // A Mesh peer: the external path hands it to the Mesh transport.
             // (Built in place — `reader_names` reads `Type name(...)` in this
             // header as a member the generated machine carries.)
             raiseExternal(EventWithMetadata(event, eventData, origin, sendId, "external",
@@ -1283,6 +1285,17 @@ public:
             route = ::SCE::ScheduledRoute{RouteKind::InternalQueue, "", ""};
             break;
         case Kind::Parent:
+            // §scxml-C-1: a session nothing invoked has no parent to address,
+            // delayed or not.
+            // `hasParentSession` is emitted beside `deliverToParent`, so the
+            // concept that finds one finds both.
+            if constexpr (SCE::Core::HasParentDelivery<StatePolicy>) {
+                if (!policy_.hasParentSession()) {
+                    return TargetSendOutcome::Unreachable;
+                }
+            } else {
+                return TargetSendOutcome::Unreachable;
+            }
             route = ::SCE::ScheduledRoute{RouteKind::Parent, eventName, ""};
             break;
         case Kind::Invocation:

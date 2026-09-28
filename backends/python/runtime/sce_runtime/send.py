@@ -14,7 +14,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .io_processors import BASIC_HTTP_EVENT_PROCESSOR_URI, SCXML_EVENT_PROCESSOR_URI
+from .io_processors import (
+    BASIC_HTTP_EVENT_PROCESSOR_URI,
+    SCXML_EVENT_PROCESSOR_URI,
+    session_id_from_scxml_location,
+)
 
 MAX_DELAY_MS = (1 << 63) - 1
 """The largest delay any engine can hold, in milliseconds: the positive range
@@ -71,6 +75,62 @@ def mesh_peer(target: str) -> Optional[str]:
 def is_mesh_target(target: str) -> bool:
     """Whether a ``<send target>`` names a Mesh peer (see `mesh_peer`)."""
     return mesh_peer(target) is not None
+
+
+TARGET_SELF = "self"
+"""The sending session's own external queue."""
+TARGET_INTERNAL = "internal"
+"""``#_internal``: the sending session's internal queue."""
+TARGET_PARENT = "parent"
+"""``#_parent``: the session that invoked this one."""
+TARGET_SESSION = "session"
+"""A session named by ``#_scxml_<id>`` or by its published location."""
+TARGET_INVOCATION = "invocation"
+"""``#_<invokeid>``: an invocation of the sending session."""
+TARGET_MESH = "mesh"
+"""``#<name>``: a machine an SCE Mesh deployment binds."""
+TARGET_UNREACHABLE = "unreachable"
+"""A value naming no session: error.communication (§scxml-C-1)."""
+TARGET_UNSUPPORTED = "unsupported"
+"""A value this processor cannot address — ``bogus``, ``!invalid``, or a URI
+of any scheme but its own locations, an http(s) URL included, which only a
+BasicHTTP send reaches: error.execution (§scxml-6.2.4)."""
+
+
+def classify_target(target: str, own_session_id: str) -> tuple[str, str]:
+    """Where a ``<send>`` to the SCXML Event I/O Processor goes, read from its
+    target value: a ``TARGET_*`` kind, and the session id (``TARGET_SESSION``)
+    or invoke id (``TARGET_INVOCATION``) it names.
+
+    The table C++ ``SendHelper::classifyTarget`` holds, and every channel's
+    (§scxml-6.2.4, §scxml-C-1): a ``target`` written in the document and a
+    ``targetexpr`` evaluated at run time are the same value and go to the same
+    place, sent at once or after a delay. A URI of another scheme — C++'s
+    ``Uri`` and ``Http``, which its Interpreter's target factory may serve — is
+    ``TARGET_UNSUPPORTED`` here, as it is for every generated machine."""
+    if is_unreachable_target(target):
+        return TARGET_UNREACHABLE, ""
+    if is_invalid_target(target):
+        return TARGET_UNSUPPORTED, ""
+    if target == "#_internal":
+        return TARGET_INTERNAL, ""
+    if target == "#_parent":
+        return TARGET_PARENT, ""
+    if target.startswith("#_scxml_"):
+        session_id = target[len("#_scxml_"):]
+        if not session_id or session_id == own_session_id:
+            return TARGET_SELF, ""
+        return TARGET_SESSION, session_id
+    located = session_id_from_scxml_location(target)
+    if located:
+        if located == own_session_id:
+            return TARGET_SELF, ""
+        return TARGET_SESSION, located
+    if target.startswith("#_"):
+        return TARGET_INVOCATION, target[2:]
+    if is_mesh_target(target):
+        return TARGET_MESH, ""
+    return TARGET_UNSUPPORTED, ""
 
 
 def parse_delay_ms(text: str) -> Optional[int]:

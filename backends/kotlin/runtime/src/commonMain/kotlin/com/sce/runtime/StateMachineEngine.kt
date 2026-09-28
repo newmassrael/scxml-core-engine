@@ -141,6 +141,16 @@ private fun refuseReservedType(call: String, processorType: String) {
     }
 }
 
+/** What became of a `<send>` handed to [StateMachineEngine.sendToTarget]. */
+enum class TargetSendOutcome {
+    /** Delivered, or scheduled to be when its delay elapses. */
+    SENT,
+    /** The value is not a target: the caller raises error.execution (§scxml-6.2.4). */
+    UNSUPPORTED,
+    /** Nothing the value names is there: the caller raises error.communication (§scxml-C-1). */
+    UNREACHABLE,
+}
+
 /**
  * §scxml-5.10: Event metadata for _event system variable.
  *
@@ -1428,6 +1438,18 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
         /** `#_parent`: the session that invoked this one. */
         data class Parent(val eventName: String, val eventData: String) : ScheduledRoute
+
+        /**
+         * A child session named by its id — its published location (§scxml-C-1)
+         * — if it is still running when the entry comes due; [unreachable] as
+         * for [Invocation].
+         */
+        data class Session(
+            val sessionId: String,
+            val eventName: String,
+            val eventData: String,
+            val unreachable: Any?,
+        ) : ScheduledRoute
     }
 
     /** Which start of which host-run invocation a scheduled deadline ends. */
@@ -2676,8 +2698,102 @@ abstract class StateMachineEngine<S : State, E : Event>(
                         entry.sendId
                     )
                 }
+            is ScheduledRoute.Session ->
+                if (!deliverToChildSession(route.sessionId, route.eventName, route.eventData)) {
+                    raisePlatformError(
+                        route.unreachable as E,
+                        "<send> names a session that was no longer running when its delay elapsed",
+                        entry.sendId
+                    )
+                }
         }
     }
+
+    /**
+     * §scxml-6.2.4 + §scxml-C-1: send to a target value read at run time.
+     *
+     * A `targetexpr` is a target: whatever value it yields is routed as the
+     * same value written in `target` is — [SendHelper.classifyTarget] reads it,
+     * the table C++ `SendHelper::classifyTarget` holds — sent at once or, with
+     * a positive [delayMs], from the scheduler through [deliverRouted] when it
+     * comes due. An invocation or a session the value names that is not running
+     * now is reported now; one that ends while a delayed send waits is reported
+     * when it comes due, as [communicationError].
+     *
+     * [event] is this machine's spelling of the event, for its own queues; a
+     * child or a parent resolves [eventName].
+     */
+    protected fun sendToTarget(
+        target: String,
+        event: E?,
+        eventName: String,
+        eventData: String,
+        delayMs: Long,
+        sendId: String,
+        communicationError: E,
+    ): TargetSendOutcome {
+        val origin = scriptSessionId ?: ""
+        val delayed = delayMs > 0
+        val route: ScheduledRoute = when (val resolved = SendHelper.classifyTarget(target, origin)) {
+            SendHelper.SendTarget.Unsupported, SendHelper.SendTarget.Mesh -> return TargetSendOutcome.UNSUPPORTED
+            SendHelper.SendTarget.Unreachable -> return TargetSendOutcome.UNREACHABLE
+            SendHelper.SendTarget.SelfExternal -> {
+                if (event != null) {
+                    val metadata = EventMetadata.external(sendId = sendId, origin = origin, data = eventData)
+                    if (delayed) scheduleSend(sendId, delayMs, event, metadata) else send(event, metadata)
+                }
+                return TargetSendOutcome.SENT
+            }
+            SendHelper.SendTarget.Internal -> {
+                if (event != null) {
+                    val metadata = EventMetadata.internal(eventData)
+                    if (delayed) scheduleInternalSend(sendId, delayMs, event, metadata) else raiseInternal(event, metadata)
+                }
+                return TargetSendOutcome.SENT
+            }
+            SendHelper.SendTarget.Parent -> {
+                if (onSendToParent == null) return TargetSendOutcome.UNREACHABLE
+                ScheduledRoute.Parent(eventName, eventData)
+            }
+            is SendHelper.SendTarget.Invocation -> {
+                if (!isInvocationRunning(resolved.invokeId)) return TargetSendOutcome.UNREACHABLE
+                ScheduledRoute.Invocation(resolved.invokeId, eventName, eventData, communicationError)
+            }
+            is SendHelper.SendTarget.Session -> {
+                if (!isChildSessionRunning(resolved.sessionId)) return TargetSendOutcome.UNREACHABLE
+                ScheduledRoute.Session(resolved.sessionId, eventName, eventData, communicationError)
+            }
+        }
+        if (delayed) {
+            scheduleRouted(sendId, delayMs, null, EventMetadata.EMPTY, route)
+            return TargetSendOutcome.SENT
+        }
+        val delivered = when (route) {
+            ScheduledRoute.InternalQueue -> true
+            is ScheduledRoute.Parent -> {
+                onSendToParent?.invoke(route.eventName, route.eventData)
+                true
+            }
+            is ScheduledRoute.Invocation -> sendToChild(route.invokeId, route.eventName, route.eventData)
+            is ScheduledRoute.Session -> deliverToChildSession(route.sessionId, route.eventName, route.eventData)
+        }
+        return if (delivered) TargetSendOutcome.SENT else TargetSendOutcome.UNREACHABLE
+    }
+
+    /**
+     * §scxml-6.4 + §scxml-C-1: whether `#_<invokeid>` names an invocation
+     * running now — one whose session has reached its final state has ended.
+     */
+    private fun isInvocationRunning(invokeId: String): Boolean =
+        activeInvokes[invokeId]?.child?.isInFinalState == false
+
+    /**
+     * §scxml-C-1: whether [childSessionId] names a child of this machine that
+     * is running now — the test [deliverToChildSession] makes.
+     */
+    private fun isChildSessionRunning(childSessionId: String): Boolean =
+        childSessionId.isNotEmpty() &&
+            activeInvokes.values.any { it.child.scriptSessionId == childSessionId && !it.child.isInFinalState }
 
     /** Queue a routed entry in [scheduledSends], replacing any send of the same id. */
     private fun scheduleRouted(sendId: String, delayMs: Long, event: E?, metadata: EventMetadata, route: ScheduledRoute) {
@@ -3364,7 +3480,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         eventName: String,
         eventData: String = ""
     ): Boolean {
-        if (childSessionId.isEmpty()) return false
+        if (!isChildSessionRunning(childSessionId)) return false
         for ((_, entry) in activeInvokes) {
             if (entry.child.scriptSessionId == childSessionId) {
                 entry.child.sendByNameWithData(eventName, eventData)

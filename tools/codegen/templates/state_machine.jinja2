@@ -401,6 +401,13 @@ struct {{ model.name }}Policy {
         parent_->raiseExternal(addressed);
         return true;
     }
+
+    // W3C SCXML C.1: whether a session invoked this one — asked when a
+    // `<send targetexpr>` names `#_parent`, so a session with none hears
+    // error.communication when the send is made, delayed or not.
+    bool hasParentSession() const {
+        return parent_ != nullptr;
+    }
     {% endif %}
 
     {# SCE_MESH.md §9.6.2 — a parent whose only `<invoke type="scxml">` is     #}

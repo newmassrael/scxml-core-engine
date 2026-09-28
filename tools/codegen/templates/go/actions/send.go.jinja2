@@ -302,8 +302,9 @@
 {% if in_block %}
 	return  // W3C SCXML 4.9: the error ends the block
 {% endif %}
-{% elif static_target is startingwith('!') and not action.send_type_host_served %}
-	// W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
+{% elif action.target_unsupported %}
+	// W3C SCXML 6.2.4: "{{ action.target }}" is not a target this processor can
+	// address — `Action::target_unsupported`, decided once at build time.
 {% if 'error.execution' in model.events %}
 	{
 		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send target='{{ action.target }}'> is not a target this processor can address")
@@ -628,41 +629,37 @@
 {% endfor %}
 {% else %}
 	// W3C SCXML 6.2: External send
-{% if delay_go and action.targetexpr and model.needs_script_engine %}
-	// W3C SCXML 6.2: the target resolved now decides where the delayed event
-	// goes — `#_internal` the internal queue, anything else this session's
-	// external queue, as the immediate send would.
-	if delayEvt, delayOk := p.GetEventFromName({{ event_name_go }}); delayOk {
-		if sendTarget == "#_internal" {
-			engine.ScheduleRoutedEvent(delayEvt, {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID,
-				sce.ScheduledRoute{Kind: sce.RouteInternalQueue})
-		} else {
-			engine.ScheduleEvent(delayEvt, {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
+{% if action.targetexpr and model.needs_script_engine %}
+	// W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+	// the same value written in `target` is, at once or after the delay, by
+	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
+	{
+		sendEvt, sendHasEvt := p.GetEventFromName({{ event_name_go }})
+		routed := engine.SendToTarget(sendEvt, sendHasEvt, {{ event_name_go }}, sendTarget, p.SessionID,
+			{% if delay_go %}{{ delay_go }}{% else %}0{% endif %}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
+		if routed == sce.TargetNotSupported {
+{% if 'error.execution' in model.events %}
+			errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> targetexpr produced a value that is not a target")
+			errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+			engine.Raise(errEvt)
+{% endif %}
+{% if in_block %}
+			return // W3C SCXML 4.9: the error ends the block
+{% endif %}
+		}
+		if routed == sce.TargetNotReachable {
+{% if 'error.communication' in model.events %}
+			errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> targetexpr names a session this processor cannot reach")
+			errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+			engine.Raise(errEvt)
+{% endif %}
+{% if in_block %}
+			return // W3C SCXML 4.9: the error ends the block
+{% endif %}
 		}
 	}
 {% elif delay_go %}
 {{ raise_external_here(action, model, machine_name, send_id, event_name_go, delay_go) }}
-{% elif action.targetexpr and model.needs_script_engine %}
-	{
-{% if model.invokes | scxml %}
-		// W3C SCXML C.1: a target that decodes to one of our children's
-		// published locations is addressed to that child. Without this the
-		// address a peer was told to answer at routes back into the
-		// sender's own queue, so the location compares equal and still
-		// reaches nobody.
-		addressedChild := sce.SessionIDFromScxmlLocation(sendTarget)
-		if !p.DeliverToChildSession(addressedChild, {{ event_name_go }}, eventDataStr) {
-{% endif %}
-		if sendEvt, sendOk := p.GetEventFromName({{ event_name_go }}); sendOk {
-			meta := sce.NewEventWithMetadata(sendEvt)
-			meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", p.SessionID)
-			meta.Metadata.Data = eventDataStr
-			engine.RaiseExternalWithMeta(meta)
-		}
-{% if model.invokes | scxml %}
-		}
-{% endif %}
-	}
 {% else %}
 {{ raise_external_here(action, model, machine_name, send_id, event_name_go) }}
 {% endif %}

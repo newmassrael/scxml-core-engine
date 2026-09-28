@@ -321,7 +321,7 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
        `{{ csym_prefix }}{{ model.name }}_sched_route_t`. */
     uint8_t route;
 {% set sched_invocations = model.invokes | scxml_family | list %}
-{% if model.has_parent_communication or sched_invocations %}
+{% if model.may_address_parent or sched_invocations %}
     /* The event NAME a `#_parent` or `#_<invokeid>` entry delivers: the
        receiver's enum is foreign to this SM, so its own by-name door
        resolves it. The `event` enum slot stays
@@ -609,7 +609,7 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        address nothing answers on. */
     char basic_http_access_uri[SCE_MAX_URI_LEN];
     {% endif %}
-    {% if model.has_parent_communication %}
+    {% if model.may_address_parent %}
     /* W3C SCXML 6.4: cross-machine event dispatch when this SM is
        invoked as a child. The parent's `execute_pending_invokes` calls
        `_init_with_parent`, which stamps these fields BEFORE the
@@ -942,7 +942,8 @@ void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t 
                                                             const char *basic_http_access_uri{% if has_native_actions %},
                                                             const {{ native_actions_interface }} *actions{% endif %});
 {% endif %}
-{% else %}
+{% endif %}
+{% if model.may_address_parent %}
 /* W3C SCXML 6.4: Initialize an invoked-child SM with parent-routing
    wired BEFORE the configuration entry walk runs. The parent's
    `execute_pending_invokes` calls this immediately after pushing the
@@ -955,7 +956,10 @@ void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t 
    the parent's transition time (test338). SMs that declare
    `<send target="#_parent">` are exclusively invoked as children, so
    the plain `_init` symbol is not emitted for them — the only call site
-   is the parent's invoke helper. `clock` is the parent's time
+   is the parent's invoke helper. One whose `<send targetexpr>` may name
+   `#_parent` keeps `_init` too: whether it is invoked is the deployment's
+   choice, and started on its own, that send is error.communication (C.1).
+   `clock` is the parent's time
    (`sce_clock_following`): an invoked session's `<send delay>`s wait on the
    clock its parent's do (§scxml-6.4), installed before the entry walk arms
    any of them. */

@@ -619,6 +619,44 @@ pub trait StatePolicy: Sized + 'static {
         false
     }
 
+    /// §scxml-C-1: whether a session invoked this one — asked when a
+    /// `<send targetexpr>` names `#_parent`, so a session with none hears
+    /// error.communication when the send is made, delayed or not.
+    ///
+    /// A policy that was not invoked has no parent, which is what the
+    /// default says.
+    fn has_parent_session(&self) -> bool {
+        false
+    }
+
+    /// §scxml-C-1: deliver a send addressed to one of this machine's children
+    /// by the session id its published location names.
+    ///
+    /// Answers whether that child was there to take it. A policy with no
+    /// children has none, which is what the default says.
+    fn deliver_to_child_session(
+        &mut self,
+        _child_session_id: &str,
+        _event_name: &str,
+        _event_data: &str,
+    ) -> bool {
+        false
+    }
+
+    /// §scxml-6.4 + §scxml-C-1: whether `#_<invokeid>` names an invocation
+    /// that is running now — one that has not started, or whose session has
+    /// reached its final state, is not there to address, and a send naming it
+    /// is reported when it is made.
+    fn is_invocation_running(&self, _invoke_id: &str) -> bool {
+        false
+    }
+
+    /// §scxml-C-1: whether a session id names a child of this machine that is
+    /// running now — the test [`deliver_to_child_session`](Self::deliver_to_child_session) makes.
+    fn is_child_session_running(&self, _child_session_id: &str) -> bool {
+        false
+    }
+
     /// §scxml-5.10: Populate pending event metadata fields from an event's metadata.
     ///
     /// Ports C++ `EventMetadataHelper::populatePolicyFromMetadata`. Called by the engine

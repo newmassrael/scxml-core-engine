@@ -283,11 +283,11 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
         # W3C SCXML 6.4 — when this policy runs as an invoked child its
         # `<send target="#_parent">` actions push `(event_name, data)`
         # tuples here; the parent's `ScxmlInvoke.drain_events()` lifts
-        # them onto the parent's external queue. Always present so
-        # generated `<send target="#_parent">` arms compile against the
-        # same field regardless of whether the document is ever
-        # actually invoked.
-        self._parent_queue: List[Tuple[str, Any]] = []
+        # them onto the parent's external queue. `None` until the invoking
+        # parent installs one, so whether this session has a parent is a
+        # fact the engine can read (W3C SCXML C.1: a send to `#_parent`
+        # from a session nothing invoked is error.communication).
+        self._parent_queue: Optional[List[Tuple[str, Any]]] = None
 {% if event_payload_active %}
         # NL→IR Item C1 Path A: the current event's typed `_event.data`
         # payload(s), lifted from the dequeued event by `set_current_event`

@@ -62,6 +62,9 @@ const (
 	RouteInvocation
 	// RouteParent is `#_parent`: the session that invoked this one.
 	RouteParent
+	// RouteSession is a child session named by its id — its published
+	// location (§scxml-C-1).
+	RouteSession
 )
 
 // ScheduledRoute is where a delayed `<send>`'s event goes when it comes due
@@ -77,6 +80,8 @@ type ScheduledRoute struct {
 	EventName string
 	// InvokeID names the invocation, for RouteInvocation.
 	InvokeID string
+	// SessionID names the child session, for RouteSession.
+	SessionID string
 }
 
 // HostInvokeDeadline identifies the start of a host-run invocation whose

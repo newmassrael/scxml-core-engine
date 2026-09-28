@@ -65,6 +65,7 @@ from .host_processor import (
 )
 from .http import HttpSendRequest, HttpSendResponse
 from . import io_processors
+from . import send as send_module
 from .invoke import (
     ERROR_INVOKE_EVENT,
     ERROR_INVOKE_PREFIX,
@@ -1523,12 +1524,34 @@ class Engine(Generic[S, E]):
         of the session that attempted to send the event." For a delayed send
         the dispatch is this delivery, so an invocation that has ended in the
         meantime is reported here, not when the send was made."""
+        if self._deliver_routed_now(event, sendid, data, route):
+            return
+        communication_error = self._policy.get_event_from_name("error.communication")
+        if communication_error is not None:
+            self.raise_internal(
+                communication_error,
+                EventMetadata(send_id=sendid, event_type="platform"),
+            )
+
+    def _deliver_routed_now(
+        self, event: Optional[E], sendid: str, data: Any, route: ScheduledRoute
+    ) -> bool:
+        """W3C SCXML 6.2.4 + C.1 — deliver a send to the target a route names,
+        now: the one delivery a send made at once and a delayed send whose wait
+        is over both go through (a delay postpones a send, it does not change
+        where it goes). Answers whether the target was there to take it."""
         if route.kind == "internal":
-            self.raise_internal(event, EventMetadata(send_id=sendid, data=data))
-            return
+            if event is not None:
+                self.raise_internal(event, EventMetadata(send_id=sendid, data=data))
+            return True
         if route.kind == "parent":
-            self._policy._parent_queue.append((route.event_name, data))
-            return
+            parent_queue = self._policy._parent_queue
+            if parent_queue is None:
+                return False
+            parent_queue.append((route.event_name, data))
+            return True
+        if route.kind == "session":
+            return self.deliver_to_child_session(route.session_id, route.event_name, data)
         invoke = self._active_invokes.get(route.invoke_id)
         if invoke is not None and not invoke.is_done():
             invoke.forward_event(
@@ -1541,13 +1564,67 @@ class Engine(Generic[S, E]):
                     origin_type=SCXML_EVENT_PROCESSOR_URI,
                 ),
             )
-            return
-        communication_error = self._policy.get_event_from_name("error.communication")
-        if communication_error is not None:
-            self.raise_internal(
-                communication_error,
-                EventMetadata(send_id=sendid, event_type="platform"),
-            )
+            return True
+        return False
+
+    def send_to_target(
+        self,
+        event: Optional[E],
+        event_name: str,
+        target: str,
+        delay_ms: int,
+        sendid: str,
+        data: Any,
+    ) -> str:
+        """W3C SCXML 6.2.4 + C.1 — send to a target value read at run time.
+
+        A `targetexpr` is a target: whatever value it yields is routed as the
+        same value written in `target` is — `send.classify_target` reads it,
+        the table C++ `SendHelper::classifyTarget` holds — sent at once or,
+        with a positive `delay_ms`, from the scheduler through
+        `_deliver_routed` when it comes due. An invocation or a session the
+        value names that is not running now is reported now; one that ends
+        while a delayed send waits is reported when it comes due.
+
+        Answers ``"sent"``, ``"unsupported"`` (the caller raises
+        error.execution) or ``"unreachable"`` (error.communication). `event`
+        is this machine's spelling of the event, for its own queues; a child
+        or a parent resolves `event_name`."""
+        kind, address = send_module.classify_target(target, self._session_id)
+        if kind in (send_module.TARGET_UNSUPPORTED, send_module.TARGET_MESH):
+            return "unsupported"
+        if kind == send_module.TARGET_UNREACHABLE:
+            return "unreachable"
+        if kind == send_module.TARGET_SELF:
+            if event is not None:
+                if delay_ms > 0:
+                    self.schedule_send(event, delay_ms, sendid, data)
+                else:
+                    self.send_to_self(event, sendid, data)
+            return "sent"
+        if kind == send_module.TARGET_INVOCATION:
+            invoke = self._active_invokes.get(address)
+            if invoke is None or invoke.is_done():
+                return "unreachable"
+            route = ScheduledRoute(kind="invocation", event_name=event_name, invoke_id=address)
+        elif kind == send_module.TARGET_SESSION:
+            if not any(
+                i.origin() == address and not i.is_done() for i in self._active_invokes.values()
+            ):
+                return "unreachable"
+            route = ScheduledRoute(kind="session", event_name=event_name, session_id=address)
+        elif kind == send_module.TARGET_PARENT:
+            # W3C SCXML C.1: a session nothing invoked has no parent to
+            # reach, delayed or not.
+            if self._policy._parent_queue is None:
+                return "unreachable"
+            route = ScheduledRoute(kind="parent", event_name=event_name)
+        else:
+            route = ScheduledRoute(kind="internal")
+        if delay_ms > 0:
+            self._scheduler.schedule(self._now_ms + delay_ms, sendid, event, data, route=route)
+            return "sent"
+        return "sent" if self._deliver_routed_now(event, sendid, data, route) else "unreachable"
 
     def schedule_host_send(
         self, request: HostSendRequest, delay_ms: int, sendid: str = ""

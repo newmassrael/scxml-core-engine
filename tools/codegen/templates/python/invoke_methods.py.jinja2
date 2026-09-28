@@ -303,6 +303,10 @@
 {% endif %}
                 _child_policy._pre_init_vars = _pre_init
 {% endif %}
+                # W3C SCXML 6.4: the link a child's `#_parent` sends travel,
+                # installed before the child starts, since its first
+                # `<onentry>` may already use it.
+                _child_policy._parent_queue = []
                 _invoke = ScxmlInvoke(_child_engine, _child_policy._parent_queue)
                 _invoke.start(engine)
                 # W3C SCXML 6.4: key `_active_invokes` by the static

@@ -292,6 +292,25 @@ pub enum ScheduledRoute {
         /// The event as the parent resolves it.
         event_name: String,
     },
+    /// A child session named by its id — its published location (§scxml-C-1).
+    Session {
+        /// The child's session id.
+        session_id: String,
+        /// The event as the child resolves it.
+        event_name: String,
+    },
+}
+
+/// What became of a `<send>` handed to [`Engine::send_to_target`].
+#[cfg(not(feature = "no_std"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetSendOutcome {
+    /// Delivered, or scheduled to be when its delay elapses.
+    Sent,
+    /// The value is not a target: the caller raises error.execution (§scxml-6.2.4).
+    Unsupported,
+    /// Nothing the value names is there: the caller raises error.communication (§scxml-C-1).
+    Unreachable,
 }
 
 #[derive(Debug)]
@@ -2301,6 +2320,122 @@ impl<P: StatePolicy> Engine<P> {
             .schedule_routed_at(event, ready_at, send_id, event_data, origin, route)
     }
 
+    /// §scxml-6.2.4 + §scxml-C-1: send to a target value read at run time.
+    ///
+    /// A `targetexpr` is a target: whatever value it yields is routed as the
+    /// same value written in `target` is —
+    /// [`classify_target`](crate::helpers::send::classify_target) reads it,
+    /// the table `SendHelper::classifyTarget` holds for C++ — sent at once or,
+    /// with a delay, from the scheduler through [`deliver_routed`](Self::deliver_routed)
+    /// when it comes due. An invocation or a session the value names that is
+    /// not running now is reported now; one that ends while a delayed send
+    /// waits is reported when it comes due.
+    ///
+    /// An associated function, not a method: the send site is a policy method
+    /// holding the policy while the engine lends itself out, so the two are
+    /// handed over apart. `event` is this machine's spelling of the event, for
+    /// its own queues; a child or a parent resolves `event_name`.
+    #[cfg(not(feature = "no_std"))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn send_to_target(
+        policy: &mut P,
+        engine: &mut Self,
+        event: Option<P::Event>,
+        event_name: &str,
+        target: &str,
+        own_session_id: &str,
+        delay: Option<Duration>,
+        send_id: &str,
+        event_data: &str,
+        origin: &str,
+    ) -> TargetSendOutcome {
+        use crate::helpers::send::{classify_target, SendTarget};
+        let route = match classify_target(target, own_session_id) {
+            SendTarget::Unsupported | SendTarget::Mesh => return TargetSendOutcome::Unsupported,
+            SendTarget::Unreachable => return TargetSendOutcome::Unreachable,
+            SendTarget::SelfExternal => {
+                if let Some(event) = event {
+                    match delay {
+                        Some(delay) => {
+                            engine.schedule_event(event, delay, send_id, event_data, origin);
+                        }
+                        None => {
+                            let mut meta = EventWithMetadata::new(event);
+                            meta.metadata = EventMetadata::external(
+                                crate::sce_string_from_str(send_id),
+                                crate::sce_string_from_str(origin),
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise_external_with_meta(meta);
+                        }
+                    }
+                }
+                return TargetSendOutcome::Sent;
+            }
+            SendTarget::Internal => ScheduledRoute::InternalQueue,
+            SendTarget::Parent => {
+                // §scxml-C-1: a session nothing invoked has no parent to
+                // address, delayed or not.
+                if !policy.has_parent_session() {
+                    return TargetSendOutcome::Unreachable;
+                }
+                ScheduledRoute::Parent {
+                    event_name: event_name.to_string(),
+                }
+            }
+            SendTarget::Invocation(invoke_id) => {
+                if !policy.is_invocation_running(&invoke_id) {
+                    return TargetSendOutcome::Unreachable;
+                }
+                ScheduledRoute::Invocation {
+                    invoke_id,
+                    event_name: event_name.to_string(),
+                }
+            }
+            SendTarget::Session(session_id) => {
+                if !policy.is_child_session_running(&session_id) {
+                    return TargetSendOutcome::Unreachable;
+                }
+                ScheduledRoute::Session {
+                    session_id,
+                    event_name: event_name.to_string(),
+                }
+            }
+        };
+        if let Some(delay) = delay {
+            engine.schedule_routed_event(event, delay, send_id, event_data, origin, route);
+            return TargetSendOutcome::Sent;
+        }
+        let delivered = match &route {
+            ScheduledRoute::InternalQueue => {
+                if let Some(event) = event {
+                    let mut meta = EventWithMetadata::new(event);
+                    meta.metadata.send_id = crate::sce_string_from_str(send_id);
+                    meta.metadata.origin = crate::sce_string_from_str(origin);
+                    meta.set_event_data(event_data);
+                    engine.raise(meta);
+                }
+                true
+            }
+            ScheduledRoute::Parent { event_name } => {
+                policy.deliver_to_parent(event_name, event_data)
+            }
+            ScheduledRoute::Invocation {
+                invoke_id,
+                event_name,
+            } => policy.deliver_to_invocation(invoke_id, event_name, event_data),
+            ScheduledRoute::Session {
+                session_id,
+                event_name,
+            } => policy.deliver_to_child_session(session_id, event_name, event_data),
+        };
+        if delivered {
+            TargetSendOutcome::Sent
+        } else {
+            TargetSendOutcome::Unreachable
+        }
+    }
+
     /// Deliver a delayed send whose wait is over to the target it named.
     ///
     /// §scxml-C-1: "If the SCXML Processor cannot dispatch the event to the
@@ -2340,6 +2475,12 @@ impl<P: StatePolicy> Engine<P> {
             ScheduledRoute::Parent { event_name } => {
                 self.policy.deliver_to_parent(event_name, event_data)
             }
+            ScheduledRoute::Session {
+                session_id,
+                event_name,
+            } => self
+                .policy
+                .deliver_to_child_session(session_id, event_name, event_data),
         };
         if delivered {
             return;

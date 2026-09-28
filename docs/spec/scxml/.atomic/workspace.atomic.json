@@ -8958,6 +8958,76 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "sendToTarget",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "SendToTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "TargetNotSupported",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "deliverRoutedNow",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/send.go",
+          "symbol": "ClassifyTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/send.go",
+          "symbol": "SendTargetKind",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/send.go",
+          "symbol": "TargetUnsupported",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
+          "symbol": "SendTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
+          "symbol": "Unsupported",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
+          "symbol": "classifyTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "TargetSendOutcome",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "sendToTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "TargetSendOutcome",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/send.rs",
+          "symbol": "SendTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/lib.rs",
+          "symbol": "TargetSendOutcome",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -10720,6 +10790,21 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "sendToTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "InvocationRunning",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "isInvocationRunning",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "is_invocation_running",
           "kind": "implements"
         }
       ],
@@ -13709,6 +13794,126 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "sendToTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "ChildSessionDelivery",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "InvocationRunning",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "SendToTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "TargetNotReachable",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "RouteSession",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/send.go",
+          "symbol": "ClassifyTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/send.go",
+          "symbol": "SendTargetKind",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/send.go",
+          "symbol": "TargetUnreachable",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
+          "symbol": "SendTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
+          "symbol": "Unreachable",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
+          "symbol": "classifyTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "Session",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "TargetSendOutcome",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "isChildSessionRunning",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "isInvocationRunning",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "sendToTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "ScheduledRoute",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "TargetSendOutcome",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "send_to_target",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "deliver_to_child_session",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "has_parent_session",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "is_child_session_running",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "is_invocation_running",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_send_action",
           "kind": "implements"
         }
       ],

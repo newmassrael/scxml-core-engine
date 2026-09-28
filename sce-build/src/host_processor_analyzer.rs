@@ -87,13 +87,13 @@ pub fn is_supported_send_type(send_type: &str) -> bool {
 /// not supported or invalid, the Processor MUST place the error
 /// error.execution on the internal event queue." The shapes it addresses are
 /// the ones every runtime's target table routes — `#_internal`, `#_parent`,
-/// `#_scxml_<id>`, `#_<invokeid>`, a Mesh `#<name>`, an http(s) URL and a
-/// published `sce://scxml/<id>` location; the C++ spelling of the same table
-/// is `SendHelper::classifyTarget`. Anything else — `bogus`, `!invalid`, or a
-/// URI of another scheme, which a generated machine registers no processor
-/// for (the Interpreter's target factory is where schemes are registered) —
-/// is the error. An empty target is the absent attribute and is not judged
-/// here.
+/// `#_scxml_<id>`, `#_<invokeid>`, a Mesh `#<name>` and a published
+/// `sce://scxml/<id>` location; the C++ spelling of the same table is
+/// `SendHelper::classifyTarget`. Anything else — `bogus`, `!invalid`, or a URI
+/// of another scheme, an http(s) URL included, which only a BasicHTTP send
+/// reaches and a generated machine registers no other processor for (the
+/// Interpreter's target factory is where schemes are registered) — is the
+/// error. An empty target is the absent attribute and is not judged here.
 pub fn is_unsupported_scxml_target(target: &str) -> bool {
     const LOCATION_PREFIX: &str = "sce://scxml/";
     if target.is_empty() {
@@ -104,8 +104,6 @@ pub fn is_unsupported_scxml_target(target: &str) -> bool {
     }
     let addressed = target.starts_with("#_")
         || (target.len() >= 2 && target.starts_with('#'))
-        || target.starts_with("http://")
-        || target.starts_with("https://")
         || (target.len() > LOCATION_PREFIX.len() && target.starts_with(LOCATION_PREFIX));
     !addressed
 }
@@ -466,7 +464,9 @@ pub fn declare_host_surfaces(
     // the flags, and recomputing them from the flags just changed is what
     // keeps `needs_host_processor` and the emitted code the same answer.
     model.host_processor_causes = analyze(model);
-    record_delayed_host_sends(model);
+    // No Mesh branch yet: that is the per-language lowering's, which
+    // re-derives this answer with it.
+    record_delayed_host_sends(model, false);
     record_host_sends_read_invokeid(model);
     Ok(())
 }
@@ -532,8 +532,12 @@ pub fn host_invocation_peak(model: &SCXMLModel) -> usize {
 /// `delay`, its parsed `delay_ms`, or a `delayexpr` whose value is not
 /// known until the send runs. A `delayexpr` counts even though it may
 /// evaluate to zero — the storage has to exist before the answer does.
-fn is_delayed_host_send(action: &Action) -> bool {
-    action.send_type_host_served
+///
+/// With `dynamic_mesh`, a `<send targetexpr>` that may name a Mesh peer
+/// counts too: the send templates' dynamic Mesh branch hands it to the same
+/// host arm, which waits on the same queue.
+fn is_delayed_host_send(action: &Action, dynamic_mesh: bool) -> bool {
+    (action.send_type_host_served || (dynamic_mesh && may_name_a_mesh_peer(action)))
         && (!action.delayexpr.is_empty()
             || action.delay_ms > 0
             || (!action.delay.is_empty() && action.delay != "0s" && action.delay != "0ms"))
@@ -545,11 +549,11 @@ fn is_delayed_host_send(action: &Action) -> bool {
 /// Runs after [`claim_action`] rather than beside it, because until the
 /// declaration is applied every one of these sends is a refusal and a
 /// refusal has no delay to honour.
-fn record_delayed_host_sends(model: &mut SCXMLModel) {
+fn record_delayed_host_sends(model: &mut SCXMLModel, dynamic_mesh: bool) {
     let mut found = false;
     let mut max_params = 0usize;
     let mut visit = |action: &Action| {
-        if is_delayed_host_send(action) {
+        if is_delayed_host_send(action, dynamic_mesh) {
             found = true;
             // §scxml-5.10: the host receives the namelist pairs as well as
             // the `<param>` ones, so both count toward the slot's width.
@@ -754,8 +758,9 @@ fn lower_mesh_sends(model: &SCXMLModel, language: Language) -> Cow<'_, SCXMLMode
             .push(MESH_PROCESSOR_TYPE.to_string());
     }
     // A delayed Mesh send waits on the delayed-send queue as any delayed
-    // host-served send does, so the queue's storage is sized with it.
-    record_delayed_host_sends(&mut lowered);
+    // host-served send does, so the queue's storage is sized with it — a
+    // delayed `targetexpr` the dynamic branch may hand the host included.
+    record_delayed_host_sends(&mut lowered, dynamic);
     record_host_sends_read_invokeid(&mut lowered);
     // A `targetexpr` that names a Mesh peer at run time reaches the same host
     // arm, which reads the same invokeid.
@@ -1161,6 +1166,24 @@ mod tests {
         let lowered = lower_mesh_sends(&model, Language::C11);
         assert!(lowered.has_delayed_host_send);
         assert_eq!(lowered.delayed_host_send_max_params, 1);
+    }
+
+    /// §mesh-19 + §scxml-6.2.4: a delayed `targetexpr` may name a peer once
+    /// evaluated, and the dynamic branch then waits on the same queue a
+    /// literal peer send does, so the storage exists for it too.
+    #[test]
+    fn a_delayed_target_expression_waits_on_the_delayed_send_queue() {
+        let model = parse(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+                 <state id="s"><onentry>
+                   <send event="later" targetexpr="where" delay="10ms" namelist="x y"/>
+                 </onentry></state>
+               </scxml>"##,
+        );
+        assert!(!model.has_delayed_host_send);
+        let lowered = lower_mesh_sends(&model, Language::C11);
+        assert!(lowered.has_delayed_host_send);
+        assert_eq!(lowered.delayed_host_send_max_params, 2);
     }
 
     const MESH_REQUEST: &str = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">

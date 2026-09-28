@@ -3492,6 +3492,18 @@ impl SCXMLParser {
         } else if action.target == "#_child" {
             model.has_child_communication = true;
         }
+        // §scxml-6.2.4 + §scxml-C-1: a `targetexpr` whose processor may be
+        // the SCXML one can evaluate to `#_parent` as the literal can, so the
+        // document may address its parent either way.
+        if action.target == "#_parent"
+            || (!action.targetexpr.is_empty()
+                && (!action.typeexpr.is_empty()
+                    || action.send_type.is_empty()
+                    || action.send_type
+                        == crate::host_processor_analyzer::SCXML_EVENT_PROCESSOR_TYPE))
+        {
+            model.may_address_parent = true;
+        }
 
         // [`NeedsScriptEngineCause::SendNamelist`] / `SendParamExpr` —
         // derived post-parse by [`crate::script_engine_analyzer`] from
@@ -5174,7 +5186,11 @@ impl SCXMLParser {
                 );
             }
 
-            child_send_to_parent.insert(si.child_name.clone(), !child_parent_events.is_empty());
+            // §scxml-6.4: the parent wires the link whenever the child may
+            // use it — the child's own predicate, so the entry point the
+            // parent calls is the one the child emits. The event set alone
+            // misses an `eventexpr` or a `targetexpr` send.
+            child_send_to_parent.insert(si.child_name.clone(), child_model_ref.may_address_parent);
 
             // Add collected events to parent's event set
             for event in child_parent_events {

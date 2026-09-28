@@ -145,6 +145,78 @@ pub fn is_mesh_target(target: &str) -> bool {
     mesh_peer(target).is_some()
 }
 
+/// §scxml-6.2.4 + §scxml-C-1: where a `<send>` to the SCXML Event I/O
+/// Processor goes, read from its target value.
+///
+/// The table `SendHelper::classifyTarget` holds for C++, and every channel's:
+/// a `target` written in the document and a `targetexpr` evaluated at run
+/// time are the same value and go to the same place, sent at once or after a
+/// delay.
+#[cfg(not(feature = "no_std"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SendTarget {
+    /// The sending session's own external queue.
+    SelfExternal,
+    /// `#_internal`: the sending session's internal queue.
+    Internal,
+    /// `#_parent`: the session that invoked this one.
+    Parent,
+    /// A session named by `#_scxml_<id>` or by its published location.
+    Session(String),
+    /// `#_<invokeid>`: an invocation of the sending session.
+    Invocation(String),
+    /// `#<name>`: a machine an SCE Mesh deployment binds.
+    Mesh,
+    /// A value naming no session: error.communication (§scxml-C-1).
+    Unreachable,
+    /// A value this processor cannot address — `bogus`, `!invalid`, or a URI
+    /// of any scheme but this processor's own locations, an http(s) URL
+    /// included, which only a BasicHTTP send reaches: error.execution
+    /// (§scxml-6.2.4).
+    Unsupported,
+}
+
+/// Classify a target value (§scxml-6.2.4, §scxml-C-1).
+///
+/// Ports C++ `SendHelper::classifyTarget`; a URI of another scheme — C++'s
+/// `Uri` and `Http`, which its Interpreter's target factory may serve — is
+/// [`SendTarget::Unsupported`] here, as it is for every generated machine.
+#[cfg(not(feature = "no_std"))]
+pub fn classify_target(target: &str, own_session_id: &str) -> SendTarget {
+    if is_unreachable_target(target) {
+        return SendTarget::Unreachable;
+    }
+    if is_invalid_target(target) {
+        return SendTarget::Unsupported;
+    }
+    if is_internal_target(target) {
+        return SendTarget::Internal;
+    }
+    if target == scxml_constants::PARENT_TARGET {
+        return SendTarget::Parent;
+    }
+    if let Some(session_id) = target.strip_prefix(scxml_constants::SCXML_SESSION_TARGET_PREFIX) {
+        if session_id.is_empty() || session_id == own_session_id {
+            return SendTarget::SelfExternal;
+        }
+        return SendTarget::Session(session_id.to_string());
+    }
+    let located = crate::helpers::io_processors::session_id_from_scxml_location(target);
+    if !located.is_empty() {
+        if located == own_session_id {
+            return SendTarget::SelfExternal;
+        }
+        return SendTarget::Session(located);
+    }
+    if is_child_invoke_target(target) {
+        return SendTarget::Invocation(extract_invoke_id(target).to_string());
+    }
+    if is_mesh_target(target) {
+        return SendTarget::Mesh;
+    }
+    SendTarget::Unsupported
+}
+
 /// §scxml-C-2: Check if send type requires a target attribute.
 ///
 /// BasicHTTP Event I/O Processor requires a target URL.

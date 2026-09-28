@@ -466,6 +466,9 @@ pub use engine::Engine;
 /// §scxml-6.2: the target a generated send site names for a delayed send.
 #[cfg(not(feature = "no_std"))]
 pub use engine::ScheduledRoute;
+/// §scxml-6.2.4: what became of a send handed to [`Engine::send_to_target`].
+#[cfg(not(feature = "no_std"))]
+pub use engine::TargetSendOutcome;
 pub use event::{EventMetadata, EventType, EventWithMetadata};
 pub use hal::{Hal, NoOpHal, StdHal};
 pub use helpers::configuration::ConfigurationRejection;

@@ -846,6 +846,135 @@ type InvocationDelivery interface {
 // child, which need not invoke anything itself.
 type ParentDelivery interface {
 	DeliverToParent(eventName, eventData string) bool
+	// HasParentSession answers whether a session invoked this one (W3C SCXML
+	// C.1), asked when a `<send targetexpr>` names `#_parent`.
+	HasParentSession() bool
+}
+
+// ChildSessionDelivery is implemented by a generated policy that invokes, so a
+// send addressed to a child's published location reaches that child
+// (§scxml-C-1). IsChildSessionRunning is the test DeliverToChildSession makes.
+type ChildSessionDelivery interface {
+	DeliverToChildSession(childSessionID, eventName, eventData string) bool
+	IsChildSessionRunning(childSessionID string) bool
+}
+
+// InvocationRunning is implemented by a generated policy that invokes: whether
+// `#_<invokeid>` names an invocation running now (§scxml-6.4 + §scxml-C-1). One
+// that has not started, or whose session has reached its final state, is not
+// there to address, and a send naming it is reported when it is made.
+type InvocationRunning interface {
+	IsInvocationRunning(invokeID string) bool
+}
+
+// TargetSendOutcome is what became of a <send> handed to SendToTarget.
+type TargetSendOutcome int
+
+const (
+	// TargetSent means delivered, or scheduled to be when its delay elapses.
+	TargetSent TargetSendOutcome = iota
+	// TargetNotSupported means the value is not a target: the caller raises
+	// error.execution (§scxml-6.2.4).
+	TargetNotSupported
+	// TargetNotReachable means nothing the value names is there: the caller
+	// raises error.communication (§scxml-C-1).
+	TargetNotReachable
+)
+
+// SendToTarget sends to a target value read at run time (§scxml-6.2.4,
+// §scxml-C-1).
+//
+// A `targetexpr` is a target: whatever value it yields is routed as the same
+// value written in `target` is — ClassifyTarget reads it, the table C++
+// `SendHelper::classifyTarget` holds — sent at once or, with a positive delay,
+// from the scheduler through deliverRouted when it comes due. An invocation or
+// a session the value names that is not running now is reported now; one that
+// ends while a delayed send waits is reported when it comes due.
+//
+// event is this machine's spelling of the event, for its own queues, valid
+// when hasEvent; a child or a parent resolves eventName.
+func (e *Engine[S, E]) SendToTarget(event E, hasEvent bool, eventName, target, ownSessionID string, delay time.Duration, sendID, eventData, origin string) TargetSendOutcome {
+	resolved := ClassifyTarget(target, ownSessionID)
+	delayed := delay > 0
+	var route ScheduledRoute
+	switch resolved.Kind {
+	case TargetUnsupported, TargetMesh:
+		return TargetNotSupported
+	case TargetUnreachable:
+		return TargetNotReachable
+	case TargetSelfExternal:
+		if hasEvent {
+			if delayed {
+				e.ScheduleEvent(event, delay, sendID, eventData, origin)
+			} else {
+				e.RaiseExternalWithMeta(NewEventWithFields(event, eventData, origin, sendID,
+					EventTypeExternal, SCXMLEventProcessorType, "", ""))
+			}
+		}
+		return TargetSent
+	case TargetInternal:
+		route = ScheduledRoute{Kind: RouteInternalQueue}
+	case TargetParent:
+		// W3C SCXML C.1: a session nothing invoked has no parent to address,
+		// delayed or not.
+		parent, ok := any(e.policy).(ParentDelivery)
+		if !ok || !parent.HasParentSession() {
+			return TargetNotReachable
+		}
+		route = ScheduledRoute{Kind: RouteParent, EventName: eventName}
+	case TargetInvocation:
+		running, ok := any(e.policy).(InvocationRunning)
+		if !ok || !running.IsInvocationRunning(resolved.ID) {
+			return TargetNotReachable
+		}
+		route = ScheduledRoute{Kind: RouteInvocation, EventName: eventName, InvokeID: resolved.ID}
+	case TargetSession:
+		sessions, ok := any(e.policy).(ChildSessionDelivery)
+		if !ok || !sessions.IsChildSessionRunning(resolved.ID) {
+			return TargetNotReachable
+		}
+		route = ScheduledRoute{Kind: RouteSession, EventName: eventName, SessionID: resolved.ID}
+	}
+	if route.Kind == RouteInternalQueue && !hasEvent {
+		return TargetSent
+	}
+	if delayed {
+		e.ScheduleRoutedEvent(event, delay, sendID, eventData, origin, route)
+		return TargetSent
+	}
+	if e.deliverRoutedNow(event, route, eventData, sendID, origin) {
+		return TargetSent
+	}
+	return TargetNotReachable
+}
+
+// deliverRoutedNow delivers a send to the target a route names, now — the one
+// delivery a send made at once and a delayed send whose wait is over both go
+// through (§scxml-6.2.4: a delay postpones a send, it does not change where it
+// goes). It answers whether the target was there to take the event.
+func (e *Engine[S, E]) deliverRoutedNow(event E, route ScheduledRoute, eventData, sendID, origin string) bool {
+	switch route.Kind {
+	case RouteInternalQueue:
+		meta := NewEventWithMetadata(event)
+		meta.Metadata.Data = eventData
+		meta.Metadata.SendID = sendID
+		meta.Metadata.Origin = origin
+		e.Raise(meta)
+		return true
+	case RouteInvocation:
+		if invocations, ok := any(e.policy).(InvocationDelivery); ok {
+			return invocations.DeliverToInvocation(route.InvokeID, route.EventName, eventData, sendID)
+		}
+	case RouteSession:
+		if sessions, ok := any(e.policy).(ChildSessionDelivery); ok {
+			return sessions.DeliverToChildSession(route.SessionID, route.EventName, eventData)
+		}
+	case RouteParent:
+		if parent, ok := any(e.policy).(ParentDelivery); ok {
+			return parent.DeliverToParent(route.EventName, eventData)
+		}
+	}
+	return false
 }
 
 // ScheduleRoutedEvent schedules a delayed send whose target is not this
@@ -871,22 +1000,7 @@ func (e *Engine[S, E]) ScheduleRoutedEvent(event E, delay time.Duration, sendID,
 // the dispatch is this delivery, so an invocation that has ended in the
 // meantime is reported here, not when the send was made.
 func (e *Engine[S, E]) deliverRouted(act ReadyAct[E]) {
-	if act.Route.Kind == RouteInternalQueue {
-		meta := NewEventWithMetadata(act.Event)
-		meta.Metadata.Data = act.Data
-		meta.Metadata.SendID = act.SendID
-		e.Raise(meta)
-		return
-	}
-	delivered := false
-	if act.Route.Kind == RouteInvocation {
-		if invocations, ok := any(e.policy).(InvocationDelivery); ok {
-			delivered = invocations.DeliverToInvocation(act.Route.InvokeID, act.Route.EventName, act.Data, act.SendID)
-		}
-	} else if parent, ok := any(e.policy).(ParentDelivery); ok {
-		delivered = parent.DeliverToParent(act.Route.EventName, act.Data)
-	}
-	if delivered {
+	if e.deliverRoutedNow(act.Event, *act.Route, act.Data, act.SendID, act.Origin) {
 		return
 	}
 	if communicationError, ok := e.policy.GetEventFromName("error.communication"); ok {

@@ -1406,13 +1406,12 @@ pub struct InvokeSessionCommon {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child_datamodel_vars: Option<Vec<String>>,
     /// §scxml-6.4 (test226/240/241/243/244/245/276): the child SCXML
-    /// has at least one `<send target="#_parent" event="..."/>`. Codegen
-    /// uses this to gate parent_sm / parent_dispatch wiring at child
-    /// spawn time so parent-routed events reach the parent's external
-    /// queue. Mirrors the C++ reuse of `child_model.has_parent_communication`
-    /// surfaced via the parsed child model — populated by
-    /// `collect_child_to_parent_events` during invoke metadata
-    /// resolution.
+    /// may address its parent — the child model's
+    /// [`SCXMLModel::may_address_parent`], a literal `#_parent` or a
+    /// `targetexpr`. Codegen uses this to gate parent_sm / parent_dispatch
+    /// wiring at child spawn time so parent-routed events reach the
+    /// parent's external queue. Populated by
+    /// `collect_child_to_parent_events` during invoke metadata resolution.
     #[serde(default)]
     pub child_has_send_to_parent: bool,
     /// §scxml-6.2 (test207): the child SCXML carries a non-empty
@@ -2709,6 +2708,21 @@ pub struct SCXMLModel {
     pub has_history_states: bool,
     pub has_event_metadata: bool,
     pub has_parent_communication: bool,
+    /// Whether a `<send>` of this document may address its parent session
+    /// (§scxml-6.2.4, §scxml-C-1): a literal `target="#_parent"`, or a
+    /// `targetexpr` whose processor may be the SCXML one — its value is only
+    /// known when the send is performed, and may be `#_parent` as a literal
+    /// may.
+    ///
+    /// Not [`Self::has_parent_communication`], which answers for the literal
+    /// alone and which the C11 backend reads as "this machine is only ever
+    /// invoked". A `targetexpr` says nothing about that, so a machine with
+    /// one keeps its standalone entry points and gains the invoked one
+    /// besides. The invoking parent reads this same answer off the child as
+    /// [`InvokeSessionCommon::child_has_send_to_parent`], so both ends of the
+    /// link are decided by one predicate.
+    #[serde(default)]
+    pub may_address_parent: bool,
     /// SCE Protocol-Synthesis RFC §synth-5-E sample-callback codegen wire-up —
     /// sorted set of every `link` name referenced by any state's
     /// `<sce:on-sample link="X" .../>` block. Derived in

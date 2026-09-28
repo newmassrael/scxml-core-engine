@@ -2373,6 +2373,11 @@
               "description": "SCE_MESH.md §16.4 / §16.7 liveness opt-in. `true` when the deploy declares a `liveliness:` block on the machine being codegen'd, regardless of whether this is a partition binary. Populated by [`crate::inject_partition_context_for`] from `deploy.yaml`.\n\nThe flag drives only the codegen-side observability gate [`crate::generator::reject_liveliness_without_handler`] (`feedback_silently_broken_hooks`): a machine declaring `liveliness:` without an `error.communication` handler in its SCXML is rejected at codegen because the row 8 `PEER_PARTITIONED` raise (on any machine with `liveliness:`) and the row 13 `REGION_PARTITIONED` raise (on a partitioned machine) both flow through `error.communication` and would be silently discarded. Transport emission is a different signal: per-partition row-13 token wiring is keyed on [`Self::partition_self_name`], and machine-level row-8 token wiring lives in the mesh transport codegen that reads `deploy.yaml`'s `liveliness:` directly.\n\n`false` when the machine declares no `liveliness:` section.",
               "type": "boolean"
             },
+            "may_address_parent": {
+              "default": false,
+              "description": "Whether a `<send>` of this document may address its parent session (§scxml-6.2.4, §scxml-C-1): a literal `target=\"#_parent\"`, or a `targetexpr` whose processor may be the SCXML one — its value is only known when the send is performed, and may be `#_parent` as a literal may.\n\nNot [`Self::has_parent_communication`], which answers for the literal alone and which the C11 backend reads as \"this machine is only ever invoked\". A `targetexpr` says nothing about that, so a machine with one keeps its standalone entry points and gains the invoked one besides. The invoking parent reads this same answer off the child as [`InvokeSessionCommon::child_has_send_to_parent`], so both ends of the link are decided by one predicate.",
+              "type": "boolean"
+            },
             "name": {
               "type": "string"
             },
@@ -4098,7 +4103,7 @@
             },
             "child_has_send_to_parent": {
               "default": false,
-              "description": "§scxml-6.4 (test226/240/241/243/244/245/276): the child SCXML has at least one `<send target=\"#_parent\" event=\"...\"/>`. Codegen uses this to gate parent_sm / parent_dispatch wiring at child spawn time so parent-routed events reach the parent's external queue. Mirrors the C++ reuse of `child_model.has_parent_communication` surfaced via the parsed child model — populated by `collect_child_to_parent_events` during invoke metadata resolution.",
+              "description": "§scxml-6.4 (test226/240/241/243/244/245/276): the child SCXML may address its parent — the child model's [`SCXMLModel::may_address_parent`], a literal `#_parent` or a `targetexpr`. Codegen uses this to gate parent_sm / parent_dispatch wiring at child spawn time so parent-routed events reach the parent's external queue. Populated by `collect_child_to_parent_events` during invoke metadata resolution.",
               "type": "boolean"
             },
             "child_name": {
@@ -4242,7 +4247,7 @@
             },
             "child_has_send_to_parent": {
               "default": false,
-              "description": "§scxml-6.4 (test226/240/241/243/244/245/276): the child SCXML has at least one `<send target=\"#_parent\" event=\"...\"/>`. Codegen uses this to gate parent_sm / parent_dispatch wiring at child spawn time so parent-routed events reach the parent's external queue. Mirrors the C++ reuse of `child_model.has_parent_communication` surfaced via the parsed child model — populated by `collect_child_to_parent_events` during invoke metadata resolution.",
+              "description": "§scxml-6.4 (test226/240/241/243/244/245/276): the child SCXML may address its parent — the child model's [`SCXMLModel::may_address_parent`], a literal `#_parent` or a `targetexpr`. Codegen uses this to gate parent_sm / parent_dispatch wiring at child spawn time so parent-routed events reach the parent's external queue. Populated by `collect_child_to_parent_events` during invoke metadata resolution.",
               "type": "boolean"
             },
             "child_name": {
