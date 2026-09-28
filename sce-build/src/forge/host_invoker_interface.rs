@@ -1017,7 +1017,7 @@ virtual void cancel{pascal}(uint64_t token) = 0;\n"
                 format!(
                     "                    const auto result = invoker->start{pascal}({typed_arg}start.token);\n                    \
 if (!result) {{\n                        return std::nullopt;\n                    }}\n                    \
-return ::SCE::HostInvokeResponse{{result->wire()}};\n"
+return ::SCE::HostInvokeResponse{{.doneData = result->wire(), .refusal = std::nullopt}};\n"
                 )
             } else {
                 format!(
