@@ -276,7 +276,8 @@ fn cancel_{snake}(&mut self, token: u64);\n"
             let answer = if invoke.result.is_some() {
                 format!(
                     ".map(|result| ::sce_rust_runtime::HostInvokeResponse {{\n                            \
-done_data: Some({machine_name}{pascal}Result::wire(&result)),\n                        }})"
+done_data: Some({machine_name}{pascal}Result::wire(&result)),\n                            \
+..::sce_rust_runtime::HostInvokeResponse::default()\n                        }})"
                 )
             } else {
                 String::new()

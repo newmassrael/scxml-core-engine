@@ -366,6 +366,34 @@ TEST_F(HostInvokerAotTest, AFailedInvocationRaisesErrorInvokeOnceWithItsOrigin) 
     EXPECT_EQ(sm.getPolicy().overturned(), std::optional<int64_t>(0));
 }
 
+// W3C SCXML 6.4.1: a host that cannot start an invocation refuses it, and the
+// document sees error.execution carrying the host's reason — not an
+// error.invoke, because no process ran. Nothing started, so a completion the
+// host reports for it afterwards is refused too.
+TEST_F(HostInvokerAotTest, ARefusedStartRaisesErrorExecutionAndStartsNothing) {
+    Machine sm;
+    sm.registerInvoker(DECLARED_TYPE, [this](const SCE::HostInvokeEvent &ev) {
+        std::optional<SCE::HostInvokeResponse> answer;
+        if (ev.start.has_value()) {
+            starts.emplace_back(ev.start->invokeId, ev.start->token);
+            if (ev.start->invokeId == "gate") {
+                answer = SCE::HostInvokeResponse{};
+                answer->refusal = R"({"reason":"NOT_HERE"})";
+            }
+        }
+        return answer;
+    });
+    boot(sm);
+    sm.processEvent(Event::Refuse);
+    sm.step();
+    EXPECT_EQ(sm.getPolicy().unstarted(), std::optional<int64_t>(1));
+
+    EXPECT_FALSE(sm.completeHostInvoke(DECLARED_TYPE, "gate", tokenOf("gate"), "ok"))
+        << "a refused start was completed";
+    sm.step();
+    EXPECT_EQ(sm.getPolicy().revived(), std::optional<int64_t>(0));
+}
+
 // W3C SCXML 6.4: once the state has exited, what the cancelled process sends
 // is ignored. The host's reply arrives after the cancel and is refused.
 TEST_F(HostInvokerAotTest, ACompletionAfterTheCancelIsRefused) {

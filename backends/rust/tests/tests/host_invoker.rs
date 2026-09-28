@@ -69,6 +69,7 @@ fn recording_invoker(
             ));
             Some(HostInvokeResponse {
                 done_data: Some("ok".to_string()),
+                ..HostInvokeResponse::default()
             })
         }
         HostInvokeEvent::Cancel(c) => {
@@ -438,6 +439,43 @@ fn a_failed_invocation_raises_error_invoke_once_with_its_origin() {
     engine.step();
     assert_eq!(counter(&engine, &script_engine, "failed"), 1);
     assert_eq!(counter(&engine, &script_engine, "overturned"), 0);
+}
+
+/// §scxml-6.4.1: a host that cannot start an invocation refuses it, and the
+/// document sees `error.execution` carrying the host's reason — not an
+/// `error.invoke`, because no process ran. Nothing started, so a completion
+/// the host reports for it afterwards is refused too.
+#[test]
+fn a_refused_start_raises_error_execution_and_starts_nothing() {
+    let starts: Starts = Arc::default();
+    let (mut engine, script_engine) = started();
+    let seen = Arc::clone(&starts);
+    engine.register_invoker(DECLARED_TYPE, move |ev: HostInvokeEvent| match ev {
+        HostInvokeEvent::Start(req) => {
+            let refuse = req.invoke_id == "gate";
+            seen.lock()
+                .expect("invoker starts")
+                .push((req.invoke_id, req.token));
+            refuse.then(|| HostInvokeResponse {
+                refusal: Some(r#"{"reason":"NOT_HERE"}"#.to_string()),
+                ..HostInvokeResponse::default()
+            })
+        }
+        HostInvokeEvent::Cancel(_) => None,
+    });
+    engine.initialize();
+    engine.step();
+    engine.process_event(Event::Refuse);
+    engine.step();
+    assert_eq!(counter(&engine, &script_engine, "unstarted"), 1);
+
+    let token = token_of(&starts, "gate");
+    assert!(
+        !engine.complete_host_invoke(DECLARED_TYPE, "gate", token, "ok"),
+        "a refused start was completed",
+    );
+    engine.step();
+    assert_eq!(counter(&engine, &script_engine, "revived"), 0);
 }
 
 /// What [`timed`] hands a case: the machine, its script engine, the
@@ -846,7 +884,7 @@ fn neither_another_type_nor_a_send_processor_serves_this_invoke() {
 fn an_invoker_that_reports_no_completion_fires_no_done_invoke() {
     let (mut engine, script_engine) = started();
     engine.register_invoker(DECLARED_TYPE, |ev: HostInvokeEvent| match ev {
-        HostInvokeEvent::Start(_) => Some(HostInvokeResponse { done_data: None }),
+        HostInvokeEvent::Start(_) => Some(HostInvokeResponse::default()),
         HostInvokeEvent::Cancel(_) => None,
     });
     engine.initialize();

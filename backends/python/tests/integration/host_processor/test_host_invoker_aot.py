@@ -321,6 +321,34 @@ def test_a_late_completion_is_accepted_exactly_once() -> None:
     )
 
 
+def test_a_refused_start_raises_error_execution_and_starts_nothing() -> None:
+    """A host that cannot start an invocation refuses it (W3C SCXML 6.4.1),
+    and the document sees ``error.execution`` carrying the host's reason —
+    not an ``error.invoke``, because no process ran. Nothing started, so a
+    completion the host reports for it afterwards is refused too."""
+    starts: List[tuple] = []
+
+    def refusing(ev: HostInvokeEvent) -> Optional[HostInvokeResponse]:
+        if ev.start is None:
+            return None
+        starts.append((ev.start.invoke_id, ev.start.token))
+        if ev.start.invoke_id != "gate":
+            return None
+        return HostInvokeResponse(refusal='{"reason":"NOT_HERE"}')
+
+    engine = _sm.create_engine()
+    engine.register_invoker(DECLARED_TYPE, refusing)
+    engine.initialize()
+    _deliver(engine, Event.REFUSE)
+    assert _counter(engine, "unstarted") == 1
+
+    assert not engine.complete_host_invoke(
+        DECLARED_TYPE, "gate", _token_of(starts, "gate"), "ok"
+    ), "a refused start was completed"
+    engine.advance_time(0)
+    assert _counter(engine, "revived") == 0
+
+
 def test_a_failed_invocation_raises_error_invoke_once_with_its_origin() -> None:
     """A host-run invocation can fail: ``error.invoke.<id>`` with the host's
     data, ``_event.invokeid``, and the origin the host named (§scxml-6.4,

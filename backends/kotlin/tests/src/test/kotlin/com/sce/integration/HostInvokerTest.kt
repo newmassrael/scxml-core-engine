@@ -94,6 +94,8 @@ class HostInvokerTest {
             "unreadable" -> sm.unreadable()
             "failed" -> sm.failed()
             "overturned" -> sm.overturned()
+            "unstarted" -> sm.unstarted()
+            "revived" -> sm.revived()
             else -> error("the fixture declares no counter named `$name`")
         }
         assertNotNull(value, "the fixture declares `$name` and the machine could not read it")
@@ -335,6 +337,41 @@ class HostInvokerTest {
             sm.tick()
             assertEquals(1L, counter(sm, "failed"))
             assertEquals(0L, counter(sm, "overturned"))
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * §scxml-6.4.1: a host that cannot start an invocation refuses it, and the
+     * document sees error.execution carrying the host's reason — not an
+     * error.invoke, because no process ran. Nothing started, so a completion
+     * the host reports for it afterwards is refused too.
+     */
+    @Test
+    fun aRefusedStartRaisesErrorExecutionAndStartsNothing() {
+        val sm = machine()
+        val starts = mutableListOf<Pair<String, Long>>()
+        sm.registerInvoker(declaredType) { ev ->
+            ev.start?.let { start ->
+                starts += start.invokeId to start.token
+                if (start.invokeId == "gate") {
+                    StateMachineEngine.HostInvokeResponse(refusal = """{"reason":"NOT_HERE"}""")
+                } else {
+                    null
+                }
+            }
+        }
+        sm.initialize()
+        try {
+            deliver(sm, StatechartHostInvokerEvent.Refuse)
+            assertEquals(1L, counter(sm, "unstarted"))
+            assertFalse(
+                sm.completeHostInvoke(declaredType, "gate", tokenOf(starts, "gate"), "ok"),
+                "a refused start was completed",
+            )
+            sm.tick()
+            assertEquals(0L, counter(sm, "revived"))
         } finally {
             sm.cleanup()
         }

@@ -110,6 +110,16 @@
     overturned  — a completion the host reports after the failure is refused,
                   since the run already ended, so this stays 0.
 
+  A host can also refuse to start an invocation at all (W3C SCXML 6.4.1: an
+  invocation that cannot be started is an error of the element): `refusing`
+  runs `gate`, and the host answers its start with a refusal whose data is
+  `{"reason":"NOT_HERE"}` — the shape a Mesh router gives an unbound peer
+  (SCE_MESH.md §mesh-10.7.1's INVOKE_SRC_NOT_FOUND).
+
+    unstarted   — error.execution arrived with `_event.data.reason` NOT_HERE.
+    revived     — a completion the host reports for the refused start is
+                  refused, since nothing started, so this stays 0.
+
   An invoke runs only for a state still active when its macrostep ends (W3C
   SCXML 6.4). `passing` leaves on an eventless transition in the macrostep
   that entered it, so `fleeting` is dropped before it starts: the host is
@@ -157,6 +167,8 @@
     <data id="level" expr="2"/>
     <data id="failed" expr="0"/>
     <data id="overturned" expr="0"/>
+    <data id="unstarted" expr="0"/>
+    <data id="revived" expr="0"/>
   </datamodel>
 
   <state id="invoking">
@@ -187,6 +199,7 @@
     <transition event="type" target="typed"/>
     <transition event="pass" target="passing"/>
     <transition event="fail" target="failing"/>
+    <transition event="refuse" target="refusing"/>
   </state>
 
   <state id="evaluating">
@@ -299,6 +312,16 @@
     </transition>
     <transition event="done.invoke.job">
       <assign location="overturned" expr="overturned + 1"/>
+    </transition>
+  </state>
+  <!-- The host cannot start `gate` at all, and says why. -->
+  <state id="refusing">
+    <invoke id="gate" type="x-sce-host"/>
+    <transition event="error.execution" cond="_event.data.reason === 'NOT_HERE'">
+      <assign location="unstarted" expr="unstarted + 1"/>
+    </transition>
+    <transition event="done.invoke.gate">
+      <assign location="revived" expr="revived + 1"/>
     </transition>
   </state>
   <!-- Left in the macrostep that entered it, so `fleeting` never starts. -->

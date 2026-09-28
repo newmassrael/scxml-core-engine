@@ -377,6 +377,40 @@ func TestAFailedInvocationRaisesErrorInvokeOnceWithItsOrigin(t *testing.T) {
 	}
 }
 
+// §scxml-6.4.1: a host that cannot start an invocation refuses it, and the
+// document sees error.execution carrying the host's reason — not an
+// error.invoke, because no process ran. Nothing started, so a completion the
+// host reports for it afterwards is refused too.
+func TestARefusedStartRaisesErrorExecutionAndStartsNothing(t *testing.T) {
+	var starts []hostStart
+	s := newStarted()
+	s.engine.RegisterInvoker(declaredType, func(ev sce.HostInvokeEvent) *sce.HostInvokeResponse {
+		if ev.Start == nil {
+			return nil
+		}
+		starts = append(starts, hostStart{ev.Start.InvokeID, ev.Start.Token})
+		if ev.Start.InvokeID != "gate" {
+			return nil
+		}
+		refusal := `{"reason":"NOT_HERE"}`
+		return &sce.HostInvokeResponse{Refusal: &refusal}
+	})
+	s.engine.Initialize()
+	s.engine.Step()
+	s.engine.ProcessEvent(StatechartHostInvokerEventRefuse)
+	s.engine.Step()
+	if got := s.counter(t, "unstarted"); got != 1 {
+		t.Fatalf("unstarted = %d", got)
+	}
+	if s.engine.CompleteHostInvoke(declaredType, "gate", tokenOf(t, starts, "gate"), "ok") {
+		t.Fatal("a refused start was completed")
+	}
+	s.engine.Step()
+	if got := s.counter(t, "revived"); got != 0 {
+		t.Fatalf("revived = %d", got)
+	}
+}
+
 // A host that finishes later reports it with the start's token, and the
 // completion is taken once: a second report of the same run finds nothing, and
 // the state's exit then cancels only the invocation still running.

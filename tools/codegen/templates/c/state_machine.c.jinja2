@@ -4890,6 +4890,22 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
 {% endif %}
     memset(&out, 0, sizeof(out));
     entry->handler(entry->user_data, start, &out);
+    if (out.has_refusal) {
+        /* W3C SCXML 6.4.1: the host could not start it, so it never started —
+           taken back out of the running set with its deadline dropped, and the
+           element's error raised with what the host said. */
+        (void)sce_host_invocation_take_token(&sm->started_host_invokes, start->processor_type, start->invoke_id,
+                                             start->token);
+{% if model.has_host_invoke_deadline %}
+        drop_host_invoke_deadline(sm, start->token);
+{% endif %}
+{% if 'error.execution' in model.events %}
+        out.refusal[sizeof(out.refusal) - 1u] = '\0';
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, out.refusal);
+{% endif %}
+        return true;
+    }
     if (out.has_done_data) {
         (void){{ csym_prefix }}{{ model.name }}_complete_host_invoke(sm, start->processor_type, start->invoke_id,
                                                                      start->token, out.done_data);

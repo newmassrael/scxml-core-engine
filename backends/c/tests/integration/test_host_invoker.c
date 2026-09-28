@@ -124,6 +124,10 @@ static int64_t counter(const statechart_host_invoker_t *sm, const char *name) {
         ok = statechart_host_invoker_failed(sm, &value);
     } else if (strcmp(name, "overturned") == 0) {
         ok = statechart_host_invoker_overturned(sm, &value);
+    } else if (strcmp(name, "unstarted") == 0) {
+        ok = statechart_host_invoker_unstarted(sm, &value);
+    } else if (strcmp(name, "revived") == 0) {
+        ok = statechart_host_invoker_revived(sm, &value);
     }
     if (!ok) {
         (void)fprintf(stderr, "host_invoker: FAIL - the fixture declares `%s` and the machine could not read it\n",
@@ -382,6 +386,40 @@ static int a_failed_invocation_raises_error_invoke_once_with_its_origin(void) {
     statechart_host_invoker_step(&sm);
     bad |= check("fail", "failed after a second report", counter(&sm, "failed"), 1);
     bad |= check("fail", "overturned", counter(&sm, "overturned"), 0);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// `running_invoker`, except that it cannot start `gate` and says why.
+static void refusing_invoker(void *user_data, const sce_host_invoke_event_t *event, sce_host_invoke_response_t *out) {
+    running_invoker(user_data, event, out);
+    if (event->phase == SCE_HOST_INVOKE_START && strcmp(event->invoke_id, "gate") == 0) {
+        out->has_refusal = true;
+        (void)snprintf(out->refusal, sizeof(out->refusal), "%s", "{\"reason\":\"NOT_HERE\"}");
+    }
+}
+
+// W3C SCXML 6.4.1: a host that cannot start an invocation refuses it, and the
+// document sees error.execution carrying the host's reason — not an
+// error.invoke, because no process ran. Nothing started, so a completion the
+// host reports for it afterwards is refused too.
+static int a_refused_start_raises_error_execution_and_starts_nothing(void) {
+    running_t run;
+    statechart_host_invoker_t sm;
+    sce_host_invoker_registry_t wiring;
+    memset(&run, 0, sizeof(run));
+    memset(&wiring, 0, sizeof(wiring));
+    (void)sce_host_invoker_register(&wiring, DECLARED_TYPE, refusing_invoker, &run);
+    statechart_host_invoker_init_with_host_invokers(&sm, &wiring);
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_REFUSE);
+
+    int bad = 0;
+    bad |= check("refuse", "unstarted", counter(&sm, "unstarted"), 1);
+    bad |=
+        expect("refuse", "a refused start was completed",
+               !statechart_host_invoker_complete_host_invoke(&sm, DECLARED_TYPE, "gate", token_of(&run, "gate"), "ok"));
+    statechart_host_invoker_step(&sm);
+    bad |= check("refuse", "revived", counter(&sm, "revived"), 0);
     statechart_host_invoker_destroy(&sm);
     return bad;
 }
@@ -1079,6 +1117,7 @@ int main(void) {
     bad |= a_completed_invocation_is_not_cancelled();
     bad |= a_late_completion_is_accepted_exactly_once();
     bad |= a_failed_invocation_raises_error_invoke_once_with_its_origin();
+    bad |= a_refused_start_raises_error_execution_and_starts_nothing();
     bad |= a_completion_after_the_cancel_is_refused();
     bad |= a_restarted_invoke_refuses_the_first_runs_reply();
     bad |= a_done_invoke_raised_the_old_way_is_refused_and_counted();

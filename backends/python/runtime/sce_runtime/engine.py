@@ -1121,6 +1121,18 @@ class Engine(Generic[S, E]):
                 ),
             )
         response = handler(HostInvokeEvent(start=request))
+        if response is not None and response.refusal is not None:
+            # W3C SCXML 6.4.1: the host could not start it, so it never
+            # started — taken back out of the running set with its deadline
+            # dropped, and the element's error raised with what the host said.
+            del self._started_host_invokes[(request.processor_type, request.invoke_id)]
+            self._scheduler.drop_host_invoke_deadline(token)
+            event = self._policy.get_event_from_name("error.execution")
+            if event is not None:
+                self.raise_internal(
+                    event, EventMetadata(event_type="platform", data=response.refusal)
+                )
+            return True
         if response is not None and response.done_data is not None:
             self.complete_host_invoke(
                 request.processor_type, request.invoke_id, token, response.done_data

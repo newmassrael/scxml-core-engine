@@ -298,6 +298,17 @@ pub struct HostInvokeResponse {
     /// the host did not report — an invoked process that never terminates
     /// never fires `done.invoke`, which is what §scxml-6.4 says.
     pub done_data: Option<String>,
+    /// The host could not start the invocation at all: `_event.data` for the
+    /// `error.execution` the engine raises instead (W3C SCXML 6.4.1 — an
+    /// invocation that cannot be started is an error of the element, not an
+    /// `error.invoke` of a process that ran). Text, or JSON when the host
+    /// reports a structured reason, as a Mesh router does with SCE_MESH.md
+    /// §mesh-10.7.1's `{"reason":"INVOKE_SRC_NOT_FOUND", …}`.
+    ///
+    /// A refused invocation never started: no deadline is armed, no cancel
+    /// follows, and a completion reported for it later is refused. It
+    /// overrides [`Self::done_data`], since nothing ran to complete.
+    pub refusal: Option<String>,
 }
 
 /// A registered invoke-lifecycle handler.

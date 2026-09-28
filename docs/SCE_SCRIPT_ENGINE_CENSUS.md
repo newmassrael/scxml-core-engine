@@ -100,9 +100,9 @@ documents-floor 700
 documents-judged-floor 450
 engine-documents 259
 native-prefix-documents 2
-datamodel-variable-init 405
-transition-guard 238
-assign-action 347
+datamodel-variable-init 407
+transition-guard 239
+assign-action 349
 child-invoke-needs-script-engine 53
 log-expr 46
 send-param-expr 49
@@ -304,7 +304,11 @@ never spelled correctly.
   `child-invoke-needs-script-engine` by one, `if-condition` by one and
   `send-dynamic-attr` by two. Then the Mesh request fixture's `force` param,
   computed so the request's event data is pinned as typed, gave the
-  `mesh-rpc-request-expr` cause its first population: 1.
+  `mesh-rpc-request-expr` cause its first population: 1. Then the host
+  invoker fixture's `refusing` state (a start the host refuses: two
+  counters, the guard on `_event.data.reason`, two assigns) raised
+  `datamodel-variable-init` by two, `transition-guard` by one and
+  `assign-action` by two.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.

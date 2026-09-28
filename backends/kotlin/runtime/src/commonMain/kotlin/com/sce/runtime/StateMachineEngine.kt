@@ -872,8 +872,18 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * when it finishes. SCE does not synthesise a completion the host did not
      * report — an invoked process that never terminates never fires
      * `done.invoke`, which is what §scxml-6.4 says.
+     *
+     * [refusal] says the host could not start the invocation at all: it is
+     * `_event.data` for the `error.execution` the engine raises instead (W3C
+     * SCXML 6.4.1 — an invocation that cannot be started is an error of the
+     * element, not an `error.invoke` of a process that ran). Text, or JSON when
+     * the host reports a structured reason, as a Mesh router does with
+     * SCE_MESH.md §mesh-10.7.1's `{"reason":"INVOKE_SRC_NOT_FOUND", …}`. A
+     * refused invocation never started: its deadline is dropped, no cancel
+     * follows, and a completion reported for it later is refused. It overrides
+     * [doneData], since nothing ran to complete.
      */
-    data class HostInvokeResponse(val doneData: String? = null)
+    data class HostInvokeResponse(val doneData: String? = null, val refusal: String? = null)
 
     private val hostInvokers = mutableMapOf<String, (HostInvokeEvent) -> HostInvokeResponse?>()
 
@@ -1003,7 +1013,18 @@ abstract class StateMachineEngine<S : State, E : Event>(
             )
             scheduledSends.sortWith(compareBy<ScheduledSendEntry> { it.fireTimeMs }.thenBy { it.sequenceNum })
         }
-        val doneData = handler(HostInvokeEvent(start = started))?.doneData
+        val response = handler(HostInvokeEvent(start = started))
+        val refusal = response?.refusal
+        if (refusal != null) {
+            // §scxml-6.4.1: the host could not start it, so it never started —
+            // taken back out of the running set with its deadline dropped, and
+            // the element's error raised with what the host said.
+            startedHostInvokes.remove(started.processorType to started.invokeId)
+            dropHostInvokeDeadline(token)
+            resolveEventByName("error.execution")?.let { raisePlatformError(it, refusal) }
+            return true
+        }
+        val doneData = response?.doneData
         if (doneData != null) {
             // §scxml-6.4: a completion the host reported NOW takes the same
             // door as one it reports later, so the two cannot disagree about

@@ -2959,6 +2959,17 @@ public:
                 fireTimeMs);
         }
         const auto response = it->second(event);
+        if (response.has_value() && response->refusal.has_value()) {
+            // W3C SCXML 6.4.1: the host could not start it, so it never
+            // started — taken back out of the running set with its deadline
+            // dropped, and the element's error raised with what the host said.
+            startedHostInvokes_.erase(std::make_pair(request.processorType, request.invokeId));
+            scheduler_.dropHostInvokeDeadline(token);
+            if (auto error = policy_.getEventFromName("error.execution")) {
+                raise(EventWithMetadata(*error, *response->refusal));
+            }
+            return true;
+        }
         if (response.has_value() && response->doneData.has_value()) {
             completeHostInvoke(request.processorType, request.invokeId, token, *response->doneData);
         }

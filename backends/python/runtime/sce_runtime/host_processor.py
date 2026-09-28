@@ -204,6 +204,16 @@ class HostInvokeResponse:
     #: — an invoked process that never terminates never fires
     #: ``done.invoke``, which is what §scxml-6.4 says.
     done_data: Optional[str] = None
+    #: The host could not start the invocation at all: ``_event.data`` for
+    #: the ``error.execution`` the engine raises instead (W3C SCXML 6.4.1 —
+    #: an invocation that cannot be started is an error of the element, not
+    #: an ``error.invoke`` of a process that ran). Text, or JSON when the host
+    #: reports a structured reason, as a Mesh router does with SCE_MESH.md
+    #: §mesh-10.7.1's ``{"reason":"INVOKE_SRC_NOT_FOUND", …}``. A refused
+    #: invocation never started: its deadline is dropped, no cancel follows,
+    #: and a completion reported for it later is refused. It overrides
+    #: ``done_data``, since nothing ran to complete.
+    refusal: Optional[str] = None
 
 
 #: A registered invoke-lifecycle handler.

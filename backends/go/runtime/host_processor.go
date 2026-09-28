@@ -388,6 +388,16 @@ type HostInvokeResponse struct {
 	// an invoked process that never terminates never fires `done.invoke`, which
 	// is what §scxml-6.4 says.
 	DoneData *string
+	// Refusal says the host could not start the invocation at all: it is
+	// `_event.data` for the `error.execution` the engine raises instead (W3C
+	// SCXML 6.4.1 — an invocation that cannot be started is an error of the
+	// element, not an `error.invoke` of a process that ran). Text, or JSON when
+	// the host reports a structured reason, as a Mesh router does with
+	// SCE_MESH.md §mesh-10.7.1's `{"reason":"INVOKE_SRC_NOT_FOUND", …}`. A
+	// refused invocation never started: its deadline is dropped, no cancel
+	// follows, and a completion reported for it later is refused. It overrides
+	// DoneData, since nothing ran to complete.
+	Refusal *string
 }
 
 // HostInvokeHandler is a registered invoke-lifecycle handler.
@@ -462,6 +472,17 @@ func (e *Engine[S, E]) PerformHostInvoke(request HostInvokeRequest) bool {
 		}, saturatingAddMs(e.schedNowMs(), deadlineMs))
 	}
 	response := handler(HostInvokeEvent{Start: &request})
+	if response != nil && response.Refusal != nil {
+		// §scxml-6.4.1: the host could not start it, so it never started —
+		// taken back out of the running set with its deadline dropped, and the
+		// element's error raised with what the host said.
+		delete(e.startedHostInvokes, hostInvokeKey{request.ProcessorType, request.InvokeID})
+		e.scheduler.DropHostInvokeDeadline(token)
+		if evt, known := e.policy.GetEventFromName("error.execution"); known {
+			e.Raise(NewPlatformError(evt, *response.Refusal))
+		}
+		return true
+	}
 	if response != nil && response.DoneData != nil {
 		// §scxml-6.4: a completion the host reported NOW takes the same door as
 		// one it reports later, so the two cannot disagree about whether the

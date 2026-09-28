@@ -2655,6 +2655,17 @@ impl<P: StatePolicy> Engine<P> {
         let Some((token, response)) = self.host_processors.start_invoke(request) else {
             return false;
         };
+        // §scxml-6.4.1: the host could not start it, so it never started —
+        // taken back out of the running set, with no deadline armed, and the
+        // element's error raised with what the host said.
+        if let Some(refusal) = response.as_ref().and_then(|r| r.refusal.as_deref()) {
+            self.host_processors
+                .take_started(&processor_type, &invoke_id, token);
+            if let Some(evt) = P::get_event_from_name("error.execution") {
+                self.raise(EventWithMetadata::platform_error(evt, refusal));
+            }
+            return true;
+        }
         if let Some(ms) = deadline {
             let ready_at = self.sched_now_plus(Duration::from_millis(ms));
             self.scheduler.schedule_host_invoke_deadline_at(
