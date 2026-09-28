@@ -167,6 +167,14 @@ paths = [
     # Its Kotlin twin (`sce-kotlin-mesh`), cited section for section. Its
     # generated tree likewise carries only §synth- cites, measured 2026-09-28.
     "backends/kotlin/mesh/src",
+    # The two files outside those trees that cite §18.4, the WebSocket
+    # binding's implementations: the Rust crate's manifest (the `wss` feature)
+    # and the lowering that makes a Mesh send and request host-served (§19).
+    # Measured 2026-09-28, they were the only citations of §18.4 anywhere the
+    # gate read, and both sat under a `scan_exclusions` prefix — so the
+    # section was cited and nothing checked it.
+    "backends/rust/mesh/Cargo.toml",
+    "sce-build/src/host_processor_analyzer.rs",
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
