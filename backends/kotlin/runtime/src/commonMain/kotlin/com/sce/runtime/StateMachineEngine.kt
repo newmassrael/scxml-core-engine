@@ -1361,9 +1361,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val sendId: String,
         val event: Any?,
         val metadata: EventMetadata,
-        val isParentSend: Boolean = false,
-        val parentEventName: String = "",
-        val parentEventData: String = "",
+        /**
+         * §scxml-6.2.4: where this entry delivers when it comes due, for a send
+         * whose target is not this machine's own external queue. Null for an
+         * entry that joins the external queue (or performs [hostSend] /
+         * [hostInvokeDeadline]).
+         */
+        val route: ScheduledRoute? = null,
         /**
          * §scxml-6.2.5: the host-served send this entry PERFORMS when it comes
          * due, instead of delivering [event]. Null for every other entry.
@@ -1388,6 +1392,33 @@ abstract class StateMachineEngine<S : State, E : Event>(
          */
         val hostInvokeDeadline: HostInvokeDeadline? = null
     )
+
+    /**
+     * §scxml-6.2.4 + §scxml-C-1: the target a delayed send resolved when it
+     * was performed. A delay postpones a send; it does not change where it
+     * goes — so the route is fixed at send time and delivered to at fire time,
+     * and a target no longer there by then is reported to the sender as
+     * `error.communication`.
+     */
+    private sealed interface ScheduledRoute {
+        /** `#_internal`: the entry's event joins this machine's internal queue. */
+        data object InternalQueue : ScheduledRoute
+
+        /**
+         * `#_<invokeid>`: the named invocation, if it is still running when the
+         * entry comes due. [unreachable] is the sender's `error.communication`
+         * event, raised when it is not.
+         */
+        data class Invocation(
+            val invokeId: String,
+            val eventName: String,
+            val eventData: String,
+            val unreachable: Any?,
+        ) : ScheduledRoute
+
+        /** `#_parent`: the session that invoked this one. */
+        data class Parent(val eventName: String, val eventData: String) : ScheduledRoute
+    }
 
     /** Which start of which host-run invocation a scheduled deadline ends. */
     private data class HostInvokeDeadline(val processorType: String, val invokeId: String, val token: Long)
@@ -2598,8 +2629,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
             performDeferredHostSend(entry.hostSend)
         } else if (entry.hostInvokeDeadline != null) {
             expireHostInvoke(entry.hostInvokeDeadline)
-        } else if (entry.isParentSend) {
-            onSendToParent?.invoke(entry.parentEventName, entry.parentEventData)
+        } else if (entry.route != null) {
+            deliverRouted(entry, entry.route)
         } else {
             // Justification (UNCHECKED_CAST): scheduledSends erases the
             // event type to Any to share the queue across parent-send and
@@ -2610,6 +2641,46 @@ abstract class StateMachineEngine<S : State, E : Event>(
             externalEventQueue.addLast(QueuedEvent(entry.event as E, entry.metadata))
         }
         return true
+    }
+
+    /**
+     * §scxml-6.2.4 + §scxml-C-1: deliver a due entry to the target its send
+     * resolved. An invocation that is no longer running — cancelled, or at its
+     * final state — cannot take the event, and the sender hears so as
+     * `error.communication` carrying the send id, as it would had the send not
+     * been delayed.
+     */
+    private fun deliverRouted(entry: ScheduledSendEntry, route: ScheduledRoute) {
+        // Justification (UNCHECKED_CAST): the producers below — scheduleInternalSend
+        // and scheduleChildSend — accept only E for the entry's event and for the
+        // unreachable event, so the casts back to E are type-safe by construction.
+        @Suppress("UNCHECKED_CAST")
+        when (route) {
+            ScheduledRoute.InternalQueue -> raiseInternal(entry.event as E, entry.metadata)
+            is ScheduledRoute.Parent -> onSendToParent?.invoke(route.eventName, route.eventData)
+            is ScheduledRoute.Invocation ->
+                if (!sendToChild(route.invokeId, route.eventName, route.eventData)) {
+                    raisePlatformError(
+                        route.unreachable as E,
+                        "<send target='#_${route.invokeId}'> names an invocation that is not running",
+                        entry.sendId
+                    )
+                }
+        }
+    }
+
+    /** Queue a routed entry in [scheduledSends], replacing any send of the same id. */
+    private fun scheduleRouted(sendId: String, delayMs: Long, event: E?, metadata: EventMetadata, route: ScheduledRoute) {
+        cancelSend(sendId)
+        scheduledSends.add(ScheduledSendEntry(
+            fireTimeMs = engineElapsedMs() + delayMs,
+            sequenceNum = schedulerSequence++,
+            sendId = sendId,
+            event = event,
+            metadata = metadata,
+            route = route
+        ))
+        scheduledSends.sortWith(compareBy<ScheduledSendEntry> { it.fireTimeMs }.thenBy { it.sequenceNum })
     }
 
     /** Fire ready delayed HTTP sends (the spec's BasicHTTP event processor). */
@@ -2951,32 +3022,45 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * §scxml-6.4: Schedule a delayed send to parent with event data.
      */
     protected fun scheduleParentSend(sendId: String, delayMs: Long, eventName: String, eventData: String) {
-        if (syncMode) {
+        // In [scheduledSends] in both modes, as a host-served send is: the
+        // coroutine loop performs due entries on its own thread
+        // ([awaitNextExternalEvent]), so the parent is reached from the one
+        // thread this machine's macrosteps run on.
+        if (delayMs <= 0) {
             cancelSend(sendId)
-            if (delayMs <= 0) {
-                onSendToParent?.invoke(eventName, eventData)
-            } else {
-                scheduledSends.add(ScheduledSendEntry(
-                    fireTimeMs = engineElapsedMs() + delayMs,
-                    sequenceNum = schedulerSequence++,
-                    sendId = sendId,
-                    event = null,
-                    metadata = EventMetadata.EMPTY,
-                    isParentSend = true,
-                    parentEventName = eventName,
-                    parentEventData = eventData
-                ))
-                scheduledSends.sortWith(compareBy<ScheduledSendEntry> { it.fireTimeMs }.thenBy { it.sequenceNum })
-            }
-        } else {
-            val scope = engineScope ?: return
-            delayedSendJobs[sendId]?.cancel()
-            delayedSendJobs[sendId] = scope.launch(Dispatchers.Default) {
-                kotlinx.coroutines.delay(delayMs)
-                onSendToParent?.invoke(eventName, eventData)
-                delayedSendJobs.remove(sendId)
-            }
+            onSendToParent?.invoke(eventName, eventData)
+            return
         }
+        scheduleRouted(sendId, delayMs, null, EventMetadata.EMPTY, ScheduledRoute.Parent(eventName, eventData))
+    }
+
+    /**
+     * §scxml-6.2.4: schedule a delayed `#_internal` send. When it comes due the
+     * event joins this machine's internal queue, as the same send without a
+     * delay would — the delay does not turn it into an external event.
+     */
+    protected fun scheduleInternalSend(sendId: String, delayMs: Long, event: E, metadata: EventMetadata) {
+        scheduleRouted(sendId, delayMs, event, metadata, ScheduledRoute.InternalQueue)
+    }
+
+    /**
+     * §scxml-6.2.4 + §scxml-6.4: schedule a delayed send to invocation
+     * [invokeId]. Whether that invocation is running is judged when the entry
+     * comes due; if it is not, [unreachable] — this machine's
+     * `error.communication` — is raised with the send id (§scxml-C-1).
+     */
+    protected fun scheduleChildSend(
+        sendId: String,
+        delayMs: Long,
+        invokeId: String,
+        eventName: String,
+        eventData: String,
+        unreachable: E
+    ) {
+        scheduleRouted(
+            sendId, delayMs, null, EventMetadata.EMPTY,
+            ScheduledRoute.Invocation(invokeId, eventName, eventData, unreachable)
+        )
     }
 
     // --- Invoke Support (§scxml-6.4) ---
@@ -3198,10 +3282,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *
      * §scxml-C-1: returns whether the invocation was there to reach. One that
      * is not running cannot take the event, and the send that addressed it
-     * reports error.communication rather than losing the message unseen.
+     * reports error.communication rather than losing the message unseen. A
+     * child at its final state has ended (§scxml-6.4) and counts as not
+     * running, though its entry stays until the macrostep's cleanup.
      */
     protected fun sendToChild(invokeId: String, eventName: String, eventData: String = ""): Boolean {
         val child = activeInvokes[invokeId]?.child ?: return false
+        if (child.isInFinalState) return false
         if (eventData.isEmpty()) child.sendByName(eventName) else child.sendByNameWithData(eventName, eventData)
         return true
     }

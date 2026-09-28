@@ -113,6 +113,27 @@ struct HasChildSessionDeliveryTrait<
            std::declval<const std::string &>(), std::declval<const SCE::Common::ForwardedEvent &>()))>>
     : std::true_type {};
 
+/// W3C SCXML 6.2 + 6.4: policy can deliver a delayed send's event to one of
+/// its invocations by invoke id, answering whether that invocation was there
+/// to take it. Only a policy that invokes has children to deliver to.
+template <typename P, typename = void> struct HasInvocationDeliveryTrait : std::false_type {};
+
+template <typename P>
+struct HasInvocationDeliveryTrait<
+    P, std::void_t<decltype(std::declval<P &>().deliverToInvocation(
+           std::declval<const std::string &>(), std::declval<const SCE::Common::ForwardedEvent &>()))>>
+    : std::true_type {};
+
+/// W3C SCXML 6.2 + 6.4: policy can deliver a delayed send's event to the
+/// session that invoked it, answering whether that session was there. Only an
+/// invoked machine has a parent.
+template <typename P, typename = void> struct HasParentDeliveryTrait : std::false_type {};
+
+template <typename P>
+struct HasParentDeliveryTrait<
+    P, std::void_t<decltype(std::declval<P &>().deliverToParent(std::declval<const SCE::Common::ForwardedEvent &>()))>>
+    : std::true_type {};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // C++20 concepts + C++17 constexpr bool aliases
 //
@@ -271,6 +292,14 @@ concept HasActiveStates = HasActiveStatesTrait<P>::value;
 template <typename P>
 concept HasChildSessionDelivery = HasChildSessionDeliveryTrait<P>::value;
 
+/// Policy can deliver a delayed send to one of its invocations by invoke id
+template <typename P>
+concept HasInvocationDelivery = HasInvocationDeliveryTrait<P>::value;
+
+/// Policy can deliver a delayed send to the session that invoked it
+template <typename P>
+concept HasParentDelivery = HasParentDeliveryTrait<P>::value;
+
 /// Driving the policy's machine needs `tick()`, not `step()` alone
 template <typename P>
 concept NeedsEventScheduler = NeedsEventSchedulerTrait<P>::value;
@@ -302,6 +331,8 @@ inline constexpr bool HasFinalize = HasFinalizeTrait<P, M, Engine>::value;
 template <typename P> inline constexpr bool HasActiveStates = HasActiveStatesTrait<P>::value;
 
 template <typename P> inline constexpr bool HasChildSessionDelivery = HasChildSessionDeliveryTrait<P>::value;
+template <typename P> inline constexpr bool HasInvocationDelivery = HasInvocationDeliveryTrait<P>::value;
+template <typename P> inline constexpr bool HasParentDelivery = HasParentDeliveryTrait<P>::value;
 
 template <typename P> inline constexpr bool NeedsEventScheduler = NeedsEventSchedulerTrait<P>::value;
 

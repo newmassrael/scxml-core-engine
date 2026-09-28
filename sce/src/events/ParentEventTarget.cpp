@@ -15,9 +15,8 @@
 
 namespace SCE {
 
-ParentEventTarget::ParentEventTarget(const std::string &childSessionId, std::shared_ptr<IEventRaiser> eventRaiser,
-                                     std::shared_ptr<IEventScheduler> scheduler)
-    : childSessionId_(childSessionId), eventRaiser_(std::move(eventRaiser)), scheduler_(std::move(scheduler)) {
+ParentEventTarget::ParentEventTarget(const std::string &childSessionId, std::shared_ptr<IEventRaiser> eventRaiser)
+    : childSessionId_(childSessionId), eventRaiser_(std::move(eventRaiser)) {
     if (childSessionId_.empty()) {
         throw std::invalid_argument("ParentEventTarget requires a valid child session ID");
     }
@@ -30,41 +29,10 @@ ParentEventTarget::ParentEventTarget(const std::string &childSessionId, std::sha
 }
 
 std::future<SendResult> ParentEventTarget::send(const EventDescriptor &event) {
-    SCE_LOG_DEBUG("ParentEventTarget::send() - ENTRY: event='{}', target='{}', sessionId='{}', delay={}ms",
-                  event.eventName, event.target, event.sessionId, event.delay.count());
-
-    // Check if this is a delayed event and scheduler is available
-    if (event.delay.count() > 0 && scheduler_) {
-        SCE_LOG_DEBUG("ParentEventTarget: Scheduling delayed parent event '{}' for {}ms", event.eventName,
-                      event.delay.count());
-
-        // Create a copy of this target for delayed execution
-        auto sharedThis = std::make_shared<ParentEventTarget>(childSessionId_, eventRaiser_, scheduler_);
-
-        // Schedule the event for delayed execution
-        auto sendIdFuture = scheduler_->scheduleEvent(event, event.delay, sharedThis, event.sendId, event.sessionId);
-
-        // §scxml-6.2: Convert sendId future to SendResult future synchronously (WASM memory leak prevention)
-        // Process result synchronously to ensure thread cleanup
-        std::promise<SendResult> resultPromise;
-        try {
-            std::string assignedSendId = sendIdFuture.get();
-            resultPromise.set_value(SendResult::success(assignedSendId));
-        } catch (const std::exception &e) {
-            resultPromise.set_value(
-                SendResult::error("Failed to schedule delayed parent event: " + std::string(e.what()),
-                                  SendResult::ErrorType::INTERNAL_ERROR));
-        }
-        return resultPromise.get_future();
-    } else {
-        // Execute immediately (no delay or no scheduler available)
-        return sendImmediately(event);
-    }
-}
-
-std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor &event) {
-    SCE_LOG_DEBUG("ParentEventTarget::sendImmediately() - ENTRY: event='{}', target='{}', sessionId='{}'",
-                  event.eventName, event.target, event.sessionId);
+    // W3C SCXML 6.2: a delayed event reaches here once the dispatcher's delay
+    // has elapsed, so this delivers now, whatever `event.delay` still says.
+    SCE_LOG_DEBUG("ParentEventTarget::send() - ENTRY: event='{}', target='{}', sessionId='{}'", event.eventName,
+                  event.target, event.sessionId);
 
     std::promise<SendResult> resultPromise;
     auto resultFuture = resultPromise.get_future();
@@ -72,9 +40,8 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
     try {
         // Use session ID from event descriptor as child session ID
         std::string actualChildSessionId = event.sessionId.empty() ? childSessionId_ : event.sessionId;
-        SCE_LOG_DEBUG(
-            "ParentEventTarget::sendImmediately() - Child session: '{}' (from event: '{}', from constructor: '{}')",
-            actualChildSessionId, event.sessionId, childSessionId_);
+        SCE_LOG_DEBUG("ParentEventTarget::send() -Child session: '{}' (from event: '{}', from constructor: '{}')",
+                      actualChildSessionId, event.sessionId, childSessionId_);
 
         // Find parent session ID: use _parentSessionId param if provided (for done.invoke), otherwise lookup via
         // JSEngine
@@ -129,10 +96,9 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
         // §scxml-5.10: Pass origintype as SCXML processor type (test 253, 331, 352, 372)
         // ARCHITECTURE.md: Use SCXMLConstants for Single Source of Truth
         std::string originType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
-        SCE_LOG_DEBUG(
-            "ParentEventTarget::sendImmediately() - Calling parent EventRaiser->raiseEvent('{}', '{}', origin: "
-            "'{}', invokeId: '{}', originType: '{}')",
-            eventName, eventData, actualChildSessionId, invokeId, originType);
+        SCE_LOG_DEBUG("ParentEventTarget::send() -Calling parent EventRaiser->raiseEvent('{}', '{}', origin: "
+                      "'{}', invokeId: '{}', originType: '{}')",
+                      eventName, eventData, actualChildSessionId, invokeId, originType);
         // Build typed event data from typedParams if available (engine-agnostic pipeline)
         std::optional<ScriptValue> typedData;
         if (!event.typedParams.empty()) {
@@ -150,8 +116,7 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
             raiseResult =
                 parentEventRaiser->raiseEvent(eventName, eventData, actualChildSessionId, invokeId, originType);
         }
-        SCE_LOG_DEBUG("ParentEventTarget::sendImmediately() - parent EventRaiser->raiseEvent() returned: {}",
-                      raiseResult);
+        SCE_LOG_DEBUG("ParentEventTarget::send() -parent EventRaiser->raiseEvent() returned: {}", raiseResult);
 
         SCE_LOG_DEBUG("ParentEventTarget: Successfully routed event '{}' to parent session '{}'", eventName,
                       parentSessionId);

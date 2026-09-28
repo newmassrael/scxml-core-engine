@@ -318,7 +318,7 @@
 #include <sce/clock.h>
 
 
-/* Forward declarations — `scheduled_push` is invoked from inside
+/* Forward declarations — `scheduled_push_routed` is invoked from inside
    `execute_entry_actions` / `execute_exit_actions` (the action emitter's
    `<send delay>` arm), but the definitions live alongside the rest of
    the RTC core lower in the translation unit so they sit next to the
@@ -373,46 +373,68 @@ SCE_SM_FN static SCE_C_UNUSED void end_turn({{ csym_prefix }}{{ model.name }}_t 
     }
 }
 
-SCE_SM_FN static SCE_C_UNUSED void scheduled_push({{ csym_prefix }}{{ model.name }}_t *sm,
-                           uint64_t fire_time_ms,
-                           {{ csym_prefix }}{{ model.name }}_event_t event,
-                           const char *send_id
-{%- if model.needs_script_engine %},
-                           const char *payload_json
-{%- endif %});
 SCE_SM_FN static SCE_C_UNUSED void scheduled_cancel({{ csym_prefix }}{{ model.name }}_t *sm, const char *send_id);
-{% if model.has_parent_communication %}
-/* W3C SCXML 6.2 + 6.4 (test187): delayed `<send target="#_parent">` —
-   distinct entry-point from `scheduled_push` so the local-event arm
-   keeps its enum-typed parameter while the parent-routed arm carries
-   an event NAME (the parent's enum is foreign here). Both paths share
-   the same `scheduled_queue_t` so `_tick`'s pop-by-fire-time ordering
-   stays unified, and `scheduled_cancel`'s send_id walk catches
-   to-parent entries the same way as local entries. */
-SCE_SM_FN static SCE_C_UNUSED void scheduled_push_parent({{ csym_prefix }}{{ model.name }}_t *sm,
+/* W3C SCXML 6.2.4 + C.1: a delayed `<send>` the processor delivers itself —
+   to this session's external or internal queue, the parent, or an invoked
+   child. The route is the target the send resolved when it was performed, and it
+   is delivered to when the entry comes due: a delay postpones a send, it
+   does not change where it goes. `event` is this machine's enum for the
+   internal route; `event_name` carries the receiver's event by NAME for
+   the other two, whose enums are foreign here. Every kind writes the one
+   `scheduled_queue_t`, so `_tick`'s pop-by-fire-time ordering stays unified
+   and `scheduled_cancel`'s send_id walk reaches them alike. */
+SCE_SM_FN static SCE_C_UNUSED void scheduled_push_routed({{ csym_prefix }}{{ model.name }}_t *sm,
                                   uint64_t fire_time_ms,
+                                  {{ csym_prefix }}{{ model.name }}_sched_route_t route,
+                                  {{ csym_prefix }}{{ model.name }}_event_t event,
                                   const char *event_name,
-                                  const char *send_id);
-{% endif %}
+                                  const char *invoke_id,
+                                  const char *send_id
+{%- if model.needs_script_engine %},
+                                  const char *payload_json
+{%- endif %});
 {% if model.has_delayed_host_send %}
 /* W3C SCXML 6.2.4 + 6.2.5: a delayed `<send>` the HOST serves — a distinct
-   entry point from `scheduled_push` because the entry carries a REQUEST to
-   perform rather than an event to raise, the same split `scheduled_push_parent`
-   makes for a different reason. All three write the one `scheduled_queue_t`, so
-   `_tick`'s pop-by-fire-time ordering stays unified and `scheduled_cancel`'s
-   send_id walk reaches every kind of entry alike. */
+   entry point from `scheduled_push_routed` because the entry carries a REQUEST to
+   perform rather than an event to deliver. It writes the same
+   `scheduled_queue_t`, so `_tick`'s pop-by-fire-time ordering stays unified
+   and `scheduled_cancel`'s send_id walk reaches every kind of entry alike. */
 SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model.name }}_t *sm,
                                   uint64_t fire_time_ms,
                                   const char *send_id,
                                   const sce_host_send_request_t *request);
 {% endif %}
 {% endif %}
+{% if model.invokes | scxml_family | list %}
+/* W3C SCXML 6.4 + C.1: deliver `fwd` to the invocation `invoke_id` names —
+   the one door a `<send target="#_<invokeid>">` reaches a child through,
+   whether it was sent now or came due from the scheduled queue. Returns
+   whether the invocation was there to take it: one not running, or at its
+   final state (it has ended, W3C SCXML 6.4), is not. */
+SCE_SM_FN static SCE_C_UNUSED bool deliver_to_invocation({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  const char *invoke_id,
+                                  const sce_forwarded_event_t *fwd) {
+{% for invoke_info in model.invokes | scxml_family %}
+{% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
+    if (strcmp(invoke_id, "{{ invoke_info.invoke_id | escape_c }}") == 0) {
+{% for target in child_targets %}
+{% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
+        if (sm->{{ slot }}_active && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {
+            {{ csym_prefix }}{{ target.stem }}_raise_external_forwarded(&sm->{{ slot }}, fwd);
+            return true;
+        }
+{% endfor %}
+    }
+{% endfor %}
+    return false;
+}
+{% endif %}
 {% if model.host_invoker_types %}
 /* W3C SCXML 6.4.1: the host-invoke start site sits in `execute_pending_invokes`,
    which this translation unit emits BEFORE the name→event mapping below. The
    start site needs that mapping to turn a host-reported completion into
    `done.invoke.<id>`, so it is forward-declared here — the same reason
-   `scheduled_push` above is. Measured: without it an invoker-only document
+   `scheduled_push_routed` above is. Measured: without it an invoker-only document
    compiled with an implicit declaration and would have failed at link. */
 SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ model.name }}_event_from_name(const char *name, size_t len);
 /* W3C SCXML 6.4.1: the one place a host-run invocation starts. Forward-declared
@@ -753,16 +775,16 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% set route = 'none' %}
 {% endif %}
 {% set refused_at_build = action.send_type_unsupported or static_target.startswith('!') or (is_http and not action.target and not action.targetexpr) or names_no_invocation %}
-{# The deliveries this backend has no route for. A delay is honoured where
-   the event lands in a queue this machine drains — its own, or its parent's
-   through the scheduled-to-parent entry, which carries no payload — and
-   BasicHTTP posts synchronously, so it takes neither a delay nor an
-   evaluated event name. #}
+{# The deliveries this backend has no route for. A delay is honoured on
+   every route the scheduled queue carries — this session's queues, the
+   parent, an invoked child — and BasicHTTP posts synchronously, so it takes
+   neither a delay nor an evaluated event name. A scheduled entry holds a
+   payload only on a machine with a script engine (its `data[]` is sized for
+   those), so a delayed payload elsewhere is said rather than dropped. #}
 {% set no_route = (not refused_at_build) and (
       route == 'none'
       or (not has_event and route != 'http')
-      or (has_delay and route not in ['self', 'session', 'parent'])
-      or (has_delay and route == 'parent' and has_payload)
+      or (has_delay and has_payload and not model.needs_script_engine)
       or (route == 'http' and (action.eventexpr or has_delay or in_foreach))) %}
 {% if no_route %}
             /* W3C SCXML 6.2: a delivery this backend has no route for. Said
@@ -997,9 +1019,11 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 /* W3C SCXML 6.2 + 6.4 (test187): delayed to the parent. It
                    waits in this child's own queue, so a session that
                    terminates first drops it — the entry the parent's queue
-                   would otherwise hold past the child's end. */
-                scheduled_push_parent(sm, sched_now_ms(sm) + {{ delay_c }},
-                                      {{ event_name_c }}, "{{ send_id_c }}");
+                   would otherwise hold past the child's end. The payload
+                   rides on the entry, as it would on the send made now. */
+                scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }},
+                                      {{ PU }}_SCHED_ROUTE_PARENT, {{ PU }}_EVENT_NONE,
+                                      {{ event_name_c }}, NULL, "{{ send_id_c }}"{{ scheduled_payload_arg(has_payload) }});
 {% elif route == 'parent' %}
                 /* W3C SCXML 6.4 (test191, 233, 338): to the invoking parent,
                    carrying the payload; the parent's shim names this child's
@@ -1007,13 +1031,44 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 if (sm->parent_dispatch != NULL) {
                     sm->parent_dispatch(sm->parent_sm, {{ event_name_c }}, sm->invoke_id, {% if has_payload %}_ed{% else %}NULL{% endif %});
                 }
+{% elif route == 'child' and has_delay %}
+                /* W3C SCXML 6.2.4 + 6.4: delayed to an invoked child. Whether
+                   it is still running is judged when the entry comes due; if
+                   not, this session hears error.communication then (C.1). */
+                scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }},
+                                      {{ PU }}_SCHED_ROUTE_INVOCATION, {{ PU }}_EVENT_NONE,
+                                      {{ event_name_c }}, "{{ child_ns.invoke.invoke_id | escape_c }}",
+                                      "{{ send_id_c }}"{{ scheduled_payload_arg(has_payload) }});
 {% elif route == 'child' %}
 {{ send_to_child(action, child_ns.invoke, event_name_c, meta_send_id, has_payload) }}
+{% elif route == 'internal' and has_delay %}
+                /* W3C SCXML 6.2.4 + C.1: delayed to `#_internal` — the event
+                   joins this session's internal queue when due; the delay
+                   does not make it an external event. */
+{{ send_schedule_here(action, PU ~ '_SCHED_ROUTE_INTERNAL', delay_c, send_id_c, has_payload) }}
 {% elif route == 'internal' %}
                 /* W3C SCXML C.1 (test189): `#_internal` is this session's
                    internal queue, and the event carries its payload there as
                    an external send does. */
 {{ send_raise_here(action, P ~ '_raise', meta_send_id, has_payload) }}
+{% elif route == 'dynamic' and has_delay %}
+                /* W3C SCXML 6.2.4 + C.1: the target was resolved now, so the
+                   queue it names is fixed now and delivered to when due. */
+                if (strcmp(_send_target_buf, "#_internal") == 0) {
+{{ send_schedule_here(action, PU ~ '_SCHED_ROUTE_INTERNAL', delay_c, send_id_c, has_payload) }}
+{% for invoke_info in model.invokes | scxml %}
+                } else if (sm->child_{{ invoke_info.field_suffix }}.scxml_location[0] != '\0' &&
+                           strcmp(_send_target_buf, sm->child_{{ invoke_info.field_suffix }}.scxml_location) == 0) {
+                    /* The location child `{{ invoke_info.invoke_id }}`
+                       publishes, as in the immediate arm below. */
+                    scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }},
+                                          {{ PU }}_SCHED_ROUTE_INVOCATION, {{ PU }}_EVENT_NONE,
+                                          {{ event_name_c }}, "{{ invoke_info.invoke_id | escape_c }}",
+                                          "{{ send_id_c }}"{{ scheduled_payload_arg(has_payload) }});
+{% endfor %}
+                } else {
+{{ send_schedule_here(action, PU ~ '_SCHED_ROUTE_EXTERNAL', delay_c, send_id_c, has_payload) }}
+                }
 {% elif route == 'dynamic' %}
                 if (strcmp(_send_target_buf, "#_internal") == 0) {
 {{ send_raise_here(action, P ~ '_raise', meta_send_id, has_payload) }}
@@ -1039,25 +1094,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                    stored on the entry as the JSON its event will carry, so
                    `_tick` raises the event with it and nothing can take it in
                    between. */
-{% if action.eventexpr %}
-                {{ P }}_event_t _send_delayed = {{ PU }}_EVENT_NONE;
-                {% for event_name in model.events | sort %}
-                if (_send_delayed == {{ PU }}_EVENT_NONE && strcmp(_send_evt_name, "{{ event_name | escape_c }}") == 0) {
-                    _send_delayed = {{ PU }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }};
-                }
-                {% endfor %}
-                if (_send_delayed != {{ PU }}_EVENT_NONE) {
-{% set delayed_event_c = '_send_delayed' %}
-{% else %}
-{% set delayed_event_c = PU ~ '_EVENT_' ~ (action.event | upper | replace('.', '_') | replace('-', '_')) %}
-                {
-{% endif %}
-                    scheduled_push(sm, sched_now_ms(sm) + {{ delay_c }},
-                                   {{ delayed_event_c }},
-                                   "{{ send_id_c }}"
-{%- if model.needs_script_engine %}, {% if has_payload %}_ed{% else %}NULL{% endif %}
-{%- endif %});
-                }
+{{ send_schedule_here(action, PU ~ '_SCHED_ROUTE_EXTERNAL', delay_c, send_id_c, has_payload) }}
 {% else %}
                 /* W3C SCXML 6.2 (test189): a send with no target — or one
                    naming this session — goes on this session's external
@@ -1069,6 +1106,40 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {{ send_param_failed_close(action) }}
 {% endif %}{# the build-time refusals #}
 {% endif %}{# a delivery with no route #}
+{%- endmacro %}
+{#- W3C SCXML 5.10: the payload argument a scheduled entry takes — `_ed`
+    when the send carries one; present only on a machine with a script
+    engine, whose entries hold a payload. -#}
+{% macro scheduled_payload_arg(has_payload) -%}
+{%- if model.needs_script_engine %}, {% if has_payload %}_ed{% else %}NULL{% endif %}{% endif -%}
+{%- endmacro %}
+{#- W3C SCXML 6.2.4: schedule the event into one of this session's own
+    queues — `route_c` names which — carrying the payload `_ed` holds. An
+    evaluated event name no transition of this document can match is
+    scheduled nowhere, as the immediate `send_raise_here` delivers it
+    nowhere. -#}
+{% macro send_schedule_here(action, route_c, delay_c, send_id_c, has_payload) %}
+{% set P = csym_prefix ~ model.name %}
+{% set PU = csym_prefix | upper ~ model.name | upper %}
+                {
+{% if action.eventexpr %}
+                    {{ P }}_event_t _send_delayed = {{ PU }}_EVENT_NONE;
+                    {% for event_name in model.events | sort %}
+                    if (_send_delayed == {{ PU }}_EVENT_NONE && strcmp(_send_evt_name, "{{ event_name | escape_c }}") == 0) {
+                        _send_delayed = {{ PU }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }};
+                    }
+                    {% endfor %}
+                    if (_send_delayed != {{ PU }}_EVENT_NONE) {
+                        scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }}, {{ route_c }},
+                                              _send_delayed, NULL, NULL,
+                                              "{{ send_id_c }}"{{ scheduled_payload_arg(has_payload) }});
+                    }
+{% else %}
+                    scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }}, {{ route_c }},
+                                          {{ PU }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }}, NULL, NULL,
+                                          "{{ send_id_c }}"{{ scheduled_payload_arg(has_payload) }});
+{% endif %}
+                }
 {%- endmacro %}
 {#- W3C SCXML 6.2 / C.1: deliver the event into one of this session's own
     queues through `raise_fn`, carrying the payload `_ed` holds. An evaluated
@@ -1109,13 +1180,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {#- W3C SCXML 6.4: deliver the event to the invocation `invoke_info` names,
     carrying the payload, through the child's forwarded-event door — the one
     that takes `_event` fields — rather than the by-name one, which takes a
-    name alone and so dropped every payload a parent sent. The slots its
-    session may occupy: one, or one per document `sce:candidates` declares,
-    at most one of them filled. With `report_missing`, an invocation that is
-    not running is not there to reach (W3C SCXML C.1): error.communication and
-    the block ends. -#}
+    name alone and so dropped every payload a parent sent. The slot it lands
+    in is found by `deliver_to_invocation`, the door a delayed send's due
+    entry uses too. With `report_missing`, an invocation that is not running
+    is not there to reach (W3C SCXML C.1): error.communication and the block
+    ends. -#}
 {% macro send_to_child(action, invoke_info, event_name_c, meta_send_id, has_payload, report_missing=true) %}
-{% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
                 {
                     sce_forwarded_event_t _send_fwd;
                     memset(&_send_fwd, 0, sizeof(_send_fwd));
@@ -1126,13 +1196,8 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% if meta_send_id %}
                     sce_copy_bounded_id(_send_fwd.send_id, "{{ meta_send_id | escape_c }}");
 {% endif %}
-{% for target in child_targets %}
-{% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
-                    {{ 'if' if loop.first else '} else if' }} (sm->{{ slot }}_active) {
-                        {{ csym_prefix }}{{ target.stem }}_raise_external_forwarded(&sm->{{ slot }}, &_send_fwd);
-{% endfor %}
 {% if report_missing %}
-                    } else {
+                    if (!deliver_to_invocation(sm, "{{ invoke_info.invoke_id | escape_c }}", &_send_fwd)) {
                         {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
                             "<send target='{{ action.target | escape_c }}'> names an invocation that is not running",
@@ -1140,7 +1205,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                         return;
                     }
 {% else %}
-                    }
+                    (void)deliver_to_invocation(sm, "{{ invoke_info.invoke_id | escape_c }}", &_send_fwd);
 {% endif %}
                 }
 {%- endmacro %}
@@ -2877,11 +2942,13 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_by_name({{ csym_
     }
     {% endfor %}
 }
+{% endif %}
 
-/* W3C SCXML 6.4: autoforward entry point. Same name→enum resolution as the
-   shim above, but the source event's `_event` fields ride along because §6.4
-   requires the copy be exact. Unknown names fall through silently: a child
-   need not declare every event its parent forwards. */
+/* W3C SCXML 6.4: the parent-to-child entry point, for a send and for
+   autoforward. Same name→enum resolution as `_raise_external_by_name`, but
+   the source event's `_event` fields ride along because §6.4 requires the
+   copy be exact. Unknown names fall through silently: a child need not
+   declare every event its parent forwards. */
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csym_prefix }}{{ model.name }}_t *sm, const sce_forwarded_event_t *fwd) {
     if (sm == NULL || fwd == NULL) {
         return;
@@ -2902,7 +2969,6 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csy
     }
     {% endfor %}
 }
-{% endif %}
 
 {% if model.needs_event_scheduler %}
 /* ── W3C SCXML 6.2: Delayed-send queue helpers ────────────────────── */
@@ -2916,19 +2982,22 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csy
    onto the internal queue per W3C 6.2 (the spec requires a discoverable
    error rather than silent loss); the entry being inserted is the one
    dropped, matching the bounded-resource contract documented at the
-   `SCE_MAX_SCHEDULED` define site in `sce/types.h`. #}
-SCE_SM_FN static void scheduled_push({{ csym_prefix }}{{ model.name }}_t *sm,
-                           uint64_t fire_time_ms,
-                           {{ csym_prefix }}{{ model.name }}_event_t event,
-                           const char *send_id
-{%- if model.needs_script_engine %},
-                           const char *payload_json
-{%- endif %}) {
+   `SCE_MAX_SCHEDULED` define site in `sce/types.h`.
+
+   Every kind of entry is inserted here, so the ordering and the overflow
+   contract are decided once. The slot is returned zeroed — every kind flag
+   clear, the route the external queue — because a slot a shifted entry of
+   another kind left behind must not lend this one its fields. #}
+SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *scheduled_reserve(
+    {{ csym_prefix }}{{ model.name }}_t *sm, uint64_t fire_time_ms, const char *overflow_message) {
     if (sm->scheduled_queue.count >= (uint8_t)SCE_MAX_SCHEDULED) {
+{% if 'error.execution' in model.events %}
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "the scheduled-send queue is full, so this <send delay> was dropped");
-        return;
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, overflow_message);
+{% else %}
+        (void)overflow_message;
+{% endif %}
+        return NULL;
     }
 
     /* Find insertion index keeping the array sorted by fire_time_ms. */
@@ -2946,37 +3015,61 @@ SCE_SM_FN static void scheduled_push({{ csym_prefix }}{{ model.name }}_t *sm,
     }
 
     {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = &sm->scheduled_queue.buf[pos];
+    memset(slot, 0, sizeof(*slot));
     slot->fire_time_ms = fire_time_ms;
+    slot->route = (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_EXTERNAL;
+    sm->scheduled_queue.count++;
+    return slot;
+}
+
+SCE_SM_FN static SCE_C_UNUSED void scheduled_push_routed({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  uint64_t fire_time_ms,
+                                  {{ csym_prefix }}{{ model.name }}_sched_route_t route,
+                                  {{ csym_prefix }}{{ model.name }}_event_t event,
+                                  const char *event_name,
+                                  const char *invoke_id,
+                                  const char *send_id
+{%- if model.needs_script_engine %},
+                                  const char *payload_json
+{%- endif %}) {
+    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = scheduled_reserve(
+        sm, fire_time_ms, "the scheduled-send queue is full, so this <send delay> was dropped");
+    if (slot == NULL) {
+        return;
+    }
+    slot->route = (uint8_t)route;
     slot->event = event;
     sce_copy_bounded_id(slot->send_id, send_id);
+{% set sched_invocations = model.invokes | scxml_family | list %}
+{% if model.has_parent_communication or sched_invocations %}
+    if (event_name != NULL) {
+        sce_copy_bounded_id(slot->route_event, event_name);
+    }
+{% else %}
+    (void)event_name;
+{% endif %}
+{% if sched_invocations %}
+    if (invoke_id != NULL) {
+        sce_copy_bounded_id(slot->route_invoke, invoke_id);
+    }
+{% else %}
+    (void)invoke_id;
+{% endif %}
 {% if model.needs_script_engine %}
     /* W3C SCXML 5.10: the payload the event will carry, as the JSON its
        `data[]` takes — `send_payload_json` already refused one that does
        not fit, so the copy is whole. */
     if (payload_json != NULL) {
         sce_copy_bounded_data(slot->data, payload_json);
-    } else {
-        slot->data[0] = '\0';
     }
 {% endif %}
-{% if model.has_parent_communication %}
-    slot->to_parent = false;
-    slot->to_parent_event[0] = '\0';
-{% endif %}
-{% if model.has_delayed_host_send %}
-    slot->host_send = false;
-{% endif %}
-{% if model.has_host_invoke_deadline %}
-    slot->host_invoke_deadline = false;
-{% endif %}
-    sm->scheduled_queue.count++;
 }
 
 {% if model.has_delayed_host_send %}
 /* W3C SCXML 6.2.4 + 6.2.5: sorted-insert a `<send delay>` the HOST serves,
    to be PERFORMED when its deadline arrives rather than raised.
 
-   The same queue `scheduled_push` writes into, which is the contract: the
+   The same queue `scheduled_push_routed` writes into, which is the contract: the
    act is ordered against every other delayed send by deadline, a
    `<cancel sendid>` drops it, and `_time_until_next_scheduled_ms` counts
    it. A private list would answer none of those three.
@@ -2994,34 +3087,13 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model
                            uint64_t fire_time_ms,
                            const char *send_id,
                            const sce_host_send_request_t *request) {
-    if (sm->scheduled_queue.count >= (uint8_t)SCE_MAX_SCHEDULED) {
-{% if 'error.execution' in model.events %}
-        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "the scheduled-send queue is full, so this <send delay> was dropped");
-{% endif %}
+    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = scheduled_reserve(
+        sm, fire_time_ms, "the scheduled-send queue is full, so this <send delay> was dropped");
+    if (slot == NULL) {
         return;
     }
-
-    uint8_t pos = sm->scheduled_queue.count;
-    for (uint8_t i = 0; i < sm->scheduled_queue.count; ++i) {
-        if (fire_time_ms < sm->scheduled_queue.buf[i].fire_time_ms) {
-            pos = i;
-            break;
-        }
-    }
-    for (uint8_t j = sm->scheduled_queue.count; j > pos; --j) {
-        sm->scheduled_queue.buf[j] = sm->scheduled_queue.buf[j - 1u];
-    }
-
-    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = &sm->scheduled_queue.buf[pos];
-    memset(slot, 0, sizeof(*slot));
-    slot->fire_time_ms = fire_time_ms;
     slot->event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
     sce_copy_bounded_id(slot->send_id, send_id);
-{% if model.needs_script_engine %}
-    slot->data[0] = '\0';
-{% endif %}
     slot->host_send = true;
     sce_copy_bounded_id(slot->host_processor_type, request->processor_type);
     sce_copy_bounded_id(slot->host_event_name, request->event_name);
@@ -3036,73 +3108,14 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model
         slot->host_param_count++;
     }
 {% endif %}
-    sm->scheduled_queue.count++;
 }
 {% endif %}
 
-{% if model.has_parent_communication %}
-/* W3C SCXML 6.2 + 6.4 (test187): sorted-insert delayed entry whose
-   firing routes through `parent_dispatch` instead of the local
-   `raise_external` path. Shares the same scheduled_queue buffer as
-   `scheduled_push` so a single fire-time ordering covers both arms,
-   and `scheduled_cancel` walks the same send_id index. The `event`
-   enum slot is left at `_EVENT_NONE` (the to_parent flag is the
-   discriminator `_tick` reads) — the parent's enum is foreign to
-   this SM, so the routing target travels as an event NAME in
-   `to_parent_event`. Capacity overflow drops the entry the same way
-   the local arm does (raise error.execution + return). */
-SCE_SM_FN static void scheduled_push_parent({{ csym_prefix }}{{ model.name }}_t *sm,
-                                  uint64_t fire_time_ms,
-                                  const char *event_name,
-                                  const char *send_id) {
-    if (sm->scheduled_queue.count >= (uint8_t)SCE_MAX_SCHEDULED) {
-        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "the scheduled-send queue is full, so this <send delay> was dropped");
-        return;
-    }
-
-    uint8_t pos = sm->scheduled_queue.count;
-    for (uint8_t i = 0; i < sm->scheduled_queue.count; ++i) {
-        if (fire_time_ms < sm->scheduled_queue.buf[i].fire_time_ms) {
-            pos = i;
-            break;
-        }
-    }
-    for (uint8_t j = sm->scheduled_queue.count; j > pos; --j) {
-        sm->scheduled_queue.buf[j] = sm->scheduled_queue.buf[j - 1u];
-    }
-
-    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = &sm->scheduled_queue.buf[pos];
-    slot->fire_time_ms = fire_time_ms;
-    slot->event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
-    sce_copy_bounded_id(slot->send_id, send_id);
-{% if model.needs_script_engine %}
-    slot->data[0] = '\0';
-{% endif %}
-    slot->to_parent = true;
-    /* The slot may be one a shifted entry of another kind left behind, so
-       every kind flag this entry does not carry is cleared, not assumed. */
-{% if model.has_delayed_host_send %}
-    slot->host_send = false;
-{% endif %}
-{% if model.has_host_invoke_deadline %}
-    slot->host_invoke_deadline = false;
-{% endif %}
-    if (event_name != NULL) {
-        strncpy(slot->to_parent_event, event_name, (size_t)SCE_MAX_ID_LEN - 1u);
-        slot->to_parent_event[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
-    } else {
-        slot->to_parent_event[0] = '\0';
-    }
-    sm->scheduled_queue.count++;
-}
-{% endif %}
 
 /* Pop the head entry iff its fire time has elapsed (compared against `now_ms`).
    Returns true and writes the matured entry into `out` when ready, false otherwise.
    Mirrors cpp `SchedulerQueueCore::popReadyEvent(now, …)` — the head element
-   is always the earliest-firing thanks to `scheduled_push`'s sorted insert. */
+   is always the earliest-firing thanks to `scheduled_reserve`'s sorted insert. */
 SCE_SM_FN static bool scheduled_pop_ready({{ csym_prefix }}{{ model.name }}_t *sm,
                                 uint64_t now_ms,
                                 {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *out) {
@@ -3515,7 +3528,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_c
             sce_copy_bounded_id(fwd.name, "{{ ev_name }}");
             {% for state_id, state in model.states | dictsort %}
             {% for invoke_info in state.invokes | scxml %}
-            {% if invoke_info.autoforward and invoke_info.child_has_send_to_parent %}
+            {% if invoke_info.autoforward %}
             if (sm->child_{{ invoke_info.field_suffix }}_active) {
                 {{ csym_prefix }}{{ invoke_info.child_name }}_raise_external_forwarded(
                     &sm->child_{{ invoke_info.field_suffix }}, &fwd);
@@ -4164,22 +4177,52 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
         }
 {% endif %}
 {% if model.has_parent_communication %}
-        /* W3C SCXML 6.2 + 6.4 (test187): a `to_parent` entry routes
+        /* W3C SCXML 6.2 + 6.4 (test187): a `#_parent` entry routes
            through `parent_dispatch` instead of the local raise path —
            the parent's enum is foreign to this SM so we carry the
            event NAME and let the parent's `dispatch_external_by_name`
-           shim resolve it. The NULL guard mirrors the cancellation
-           drop semantics in the parent's invoke cancel arm
-           (test252-shape): if the parent already cleared the dispatch
-           pointer, the in-flight delayed send falls away silently. */
-        if (ready.to_parent) {
+           shim resolve it, with the payload the send captured. The NULL
+           guard mirrors the cancellation drop semantics in the parent's
+           invoke cancel arm (test252-shape): if the parent already
+           cleared the dispatch pointer, the in-flight delayed send falls
+           away silently. */
+        if (ready.route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_PARENT) {
             if (sm->parent_dispatch != NULL) {
-                /* W3C SCXML 6.2 (test187): delayed `<send target="#_parent">`
-                   without `<param>` carries no payload; pass NULL so the
-                   parent shim's `event_data` arm is a no-op. The fixture
-                   that combines delay + param would land here once the
-                   first such fixture exists. */
-                sm->parent_dispatch(sm->parent_sm, ready.to_parent_event, sm->invoke_id, NULL);
+                sm->parent_dispatch(sm->parent_sm, ready.route_event, sm->invoke_id,
+{%- if model.needs_script_engine %} ready.data[0] != '\0' ? ready.data : NULL{% else %} NULL{% endif %});
+            }
+            continue;
+        }
+{% endif %}
+{% if model.invokes | scxml_family | list %}
+        /* W3C SCXML 6.2.4 + C.1: a `#_<invokeid>` entry reaches the
+           invocation if it is still running now; one that has ended or was
+           cancelled since the send cannot take it, and this session hears
+           error.communication carrying the send id. */
+        if (ready.route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INVOCATION) {
+            sce_forwarded_event_t _ready_fwd;
+            memset(&_ready_fwd, 0, sizeof(_ready_fwd));
+            sce_copy_bounded_id(_ready_fwd.name, ready.route_event);
+{% if model.needs_script_engine %}
+            sce_copy_bounded_data(_ready_fwd.data, ready.data);
+{% endif %}
+            sce_copy_bounded_id(_ready_fwd.send_id, ready.send_id);
+{% if 'error.communication' in model.events %}
+            if (!deliver_to_invocation(sm, ready.route_invoke, &_ready_fwd)) {
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
+                    "a delayed <send> names an invocation that is not running",
+                    ready.send_id);
+            }
+{% else %}
+            /* No `<send>` of this document can be unreachable, so none
+               schedules this route (the parser adds error.communication
+               for every target that can be). */
+            (void)deliver_to_invocation(sm, ready.route_invoke, &_ready_fwd);
+{% endif %}
+            run_main_event_loop(sm);
+            if (!sm->is_running || {{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
+                break;
             }
             continue;
         }
@@ -4187,7 +4230,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
         {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
         memset(&evt, 0, sizeof(evt));
         evt.event = ready.event;
-        /* Both arrays are SCE_MAX_ID_LEN-sized and `scheduled_push` always
+        /* Both arrays are SCE_MAX_ID_LEN-sized and `scheduled_push_routed` always
            writes a terminating NUL inside the buffer, so a verbatim
            memcpy of the whole array transfers the string and its
            terminator without tripping `-Wstringop-truncation` (which
@@ -4197,10 +4240,16 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
         /* W3C SCXML 5.10 (test186): the payload captured at send time rides
            on the event it belongs to (mirrors cpp's EventWithMetadata::data
            → LuaEngine::setCurrentEvent delivery). Same-sized arrays, NUL
-           written by `scheduled_push`. */
+           written by `scheduled_push_routed`. */
         memcpy(evt.data, ready.data, sizeof(evt.data));
 {% endif %}
-        {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
+        /* W3C SCXML 6.2.4 + C.1: a `#_internal` entry joins the internal
+           queue it named; every other one this session's external queue. */
+        if (ready.route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INTERNAL) {
+            {{ csym_prefix }}{{ model.name }}_raise(sm, &evt);
+        } else {
+            {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
+        }
 
         /* The macrostep this entry drives may `<cancel>` a later one, so the
            queue is re-consulted after it rather than before. The reading is
@@ -4731,38 +4780,16 @@ SCE_SM_FN static void schedule_host_invoke_deadline({{ csym_prefix }}{{ model.na
                                                     const char *invoke_id, uint64_t token, uint64_t deadline_ms) {
     const uint64_t now_ms = sched_now_ms(sm);
     const uint64_t fire_time_ms = deadline_ms > UINT64_MAX - now_ms ? UINT64_MAX : now_ms + deadline_ms;
-    uint8_t pos;
-    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot;
-    if (sm->scheduled_queue.count >= (uint8_t)SCE_MAX_SCHEDULED) {
-{% if 'error.execution' in model.events %}
-        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "the scheduled-send queue is full, so an <invoke> deadline was dropped");
-{% endif %}
+    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = scheduled_reserve(
+        sm, fire_time_ms, "the scheduled-send queue is full, so an <invoke> deadline was dropped");
+    if (slot == NULL) {
         return;
     }
-    pos = sm->scheduled_queue.count;
-    for (uint8_t i = 0; i < sm->scheduled_queue.count; ++i) {
-        if (fire_time_ms < sm->scheduled_queue.buf[i].fire_time_ms) {
-            pos = i;
-            break;
-        }
-    }
-    for (uint8_t j = sm->scheduled_queue.count; j > pos; --j) {
-        sm->scheduled_queue.buf[j] = sm->scheduled_queue.buf[j - 1u];
-    }
-    slot = &sm->scheduled_queue.buf[pos];
-    memset(slot, 0, sizeof(*slot));
-    slot->fire_time_ms = fire_time_ms;
     slot->event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
-{% if model.needs_script_engine %}
-    slot->data[0] = '\0';
-{% endif %}
     slot->host_invoke_deadline = true;
     sce_copy_bounded_id(slot->deadline_processor_type, processor_type);
     sce_copy_bounded_id(slot->deadline_invoke_id, invoke_id);
     slot->deadline_token = token;
-    sm->scheduled_queue.count++;
 }
 
 /* Drop the pending deadline of start `token`, whose invocation ended another
@@ -5300,8 +5327,14 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_basic_http({
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix }}{{ model.name }}_t *sm,
                                        void *parent_sm,
                                        void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data),
-                                       const char *invoke_id) {
+                                       const char *invoke_id,
+                                       sce_clock_t clock) {
     memset(sm, 0, sizeof(*sm));
+{% if model.needs_event_scheduler %}
+    sm->clock = clock;
+{% else %}
+    (void)clock;
+{% endif %}
     {{ csym_prefix }}{{ model.name }}_issue_session_identity(sm);
     /* W3C SCXML 6.4: Stamp parent-routing BEFORE the entry walk so
        `<onentry><send target="#_parent">` (test191/338) routes through
@@ -5317,10 +5350,8 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix
     sm->is_running = true;
 {% if model.needs_event_scheduler %}
     /* §scxml-3.13: the entry walk below is one turn — its `<onentry>` arms its
-       `<send delay>`s against one instant. The memset above left the default
-       (link-time monotonic) clock; a child does not yet inherit its parent's,
-       which is why a parent on host-owned time still sees this one run on the
-       wall. */
+       `<send delay>`s against one instant, read from the parent's clock
+       installed above. */
     bool _turn_opened = begin_turn(sm);
 {% endif %}
     {% if model.needs_script_engine %}

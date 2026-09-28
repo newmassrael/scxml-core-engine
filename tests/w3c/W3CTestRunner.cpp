@@ -872,7 +872,7 @@ std::unique_ptr<TestResources> TestComponentFactory::createResources() {
     eventRaiser->setScheduler(scheduler);
 
     // Create EventTargetFactory and EventDispatcher
-    auto targetFactory = std::make_shared<SCE::EventTargetFactoryImpl>(eventRaiser, scheduler);
+    auto targetFactory = std::make_shared<SCE::EventTargetFactoryImpl>(eventRaiser);
     auto eventDispatcher = std::make_shared<SCE::EventDispatcherImpl>(scheduler, targetFactory);
 
     // Create TestResources with const fields initialized via constructor

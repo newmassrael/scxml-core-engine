@@ -43,6 +43,17 @@
 {% endif %}
 {% endif %}
 {%- endmacro -%}
+{#- W3C SCXML 6.2 — a delayed send to a `targetexpr` resolved now: `#_internal`
+    reaches the internal queue when due, anything else this session's
+    external queue, as the immediate send would. -#}
+{%- macro scheduled_to_resolved_target(indent, delay_py) -%}
+{{ indent }}_evt = self.get_event_from_name(_evt_name)
+{{ indent }}if _evt is not None:
+{{ indent }}    if _target_str == "#_internal":
+{{ indent }}        engine.schedule_routed_send(_evt, {{ delay_py }}, _sid, _data, "internal")
+{{ indent }}    else:
+{{ indent }}        engine.schedule_send(_evt, {{ delay_py }}, _sid, _data)
+{%- endmacro -%}
 {%- macro emit_send(action, indent, machine_name, model) -%}
 {% set has_namelist = action.namelist and action.namelist | trim %}
 {% set has_payload = action.params or has_namelist or action.content or action.contentexpr %}
@@ -213,16 +224,11 @@
 {{ indent }}engine.perform_http_send({{ action.target | py_string_literal }}, _evt_name, {% if action.contentexpr and not (action.params or has_namelist or action.content) %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %}, self._wire_params_from_payload(_data), _sid)
 {% elif not action.targetexpr and action.target == '#_parent' %}
 {% if has_delay %}
-{# Delayed parent sends ride the child's own scheduler, so when the sending
-   session terminates the still-pending event is silently dropped — the W3C
-   SCXML 6.2 "if the sending session terminates first" clause. #}
-{% if dyn_event %}
-{{ indent }}_evt = self.get_event_from_name(_evt_name)
-{{ indent }}if _evt is not None:
-{{ indent }}    engine.schedule_send(_evt, {{ delay_py }}, _sid, _data)
-{% else %}
-{{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ delay_py }}, _sid, _data)
-{% endif %}
+{# W3C SCXML 6.2 + 6.4: delayed to the parent. It waits in this child's own
+   scheduler, so `<cancel>` reaches it and a child that ends first drops it —
+   the "if the sending session terminates first" clause — and it reaches the
+   parent, payload included, when the delay has elapsed. #}
+{{ indent }}engine.schedule_routed_send(None, {{ delay_py }}, _sid, _data, "parent", event_name=_evt_name)
 {% else %}
 {# W3C SCXML 6.2 (test233/234): the parent receives the same payload any other
    `<send>` would carry. #}
@@ -231,8 +237,16 @@
 {% elif not action.targetexpr and action.target == '#_internal' %}
 {# W3C SCXML 6.2 (test189, test495): `<send target="#_internal">` enqueues onto
    this session's internal queue, carrying `_event.data` as an external send
-   does. #}
+   does. A delay postpones it and does not change the queue (W3C SCXML 6.2). #}
+{% if has_delay %}
 {% if dyn_event %}
+{{ indent }}_evt = self.get_event_from_name(_evt_name)
+{{ indent }}if _evt is not None:
+{{ indent }}    engine.schedule_routed_send(_evt, {{ delay_py }}, _sid, _data, "internal")
+{% else %}
+{{ indent }}engine.schedule_routed_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ delay_py }}, _sid, _data, "internal")
+{% endif %}
+{% elif dyn_event %}
 {{ indent }}_evt = self.get_event_from_name(_evt_name)
 {{ indent }}if _evt is not None:
 {% if has_payload %}
@@ -251,16 +265,17 @@
    too (test 190). Any other is not reachable: error.communication, nothing
    delivered, the block ended (W3C SCXML 4.9). #}
 {% if static_target != '#_scxml_' %}
-{{ indent }}if self._session_id !={{ static_target | slice_from(8) | py_string_literal }}:
+{{ indent }}if self._session_id != {{ static_target | slice_from(8) | py_string_literal }}:
 {{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
 {{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
 {% endif %}
+{% set self_call = ('engine.schedule_send', ', ' ~ delay_py ~ ', _sid, _data') if has_delay else ('engine.send_to_self', ', _sid, _data') %}
 {% if dyn_event %}
 {{ indent }}_evt = self.get_event_from_name(_evt_name)
 {{ indent }}if _evt is not None:
-{{ indent }}    engine.send_to_self(_evt, _sid, _data)
+{{ indent }}    {{ self_call[0] }}(_evt{{ self_call[1] }})
 {% else %}
-{{ indent }}engine.send_to_self({{ machine_name }}Event.{{ action.event | to_python_const }}, _sid, _data)
+{{ indent }}{{ self_call[0] }}({{ machine_name }}Event.{{ action.event | to_python_const }}{{ self_call[1] }})
 {% endif %}
 {% elif static_target.startswith('#_') %}
 {# W3C SCXML 6.4 — parent-to-child send. The active `Invoke` looks up the
@@ -270,25 +285,27 @@
    (W3C SCXML C.1). #}
 {{ indent }}_inv_target = engine._active_invokes.get({{ action.target | slice_from(2) | py_string_literal }})
 {{ indent }}if _inv_target is not None and not _inv_target.is_done():
+{% if has_delay %}
+{# W3C SCXML 6.2: named now, reached when the delay has elapsed — or reported
+   then, if the invocation has ended by that time (W3C SCXML C.1). #}
+{{ indent }}    engine.schedule_routed_send(None, {{ delay_py }}, _sid, _data, "invocation", event_name=_evt_name, invoke_id={{ action.target | slice_from(2) | py_string_literal }})
+{% else %}
 {{ indent }}    _inv_target.forward_event(_evt_name, EventMetadata(event_type="external", data=_data))
+{% endif %}
 {{ indent }}else:
 {{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
 {{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
 {% elif action.targetexpr and has_delay %}
-{# W3C SCXML 6.2: a delayed send to a dynamic target is scheduled locally (C++
-   pattern: delay before target routing), as on every other backend — except
-   a Mesh peer, whose router takes the delayed send (SCE_MESH.md §mesh-19). #}
+{# W3C SCXML 6.2: the target resolved now decides where the delayed event goes —
+   `#_internal` the internal queue, a Mesh peer the host router
+   (SCE_MESH.md §mesh-19), anything else this session's external queue. #}
 {% if dynamic_mesh %}
 {{ indent }}if _is_mesh_target(_target_str):
 {{ host_send_request(action, indent ~ '    ', 'sce:mesh', has_payload, has_delay, delay_py, machine_name, model) }}
 {{ indent }}else:
-{{ indent }}    _evt = self.get_event_from_name(_evt_name)
-{{ indent }}    if _evt is not None:
-{{ indent }}        engine.schedule_send(_evt, {{ delay_py }}, _sid, _data)
+{{ scheduled_to_resolved_target(indent ~ '    ', delay_py) }}
 {% else %}
-{{ indent }}_evt = self.get_event_from_name(_evt_name)
-{{ indent }}if _evt is not None:
-{{ indent }}    engine.schedule_send(_evt, {{ delay_py }}, _sid, _data)
+{{ scheduled_to_resolved_target(indent, delay_py) }}
 {% endif %}
 {% elif action.targetexpr %}
 {# W3C SCXML C.1 — the target resolved at action time (an empty one was refused

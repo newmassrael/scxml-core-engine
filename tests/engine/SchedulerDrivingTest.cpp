@@ -125,8 +125,6 @@ struct TinyPolicyBase {
 
     template <typename Engine> void executeHistoryDefaultContent(History, Engine &) {}
 
-    template <typename Engine> void deliverReadyParentSends(Engine &) {}
-
     // §scxml-3.12: `timeout` moves waiting to done; nothing else transitions.
     // What is under test is which entry point delivers that event, not the
     // transition itself.

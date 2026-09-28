@@ -106,6 +106,21 @@ static inline uint64_t sce_clock_read(const sce_clock_t *clock) {
     return _sce_clock_now_ms();
 }
 
+// The reading function behind `sce_clock_following`.
+static inline uint64_t sce_clock_read_followed(void *followed) {
+    return sce_clock_read((const sce_clock_t *)followed);
+}
+
+// A clock that reads another one, which must outlive it. §scxml-6.4: an
+// invoked session runs in its parent's time — a `<send delay>` it arms is a
+// wait on the same clock the parent's own delays wait on — so a parent hands
+// its child this, over its own clock. A parent on host-owned time would
+// otherwise have a child that ran on the wall, whose delays a host advancing
+// time never reached.
+static inline sce_clock_t sce_clock_following(const sce_clock_t *followed) {
+    return sce_clock_source(sce_clock_read_followed, (void *)followed);
+}
+
 #ifdef __cplusplus
 }
 #endif

@@ -47,6 +47,36 @@ type scheduledEntry[E any] struct {
 	// the reason hostSend is: one deadline order, one answer about when the
 	// host must next tick.
 	deadline *HostInvokeDeadline
+	// route is the target a delayed send resolved when it was made
+	// (§scxml-6.2), or nil for this session's own external queue.
+	route *ScheduledRoute
+}
+
+// RouteKind names where a delayed send's event goes when it comes due.
+type RouteKind int
+
+const (
+	// RouteInternalQueue is `#_internal`: this session's internal queue.
+	RouteInternalQueue RouteKind = iota
+	// RouteInvocation is `#_<invokeid>`: an invocation of this session.
+	RouteInvocation
+	// RouteParent is `#_parent`: the session that invoked this one.
+	RouteParent
+)
+
+// ScheduledRoute is where a delayed `<send>`'s event goes when it comes due
+// (§scxml-6.2).
+//
+// A delay postpones a send; it does not change where the send goes. The target
+// is resolved when the send is made and recorded here, so the delivery at the
+// end of the delay reaches it. EventName is the event as the receiving machine
+// resolves it: a child or a parent is another machine with its own events, so
+// the name is what crosses, as it does on an immediate send.
+type ScheduledRoute struct {
+	Kind      RouteKind
+	EventName string
+	// InvokeID names the invocation, for RouteInvocation.
+	InvokeID string
 }
 
 // HostInvokeDeadline identifies the start of a host-run invocation whose
@@ -85,6 +115,20 @@ func (s *PullScheduler[E]) ScheduleEventAt(event E, readyAtMs int64, sendID, eve
 		origin:    origin,
 		readyAtMs: readyAtMs,
 	})
+	return effectiveSendID
+}
+
+// ScheduleRoutedAt queues a delayed send whose target is not this session's
+// own external queue, to be delivered there at readyAtMs (§scxml-6.2).
+//
+// The same queue as ScheduleEventAt, so one deadline order, one
+// `<cancel sendid>` path (§scxml-6.3) and one NextReadyAtMs cover it. event is
+// this machine's own spelling of the event, used when the route is this
+// session's internal queue.
+func (s *PullScheduler[E]) ScheduleRoutedAt(event E, readyAtMs int64, sendID, eventData, origin string, route ScheduledRoute) string {
+	effectiveSendID := s.ScheduleEventAt(event, readyAtMs, sendID, eventData, origin)
+	held := route
+	s.entries[len(s.entries)-1].route = &held
 	return effectiveSendID
 }
 
@@ -207,6 +251,9 @@ type ReadyAct[E any] struct {
 	Origin   string
 	HostSend *HostSendRequest
 	Deadline *HostInvokeDeadline
+	// Route is the target the send resolved when it was made (§scxml-6.2), or
+	// nil for this session's own external queue.
+	Route *ScheduledRoute
 }
 
 // PopReadyActAt pops the act that came due first (§scxml-6.2.4 +
@@ -236,6 +283,7 @@ func (s *PullScheduler[E]) PopReadyActAt(nowMs int64) (ReadyAct[E], bool) {
 		Origin:   entry.origin,
 		HostSend: entry.hostSend,
 		Deadline: entry.deadline,
+		Route:    entry.route,
 	}, true
 }
 

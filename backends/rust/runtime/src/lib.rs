@@ -463,6 +463,9 @@ pub mod scripting;
 
 pub use clock::SceClock;
 pub use engine::Engine;
+/// §scxml-6.2: the target a generated send site names for a delayed send.
+#[cfg(not(feature = "no_std"))]
+pub use engine::ScheduledRoute;
 pub use event::{EventMetadata, EventType, EventWithMetadata};
 pub use hal::{Hal, NoOpHal, StdHal};
 pub use helpers::configuration::ConfigurationRejection;

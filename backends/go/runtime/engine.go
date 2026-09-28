@@ -438,6 +438,9 @@ func (e *Engine[S, E]) Tick() {
 			e.performDeferredHostSend(*act.HostSend)
 		} else if act.Deadline != nil {
 			e.expireHostInvoke(*act.Deadline)
+		} else if act.Route != nil {
+			// §scxml-6.2: to the target the send named when it was made.
+			e.deliverRouted(act)
 		} else {
 			// §scxml-5.10.1 + §scxml-C-1: the metadata the immediate send
 			// stamps, restored when the wait ends.
@@ -824,6 +827,73 @@ func (e *Engine[S, E]) DonedataAtFinal() string {
 func (e *Engine[S, E]) ScheduleEvent(event E, delay time.Duration, sendID, eventData, origin string) string {
 	readyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)
 	return e.scheduler.ScheduleEventAt(event, readyAtMs, sendID, eventData, origin)
+}
+
+// InvocationDelivery is implemented by a generated policy that invokes, so it
+// can hand a delayed send's event to one of its invocations (§scxml-6.2 +
+// §scxml-6.4). It answers whether that invocation was there to take it.
+//
+// Detected rather than required, as the C++ engine detects its policy's
+// delivery hooks: a policy with no invocations — every hand-written test
+// policy among them — must not have to say so.
+type InvocationDelivery interface {
+	DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool
+}
+
+// ParentDelivery is implemented by a generated policy, so a delayed
+// `<send target="#_parent">` can reach the session that invoked it. Separate
+// from InvocationDelivery because the machine that needs it is an invoked
+// child, which need not invoke anything itself.
+type ParentDelivery interface {
+	DeliverToParent(eventName, eventData string) bool
+}
+
+// ScheduleRoutedEvent schedules a delayed send whose target is not this
+// session's own external queue (§scxml-6.2). Returns the send ID.
+//
+// A delay postpones a send; it does not change where the send goes. The
+// generated send site resolves the target when the send is made and hands it
+// over here, so the delivery at the end of the delay reaches it — in the same
+// queue as every other delayed send, which is what lets one `<cancel sendid>`
+// (§scxml-6.3) reach it. event is this machine's own spelling of the event,
+// used for the internal queue; a child or a parent resolves route.EventName.
+func (e *Engine[S, E]) ScheduleRoutedEvent(event E, delay time.Duration, sendID, eventData, origin string, route ScheduledRoute) string {
+	readyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)
+	return e.scheduler.ScheduleRoutedAt(event, readyAtMs, sendID, eventData, origin, route)
+}
+
+// deliverRouted delivers a delayed send whose wait is over to the target it
+// named.
+//
+// W3C SCXML C.1: "If the SCXML Processor cannot dispatch the event to the
+// target, it MUST place the error error.communication on the internal event
+// queue of the session that attempted to send the event." For a delayed send
+// the dispatch is this delivery, so an invocation that has ended in the
+// meantime is reported here, not when the send was made.
+func (e *Engine[S, E]) deliverRouted(act ReadyAct[E]) {
+	if act.Route.Kind == RouteInternalQueue {
+		meta := NewEventWithMetadata(act.Event)
+		meta.Metadata.Data = act.Data
+		meta.Metadata.SendID = act.SendID
+		e.Raise(meta)
+		return
+	}
+	delivered := false
+	if act.Route.Kind == RouteInvocation {
+		if invocations, ok := any(e.policy).(InvocationDelivery); ok {
+			delivered = invocations.DeliverToInvocation(act.Route.InvokeID, act.Route.EventName, act.Data, act.SendID)
+		}
+	} else if parent, ok := any(e.policy).(ParentDelivery); ok {
+		delivered = parent.DeliverToParent(act.Route.EventName, act.Data)
+	}
+	if delivered {
+		return
+	}
+	if communicationError, ok := e.policy.GetEventFromName("error.communication"); ok {
+		errEvt := NewPlatformError(communicationError, "<send> named a target that was no longer there when its delay elapsed")
+		errEvt.Metadata.SendID = act.SendID
+		e.Raise(errEvt)
+	}
 }
 
 // ScheduleHostSend arms a host-served `<send delay>`, to be performed when the

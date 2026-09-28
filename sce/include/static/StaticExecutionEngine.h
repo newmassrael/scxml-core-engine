@@ -488,16 +488,16 @@ private:
     /**
      * @brief Select, and take the microstep if anything was selected
      *
-     * The one place a selection meets the policy's delayed-send delivery: it
-     * ran at the end of every selection before the microstep moved here, and
-     * still does, whether or not a transition was taken.
+     * A delayed send to `#_parent` used to be drained here, from a queue of
+     * its own beside the engine's. It is an entry in the engine's queue now,
+     * delivered by `tick()` like every other delayed send (§scxml-6.2), so
+     * `<cancel>` reaches it and it carries its payload.
      */
     std::vector<TransitionInfo> selectAndTakeMicrostep(Event event) {
         std::vector<TransitionInfo> enabled = selectTransitions(event);
         if (!enabled.empty()) {
             microstep(enabled);
         }
-        policy_.deliverReadyParentSends(*this);
         return enabled;
     }
 
@@ -1143,6 +1143,64 @@ public:
                         const std::string &origin) {
         raiseExternal(EventWithMetadata(event, eventData, origin, sendId, "external",
                                         SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE));
+    }
+
+    /**
+     * @brief Schedule a delayed send whose target is not this session's own
+     *        external queue (§scxml-6.2)
+     *
+     * A `delay` postpones a send; it does not change where the send goes. The
+     * generated send site resolves the target when the send is made and hands
+     * it over here, so the delivery at the end of the delay reaches it — in
+     * the same queue as every other delayed send, which is what lets one
+     * `<cancel sendid>` (§scxml-6.3) reach it.
+     *
+     * @param event This machine's spelling of the event, used for the
+     *        internal queue; a child or a parent resolves `route.eventName`
+     * @return The sendid assigned to this event
+     */
+    std::string scheduleRoutedEvent(Event event, std::chrono::milliseconds delay, const std::string &sendId,
+                                    const std::string &eventData, const std::string &origin,
+                                    ::SCE::ScheduledRoute route) {
+        uint64_t fireTimeMs = schedNowMs() + static_cast<uint64_t>(delay.count());
+        return scheduler_.scheduleRoutedAt(event, fireTimeMs, sendId, eventData, origin, std::move(route));
+    }
+
+    /**
+     * @brief Deliver a delayed send whose wait is over to the target it named
+     *
+     * W3C SCXML C.1: "If the SCXML Processor cannot dispatch the event to the
+     * target, it MUST place the error error.communication on the internal
+     * event queue of the session that attempted to send the event." For a
+     * delayed send the dispatch is this delivery, so an invocation that has
+     * ended in the meantime is reported here, not when the send was made.
+     */
+    void deliverScheduled(Event event, const std::string &eventData, const std::string &sendId,
+                          const std::string &origin, const ::SCE::ScheduledRoute &route) {
+        using Kind = ::SCE::ScheduledRoute::Kind;
+        if (route.kind == Kind::InternalQueue) {
+            raise(EventWithMetadata(event, eventData, origin, sendId));
+            return;
+        }
+        SCE::Common::ForwardedEvent forwarded{
+            route.eventName, eventData, origin, sendId, "external", SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, ""};
+        bool delivered = false;
+        if (route.kind == Kind::Invocation) {
+            if constexpr (SCE::Core::HasInvocationDelivery<StatePolicy>) {
+                delivered = policy_.deliverToInvocation(route.invokeId, forwarded);
+            }
+        } else {
+            if constexpr (SCE::Core::HasParentDelivery<StatePolicy>) {
+                delivered = policy_.deliverToParent(forwarded);
+            }
+        }
+        if (!delivered) {
+            if (auto communicationError = policy_.getEventFromName("error.communication")) {
+                raise(EventWithMetadata(*communicationError,
+                                        "<send> named a target that was no longer there when its delay elapsed", "",
+                                        sendId));
+            }
+        }
     }
 
     /**
@@ -2106,7 +2164,6 @@ protected:
                 // §scxml-3.13: nothing enabled by NULL — the configuration is
                 // stable. Internal events are the caller's to drain
                 // (runMainEventLoop or step).
-                policy_.deliverReadyParentSends(*this);
                 break;
             }
             if (macrostepMicrostepsTaken_ == MAX_MACROSTEP_MICROSTEPS) {
@@ -2120,7 +2177,6 @@ protected:
                 // specification allows the document, so declining to run it
                 // forever is a fact to report, not grounds to kill a session
                 // whose other states still work.
-                policy_.deliverReadyParentSends(*this);
                 recordTruncatedMacrostep(currentState_);
                 SCE_LOG_ERROR("StaticExecutionEngine: macrostep still going after {} microsteps; stopped taking them",
                               MAX_MACROSTEP_MICROSTEPS);
@@ -2130,7 +2186,6 @@ protected:
             // A targetless transition takes a microstep too: it runs its
             // content in place, and the chain it opens is walked like any other.
             microstep(enabled);
-            policy_.deliverReadyParentSends(*this);
         }
 
         // §scxml-3.13: a macrostep that entered a top-level final state halts
@@ -2706,7 +2761,8 @@ public:
             Event event;
             std::shared_ptr<const ::SCE::HostSendRequest> hostSend;
             std::shared_ptr<const ::SCE::HostInvokeDeadline> deadline;
-            while (scheduler_.popReadyAct(schedNowMs(), event, eventData, sendId, origin, hostSend, deadline)) {
+            std::shared_ptr<const ::SCE::ScheduledRoute> route;
+            while (scheduler_.popReadyAct(schedNowMs(), event, eventData, sendId, origin, hostSend, deadline, route)) {
                 if (hostSend) {
                     // §scxml-6.2.4: the wait is over, so now the act happens.
                     performDeferredHostSend(*hostSend);
@@ -2714,6 +2770,10 @@ public:
                 } else if (deadline) {
                     expireHostInvoke(*deadline);
                     deadline.reset();
+                } else if (route) {
+                    // §scxml-6.2: to the target the send named when it was made.
+                    deliverScheduled(event, eventData, sendId, origin, *route);
+                    route.reset();
                 } else {
                     raiseScheduled(event, eventData, sendId, origin);
                 }

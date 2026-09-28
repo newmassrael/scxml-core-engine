@@ -84,7 +84,7 @@ from .microstep import (
 )
 from .payload_reading import PayloadReading
 from .policy import StatePolicy
-from .scheduler import Scheduler
+from .scheduler import ScheduledRoute, Scheduler
 
 S = TypeVar("S")
 E = TypeVar("E")
@@ -1477,6 +1477,73 @@ class Engine(Generic[S, E]):
             return
         self._scheduler.schedule(self._now_ms + delay_ms, sendid, event, data)
 
+    def schedule_routed_send(
+        self,
+        event: Optional[E],
+        delay_ms: int,
+        sendid: str,
+        data: Any,
+        kind: str,
+        event_name: str = "",
+        invoke_id: str = "",
+    ) -> None:
+        """W3C SCXML 6.2 — schedule a delayed send whose target is not this
+        session's own external queue.
+
+        A delay postpones a send; it does not change where the send goes. The
+        generated send site resolves the target when the send is made and
+        names it here — `kind` ``"internal"``, ``"invocation"`` (with
+        `invoke_id`) or ``"parent"`` — so the delivery at the end of the delay
+        reaches it. It shares the queue with every other delayed send, which
+        is what lets one `<cancel sendid>` (W3C SCXML 6.3) reach it.
+
+        `event` is this machine's own event, used for the internal queue; a
+        child or a parent resolves `event_name`."""
+        route = ScheduledRoute(kind=kind, event_name=event_name, invoke_id=invoke_id)
+        if delay_ms <= 0:
+            self._deliver_routed(event, sendid, data, route)
+            return
+        self._scheduler.schedule(
+            self._now_ms + delay_ms, sendid, event, data, route=route
+        )
+
+    def _deliver_routed(
+        self, event: Optional[E], sendid: str, data: Any, route: ScheduledRoute
+    ) -> None:
+        """W3C SCXML 6.2 + C.1 — deliver a delayed send whose wait is over to
+        the target it named.
+
+        "If the SCXML Processor cannot dispatch the event to the target, it
+        MUST place the error error.communication on the internal event queue
+        of the session that attempted to send the event." For a delayed send
+        the dispatch is this delivery, so an invocation that has ended in the
+        meantime is reported here, not when the send was made."""
+        if route.kind == "internal":
+            self.raise_internal(event, EventMetadata(send_id=sendid, data=data))
+            return
+        if route.kind == "parent":
+            self._policy._parent_queue.append((route.event_name, data))
+            return
+        invoke = self._active_invokes.get(route.invoke_id)
+        if invoke is not None and not invoke.is_done():
+            invoke.forward_event(
+                route.event_name,
+                EventMetadata(
+                    event_type="external",
+                    data=data,
+                    send_id=sendid,
+                    origin=self._session_id,
+                    origin_type=SCXML_EVENT_PROCESSOR_URI,
+                ),
+            )
+            return
+        communication_error = self._policy.get_event_from_name("error.communication")
+        if communication_error is not None:
+            self.raise_internal(
+                communication_error,
+                EventMetadata(send_id=sendid, event_type="platform"),
+            )
+
     def schedule_host_send(
         self, request: HostSendRequest, delay_ms: int, sendid: str = ""
     ) -> None:
@@ -1585,6 +1652,9 @@ class Engine(Generic[S, E]):
                 self._perform_deferred_host_send(entry.host_send)
             elif entry.host_invoke_deadline is not None:
                 self._expire_host_invoke(entry.host_invoke_deadline)
+            elif entry.route is not None:
+                # §scxml-6.2: to the target the send named when it was made.
+                self._deliver_routed(entry.event, entry.sendid, entry.data, entry.route)
             else:
                 # §scxml-C-1: scheduler drain is the SCXML processor's
                 # delayed-delivery path for a `<send>` this session addressed

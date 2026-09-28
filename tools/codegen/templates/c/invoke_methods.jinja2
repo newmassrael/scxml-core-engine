@@ -12,6 +12,11 @@
    (`sce_invoke_pending_queue_t`) live in `backends/c/runtime/include/sce/invoke.h`
    as static inline helpers — no .c source.                             #}
 {%- import 'c/param_macros.jinja2' as param_macros %}
+{# §scxml-6.4: the clock a child this machine starts measures its delays on —
+   this machine's own, read through `sce_clock_following`, so a host that owns
+   the parent's time owns the child's too. A parent with no scheduler has no
+   clock of its own to hand over, and the child keeps the monotonic default. #}
+{% set child_clock_c = 'sce_clock_following(&sm->clock)' if model.needs_event_scheduler else 'sce_clock_monotonic()' %}
 
 {# ── §scxml-6.4: a namelist the invoke cannot read starts nothing ──────
    One check for every child the invoke may start — a static child, or the
@@ -475,7 +480,12 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 &sm->child_{{ invoke_info.field_suffix }},
                 sm,
                 {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name,
-                p->invoke_id);
+                p->invoke_id,
+                {{ child_clock_c }});
+            {% elif invoke_info.child_needs_event_scheduler and model.needs_event_scheduler %}
+            /* §scxml-6.4: the child's `<send delay>`s wait on this machine's
+               clock, installed before its entry walk arms any of them. */
+            (void){{ csym_prefix }}{{ invoke_info.child_name }}_init_with_clock(&sm->child_{{ invoke_info.field_suffix }}, {{ child_clock_c }});
             {% else %}
             {{ csym_prefix }}{{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
             {% endif %}
@@ -642,7 +652,8 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                     &sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }},
                     sm,
                     {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name,
-                    p->invoke_id);
+                    p->invoke_id,
+                    {{ child_clock_c }});
                 sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_active = true;
                 sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
 {{ invoke_seed_child(invoke_info, candidate, "sm->child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem ~ ".L", model, csym_prefix, se) }}

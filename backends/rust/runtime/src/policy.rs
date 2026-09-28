@@ -592,6 +592,33 @@ pub trait StatePolicy: Sized + 'static {
     /// [`Engine::tick`](crate::Engine::tick) to propagate scheduler ticks to children.
     fn tick_children(&mut self, _engine: &mut Engine<Self>) {}
 
+    /// §scxml-6.2 + §scxml-6.4: deliver a delayed `<send target="#_<invokeid>">`
+    /// whose wait is over to that invocation, by name — a child need not
+    /// declare every event its parent sends.
+    ///
+    /// Answers whether the invocation was there to take it: one whose session
+    /// has reached its final state has ended, and the engine reports the send
+    /// it could not deliver (§scxml-C-1). A policy with no invocations has
+    /// none, which is what the default says.
+    fn deliver_to_invocation(
+        &mut self,
+        _invoke_id: &str,
+        _event_name: &str,
+        _event_data: &str,
+    ) -> bool {
+        false
+    }
+
+    /// §scxml-6.2 + §scxml-6.4: deliver a delayed `<send target="#_parent">`
+    /// whose wait is over to the session that invoked this one, with the
+    /// payload an immediate one carries.
+    ///
+    /// Answers whether that session was there to take it. A policy that was
+    /// not invoked has no parent, which is what the default says.
+    fn deliver_to_parent(&mut self, _event_name: &str, _event_data: &str) -> bool {
+        false
+    }
+
     /// §scxml-5.10: Populate pending event metadata fields from an event's metadata.
     ///
     /// Ports C++ `EventMetadataHelper::populatePolicyFromMetadata`. Called by the engine

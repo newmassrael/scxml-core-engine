@@ -4,10 +4,68 @@
 #include "events/EventDispatcherImpl.h"
 #include "common/StringUtils.h"
 #include "core/LogMacros.h"
+#include "events/EventRaiserService.h"
+#include "runtime/IEventRaiser.h"
 #include <sstream>
 #include <stdexcept>
 
 namespace SCE {
+
+namespace {
+
+/**
+ * W3C SCXML C.1: "If the SCXML Processor cannot dispatch the event to the
+ * target, it MUST place the error error.communication on the internal event
+ * queue of the session that attempted to send the event."
+ *
+ * For a delayed send the dispatch is the delivery at the end of the delay, so
+ * that is where a target found missing is reported — the rule
+ * `ActionExecutorImpl::executeSendAction` applies to an immediate send's
+ * `TARGET_NOT_FOUND`, applied when the attempt is actually made. The one place
+ * every delayed send passes through is here, which is why it is a decorator
+ * the dispatcher schedules rather than a line in the scheduler's callback:
+ * each host installs its own callback, and a rule there would be one copy per
+ * host. A sending session that has itself ended hears nothing; there is no
+ * queue left to report to.
+ */
+class DispatchReportingTarget : public IEventTarget {
+public:
+    explicit DispatchReportingTarget(std::shared_ptr<IEventTarget> inner) : inner_(std::move(inner)) {}
+
+    std::future<SendResult> send(const EventDescriptor &event) override {
+        auto delivered = inner_->send(event).get();
+        if (!delivered.isSuccess && delivered.errorType == SendResult::ErrorType::TARGET_NOT_FOUND) {
+            if (auto sender = EventRaiserService::getInstance().getEventRaiser(event.sessionId)) {
+                sender->raiseEvent("error.communication", delivered.errorMessage, event.sendId,
+                                   false /* overload discriminator for sendId variant */);
+            }
+        }
+        std::promise<SendResult> reported;
+        reported.set_value(std::move(delivered));
+        return reported.get_future();
+    }
+
+    std::string getTargetType() const override {
+        return inner_->getTargetType();
+    }
+
+    bool canHandle(const std::string &targetUri) const override {
+        return inner_->canHandle(targetUri);
+    }
+
+    std::vector<std::string> validate() const override {
+        return inner_->validate();
+    }
+
+    std::string getDebugInfo() const override {
+        return inner_->getDebugInfo();
+    }
+
+private:
+    std::shared_ptr<IEventTarget> inner_;
+};
+
+}  // namespace
 
 EventDispatcherImpl::EventDispatcherImpl(std::shared_ptr<IEventScheduler> scheduler,
                                          std::shared_ptr<IEventTargetFactory> targetFactory)
@@ -50,8 +108,14 @@ std::future<SendResult> EventDispatcherImpl::sendEvent(const EventDescriptor &ev
             SCE_LOG_DEBUG("Scheduling delayed event '{}' with {}ms delay in session '{}' (sendId: '{}')",
                           event.eventName, effectiveDelay.count(), event.sessionId, event.sendId);
 
-            // Schedule the event for delayed execution
-            auto sendIdFuture = scheduler_->scheduleEvent(event, effectiveDelay, target, event.sendId, event.sessionId);
+            // Schedule the event for delayed execution. A delayed send's
+            // dispatch happens when it fires, so that is where a missing
+            // target is reported (W3C SCXML C.1). A platform event's sender
+            // is the engine, not a document, and is left as it was.
+            std::shared_ptr<IEventTarget> scheduledTarget =
+                isPlatform ? target : std::make_shared<DispatchReportingTarget>(target);
+            auto sendIdFuture =
+                scheduler_->scheduleEvent(event, effectiveDelay, scheduledTarget, event.sendId, event.sessionId);
 
             // Convert sendId future to SendResult future synchronously (no thread creation)
             std::promise<SendResult> resultPromise;

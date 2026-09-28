@@ -1056,6 +1056,46 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
         self.do_execute_pending_invokes(engine);
     }
 {% endif %}
+{% if model.invokes | scxml_family %}
+
+    // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_<invokeid>">` whose wait
+    // is over, delivered by name. A child whose session has reached its final
+    // state has ended, and is not there to take it (W3C SCXML C.1).
+    fn deliver_to_invocation(&mut self, invoke_id: &str, event_name: &str, event_data: &str) -> bool {
+{% for invoke_info in model.invokes | scxml_family %}
+{% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': none}] %}
+        if invoke_id == "{{ invoke_info.invoke_id }}" {
+{% for target in child_targets %}
+{% set slot = ('self.child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
+            if let Some(ref mut child) = {{ slot }} {
+                if !child.is_in_final_state() {
+                    child.raise_external_by_name(event_name, event_data);
+                    return true;
+                }
+            }
+{% endfor %}
+            return false;
+        }
+{% endfor %}
+        false
+    }
+{% endif %}
+{% if not no_std %}
+
+    // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_parent">` whose wait is
+    // over, with the payload an immediate one carries. It waited in this
+    // machine's own queue, so `<cancel>` reached it and a child that ended
+    // first dropped it — the engine dispatches nothing once final.
+    fn deliver_to_parent(&mut self, event_name: &str, event_data: &str) -> bool {
+        if let Some(ref parent_queue) = self.parent_external_queue {
+            if let Ok(mut q) = parent_queue.lock() {
+                q.push((event_name.to_string(), event_data.to_string()));
+                return true;
+            }
+        }
+        false
+    }
+{% endif %}
 {% if model.invokes | scxml or model.invokes | hybrid %}
 
     // W3C SCXML 6.4: Tick child state machines

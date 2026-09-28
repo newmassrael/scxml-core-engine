@@ -4552,11 +4552,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/events/ParentEventTarget.cpp",
-          "symbol": "ParentEventTarget::sendImmediately",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/parsing/ActionParser.cpp",
           "symbol": "SCE::ActionParser::parseActionNode",
           "kind": "implements"
@@ -5173,6 +5168,11 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "HostInvokeRequest",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/events/ParentEventTarget.cpp",
+          "symbol": "ParentEventTarget::send",
           "kind": "implements"
         }
       ],
@@ -8370,6 +8370,81 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "raiseScheduled",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "InvocationDelivery",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "ScheduleRoutedEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "scheduledEntry",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "ScheduledRoute",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "ScheduleRoutedAt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "ReadyAct",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "ScheduledAct",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/lib.rs",
+          "symbol": "ScheduledRoute",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "deliver_to_invocation",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "deliver_to_parent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "route",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "popReadyAct",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "scheduleRoutedAt",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "selectAndTakeMicrostep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "scheduleRoutedEvent",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -8745,6 +8820,26 @@
         {
           "file": "backends/c/runtime/include/sce/host_processor.h",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "ScheduledRoute",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "deliverRouted",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "scheduleInternalSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "scheduleChildSend",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -9133,6 +9228,26 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "ScheduledSendId",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "ScheduleRoutedEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "ScheduleRoutedAt",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "scheduleRoutedAt",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "scheduleRoutedEvent",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -9428,11 +9543,6 @@
         {
           "file": "sce/src/events/ParentEventTarget.cpp",
           "symbol": "ParentEventTarget::findParentSessionId",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/events/ParentEventTarget.cpp",
-          "symbol": "ParentEventTarget::sendImmediately",
           "kind": "implements"
         },
         {
@@ -10452,6 +10562,36 @@
         {
           "file": "backends/go/runtime/host_processor.go",
           "symbol": "FailHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/clock.h",
+          "symbol": "sce_clock_following",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "InvocationDelivery",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "scheduleChildSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "deliver_to_invocation",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "deliver_to_parent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/events/ParentEventTarget.cpp",
+          "symbol": "ParentEventTarget::send",
           "kind": "implements"
         }
       ],
@@ -13367,6 +13507,26 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "sendToChild",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "ScheduledRoute",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "deliverRouted",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "scheduleChildSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "deliver_to_invocation",
           "kind": "implements"
         }
       ],
@@ -20040,6 +20200,18 @@
       "target_kind": "section",
       "target_id": "scxml-3.12.1",
       "reason": "the completion's body moved into the shared helper behind completion and failure; the citation moved with it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "sendImmediately was folded into send, which delivers directly now that a delayed #_parent is scheduled by the sender's own queue"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "sendImmediately was folded into send, which delivers directly now that a delayed #_parent is scheduled by the sender's own queue"
     }
   ],
   "frames": {},

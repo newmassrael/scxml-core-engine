@@ -10,7 +10,6 @@
 namespace SCE {
 
 class IEventRaiser;
-class IEventScheduler;
 
 /**
  * @brief Event target for routing events to parent sessions (#_parent)
@@ -18,6 +17,14 @@ class IEventScheduler;
  * §scxml-6.2: This target handles the special "#_parent" target used
  * in invoke scenarios where child sessions need to send events to their
  * parent session.
+ *
+ * It delivers; it does not wait. A `delay` is the dispatcher's: it schedules
+ * the event with this target and calls `send` when the delay has elapsed,
+ * and it drops what is still pending when the child session ends (W3C SCXML
+ * 6.2, test 187). This target once scheduled a delayed event again itself,
+ * and since the dispatcher hands it the event with its delay unchanged, a
+ * delayed send to the parent was rescheduled every time it fired and never
+ * arrived.
  */
 class ParentEventTarget : public IEventTarget {
 public:
@@ -25,10 +32,8 @@ public:
      * @brief Construct parent event target
      * @param childSessionId The child session ID that wants to send to parent
      * @param eventRaiser Event raiser for delivering events to parent session
-     * @param scheduler Event scheduler for handling delayed events (optional)
      */
-    ParentEventTarget(const std::string &childSessionId, std::shared_ptr<IEventRaiser> eventRaiser,
-                      std::shared_ptr<IEventScheduler> scheduler = nullptr);
+    ParentEventTarget(const std::string &childSessionId, std::shared_ptr<IEventRaiser> eventRaiser);
 
     virtual ~ParentEventTarget() = default;
 
@@ -42,7 +47,6 @@ public:
 private:
     std::string childSessionId_;
     std::shared_ptr<IEventRaiser> eventRaiser_;
-    std::shared_ptr<IEventScheduler> scheduler_;
 
     /**
      * @brief Find parent session ID for the given child session
@@ -50,13 +54,6 @@ private:
      * @return Parent session ID or empty string if not found
      */
     std::string findParentSessionId(const std::string &childSessionId) const;
-
-    /**
-     * @brief Send event immediately to parent session
-     * @param event Event descriptor
-     * @return Future with send result
-     */
-    std::future<SendResult> sendImmediately(const EventDescriptor &event);
 };
 
 }  // namespace SCE

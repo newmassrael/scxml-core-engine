@@ -269,7 +269,7 @@ bool SCXMLEngineImpl::loadSCXMLFromString(const std::string &scxmlContent, const
         auto eventRaiserImpl = std::static_pointer_cast<EventRaiserImpl>(eventRaiser_);
         eventRaiserImpl->setScheduler(eventScheduler_);
 
-        auto targetFactory = std::make_shared<EventTargetFactoryImpl>(eventRaiser_, eventScheduler_);
+        auto targetFactory = std::make_shared<EventTargetFactoryImpl>(eventRaiser_);
         eventDispatcher_ = std::make_shared<EventDispatcherImpl>(eventScheduler_, targetFactory);
 
         // Create StateMachine with full W3C event infrastructure

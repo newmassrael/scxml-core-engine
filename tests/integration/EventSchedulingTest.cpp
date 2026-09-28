@@ -10,6 +10,7 @@
 
 #include "actions/CancelAction.h"
 #include "actions/SendAction.h"
+#include "common/IOProcessorHelper.h"
 #include "common/Logger.h"
 #include "common/TestUtils.h"
 #include "core/LogMacros.h"
@@ -1071,8 +1072,12 @@ TEST_F(EventSchedulingTest, W3C_Test230_AutoforwardPreservesAllEventFields) {
     auto parentData =
         ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_data").get().getValueAsString();
 
-    std::string childSessionId = SessionRegistry::instance().getInvokeSessionId(parentSessionId, "childInvokeId");
-    ASSERT_FALSE(childSessionId.empty()) << "Child session should exist";
+    // The child is found by the location its event carried (§scxml-C-1: the
+    // origin IS the sender's address), not by the invoke mapping — the child
+    // has reached its final state, so `#_childInvokeId` no longer names a
+    // running invocation (§scxml-6.4) and the mapping is gone with it.
+    std::string childSessionId = SCE::IOProcessorHelper::sessionIdFromScxmlLocation(parentOrigin);
+    ASSERT_FALSE(childSessionId.empty()) << "the child's event must carry its location, got '" << parentOrigin << "'";
 
     auto childName =
         ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_name").get().getValueAsString();

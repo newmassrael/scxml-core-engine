@@ -18,6 +18,27 @@ from typing import Any, Generic, Iterator, List, Optional, Set, TypeVar
 E = TypeVar("E")
 
 
+@dataclass(frozen=True)
+class ScheduledRoute:
+    """W3C SCXML 6.2 — where a delayed `<send>`'s event goes when it comes due.
+
+    A delay postpones a send; it does not change where the send goes. The
+    target is resolved when the send is made and recorded here, so the
+    delivery at the end of the delay reaches it. An entry without one goes to
+    the sending session's own external queue.
+
+    `kind` is ``"internal"`` (this session's internal queue), ``"invocation"``
+    (`#_<invokeid>`, named by `invoke_id`) or ``"parent"`` (`#_parent`).
+    `event_name` is the event as the receiving machine resolves it: a child or
+    a parent is another machine with its own events, so the name is what
+    crosses, as it does on an immediate send.
+    """
+
+    kind: str
+    event_name: str = ""
+    invoke_id: str = ""
+
+
 @dataclass(order=True)
 class ScheduledEvent(Generic[E]):
     """One entry in the scheduler's priority queue.
@@ -51,6 +72,9 @@ class ScheduledEvent(Generic[E]):
     #: the engine's, not the document's, so no ``<cancel sendid>`` can name
     #: it — and leaves through `drop_host_invoke_deadline` or by firing.
     host_invoke_deadline: Any = field(default=None, compare=False)
+    #: W3C SCXML 6.2 — the `ScheduledRoute` the delayed send resolved when it
+    #: was made, or ``None`` for this session's own external queue.
+    route: Optional[ScheduledRoute] = field(default=None, compare=False)
 
 
 class Scheduler(Generic[E]):
@@ -73,6 +97,7 @@ class Scheduler(Generic[E]):
         data: Any = "",
         host_send: Any = None,
         host_invoke_deadline: Any = None,
+        route: Optional[ScheduledRoute] = None,
     ) -> None:
         """Queue `event` for delivery at `due_ms`. `sendid` identifies the
         entry for later `<cancel>` lookups; empty string ids cannot be
@@ -86,7 +111,10 @@ class Scheduler(Generic[E]):
         by deadline and cancelled by the same id.
 
         `host_invoke_deadline` makes the entry the deadline of a host-run
-        invocation start, to be judged at `due_ms`."""
+        invocation start, to be judged at `due_ms`.
+
+        `route` is where the event goes when due (W3C SCXML 6.2), ``None``
+        for this session's own external queue."""
         heapq.heappush(
             self._heap,
             ScheduledEvent(
@@ -97,6 +125,7 @@ class Scheduler(Generic[E]):
                 data=data,
                 host_send=host_send,
                 host_invoke_deadline=host_invoke_deadline,
+                route=route,
             ),
         )
 

@@ -23,7 +23,6 @@
     - bindCurrentEvent(event, engine)            §scxml-5.10 `_event` for the guards
     - firstEnabledTransition(state, event, engine)  the per-state half of selection
     - executeTransitionActions(source, index, engine)
-    - deliverReadyParentSends(engine)            §scxml-6.4.2 delayed sends to #_parent
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
@@ -183,26 +182,5 @@ public:
         }
 {% else %}
         // W3C SCXML 3.13: no transition in this document has content.
-{% endif %}
-    }
-
-    {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
-    // W3C SCXML 6.4.2: delayed sends to the parent that have come due. The
-    // engine calls this after every selection, microstep or not.
-    // SCE_MESH.md §9.6: gated on needs_parent_template — remote invoke workers
-    // emit `<send target="#_parent">` through performMeshSend instead.
-    //
-    // §scxml-6.2.2: due is judged against the engine's clock, the same one
-    // the deadline was armed from — a queue that read its own would answer
-    // a different question on a host that owns time.
-    template <typename Engine>
-    void deliverReadyParentSends([[maybe_unused]] Engine& engine) {
-{% if model.needs_parent_template %}
-        typename ParentStateMachine::Event readyEvent;
-        std::string readyEventData;
-        while (parentSendScheduler_.popReadyEvent(engine.nowMs(), readyEvent, readyEventData)) {
-            AOT_DEBUG("Delivering delayed send to parent");
-            parent_->raiseExternal(readyEvent);
-        }
 {% endif %}
     }

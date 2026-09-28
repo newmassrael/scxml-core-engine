@@ -45,12 +45,12 @@
    find the definition through the same include it already has. #}
 #include "sce/payload_reading.h"
 
-{% if model.needs_event_scheduler %}
 /* §scxml-6.2.2: `sce_clock_t`, the per-instance seam this machine measures its
    `<send delay>` deadlines from. The link-time `_sce_clock_now_ms()` it falls
-   back to is declared in the same header. */
+   back to is declared in the same header. Included on every machine: one
+   that is invoked is handed its parent's clock at `_init_with_parent`, whether
+   or not it has delays of its own. */
 #include "sce/clock.h"
-{% endif %}
 
 {% if model.on_sample_links %}
 /* SCE Protocol-Synthesis RFC §synth-5-E sample-callback codegen wire-up. `sce_sample_t`
@@ -281,6 +281,14 @@ typedef struct {{ csym_prefix }}{{ model.name }}_event_queue {
 } {{ csym_prefix }}{{ model.name }}_event_queue_t;
 
 {% if model.needs_event_scheduler %}
+/* W3C SCXML 6.2.4: the queue a scheduled entry delivers to when due. */
+typedef enum {
+    {{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_EXTERNAL = 0,  /* this session's external queue */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INTERNAL,      /* `#_internal`: this session's internal queue */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_PARENT,        /* `#_parent`: the invoking session */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INVOCATION     /* `#_<invokeid>`: an invoked child */
+} {{ csym_prefix }}{{ model.name }}_sched_route_t;
+
 /* ── W3C SCXML 6.2: Delayed-send queue entry ──────────────────────── */
 {# Mirrors `SchedulerQueueCore::ScheduledEntry` from cpp
    `common/SendSchedulingHelper.h`. Unlike the cpp shape we drop the
@@ -307,19 +315,26 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
        evaluate a payload. */
     char data[SCE_MAX_DATA_LEN];
 {% endif %}
-{% if model.has_parent_communication %}
-    /* W3C SCXML 6.2 + 6.4 (test187): delayed `<send target="#_parent">` —
-       the entry carries an event NAME (parent's enum is foreign to this
-       SM) plus a `to_parent` flag so `_tick`'s promote loop can dispatch
-       through `parent_dispatch` instead of the local `raise_external`
-       path. When the child terminates before fire_time_ms is reached,
-       `_tick`'s `is_in_final_state` early-return drops the pending entry
-       silently — same observable as cpp's per-child `parentSendScheduler_`
-       destructor cleaning up its std::map. The `event` enum slot stays
-       zero-initialised (`{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE`) for these
-       entries; only `to_parent_event` carries routing information. */
-    bool to_parent;
-    char to_parent_event[SCE_MAX_ID_LEN];
+    /* W3C SCXML 6.2.4 + C.1: where the entry delivers when it comes due —
+       the target its `<send>` resolved when it was performed. A delay
+       postpones a send; it does not change where it goes. One of
+       `{{ csym_prefix }}{{ model.name }}_sched_route_t`. */
+    uint8_t route;
+{% set sched_invocations = model.invokes | scxml_family | list %}
+{% if model.has_parent_communication or sched_invocations %}
+    /* The event NAME a `#_parent` or `#_<invokeid>` entry delivers: the
+       receiver's enum is foreign to this SM, so its own by-name door
+       resolves it. The `event` enum slot stays
+       `{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE` for these entries. A child that terminates
+       before its `#_parent` entry is due drops it with the rest of its
+       queue (`_tick`'s `is_in_final_state` early return). */
+    char route_event[SCE_MAX_ID_LEN];
+{% endif %}
+{% if sched_invocations %}
+    /* The invocation a `#_<invokeid>` entry is addressed to. Whether it is
+       still running is judged when the entry comes due; one that is not
+       is reported to this machine as error.communication (W3C SCXML C.1). */
+    char route_invoke[SCE_MAX_ID_LEN];
 {% endif %}
 {% if model.has_delayed_host_send %}
     /* W3C SCXML 6.2.4 + 6.2.5: a `<send delay>` addressed to a processor
@@ -936,11 +951,15 @@ void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t 
    the parent's transition time (test338). SMs that declare
    `<send target="#_parent">` are exclusively invoked as children, so
    the plain `_init` symbol is not emitted for them — the only call site
-   is the parent's invoke helper. */
+   is the parent's invoke helper. `clock` is the parent's time
+   (`sce_clock_following`): an invoked session's `<send delay>`s wait on the
+   clock its parent's do (§scxml-6.4), installed before the entry walk arms
+   any of them. */
 void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix }}{{ model.name }}_t *sm,
                                        void *parent_sm,
                                        void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data),
-                                       const char *invoke_id);
+                                       const char *invoke_id,
+                                       sce_clock_t clock);
 {% endif %}
 
 /* W3C SCXML 5.10: Tear down any owned datamodel resources. Idempotent —
@@ -1248,15 +1267,17 @@ void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }}{{ model.
    matching transition shape — same observable as cpp's SendHelper for
    unknown event targets). */
 void {{ csym_prefix }}{{ model.name }}_raise_external_by_name({{ csym_prefix }}{{ model.name }}_t *sm, const char *event_name);
-
-/* W3C SCXML 6.4: autoforward entry point. §6.4 requires the parent to
-   forward an *exact copy* of the event, so this sibling of
-   `_raise_external_by_name` takes the source event's `_event` fields in a
-   transport-neutral carrier (the child's own event record type is
-   unrelated to the parent's). Names absent from this SM's enum drop
-   silently, same as the by-name form. */
-void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csym_prefix }}{{ model.name }}_t *sm, const sce_forwarded_event_t *fwd);
 {% endif %}
+
+/* W3C SCXML 6.4: the door an invoking parent reaches this machine through —
+   a `<send target="#_<invokeid>">`, delivered now or when a delayed one comes
+   due, and autoforward, which §6.4 requires be an *exact copy* of the event.
+   It takes the source event's `_event` fields in a transport-neutral carrier
+   (the child's own event record type is unrelated to the parent's). Names
+   absent from this SM's enum drop silently. Emitted on every machine: any of
+   them can be invoked, and whether it SENDS to a parent says nothing about
+   whether a parent sends to it. */
+void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csym_prefix }}{{ model.name }}_t *sm, const sce_forwarded_event_t *fwd);
 
 /* W3C SCXML 3.2: configuration query helpers. `_active_states` exposes
    the full bitmap; `_in_state(s)` mirrors the SCXML In() predicate (true

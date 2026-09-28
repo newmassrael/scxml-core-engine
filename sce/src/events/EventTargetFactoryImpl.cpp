@@ -19,9 +19,8 @@
 
 namespace SCE {
 
-EventTargetFactoryImpl::EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eventRaiser,
-                                               std::shared_ptr<IEventScheduler> scheduler)
-    : eventRaiser_(std::move(eventRaiser)), scheduler_(std::move(scheduler)) {
+EventTargetFactoryImpl::EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eventRaiser)
+    : eventRaiser_(std::move(eventRaiser)) {
     if (!eventRaiser_) {
         throw std::invalid_argument("EventTargetFactoryImpl requires a valid event raiser");
     }
@@ -308,7 +307,7 @@ std::shared_ptr<SCE::IEventTarget> SCE::EventTargetFactoryImpl::createParentTarg
         std::string childSessionId = sessionId;
 
         // Create parent target with child session ID for proper event routing
-        auto target = std::make_shared<SCE::ParentEventTarget>(childSessionId, eventRaiser_, scheduler_);
+        auto target = std::make_shared<SCE::ParentEventTarget>(childSessionId, eventRaiser_);
 
         SCE_LOG_DEBUG("EventTargetFactoryImpl: Created parent target for URI: {} with child session: {}", targetUri,
                       childSessionId);

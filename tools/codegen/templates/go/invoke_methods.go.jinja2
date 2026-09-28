@@ -550,6 +550,24 @@ func (p *{{ machine_name }}Policy) ForwardToAutoforwardChildren(eventName string
 }
 {% endif %}
 
+// DeliverToInvocation delivers a delayed `<send target="#_<invokeid>">` whose
+// wait is over, by name — a child need not declare every event its parent
+// sends (W3C SCXML 6.2 + 6.4). It answers whether the invocation was there to
+// take it: one whose session has reached its final state has ended, and the
+// engine reports the send it could not deliver (W3C SCXML C.1).
+func (p *{{ machine_name }}Policy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
+{% for invoke_info in model.invokes | scxml_family %}
+	if invokeID == "{{ invoke_info.invoke_id }}" {
+		if child := p.child{{ invoke_info.invoke_id | to_pascal_case }}; child != nil && !child.IsInFinalState() {
+			child.RaiseExternalByName(eventName, eventData)
+			return true
+		}
+		return false
+	}
+{% endfor %}
+	return false
+}
+
 {% if model.invokes | scxml %}
 // DeliverToChildSession delivers an event addressed to a child's published
 // location (W3C SCXML C.1).

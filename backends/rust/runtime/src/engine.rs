@@ -232,6 +232,21 @@ pub enum ScheduledAct<E> {
         /// so waiting must not cost it the address a reply goes back to.
         origin: SceString,
     },
+    /// §scxml-6.2: deliver a delayed send whose target is not this session's
+    /// own external queue to the target it resolved when it was made.
+    Routed {
+        /// This machine's own event, for the internal queue. None for a child
+        /// or a parent, which resolve the route's event name instead.
+        event: Option<E>,
+        /// Delayed-send `_event.data` JSON payload, preserved across the wait.
+        event_data: SceString,
+        /// §scxml-5.10.1: the `<send>`'s id.
+        send_id: SceString,
+        /// §scxml-C-1: the sending session.
+        origin: SceString,
+        /// Where the event goes.
+        route: ScheduledRoute,
+    },
     /// §scxml-6.2.5: perform a `<send>` a host-supplied processor serves.
     ///
     /// Boxed because a `HostSendRequest` is several strings and a map, and an
@@ -250,6 +265,32 @@ pub enum ScheduledAct<E> {
         /// The start this deadline belongs to; a restart under the same id
         /// has its own.
         token: u64,
+    },
+}
+
+/// §scxml-6.2: where a delayed `<send>`'s event goes when it comes due.
+///
+/// A delay postpones a send; it does not change where the send goes. The target
+/// is resolved when the send is made and recorded here, so the delivery at the
+/// end of the delay reaches it. `event_name` is the event as the receiving
+/// machine resolves it: a child or a parent is another machine with its own
+/// events, so the name is what crosses, as it does on an immediate send.
+#[cfg(not(feature = "no_std"))]
+#[derive(Debug, Clone)]
+pub enum ScheduledRoute {
+    /// `#_internal`: this session's internal queue.
+    InternalQueue,
+    /// `#_<invokeid>`: an invocation of this session.
+    Invocation {
+        /// The invocation.
+        invoke_id: String,
+        /// The event as the child resolves it.
+        event_name: String,
+    },
+    /// `#_parent`: the session that invoked this one.
+    Parent {
+        /// The event as the parent resolves it.
+        event_name: String,
     },
 }
 
@@ -348,6 +389,43 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
             // clones it, the zero-size `ElidedSendId` impl drops it. The id is
             // still returned below by move (callers may use it to `<cancel>`),
             // so cancel-free machines pay nothing for the discarded storage.
+            send_id: S::store(&effective_send_id),
+            ready_at,
+        };
+        self.push_scheduled(entry);
+        effective_send_id
+    }
+
+    /// §scxml-6.2: schedule a delayed send whose target is not this session's
+    /// own external queue, to be delivered there once `ready_at` arrives.
+    ///
+    /// The same queue as [`schedule_event_at`](Self::schedule_event_at), so one
+    /// deadline order, one `<cancel sendid>` path (§scxml-6.3) and one
+    /// next-due answer cover it.
+    #[cfg(not(feature = "no_std"))]
+    pub fn schedule_routed_at(
+        &mut self,
+        event: Option<E>,
+        ready_at: SchedTimePoint,
+        send_id: &str,
+        event_data: &str,
+        origin: &str,
+        route: ScheduledRoute,
+    ) -> SceString {
+        let effective_send_id: SceString = if send_id.is_empty() {
+            self.next_auto_send_id += 1;
+            format_auto_send_id(self.next_auto_send_id)
+        } else {
+            crate::sce_string_from_str(send_id)
+        };
+        let entry = ScheduledEntry {
+            act: ScheduledAct::Routed {
+                event,
+                event_data: crate::sce_string_from_str(event_data),
+                send_id: effective_send_id.clone(),
+                origin: crate::sce_string_from_str(origin),
+                route,
+            },
             send_id: S::store(&effective_send_id),
             ready_at,
         };
@@ -1387,6 +1465,16 @@ impl<P: StatePolicy> Engine<P> {
                         meta.set_event_data(&event_data);
                         self.raise_external_with_meta(meta);
                     }
+                    // §scxml-6.2: to the target the send named when it was made.
+                    ScheduledAct::Routed {
+                        event,
+                        event_data,
+                        send_id,
+                        origin,
+                        route,
+                    } => {
+                        self.deliver_routed(event, &event_data, send_id, origin, route);
+                    }
                     // §scxml-6.2.4: the wait is over, so now the act happens.
                     // Everything the immediate send site does happens here
                     // instead — including reporting an act nobody performed,
@@ -2186,6 +2274,84 @@ impl<P: StatePolicy> Engine<P> {
         let ready_at = self.sched_now_plus(delay);
         self.scheduler
             .schedule_event_at(event, ready_at, send_id, event_data, origin)
+    }
+
+    /// §scxml-6.2: schedule a delayed send whose target is not this session's
+    /// own external queue. Returns the send ID.
+    ///
+    /// A delay postpones a send; it does not change where the send goes. The
+    /// generated send site resolves the target when the send is made and hands
+    /// it over here, so the delivery at the end of the delay reaches it — in
+    /// the same queue as every other delayed send, which is what lets one
+    /// `<cancel sendid>` (§scxml-6.3) reach it. `event` is this machine's own
+    /// spelling, needed for the internal queue and None otherwise; a child or a
+    /// parent resolves the route's event name.
+    #[cfg(not(feature = "no_std"))]
+    pub fn schedule_routed_event(
+        &mut self,
+        event: Option<P::Event>,
+        delay: Duration,
+        send_id: &str,
+        event_data: &str,
+        origin: &str,
+        route: ScheduledRoute,
+    ) -> SceString {
+        let ready_at = self.sched_now_plus(delay);
+        self.scheduler
+            .schedule_routed_at(event, ready_at, send_id, event_data, origin, route)
+    }
+
+    /// Deliver a delayed send whose wait is over to the target it named.
+    ///
+    /// §scxml-C-1: "If the SCXML Processor cannot dispatch the event to the
+    /// target, it MUST place the error error.communication on the internal
+    /// event queue of the session that attempted to send the event." For a
+    /// delayed send the dispatch is this delivery, so an invocation that has
+    /// ended in the meantime is reported here, not when the send was made.
+    #[cfg(not(feature = "no_std"))]
+    fn deliver_routed(
+        &mut self,
+        event: Option<P::Event>,
+        event_data: &str,
+        send_id: SceString,
+        origin: SceString,
+        route: ScheduledRoute,
+    ) {
+        let delivered = match &route {
+            ScheduledRoute::InternalQueue => {
+                // The send site names this machine's event for this route; an
+                // entry without one reaches nobody, which is what it reports.
+                let Some(event) = event else {
+                    return;
+                };
+                let mut meta = EventWithMetadata::new(event);
+                meta.metadata.send_id = send_id;
+                meta.metadata.origin = origin;
+                meta.set_event_data(event_data);
+                self.raise(meta);
+                return;
+            }
+            ScheduledRoute::Invocation {
+                invoke_id,
+                event_name,
+            } => self
+                .policy
+                .deliver_to_invocation(invoke_id, event_name, event_data),
+            ScheduledRoute::Parent { event_name } => {
+                self.policy.deliver_to_parent(event_name, event_data)
+            }
+        };
+        if delivered {
+            return;
+        }
+        if let Some(communication_error) = P::get_event_from_name("error.communication") {
+            let mut err_meta = EventWithMetadata::platform_error(
+                communication_error,
+                "<send> named a target that was no longer there when its delay elapsed",
+            );
+            err_meta.metadata.send_id = send_id;
+            self.raise(err_meta);
+        }
     }
 
     /// §scxml-6.2.4 + §scxml-6.2.5: arm a `<send delay>` addressed to a

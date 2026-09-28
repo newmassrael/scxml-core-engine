@@ -369,7 +369,15 @@
 {% elif not action.targetexpr and action.target == '#_internal' %}
             // W3C SCXML 5.10: an internal send carries `_event.data` just as an
             // external one does.
+{% if has_delay %}
+            // W3C SCXML 6.2.4: a delay postpones the send, it does not change
+            // where it goes — the event joins the internal queue when due.
 {% if dyn_event %}
+            if (sendEvent != null) scheduleInternalSend("{{ send_id_kt }}", {{ delay_kt }}, sendEvent, EventMetadata.internal(sendData))
+{% else %}
+            scheduleInternalSend("{{ send_id_kt }}", {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.internal(sendData))
+{% endif %}
+{% elif dyn_event %}
             if (sendEvent != null) raiseInternal(sendEvent, EventMetadata.internal(sendData))
 {% else %}
             raiseInternal({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.internal(sendData))
@@ -393,11 +401,23 @@
                 return@send true
             }
 {% endif %}
+{% if has_delay %}
+            // W3C SCXML 6.2.4: this session's own external queue, when due.
 {% if dyn_event %}
+            if (sendEvent != null) scheduleSend("{{ send_id_kt }}", {{ delay_kt }}, sendEvent, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData))
+{% else %}
+            scheduleSend("{{ send_id_kt }}", {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData))
+{% endif %}
+{% elif dyn_event %}
             if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData))
 {% else %}
             send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData))
 {% endif %}
+{% elif static_target.startswith('#_') and has_delay %}
+            // W3C SCXML 6.2.4 + 6.4: a delayed send to an invoked child. Whether
+            // it is still running is judged when the send comes due; if not,
+            // the sender hears error.communication then (W3C SCXML C.1).
+            scheduleChildSend("{{ send_id_kt }}", {{ delay_kt }}, "{{ action.target[2:] | escape_kotlin }}", {% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %}, sendData, {{ machine_name }}Event.Error.Communication)
 {% elif static_target.startswith('#_') %}
             // W3C SCXML 6.4 (test192): Send event to invoked child. The build
             // refused a target naming no invocation above; one that is not
@@ -407,13 +427,22 @@
                 return@send true
             }
 {% elif dyn_target and has_delay %}
-            // W3C SCXML 6.2: a delayed send to a dynamic target is scheduled
-            // locally (C++ pattern: delay before target routing).
+            // W3C SCXML 6.2.4: a delayed send to a dynamic target keeps the
+            // queue it names — `#_internal` is the internal queue when due;
+            // any other is this session's external queue.
+            if (_rt == "#_internal") {
 {% if dyn_event %}
-            if (sendEvent != null) scheduleSend("{{ send_id_kt }}", {{ delay_kt }}, sendEvent, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData))
+                if (sendEvent != null) scheduleInternalSend("{{ send_id_kt }}", {{ delay_kt }}, sendEvent, EventMetadata.internal(sendData))
 {% else %}
-            scheduleSend("{{ send_id_kt }}", {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData))
+                scheduleInternalSend("{{ send_id_kt }}", {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.internal(sendData))
 {% endif %}
+            } else {
+{% if dyn_event %}
+                if (sendEvent != null) scheduleSend("{{ send_id_kt }}", {{ delay_kt }}, sendEvent, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData))
+{% else %}
+                scheduleSend("{{ send_id_kt }}", {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData))
+{% endif %}
+            }
 {% elif dyn_target %}
             // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
             if (_rt == "#_internal") {

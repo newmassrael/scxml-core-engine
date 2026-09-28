@@ -14,7 +14,6 @@ namespace SCE {
 // Forward declarations
 class IActionExecutor;
 class IEventRaiser;
-class IEventScheduler;
 
 /**
  * @brief Concrete implementation of IEventTargetFactory
@@ -36,10 +35,11 @@ public:
      * @brief Construct factory with event raiser for internal events
      *
      * @param eventRaiser Event raiser for internal event delivery
-     * @param scheduler Event scheduler for delayed events (optional)
+     *
+     * No scheduler: a target delivers, and a `delay` is the dispatcher's,
+     * which schedules the event together with the target this creates.
      */
-    explicit EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eventRaiser,
-                                    std::shared_ptr<IEventScheduler> scheduler = nullptr);
+    explicit EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eventRaiser);
 
     /**
      * @brief Destructor
@@ -122,7 +122,6 @@ private:
     std::shared_ptr<IEventTarget> createInvokeTarget(const std::string &invokeId, const std::string &sessionId);
 
     std::shared_ptr<IEventRaiser> eventRaiser_;
-    std::shared_ptr<IEventScheduler> scheduler_;
     std::map<std::string, std::function<std::shared_ptr<IEventTarget>(const std::string &)>> targetCreators_;
 };
 

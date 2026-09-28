@@ -83,7 +83,7 @@ InteractiveTestRunner::InteractiveTestRunner()
     stateMachine_->setEventRaiser(eventRaiser_);
 
     // Create event target factory and dispatcher
-    auto targetFactory = std::make_shared<EventTargetFactoryImpl>(eventRaiser, scheduler_);
+    auto targetFactory = std::make_shared<EventTargetFactoryImpl>(eventRaiser);
     eventDispatcher_ = std::make_shared<EventDispatcherImpl>(scheduler_, targetFactory);
 
     // Set EventDispatcher on StateMachine

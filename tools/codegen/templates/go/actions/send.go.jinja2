@@ -70,8 +70,14 @@
 {# W3C SCXML 6.2 / C.1: deliver the event to this session's own external
    queue, carrying this session as its origin. One body for the send with no
    target and the one whose target names this session. #}
-{% macro raise_external_here(action, model, machine_name, send_id, event_name_go) %}
-{% if action.eventexpr and model.needs_script_engine %}
+{% macro raise_external_here(action, model, machine_name, send_id, event_name_go, delay_go=none) %}
+{% if delay_go %}
+	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+	// origin is this session, as on the immediate path.
+	if delayEvt, delayOk := p.GetEventFromName({{ event_name_go }}); delayOk {
+		engine.ScheduleEvent(delayEvt, {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
+	}
+{% elif action.eventexpr and model.needs_script_engine %}
 	if sendEvt, sendOk := p.GetEventFromName({{ event_name_go }}); sendOk {
 		meta := sce.NewEventWithMetadata(sendEvt)
 		meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", p.SessionID)
@@ -474,6 +480,18 @@
    evaluated, so the build could not lower it. The same act the lowering
    arranges for a literal `#peer` is chosen here, on the one evaluated target,
    ahead of every other route — a peer is not a local session. #}
+{# W3C SCXML 6.2: the wait, as a Go duration, or none for an immediate send.
+   A delay postpones a send and does not change where it goes, so each
+   delivery arm below takes it rather than one arm taking every delayed send.
+   The build read a static delay once, by the grammar every engine shares
+   (ARCHITECTURE.md, "Durations"). #}
+{% if action.delayexpr and model.needs_script_engine %}
+{% set delay_go = 'time.Duration(sendDelayMs) * time.Millisecond' %}
+{% elif action.delay %}
+{% set delay_go = 'time.Duration(' ~ action.delay_ms ~ ') * time.Millisecond' %}
+{% else %}
+{% set delay_go = none %}
+{% endif %}
 {% set dynamic_mesh = action.targetexpr and model.needs_script_engine and not action.typeexpr and not action.send_type_host_served and not action.send_type_unsupported and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') %}
 {% if dynamic_mesh %}
 	if sce.IsMeshTarget(sendTarget) {
@@ -524,34 +542,29 @@
 		}
 	}
 {% elif action.target == '#_internal' %}
-	// W3C SCXML 6.2: Internal send (target="#_internal")
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
 {% if action.event %}
+{% if delay_go %}
+	engine.ScheduleRoutedEvent({{ machine_name }}Event{{ action.event | to_event_variant }}, {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID,
+		sce.ScheduledRoute{Kind: sce.RouteInternalQueue})
+{% else %}
 	{
 		meta := sce.NewEventWithMetadata({{ machine_name }}Event{{ action.event | to_event_variant }})
 		meta.Metadata.Data = eventDataStr
 		engine.Raise(meta)
 	}
 {% endif %}
-{% elif action.delay or action.delayexpr %}
-	// W3C SCXML 6.2: Delayed send
-	{
-{% if action.delayexpr and model.needs_script_engine %}
-		delayDur := time.Duration(sendDelayMs) * time.Millisecond
-{% elif action.delay %}
-		// The build read the static delay once, by the grammar every engine
-		// shares (ARCHITECTURE.md, "Durations").
-		delayDur := time.Duration({{ action.delay_ms }}) * time.Millisecond
-{% else %}
-		delayDur := time.Duration(0)
 {% endif %}
-		if delayEvt, delayOk := p.GetEventFromName({{ event_name_go }}); delayOk {
-			// §scxml-C-1: the origin is this session, as on the immediate path.
-			engine.ScheduleEvent(delayEvt, delayDur, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
-		}
-	}
 {% elif action.target == '#_parent' %}
 	// W3C SCXML 6.2: Send to parent
-{% if action.event %}
+{% if delay_go %}
+	// W3C SCXML 6.2 + 6.4: delayed to the parent. It waits in this child's own
+	// queue, so `<cancel>` reaches it and a child that ends first drops it, and
+	// it carries its payload when the delay has elapsed.
+	engine.ScheduleRoutedEvent(*new({{ machine_name }}Event), {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID,
+		sce.ScheduledRoute{Kind: sce.RouteParent, EventName: {{ event_name_go }}})
+{% elif action.event %}
 	if p.ParentExternalQueue != nil {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "{{ action.event | escape_go }}", Data: eventDataStr})
 	}
@@ -571,7 +584,7 @@
 {% endif %}
 	} else {
 {% endif %}
-{{ raise_external_here(action, model, machine_name, send_id, event_name_go) }}
+{{ raise_external_here(action, model, machine_name, send_id, event_name_go, delay_go) }}
 {% if static_target != '#_scxml_' %}
 	}
 {% endif %}
@@ -581,9 +594,20 @@
 	// refused a target naming no invocation above, so one matches here.
 {% for invoke_info in model.invokes | scxml_family %}
 {% if invoke_info.invoke_id == invoke_target_id %}
-	if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
+	// A child whose session has reached its final state has ended, and is not
+	// there to address.
+	if child := p.child{{ invoke_info.invoke_id | to_pascal_case }}; child != nil && !child.IsInFinalState() {
 {% if action.event or (action.eventexpr and model.needs_script_engine) %}
-		p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName({{ event_name_go }}, eventDataStr)
+{% if delay_go %}
+		// W3C SCXML 6.2: named now, reached when the delay has elapsed — or
+		// reported then, if the invocation has ended by that time (C.1).
+		engine.ScheduleRoutedEvent(*new({{ machine_name }}Event), {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID,
+			sce.ScheduledRoute{Kind: sce.RouteInvocation, EventName: {{ event_name_go }}, InvokeID: "{{ invoke_info.invoke_id | escape_go }}"})
+{% else %}
+		child.RaiseExternalByName({{ event_name_go }}, eventDataStr)
+{% endif %}
+{% else %}
+		_ = child
 {% endif %}
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
@@ -599,7 +623,21 @@
 {% endfor %}
 {% else %}
 	// W3C SCXML 6.2: External send
-{% if action.targetexpr and model.needs_script_engine %}
+{% if delay_go and action.targetexpr and model.needs_script_engine %}
+	// W3C SCXML 6.2: the target resolved now decides where the delayed event
+	// goes — `#_internal` the internal queue, anything else this session's
+	// external queue, as the immediate send would.
+	if delayEvt, delayOk := p.GetEventFromName({{ event_name_go }}); delayOk {
+		if sendTarget == "#_internal" {
+			engine.ScheduleRoutedEvent(delayEvt, {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID,
+				sce.ScheduledRoute{Kind: sce.RouteInternalQueue})
+		} else {
+			engine.ScheduleEvent(delayEvt, {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
+		}
+	}
+{% elif delay_go %}
+{{ raise_external_here(action, model, machine_name, send_id, event_name_go, delay_go) }}
+{% elif action.targetexpr and model.needs_script_engine %}
 	{
 {% if model.invokes | scxml %}
 		// W3C SCXML C.1: a target that decodes to one of our children's

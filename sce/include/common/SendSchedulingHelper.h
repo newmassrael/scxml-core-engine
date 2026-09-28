@@ -49,6 +49,30 @@ struct HostSendRequest;
 struct HostInvokeDeadline;
 
 /**
+ * @brief W3C SCXML 6.2: where a delayed `<send>`'s event goes when it comes due
+ *
+ * A `delay` postpones a send; it does not change where the send goes. The
+ * target is resolved when the send is made, and this records the answer so
+ * the delivery at the end of the delay reaches it. An entry without one goes
+ * to the sending session's own external queue — a send with no target, or one
+ * naming this session.
+ *
+ * `eventName` is the event as the receiving machine resolves it: a child or a
+ * parent is another machine with its own event set, so the name is what
+ * crosses, as it does on an immediate send.
+ */
+struct ScheduledRoute {
+    enum class Kind {
+        InternalQueue,  ///< `#_internal`: this session's internal queue
+        Invocation,     ///< `#_<invokeid>`: an invocation of this session
+        Parent,         ///< `#_parent`: the session that invoked this one
+    };
+    Kind kind;
+    std::string eventName;
+    std::string invokeId;  ///< the invocation, for Kind::Invocation
+};
+
+/**
  * @brief Helper for W3C SCXML <send> delay parsing
  *
  * Single Source of Truth for delay parsing logic shared between:
@@ -230,6 +254,11 @@ public:
          * target object) and for entries that are not an event.
          */
         std::string origin;
+        /**
+         * @brief §scxml-6.2: the target a delayed send resolved when it was
+         *        made, or null for this session's own external queue
+         */
+        std::shared_ptr<const ScheduledRoute> route;
 
         ScheduledEntry(EventType evt, TimePoint fire, std::string id, EventDataType data, uint64_t seq,
                        std::shared_ptr<const HostSendRequest> host = nullptr,
@@ -268,11 +297,14 @@ public:
      * @param eventData Additional event data
      * @param hostSend The host-served send this entry performs, or null
      * @param origin The sending session (§scxml-C-1), or empty
+     * @param route Where the event goes when due (§scxml-6.2), or null for
+     *              this session's own external queue
      * @return The sendId assigned
      */
     std::string schedule(EventType event, TimePoint fireTime, const std::string &sendId,
                          EventDataType eventData = EventDataType{},
-                         std::shared_ptr<const HostSendRequest> hostSend = nullptr, std::string origin = {}) {
+                         std::shared_ptr<const HostSendRequest> hostSend = nullptr, std::string origin = {},
+                         std::shared_ptr<const ScheduledRoute> route = nullptr) {
         std::string actualSendId = sendId.empty() ? generateUniqueSendId() : sendId;
 
         // §scxml-6.3: Cancel existing event with same sendId (ACTUAL removal)
@@ -283,6 +315,7 @@ public:
         auto entry = std::make_shared<ScheduledEntry>(std::move(event), fireTime, actualSendId, std::move(eventData),
                                                       seqNum, std::move(hostSend));
         entry->origin = std::move(origin);
+        entry->route = std::move(route);
 
         OrderKey key{fireTime, seqNum};
         auto it = queue_.emplace(key, entry);
@@ -415,6 +448,18 @@ public:
         return popReadyEventImpl(now, outEvent, outEventData, outSendId, &outHostSend, &outDeadline, &outOrigin);
     }
 
+    /**
+     * @brief popReadyAct, with the target a delayed send resolved when it was
+     *        made (§scxml-6.2) — null for this session's own external queue
+     */
+    bool popReadyAct(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId,
+                     std::string &outOrigin, std::shared_ptr<const HostSendRequest> &outHostSend,
+                     std::shared_ptr<const HostInvokeDeadline> &outDeadline,
+                     std::shared_ptr<const ScheduledRoute> &outRoute) {
+        return popReadyEventImpl(now, outEvent, outEventData, outSendId, &outHostSend, &outDeadline, &outOrigin,
+                                 &outRoute);
+    }
+
     bool hasPendingEvents() const {
         return !queue_.empty();
     }
@@ -458,7 +503,8 @@ private:
     bool popReadyEventImpl(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId,
                            std::shared_ptr<const HostSendRequest> *outHostSend = nullptr,
                            std::shared_ptr<const HostInvokeDeadline> *outDeadline = nullptr,
-                           std::string *outOrigin = nullptr) {
+                           std::string *outOrigin = nullptr,
+                           std::shared_ptr<const ScheduledRoute> *outRoute = nullptr) {
         if (queue_.empty() || queue_.begin()->first.fireTime > now) {
             return false;
         }
@@ -469,6 +515,9 @@ private:
         outSendId = it->second->sendId;
         if (outOrigin != nullptr) {
             *outOrigin = std::move(it->second->origin);
+        }
+        if (outRoute != nullptr) {
+            *outRoute = std::move(it->second->route);
         }
         if (outHostSend != nullptr) {
             *outHostSend = std::move(it->second->hostSend);
@@ -519,6 +568,21 @@ public:
     std::string scheduleEventAt(EventType event, uint64_t fireTimeMs, const std::string &sendId = "",
                                 const std::string &eventData = "", const std::string &origin = "") {
         return core_.schedule(std::move(event), fireTimeMs, sendId, eventData, nullptr, origin);
+    }
+
+    /**
+     * @brief §scxml-6.2: queue a delayed send whose target is not this
+     *        session's own external queue, to be delivered there when due
+     *
+     * The same queue as `scheduleEventAt`, so one deadline order, one
+     * `<cancel sendid>` path (§scxml-6.3) and one `nextFireTime()` cover it.
+     * `event` is this machine's own spelling of the event, used when the route
+     * is this session's internal queue.
+     */
+    std::string scheduleRoutedAt(EventType event, uint64_t fireTimeMs, const std::string &sendId,
+                                 const std::string &eventData, const std::string &origin, ScheduledRoute route) {
+        return core_.schedule(std::move(event), fireTimeMs, sendId, eventData, nullptr, origin,
+                              std::make_shared<const ScheduledRoute>(std::move(route)));
     }
 
     /**
@@ -597,6 +661,18 @@ public:
                      std::string &outOrigin, std::shared_ptr<const HostSendRequest> &outHostSend,
                      std::shared_ptr<const HostInvokeDeadline> &outDeadline) {
         return core_.popReadyAct(nowMs, outEvent, outEventData, outSendId, outOrigin, outHostSend, outDeadline);
+    }
+
+    /**
+     * @brief Pop the act due first with the target a delayed send resolved
+     *        (§scxml-6.2) — null for this session's own external queue
+     */
+    bool popReadyAct(uint64_t nowMs, EventType &outEvent, std::string &outEventData, std::string &outSendId,
+                     std::string &outOrigin, std::shared_ptr<const HostSendRequest> &outHostSend,
+                     std::shared_ptr<const HostInvokeDeadline> &outDeadline,
+                     std::shared_ptr<const ScheduledRoute> &outRoute) {
+        return core_.popReadyAct(nowMs, outEvent, outEventData, outSendId, outOrigin, outHostSend, outDeadline,
+                                 outRoute);
     }
 
     bool hasPendingEvents() const {

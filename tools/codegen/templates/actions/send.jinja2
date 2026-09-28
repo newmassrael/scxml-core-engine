@@ -487,22 +487,13 @@ engine.performMeshSend("#_parent", {{ event_name_cpp }}, eventData, sendId, "");
    until then the two shapes remain divergent and the
    `is_remote_invoke_target` classifier is the single seam. #}
 {% if has_delay %}
-// W3C SCXML 6.2/6.4.3: Delayed send to parent (stored in child, cancelled on termination).
-// §scxml-6.2.2: the deadline is measured from the engine's clock, not from
-// a reading this queue takes for itself — a machine on a host-owned clock
-// would otherwise arm its parent-directed sends against the wall while
-// everything else it does waits for the host. When the child terminates,
-// the scheduler's destructor drops what is still pending.
-if (parent_) {
-    parentSendScheduler_.scheduleEventAt(
-        ParentStateMachine::Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }},
-        engine.nowMs() + static_cast<uint64_t>(delayMs.count()),
-        sendId
-    );
-    AOT_DEBUG("Scheduled delayed send to parent: event={{ action.event }}, sendId={}", sendId);
-} else {
-    SCE_LOG_ERROR("Cannot send to parent: parent pointer is null");
-}
+// W3C SCXML 6.2 + 6.4: delayed to the parent. It waits in this machine's own
+// queue, so `<cancel>` reaches it (§scxml-6.3) and a child that ends first
+// drops it — the engine dispatches nothing once final (test187) — and it
+// carries the payload, this invocation's id and this session as its origin
+// when `deliverToParent` hands it over.
+engine.scheduleRoutedEvent(Event{}, delayMs, sendId, eventData, "",
+                           ::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::Parent, {{ event_name_cpp }}, ""});
 {% else %}
 // W3C SCXML 6.2: Immediate send to parent state machine with invokeid (test338)
 // W3C SCXML 6.5: Send with child session ID in origin for finalize support (test233)
@@ -540,12 +531,22 @@ if (parent_) {
 // W3C SCXML 6.4: to the invocation "{{ child_ns.invoke.invoke_id }}", carrying the payload
 // evaluated above. By name rather than by the child's enumerator: a child need
 // not declare every event its parent sends, and one it does not declare is
-// delivered and matches nothing.
+// delivered and matches nothing. A child whose session has reached its final
+// state has ended, and is not there to address.
 {% for slot in child_slots %}
-{{ 'if' if loop.first else '} else if' }} ({{ slot }}) {
+{{ 'if' if loop.first else '} else if' }} ({{ slot }} && !{{ slot }}->isInFinalState()) {
+{% if has_delay %}
+    // W3C SCXML 6.2: the delay postpones the send, not where it goes — the
+    // invocation is named now and reached when the delay has elapsed, or
+    // reported then if it has ended by that time (W3C SCXML C.1).
+    engine.scheduleRoutedEvent(
+        Event{}, delayMs, sendId, eventData, sessionId_.value_or(""),
+        ::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::Invocation, {{ event_name_cpp }}, "{{ child_ns.invoke.invoke_id | escape_cpp }}"});
+{% else %}
     {{ slot }}->raiseExternal({{ event_name_cpp }}, eventData);
     // W3C SCXML 6.4: Process child's event queues immediately (synchronous communication)
     {{ slot }}->step();
+{% endif %}
 {% endfor %}
 } else {
     // W3C SCXML C.1: the invocation is not running, so the session the target
@@ -625,9 +626,28 @@ engine.performHttpSend({% if action.targetexpr %}dynamicTarget{% else %}"{{ acti
 if (sendEvent) {
 {% endif %}
 {% if has_delay %}
-// W3C SCXML 6.2: Delayed send with event scheduling. §scxml-C-1: the origin is
-// this session, as on the immediate path, where anything can read it.
-engine.scheduleEvent({{ event_enum_cpp }}, delayMs, sendId, eventData{% if model.needs_script_engine or model.needs_event_origin %}, sessionId_.value_or(""){% endif %});
+{# W3C SCXML 6.2: the delay postpones the send, not where it goes — the queue
+   an immediate send would reach is the one this is delivered to. #}
+{% set delayed_origin_cpp = 'sessionId_.value_or("")' if (model.needs_script_engine or model.needs_event_origin) else '""' %}
+{% if not action.targetexpr and action.target == '#_internal' %}
+// W3C SCXML 6.2 + C.1: delayed to this session's internal queue.
+engine.scheduleRoutedEvent({{ event_enum_cpp }}, delayMs, sendId, eventData, {{ delayed_origin_cpp }},
+                           ::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::InternalQueue, "", ""});
+{% else %}
+{% if action.targetexpr %}
+// W3C SCXML 6.2 + C.1: the target resolved now decides the queue the delayed
+// event reaches, as it decides an immediate send's.
+if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
+    engine.scheduleRoutedEvent({{ event_enum_cpp }}, delayMs, sendId, eventData, {{ delayed_origin_cpp }},
+                               ::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::InternalQueue, "", ""});
+} else
+{% endif %}
+{
+    // W3C SCXML 6.2: Delayed send to this session's external queue.
+    // §scxml-C-1: the origin is this session, as on the immediate path.
+    engine.scheduleEvent({{ event_enum_cpp }}, delayMs, sendId, eventData, {{ delayed_origin_cpp }});
+}
+{% endif %}
 {% else %}
 // W3C SCXML 6.2: Immediate send — the payload computed once, then one dispatch.
 {{ send_dispatch_local(action, model, event_enum_cpp) }}
