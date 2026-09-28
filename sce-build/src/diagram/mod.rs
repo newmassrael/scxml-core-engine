@@ -30,6 +30,8 @@
 
 use crate::model::SCXMLModel;
 
+pub mod metrics;
+
 /// Which figure — named by the state it opens, never by a number, because a
 /// number shifts when a state is added and a specification that says
 /// "figure 4" would then point at the wrong picture.
