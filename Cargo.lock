@@ -1841,6 +1841,7 @@ dependencies = [
  "reqwest",
  "sce-forge-runtime",
  "sce-rust-lua",
+ "sce-rust-mesh",
  "sce-rust-runtime",
  "serde_json",
 ]
