@@ -84,6 +84,8 @@ pub struct SCXMLParser {
     invoke_counter: u32,
     hybrid_invoke_counter: u32,
     send_counter: u32,
+    /// The last [`Action::if_ordinal`] handed out; the next `<if>` takes one more.
+    if_counter: u32,
     /// §scxml-3.14: every `<invoke>` id must be document-unique.
     /// Both author-supplied and auto-generated ids feed this set so
     /// the author-shadows-auto-counter case (e.g. `<invoke id="_invoke_0">`
@@ -1810,6 +1812,7 @@ impl SCXMLParser {
             invoke_counter: 0,
             hybrid_invoke_counter: 0,
             send_counter: 0,
+            if_counter: 0,
             invoke_ids_seen: BTreeSet::new(),
             preprocessor_deps: Vec::new(),
             include_dirs: Vec::new(),
@@ -3660,6 +3663,9 @@ impl SCXMLParser {
         model: &mut SCXMLModel,
         source_name: &str,
     ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+        self.if_counter += 1;
+        action.if_ordinal = self.if_counter;
+
         let cond = elem.attribute("cond").unwrap_or("").to_string();
         if !cond.is_empty() {
             // [`NeedsScriptEngineCause::IfCondition`] is derived post-parse

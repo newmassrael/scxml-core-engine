@@ -59,11 +59,32 @@
             raise _ActionAbort
 
     def _guard(self, engine, lua_expr: str) -> bool:
-        """W3C SCXML 3.13 — evaluate a transition / `<if>` guard. The
-        spec requires `error.execution` on eval failure plus a `False`
-        return; the block-abort sentinel is NOT raised here so an
-        `<if>`/`<elseif>` cascade's next branch keeps the opportunity
-        to evaluate (W3C 4.2)."""
+        """W3C SCXML 3.13 — evaluate a transition guard. The spec
+        requires `error.execution` on eval failure plus a `False`
+        return (W3C SCXML 5.9.1)."""
+        value = self._guard_raising(
+            engine, lua_expr, "a <transition> cond failed to evaluate"
+        )
+        return bool(value)
+
+    def _if_guard(self, engine, lua_expr: str, failed: list) -> bool:
+        """W3C SCXML 5.9.1 + 4.9 — evaluate an `<if>` / `<elseif>` cond
+        as a transition guard is, and also record a failure in
+        `failed[0]`. The block-abort sentinel is NOT raised here: the
+        `<if>` still selects on `False`, so its next branch keeps the
+        opportunity to run, and only once the chain has run does the
+        `<if>` end its block as any element that raised does."""
+        value = self._guard_raising(
+            engine, lua_expr, "an <if> cond failed to evaluate"
+        )
+        if value is None:
+            failed[0] = True
+        return bool(value)
+
+    def _guard_raising(self, engine, lua_expr: str, reason: str):
+        """W3C SCXML 5.9.1 — a cond that cannot be evaluated raises
+        `error.execution`; `None` says so, where a bare `False` could
+        not."""
         if not lua_expr:
             return True
         try:
@@ -71,10 +92,8 @@
                 self._session_id, lua_expr
             )
         except _ScriptError:
-            self._raise_error_execution(
-                engine, "a <transition> cond failed to evaluate"
-            )
-            return False
+            self._raise_error_execution(engine, reason)
+            return None
         return result.to_bool()
 
     def _assign(self, engine, location: str, lua_expr: str) -> None:

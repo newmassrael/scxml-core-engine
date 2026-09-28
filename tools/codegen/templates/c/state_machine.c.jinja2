@@ -1607,8 +1607,15 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% endif %}
         }
 {% elif action.type == 'if' %}
+{% set if_can_fail = model.needs_script_engine and (not action.is_pure_in_predicate or (action.elseif_branches | rejectattr("is_pure_in_predicate") | list | length > 0)) %}
         {
             /* W3C SCXML 4.3: <if cond="{{ action.cond }}"> */
+{% if if_can_fail %}
+            /* W3C SCXML 5.9.1 + 4.9: a cond that cannot be evaluated is false,
+               so the selection goes on; the <if> then ends its block, as any
+               element that raised does — every block is its own C function. */
+            bool _if_cond_failed = false;
+{% endif %}
 {% if action.is_pure_in_predicate %}
             /* W3C 5.9.2 pure In() predicate — native C lower via
                `to_in_predicate_c11` (mirrors transition cond's pure-In branch).
@@ -1621,7 +1628,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             }
 {% elif model.needs_script_engine %}
             bool _if_pass;
-{{ se.lua_eval_guard(action.cond, '_if_pass') }}
+{{ se.lua_eval_guard(action.cond, '_if_pass', '_if_cond_failed', 'an <if>') }}
             if (_if_pass) {
                 {% for sub in action.then_actions %}
                 {{ emit_action(sub, in_foreach, foreach_depth) }}
@@ -1649,7 +1656,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 }
 {% elif model.needs_script_engine %}
                 bool _elif_pass;
-{{ se.lua_eval_guard(elif.cond, '_elif_pass') }}
+{{ se.lua_eval_guard(elif.cond, '_elif_pass', '_if_cond_failed', 'an <elseif>') }}
                 if (_elif_pass) {
                     {% for sub in elif.actions %}
                     {{ emit_action(sub, in_foreach, foreach_depth) }}
@@ -1675,6 +1682,11 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% for elif in action.elseif_branches %}
             }
 {% endfor %}
+{% if if_can_fail %}
+            if (_if_cond_failed) {
+                return;
+            }
+{% endif %}
         }
 {% elif action.type == 'log' %}
         /* W3C SCXML 4.4: <log{% if action.label %} label="{{ action.label }}"{% endif %}{% if action.expr %} expr="{{ action.expr }}"{% endif %}>

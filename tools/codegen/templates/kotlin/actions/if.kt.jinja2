@@ -11,6 +11,19 @@
    beside it unconditionally — a wrong output with no diagnostic. #}
 {# Save outer action to avoid scoping conflict with nested action includes #}
 {% set outer_if_action = action %}
+{# W3C SCXML 5.9.1 + 4.9: only the script-engine arm can fail. A cond that
+   cannot be evaluated is false, so the selection goes on to the next
+   partition; the flag remembers it, and once the chain has run the <if>
+   ends its block as any element that raised does. The flag is named by
+   the <if>'s ordinal: Kotlin warns on a shadowed name, and warnings fail
+   this build, so a nested <if> cannot reuse its parent's. #}
+{% import 'block_exit.kt.jinja2' as block_exit %}
+{% set if_script_arm = model.needs_script_engine and outer_if_action.cond and not outer_if_action.native_cond and not (outer_if_action.is_kt_condition and outer_if_action.cond_kt) and not (outer_if_action.is_pure_in_predicate and outer_if_action.cond_kt) %}
+{% set if_can_fail = model.needs_script_engine and (if_script_arm or (outer_if_action.elseif_branches | rejectattr("native_cond") | rejectattr("is_kt_condition") | rejectattr("is_pure_in_predicate") | list | length > 0)) %}
+{% set if_failed_var = 'ifCondFailed' ~ outer_if_action.if_ordinal %}
+{% if if_can_fail %}
+            var {{ if_failed_var }} = false
+{% endif %}
 {% if outer_if_action.native_cond %}
             if ({{ outer_if_action.native_cond }}) {
 {% elif outer_if_action.is_kt_condition and outer_if_action.cond_kt %}
@@ -18,7 +31,7 @@
 {% elif outer_if_action.is_pure_in_predicate and outer_if_action.cond_kt %}
             if ({{ outer_if_action.cond_kt }}) {
 {% elif model.needs_script_engine and outer_if_action.cond %}
-            if (safeEvaluateGuard({{ outer_if_action.cond | to_script_source_guard }})) {
+            if (evaluateIfCond({{ outer_if_action.cond | to_script_source_guard }}) { {{ if_failed_var }} = true }) {
 {% elif outer_if_action.cond %}
             // W3C SCXML 4.2: cond="{{ outer_if_action.cond }}" decided at build time
             if ({{ 'true' if outer_if_action.cond_constant else 'false' }}) {
@@ -35,7 +48,7 @@
 {% elif elseif.is_pure_in_predicate and elseif.cond_kt %}
             } else if ({{ elseif.cond_kt }}) {
 {% elif model.needs_script_engine and elseif.cond %}
-            } else if (safeEvaluateGuard({{ elseif.cond | to_script_source_guard }})) {
+            } else if (evaluateIfCond({{ elseif.cond | to_script_source_guard }}) { {{ if_failed_var }} = true }) {
 {% else %}
             } else if ({{ 'true' if elseif.cond_constant else 'false' }}) {
 {% endif %}
@@ -52,5 +65,10 @@
 {% endfor %}
             }
 {% else %}
+            }
+{% endif %}
+{% if if_can_fail %}
+            if ({{ if_failed_var }}) {
+                {{ block_exit.stmt(_in_foreach_body is defined and _in_foreach_body, in_run_block is defined and in_run_block) }}
             }
 {% endif %}

@@ -620,6 +620,10 @@ bool ActionExecutorImpl::executeIfAction(const IfAction &action) {
 
         // §scxml-4.3.2: execute the first partition in document order whose defining
         // tag has a 'cond' that evaluates to true; <else> defines an unconditional one.
+        // §scxml-5.9.1: a cond that cannot be evaluated counts as false, so the
+        // selection goes on; the <if> is then the element whose processing raised,
+        // and §scxml-4.9 ends its block once the selection is done.
+        bool condFailed = false;
         for (const auto &branch : branches) {
             bool shouldExecute = false;
 
@@ -628,8 +632,9 @@ bool ActionExecutorImpl::executeIfAction(const IfAction &action) {
                 shouldExecute = true;
                 SCE_LOG_DEBUG("Executing else branch");
             } else if (!branch.condition.empty()) {
-                // Evaluate condition
-                shouldExecute = evaluateCondition(branch.condition);
+                const auto value = evaluateConditionReportingFailure(branch.condition);
+                condFailed = condFailed || !value.has_value();
+                shouldExecute = value.value_or(false);
                 SCE_LOG_DEBUG("Condition '{}' evaluated to: {}", branch.condition, shouldExecute);
             } else {
                 SCE_LOG_WARN("Branch has empty condition and is not else branch");
@@ -650,13 +655,13 @@ bool ActionExecutorImpl::executeIfAction(const IfAction &action) {
                         return false;
                     }
                 }
-                return true;  // Stop after first matching branch
+                return !condFailed;  // Stop after first matching branch
             }
         }
 
         // No branch matched
         SCE_LOG_DEBUG("No branch condition matched in if action");
-        return true;
+        return !condFailed;
     } catch (const std::exception &e) {
         SCE_LOG_ERROR("Failed to execute if action: {}", e.what());
         return false;
@@ -664,6 +669,10 @@ bool ActionExecutorImpl::executeIfAction(const IfAction &action) {
 }
 
 bool ActionExecutorImpl::evaluateCondition(const std::string &condition) {
+    return evaluateConditionReportingFailure(condition).value_or(false);
+}
+
+std::optional<bool> ActionExecutorImpl::evaluateConditionReportingFailure(const std::string &condition) {
     // §scxml-5.9: Conditional expressions in <if> elements
     // ARCHITECTURE.md: Zero Duplication - Use shared GuardHelper for conditional evaluation
     if (condition.empty()) {
@@ -679,7 +688,7 @@ bool ActionExecutorImpl::evaluateCondition(const std::string &condition) {
         if (eventRaiser_) {
             eventRaiser_->raiseEvent("error.execution", "Guard evaluation failed: " + condition);
         }
-        return false;
+        return std::nullopt;
     }
 
     return *result;

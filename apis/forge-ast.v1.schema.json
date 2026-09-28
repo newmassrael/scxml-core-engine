@@ -94,6 +94,13 @@
         "idlocation": {
           "type": "string"
         },
+        "if_ordinal": {
+          "default": 0,
+          "description": "An `<if>`'s place among the document's `<if>`s, from 1 in the order the parser meets them; 0 on every other action. A backend names the local that records a failed `cond` (W3C SCXML 5.9.1 + 4.9) after it, so an `<if>` nested in another's branch, or two in one block, never declare the same name in a language that refuses shadowing.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
         "index": {
           "type": "string"
         },

@@ -358,6 +358,13 @@ pub struct Action {
     /// backend emits through the same arms.
     #[serde(default)]
     pub cond_constant: Option<bool>,
+    /// An `<if>`'s place among the document's `<if>`s, from 1 in the order
+    /// the parser meets them; 0 on every other action. A backend names the
+    /// local that records a failed `cond` (W3C SCXML 5.9.1 + 4.9) after it,
+    /// so an `<if>` nested in another's branch, or two in one block, never
+    /// declare the same name in a language that refuses shadowing.
+    #[serde(default)]
+    pub if_ordinal: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub then_actions: Vec<Action>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -693,6 +700,7 @@ impl Action {
                 "is_cpp_condition",
                 "is_kt_condition",
                 "is_pure_in_predicate",
+                "if_ordinal",
             ],
             "script" => &[
                 "content_transformed",

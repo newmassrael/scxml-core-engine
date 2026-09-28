@@ -2,10 +2,20 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {# W3C SCXML 5.9.2: Conditional execution (if/elseif/else) #}
+{# W3C SCXML 5.9.1 + 4.9: only the script-engine arm can fail. A cond that
+   cannot be evaluated is false, so the selection goes on to the next
+   partition; `ifCondFailed` remembers it, and once the chain has run the
+   <if> ends its block — the closure the block runs in — as any element that
+   raised does. Outside an action block there is no block to end. #}
+{% set if_can_fail = model.needs_script_engine and in_action_block is defined and in_action_block and (not action.is_pure_in_predicate or (action.elseif_branches | rejectattr("is_pure_in_predicate") | list | length > 0)) %}
+{% if if_can_fail %}
+	{
+	ifCondFailed := false
+{% endif %}
 {% if action.is_pure_in_predicate %}
 	if {{ action.cond_cpp | to_in_predicate_go }} {
 {% elif model.needs_script_engine %}
-	if p.evaluateGuard(`{{ action.cond | to_lua_guard }}`, engine) {
+	if {% if if_can_fail %}p.evaluateIfCond(`{{ action.cond | to_lua_guard }}`, engine, &ifCondFailed){% else %}p.evaluateGuard(`{{ action.cond | to_lua_guard }}`, engine){% endif %} {
 {% else %}
 	// W3C SCXML 4.2: cond="{{ action.cond }}" decided at build time
 	if {{ 'true' if action.cond_constant else 'false' }} {
@@ -18,7 +28,7 @@
 {% if elseif.is_pure_in_predicate %}
 	} else if {{ elseif.cond_cpp | to_in_predicate_go }} {
 {% elif model.needs_script_engine %}
-	} else if p.evaluateGuard(`{{ elseif.cond | to_lua_guard }}`, engine) {
+	} else if {% if if_can_fail %}p.evaluateIfCond(`{{ elseif.cond | to_lua_guard }}`, engine, &ifCondFailed){% else %}p.evaluateGuard(`{{ elseif.cond | to_lua_guard }}`, engine){% endif %} {
 {% else %}
 	} else if {{ 'true' if elseif.cond_constant else 'false' }} {
 {% endif %}
@@ -35,3 +45,9 @@
 {% endfor %}
 {% endif %}
 	}
+{% if if_can_fail %}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+{% endif %}

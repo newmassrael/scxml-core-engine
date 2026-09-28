@@ -518,7 +518,11 @@
    transition) keep producing the same observable: result_var stays
    false, the next transition fires eventlessly before error.execution
    is dequeued, and pass is reached. #}
-{% macro lua_eval_guard(cond, result_var) %}
+{# `failed_var`, when given, names a bool set to true on a failure: an <if>
+   or <elseif> cond needs it, since W3C SCXML 4.9 then ends the block the
+   <if> is in, and `result_var` alone cannot tell a false cond from one that
+   could not be evaluated (W3C SCXML 5.9.1). A transition passes none. #}
+{% macro lua_eval_guard(cond, result_var, failed_var='', element='a <transition>') %}
     {{ result_var }} = false;
     if (luaL_dostring(sm->L,
         "return ({{ cond | to_lua_guard | escape_c }})") == 0) {
@@ -526,9 +530,12 @@
         lua_pop(sm->L, 1);
     } else {
         lua_pop(sm->L, 1);
+{% if failed_var %}
+        {{ failed_var }} = true;
+{% endif %}
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "a <transition> cond failed to evaluate");
+            "{{ element }} cond failed to evaluate");
     }
 {% endmacro %}
 

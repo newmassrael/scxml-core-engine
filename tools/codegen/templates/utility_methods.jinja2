@@ -11,6 +11,26 @@
     template <typename Engine>
     bool safeEvaluateGuard(::SCE::IScriptEngine& jsEngine, const std::string& sessionId,
                            const ::SCE::ScriptSource& guardExpr, Engine& engine) const {
+        return evaluateGuardRaising(jsEngine, sessionId, guardExpr, engine).value_or(false);
+    }
+
+    // W3C SCXML 5.9.1 + 4.9: an <if> or <elseif> cond. It is evaluated and
+    // reported exactly as a transition guard is, and a failure is also
+    // recorded in `condFailed`: the <if> still selects on `false`, and is
+    // then the element whose processing raised, so its block ends after it.
+    template <typename Engine>
+    bool evaluateIfCond(::SCE::IScriptEngine& jsEngine, const std::string& sessionId,
+                        const ::SCE::ScriptSource& condExpr, Engine& engine, bool& condFailed) const {
+        const auto result = evaluateGuardRaising(jsEngine, sessionId, condExpr, engine);
+        condFailed = condFailed || !result.has_value();
+        return result.value_or(false);
+    }
+
+    // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
+    // `std::nullopt` says so, where a bare `false` could not.
+    template <typename Engine>
+    std::optional<bool> evaluateGuardRaising(::SCE::IScriptEngine& jsEngine, const std::string& sessionId,
+                                             const ::SCE::ScriptSource& guardExpr, Engine& engine) const {
         AOT_DEBUG("AOT safeEvaluateGuard: Evaluating guard: '{}'", guardExpr.source());
         auto result = ::SCE::GuardHelper::evaluateGuard(jsEngine, sessionId, guardExpr);
 
@@ -18,7 +38,7 @@
             // W3C SCXML 5.9: Evaluation failed → raise error.execution AND return false
             SCE_LOG_ERROR("W3C SCXML 5.9: Guard evaluation failed: '{}'", guardExpr.source());
             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "Guard evaluation failed"));
-            return false;
+            return std::nullopt;
         }
 
         AOT_DEBUG("AOT safeEvaluateGuard: Guard '{}' evaluated to: {}", guardExpr.source(), *result);

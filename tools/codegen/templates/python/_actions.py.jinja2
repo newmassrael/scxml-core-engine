@@ -54,13 +54,20 @@
    recursion access to `emit`; nested children route back through the
    same dispatch table so any future action type is reachable from
    inside an `<if>` branch with no further wiring. #}
+{#- W3C SCXML 5.9.1 + 4.9: a cond that cannot be evaluated is false, so the
+   selection goes on to the next branch; the flag remembers it, and once the
+   chain has run the <if> ends its block as any element that raised does.
+   The flag is named by the <if>'s ordinal: Python has no block scope, so a
+   nested <if> sharing its parent's name would overwrite the parent's. -#}
 {%- macro emit_if(action, indent, machine_name, model) -%}
-{{ indent }}if self._guard(engine, {{ action.cond | to_lua_guard | py_string_literal }}):
+{% set failed = '_if_cond_failed_' ~ action.if_ordinal -%}
+{{ indent }}{{ failed }} = [False]
+{{ indent }}if self._if_guard(engine, {{ action.cond | to_lua_guard | py_string_literal }}, {{ failed }}):
 {% for sub in action.then_actions %}{{ emit(sub, indent ~ '    ', machine_name, model) }}{% endfor %}
 {% if not action.then_actions %}{{ indent }}    pass
 {% endif %}
 {% for branch in action.elseif_branches %}
-{{ indent }}elif self._guard(engine, {{ branch.cond | to_lua_guard | py_string_literal }}):
+{{ indent }}elif self._if_guard(engine, {{ branch.cond | to_lua_guard | py_string_literal }}, {{ failed }}):
 {% for sub in branch.actions %}{{ emit(sub, indent ~ '    ', machine_name, model) }}{% endfor %}
 {% if not branch.actions %}{{ indent }}    pass
 {% endif %}
@@ -69,7 +76,9 @@
 {{ indent }}else:
 {% for sub in action.else_actions %}{{ emit(sub, indent ~ '    ', machine_name, model) }}{% endfor %}
 {% endif %}
-{%- endmacro -%}
+{{ indent }}if {{ failed }}[0]:
+{{ indent }}    raise _ActionAbort
+{% endmacro -%}
 
 {# W3C SCXML 4.6 — `<foreach array item [index]>`. Inline alongside
    `<if>` so nested children recurse through `emit`. `_foreach` yields

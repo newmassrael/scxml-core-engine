@@ -15,7 +15,17 @@
     list — three transitions of one state each carrying one, say — otherwise
     declared it twice in the same scope and the machine did not compile.
 #}
+{#
+    W3C SCXML 5.9.1 + 4.9: only the script-engine arm can fail. A cond that
+    cannot be evaluated is false, so the selection goes on to the next
+    partition; `condFailed` remembers it, and once the chain has run the
+    <if> ends its block as any element that raised does.
+#}
+{% set if_can_fail = model.needs_script_engine and ((not action.is_cpp_condition and not action.is_pure_in_predicate) or (action.elseif_branches | rejectattr("is_cpp_condition") | rejectattr("is_pure_in_predicate") | list | length > 0)) %}
 {
+{% if if_can_fail %}
+bool condFailed = false;
+{% endif %}
 {% if action.is_cpp_condition %}
 // W3C SCXML 4.2: native guard (cpp: prefix) - direct C++ evaluation
 if ({{ action.cond_cpp_transformed }}) SCE_LIKELY {
@@ -24,10 +34,9 @@ if ({{ action.cond_cpp_transformed }}) SCE_LIKELY {
 if ({{ action.cond_cpp }}) SCE_LIKELY {
 {% elif model.needs_script_engine %}
 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
-// Use safeEvaluateGuard for std::optional<bool> handling and error.execution support
 this->ensureScriptEngine();
 auto& scriptEngine = getScriptEngine();
-if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), {{ action.cond | to_script_source_guard }}, engine)) SCE_LIKELY {
+if (this->evaluateIfCond(scriptEngine, sessionId_.value(), {{ action.cond | to_script_source_guard }}, engine, condFailed)) SCE_LIKELY {
 {% else %}
 // W3C SCXML 4.2: cond="{{ action.cond }}" decided at build time
 if ({{ 'true' if action.cond_constant else 'false' }}) SCE_LIKELY {
@@ -38,7 +47,7 @@ if ({{ 'true' if action.cond_constant else 'false' }}) SCE_LIKELY {
     {% endwith %}
     {% endfor %}
 {% for elseif in action.elseif_branches %}
-} else if ({% if elseif.is_cpp_condition %}{{ elseif.cond_cpp_transformed }}{% elif elseif.is_pure_in_predicate %}{{ elseif.cond_cpp }}{% elif model.needs_script_engine %}this->safeEvaluateGuard(scriptEngine, sessionId_.value(), {{ elseif.cond | to_script_source_guard }}, engine){% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %}) {
+} else if ({% if elseif.is_cpp_condition %}{{ elseif.cond_cpp_transformed }}{% elif elseif.is_pure_in_predicate %}{{ elseif.cond_cpp }}{% elif model.needs_script_engine %}this->evaluateIfCond(scriptEngine, sessionId_.value(), {{ elseif.cond | to_script_source_guard }}, engine, condFailed){% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %}) {
     {% for elseif_action in elseif.actions %}
     {% with action=elseif_action %}
     {% include 'actions/' + elseif_action.type + '.jinja2' %}
@@ -54,4 +63,9 @@ if ({{ 'true' if action.cond_constant else 'false' }}) SCE_LIKELY {
     {% endfor %}
 {% endif %}
 }
+{% if if_can_fail and block_exit is defined and block_exit %}
+if (condFailed) {
+    {{ block_exit }}
+}
+{% endif %}
 }
