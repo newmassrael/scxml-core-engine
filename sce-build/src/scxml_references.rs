@@ -489,6 +489,7 @@ mod tests {
                 default_target: "b1".to_string(),
                 default_targets: vec!["b1".to_string()],
                 default_actions: Vec::new(),
+                source_location: None,
             },
         );
         assert!(validate(&model, "probe.scxml").is_ok());
@@ -506,6 +507,7 @@ mod tests {
                 default_target: "ghost".to_string(),
                 default_targets: vec!["ghost".to_string()],
                 default_actions: Vec::new(),
+                source_location: None,
             },
         );
         let err = validate(&model, "probe.scxml").expect_err("must reject");

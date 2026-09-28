@@ -3288,6 +3288,7 @@ impl SCXMLParser {
                         .collect(),
                     default_target,
                     default_actions,
+                    source_location: source_location_of(&child, source_name),
                 },
             );
             model.has_history_states = true;

@@ -420,6 +420,7 @@ mod tests {
                 default_targets: vec!["armed".to_string()],
                 leaf_target: "armed".to_string(),
                 default_actions: Vec::new(),
+                source_location: None,
             },
         );
         assert!(validate(&model, "test.scxml").is_ok());

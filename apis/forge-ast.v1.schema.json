@@ -3954,6 +3954,17 @@
         "parent": {
           "type": "string"
         },
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The `<history>` element's position.\n\n⚠ Not a document-order rank, and deliberately so: a history is not a state, and [`State::document_order`] is emitted into generated code as each state's document-order index, so ranking histories there would renumber every state after one. A reader that must place a history among its parent's children in the order the author wrote them — the GUI structure, the C++ engine's own — orders by this position instead."
+        },
         "type": {
           "type": "string"
         }

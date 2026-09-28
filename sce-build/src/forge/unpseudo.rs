@@ -2943,6 +2943,8 @@ fn parse_history(
             // the page — see the renderer.
             leaf_target: String::new(),
             default_actions: parse_action_list(kids)?,
+            // A page is not XML; it has no element position to carry.
+            source_location: None,
         },
     ))
 }

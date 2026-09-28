@@ -1015,6 +1015,17 @@ pub struct HistoryInfo {
     pub default_targets: Vec<String>,
     pub leaf_target: String,
     pub default_actions: Vec<Action>,
+    /// The `<history>` element's position.
+    ///
+    /// ⚠ Not a document-order rank, and deliberately so: a history is not
+    /// a state, and [`State::document_order`] is emitted into generated
+    /// code as each state's document-order index, so ranking histories
+    /// there would renumber every state after one. A reader that must
+    /// place a history among its parent's children in the order the
+    /// author wrote them — the GUI structure, the C++ engine's own —
+    /// orders by this position instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<crate::forge::error::SourceLocation>,
 }
 
 /// §scxml-5.7: Done data for final states.
