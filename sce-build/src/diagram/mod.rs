@@ -31,6 +31,7 @@
 use crate::model::SCXMLModel;
 
 pub mod metrics;
+pub mod words;
 
 /// Which figure — named by the state it opens, never by a number, because a
 /// number shifts when a state is added and a specification that says

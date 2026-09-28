@@ -140,6 +140,12 @@ const THE_SCRIPT_IS_THE_SUBJECT: &[(&str, &str)] = &[
          the one thing a reader of a lexicon has to check, and an English \
          paraphrase would not be that lexicon but a different one",
     ),
+    (
+        "sce-build/src/diagram/words.rs",
+        "holds the print figure's Korean phrases beside page.rs's lexicon: \
+         each spelling is what the figure prints for that lexicon, and its \
+         test checks the Korean word order, which an escape would hide",
+    ),
 ];
 
 // ⚠ This gate is NOT in the list above, and that is deliberate. Its own
