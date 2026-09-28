@@ -602,8 +602,9 @@ engine.performHttpSend({% if action.targetexpr %}dynamicTarget{% else %}"{{ acti
 if (sendEvent) {
 {% endif %}
 {% if has_delay %}
-// W3C SCXML 6.2: Delayed send with event scheduling
-engine.scheduleEvent({{ event_enum_cpp }}, delayMs, sendId, eventData);
+// W3C SCXML 6.2: Delayed send with event scheduling. §scxml-C-1: the origin is
+// this session, as on the immediate path, where anything can read it.
+engine.scheduleEvent({{ event_enum_cpp }}, delayMs, sendId, eventData{% if model.needs_script_engine or model.needs_event_origin %}, sessionId_.value_or(""){% endif %});
 {% else %}
 // W3C SCXML 6.2: Immediate send — the payload computed once, then one dispatch.
 {{ send_dispatch_local(action, model, event_enum_cpp) }}

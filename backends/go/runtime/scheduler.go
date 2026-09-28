@@ -25,6 +25,11 @@ type scheduledEntry[E any] struct {
 	event     E
 	eventData string
 	sendID    string
+	// origin is the sending session, which `_event.origin` publishes when the
+	// event arrives (§scxml-C-1). A delayed send is the same event as an
+	// immediate one, only later, so waiting must not cost it the address a
+	// reply goes back to.
+	origin    string
 	readyAtMs int64
 	// hostSend is the §scxml-6.2.5 host-served send this entry performs
 	// instead of raising event, or nil for an ordinary delayed send.
@@ -67,7 +72,7 @@ func NewPullScheduler[E any]() *PullScheduler[E] {
 // (caller can use it to cancel). Matches Rust PullScheduler::schedule_event_at:
 // the deadline is resolved by the caller, which is the only party that knows
 // which clock the engine reads.
-func (s *PullScheduler[E]) ScheduleEventAt(event E, readyAtMs int64, sendID, eventData string) string {
+func (s *PullScheduler[E]) ScheduleEventAt(event E, readyAtMs int64, sendID, eventData, origin string) string {
 	effectiveSendID := sendID
 	if effectiveSendID == "" {
 		s.nextAutoSendID++
@@ -77,6 +82,7 @@ func (s *PullScheduler[E]) ScheduleEventAt(event E, readyAtMs int64, sendID, eve
 		event:     event,
 		eventData: eventData,
 		sendID:    effectiveSendID,
+		origin:    origin,
 		readyAtMs: readyAtMs,
 	})
 	return effectiveSendID
@@ -181,22 +187,34 @@ func (s *PullScheduler[E]) HasReadyEventsAt(nowMs int64) bool {
 //
 // Matches Rust PullScheduler::pop_ready_event_at.
 func (s *PullScheduler[E]) PopReadyEventAt(nowMs int64) (E, string, bool) {
-	event, data, _, _, ok := s.PopReadyActAt(nowMs)
-	return event, data, ok
+	act, ok := s.PopReadyActAt(nowMs)
+	return act.Event, act.Data, ok
 }
 
-// PopReadyActAt pops the act that came due first — an event to raise, or a
-// host-served send to perform (§scxml-6.2.4 + §scxml-6.2.5).
+// ReadyAct is one act that came due: an event to raise, or a host-served send
+// to perform, or a host-run invocation's deadline.
 //
-// The returned *HostSendRequest is nil for an ordinary delayed send, in which
-// case the event and data are what to raise; when it is non-nil the entry IS
-// the act and the event fields carry nothing meaningful. The same holds for
-// the *HostInvokeDeadline, a host-run invocation's deadline. Deadline order is
-// the queue's, so the kinds interleave by when they were due and by nothing
-// else.
+// HostSend is nil for an ordinary delayed send, in which case Event, Data,
+// SendID and Origin are what to raise; when it is non-nil the entry IS the act
+// and the event fields carry nothing meaningful. The same holds for Deadline.
+type ReadyAct[E any] struct {
+	Event E
+	Data  string
+	// SendID is the `<send>`'s id, which `_event.sendid` carries (§scxml-5.10.1).
+	SendID string
+	// Origin is the sending session, which `_event.origin` publishes
+	// (§scxml-C-1).
+	Origin   string
+	HostSend *HostSendRequest
+	Deadline *HostInvokeDeadline
+}
+
+// PopReadyActAt pops the act that came due first (§scxml-6.2.4 +
+// §scxml-6.2.5). Deadline order is the queue's, so the kinds interleave by when
+// they were due and by nothing else.
 //
 // Matches Rust PullScheduler::pop_ready_act_at.
-func (s *PullScheduler[E]) PopReadyActAt(nowMs int64) (E, string, *HostSendRequest, *HostInvokeDeadline, bool) {
+func (s *PullScheduler[E]) PopReadyActAt(nowMs int64) (ReadyAct[E], bool) {
 	best := -1
 	for i, e := range s.entries {
 		if e.readyAtMs > nowMs {
@@ -207,12 +225,18 @@ func (s *PullScheduler[E]) PopReadyActAt(nowMs int64) (E, string, *HostSendReque
 		}
 	}
 	if best < 0 {
-		var zero E
-		return zero, "", nil, nil, false
+		return ReadyAct[E]{}, false
 	}
 	entry := s.entries[best]
 	s.entries = append(s.entries[:best], s.entries[best+1:]...)
-	return entry.event, entry.eventData, entry.hostSend, entry.deadline, true
+	return ReadyAct[E]{
+		Event:    entry.event,
+		Data:     entry.eventData,
+		SendID:   entry.sendID,
+		Origin:   entry.origin,
+		HostSend: entry.hostSend,
+		Deadline: entry.deadline,
+	}, true
 }
 
 // HasPendingEvents returns whether there are any scheduled events (ready or not).

@@ -58,7 +58,7 @@
 {% if action.delay_ms > 0 -%}
 {{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ action.delay_ms }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}engine._next_auto_sendid(){% endif %})
 {% else -%}
-{{ indent }}engine.send_external({{ machine_name }}Event.{{ action.event | to_python_const }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{{ indent }}engine.send_to_self({{ machine_name }}Event.{{ action.event | to_python_const }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {% endif -%}
 {% elif action.delay_invalid and not action.delayexpr %}
 {# W3C SCXML 6.2: the written delay is not a CSS2 time (ARCHITECTURE.md,
@@ -118,13 +118,13 @@
 {{ indent }}_namelist_values = self._eval_send_namelist(engine, _sid, {{ action.namelist | py_string_literal }})
 {% endif %}
 {% if action.targetexpr %}
-{# W3C SCXML C.1 (test496, test521): a target that evaluates to no value is not
-   reachable — error.communication, nothing delivered, and the error ends the
-   block as any other would (W3C SCXML 4.9). An empty STRING is not this case
-   here: a self-sent event carries no origin on this backend, so
-   `targetexpr="_event.origin"` reads "" and must reach this session
-   (test336). #}
-{{ indent }}if _target_value.to_python() is None:
+{# W3C SCXML C.1 (test496, test521): a target that evaluates to no value, or to
+   text that names nothing (empty or "undefined"), is not reachable —
+   error.communication, nothing delivered, and the error ends the block as any
+   other would (W3C SCXML 4.9). A self-sent event names its origin, so
+   `targetexpr="_event.origin"` (test336) reads this session's location, never
+   "". #}
+{{ indent }}if _target_value.to_python() is None or _is_unreachable_target(_target_str):
 {% if 'error.communication' in model.events %}
 {{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(data="<send> targetexpr evaluated to nothing, so there is no target to reach", send_id=_sid, event_type="platform"))
 {% endif %}
@@ -247,21 +247,19 @@
 {{ indent }}    engine.schedule_send(_evt, {{ delay_py }}, _sid, _data)
 {% endif %}
 {% elif action.targetexpr %}
-{# W3C SCXML C.1 — the target resolved at action time: empty → this session's
-   external queue; `http(s)://...` → `perform_http_send`; `#_internal` →
-   internal raise; `#_parent` → the parent; `#_<…>` → an active invoke, else
-   this session; an SCXML processor location → the child it names, else this
-   session; anything else → `error.communication`. #}
-{{ indent }}if not _target_str:
-{{ indent }}    _dyn_evt = self.get_event_from_name(_evt_name)
-{{ indent }}    if _dyn_evt is not None:
-{{ indent }}        engine.send_external(_dyn_evt, _sid, _data)
+{# W3C SCXML C.1 — the target resolved at action time (an empty one was refused
+   above as naming nothing): `http(s)://...` → `perform_http_send`;
+   `#_internal` → internal raise; `#_parent` → the parent; `#_<…>` → an active
+   invoke, else this session; an SCXML processor location → the child it
+   names, else this session; anything else → `error.communication`. #}
 {% if dynamic_mesh %}
 {# SCE_MESH.md §mesh-19: a Mesh peer is the host router's, never this session's. #}
-{{ indent }}elif _is_mesh_target(_target_str):
+{{ indent }}if _is_mesh_target(_target_str):
 {{ host_send_request(action, indent ~ '    ', 'sce:mesh', has_payload, has_delay, delay_py, machine_name, model) }}
-{% endif %}
 {{ indent }}elif _target_str.startswith("http://") or _target_str.startswith("https://"):
+{% else %}
+{{ indent }}if _target_str.startswith("http://") or _target_str.startswith("https://"):
+{% endif %}
 {{ indent }}    engine.perform_http_send(_target_str, _evt_name, {% if action.contentexpr and not (action.params or has_namelist or action.content) %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %}, self._wire_params_from_payload(_data), _sid)
 {{ indent }}elif _target_str == "#_internal":
 {{ indent }}    _dyn_evt = self.get_event_from_name(_evt_name)
@@ -276,7 +274,7 @@
 {{ indent }}    else:
 {{ indent }}        _dyn_evt = self.get_event_from_name(_evt_name)
 {{ indent }}        if _dyn_evt is not None:
-{{ indent }}            engine.send_external(_dyn_evt, _sid, _data)
+{{ indent }}            engine.send_to_self(_dyn_evt, _sid, _data)
 {{ indent }}elif _session_id_from_scxml_location(_target_str):
 {# W3C SCXML C.1 — an SCXML Event I/O Processor location. When it decodes to
    one of our own children it is addressed to that child; otherwise it names
@@ -286,7 +284,7 @@
 {{ indent }}    ):
 {{ indent }}        _dyn_evt = self.get_event_from_name(_evt_name)
 {{ indent }}        if _dyn_evt is not None:
-{{ indent }}            engine.send_external(_dyn_evt, _sid, _data)
+{{ indent }}            engine.send_to_self(_dyn_evt, _sid, _data)
 {{ indent }}else:
 {% if 'error.communication' in model.events %}
 {{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
@@ -300,12 +298,12 @@
 {% if has_delay %}
 {{ indent }}    engine.schedule_send(_evt, {{ delay_py }}, _sid, _data)
 {% else %}
-{{ indent }}    engine.send_external(_evt, _sid, _data)
+{{ indent }}    engine.send_to_self(_evt, _sid, _data)
 {% endif %}
 {% elif has_delay %}
 {{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ delay_py }}, _sid, _data)
 {% else %}
-{{ indent }}engine.send_external({{ machine_name }}Event.{{ action.event | to_python_const }}, _sid, _data)
+{{ indent }}engine.send_to_self({{ machine_name }}Event.{{ action.event | to_python_const }}, _sid, _data)
 {% endif %}
 {% endif %}
 {% if action.params %}

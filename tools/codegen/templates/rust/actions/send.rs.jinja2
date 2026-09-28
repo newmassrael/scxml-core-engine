@@ -12,6 +12,12 @@
 {# W3C SCXML 5.7: `<param>` collection is shared with the host invoke; see
    `param_macros.rs.jinja2`. #}
 {% from 'param_macros.rs.jinja2' import collect_params_into %}
+{# §scxml-C-1: the origin of an event this session sends to itself — its own
+   session, which `_event.origin` publishes as the location a reply goes back
+   to. One spelling for every arm that delivers into this session's queue,
+   immediate or delayed. Under no_std no session identity exists and origin
+   metadata is elided, so the value is empty there. #}
+{% macro self_origin(no_std) %}{% if no_std %}::sce_rust_runtime::SceString::new(){% else %}::sce_rust_runtime::sce_string_from_str(self.session_id.as_deref().unwrap_or("")){% endif %}{% endmacro %}
 {# §scxml-6.2.5: the act a host-served send performs, for `processor_type`.
    One body for the two ways a send reaches it: a type the build saw served by
    the host (`send_type_host_served`, a Mesh send the build lowered among them)
@@ -280,13 +286,15 @@
    ends the block as any other error would (W3C SCXML 4.9). #}
 {% if action.targetexpr and model.needs_script_engine %}
     // §scxml-C-1: a target expression's value is read as text — the same
-    // reading C++ `resultToString` gives it. A value that is not there names
-    // no target; an empty STRING is not that case here, because a self-sent
-    // event carries no origin on this backend, so `targetexpr="_event.origin"`
-    // reads "" and must reach this session (test336).
+    // reading C++ `resultToString` gives it. A value that is not there, or
+    // text that names nothing (`SendHelper::isUnreachableTarget`: empty or
+    // "undefined"), is no target. A self-sent event names its origin, so
+    // `targetexpr="_event.origin"` (test336) reads this session's location,
+    // never "".
     let _resolved_target: Option<String> = match _send_target_value {
         Some(sce_rust_runtime::ScriptValue::Null) | Some(sce_rust_runtime::ScriptValue::Undefined) | None => None,
-        Some(ref val) => Some(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)),
+        Some(ref val) => Some(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val))
+            .filter(|t| !::sce_rust_runtime::helpers::send::is_unreachable_target(t)),
     };
     if _resolved_target.is_none() {
         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
@@ -583,6 +591,7 @@
                 core::time::Duration::from_millis(delay_ms),
                 &send_id,
                 event_data,
+                &{{ self_origin(no_std) }},
             );
         }
     }
@@ -623,7 +632,7 @@
 {% endif %}
             if let Some(evt) = __sce_external_event {
                 let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
-                meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::SceString::new());
+                meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), {{ self_origin(no_std) }});
                 meta.set_event_data(event_data);
                 engine.raise_external_with_meta(meta);
             }
@@ -675,7 +684,7 @@
     {
         let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
         // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::SceString::new());
+        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), {{ self_origin(no_std) }});
         meta.set_event_data(event_data);
         engine.raise_external_with_meta(meta);
     }
@@ -686,14 +695,14 @@
     {
         let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
         // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::SceString::new());
+        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), {{ self_origin(no_std) }});
         meta.set_event_data(event_data);
         engine.raise_external_with_meta(meta);
     }
 {% elif dyn_event %}
     if let Some(evt) = Self::get_event_from_name(&_send_event_name) {
         let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
-        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::SceString::new());
+        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), {{ self_origin(no_std) }});
         meta.set_event_data(event_data);
         engine.raise_external_with_meta(meta);
     }

@@ -224,6 +224,13 @@ pub enum ScheduledAct<E> {
         event: E,
         /// Delayed-send `_event.data` JSON payload, preserved across the wait.
         event_data: SceString,
+        /// §scxml-5.10.1: the `<send>`'s id, which `_event.sendid` carries
+        /// when the event arrives — the same one the immediate send stamps.
+        send_id: SceString,
+        /// §scxml-C-1: the sending session, which `_event.origin` publishes.
+        /// A delayed send is the same event as an immediate one, only later,
+        /// so waiting must not cost it the address a reply goes back to.
+        origin: SceString,
     },
     /// §scxml-6.2.5: perform a `<send>` a host-supplied processor serves.
     ///
@@ -315,6 +322,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         ready_at: SchedTimePoint,
         send_id: &str,
         event_data: &str,
+        origin: &str,
     ) -> SceString {
         let effective_send_id: SceString = if send_id.is_empty() {
             self.next_auto_send_id += 1;
@@ -322,15 +330,17 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         } else {
             crate::sce_string_from_str(send_id)
         };
-        // no_std elides the per-entry data string (see `ScheduledEntry`); the
-        // parameter is then unused (mirrors `raise_external`'s `let _ = ...`).
+        // no_std elides the per-entry strings (see `ScheduledEntry`); the
+        // parameters are then unused (mirrors `raise_external`'s `let _ = ...`).
         #[cfg(feature = "no_std")]
-        let _ = event_data;
+        let _ = (event_data, origin);
         let entry = ScheduledEntry {
             #[cfg(not(feature = "no_std"))]
             act: ScheduledAct::Raise {
                 event,
                 event_data: crate::sce_string_from_str(event_data),
+                send_id: effective_send_id.clone(),
+                origin: crate::sce_string_from_str(origin),
             },
             #[cfg(feature = "no_std")]
             event,
@@ -1355,8 +1365,18 @@ impl<P: StatePolicy> Engine<P> {
                     break;
                 };
                 match act {
-                    ScheduledAct::Raise { event, event_data } => {
-                        self.raise_external(event, &event_data, "");
+                    ScheduledAct::Raise {
+                        event,
+                        event_data,
+                        send_id,
+                        origin,
+                    } => {
+                        // §scxml-5.10.1 + §scxml-C-1: the metadata the
+                        // immediate send stamps, restored when the wait ends.
+                        let mut meta = EventWithMetadata::new(event);
+                        meta.metadata = EventMetadata::external(send_id, origin);
+                        meta.set_event_data(&event_data);
+                        self.raise_external_with_meta(meta);
                     }
                     // §scxml-6.2.4: the wait is over, so now the act happens.
                     // Everything the immediate send site does happens here
@@ -2152,10 +2172,11 @@ impl<P: StatePolicy> Engine<P> {
         delay: Duration,
         send_id: &str,
         event_data: &str,
+        origin: &str,
     ) -> SceString {
         let ready_at = self.sched_now_plus(delay);
         self.scheduler
-            .schedule_event_at(event, ready_at, send_id, event_data)
+            .schedule_event_at(event, ready_at, send_id, event_data, origin)
     }
 
     /// §scxml-6.2.4 + §scxml-6.2.5: arm a `<send delay>` addressed to a

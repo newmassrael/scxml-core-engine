@@ -221,6 +221,16 @@ public:
         /// The start token `hostInvokeDeadline` belongs to, kept beside it so
         /// the queue can index it without the complete type.
         uint64_t hostInvokeDeadlineToken = 0;
+        /**
+         * @brief §scxml-C-1: the sending session, which `_event.origin`
+         *        publishes when the event arrives
+         *
+         * A delayed send is the same event as an immediate one, only later, so
+         * waiting must not cost it the address a reply goes back to. Empty for
+         * an engine that carries origin some other way (the Interpreter's
+         * target object) and for entries that are not an event.
+         */
+        std::string origin;
 
         ScheduledEntry(EventType evt, TimePoint fire, std::string id, EventDataType data, uint64_t seq,
                        std::shared_ptr<const HostSendRequest> host = nullptr,
@@ -257,11 +267,13 @@ public:
      * @param fireTime When the event should fire
      * @param sendId Unique identifier for cancellation
      * @param eventData Additional event data
+     * @param hostSend The host-served send this entry performs, or null
+     * @param origin The sending session (§scxml-C-1), or empty
      * @return The sendId assigned
      */
     std::string schedule(EventType event, TimePoint fireTime, const std::string &sendId,
                          EventDataType eventData = EventDataType{},
-                         std::shared_ptr<const HostSendRequest> hostSend = nullptr) {
+                         std::shared_ptr<const HostSendRequest> hostSend = nullptr, std::string origin = {}) {
         std::string actualSendId = sendId.empty() ? generateUniqueSendId() : sendId;
 
         // §scxml-6.3: Cancel existing event with same sendId (ACTUAL removal)
@@ -271,6 +283,7 @@ public:
         uint64_t seqNum = sequenceCounter_++;
         auto entry = std::make_shared<ScheduledEntry>(std::move(event), fireTime, actualSendId, std::move(eventData),
                                                       seqNum, std::move(hostSend));
+        entry->origin = std::move(origin);
 
         OrderKey key{fireTime, seqNum};
         auto it = queue_.emplace(key, entry);
@@ -358,6 +371,15 @@ public:
     }
 
     /**
+     * @brief Pop the next event due, with its sendId and the sending session
+     *        (§scxml-C-1) it was scheduled with
+     */
+    bool popReadyEvent(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId,
+                       std::string &outOrigin) {
+        return popReadyEventImpl(now, outEvent, outEventData, outSendId, nullptr, nullptr, &outOrigin);
+    }
+
+    /**
      * @brief Pop the act due first — an event to raise, or a host-served send
      *        to perform (§scxml-6.2.4 + §scxml-6.2.5)
      *
@@ -382,6 +404,16 @@ public:
                      std::shared_ptr<const HostSendRequest> &outHostSend,
                      std::shared_ptr<const HostInvokeDeadline> &outDeadline) {
         return popReadyEventImpl(now, outEvent, outEventData, outSendId, &outHostSend, &outDeadline);
+    }
+
+    /**
+     * @brief popReadyAct, with the sending session (§scxml-C-1) the entry was
+     *        scheduled with
+     */
+    bool popReadyAct(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId,
+                     std::string &outOrigin, std::shared_ptr<const HostSendRequest> &outHostSend,
+                     std::shared_ptr<const HostInvokeDeadline> &outDeadline) {
+        return popReadyEventImpl(now, outEvent, outEventData, outSendId, &outHostSend, &outDeadline, &outOrigin);
     }
 
     bool hasPendingEvents() const {
@@ -426,7 +458,8 @@ public:
 private:
     bool popReadyEventImpl(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId,
                            std::shared_ptr<const HostSendRequest> *outHostSend = nullptr,
-                           std::shared_ptr<const HostInvokeDeadline> *outDeadline = nullptr) {
+                           std::shared_ptr<const HostInvokeDeadline> *outDeadline = nullptr,
+                           std::string *outOrigin = nullptr) {
         if (queue_.empty() || queue_.begin()->first.fireTime > now) {
             return false;
         }
@@ -435,6 +468,9 @@ private:
         outEvent = std::move(it->second->event);
         outEventData = std::move(it->second->eventData);
         outSendId = it->second->sendId;
+        if (outOrigin != nullptr) {
+            *outOrigin = std::move(it->second->origin);
+        }
         if (outHostSend != nullptr) {
             *outHostSend = std::move(it->second->hostSend);
         }
@@ -482,8 +518,8 @@ public:
      * statement's.
      */
     std::string scheduleEventAt(EventType event, uint64_t fireTimeMs, const std::string &sendId = "",
-                                const std::string &eventData = "") {
-        return core_.schedule(std::move(event), fireTimeMs, sendId, eventData);
+                                const std::string &eventData = "", const std::string &origin = "") {
+        return core_.schedule(std::move(event), fireTimeMs, sendId, eventData, nullptr, origin);
     }
 
     /**
@@ -527,6 +563,15 @@ public:
     }
 
     /**
+     * @brief Pop the next event due with the metadata it was scheduled with —
+     *        its sendid (§scxml-5.10.1) and its origin (§scxml-C-1)
+     */
+    bool popReadyEvent(uint64_t nowMs, EventType &outEvent, std::string &outEventData, std::string &outSendId,
+                       std::string &outOrigin) {
+        return core_.popReadyEvent(nowMs, outEvent, outEventData, outSendId, outOrigin);
+    }
+
+    /**
      * @brief Pop the act due first — see `SchedulerQueueCore::popReadyAct`
      */
     bool popReadyAct(uint64_t nowMs, EventType &outEvent, std::string &outEventData,
@@ -543,6 +588,16 @@ public:
                      std::shared_ptr<const HostInvokeDeadline> &outDeadline) {
         std::string sendId;
         return core_.popReadyAct(nowMs, outEvent, outEventData, sendId, outHostSend, outDeadline);
+    }
+
+    /**
+     * @brief Pop the act due first with the metadata an event was scheduled
+     *        with — its sendid (§scxml-5.10.1) and its origin (§scxml-C-1)
+     */
+    bool popReadyAct(uint64_t nowMs, EventType &outEvent, std::string &outEventData, std::string &outSendId,
+                     std::string &outOrigin, std::shared_ptr<const HostSendRequest> &outHostSend,
+                     std::shared_ptr<const HostInvokeDeadline> &outDeadline) {
+        return core_.popReadyAct(nowMs, outEvent, outEventData, outSendId, outOrigin, outHostSend, outDeadline);
     }
 
     bool hasPendingEvents() const {

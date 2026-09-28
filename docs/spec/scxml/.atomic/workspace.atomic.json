@@ -5496,6 +5496,36 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SavedState.kt",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "ReadyAct",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Tick",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "tick_in_turn",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "popReadyEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "popReadyAct",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "raiseScheduled",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -8256,6 +8286,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/send.py",
           "symbol": "parse_delay_ms",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "raiseScheduled",
           "kind": "implements"
         }
       ],
@@ -13160,6 +13195,71 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
           "symbol": "isUnreachableTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "scheduledEntry",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "ReadyAct",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Tick",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/send.py",
+          "symbol": "is_unreachable_target",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "ScheduledAct",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "tick_in_turn",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "ScheduledEntry",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "schedule",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "popReadyEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "popReadyAct",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "scheduleEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "raiseScheduled",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "origin",
           "kind": "implements"
         }
       ],

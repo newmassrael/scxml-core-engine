@@ -429,17 +429,28 @@ func (e *Engine[S, E]) Tick() {
 	// entries the host had not yet reached, in a loop the host cannot get
 	// between (see beginTurn).
 	for {
-		event, data, hostSend, deadline, ok := e.scheduler.PopReadyActAt(e.turnNowMs)
+		act, ok := e.scheduler.PopReadyActAt(e.turnNowMs)
 		if !ok {
 			break
 		}
-		if hostSend != nil {
+		if act.HostSend != nil {
 			// §scxml-6.2.4: the wait is over, so now the act happens.
-			e.performDeferredHostSend(*hostSend)
-		} else if deadline != nil {
-			e.expireHostInvoke(*deadline)
+			e.performDeferredHostSend(*act.HostSend)
+		} else if act.Deadline != nil {
+			e.expireHostInvoke(*act.Deadline)
 		} else {
-			e.RaiseExternal(event, data, "")
+			// §scxml-5.10.1 + §scxml-C-1: the metadata the immediate send
+			// stamps, restored when the wait ends.
+			e.externalQueue.Raise(NewEventWithFields(
+				act.Event,
+				act.Data,
+				act.Origin,
+				act.SendID,
+				EventTypeExternal,
+				SCXMLEventProcessorType,
+				"", // invokeID
+				"", // target
+			))
 		}
 		// The macrostep this act drives may <cancel> a later one, so the
 		// queue is re-consulted after it rather than before.
@@ -810,9 +821,9 @@ func (e *Engine[S, E]) DonedataAtFinal() string {
 //
 // The deadline is this turn's instant plus the delay — see beginTurn for why
 // the reading is the turn's rather than this statement's.
-func (e *Engine[S, E]) ScheduleEvent(event E, delay time.Duration, sendID, eventData string) string {
+func (e *Engine[S, E]) ScheduleEvent(event E, delay time.Duration, sendID, eventData, origin string) string {
 	readyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)
-	return e.scheduler.ScheduleEventAt(event, readyAtMs, sendID, eventData)
+	return e.scheduler.ScheduleEventAt(event, readyAtMs, sendID, eventData, origin)
 }
 
 // ScheduleHostSend arms a host-served `<send delay>`, to be performed when the

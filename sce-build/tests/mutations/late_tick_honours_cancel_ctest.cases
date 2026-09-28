@@ -35,7 +35,7 @@ mutation_oracles tests/integration/LateTickHonoursCancelAotTest.cpp tests/integr
 mutation_case "the cpp tick raises every ready entry before running a macrostep" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
      """                } else {
-                    raiseExternal(event, eventData);
+                    raiseScheduled(event, eventData, sendId, origin);
                 }
                 // The macrostep this act drives may `<cancel>` a later one,
                 // so the queue is re-consulted after it rather than before.
@@ -44,7 +44,7 @@ edit("sce/include/static/StaticExecutionEngine.h",
                     break;
                 }""",
      """                } else {
-                    raiseExternal(event, eventData);
+                    raiseScheduled(event, eventData, sendId, origin);
                 }""")
 PY
 

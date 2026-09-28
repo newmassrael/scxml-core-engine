@@ -211,13 +211,13 @@
 {% endif %}
 	}
 {% if action.targetexpr %}
-	if sendArgError == "" && sendTargetVal == nil {
-		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value
-		// is not reachable — error.communication, nothing delivered, and the
-		// error ends the block as any other would (W3C SCXML 4.9). An empty
-		// STRING is not this case here: a self-sent event carries no origin
-		// on this backend, so `targetexpr="_event.origin"` reads "" and must
-		// reach this session (test336).
+	if sendArgError == "" && (sendTargetVal == nil || sce.IsUnreachableTarget(sendTarget)) {
+		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value,
+		// or to text that names nothing (empty or "undefined"), is not
+		// reachable — error.communication, nothing delivered, and the error
+		// ends the block as any other would (W3C SCXML 4.9). A self-sent
+		// event names its origin, so `targetexpr="_event.origin"` (test336)
+		// reads this session's location, never "".
 {% if 'error.communication' in model.events %}
 		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
@@ -452,7 +452,8 @@
 		delayDur := time.Duration(0)
 {% endif %}
 		if delayEvt, delayOk := p.GetEventFromName({{ event_name_go }}); delayOk {
-			engine.ScheduleEvent(delayEvt, delayDur, "{{ send_id | default('') | escape_go }}", eventDataStr)
+			// §scxml-C-1: the origin is this session, as on the immediate path.
+			engine.ScheduleEvent(delayEvt, delayDur, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
 		}
 	}
 {% elif action.target == '#_parent' %}
@@ -501,7 +502,7 @@
 {% endif %}
 		if sendEvt, sendOk := p.GetEventFromName({{ event_name_go }}); sendOk {
 			meta := sce.NewEventWithMetadata(sendEvt)
-			meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", "")
+			meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", p.SessionID)
 			meta.Metadata.Data = eventDataStr
 			engine.RaiseExternalWithMeta(meta)
 		}
@@ -512,14 +513,14 @@
 {% elif action.eventexpr and model.needs_script_engine %}
 	if sendEvt, sendOk := p.GetEventFromName(sendEventName); sendOk {
 		meta := sce.NewEventWithMetadata(sendEvt)
-		meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", "")
+		meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
 {% elif action.event %}
 	{
 		meta := sce.NewEventWithMetadata({{ machine_name }}Event{{ action.event | to_event_variant }})
-		meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", "")
+		meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}

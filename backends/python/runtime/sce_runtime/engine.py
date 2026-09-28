@@ -1329,6 +1329,24 @@ class Engine(Generic[S, E]):
         )
         self._external_queue.append(EventWithMetadata(event=event, metadata=metadata))
 
+    def send_to_self(self, event: E, sendid: str = "", data: Any = "") -> None:
+        """W3C SCXML 6.2 + C.1 — a `<send>` this session addressed to itself.
+
+        The event `send_external` enqueues, named by its sender: C.1 gives
+        `_event.origin` one meaning for every event the SCXML Event I/O
+        Processor delivers — the location the SENDER published, the address a
+        reply goes back to — and a session sending to itself is such a sender.
+        `send_external` stays origin-less because a host that injects an event
+        is not this session."""
+        metadata = EventMetadata(
+            send_id=sendid,
+            event_type="external",
+            data=data,
+            origin=self._session_id,
+            origin_type=SCXML_EVENT_PROCESSOR_URI,
+        )
+        self._external_queue.append(EventWithMetadata(event=event, metadata=metadata))
+
     def deliver_to_child_session(
         self, child_session_id: str, event_name: str, data: Any = ""
     ) -> bool:
@@ -1362,7 +1380,7 @@ class Engine(Generic[S, E]):
         external queue. `data` is preserved across the scheduler delay
         and surfaces on `_event.data` when the event is delivered."""
         if delay_ms <= 0:
-            self.send_external(event, sendid, data)
+            self.send_to_self(event, sendid, data)
             return
         self._scheduler.schedule(self._now_ms + delay_ms, sendid, event, data)
 
@@ -1476,11 +1494,14 @@ class Engine(Generic[S, E]):
                 self._expire_host_invoke(entry.host_invoke_deadline)
             else:
                 # §scxml-C-1: scheduler drain is the SCXML processor's
-                # delayed-delivery path — origintype mirrors send_external.
+                # delayed-delivery path for a `<send>` this session addressed
+                # to itself — origin and origintype mirror send_to_self, since
+                # waiting must not cost the event its sender.
                 metadata = EventMetadata(
                     send_id=entry.sendid,
                     event_type="external",
                     data=entry.data,
+                    origin=self._session_id,
                     origin_type=SCXML_EVENT_PROCESSOR_URI,
                 )
                 self._external_queue.append(

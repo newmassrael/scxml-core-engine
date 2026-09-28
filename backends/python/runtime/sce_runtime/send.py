@@ -41,6 +41,17 @@ def is_invalid_target(target: str) -> bool:
     return target.startswith("!")
 
 
+def is_unreachable_target(target: str) -> bool:
+    """Whether a target a ``<send targetexpr>`` evaluated to names nothing:
+    empty, or the text ``undefined``. Such a send raises error.communication
+    and delivers nothing.
+
+    The Python copy of C++ ``SendHelper::isUnreachableTarget``."""
+    # §scxml-C-1: the event is placed on the queue of the session the target
+    # names, and an empty one names no session.
+    return target == "" or target == "undefined"
+
+
 def mesh_peer(target: str) -> Optional[str]:
     """The peer a ``<send target>`` names, when it names one: ``#`` followed
     by at least one character, where ``#_`` stays reserved for the targets

@@ -1202,13 +1202,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     "<send> targetexpr failed to evaluate");
                 return;
             }
-            if (_send_target_buf[0] == '\0') {
-                /* Empty target → external queue (W3C 6.2). */
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-                memset(&_send_evt, 0, sizeof(_send_evt));
-                _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-                {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
-            } else if (strcmp(_send_target_buf, "#_internal") == 0) {
+            if (strcmp(_send_target_buf, "#_internal") == 0) {
                 /* `#_internal` alias → internal queue (W3C C.1). */
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
                 memset(&_send_evt, 0, sizeof(_send_evt));
@@ -1221,18 +1215,19 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                     "<send> targetexpr produced a target this processor cannot address");
                 return;
-            } else if (strcmp(_send_target_buf, "undefined") == 0 ||
+            } else if (_send_target_buf[0] == '\0' ||
+                       strcmp(_send_target_buf, "undefined") == 0 ||
                        strcmp(_send_target_buf, "nil") == 0) {
                 /* W3C SCXML C.1 (test496/test521): unreachable target
                    evaluation result raises error.communication and stops
                    subsequent executable content. Mirrors cpp
-                   `SendHelper::isUnreachableTarget`
-                   (`sce/include/common/SendHelper.h:255`) with both the
+                   `SendHelper::isUnreachableTarget` — empty, and the
                    ECMAScript identifier (`"undefined"` from
-                   `ScriptResultUtils::resultToString`) and its lua transpile
-                   counterpart (`"nil"` from `tostring((nil))`). cpp's
-                   `target.empty()` arm of the same helper is already
-                   covered by the empty-buffer branch above. */
+                   `ScriptResultUtils::resultToString`) with its lua transpile
+                   counterpart (`"nil"` from `tostring((nil))`). An empty
+                   target used to reach this session instead; a self-sent
+                   event names its origin, so `targetexpr="_event.origin"`
+                   (test336) never reads "". */
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
                     "<send> targetexpr evaluated to nothing, so there is no target to reach");
@@ -1373,12 +1368,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     "<send> targetexpr failed to evaluate");
                 return;
             }
-            if (_send_target_buf[0] == '\0') {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-                memset(&_send_evt, 0, sizeof(_send_evt));
-                _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-                {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
-            } else if (strcmp(_send_target_buf, "#_internal") == 0) {
+            if (strcmp(_send_target_buf, "#_internal") == 0) {
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
                 memset(&_send_evt, 0, sizeof(_send_evt));
                 _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
@@ -1388,7 +1378,8 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                     "<send> targetexpr produced a target this processor cannot address");
                 return;
-            } else if (strcmp(_send_target_buf, "undefined") == 0 ||
+            } else if (_send_target_buf[0] == '\0' ||
+                       strcmp(_send_target_buf, "undefined") == 0 ||
                        strcmp(_send_target_buf, "nil") == 0) {
                 /* W3C SCXML C.1 (test496/test521): unreachable target
                    evaluation result — mirrors cpp

@@ -1123,12 +1123,27 @@ public:
      * @param delay Delay before delivery
      * @param sendId Optional sendid for cancellation
      * @param eventData Optional event data JSON
+     * @param origin The sending session, which `_event.origin` publishes when
+     *        the event arrives (§scxml-C-1) — this session for a `<send>`
      * @return The sendid assigned to this event
      */
     std::string scheduleEvent(Event event, std::chrono::milliseconds delay, const std::string &sendId = "",
-                              const std::string &eventData = "") {
+                              const std::string &eventData = "", const std::string &origin = "") {
         uint64_t fireTimeMs = schedNowMs() + static_cast<uint64_t>(delay.count());
-        return scheduler_.scheduleEventAt(event, fireTimeMs, sendId, eventData);
+        return scheduler_.scheduleEventAt(event, fireTimeMs, sendId, eventData, origin);
+    }
+
+    /**
+     * @brief Deliver a delayed event whose wait is over (§scxml-6.2)
+     *
+     * With the metadata the immediate send stamps — its sendid (§scxml-5.10.1)
+     * and its origin (§scxml-C-1) — which the simple `raiseExternal` overload
+     * would leave blank: a delayed send is the same event, only later.
+     */
+    void raiseScheduled(Event event, const std::string &eventData, const std::string &sendId,
+                        const std::string &origin) {
+        raiseExternal(EventWithMetadata(event, eventData, origin, sendId, "external",
+                                        SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE));
     }
 
     /**
@@ -2619,9 +2634,11 @@ public:
     void pumpScheduledEvents() {
         TurnGuard turn(*this);
         std::string eventData;
+        std::string sendId;
+        std::string origin;
         Event event;
-        while (scheduler_.popReadyEvent(schedNowMs(), event, eventData)) {
-            raiseExternal(event, eventData);
+        while (scheduler_.popReadyEvent(schedNowMs(), event, eventData, sendId, origin)) {
+            raiseScheduled(event, eventData, sendId, origin);
         }
     }
 
@@ -2685,10 +2702,12 @@ public:
         // host cannot get between (see `beginTurn()`).
         {
             std::string eventData;
+            std::string sendId;
+            std::string origin;
             Event event;
             std::shared_ptr<const ::SCE::HostSendRequest> hostSend;
             std::shared_ptr<const ::SCE::HostInvokeDeadline> deadline;
-            while (scheduler_.popReadyAct(schedNowMs(), event, eventData, hostSend, deadline)) {
+            while (scheduler_.popReadyAct(schedNowMs(), event, eventData, sendId, origin, hostSend, deadline)) {
                 if (hostSend) {
                     // §scxml-6.2.4: the wait is over, so now the act happens.
                     performDeferredHostSend(*hostSend);
@@ -2697,7 +2716,7 @@ public:
                     expireHostInvoke(*deadline);
                     deadline.reset();
                 } else {
-                    raiseExternal(event, eventData);
+                    raiseScheduled(event, eventData, sendId, origin);
                 }
                 // The macrostep this act drives may `<cancel>` a later one,
                 // so the queue is re-consulted after it rather than before.

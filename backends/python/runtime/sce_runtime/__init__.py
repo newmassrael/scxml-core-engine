@@ -45,6 +45,7 @@ from .send import (
     is_invalid_target,
     is_mesh_target,
     is_supported_send_type,
+    is_unreachable_target,
     mesh_peer,
     parse_delay_ms,
 )
@@ -97,6 +98,7 @@ __all__ = [
     "is_mesh_target",
     "is_reserved_type",
     "is_supported_send_type",
+    "is_unreachable_target",
     "parse_delay_ms",
     "mesh_peer",
     "parse_host_invoke_deadline_ms",

@@ -209,7 +209,7 @@ fn scheduler_consults_hal_under_std() {
     engine.initialize();
 
     // (1) Schedule a 5s delayed event. ready_at = now_ticks_ms() + 5000.
-    let _send_id = engine.schedule_event(Ev::Delayed, Duration::from_secs(5), "sid1", "");
+    let _send_id = engine.schedule_event(Ev::Delayed, Duration::from_secs(5), "sid1", "", "");
 
     // (2) Clock still at 1_000_000 → not ready.
     assert!(
@@ -245,7 +245,7 @@ fn scheduler_resolution_is_milliseconds() {
     let mut engine = Engine::<MockPolicy>::new(MockPolicy::new());
     engine.initialize();
 
-    let _ = engine.schedule_event(Ev::Delayed, Duration::from_micros(500), "sid2", "");
+    let _ = engine.schedule_event(Ev::Delayed, Duration::from_micros(500), "sid2", "", "");
 
     // ready_at = 2_000_000 + (500us as ms = 0) = 2_000_000, i.e. now → ready immediately.
     assert!(
