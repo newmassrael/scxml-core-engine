@@ -44,7 +44,7 @@ def is_invalid_target(target: str) -> bool:
 def mesh_peer(target: str) -> Optional[str]:
     """The peer a ``<send target>`` names, when it names one: ``#`` followed
     by at least one character, where ``#_`` stays reserved for the targets
-    §scxml-6.2.4 defines (``#_internal``, ``#_parent``, ...).
+    W3C SCXML defines (``#_internal``, ``#_parent``, ...).
 
     The Python copy of C++ ``SendHelper::isMeshTarget``; every copy reads
     ``tests/mesh/mesh_target_cases.json``, so a target one of them routes over
@@ -52,6 +52,8 @@ def mesh_peer(target: str) -> Optional[str]:
     if not target.startswith("#"):
         return None
     peer = target[1:]
+    # §scxml-6.2.4: `#_` names the targets the processor itself defines, so a
+    # name that starts with `_` is never a peer.
     return peer if peer and not peer.startswith("_") else None
 
 

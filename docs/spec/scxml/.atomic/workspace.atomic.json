@@ -8623,6 +8623,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SendHelper.kt",
           "symbol": "meshPeer",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/send.py",
+          "symbol": "mesh_peer",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
