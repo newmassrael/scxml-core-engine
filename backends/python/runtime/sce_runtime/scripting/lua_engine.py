@@ -108,6 +108,16 @@ def _is_undeclared_simple_variable(expr: str, session: "_LuaSession") -> bool:
     a declared SCXML variable, or a Lua standard-library global."""
     if not expr:
         return False
+    # The ECMAScript frontend reads a datamodel variable whose name Lua cannot
+    # spell — a Lua keyword such as `local` or `end` — through the globals
+    # table, as `_ENV["name"]`. The name it addresses is the one to look up:
+    # `_ENV` itself is an upvalue, never a declared variable, and taking it as
+    # the base made every such read a ReferenceError. The cases are
+    # tests/scripting/undeclared_reads.json.
+    if expr.startswith('_ENV["'):
+        end = expr.find('"]', len('_ENV["'))
+        if end >= 0:
+            return _is_undeclared_name(expr[len('_ENV["'):end], session)
     first = expr[0]
     if not (first.isalpha() or first == "_"):
         return False
@@ -121,12 +131,18 @@ def _is_undeclared_simple_variable(expr: str, session: "_LuaSession") -> bool:
     base = expr[:base_end]
     if base in _LUA_KEYWORDS:
         return False
-    if base in session.declared_vars:
+    return _is_undeclared_name(base, session)
+
+
+def _is_undeclared_name(name: str, session: "_LuaSession") -> bool:
+    """Whether `name` — a variable's name, however it is spelled — is
+    neither declared nor non-nil in the session's global table."""
+    if name in session.declared_vars:
         return False
     # Lua standard-library globals (`table`, `string`, `math`, …) and
     # SCE-installed builtins (`_scxml_truthy`, `_event`, `_ioprocessors`,
     # …) are non-nil in the session's global table.
-    return session.runtime.globals()[base] is None
+    return session.runtime.globals()[name] is None
 
 
 # ── ECMAScript builtins (§scxml-B-2 semantics over Lua 5.4) ─────

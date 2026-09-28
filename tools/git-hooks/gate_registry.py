@@ -695,6 +695,7 @@ GATES: dict[str, dict] = {
             "apis/**",
             "tests/json_text/**",
             "tests/durations/**",
+            "tests/scripting/**",
             # The shared Mesh-target predicate table the build reads.
             "tests/mesh/**",
         ],

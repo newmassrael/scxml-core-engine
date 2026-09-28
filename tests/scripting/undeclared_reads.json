@@ -1,0 +1,28 @@
+{
+  "about": [
+    "Which Lua reads of a datamodel variable are the ReferenceError ECMAScript",
+    "gives for an undeclared name, written out by hand.",
+    "",
+    "The ECMAScript frontend lowers a read to Lua for the Rust, Go and Python",
+    "engines. A name Lua can spell is read bare (`Var1`, `Var1.x`); a name Lua",
+    "reserves (`local`, `end`, ...) is read through the globals table, as",
+    "`_ENV[\"name\"]`. Each engine refuses a read of a name that is neither",
+    "declared nor a Lua standard-library global, and must look at the name the",
+    "read addresses - never at `_ENV`, which is an upvalue and never declared.",
+    "",
+    "`declared` is the session's datamodel; `refused` is whether evaluating",
+    "`expr` is a ReferenceError. Every engine's check reads this table."
+  ],
+  "cases": [
+    { "declared": ["Var1"], "expr": "Var1", "refused": false },
+    { "declared": ["Var1"], "expr": "Var1.x", "refused": false },
+    { "declared": [], "expr": "Var2", "refused": true },
+    { "declared": [], "expr": "Var2.x", "refused": true },
+    { "declared": [], "expr": "math", "refused": false },
+    { "declared": ["local"], "expr": "_ENV[\"local\"]", "refused": false },
+    { "declared": ["end"], "expr": "_ENV[\"end\"]", "refused": false },
+    { "declared": ["repeat"], "expr": "_ENV[\"repeat\"]", "refused": false },
+    { "declared": [], "expr": "_ENV[\"until\"]", "refused": true },
+    { "declared": [], "expr": "_ENV[\"local\"]", "refused": true }
+  ]
+}

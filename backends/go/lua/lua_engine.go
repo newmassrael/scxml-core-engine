@@ -701,6 +701,17 @@ func isUndeclaredSimpleVariable(expr string, sess *session) bool {
 	if expr == "" {
 		return false
 	}
+	// The ECMAScript frontend reads a datamodel variable whose name Lua cannot
+	// spell — a Lua keyword such as `local` or `end` — through the globals
+	// table, as `_ENV["name"]`. The name it addresses is the one to look up:
+	// `_ENV` itself is an upvalue, never a declared variable, and taking it as
+	// the base made every such read a ReferenceError. The cases are
+	// tests/scripting/undeclared_reads.json.
+	if rest, ok := strings.CutPrefix(expr, `_ENV["`); ok {
+		if end := strings.Index(rest, `"]`); end >= 0 {
+			return isUndeclaredName(rest[:end], sess)
+		}
+	}
 	// Must start with letter or underscore
 	first := expr[0]
 	if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || first == '_') {
@@ -727,16 +738,19 @@ func isUndeclaredSimpleVariable(expr string, sess *session) bool {
 		return false
 	}
 
-	// Check declared vars
-	if sess.declaredVars[baseName] {
+	return isUndeclaredName(baseName, sess)
+}
+
+// isUndeclaredName reports whether name — a variable's name, however it is
+// spelled — is neither declared nor a Lua standard library global (math,
+// string, table, etc.).
+func isUndeclaredName(name string, sess *session) bool {
+	if sess.declaredVars[name] {
 		return false
 	}
-
-	// Check Lua standard library globals (math, string, table, etc.)
-	sess.l.Global(baseName)
+	sess.l.Global(name)
 	isNil := sess.l.IsNoneOrNil(-1)
 	sess.l.Pop(1)
-
 	return isNil
 }
 

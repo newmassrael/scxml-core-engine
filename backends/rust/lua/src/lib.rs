@@ -51,16 +51,19 @@ fn is_undeclared_identifier(name: &str, declared_vars: &HashSet<String>, lua: &L
     if LUA_KEYWORDS.contains(&name) {
         return false;
     }
+    is_undeclared_name(name, declared_vars, lua)
+}
+
+/// Whether `name` — a variable's name, however it is spelled — is neither
+/// declared nor a Lua standard library global.
+fn is_undeclared_name(name: &str, declared_vars: &HashSet<String>, lua: &Lua) -> bool {
     if declared_vars.contains(name) {
         return false;
     }
-    // Check if it's a Lua standard library global
-    let is_nil: bool = lua
-        .globals()
+    lua.globals()
         .get::<LuaValue>(name)
         .map(|v| matches!(v, LuaValue::Nil))
-        .unwrap_or(true);
-    is_nil
+        .unwrap_or(true)
 }
 
 /// Detect undeclared variable references in simple expressions.
@@ -68,6 +71,16 @@ fn is_undeclared_identifier(name: &str, declared_vars: &HashSet<String>, lua: &L
 fn is_undeclared_simple_variable(expr: &str, declared_vars: &HashSet<String>, lua: &Lua) -> bool {
     if expr.is_empty() {
         return false;
+    }
+    // The ECMAScript frontend reads a datamodel variable whose name Lua cannot
+    // spell — a Lua keyword such as `local` or `end` — through the globals
+    // table, as `_ENV["name"]`. The name it addresses is the one to look up:
+    // `_ENV` itself is an upvalue, never a declared variable, and taking it as
+    // the base made every such read a ReferenceError.
+    if let Some(rest) = expr.strip_prefix("_ENV[\"") {
+        if let Some(end) = rest.find("\"]") {
+            return is_undeclared_name(&rest[..end], declared_vars, lua);
+        }
     }
     let first = expr.as_bytes()[0];
     if !first.is_ascii_alphabetic() && first != b'_' {
