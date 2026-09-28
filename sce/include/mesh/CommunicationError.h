@@ -406,6 +406,20 @@ struct CommunicationError {
     /// observes a DELETE on `sce/live/<machine>/<partition>`.
     std::optional<std::string> partition;
 
+    /// §mesh-16.7 row 14 exactly as the row names it: the machine the reply
+    /// came from, and the request it tried to retire — the correlation key
+    /// it carried, as RFC 4122 text. Every site that refuses such a reply
+    /// builds the row here, so it reads the same on every transport and
+    /// matches the Rust and Kotlin cores byte for byte.
+    [[nodiscard]] static CommunicationError replyFromUndeclaredPeer(std::string replier,
+                                                                    const std::array<std::uint8_t, 16> &request) {
+        CommunicationError err;
+        err.reason = ReasonCode::RpcReplyFromUndeclaredPeer;
+        err.source = std::move(replier);
+        err.invoke_id = SCE::uuid::to_string(request);
+        return err;
+    }
+
     /// Render to canonical JSON bytes for `MeshEnvelope::data`.
     ///
     /// Uses `nlohmann::ordered_json` so the wire field order matches

@@ -554,3 +554,21 @@ TEST(CommunicationErrorTest, StringEscapesQuotesAndBackslashes) {
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_NE(out.find("\"source\":\"a\\\"b\\\\c\\n\""), std::string::npos) << "rendered: " << out;
 }
+
+TEST(CommunicationErrorTest, RpcReplyFromUndeclaredPeerShape) {
+    // §mesh-16.7 row 14 as every refusal site builds it, through
+    // `replyFromUndeclaredPeer`: the machine the reply came from and the
+    // request it tried to retire, as RFC 4122 text — the columns the row
+    // names and no others. The same literal pins the Rust and Kotlin cores
+    // (backends/rust/mesh/src/signal.rs, backends/kotlin/mesh/.../RpcTest.kt),
+    // so a document cannot tell which core refused the reply.
+    const auto err = CommunicationError::replyFromUndeclaredPeer(
+        "mallory", std::array<std::uint8_t, 16>{0x01, 0x92, 0x00, 0x00, 0x00, 0x00, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00,
+                                                0x00, 0x00, 0x00, 0xab});
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out, "{\"errorName\":\"communication\","
+                   "\"reason\":\"RPC_REPLY_FROM_UNDECLARED_PEER\","
+                   "\"source\":\"mallory\","
+                   "\"invoke_id\":\"01920000-0000-7000-8000-0000000000ab\"}");
+}

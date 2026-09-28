@@ -614,7 +614,9 @@ fn dds_client_retires_and_gates_its_correlation_entries() {
          notice is not renamed into the declared success event"
     );
     assert!(
-        code.contains("ReasonCode::RpcReplyFromUndeclaredPeer"),
+        // The row is built in one place (`CommunicationError::
+        // replyFromUndeclaredPeer`), so the generated router names that.
+        code.contains("CommunicationError::replyFromUndeclaredPeer("),
         "§mesh-16.7 row 14 must reach dds: a reply from outside the \
          responder set may not retire someone else's pending request"
     );

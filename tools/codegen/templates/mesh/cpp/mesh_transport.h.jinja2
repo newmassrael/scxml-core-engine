@@ -227,12 +227,8 @@
                     // SCE_MESH.md §16.7 row 14, raised outside the
                     // correlation mutex. The entry is still live, so the
                     // request stays answerable by a declared responder.
-                    SCE::Mesh::CommunicationError err;
-                    err.reason = SCE::Mesh::ReasonCode::RpcReplyFromUndeclaredPeer;
-                    err.source = env.source;
-                    err.transport = "someip";
-                    err.envelope_id = env.id;
-                    raiseCommunicationError(std::move(err));
+                    raiseCommunicationError(SCE::Mesh::CommunicationError::replyFromUndeclaredPeer(
+                        env.source, *env.correlation_id));
                     return;
                 }
 {% else %}
@@ -5141,12 +5137,8 @@ struct TransportRouter {
             if (undeclared_replier) {
                 // SCE_MESH.md §mesh-16.7 row 14, raised outside the
                 // correlation mutex.
-                SCE::Mesh::CommunicationError err;
-                err.reason = SCE::Mesh::ReasonCode::RpcReplyFromUndeclaredPeer;
-                err.source = env.source;
-                err.transport = "dds";
-                err.envelope_id = env.id;
-                raiseCommunicationError(std::move(err));
+                raiseCommunicationError(SCE::Mesh::CommunicationError::replyFromUndeclaredPeer(
+                    env.source, *env.correlation_id));
                 return;
             }
         }
@@ -5272,12 +5264,8 @@ struct TransportRouter {
             if (undeclared_replier) {
                 // SCE_MESH.md §mesh-16.7 row 14, raised outside the
                 // correlation mutex.
-                SCE::Mesh::CommunicationError err;
-                err.reason = SCE::Mesh::ReasonCode::RpcReplyFromUndeclaredPeer;
-                err.source = env.source;
-                err.transport = "custom_tcp";
-                err.envelope_id = env.id;
-                raiseCommunicationError(std::move(err));
+                raiseCommunicationError(SCE::Mesh::CommunicationError::replyFromUndeclaredPeer(
+                    env.source, *env.correlation_id));
                 return;
             }
         }
@@ -5430,12 +5418,8 @@ struct TransportRouter {
                 // undeclared peer is either a topology error or an
                 // attempt to retire someone else's request, and both
                 // are things the author must be able to observe.
-                SCE::Mesh::CommunicationError err;
-                err.reason = SCE::Mesh::ReasonCode::RpcReplyFromUndeclaredPeer;
-                err.source = env.source;
-                err.invoke_id = SCE::uuid::to_string(*env.invoke_id);
-                err.envelope_id = env.id;
-                raiseCommunicationError(std::move(err));
+                raiseCommunicationError(
+                    SCE::Mesh::CommunicationError::replyFromUndeclaredPeer(env.source, *env.invoke_id));
                 return true;
             }
             case ReplyOutcome::NoSuchInvoke:

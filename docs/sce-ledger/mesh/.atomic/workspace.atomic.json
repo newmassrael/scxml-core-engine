@@ -2657,6 +2657,11 @@
         {
           "file": "backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/RpcTest.kt",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/CommunicationError.h",
+          "symbol": "replyFromUndeclaredPeer",
+          "kind": "implements"
         }
       ]
     },
