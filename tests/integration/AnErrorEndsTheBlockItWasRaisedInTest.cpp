@@ -90,9 +90,10 @@ TEST_F(AnErrorEndsTheBlockItWasRaisedInTest, EachErrorEndsOnlyItsOwnBlock) {
 
     EXPECT_EQ(sm_->terminalState().value_or(""), "done") << "`finish` must carry the run to `done`";
     const std::vector<std::pair<std::string, int>> expected = {
-        {"errors", 7},      {"afterAssign", 0},  {"afterScript", 0}, {"afterLog", 0},
-        {"afterCancel", 0}, {"afterIfInner", 0}, {"afterIf", 0},     {"afterSingle", 0},
-        {"afterTrans", 0},  {"initRan", 1},      {"pairs", 4},       {"sum", 90},
+        {"errors", 10},      {"afterAssign", 0}, {"afterScript", 0},     {"afterLog", 0},      {"afterCancel", 0},
+        {"afterIfInner", 0}, {"afterIf", 0},     {"afterSingle", 0},     {"afterTrans", 0},    {"initRan", 1},
+        {"pairs", 4},        {"sum", 90},        {"ifThen", 0},          {"ifElse", 1},        {"afterIfCond", 0},
+        {"elseifThen", 0},   {"elseifElse", 1},  {"afterElseifCond", 0}, {"afterNestedIf", 0}, {"afterOuterIf", 0},
     };
     for (const auto &[name, value] : expected) {
         EXPECT_EQ(read(name + " === " + std::to_string(value)), "true")

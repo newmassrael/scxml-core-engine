@@ -47,7 +47,7 @@ int main(void) {
         reader_t read;
         int64_t want;
     } observed[] = {
-        {"errors", an_error_ends_the_block_it_was_raised_in_errors, 7},
+        {"errors", an_error_ends_the_block_it_was_raised_in_errors, 10},
         {"afterAssign", an_error_ends_the_block_it_was_raised_in_after_assign, 0},
         {"afterScript", an_error_ends_the_block_it_was_raised_in_after_script, 0},
         {"afterLog", an_error_ends_the_block_it_was_raised_in_after_log, 0},
@@ -59,6 +59,14 @@ int main(void) {
         {"initRan", an_error_ends_the_block_it_was_raised_in_init_ran, 1},
         {"pairs", an_error_ends_the_block_it_was_raised_in_pairs, 4},
         {"sum", an_error_ends_the_block_it_was_raised_in_sum, 90},
+        {"ifThen", an_error_ends_the_block_it_was_raised_in_if_then, 0},
+        {"ifElse", an_error_ends_the_block_it_was_raised_in_if_else, 1},
+        {"afterIfCond", an_error_ends_the_block_it_was_raised_in_after_if_cond, 0},
+        {"elseifThen", an_error_ends_the_block_it_was_raised_in_elseif_then, 0},
+        {"elseifElse", an_error_ends_the_block_it_was_raised_in_elseif_else, 1},
+        {"afterElseifCond", an_error_ends_the_block_it_was_raised_in_after_elseif_cond, 0},
+        {"afterNestedIf", an_error_ends_the_block_it_was_raised_in_after_nested_if, 0},
+        {"afterOuterIf", an_error_ends_the_block_it_was_raised_in_after_outer_if, 0},
     };
 
     for (size_t i = 0; i < sizeof(observed) / sizeof(observed[0]); ++i) {

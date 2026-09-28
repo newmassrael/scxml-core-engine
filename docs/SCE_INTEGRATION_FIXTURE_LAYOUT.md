@@ -1439,7 +1439,15 @@ for a failed `<script>`, `<cancel>` or send argument and ran the rest of an
 whole `onEntry` with a bare `return`, skipping the state's invoke deferral,
 done event and `<initial>` content; and C11 and the QuickJS engine cached a
 `<foreach>` collection in one global, so an inner loop overwrote the outer
-one's.
+one's. Two more blocks carry §4.9 to an `<if>` whose own `cond` fails, once
+on the `<if>` and once on an `<elseif>` after a false `<if>`: §5.9.1 treats
+the cond as false, so the `<if>` still selects its `<else>` (`ifElse` and
+`elseifElse` 1), and the `<if>` is then the element that raised, so nothing
+after it in the block runs (`afterIfCond` and `afterElseifCond` 0). A third
+fails the `cond` of an `<if>` inside an outer `<if>`'s branch, and ends the
+branch and the outer block alike (`afterNestedIf` and `afterOuterIf` 0). Before
+2026-09-28 all seven channels raised, took the cond as false and ran the
+rest of the block.
 
 `a_bad_invoke_argument_is_reported_once` covers the arguments of an
 `<invoke>`. A `<param>` follows §5.7.1 as `invoke_param_error_starts_the_child`

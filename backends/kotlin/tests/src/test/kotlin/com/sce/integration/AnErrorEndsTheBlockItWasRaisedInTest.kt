@@ -36,7 +36,7 @@ class AnErrorEndsTheBlockItWasRaisedInTest {
 
         assertEquals(AnErrorEndsTheBlockItWasRaisedInState.Done, sm.terminalState, "`finish` must carry the run to `done`")
         val observed = mapOf(
-            "errors" to (sm.errors() to 7L),
+            "errors" to (sm.errors() to 10L),
             "afterAssign" to (sm.afterAssign() to 0L),
             "afterScript" to (sm.afterScript() to 0L),
             "afterLog" to (sm.afterLog() to 0L),
@@ -48,6 +48,14 @@ class AnErrorEndsTheBlockItWasRaisedInTest {
             "initRan" to (sm.initRan() to 1L),
             "pairs" to (sm.pairs() to 4L),
             "sum" to (sm.sum() to 90L),
+            "ifThen" to (sm.ifThen() to 0L),
+            "ifElse" to (sm.ifElse() to 1L),
+            "afterIfCond" to (sm.afterIfCond() to 0L),
+            "elseifThen" to (sm.elseifThen() to 0L),
+            "elseifElse" to (sm.elseifElse() to 1L),
+            "afterElseifCond" to (sm.afterElseifCond() to 0L),
+            "afterNestedIf" to (sm.afterNestedIf() to 0L),
+            "afterOuterIf" to (sm.afterOuterIf() to 0L),
         )
         val wrong = observed.filterValues { (got, want) -> got != want }
         assertEquals(emptyMap<String, Pair<Long?, Long>>(), wrong, "observed (got to want)")

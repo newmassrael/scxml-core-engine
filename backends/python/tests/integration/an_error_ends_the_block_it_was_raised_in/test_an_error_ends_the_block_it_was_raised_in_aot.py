@@ -31,7 +31,7 @@ def test_each_error_ends_only_its_own_block() -> None:
     p = engine.policy
     assert engine.terminal_state == _State.DONE, "`finish` must carry the run to `done`"
     observed = {
-        "errors": (p.errors(), 7),
+        "errors": (p.errors(), 10),
         "afterAssign": (p.after_assign(), 0),
         "afterScript": (p.after_script(), 0),
         "afterLog": (p.after_log(), 0),
@@ -43,6 +43,14 @@ def test_each_error_ends_only_its_own_block() -> None:
         "initRan": (p.init_ran(), 1),
         "pairs": (p.pairs(), 4),
         "sum": (p.sum(), 90),
+        "ifThen": (p.if_then(), 0),
+        "ifElse": (p.if_else(), 1),
+        "afterIfCond": (p.after_if_cond(), 0),
+        "elseifThen": (p.elseif_then(), 0),
+        "elseifElse": (p.elseif_else(), 1),
+        "afterElseifCond": (p.after_elseif_cond(), 0),
+        "afterNestedIf": (p.after_nested_if(), 0),
+        "afterOuterIf": (p.after_outer_if(), 0),
     }
     wrong = {name: got for name, (got, want) in observed.items() if got != want}
     assert not wrong, f"observed {wrong}, want { {n: w for n, (_, w) in observed.items()} }"

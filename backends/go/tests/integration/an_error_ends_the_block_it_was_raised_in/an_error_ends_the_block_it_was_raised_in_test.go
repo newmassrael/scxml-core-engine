@@ -40,7 +40,7 @@ func TestEachErrorEndsOnlyItsOwnBlock(t *testing.T) {
 		read func() (int64, bool)
 		want int64
 	}{
-		{"errors", policy.Errors, 7},
+		{"errors", policy.Errors, 10},
 		{"afterAssign", policy.AfterAssign, 0},
 		{"afterScript", policy.AfterScript, 0},
 		{"afterLog", policy.AfterLog, 0},
@@ -52,6 +52,14 @@ func TestEachErrorEndsOnlyItsOwnBlock(t *testing.T) {
 		{"initRan", policy.InitRan, 1},
 		{"pairs", policy.Pairs, 4},
 		{"sum", policy.Sum, 90},
+		{"ifThen", policy.IfThen, 0},
+		{"ifElse", policy.IfElse, 1},
+		{"afterIfCond", policy.AfterIfCond, 0},
+		{"elseifThen", policy.ElseifThen, 0},
+		{"elseifElse", policy.ElseifElse, 1},
+		{"afterElseifCond", policy.AfterElseifCond, 0},
+		{"afterNestedIf", policy.AfterNestedIf, 0},
+		{"afterOuterIf", policy.AfterOuterIf, 0},
 	}
 	for _, o := range observed {
 		if got, ok := o.read(); !ok || got != o.want {

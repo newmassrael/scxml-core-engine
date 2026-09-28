@@ -100,9 +100,9 @@ documents-floor 700
 documents-judged-floor 450
 engine-documents 260
 native-prefix-documents 2
-datamodel-variable-init 416
+datamodel-variable-init 424
 transition-guard 240
-assign-action 360
+assign-action 370
 child-invoke-needs-script-engine 54
 log-expr 46
 send-param-expr 49
@@ -113,8 +113,8 @@ donedata-param 10
 donedata-content 9
 inline-script-action 3
 send-namelist 8
-if-condition 17
-elseif-condition 3
+if-condition 19
+elseif-condition 4
 global-script 3
 mesh-rpc-srcexpr 2
 mesh-rpc-request-expr 1
@@ -316,6 +316,13 @@ never spelled correctly.
   `datamodel-variable-init` by nine, `assign-action` by eleven,
   `if-condition` by three, and `transition-guard`,
   `child-invoke-needs-script-engine` and `send-dynamic-attr` by one each.
+  Then `integration_resources/an_error_ends_the_block_it_was_raised_in/`
+  took three more onentry blocks, each on an `<if>` whose own cond fails
+  (eight data items, ten assigns; the two conds that read the datamodel on
+  `<if>`s and one on an `<elseif>`, where the `false` and `true` conds beside
+  them are constants), and raised `datamodel-variable-init` by eight,
+  `assign-action` by ten, `if-condition` by two and `elseif-condition` by
+  one; `engine-documents` did not move, as the document already needed one.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.

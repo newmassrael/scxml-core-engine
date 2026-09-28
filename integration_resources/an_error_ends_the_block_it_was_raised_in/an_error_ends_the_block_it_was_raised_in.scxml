@@ -5,7 +5,7 @@
   (The execution of other blocks of executable content is not affected.)"
   — for every element that can raise, not only <send> and <foreach>.
 
-  Five onentry blocks of `q`, each failing on a different element and each
+  Eight onentry blocks of `q`, each failing on a different element and each
   followed by an <assign> that must not run:
 
     1  <assign> to `obj.missing.deep`, a location that cannot be written;
@@ -14,16 +14,25 @@
        raises error.execution);
     4  <cancel> whose `sendidexpr` reads it;
     5  an <assign> to it inside an <if> branch — the branch stops, and so
-       does the block that contains the <if>.
+       does the block that contains the <if>;
+    6  an <if> whose `cond` reads it;
+    7  an <elseif> whose `cond` reads it, after an <if> that is false;
+    8  an <if> whose `cond` reads it, inside the branch of an outer <if> —
+       the inner <if> ends the branch, and the block the outer one is in.
+
+  A `cond` that cannot be evaluated is treated as false and raises
+  error.execution (W3C SCXML 5.9.1), so the <if> goes on to its <else> —
+  `ifElse` and `elseifElse` are 1, `ifThen` and `elseifThen` 0. The <if> is
+  then the element whose processing raised, so 4.9 ends its block after it.
 
   `p` has a single onentry block that fails the same way, and an <initial>
   whose transition content sets `initRan`: that content is another block,
   so it still runs. The targetless transition on the host's `t` fails in its
-  own content. A sixth onentry block of `q` nests one <foreach> in another,
-  2 x 2, and must walk all four pairs: an inner loop keeps its own
+  own content. A ninth onentry block of `q` nests one <foreach> in
+  another, 2 x 2, and must walk all four pairs: an inner loop keeps its own
   collection and leaves the outer one's intact.
 
-    errors     7 — one error.execution per failed element (five in `q`, one
+    errors    10 — one error.execution per failed element (eight in `q`, one
                    in `p`, one in `t`'s content).
     after*     0 — nothing after a failed element in its block runs.
     initRan    1 — a failure in `p`'s onentry does not stop its <initial>.
@@ -42,6 +51,14 @@
     <data id="afterCancel" expr="0"/>
     <data id="afterIfInner" expr="0"/>
     <data id="afterIf" expr="0"/>
+    <data id="ifThen" expr="0"/>
+    <data id="ifElse" expr="0"/>
+    <data id="afterIfCond" expr="0"/>
+    <data id="elseifThen" expr="0"/>
+    <data id="elseifElse" expr="0"/>
+    <data id="afterElseifCond" expr="0"/>
+    <data id="afterNestedIf" expr="0"/>
+    <data id="afterOuterIf" expr="0"/>
     <data id="afterSingle" expr="0"/>
     <data id="afterTrans" expr="0"/>
     <data id="initRan" expr="0"/>
@@ -97,6 +114,33 @@
           <assign location="afterIfInner" expr="1"/>
         </if>
         <assign location="afterIf" expr="1"/>
+      </onentry>
+      <onentry>
+        <if cond="obj.missing.deep">
+          <assign location="ifThen" expr="1"/>
+        <else/>
+          <assign location="ifElse" expr="1"/>
+        </if>
+        <assign location="afterIfCond" expr="1"/>
+      </onentry>
+      <onentry>
+        <if cond="false">
+          <assign location="elseifThen" expr="2"/>
+        <elseif cond="obj.missing.deep"/>
+          <assign location="elseifThen" expr="1"/>
+        <else/>
+          <assign location="elseifElse" expr="1"/>
+        </if>
+        <assign location="afterElseifCond" expr="1"/>
+      </onentry>
+      <onentry>
+        <if cond="true">
+          <if cond="obj.missing.deep">
+            <assign location="ifThen" expr="2"/>
+          </if>
+          <assign location="afterNestedIf" expr="1"/>
+        </if>
+        <assign location="afterOuterIf" expr="1"/>
       </onentry>
       <onentry>
         <foreach array="outer" item="o">

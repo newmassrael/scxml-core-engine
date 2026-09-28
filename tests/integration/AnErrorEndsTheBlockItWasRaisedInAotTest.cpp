@@ -45,7 +45,7 @@ TEST(AnErrorEndsTheBlockItWasRaisedInAotTest, EachErrorEndsOnlyItsOwnBlock) {
     sm.processEvent(SM::Event::Finish);
 
     EXPECT_EQ(sm.terminalState(), SM::State::Done) << "`finish` must carry the run to `done`";
-    EXPECT_EQ(sm.errors(), std::optional<int64_t>(7)) << "errors = " << show(sm.errors());
+    EXPECT_EQ(sm.errors(), std::optional<int64_t>(10)) << "errors = " << show(sm.errors());
     EXPECT_EQ(sm.afterAssign(), std::optional<int64_t>(0)) << "afterAssign = " << show(sm.afterAssign());
     EXPECT_EQ(sm.afterScript(), std::optional<int64_t>(0)) << "afterScript = " << show(sm.afterScript());
     EXPECT_EQ(sm.afterLog(), std::optional<int64_t>(0)) << "afterLog = " << show(sm.afterLog());
@@ -57,6 +57,16 @@ TEST(AnErrorEndsTheBlockItWasRaisedInAotTest, EachErrorEndsOnlyItsOwnBlock) {
     EXPECT_EQ(sm.initRan(), std::optional<int64_t>(1)) << "initRan = " << show(sm.initRan());
     EXPECT_EQ(sm.pairs(), std::optional<int64_t>(4)) << "pairs = " << show(sm.pairs());
     EXPECT_EQ(sm.sum(), std::optional<int64_t>(90)) << "sum = " << show(sm.sum());
+    // W3C SCXML 5.9.1 + 4.9: a cond that cannot be evaluated is false, so the
+    // <else> runs, and the <if> ends its block.
+    EXPECT_EQ(sm.ifThen(), std::optional<int64_t>(0)) << "ifThen = " << show(sm.ifThen());
+    EXPECT_EQ(sm.ifElse(), std::optional<int64_t>(1)) << "ifElse = " << show(sm.ifElse());
+    EXPECT_EQ(sm.afterIfCond(), std::optional<int64_t>(0)) << "afterIfCond = " << show(sm.afterIfCond());
+    EXPECT_EQ(sm.elseifThen(), std::optional<int64_t>(0)) << "elseifThen = " << show(sm.elseifThen());
+    EXPECT_EQ(sm.elseifElse(), std::optional<int64_t>(1)) << "elseifElse = " << show(sm.elseifElse());
+    EXPECT_EQ(sm.afterElseifCond(), std::optional<int64_t>(0)) << "afterElseifCond = " << show(sm.afterElseifCond());
+    EXPECT_EQ(sm.afterNestedIf(), std::optional<int64_t>(0)) << "afterNestedIf = " << show(sm.afterNestedIf());
+    EXPECT_EQ(sm.afterOuterIf(), std::optional<int64_t>(0)) << "afterOuterIf = " << show(sm.afterOuterIf());
 }
 
 }  // namespace SCE::Tests

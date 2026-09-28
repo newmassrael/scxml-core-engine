@@ -1,0 +1,50 @@
+# Mutation cases for §scxml-5.9.1 / §scxml-4.9 on an `<if>` whose `cond`
+# cannot be evaluated: the cond is false, so the `<if>` still selects its
+# `<else>`, and the `<if>` is then the element whose processing raised, so
+# nothing after it in its block runs.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/an_error_ends_the_block_it_was_raised_in.cases`.
+#
+# Measured 2026-09-28, before this round every channel raised
+# error.execution, took the cond as false and ran the rest of the block. The
+# cases below hold the three channels this harness reaches; the Rust, Go,
+# Kotlin and Python halves are held by the same fixture in their suites.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_an_error_ends_the_block_it_was_raised_in)$'
+mutation_targets sce/src/runtime/ActionExecutorImpl.cpp tools/codegen/templates/utility_methods.jinja2 tools/codegen/templates/c/scriptengine.jinja2
+mutation_oracles tests/integration/AnErrorEndsTheBlockItWasRaisedInTest.cpp tests/integration/AnErrorEndsTheBlockItWasRaisedInAotTest.cpp backends/c/tests/integration/test_an_error_ends_the_block_it_was_raised_in.c
+
+# ── Interpreter: the selected branch runs, then the block goes on ──
+
+mutation_case "the interpreter runs the rest of the block after an <if> whose cond failed" <<'PY'
+edit("sce/src/runtime/ActionExecutorImpl.cpp",
+     "                return !condFailed;  // Stop after first matching branch",
+     "                return true;  // Stop after first matching branch")
+PY
+
+# ── Interpreter: no branch runs, then the block goes on ────────────
+
+mutation_case "the interpreter goes on after an <if> with no branch whose cond failed" <<'PY'
+edit("sce/src/runtime/ActionExecutorImpl.cpp",
+     "        SCE_LOG_DEBUG(\"No branch condition matched in if action\");\n        return !condFailed;",
+     "        SCE_LOG_DEBUG(\"No branch condition matched in if action\");\n        return true;")
+PY
+
+# ── C++ AOT: the failure is raised and forgotten ───────────────────
+
+mutation_case "the C++ AOT forgets that an <if> cond failed" <<'PY'
+edit("tools/codegen/templates/utility_methods.jinja2",
+     "        condFailed = condFailed || !result.has_value();",
+     "        (void)condFailed;")
+PY
+
+# ── C11: the failure is raised and forgotten ───────────────────────
+
+mutation_case "C11 forgets that an <if> cond failed" <<'PY'
+edit("tools/codegen/templates/c/scriptengine.jinja2",
+     "        {{ failed_var }} = true;",
+     "        (void)0;")
+PY
