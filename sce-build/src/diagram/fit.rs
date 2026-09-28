@@ -140,6 +140,12 @@ pub enum Refusal {
         need_pt: (f64, f64),
         area_pt: (f64, f64),
     },
+    /// A requirement checklist row wider or taller than the page at the
+    /// minimum type size (see [`super::checklist::pages`]).
+    ChecklistDoesNotFit {
+        need_pt: (f64, f64),
+        area_pt: (f64, f64),
+    },
 }
 
 impl std::fmt::Display for Refusal {
@@ -155,6 +161,12 @@ impl std::fmt::Display for Refusal {
                 "the figure {figure:?} needs {:.0} x {:.0} pt at the minimum type size, \
                  and the page gives {:.0} x {:.0} pt; it is not shrunk below that size — \
                  split the container's children across more states",
+                need_pt.0, need_pt.1, area_pt.0, area_pt.1
+            ),
+            Refusal::ChecklistDoesNotFit { need_pt, area_pt } => write!(
+                f,
+                "a requirement checklist row needs {:.0} x {:.0} pt at the minimum type size, \
+                 and the page gives {:.0} x {:.0} pt; it is not shrunk below that size",
                 need_pt.0, need_pt.1, area_pt.0, area_pt.1
             ),
         }

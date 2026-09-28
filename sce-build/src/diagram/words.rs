@@ -29,6 +29,22 @@ pub enum Phrase {
     DescribedIn,
     /// "from <state>" — the real source of an arrow leaving a folded box.
     From,
+    /// The requirement checklist's title.
+    Checklist,
+    /// Its column heads: the requirement, the section of the source that
+    /// states it, its outcome, and where the figures show it.
+    Requirement,
+    Section,
+    Outcome,
+    InFigures,
+    /// "row <n>" — a transition, by its row in a figure's table.
+    Row,
+    /// A requirement no figure shows.
+    NotShown,
+    /// A requirement resting on a value the author guessed (`sce:assumed`).
+    Assumed,
+    /// A requirement resting on something the author marked undecided.
+    Open,
 }
 
 /// The phrase in `lexicon`, or `None` for a lexicon this table does not
@@ -41,11 +57,29 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("en", Phrase::OpensIn) => "shown in:",
         ("en", Phrase::DescribedIn) => "described in:",
         ("en", Phrase::From) => "from",
+        ("en", Phrase::Checklist) => "requirement checklist",
+        ("en", Phrase::Requirement) => "requirement",
+        ("en", Phrase::Section) => "section",
+        ("en", Phrase::Outcome) => "outcome",
+        ("en", Phrase::InFigures) => "in the figures",
+        ("en", Phrase::Row) => "row",
+        ("en", Phrase::NotShown) => "not shown",
+        ("en", Phrase::Assumed) => "includes a guess",
+        ("en", Phrase::Open) => "undecided",
         ("ko", Phrase::WholeDocument) => "문서 전체",
         ("ko", Phrase::Inside) => "안쪽",
         ("ko", Phrase::OpensIn) => "펼친 그림:",
         ("ko", Phrase::DescribedIn) => "설명은:",
         ("ko", Phrase::From) => "에서",
+        ("ko", Phrase::Checklist) => "요구사항 체크리스트",
+        ("ko", Phrase::Requirement) => "요구사항",
+        ("ko", Phrase::Section) => "조항",
+        ("ko", Phrase::Outcome) => "상태",
+        ("ko", Phrase::InFigures) => "그림에서",
+        ("ko", Phrase::Row) => "행",
+        ("ko", Phrase::NotShown) => "그림에 없음",
+        ("ko", Phrase::Assumed) => "추측 포함",
+        ("ko", Phrase::Open) => "미정",
         _ => return None,
     })
 }
@@ -77,12 +111,21 @@ mod tests {
     use super::*;
     use crate::forge::page::{lexicon_named, lexicon_names};
 
-    const ALL: [Phrase; 5] = [
+    const ALL: [Phrase; 14] = [
         Phrase::WholeDocument,
         Phrase::Inside,
         Phrase::OpensIn,
         Phrase::DescribedIn,
         Phrase::From,
+        Phrase::Checklist,
+        Phrase::Requirement,
+        Phrase::Section,
+        Phrase::Outcome,
+        Phrase::InFigures,
+        Phrase::Row,
+        Phrase::NotShown,
+        Phrase::Assumed,
+        Phrase::Open,
     ];
 
     /// The page's registry is the list of languages; a lexicon registered

@@ -13,6 +13,7 @@
 //! bytes on every machine.
 
 use super::boxes::{Line, Outline};
+use super::checklist::ChecklistPage;
 use super::fit::Printed;
 use super::layout::Placed;
 use super::metrics::Face;
@@ -23,6 +24,8 @@ const INK: &str = "#000000";
 const BRIEF_INK: &str = "#707070";
 const ELSEWHERE_FILL: &str = "#e6e6e6";
 const PAPER: &str = "#ffffff";
+const FLAG_FILL: &str = "#fff4cc";
+const RULE: &str = "#b0b0b0";
 
 /// `printed` as one standalone SVG document.
 pub fn render(printed: &Printed) -> String {
@@ -151,6 +154,84 @@ pub fn render(printed: &Printed) -> String {
                 y + i as f64 * line,
                 s.leading,
             );
+        }
+    }
+    out.push_str("</svg>\n");
+    out
+}
+
+/// One page of the requirement checklist as a standalone SVG document —
+/// the title, the column heads over a rule, and each row's cells line by
+/// line, a flagged row on a light fill so the reviewer's eye lands there.
+pub fn render_checklist(page: &ChecklistPage) -> String {
+    let s = page.style;
+    let line = s.body_pt * s.leading;
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}pt" height="{h}pt" viewBox="0 0 {w} {h}">"#,
+        w = n(page.width),
+        h = n(page.height),
+    );
+    let _ = writeln!(
+        out,
+        r#"<rect width="{}" height="{}" fill="{PAPER}"/>"#,
+        n(page.width),
+        n(page.height)
+    );
+    let prose = |text: &str, size_pt: f64| Line {
+        text: text.to_string(),
+        face: Face::Proportional,
+        size_pt,
+    };
+    write_line(
+        &mut out,
+        &prose(&page.title, s.title_pt),
+        0.0,
+        0.0,
+        s.leading,
+    );
+    let head_top = page.body_top - line * 1.5;
+    for (x, head) in page.columns.iter().zip(&page.header) {
+        write_line(&mut out, &prose(head, s.body_pt), *x, head_top, s.leading);
+    }
+    let _ = writeln!(
+        out,
+        r#"<line x1="0" y1="{y}" x2="{w}" y2="{y}" stroke="{INK}" stroke-width="{sw}"/>"#,
+        y = n(page.body_top - line * 0.25),
+        w = n(page.width),
+        sw = n(s.body_pt * 0.1),
+    );
+    for row in &page.rows {
+        let top = page.body_top + row.top;
+        if row.flagged {
+            let _ = writeln!(
+                out,
+                r#"<rect x="0" y="{}" width="{}" height="{}" fill="{FLAG_FILL}"/>"#,
+                n(top),
+                n(page.width),
+                n(row.height)
+            );
+        }
+        // A hairline under each row, so a row of several lines reads as
+        // one requirement and not as the start of the next.
+        let _ = writeln!(
+            out,
+            r#"<line x1="0" y1="{y}" x2="{w}" y2="{y}" stroke="{RULE}" stroke-width="{sw}"/>"#,
+            y = n(top + row.height),
+            w = n(page.width),
+            sw = n(s.body_pt * 0.05),
+        );
+        for (x, cell) in page.columns.iter().zip(&row.cells) {
+            for (i, text) in cell.iter().enumerate() {
+                write_line(
+                    &mut out,
+                    &prose(text, s.body_pt),
+                    *x,
+                    top + i as f64 * line,
+                    s.leading,
+                );
+            }
         }
     }
     out.push_str("</svg>\n");

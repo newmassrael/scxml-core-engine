@@ -161,9 +161,10 @@ class PackFreeScxmlMcp(unittest.TestCase):
         doc, manifest = str(self.document), str(self.document)
         cases = [
             ("render_scxml_diagram",
-             dict(document=doc, out="figs", page="a3-landscape", min_pt=8, lexicon="ko"),
+             dict(document=doc, out="figs", page="a3-landscape", min_pt=8, lexicon="ko",
+                  manifest=manifest),
              ["diagram", doc, "-o", "figs", "--page", "a3-landscape",
-              "--min-pt", "8.0", "--lexicon", "ko"]),
+              "--min-pt", "8.0", "--lexicon", "ko", "--manifest", manifest]),
             ("scxml_unresolved", dict(document=doc), ["unresolved", doc]),
             ("scxml_requirements", dict(document=doc, manifest=manifest),
              ["requirements", doc, "--manifest", manifest]),

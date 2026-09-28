@@ -283,6 +283,10 @@ TOOLS = [
                 "page": {"type": "string", "description": "Page name, passed to the generator (default a4-portrait)."},
                 "min_pt": {"type": "number", "description": "Smallest type size in points (default 7)."},
                 "lexicon": {"type": "string", "description": "Vocabulary name, passed to the generator."},
+                "manifest": {"type": "string", "description": (
+                    "Path to the requirement manifest. Adds the requirement "
+                    "checklist pages: every requirement, its outcome, and where "
+                    "the figures show it -- 'not shown' marks a gap.")},
             },
         },
     },
@@ -745,7 +749,8 @@ def call_tool(name: str, args: dict) -> dict:
                 _scxml_document_arg(args),
                 _path_arg(args, "out", "the directory the figures are written into"),
                 _name_arg(args, "page", "a page name"), min_pt,
-                _name_arg(args, "lexicon", "a lexicon name"))
+                _name_arg(args, "lexicon", "a lexicon name"),
+                _file_arg(args, "manifest", "the requirement manifest", required=False))
             return _failure(refusal) if refusal else _text(report)
 
         if name == "scxml_unresolved":

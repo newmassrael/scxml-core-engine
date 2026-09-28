@@ -145,3 +145,81 @@ fn a_figure_that_does_not_fit_is_refused_and_nothing_is_written() {
     assert!(!out.exists(), "a refusal writes nothing");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Given the specification's manifest, the command also writes the
+/// requirement checklist after the figures, and every requirement of the
+/// manifest has its row there — the missing ones saying no figure shows
+/// them.
+#[test]
+fn a_manifest_adds_the_requirement_checklist() {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/requirement_closure");
+    let doc = fixtures.join("doip_nl_connection_states.scxml");
+    let manifest = fixtures.join("iso13400_2_nl_socket_handling.manifest.json");
+    let dir = scratch("diagram-checklist");
+    let out = dir.join("figures");
+    let run = Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
+        .args(["--error-format", "json", "diagram"])
+        .arg(&doc)
+        .arg("-o")
+        .arg(&out)
+        .args(["--page", "a3-landscape", "--manifest"])
+        .arg(&manifest)
+        .output()
+        .expect("run sce-codegen diagram");
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let printed: Vec<PathBuf> = String::from_utf8(run.stdout)
+        .expect("utf-8")
+        .lines()
+        .map(PathBuf::from)
+        .collect();
+    let sheets: Vec<&PathBuf> = printed
+        .iter()
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("checklist-"))
+        })
+        .collect();
+    assert_eq!(
+        sheets.first().map(|p| p.as_path()),
+        Some(out.join("checklist-1.svg").as_path())
+    );
+    assert!(
+        printed.iter().position(|p| p == sheets[0])
+            > printed.iter().position(|p| p.ends_with("document.svg")),
+        "after the figures: {printed:?}"
+    );
+
+    let manifest_json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&manifest).expect("read")).expect("json");
+    let ids: Vec<String> = manifest_json["requirements"]
+        .as_array()
+        .expect("a requirements list")
+        .iter()
+        .map(|r| r["id"].as_str().expect("an id").to_string())
+        .collect();
+    assert!(!ids.is_empty());
+    let mut texts = Vec::new();
+    for sheet in &sheets {
+        let svg = std::fs::read_to_string(sheet).expect("read");
+        let parsed = roxmltree::Document::parse(&svg)
+            .expect("well-formed")
+            .descendants()
+            .filter(|n| n.has_tag_name("text"))
+            .filter_map(|n| n.text().map(str::to_string))
+            .collect::<Vec<_>>();
+        texts.extend(parsed);
+    }
+    for id in &ids {
+        assert!(texts.contains(id), "{id} has no row: {texts:?}");
+    }
+    assert!(
+        texts.iter().any(|t| t == "not shown"),
+        "a missing one says so"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

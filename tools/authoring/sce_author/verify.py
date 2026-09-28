@@ -746,9 +746,12 @@ def _written_paths(stdout: str) -> list:
 def diagram_figures(document: pathlib.Path, out: pathlib.Path,
                     page: str | None = None, min_pt: float | None = None,
                     lexicon: str | None = None,
+                    manifest: pathlib.Path | None = None,
                     codegen: pathlib.Path | None = None) -> tuple[str, str]:
     """Draw the document as print figures (`sce-codegen diagram`): one SVG
-    per container, written into `out`. The answer is the list of files.
+    per container, written into `out`, and -- given the specification's
+    `manifest` -- the requirement checklist pages after them. The answer
+    is the list of files.
 
     ⚠ `page`, `min_pt` and `lexicon` are passed through unchecked and
     omitted when not asked for, for `pseudo_page`'s reason: the product's
@@ -763,6 +766,8 @@ def diagram_figures(document: pathlib.Path, out: pathlib.Path,
         args += ["--min-pt", repr(float(min_pt))]
     if lexicon is not None:
         args += ["--lexicon", lexicon]
+    if manifest is not None:
+        args += ["--manifest", str(manifest)]
     return _product_answer(args, codegen, answer="figures", read=_written_paths)
 
 

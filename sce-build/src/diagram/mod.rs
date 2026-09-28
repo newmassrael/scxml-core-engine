@@ -31,6 +31,7 @@
 use crate::model::SCXMLModel;
 
 pub mod boxes;
+pub mod checklist;
 pub mod fit;
 pub mod layout;
 pub mod metrics;

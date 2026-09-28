@@ -2169,6 +2169,13 @@ enum Commands {
             value_parser = registered_lexicons()
         )]
         lexicon: String,
+        /// The specification's closed requirement set. Given it, the
+        /// command also writes the requirement checklist — every
+        /// requirement, its outcome, and where the figures show it — as
+        /// `<out>/checklist-<n>.svg`. A requirement no figure shows says
+        /// so, which is how a gap in the design becomes visible on paper.
+        #[arg(long, value_name = "PATH")]
+        manifest: Option<String>,
     },
     /// Emit what a diagram must be told to draw the annotation family —
     /// NL→IR closure ledger row G2. One JSON object on stdout.
@@ -2845,7 +2852,16 @@ fn main() {
             page,
             min_pt,
             lexicon,
-        } => cmd_diagram(&document, &out, &page, min_pt, &lexicon, error_format),
+            manifest,
+        } => cmd_diagram(
+            &document,
+            &out,
+            &page,
+            min_pt,
+            &lexicon,
+            manifest.as_deref(),
+            error_format,
+        ),
         Commands::AnnotationOverlay { scxml } => cmd_annotation_overlay(&scxml, error_format),
         Commands::AcceptanceReport {
             scxml,
@@ -8080,16 +8096,20 @@ fn registered_pages() -> clap::builder::PossibleValuesParser {
     )
 }
 
-/// Draw `document` as print figures, one SVG per figure, into `out`.
+/// Draw `document` as print figures, one SVG per figure, into `out` — and,
+/// given the specification's manifest, the requirement checklist beside
+/// them, on as many `checklist-<n>.svg` pages as it takes.
 ///
-/// Refused whole — nothing written — when any figure cannot be drawn or
-/// does not fit: a set of figures missing one reads like a complete set.
+/// Refused whole — nothing written — when any figure or checklist page
+/// cannot be drawn or does not fit: a set of figures missing one reads
+/// like a complete set.
 fn cmd_diagram(
     document: &str,
     out: &str,
     page: &str,
     min_pt: f64,
     lexicon: &str,
+    manifest: Option<&str>,
     error_format: ErrorFormat,
 ) {
     use sce_build::diagram::fit::{self, Page, Refusal};
@@ -8115,25 +8135,52 @@ fn cmd_diagram(
         })
     });
 
-    let printed = match fit::print(&model, lexicon, page) {
-        Ok(p) => p,
-        Err(Refusal::Box(e)) => cli_exit(CliError::DiagramUnavailable {
-            feature: e.to_string(),
-        }),
-        Err(Refusal::DoesNotFit {
-            figure,
-            need_pt,
-            area_pt,
-        }) => cli_exit(CliError::DiagramDoesNotFit {
-            figure: sce_build::diagram::words::figure_title(lexicon, &figure)
-                .unwrap_or_else(|| format!("{figure:?}")),
-            min_pt,
-            need_w: need_pt.0,
-            need_h: need_pt.1,
-            area_w: area_pt.0,
-            area_h: area_pt.1,
-        }),
+    let refuse = |refusal: Refusal| -> ! {
+        use sce_build::diagram::words::{self, Phrase};
+        let does_not_fit = |figure: String, need_pt: (f64, f64), area_pt: (f64, f64)| {
+            CliError::DiagramDoesNotFit {
+                figure,
+                min_pt,
+                need_w: need_pt.0,
+                need_h: need_pt.1,
+                area_w: area_pt.0,
+                area_h: area_pt.1,
+            }
+        };
+        cli_exit(match refusal {
+            Refusal::Box(e) => CliError::DiagramUnavailable {
+                feature: e.to_string(),
+            },
+            Refusal::DoesNotFit {
+                figure,
+                need_pt,
+                area_pt,
+            } => does_not_fit(
+                words::figure_title(lexicon, &figure).unwrap_or_else(|| format!("{figure:?}")),
+                need_pt,
+                area_pt,
+            ),
+            Refusal::ChecklistDoesNotFit { need_pt, area_pt } => does_not_fit(
+                words::phrase(lexicon, Phrase::Checklist)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("{:?}", Phrase::Checklist)),
+                need_pt,
+                area_pt,
+            ),
+        })
     };
+    let printed = fit::print(&model, lexicon, page).unwrap_or_else(|r| refuse(r));
+
+    // The checklist, when the specification's list was given: every
+    // requirement, its outcome, and where these figures show it.
+    let checklist = manifest.map(|path| {
+        let loaded = load_requirement_manifest(path);
+        let classification = sce_build::requirement_manifest::classify(&model, &loaded);
+        let diagram = sce_build::diagram::split(&model, 1);
+        let items =
+            sce_build::diagram::checklist::items(&model, &classification, &diagram, &printed);
+        sce_build::diagram::checklist::pages(&items, lexicon, page).unwrap_or_else(|r| refuse(r))
+    });
 
     // Every name is decided before anything is written, so a refusal
     // leaves no partial set behind.
@@ -8164,6 +8211,15 @@ fn cmd_diagram(
         emit_generated(
             &path,
             sce_build::diagram::svg::render(p).as_bytes(),
+            WritePolicy::IfChanged,
+        );
+        written.push(path);
+    }
+    for (n, sheet) in checklist.iter().flatten().enumerate() {
+        let path = dir.join(format!("checklist-{}.svg", n + 1));
+        emit_generated(
+            &path,
+            sce_build::diagram::svg::render_checklist(sheet).as_bytes(),
             WritePolicy::IfChanged,
         );
         written.push(path);
