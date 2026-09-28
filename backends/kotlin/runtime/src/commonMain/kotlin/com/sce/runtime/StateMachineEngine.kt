@@ -993,20 +993,79 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * This is the only way a host-run invocation's `done.invoke` reaches the
      * document. One raised through the ordinary external-event API skips the
      * check above, so the engine refuses it when it is dequeued.
+     *
+     * [origin] and [originType] are the completion's `_event.origin` and
+     * `_event.origintype` (§scxml-5.10.1), for a host whose invocation stands
+     * for another party it can name — as a Mesh router's `sce:mesh-rpc`
+     * stands for the peer that answered (`mesh://<peer>`, SCE_MESH.md
+     * §mesh-9.5). Empty keeps what every host completion has carried.
      */
-    fun completeHostInvoke(processorType: String, invokeId: String, token: Long, doneData: String): Boolean {
+    fun completeHostInvoke(
+        processorType: String,
+        invokeId: String,
+        token: Long,
+        doneData: String,
+        origin: String = "",
+        originType: String = "",
+    ): Boolean = endHostInvoke(processorType, invokeId, token, failed = false, doneData, origin, originType)
+
+    /**
+     * §scxml-6.4: a host-run invocation failed; raise its
+     * `error.invoke.<invokeId>` — or the generic `error.invoke` when the
+     * document names no specific one — with [errorData] as `_event.data`.
+     *
+     * The same door as [completeHostInvoke], and the same rules: accepted
+     * only while start [token] is still running, ending the invocation, so a
+     * run ends once — by success, failure or deadline, whichever comes first.
+     * Returns `false`, raising nothing, for an invocation that was cancelled,
+     * already ended, or restarted since.
+     */
+    fun failHostInvoke(
+        processorType: String,
+        invokeId: String,
+        token: Long,
+        errorData: String,
+        origin: String = "",
+        originType: String = "",
+    ): Boolean = endHostInvoke(processorType, invokeId, token, failed = true, errorData, origin, originType)
+
+    /** The one body behind a host-run invocation's completion and failure. */
+    private fun endHostInvoke(
+        processorType: String,
+        invokeId: String,
+        token: Long,
+        failed: Boolean,
+        data: String,
+        origin: String,
+        originType: String,
+    ): Boolean {
         val key = processorType to invokeId
         if (startedHostInvokes[key] != token) return false
         startedHostInvokes.remove(key)
         dropHostInvokeDeadline(token)
         // Under the id the AUTHOR wrote a transition for, or — §scxml-3.12.1 —
-        // the generic `done.invoke` its descriptor matches when the document
-        // names no specific completion, as an SCXML child's completion does.
+        // the generic event its descriptor matches when the document names no
+        // specific one, as an SCXML child's completion does.
         // §scxml-5.10.1: it is an event of the invocation, so
         // `_event.invokeid` is that same id.
-        val done = resolveEventByName(DONE_INVOKE_PREFIX + invokeId) ?: resolveEventByName(DONE_INVOKE_EVENT)
-        if (done != null) {
-            send(done, EventMetadata(type = "external", data = doneData, invokeId = invokeId, hostInvokeToken = token))
+        val (prefix, generic) = if (failed) {
+            ERROR_INVOKE_PREFIX to ERROR_INVOKE_EVENT
+        } else {
+            DONE_INVOKE_PREFIX to DONE_INVOKE_EVENT
+        }
+        val ended = resolveEventByName(prefix + invokeId) ?: resolveEventByName(generic)
+        if (ended != null) {
+            send(
+                ended,
+                EventMetadata(
+                    type = "external",
+                    data = data,
+                    origin = origin,
+                    originType = originType,
+                    invokeId = invokeId,
+                    hostInvokeToken = token,
+                ),
+            )
         }
         return true
     }

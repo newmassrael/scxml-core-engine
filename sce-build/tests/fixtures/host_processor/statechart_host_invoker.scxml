@@ -99,6 +99,17 @@
                        6.4.1), so error.execution and the host is never
                        asked to start it.
 
+  A host-run invocation can also fail, which the host reports through the
+  same door as a completion (W3C SCXML 6.4): `failing` runs `job`, and the
+  host ends it with a failure naming who failed — as a Mesh router does for
+  the peer that answered an `sce:mesh-rpc` (SCE_MESH.md §mesh-9.5).
+
+    failed      — error.invoke.job arrived with `_event.invokeid` 'job', the
+                  host's data, and the `_event.origin` / `_event.origintype`
+                  the host named. A mismatch in any of them leaves it 0.
+    overturned  — a completion the host reports after the failure is refused,
+                  since the run already ended, so this stays 0.
+
   An invoke runs only for a state still active when its macrostep ends (W3C
   SCXML 6.4). `passing` leaves on an eventless transition in the macrostep
   that entered it, so `fleeting` is dropped before it starts: the host is
@@ -144,6 +155,8 @@
     <data id="unreadable" expr="0"/>
     <data id="scope" expr="'storage'"/>
     <data id="level" expr="2"/>
+    <data id="failed" expr="0"/>
+    <data id="overturned" expr="0"/>
   </datamodel>
 
   <state id="invoking">
@@ -173,6 +186,7 @@
     <transition event="time" target="timed"/>
     <transition event="type" target="typed"/>
     <transition event="pass" target="passing"/>
+    <transition event="fail" target="failing"/>
   </state>
 
   <state id="evaluating">
@@ -274,6 +288,17 @@
     </transition>
     <transition event="retype" target="typed">
       <assign location="level" expr="'high'"/>
+    </transition>
+  </state>
+  <!-- The host fails `job`, naming who failed. -->
+  <state id="failing">
+    <invoke id="job" type="x-sce-host"/>
+    <transition event="error.invoke.job"
+                cond="_event.invokeid === 'job' &amp;&amp; _event.data === 'no' &amp;&amp; _event.origin === 'host://job' &amp;&amp; _event.origintype === 'x-sce-host'">
+      <assign location="failed" expr="failed + 1"/>
+    </transition>
+    <transition event="done.invoke.job">
+      <assign location="overturned" expr="overturned + 1"/>
     </transition>
   </state>
   <!-- Left in the macrostep that entered it, so `fleeting` never starts. -->

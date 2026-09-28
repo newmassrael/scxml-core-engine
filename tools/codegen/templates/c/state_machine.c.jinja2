@@ -5256,14 +5256,20 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_cancel_host_invoke({{ csym_pref
    The only way a host-run invocation's `done.invoke` reaches the document.
    One raised through `_raise_external` skips the check above, so the machine
    refuses it when it is dequeued. */
-SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm,
-                                                                      const char *processor_type,
-                                                                      const char *invoke_id, uint64_t token,
-                                                                      const char *done_data) {
+/* The one body behind a host-run invocation's completion and failure (W3C
+   SCXML 6.4): the token check, the deadline drop, and `done.invoke.<id>` or
+   `error.invoke.<id>` — the generic one when the document names no specific
+   one (W3C SCXML 3.12.1) — carrying `data`, `_event.invokeid`, and the
+   origin the host named, when it named one (W3C SCXML 5.10.1). */
+SCE_SM_FN static bool end_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
+                                      const char *invoke_id, uint64_t token, bool failed, const char *data,
+                                      const char *origin, const char *origin_type) {
     char name[SCE_MAX_ID_LEN];
-    const size_t prefix_len = sizeof(SCE_DONE_INVOKE_PREFIX) - 1u;
+    const char *prefix = failed ? SCE_ERROR_INVOKE_PREFIX : SCE_DONE_INVOKE_PREFIX;
+    const char *generic = failed ? SCE_ERROR_INVOKE_EVENT : SCE_DONE_INVOKE_EVENT;
+    const size_t prefix_len = strlen(prefix);
     size_t id_len;
-    {{ csym_prefix }}{{ model.name }}_event_t done_event;
+    {{ csym_prefix }}{{ model.name }}_event_t ended;
     if (sm == NULL || processor_type == NULL || invoke_id == NULL) {
         return false;
     }
@@ -5279,31 +5285,66 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke({{ csym_pr
            of them; the invocation is over either way. */
         return true;
     }
-    memcpy(name, SCE_DONE_INVOKE_PREFIX, prefix_len);
+    memcpy(name, prefix, prefix_len);
     memcpy(name + prefix_len, invoke_id, id_len);
     name[prefix_len + id_len] = '\0';
-    done_event = {{ csym_prefix }}{{ model.name }}_event_from_name(name, prefix_len + id_len);
-    if (done_event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
-        /* W3C SCXML 3.12.1: the generic `done.invoke` its descriptor matches
-           when the document names no specific completion — as an SCXML
-           child's completion does. */
-        done_event = {{ csym_prefix }}{{ model.name }}_event_from_name(SCE_DONE_INVOKE_EVENT,
-                                                                       sizeof(SCE_DONE_INVOKE_EVENT) - 1u);
+    ended = {{ csym_prefix }}{{ model.name }}_event_from_name(name, prefix_len + id_len);
+    if (ended == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
+        ended = {{ csym_prefix }}{{ model.name }}_event_from_name(generic, strlen(generic));
     }
-    if (done_event != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
+    if (ended != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
         {{ csym_prefix }}{{ model.name }}_event_with_meta_t completion;
         memset(&completion, 0, sizeof(completion));
-        completion.event = done_event;
-        sce_copy_bounded_data(completion.data, done_data != NULL ? done_data : "");
+        completion.event = ended;
+        sce_copy_bounded_data(completion.data, data != NULL ? data : "");
         /* W3C SCXML 5.10.1: the completion is an event of the invocation, so
-           `_event.invokeid` is the invocation's id — the one `done.invoke.<id>`
-           names and the host was handed. */
+           `_event.invokeid` is the invocation's id — the one the event names
+           and the host was handed. */
         sce_copy_bounded_id(completion.invoke_id, invoke_id);
+        if (origin != NULL) {
+            sce_copy_bounded_origin(completion.origin, origin);
+        }
+        if (origin_type != NULL) {
+            sce_copy_bounded_id(completion.origin_type, origin_type);
+        }
         completion.has_host_invoke_token = true;
         completion.host_invoke_token = token;
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &completion);
     }
     return true;
+}
+
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                      const char *processor_type,
+                                                                      const char *invoke_id, uint64_t token,
+                                                                      const char *done_data) {
+    return end_host_invoke(sm, processor_type, invoke_id, token, false, done_data, NULL, NULL);
+}
+
+/* `_complete_host_invoke`, with the `_event.origin` and `_event.origintype` the
+   completion carries (W3C SCXML 5.10.1) — for a host whose invocation stands
+   for another party it can name, as a Mesh router's `sce:mesh-rpc` stands for
+   the peer that answered (SCE_MESH.md §mesh-9.5). NULL leaves either field
+   as every host completion has carried it. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke_from({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                           const char *processor_type,
+                                                                           const char *invoke_id, uint64_t token,
+                                                                           const char *done_data, const char *origin,
+                                                                           const char *origin_type) {
+    return end_host_invoke(sm, processor_type, invoke_id, token, false, done_data, origin, origin_type);
+}
+
+/* W3C SCXML 6.4: a host-run invocation failed; raise its
+   `error.invoke.<invoke_id>` — or the generic `error.invoke` — with
+   `error_data` as `_event.data`. The same door as `_complete_host_invoke`,
+   and the same rules: accepted only while start `token` is still running,
+   ending the invocation, so a run ends once — by success, failure or
+   deadline, whichever comes first. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_fail_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                  const char *processor_type, const char *invoke_id,
+                                                                  uint64_t token, const char *error_data,
+                                                                  const char *origin, const char *origin_type) {
+    return end_host_invoke(sm, processor_type, invoke_id, token, true, error_data, origin, origin_type);
 }
 
 /* W3C SCXML 6.4: how many host-run invocations' `done.invoke` events this

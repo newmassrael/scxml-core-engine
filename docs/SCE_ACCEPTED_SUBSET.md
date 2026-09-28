@@ -2220,6 +2220,19 @@ not the host:
   that arrives after the state exited, after a restart, or a second time is
   refused, as is a `done.invoke` for a host-run invoke raised through the
   ordinary event API.
+- **Failure.** The host may instead report that the run failed, through the
+  same door and under the same rules, and the document receives
+  `error.invoke.<id>` — or the generic `error.invoke` — with the host's data
+  and `_event.invokeid`. A run ends once, by completion, failure or
+  deadline, whichever comes first. Either report may name the
+  `_event.origin` / `_event.origintype` it carries, for a host whose
+  invocation stands for another party (a Mesh router's `sce:mesh-rpc` names
+  the peer that answered, SCE_MESH.md §9.5); left empty it carries what a
+  host completion always has. The calls: Rust `fail_host_invoke` /
+  `complete_host_invoke_from`, Go `FailHostInvoke` /
+  `CompleteHostInvokeFrom`, C11 `_fail_host_invoke` /
+  `_complete_host_invoke_from`, and `failHostInvoke` / `fail_host_invoke`
+  beside an optional origin on the completion in Kotlin, C++ and Python.
 - **Cancel.** Leaving the state cancels a start still running, once, with
   its token. A start that never ran or already completed is not cancelled.
 - **Deadline.** The reserved `<param name="_sce_deadline_ms">` is the

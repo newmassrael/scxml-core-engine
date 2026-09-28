@@ -92,6 +92,8 @@ class HostInvokerTest {
             "granted" -> sm.granted()
             "denied" -> sm.denied()
             "unreadable" -> sm.unreadable()
+            "failed" -> sm.failed()
+            "overturned" -> sm.overturned()
             else -> error("the fixture declares no counter named `$name`")
         }
         assertNotNull(value, "the fixture declares `$name` and the machine could not read it")
@@ -296,6 +298,43 @@ class HostInvokerTest {
             deliver(sm, StatechartHostInvokerEvent.Leave)
             assertEquals(1L, counter(sm, "started"))
             assertTrue(log.none { it.startsWith("CANCEL") }, "a completed invocation was cancelled: $log")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * A host-run invocation can fail: `error.invoke.<id>` with the host's
+     * data, `_event.invokeid`, and the origin the host named (§scxml-6.4,
+     * 5.10.1) — and a failure ends the run, so a completion afterwards is
+     * refused.
+     */
+    @Test
+    fun aFailedInvocationRaisesErrorInvokeOnceWithItsOrigin() {
+        val sm = machine()
+        val log = mutableListOf<String>()
+        val starts = mutableListOf<Pair<String, Long>>()
+        sm.registerInvoker(declaredType, runningInvoker(log, starts))
+        sm.initialize()
+        try {
+            deliver(sm, StatechartHostInvokerEvent.Fail)
+            val token = tokenOf(starts, "job")
+            assertTrue(
+                sm.failHostInvoke(declaredType, "job", token, "\"no\"", "host://job", declaredType),
+                "a running invocation's failure was refused",
+            )
+            sm.tick()
+            // Counted only when the invokeid, the data and both origin fields
+            // are what the host named, so this is those assertions too.
+            assertEquals(1L, counter(sm, "failed"))
+            assertFalse(sm.completeHostInvoke(declaredType, "job", token, "ok"), "a failed run completed afterwards")
+            assertFalse(
+                sm.failHostInvoke(declaredType, "job", token, "\"no\"", "host://job", declaredType),
+                "the same run failed twice",
+            )
+            sm.tick()
+            assertEquals(1L, counter(sm, "failed"))
+            assertEquals(0L, counter(sm, "overturned"))
         } finally {
             sm.cleanup()
         }

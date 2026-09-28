@@ -952,11 +952,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/go/runtime/host_processor.go",
-          "symbol": "CompleteHostInvoke",
-          "kind": "implements"
-        },
-        {
           "file": "backends/go/runtime/invoke.go",
           "symbol": "DoneInvokeEvent",
           "kind": "implements"
@@ -964,16 +959,6 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "DONE_INVOKE_EVENT",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "completeHostInvoke",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "complete_host_invoke",
           "kind": "implements"
         },
         {
@@ -987,8 +972,23 @@
           "kind": "implements"
         },
         {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "endHostInvoke",
+          "kind": "implements"
+        },
+        {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "completeHostInvoke",
+          "symbol": "endHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "end_host_invoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "endHostInvoke",
           "kind": "implements"
         }
       ],
@@ -5430,23 +5430,8 @@
           "kind": "implements"
         },
         {
-          "file": "backends/go/runtime/host_processor.go",
-          "symbol": "CompleteHostInvoke",
-          "kind": "implements"
-        },
-        {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "completeHostInvoke",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "complete_host_invoke",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "complete_host_invoke",
           "kind": "implements"
         },
         {
@@ -5525,6 +5510,36 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "raiseScheduled",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "endHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "CompleteHostInvokeFrom",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_end_host_invoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "endHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "end_host_invoke",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "endHostInvoke",
           "kind": "implements"
         }
       ],
@@ -10359,6 +10374,21 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "awaitNextExternalEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "failHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "failHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "FailHostInvoke",
           "kind": "implements"
         }
       ],
@@ -19895,6 +19925,48 @@
       "target_kind": "section",
       "target_id": "scxml-6.2.4",
       "reason": "the citation sits in the nested check_actions, which the checker resolves as the innermost symbol"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "the completion's body moved into the shared helper behind completion and failure; the citation moved with it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "the completion's body moved into the shared helper behind completion and failure; the citation moved with it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "the completion's body moved into the shared helper behind completion and failure; the citation moved with it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "the completion's body moved into the shared helper behind completion and failure; the citation moved with it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "the completion's body moved into the shared helper behind completion and failure; the citation moved with it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "the completion's body moved into the shared helper behind completion and failure; the citation moved with it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "the completion's body moved into the shared helper behind completion and failure; the citation moved with it"
     }
   ],
   "frames": {},

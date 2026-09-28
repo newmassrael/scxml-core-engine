@@ -321,6 +321,34 @@ def test_a_late_completion_is_accepted_exactly_once() -> None:
     )
 
 
+def test_a_failed_invocation_raises_error_invoke_once_with_its_origin() -> None:
+    """A host-run invocation can fail: ``error.invoke.<id>`` with the host's
+    data, ``_event.invokeid``, and the origin the host named (§scxml-6.4,
+    5.10.1) — and a failure ends the run, so a completion afterwards is
+    refused."""
+    engine, _log, starts = _running()
+    _deliver(engine, Event.FAIL)
+
+    token = _token_of(starts, "job")
+    assert engine.fail_host_invoke(
+        DECLARED_TYPE, "job", token, '"no"', origin="host://job", origin_type=DECLARED_TYPE
+    ), "a running invocation's failure was refused"
+    engine.advance_time(0)
+    # Counted only when the invokeid, the data and both origin fields are
+    # what the host named, so this is those assertions too.
+    assert _counter(engine, "failed") == 1
+
+    assert not engine.complete_host_invoke(DECLARED_TYPE, "job", token, "ok"), (
+        "a failed run completed afterwards"
+    )
+    assert not engine.fail_host_invoke(
+        DECLARED_TYPE, "job", token, '"no"', origin="host://job", origin_type=DECLARED_TYPE
+    ), "the same run failed twice"
+    engine.advance_time(0)
+    assert _counter(engine, "failed") == 1
+    assert _counter(engine, "overturned") == 0
+
+
 def test_a_completion_after_the_cancel_is_refused() -> None:
     """§scxml-6.4: once the state has exited, what the cancelled process
     sends is ignored. The host's reply arrives after the cancel and is

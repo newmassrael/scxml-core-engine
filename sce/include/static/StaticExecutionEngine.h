@@ -2982,9 +2982,41 @@ public:
      * This is the only way a host-run invocation's `done.invoke` reaches the
      * document. One raised through the ordinary external-event API skips the
      * check above, so the engine refuses it when it is dequeued.
+     *
+     * `origin` and `originType` are the completion's `_event.origin` and
+     * `_event.origintype` (§scxml-5.10.1), for a host whose invocation stands
+     * for another party it can name — as a Mesh router's `sce:mesh-rpc` stands
+     * for the peer that answered (SCE_MESH.md §mesh-9.5). Empty keeps what
+     * every host completion has carried.
      */
     bool completeHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
-                            const std::string &doneData) {
+                            const std::string &doneData, const std::string &origin = "",
+                            const std::string &originType = "") {
+        return endHostInvoke(processorType, invokeId, token, false, doneData, origin, originType);
+    }
+
+    /**
+     * @brief §scxml-6.4: a host-run invocation failed; raise its
+     *        `error.invoke.<invokeId>` — or the generic `error.invoke` — with
+     *        `errorData` as `_event.data`
+     *
+     * The same door as completeHostInvoke(), and the same rules: accepted only
+     * while start `token` is still running, ending the invocation, so a run
+     * ends once — by success, failure or deadline, whichever comes first.
+     * Returns `false`, raising nothing, for an invocation that was cancelled,
+     * already ended, or restarted since.
+     */
+    bool failHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
+                        const std::string &errorData, const std::string &origin = "",
+                        const std::string &originType = "") {
+        return endHostInvoke(processorType, invokeId, token, true, errorData, origin, originType);
+    }
+
+private:
+    /// The one body behind a host-run invocation's completion and failure: the
+    /// token check, the deadline drop, and the event.
+    bool endHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token, bool failed,
+                       const std::string &data, const std::string &origin, const std::string &originType) {
         const auto key = std::make_pair(processorType, invokeId);
         const auto running = startedHostInvokes_.find(key);
         if (running == startedHostInvokes_.end() || running->second != token) {
@@ -2993,30 +3025,34 @@ public:
         startedHostInvokes_.erase(running);
         scheduler_.dropHostInvokeDeadline(token);
         // §scxml-5.10.1: the completion is an event of the invocation, so its
-        // `_event.invokeid` is the invocation's id — the one `done.invoke.<id>`
-        // names and the host was handed.
-        // §scxml-3.12.1: the specific `done.invoke.<id>` when the document
-        // names it, and otherwise the generic `done.invoke` its descriptor
-        // matches — as an SCXML child's completion does.
-        const std::string name = ::SCE::Core::InvokeHelper::createDoneInvokeEventName(invokeId);
-        auto done = policy_.getEventFromName(name);
-        if (!done) {
-            done = policy_.getEventFromName(std::string(::SCE::Core::InvokeHelper::DONE_INVOKE_EVENT));
+        // `_event.invokeid` is the invocation's id — the one the event names and
+        // the host was handed.
+        // §scxml-3.12.1: the specific `done.invoke.<id>` / `error.invoke.<id>`
+        // when the document names it, and otherwise the generic event its
+        // descriptor matches — as an SCXML child's completion does.
+        const std::string name = failed ? std::string(::SCE::Core::InvokeHelper::ERROR_INVOKE_PREFIX) + invokeId
+                                        : ::SCE::Core::InvokeHelper::createDoneInvokeEventName(invokeId);
+        auto ended = policy_.getEventFromName(name);
+        if (!ended) {
+            ended = policy_.getEventFromName(std::string(failed ? ::SCE::Core::InvokeHelper::ERROR_INVOKE_EVENT
+                                                                : ::SCE::Core::InvokeHelper::DONE_INVOKE_EVENT));
         }
-        if (done) {
-            EventWithMetadata completion(*done, doneData, "", "", "external",
-                                         SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, invokeId);
+        if (ended) {
+            EventWithMetadata completion(*ended, data, origin, "", "external",
+                                         originType.empty() ? SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE : originType,
+                                         invokeId);
             completion.hostInvokeToken = token;
             raiseExternal(completion);
         } else {
             // The degradation raiseExternal(name) has: a document that wrote
             // no transition on the completion declares no such event, and
             // there is nothing to deliver it to.
-            SCE_LOG_DEBUG("AOT completeHostInvoke: '{}' not in Event enum, ignoring", name);
+            SCE_LOG_DEBUG("AOT host invoke end: '{}' not in Event enum, ignoring", name);
         }
         return true;
     }
 
+public:
     /**
      * @brief How many host-run invocations' `done.invoke` events the engine
      *        refused because they did not arrive through completeHostInvoke()

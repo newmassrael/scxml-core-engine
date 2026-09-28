@@ -455,27 +455,63 @@ func (e *Engine[S, E]) PerformHostInvoke(request HostInvokeRequest) bool {
 // document. One raised through the ordinary external-event API skips the check
 // above, so the engine refuses it when it is dequeued.
 func (e *Engine[S, E]) CompleteHostInvoke(processorType, invokeID string, token uint64, doneData string) bool {
+	return e.CompleteHostInvokeFrom(processorType, invokeID, token, doneData, "", "")
+}
+
+// CompleteHostInvokeFrom is CompleteHostInvoke with the `_event.origin` and
+// `_event.origintype` the completion carries (§scxml-5.10.1), for a host whose
+// invocation stands for another party it can name — as a Mesh router's
+// `sce:mesh-rpc` stands for the peer that answered (`mesh://<peer>`,
+// SCE_MESH.md §mesh-9.5). An empty originType keeps the one every host
+// completion has carried.
+func (e *Engine[S, E]) CompleteHostInvokeFrom(processorType, invokeID string, token uint64, doneData, origin, originType string) bool {
+	return e.endHostInvoke(processorType, invokeID, token, false, doneData, origin, originType)
+}
+
+// FailHostInvoke reports that a host-run invocation failed, raising its
+// `error.invoke.<invokeID>` — or the generic `error.invoke` when the document
+// names no specific one — with errorData as `_event.data` (§scxml-6.4).
+//
+// The same door as CompleteHostInvoke, and the same rules: accepted only while
+// start token is still running, ending the invocation, so a run ends once — by
+// success, failure or deadline, whichever comes first. It returns false,
+// raising nothing, for an invocation that was cancelled, already ended, or
+// restarted since.
+func (e *Engine[S, E]) FailHostInvoke(processorType, invokeID string, token uint64, errorData, origin, originType string) bool {
+	return e.endHostInvoke(processorType, invokeID, token, true, errorData, origin, originType)
+}
+
+// endHostInvoke is the one body behind a host-run invocation's completion and
+// failure: the token check, the deadline drop, and the event.
+func (e *Engine[S, E]) endHostInvoke(processorType, invokeID string, token uint64, failed bool, data, origin, originType string) bool {
 	key := hostInvokeKey{processorType, invokeID}
 	if running, ok := e.startedHostInvokes[key]; !ok || running != token {
 		return false
 	}
 	delete(e.startedHostInvokes, key)
 	e.scheduler.DropHostInvokeDeadline(token)
-	// The id is the DOCUMENT's, because `done.invoke.<id>` is the name the
-	// author wrote a transition for. §scxml-3.12.1: when the document names no
-	// specific completion, the generic `done.invoke` its descriptor matches —
+	// The id is the DOCUMENT's, because `done.invoke.<id>` / `error.invoke.<id>`
+	// is the name the author wrote a transition for. §scxml-3.12.1: when the
+	// document names no specific one, the generic event its descriptor matches —
 	// as an SCXML child's completion does.
-	evt, known := e.policy.GetEventFromName(CreateDoneInvokeEventName(invokeID))
+	specific, generic := CreateDoneInvokeEventName(invokeID), DoneInvokeEvent
+	if failed {
+		specific, generic = ErrorInvokePrefix+invokeID, ErrorInvokeEvent
+	}
+	evt, known := e.policy.GetEventFromName(specific)
 	if !known {
-		evt, known = e.policy.GetEventFromName(DoneInvokeEvent)
+		evt, known = e.policy.GetEventFromName(generic)
 	}
 	if known {
 		meta := NewEventWithMetadata(evt)
-		meta.Metadata = ExternalMetadata("", "")
-		meta.Metadata.Data = doneData
+		meta.Metadata = ExternalMetadata("", origin)
+		if originType != "" {
+			meta.Metadata.OriginType = originType
+		}
+		meta.Metadata.Data = data
 		// §scxml-5.10.1: the completion is an event of the invocation, so
-		// `_event.invokeid` is the invocation's id — the one `done.invoke.<id>`
-		// names and the host was handed.
+		// `_event.invokeid` is the invocation's id — the one the event names
+		// and the host was handed.
 		meta.Metadata.InvokeID = invokeID
 		meta.Metadata.HostInvokeToken = &token
 		e.externalQueue.Raise(meta)

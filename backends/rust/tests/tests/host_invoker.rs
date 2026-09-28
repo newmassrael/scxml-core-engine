@@ -390,6 +390,56 @@ fn a_late_completion_is_accepted_exactly_once() {
     );
 }
 
+/// A host-run invocation can fail: `error.invoke.<id>` with the host's data,
+/// `_event.invokeid`, and the origin the host named (§scxml-6.4, 5.10.1) —
+/// and a failure ends the run, so a completion afterwards is refused.
+#[test]
+fn a_failed_invocation_raises_error_invoke_once_with_its_origin() {
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let starts: Starts = Arc::default();
+    let (mut engine, script_engine) = started();
+    engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
+    engine.initialize();
+    engine.step();
+    engine.process_event(Event::Fail);
+
+    let token = token_of(&starts, "job");
+    assert!(
+        engine.fail_host_invoke(
+            DECLARED_TYPE,
+            "job",
+            token,
+            "\"no\"",
+            "host://job",
+            DECLARED_TYPE
+        ),
+        "a running invocation's failure was refused",
+    );
+    engine.step();
+    // The fixture counts it only when the invokeid, the data and both origin
+    // fields are what the host named, so this is those assertions too.
+    assert_eq!(counter(&engine, &script_engine, "failed"), 1);
+
+    assert!(
+        !engine.complete_host_invoke(DECLARED_TYPE, "job", token, "ok"),
+        "a failed run completed afterwards",
+    );
+    assert!(
+        !engine.fail_host_invoke(
+            DECLARED_TYPE,
+            "job",
+            token,
+            "\"no\"",
+            "host://job",
+            DECLARED_TYPE
+        ),
+        "the same run failed twice",
+    );
+    engine.step();
+    assert_eq!(counter(&engine, &script_engine, "failed"), 1);
+    assert_eq!(counter(&engine, &script_engine, "overturned"), 0);
+}
+
 /// What [`timed`] hands a case: the machine, its script engine, the
 /// invoker's log and every start's token.
 type Timed = (

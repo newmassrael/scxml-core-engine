@@ -342,6 +342,30 @@ TEST_F(HostInvokerAotTest, ALateCompletionIsAcceptedExactlyOnce) {
         << "only the invocation still running is cancelled";
 }
 
+// A host-run invocation can fail: `error.invoke.<id>` with the host's data,
+// `_event.invokeid`, and the origin the host named (W3C SCXML 6.4, 5.10.1) —
+// and a failure ends the run, so a completion afterwards is refused.
+TEST_F(HostInvokerAotTest, AFailedInvocationRaisesErrorInvokeOnceWithItsOrigin) {
+    Machine sm;
+    registerRunningInvoker(sm);
+    boot(sm);
+    sm.processEvent(Event::Fail);
+
+    const uint64_t token = tokenOf("job");
+    EXPECT_TRUE(sm.failHostInvoke(DECLARED_TYPE, "job", token, "\"no\"", "host://job", DECLARED_TYPE))
+        << "a running invocation's failure was refused";
+    sm.step();
+    // Counted only when the invokeid, the data and both origin fields are what
+    // the host named, so this is those assertions too.
+    EXPECT_EQ(sm.getPolicy().failed(), std::optional<int64_t>(1));
+    EXPECT_FALSE(sm.completeHostInvoke(DECLARED_TYPE, "job", token, "ok")) << "a failed run completed afterwards";
+    EXPECT_FALSE(sm.failHostInvoke(DECLARED_TYPE, "job", token, "\"no\"", "host://job", DECLARED_TYPE))
+        << "the same run failed twice";
+    sm.step();
+    EXPECT_EQ(sm.getPolicy().failed(), std::optional<int64_t>(1));
+    EXPECT_EQ(sm.getPolicy().overturned(), std::optional<int64_t>(0));
+}
+
 // W3C SCXML 6.4: once the state has exited, what the cancelled process sends
 // is ignored. The host's reply arrives after the cancel and is refused.
 TEST_F(HostInvokerAotTest, ACompletionAfterTheCancelIsRefused) {

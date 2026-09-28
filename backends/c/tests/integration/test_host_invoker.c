@@ -120,6 +120,10 @@ static int64_t counter(const statechart_host_invoker_t *sm, const char *name) {
         ok = statechart_host_invoker_denied(sm, &value);
     } else if (strcmp(name, "unreadable") == 0) {
         ok = statechart_host_invoker_unreadable(sm, &value);
+    } else if (strcmp(name, "failed") == 0) {
+        ok = statechart_host_invoker_failed(sm, &value);
+    } else if (strcmp(name, "overturned") == 0) {
+        ok = statechart_host_invoker_overturned(sm, &value);
     }
     if (!ok) {
         (void)fprintf(stderr, "host_invoker: FAIL - the fixture declares `%s` and the machine could not read it\n",
@@ -348,6 +352,36 @@ static int a_late_completion_is_accepted_exactly_once(void) {
     deliver(&sm, STATECHART_HOST_INVOKER_EVENT_LEAVE);
     bad |= check("late", "cancels of probe", count_lines(&run.rec, "CANCEL id=probe"), 0);
     bad |= check("late", "cancels of probe2", count_lines(&run.rec, "CANCEL id=probe2"), 1);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// A host-run invocation can fail: `error.invoke.<id>` with the host's data,
+// `_event.invokeid`, and the origin the host named (W3C SCXML 6.4, 5.10.1) — and
+// a failure ends the run, so a completion afterwards is refused.
+static int a_failed_invocation_raises_error_invoke_once_with_its_origin(void) {
+    running_t run;
+    statechart_host_invoker_t sm;
+    boot_running(&sm, &run);
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_FAIL);
+
+    int bad = 0;
+    const uint64_t token = token_of(&run, "job");
+    bad |= expect("fail", "a running invocation's failure was refused",
+                  statechart_host_invoker_fail_host_invoke(&sm, DECLARED_TYPE, "job", token, "\"no\"", "host://job",
+                                                           DECLARED_TYPE));
+    statechart_host_invoker_step(&sm);
+    // Counted only when the invokeid, the data and both origin fields are what
+    // the host named, so this is those assertions too.
+    bad |= check("fail", "failed", counter(&sm, "failed"), 1);
+    bad |= expect("fail", "a failed run completed afterwards",
+                  !statechart_host_invoker_complete_host_invoke(&sm, DECLARED_TYPE, "job", token, "ok"));
+    bad |= expect("fail", "the same run failed twice",
+                  !statechart_host_invoker_fail_host_invoke(&sm, DECLARED_TYPE, "job", token, "\"no\"", "host://job",
+                                                            DECLARED_TYPE));
+    statechart_host_invoker_step(&sm);
+    bad |= check("fail", "failed after a second report", counter(&sm, "failed"), 1);
+    bad |= check("fail", "overturned", counter(&sm, "overturned"), 0);
     statechart_host_invoker_destroy(&sm);
     return bad;
 }
@@ -1044,6 +1078,7 @@ int main(void) {
     bad |= an_invocation_whose_state_left_is_never_started();
     bad |= a_completed_invocation_is_not_cancelled();
     bad |= a_late_completion_is_accepted_exactly_once();
+    bad |= a_failed_invocation_raises_error_invoke_once_with_its_origin();
     bad |= a_completion_after_the_cancel_is_refused();
     bad |= a_restarted_invoke_refuses_the_first_runs_reply();
     bad |= a_done_invoke_raised_the_old_way_is_refused_and_counted();

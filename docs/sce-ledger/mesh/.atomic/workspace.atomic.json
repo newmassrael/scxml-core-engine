@@ -3702,6 +3702,11 @@
           "file": "sce-build/src/mesh/codegen.rs",
           "symbol": "host_peer_table_template",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "completeHostInvoke",
+          "kind": "references"
         }
       ]
     },

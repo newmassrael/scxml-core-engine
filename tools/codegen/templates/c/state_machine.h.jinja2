@@ -761,6 +761,20 @@ bool {{ csym_prefix }}{{ model.name }}_cancel_host_invoke({{ csym_prefix }}{{ mo
 bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
                                   const char *invoke_id, uint64_t token, const char *done_data);
 
+/* `_complete_host_invoke`, with the completion's `_event.origin` and
+   `_event.origintype` (W3C SCXML 5.10.1); NULL leaves either as it was. */
+bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke_from({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
+                                  const char *invoke_id, uint64_t token, const char *done_data,
+                                  const char *origin, const char *origin_type);
+
+/* W3C SCXML 6.4: a host-run invocation failed — raise its
+   `error.invoke.<invoke_id>` with `error_data`, under the same rules as a
+   completion: accepted at most once, only while that start is still running,
+   and a failure ends the run. */
+bool {{ csym_prefix }}{{ model.name }}_fail_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
+                                  const char *invoke_id, uint64_t token, const char *error_data,
+                                  const char *origin, const char *origin_type);
+
 /* W3C SCXML 6.4: how many host invokes' `done.invoke` events were refused
    because they did not arrive through `_complete_host_invoke`. */
 uint32_t {{ csym_prefix }}{{ model.name }}_refused_host_invoke_completions(const {{ csym_prefix }}{{ model.name }}_t *sm);

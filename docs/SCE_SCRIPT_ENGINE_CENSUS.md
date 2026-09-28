@@ -100,9 +100,9 @@ documents-floor 700
 documents-judged-floor 450
 engine-documents 256
 native-prefix-documents 2
-datamodel-variable-init 384
-transition-guard 232
-assign-action 327
+datamodel-variable-init 386
+transition-guard 233
+assign-action 329
 child-invoke-needs-script-engine 52
 log-expr 46
 send-param-expr 49
@@ -275,6 +275,12 @@ never spelled correctly.
   just before the second-to-last entry above was measured on a tree without
   it, so the ceilings that shipped with that entry were already short on
   `main` — which is how a ledger ahead of its own tree reads.
+  ⚠ **2026-09-28, deliberately:** the host invoker fixture's `failing`
+  state (a host-run invocation's failure: two counters, the guard that
+  reads `_event.invokeid`, `_event.data`, `_event.origin` and
+  `_event.origintype` together, and two assigns) raised
+  `datamodel-variable-init` by two, `transition-guard` by one and
+  `assign-action` by two.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.

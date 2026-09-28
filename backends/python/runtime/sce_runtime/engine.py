@@ -1111,7 +1111,13 @@ class Engine(Generic[S, E]):
         return True
 
     def complete_host_invoke(
-        self, processor_type: str, invoke_id: str, token: int, done_data: str
+        self,
+        processor_type: str,
+        invoke_id: str,
+        token: int,
+        done_data: str,
+        origin: str = "",
+        origin_type: str = "",
     ) -> bool:
         """W3C SCXML 6.4 — a host-run invocation finished; raise its
         ``done.invoke.<invoke_id>`` with `done_data` as ``_event.data``.
@@ -1127,19 +1133,78 @@ class Engine(Generic[S, E]):
 
         This is the only way a host-run invocation's ``done.invoke`` reaches
         the document. One raised through the ordinary external-event API
-        skips the check above, so the engine refuses it."""
+        skips the check above, so the engine refuses it.
+
+        `origin` and `origin_type` are the completion's ``_event.origin`` and
+        ``_event.origintype`` (W3C SCXML 5.10.1), for a host whose invocation
+        stands for another party it can name — as a Mesh router's
+        ``sce:mesh-rpc`` stands for the peer that answered (``mesh://<peer>``,
+        SCE_MESH.md §mesh-9.5). Empty keeps what every host completion has
+        carried."""
+        return self._end_host_invoke(
+            processor_type,
+            invoke_id,
+            token,
+            create_done_invoke_event_name(invoke_id),
+            done_data,
+            origin,
+            origin_type,
+        )
+
+    def fail_host_invoke(
+        self,
+        processor_type: str,
+        invoke_id: str,
+        token: int,
+        error_data: str,
+        origin: str = "",
+        origin_type: str = "",
+    ) -> bool:
+        """W3C SCXML 6.4 — a host-run invocation failed; raise its
+        ``error.invoke.<invoke_id>`` — or the generic ``error.invoke`` when the
+        document names no specific one — with `error_data` as ``_event.data``.
+
+        The same door as `complete_host_invoke`, and the same rules: accepted
+        only while start `token` is still running, ending the invocation, so
+        a run ends once — by success, failure or deadline, whichever comes
+        first. Returns `False`, raising nothing, for an invocation that was
+        cancelled, already ended, or restarted since."""
+        return self._end_host_invoke(
+            processor_type,
+            invoke_id,
+            token,
+            f"{ERROR_INVOKE_PREFIX}{invoke_id}",
+            error_data,
+            origin,
+            origin_type,
+        )
+
+    def _end_host_invoke(
+        self,
+        processor_type: str,
+        invoke_id: str,
+        token: int,
+        event_name: str,
+        data: str,
+        origin: str,
+        origin_type: str,
+    ) -> bool:
+        """The one body behind a host-run invocation's completion and
+        failure: the token check, the deadline drop, and the event."""
         key = (processor_type, invoke_id)
         if self._started_host_invokes.get(key) != token:
             return False
         del self._started_host_invokes[key]
         self._scheduler.drop_host_invoke_deadline(token)
         # §scxml-5.10.1: the completion is an event of the invocation, so
-        # `_event.invokeid` is the invocation's id — the one
-        # `done.invoke.<id>` names and the host was handed.
+        # `_event.invokeid` is the invocation's id — the one the event names
+        # and the host was handed.
         self.send_external_by_name(
-            create_done_invoke_event_name(invoke_id),
-            data=done_data,
+            event_name,
+            data=data,
             invoke_id=invoke_id,
+            origin=origin,
+            origin_type=origin_type,
             host_invoke_token=token,
         )
         return True

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c62ee86a6a3e85b63aad9b9d49c5f4d961f6570652e8bbce347efe8dec5f51b4
+// source-hash: 03bded920118ffd4c5bc5f6f7871d1aeb1599bc783619843f7258bcbecec5841
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: statechart_host_invoker.scxml:112 :: _machine"]
-// SCE-MAP: statechart_host_invoker.scxml:112 :: _machine
+#![doc = "SCE-MAP: statechart_host_invoker.scxml:123 :: _machine"]
+// SCE-MAP: statechart_host_invoker.scxml:123 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -84,6 +84,7 @@ use sce_rust_runtime::{Engine, StatePolicy};
 pub enum StatechartHostInvokerState {
     Done,
     Evaluating,
+    Failing,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
     Invoking,
@@ -101,14 +102,17 @@ pub enum StatechartHostInvokerState {
 pub enum StatechartHostInvokerEvent {
     Again,
     DoneInvoke,
+    DoneInvokeJob,
     DoneInvokePerm,
     DoneInvokeProbe,
     DoneInvokeProbe2,
     DoneInvokeSlow,
     ErrorExecution,
     ErrorInvoke,
+    ErrorInvokeJob,
     ErrorInvokeSlow,
     Evaluate,
+    Fail,
     Forget,
     Leak,
     Leave,
@@ -141,6 +145,7 @@ impl StatechartHostInvokerEvent {
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [StatechartHostInvokerEvent] = &[
         StatechartHostInvokerEvent::Again,
         StatechartHostInvokerEvent::Evaluate,
+        StatechartHostInvokerEvent::Fail,
         StatechartHostInvokerEvent::Forget,
         StatechartHostInvokerEvent::Leak,
         StatechartHostInvokerEvent::Leave,
@@ -683,6 +688,36 @@ impl StatechartHostInvokerPolicy {
         )
     }
 
+    /// §scxml-5.3: what the `failed` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `failed` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn failed(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "failed",
+        )
+    }
+
+    /// §scxml-5.3: what the `overturned` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `overturned` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn overturned(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "overturned",
+        )
+    }
+
     /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
     /// machine, published as the processor's 'location' in `_ioprocessors`.
     /// Must be called before `initialize()`, since the entries are populated
@@ -914,6 +949,23 @@ impl StatechartHostInvokerPolicy {
         // W3C SCXML 5.2/5.3: Initialize 'level' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "level", "2",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'failed' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "failed", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'overturned' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "overturned",
+            "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
@@ -1205,6 +1257,31 @@ impl StatechartHostInvokerPolicy {
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 StatechartHostInvokerEvent::ErrorExecution,
                 "<data id='level'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'failed' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "failed", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                StatechartHostInvokerEvent::ErrorExecution,
+                "<data id='failed'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'overturned' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "overturned",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                StatechartHostInvokerEvent::ErrorExecution,
+                "<data id='overturned'> expr failed to evaluate",
             ));
         }
 
@@ -1641,6 +1718,46 @@ impl StatechartHostInvokerPolicy {
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "x-sce-host".to_string(),
                     invoke_id: "req3".to_string(),
+                    src: host_invoke_src,
+                    params: host_invoke_params,
+                    content: host_invoke_content,
+                    // §scxml-6.4: which start this is belongs to the engine,
+                    // which assigns it when the invocation starts.
+                    token: 0,
+                });
+                if !started {
+                    // §scxml-6.4.1: declared but no invoker registered. The
+                    // document asked for a process to be run and none was,
+                    // which is the same fact as an unsupported type — so the
+                    // same event, rather than a silence that reads as started.
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        StatechartHostInvokerEvent::ErrorExecution,
+                        "<invoke> names an invoker the host declared but never registered",
+                    ));
+                }
+                continue;
+            }
+            if pending.document_id == "job" {
+                // §scxml-6.4.1: the host declared this `type`, so start the
+                // invocation rather than refusing it. The id handed over is
+                // the DOCUMENT's, not the per-instance one the defer queue
+                // carries: `done.invoke.<id>` is the name the author wrote a
+                // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
+                let mut host_invoke_params =
+                    std::collections::HashMap::<String, Vec<String>>::new();
+
+                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                    processor_type: "x-sce-host".to_string(),
+                    invoke_id: "job".to_string(),
                     src: host_invoke_src,
                     params: host_invoke_params,
                     content: host_invoke_content,
@@ -2264,9 +2381,10 @@ impl StatePolicy for StatechartHostInvokerPolicy {
         match state {
             StatechartHostInvokerState::Done => 2,
             StatechartHostInvokerState::Evaluating => 1,
+            StatechartHostInvokerState::Failing => 6,
             StatechartHostInvokerState::Invoking => 0,
             StatechartHostInvokerState::Locating => 3,
-            StatechartHostInvokerState::Passing => 6,
+            StatechartHostInvokerState::Passing => 7,
             StatechartHostInvokerState::Timed => 4,
             StatechartHostInvokerState::Typed => 5,
         }
@@ -2276,14 +2394,17 @@ impl StatePolicy for StatechartHostInvokerPolicy {
         match event {
             StatechartHostInvokerEvent::Again => "again",
             StatechartHostInvokerEvent::DoneInvoke => "done.invoke",
+            StatechartHostInvokerEvent::DoneInvokeJob => "done.invoke.job",
             StatechartHostInvokerEvent::DoneInvokePerm => "done.invoke.perm",
             StatechartHostInvokerEvent::DoneInvokeProbe => "done.invoke.probe",
             StatechartHostInvokerEvent::DoneInvokeProbe2 => "done.invoke.probe2",
             StatechartHostInvokerEvent::DoneInvokeSlow => "done.invoke.slow",
             StatechartHostInvokerEvent::ErrorExecution => "error.execution",
             StatechartHostInvokerEvent::ErrorInvoke => "error.invoke",
+            StatechartHostInvokerEvent::ErrorInvokeJob => "error.invoke.job",
             StatechartHostInvokerEvent::ErrorInvokeSlow => "error.invoke.slow",
             StatechartHostInvokerEvent::Evaluate => "evaluate",
+            StatechartHostInvokerEvent::Fail => "fail",
             StatechartHostInvokerEvent::Forget => "forget",
             StatechartHostInvokerEvent::Leak => "leak",
             StatechartHostInvokerEvent::Leave => "leave",
@@ -2301,14 +2422,17 @@ impl StatePolicy for StatechartHostInvokerPolicy {
         match name {
             "again" => Some(StatechartHostInvokerEvent::Again),
             "done.invoke" => Some(StatechartHostInvokerEvent::DoneInvoke),
+            "done.invoke.job" => Some(StatechartHostInvokerEvent::DoneInvokeJob),
             "done.invoke.perm" => Some(StatechartHostInvokerEvent::DoneInvokePerm),
             "done.invoke.probe" => Some(StatechartHostInvokerEvent::DoneInvokeProbe),
             "done.invoke.probe2" => Some(StatechartHostInvokerEvent::DoneInvokeProbe2),
             "done.invoke.slow" => Some(StatechartHostInvokerEvent::DoneInvokeSlow),
             "error.execution" => Some(StatechartHostInvokerEvent::ErrorExecution),
             "error.invoke" => Some(StatechartHostInvokerEvent::ErrorInvoke),
+            "error.invoke.job" => Some(StatechartHostInvokerEvent::ErrorInvokeJob),
             "error.invoke.slow" => Some(StatechartHostInvokerEvent::ErrorInvokeSlow),
             "evaluate" => Some(StatechartHostInvokerEvent::Evaluate),
+            "fail" => Some(StatechartHostInvokerEvent::Fail),
             "forget" => Some(StatechartHostInvokerEvent::Forget),
             "leak" => Some(StatechartHostInvokerEvent::Leak),
             "leave" => Some(StatechartHostInvokerEvent::Leave),
@@ -2336,6 +2460,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
         "slow",
         "undated",
         "perm",
+        "job",
         "fleeting",
     ];
 
@@ -2343,6 +2468,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
         match state {
             StatechartHostInvokerState::Done => "done",
             StatechartHostInvokerState::Evaluating => "evaluating",
+            StatechartHostInvokerState::Failing => "failing",
             StatechartHostInvokerState::Invoking => "invoking",
             StatechartHostInvokerState::Locating => "locating",
             StatechartHostInvokerState::Passing => "passing",
@@ -2358,6 +2484,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
         match name {
             "done" => Some(StatechartHostInvokerState::Done),
             "evaluating" => Some(StatechartHostInvokerState::Evaluating),
+            "failing" => Some(StatechartHostInvokerState::Failing),
             "invoking" => Some(StatechartHostInvokerState::Invoking),
             "locating" => Some(StatechartHostInvokerState::Locating),
             "passing" => Some(StatechartHostInvokerState::Passing),
@@ -2448,8 +2575,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:112 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:112 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:123 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:123 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -2458,7 +2585,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     ) {
         match state {
             StatechartHostInvokerState::Done => {
-                // SCE-MAP: statechart_host_invoker.scxml:194 :: done :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:208 :: done :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -2505,7 +2632,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                 }
             }
             StatechartHostInvokerState::Evaluating => {
-                // SCE-MAP: statechart_host_invoker.scxml:178 :: evaluating :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:192 :: evaluating :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -2549,8 +2676,29 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                     );
                 }
             }
+            StatechartHostInvokerState::Failing => {
+                // SCE-MAP: statechart_host_invoker.scxml:294 :: failing :: _state_body
+                // §scxml-6.4.1: `type` names an invoker the HOST declared to
+                // this build. Deferred exactly like the refused arm above and
+                // for the same reason — §scxml-6.4 orders invokes after the
+                // macrostep settles, and a state that exits first must never
+                // have started anything. Only the execute step differs: a
+                // dispatch into the host's invoker instead of a raise.
+                {
+                    let generated_invoke_id =
+                        format!("{}.{}.job", "failing", self as *const _ as usize);
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: StatechartHostInvokerState::Failing,
+                            document_id: "job",
+                        },
+                    );
+                }
+            }
             StatechartHostInvokerState::Invoking => {
-                // SCE-MAP: statechart_host_invoker.scxml:149 :: invoking :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:162 :: invoking :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -2612,7 +2760,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                 }
             }
             StatechartHostInvokerState::Locating => {
-                // SCE-MAP: statechart_host_invoker.scxml:205 :: locating :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:219 :: locating :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -2763,7 +2911,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                 }
             }
             StatechartHostInvokerState::Passing => {
-                // SCE-MAP: statechart_host_invoker.scxml:280 :: passing :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:305 :: passing :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -2784,7 +2932,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                 }
             }
             StatechartHostInvokerState::Timed => {
-                // SCE-MAP: statechart_host_invoker.scxml:227 :: timed :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:241 :: timed :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -2817,7 +2965,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                 }
             }
             StatechartHostInvokerState::Typed => {
-                // SCE-MAP: statechart_host_invoker.scxml:261 :: typed :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:275 :: typed :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -2848,8 +2996,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:112 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:112 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:123 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:123 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -2902,6 +3050,20 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                 // this one ever started and stays silent when it did not, so
                 // the emitted chain does not need its own bookkeeping.
                 engine.cancel_host_invoke("x-sce-host", "req3");
+            }
+            StatechartHostInvokerState::Failing => {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
+                sce_rust_runtime::invoke::cancel_invokes_for_state(
+                    &mut self.pending_invokes,
+                    StatechartHostInvokerState::Failing,
+                );
+                // §scxml-6.4: the host's invocation ends with the state that
+                // started it. Unconditional here: the engine knows whether
+                // this one ever started and stays silent when it did not, so
+                // the emitted chain does not need its own bookkeeping.
+                engine.cancel_host_invoke("x-sce-host", "job");
             }
             StatechartHostInvokerState::Invoking => {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state.
@@ -2995,8 +3157,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:112 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:112 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:123 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:123 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -3040,8 +3202,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:112 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:112 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:123 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:123 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -3051,6 +3213,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
         match state {
             StatechartHostInvokerState::Done => {
                 if event == StatechartHostInvokerEvent::DoneInvoke
+                    || event == StatechartHostInvokerEvent::DoneInvokeJob
                     || event == StatechartHostInvokerEvent::DoneInvokePerm
                     || event == StatechartHostInvokerEvent::DoneInvokeProbe
                     || event == StatechartHostInvokerEvent::DoneInvokeProbe2
@@ -3088,6 +3251,31 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             source: state,
                             targets: &[],
                             transition_index: 0,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
+                None
+            }
+            StatechartHostInvokerState::Failing => {
+                if event == StatechartHostInvokerEvent::ErrorInvokeJob {
+                    if self.safe_evaluate_guard("((((_event.invokeid == \"job\") and (_event.data == \"no\")) and (_event.origin == \"host://job\")) and (_event.origintype == \"x-sce-host\"))", engine) {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 0,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == StatechartHostInvokerEvent::DoneInvokeJob {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 1,
                             has_actions: true,
                             is_internal: false,
                         });
@@ -3207,10 +3395,24 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         });
                     }
                 }
+                if event == StatechartHostInvokerEvent::Fail {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                StatechartHostInvokerState::Failing,
+                            )],
+                            transition_index: 9,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
                 None
             }
             StatechartHostInvokerState::Locating => {
                 if event == StatechartHostInvokerEvent::DoneInvoke
+                    || event == StatechartHostInvokerEvent::DoneInvokeJob
                     || event == StatechartHostInvokerEvent::DoneInvokePerm
                     || event == StatechartHostInvokerEvent::DoneInvokeProbe
                     || event == StatechartHostInvokerEvent::DoneInvokeProbe2
@@ -3397,8 +3599,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:112 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:112 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:123 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:123 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -3409,7 +3611,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Done => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:199 :: done :: _transition_0
+                        // SCE-MAP: statechart_host_invoker.scxml:213 :: done :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3448,7 +3650,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Evaluating => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:189 :: evaluating :: _transition_0
+                        // SCE-MAP: statechart_host_invoker.scxml:203 :: evaluating :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3484,10 +3686,83 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                     _ => {}
                 }
             }
+            StatechartHostInvokerState::Failing => {
+                match transition_index {
+                    0 => {
+                        // SCE-MAP: statechart_host_invoker.scxml:296 :: failing :: _transition_0
+                        // W3C SCXML 3.13: Transition 0 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="failed">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(failed, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "failed", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'failed': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            StatechartHostInvokerEvent::ErrorExecution,
+                                            "<assign> to 'failed' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
+                            }
+                        }
+                    }
+                    1 => {
+                        // SCE-MAP: statechart_host_invoker.scxml:300 :: failing :: _transition_1
+                        // W3C SCXML 3.13: Transition 1 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                // W3C SCXML 5.3: <assign location="overturned">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "_scxml_add(overturned, 1)";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "overturned", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'overturned': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            StatechartHostInvokerEvent::ErrorExecution,
+                                            "<assign> to 'overturned' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
             StatechartHostInvokerState::Invoking => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:159 :: invoking :: _transition_0
+                        // SCE-MAP: statechart_host_invoker.scxml:172 :: invoking :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3521,7 +3796,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:162 :: invoking :: _transition_1
+                        // SCE-MAP: statechart_host_invoker.scxml:175 :: invoking :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3555,7 +3830,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:165 :: invoking :: _transition_2
+                        // SCE-MAP: statechart_host_invoker.scxml:178 :: invoking :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3594,7 +3869,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Locating => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:213 :: locating :: _transition_0
+                        // SCE-MAP: statechart_host_invoker.scxml:227 :: locating :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3628,7 +3903,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:216 :: locating :: _transition_1
+                        // SCE-MAP: statechart_host_invoker.scxml:230 :: locating :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3662,7 +3937,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:219 :: locating :: _transition_2
+                        // SCE-MAP: statechart_host_invoker.scxml:233 :: locating :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3696,7 +3971,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:222 :: locating :: _transition_3
+                        // SCE-MAP: statechart_host_invoker.scxml:236 :: locating :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3735,7 +4010,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Timed => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:234 :: timed :: _transition_0
+                        // SCE-MAP: statechart_host_invoker.scxml:248 :: timed :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3769,7 +4044,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:240 :: timed :: _transition_1
+                        // SCE-MAP: statechart_host_invoker.scxml:254 :: timed :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3806,7 +4081,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:247 :: timed :: _transition_3
+                        // SCE-MAP: statechart_host_invoker.scxml:261 :: timed :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3840,7 +4115,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:251 :: timed :: _transition_4
+                        // SCE-MAP: statechart_host_invoker.scxml:265 :: timed :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3879,7 +4154,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Typed => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:266 :: typed :: _transition_0
+                        // SCE-MAP: statechart_host_invoker.scxml:280 :: typed :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3913,7 +4188,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:269 :: typed :: _transition_1
+                        // SCE-MAP: statechart_host_invoker.scxml:283 :: typed :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3947,7 +4222,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:272 :: typed :: _transition_2
+                        // SCE-MAP: statechart_host_invoker.scxml:286 :: typed :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3981,7 +4256,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:275 :: typed :: _transition_3
+                        // SCE-MAP: statechart_host_invoker.scxml:289 :: typed :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {

@@ -340,6 +340,43 @@ func TestACompletedInvocationIsNotCancelled(t *testing.T) {
 	}
 }
 
+// A host-run invocation can fail: `error.invoke.<id>` with the host's data,
+// `_event.invokeid`, and the origin the host named (§scxml-6.4, 5.10.1) — and a
+// failure ends the run, so a completion afterwards is refused.
+func TestAFailedInvocationRaisesErrorInvokeOnceWithItsOrigin(t *testing.T) {
+	var log []string
+	var starts []hostStart
+	s := newStarted()
+	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
+	s.engine.Initialize()
+	s.engine.Step()
+	s.engine.ProcessEvent(StatechartHostInvokerEventFail)
+
+	token := tokenOf(t, starts, "job")
+	if !s.engine.FailHostInvoke(declaredType, "job", token, `"no"`, "host://job", declaredType) {
+		t.Fatal("a running invocation's failure was refused")
+	}
+	s.engine.Step()
+	// Counted only when the invokeid, the data and both origin fields are what
+	// the host named, so this is those assertions too.
+	if got := s.counter(t, "failed"); got != 1 {
+		t.Fatalf("failed = %d", got)
+	}
+	if s.engine.CompleteHostInvoke(declaredType, "job", token, "ok") {
+		t.Fatal("a failed run completed afterwards")
+	}
+	if s.engine.FailHostInvoke(declaredType, "job", token, `"no"`, "host://job", declaredType) {
+		t.Fatal("the same run failed twice")
+	}
+	s.engine.Step()
+	if got := s.counter(t, "failed"); got != 1 {
+		t.Fatalf("failed = %d after a second report", got)
+	}
+	if got := s.counter(t, "overturned"); got != 0 {
+		t.Fatalf("overturned = %d", got)
+	}
+}
+
 // A host that finishes later reports it with the start's token, and the
 // completion is taken once: a second report of the same run finds nothing, and
 // the state's exit then cancels only the invocation still running.

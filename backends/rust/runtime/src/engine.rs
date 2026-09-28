@@ -613,6 +613,15 @@ pub(crate) enum EventOutcome {
     Taken,
 }
 
+/// How a host-run invocation ended, when the host reports it (§scxml-6.4):
+/// which of `done.invoke` and `error.invoke` the document receives.
+#[cfg(not(feature = "no_std"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostInvokeEnd {
+    Done,
+    Failed,
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Engine<P>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2662,6 +2671,79 @@ impl<P: StatePolicy> Engine<P> {
         token: u64,
         done_data: &str,
     ) -> bool {
+        self.complete_host_invoke_from(processor_type, invoke_id, token, done_data, "", "")
+    }
+
+    /// [`complete_host_invoke`](Self::complete_host_invoke), with the
+    /// `_event.origin` and `_event.origintype` the completion carries
+    /// (§scxml-5.10.1) — for a host whose invocation stands for another
+    /// party it can name, as a Mesh router's `sce:mesh-rpc` stands for the
+    /// peer that answered (`mesh://<peer>`, SCE_MESH.md §mesh-9.5).
+    #[cfg(not(feature = "no_std"))]
+    pub fn complete_host_invoke_from(
+        &mut self,
+        processor_type: &str,
+        invoke_id: &str,
+        token: u64,
+        done_data: &str,
+        origin: &str,
+        origin_type: &str,
+    ) -> bool {
+        self.end_host_invoke(
+            processor_type,
+            invoke_id,
+            token,
+            HostInvokeEnd::Done,
+            done_data,
+            origin,
+            origin_type,
+        )
+    }
+
+    /// §scxml-6.4: a host-run invocation failed; raise its
+    /// `error.invoke.<invoke_id>` — or the generic `error.invoke` when the
+    /// document names no specific one — with `error_data` as `_event.data`.
+    ///
+    /// The same door as a completion, and the same rules: accepted only
+    /// while start `token` is still running, ending the invocation, so a run
+    /// ends once, by success, failure or deadline, whichever comes first.
+    /// Returns `false` — raising nothing — for an invocation that was
+    /// cancelled, already ended, or restarted since.
+    #[cfg(not(feature = "no_std"))]
+    pub fn fail_host_invoke(
+        &mut self,
+        processor_type: &str,
+        invoke_id: &str,
+        token: u64,
+        error_data: &str,
+        origin: &str,
+        origin_type: &str,
+    ) -> bool {
+        self.end_host_invoke(
+            processor_type,
+            invoke_id,
+            token,
+            HostInvokeEnd::Failed,
+            error_data,
+            origin,
+            origin_type,
+        )
+    }
+
+    /// The one body behind a host-run invocation's completion and failure:
+    /// the token check, the deadline drop, and the event.
+    #[cfg(not(feature = "no_std"))]
+    #[allow(clippy::too_many_arguments)]
+    fn end_host_invoke(
+        &mut self,
+        processor_type: &str,
+        invoke_id: &str,
+        token: u64,
+        end: HostInvokeEnd,
+        data: &str,
+        origin: &str,
+        origin_type: &str,
+    ) -> bool {
         if !self
             .host_processors
             .take_started(processor_type, invoke_id, token)
@@ -2669,20 +2751,36 @@ impl<P: StatePolicy> Engine<P> {
             return false;
         }
         self.scheduler.drop_host_invoke_deadline(token);
-        // §scxml-3.12.1: the specific `done.invoke.<id>` when the document
-        // names it, and otherwise the generic `done.invoke` its descriptor
-        // matches — as an SCXML child's completion does. Looking up only the
-        // specific name lost every completion a document handled generically.
-        let event_name = crate::invoke::create_done_invoke_event_name(invoke_id);
-        if let Some(evt) = P::get_event_from_name(&event_name)
-            .or_else(|| P::get_event_from_name(crate::invoke::DONE_INVOKE_EVENT))
+        // §scxml-3.12.1: the specific `done.invoke.<id>` / `error.invoke.<id>`
+        // when the document names it, and otherwise the generic event its
+        // descriptor matches — as an SCXML child's completion does. Looking
+        // up only the specific name lost every completion a document handled
+        // generically.
+        let (event_name, generic) = match end {
+            HostInvokeEnd::Done => (
+                crate::invoke::create_done_invoke_event_name(invoke_id),
+                crate::invoke::DONE_INVOKE_EVENT,
+            ),
+            HostInvokeEnd::Failed => (
+                format!("{}{invoke_id}", crate::invoke::ERROR_INVOKE_PREFIX),
+                crate::invoke::ERROR_INVOKE_EVENT,
+            ),
+        };
+        if let Some(evt) =
+            P::get_event_from_name(&event_name).or_else(|| P::get_event_from_name(generic))
         {
             let mut meta = EventWithMetadata::new(evt);
-            meta.metadata = EventMetadata::external(SceString::new(), SceString::new());
-            meta.metadata.data = crate::sce_string_from_str(done_data);
+            meta.metadata =
+                EventMetadata::external(SceString::new(), crate::sce_string_from_str(origin));
+            // An empty `origin_type` keeps the one every host completion has
+            // carried, so `complete_host_invoke` reads as it always did.
+            if !origin_type.is_empty() {
+                meta.metadata.origin_type = crate::sce_string_from_str(origin_type);
+            }
+            meta.metadata.data = crate::sce_string_from_str(data);
             // §scxml-5.10.1: the completion is an event of the invocation, so
-            // `_event.invokeid` is the invocation's id — the one
-            // `done.invoke.<id>` names and the host was handed.
+            // `_event.invokeid` is the invocation's id — the one the event
+            // names and the host was handed.
             meta.metadata.invoke_id = crate::sce_string_from_str(invoke_id);
             meta.metadata.host_invoke_token = Some(token);
             self.external_queue.raise(meta);
