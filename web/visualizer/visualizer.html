@@ -316,6 +316,10 @@
          nothing itself, which is the whole point of the file. -->
     <script src="annotation-overlay.js"></script>
 
+    <!-- The codegen WASM, loaded once: the GUI's structure (from the Rust
+         model), the annotation overlay and the code generator share it. -->
+    <script src="sce-build-wasm.js"></script>
+
     <!-- Execution Controller Modules -->
     <script src="controller/formatters.js"></script>
     <script src="controller/ui-updater.js"></script>

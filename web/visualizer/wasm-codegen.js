@@ -38,9 +38,8 @@ class WasmCodegen {
         try {
             if (progressCallback) progressCallback('Loading WASM codegen...', 30);
 
-            // Dynamic import of the WASM ES module
-            this.module = await import(`./${WASM_BASE}sce_build.js`);
-            await this.module.default(`./${WASM_BASE}sce_build_bg.wasm`);
+            // The page's one loader for this module (sce-build-wasm.js).
+            this.module = await SceBuildWasm.load(WASM_BASE);
 
             if (progressCallback) progressCallback('Ready!', 100);
             this.loaded = true;

@@ -289,10 +289,9 @@ async function loadAnnotationOverlay(wasmModule, scxmlContent, scxmlName) {
  * claimed. Those are different statements and only one of them is true.
  */
 async function annotationOverlayFromWasm(scxmlContent, scxmlName, wasmBase) {
-    const base = wasmBase || 'wasm/';
     try {
-        const wasm = await import(`./${base}sce_build.js`);
-        await wasm.default(`./${base}sce_build_bg.wasm`);
+        // The page's one loader for this module (sce-build-wasm.js).
+        const wasm = await SceBuildWasm.load(wasmBase || 'wasm/');
         return await loadAnnotationOverlay(wasm, scxmlContent, scxmlName);
     } catch (error) {
         if (typeof logger !== 'undefined' && logger.warn) {
