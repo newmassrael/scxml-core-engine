@@ -24,6 +24,10 @@
 {{ indent }}    params=self._wire_params_from_payload(_data),
 {{ indent }}    send_id=_sid,
 {{ indent }}    event_data=self._event_data_text(_data, {{ action.content | to_lua_data_content | py_string_literal }}, {{ 'True' if has_payload else 'False' }}),
+{# SCE_MESH.md §mesh-10.7: the invokeid of the event being processed now,
+   carried back out as a W3C child's send to its parent carries it
+   (§scxml-6.4.1). #}
+{{ indent }}    invoke_id=engine.current_event_invoke_id,
 {{ indent }})
 {% if has_delay %}
 {# W3C SCXML 6.2.4: a `delay` is a property of the SEND, not of the processor

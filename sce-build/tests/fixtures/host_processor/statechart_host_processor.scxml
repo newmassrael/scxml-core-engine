@@ -28,6 +28,13 @@
   counted in `paramErrors`, in its own state, so it cannot be mistaken for the
   `refused` of a processor nobody registered.
 
+  In `pairs` the driver then raises `answer.please` with an invokeid, and the
+  third request, `watch.answer`, must carry that invokeid while the first two
+  carry none. A request a Mesh router served arrives this way, and the reply
+  the document sends while handling it is matched back to the request by
+  nothing else (SCE_MESH.md §mesh-10.7). The invokeid is the one current when
+  the `<send>` executes, not when a delayed one fires.
+
   The generated machine is compiled with the host-processor declaration
   `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
   comment cannot spell a double hyphen). Driven with a handler registered
@@ -87,6 +94,14 @@
     </onentry>
     <transition event="error.execution">
       <assign location="paramErrors" expr="paramErrors + 1"/>
+    </transition>
+    <!-- The driver raises this with an invokeid, as a Mesh router raises an
+         inbound request (SCE_MESH.md §mesh-10.7). A send made while it is
+         being processed carries that invokeid back out, the way a W3C
+         child's send to its parent does (W3C SCXML 6.4.1); the two sends
+         above ran while no invokeid was current, and carry none. -->
+    <transition event="answer.please">
+      <send type="x-sce-host" event="watch.answer"/>
     </transition>
   </state>
 </scxml>

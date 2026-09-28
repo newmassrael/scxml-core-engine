@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d70eed386fb1be497072e2a448c260b668c5dcbd8d5e1fa953f0b558b2b8d584
+// source-hash: 525402c05b4c4ac24bc3fdb20cfda83cd34432cc0765e9667256e22eee0911d3
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -141,6 +141,8 @@ impl StatechartDelayedHostSendEvent {
 // ======================================================================
 
 pub struct StatechartDelayedHostSendPolicy {
+    // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
+    pending_event_invokeid: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
@@ -166,6 +168,7 @@ pub struct StatechartDelayedHostSendPolicy {
 impl StatechartDelayedHostSendPolicy {
     pub fn new() -> Self {
         Self {
+            pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             session_id: None,
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -382,6 +385,18 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
         match history {}
     }
 
+    // W3C SCXML 5.10: Populate pending event metadata from EventWithMetadata
+    // Ports C++ EventMetadataHelper::populatePolicyFromMetadata
+    fn populate_event_metadata(&mut self, metadata: &sce_rust_runtime::EventMetadata) {
+        self.pending_event_invokeid = metadata.invoke_id.clone();
+    }
+
+    // W3C SCXML 5.10: Clear pending event metadata after transition processing
+    // Ports C++ EventMetadataHelper::clearPolicyMetadata
+    fn clear_event_metadata(&mut self) {
+        self.pending_event_invokeid.clear();
+    }
+
     // ======================================================================
     // Instance methods - generated executable content
     // ======================================================================
@@ -420,6 +435,11 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                                 send_id: send_id.to_string(),
                                 // W3C SCXML 5.10: the payload computed above, once, for every arm.
                                 event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
                             };
                             let __sce_delay_ms = 200_u64;
                             // W3C SCXML 6.2.4: arm it. The engine performs the act when the
@@ -517,6 +537,11 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                                 send_id: send_id.to_string(),
                                 // W3C SCXML 5.10: the payload computed above, once, for every arm.
                                 event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
                             };
                             let __sce_delay_ms = 200_u64;
                             // W3C SCXML 6.2.4: arm it. The engine performs the act when the

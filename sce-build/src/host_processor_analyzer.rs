@@ -437,7 +437,22 @@ pub fn declare_host_surfaces(
     // keeps `needs_host_processor` and the emitted code the same answer.
     model.host_processor_causes = analyze(model);
     record_delayed_host_sends(model);
+    record_host_sends_read_invokeid(model);
     Ok(())
+}
+
+/// A host-served `<send>` carries the `_event.invokeid` current when it
+/// executes (`HostSendRequest.invoke_id`, SCE_MESH.md §mesh-10.7), so a
+/// machine with one reads that field of every event it processes — the fact
+/// the backends that keep it only on demand (`needs_event_invokeid`) are
+/// told, as they are told by a document that names `_event.invokeid`.
+///
+/// Runs after the declaration is applied and after Mesh sends are lowered,
+/// the two points at which a send becomes host-served.
+fn record_host_sends_read_invokeid(model: &mut SCXMLModel) {
+    if any_action(model, &mut |action| action.send_type_host_served) {
+        model.needs_event_invokeid = true;
+    }
 }
 
 /// The most host-run invocations this machine can have in flight at once.
@@ -711,6 +726,12 @@ fn lower_mesh_sends(model: &SCXMLModel, language: Language) -> Cow<'_, SCXMLMode
     // A delayed Mesh send waits on the delayed-send queue as any delayed
     // host-served send does, so the queue's storage is sized with it.
     record_delayed_host_sends(&mut lowered);
+    record_host_sends_read_invokeid(&mut lowered);
+    // A `targetexpr` that names a Mesh peer at run time reaches the same host
+    // arm, which reads the same invokeid.
+    if dynamic {
+        lowered.needs_event_invokeid = true;
+    }
     Cow::Owned(lowered)
 }
 

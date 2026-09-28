@@ -178,6 +178,11 @@ class Engine(Generic[S, E]):
         # here rather than guessing one. Empty means no such endpoint is
         # deployed, and no BasicHTTP entry is published in `_ioprocessors`.
         self.basic_http_access_uri: str = ""
+        # §scxml-5.10 — `_event.invokeid` of the event being processed, kept
+        # where the generated send site can read it without a datamodel: a
+        # host-served `<send>` carries it back out (SCE_MESH.md §mesh-10.7).
+        # Set with `_event`, by `_bind_current_event`, and never otherwise.
+        self.current_event_invoke_id: str = ""
         # Back-ref so the policy's helpers (which run as instance
         # methods on the generated module) can find the engine's
         # session without an extra parameter on every call site.
@@ -1912,7 +1917,7 @@ class Engine(Generic[S, E]):
         # backend reports it once.
         already_bound = bool(evt.metadata.invoke_id)
         if already_bound:
-            self._policy.set_current_event(evt.event, evt.metadata)
+            self._bind_current_event(evt)
             self._policy.execute_finalize_for_child_event(evt, self)
         # §scxml-6.4.1 — autoforward into every active child marked
         # `autoforward="true"`, before transition selection, so the child
@@ -1982,6 +1987,12 @@ class Engine(Generic[S, E]):
             microstep(self._host, transitions)
             self._macrostep_microsteps_taken += 1
 
+    def _bind_current_event(self, evt: EventWithMetadata[E]) -> None:
+        """§scxml-5.10 — bind `_event` for the event selected for processing,
+        and keep its invokeid where a host-served `<send>` reads it."""
+        self._policy.set_current_event(evt.event, evt.metadata)
+        self.current_event_invoke_id = evt.metadata.invoke_id
+
     def _dispatch(self, evt: EventWithMetadata[E], already_bound: bool = False) -> bool:
         # §scxml-5.10 — bind `_event` into the datamodel before the
         # microstep so transition guards and action expressions can
@@ -1992,7 +2003,7 @@ class Engine(Generic[S, E]):
         # processing". `already_bound` is the external dequeue saying it
         # bound this event itself, before `<finalize>` — once per event.
         if not already_bound:
-            self._policy.set_current_event(evt.event, evt.metadata)
+            self._bind_current_event(evt)
         # §scxml-6.5 / 6.4.1 — the `<finalize>` and autoforward
         # preliminary steps belong to the external dequeue and run in
         # `_process_next_external_event`, which is the only caller that

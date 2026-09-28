@@ -106,13 +106,32 @@ fn a_registered_handler_receives_the_send_and_its_reply_arrives() {
         "the <param> that cannot be read was not reported",
     );
 
+    // SCE_MESH.md §mesh-10.7: an event raised with an invokeid, as a Mesh
+    // router raises an inbound request; the send made while handling it
+    // carries that invokeid back out.
+    engine.raise_external_by_name_with_meta(
+        "answer.please",
+        &sce_rust_runtime::EventMetadata {
+            event_type: sce_rust_runtime::EventType::External,
+            invoke_id: "req-7".into(),
+            ..sce_rust_runtime::EventMetadata::default()
+        },
+    );
+    engine.step();
+
     let requests = seen.lock().expect("handler log");
     assert_eq!(
         requests.len(),
-        2,
-        "the handler ran {} times; the served send and the one from `pairs` each run it once",
+        3,
+        "the handler ran {} times; the served send, the one from `pairs` and the answer each run it once",
         requests.len()
     );
+    // Taken from the event current when each send executed: the first two
+    // ran while none carried an invokeid, the third while `answer.please` did.
+    assert_eq!(requests[0].invoke_id, "");
+    assert_eq!(requests[1].invoke_id, "");
+    assert_eq!(requests[2].event_name, "watch.answer");
+    assert_eq!(requests[2].invoke_id, "req-7");
     let req = &requests[0];
     // W3C SCXML 5.10: the event data is what a local delivery of this send
     // would carry in `_event.data`, computed by the engine, not rebuilt by

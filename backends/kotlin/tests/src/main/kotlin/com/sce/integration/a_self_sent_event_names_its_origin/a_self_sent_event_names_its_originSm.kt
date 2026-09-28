@@ -626,7 +626,11 @@ class ASelfSentEventNamesItsOriginStateMachine(
                 content = "",
                 params = sendWireParams,
                 sendId = "__send_3",
-                eventData = sendData
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
             )
             val hostServed = performHostSend(hostRequest)
             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -838,7 +842,11 @@ class ASelfSentEventNamesItsOriginStateMachine(
                 content = "",
                 params = sendWireParams,
                 sendId = "__send_0",
-                eventData = sendData
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
             )
             val hostServed = performHostSend(hostRequest)
             // W3C SCXML 6.2: a declared type with no handler registered is,

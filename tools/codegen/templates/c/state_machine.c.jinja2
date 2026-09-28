@@ -664,6 +664,10 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% else %}
                 _host_req.event_data = "";
 {% endif %}
+                /* SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                   processed now, carried back out as a W3C child's send to
+                   its parent carries it (§scxml-6.4.1). */
+                _host_req.invoke_id = sm->current_event_invoke_id;
 {% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
 {% if action.delayexpr or host_delay_ms > 0 %}
                 /* W3C SCXML 6.2.4: a `delay` is a property of the SEND, not
@@ -3100,6 +3104,7 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model
     sce_copy_bounded_n(slot->host_target, request->target, sizeof(slot->host_target));
     sce_copy_bounded_data(slot->host_content, request->content);
     sce_copy_bounded_data(slot->host_event_data, request->event_data);
+    sce_copy_bounded_id(slot->host_invoke_id, request->invoke_id);
 {% if model.delayed_host_send_max_params > 0 %}
     slot->host_param_count = 0;
     for (int _p = 0; _p < request->param_count && _p < {{ model.delayed_host_send_max_params }}; ++_p) {
@@ -4147,6 +4152,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             _ready_req.content = ready.host_content;
             _ready_req.send_id = ready.send_id;
             _ready_req.event_data = ready.host_event_data;
+            _ready_req.invoke_id = ready.host_invoke_id;
 {% if model.delayed_host_send_max_params > 0 %}
             _ready_req.params = ready.host_param_count > 0u ? _ready_params : NULL;
             _ready_req.param_count = (int)ready.host_param_count;

@@ -29,6 +29,7 @@
 package com.sce.integration
 
 import com.sce.integration.statechart_host_processor.StatechartHostProcessorStateMachine
+import com.sce.runtime.EventMetadata
 import com.sce.runtime.MESH_PROCESSOR_TYPE
 import com.sce.runtime.StateMachineEngine
 import com.sce.runtime.isReservedType
@@ -103,7 +104,23 @@ class HostProcessorTest {
             // W3C SCXML 5.7.1: the second send's unreadable <param> raised, and
             // the message still went — which the second request confirms.
             assertEquals(1L, counter(sm, "paramErrors"), "the <param> that cannot be read was not reported")
-            assertEquals(2, seen.size, "the handler ran ${seen.size} times; the served send and the one from `pairs` each run it once")
+            // SCE_MESH.md §mesh-10.7: an event raised with an invokeid, as a
+            // Mesh router raises an inbound request; the send made while
+            // handling it carries that invokeid back out.
+            sm.sendEventByName("answer.please", EventMetadata(type = "external", invokeId = "req-7"))
+            sm.tick()
+            assertEquals(
+                3,
+                seen.size,
+                "the handler ran ${seen.size} times; the served send, the one from `pairs` and the answer each run it once",
+            )
+            // Taken from the event current when each send executed: the first
+            // two ran while none carried an invokeid, the third while
+            // `answer.please` did.
+            assertEquals("", seen[0].invokeId)
+            assertEquals("", seen[1].invokeId)
+            assertEquals("watch.answer", seen[2].eventName)
+            assertEquals("req-7", seen[2].invokeId)
             val request = seen[0]
             // W3C SCXML 5.10: the event data is what a local delivery of this
             // send would carry in `_event.data`, computed by the engine, not

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 853e159a7eb79ab15c04e875f7bec1835f6503b1cce8655a99ae83b3ec39b1dc
+// source-hash: f55f0d50f2ff05a8b6dba1e27e40d55e81b13b70ab29ebc5ee03738d4ee0ecd4
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine"]
-// SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine
+#![doc = "SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine"]
+// SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -1297,8 +1297,8 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine"]
-    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine
+    #[doc = "SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine"]
+    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1307,7 +1307,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
     ) {
         match state {
             ADelayedSendReachesWhatItsTargetNamesState::Run => {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:64 :: run :: _state_body
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:66 :: run :: _state_body
                 // W3C SCXML 3.8: onentry block 1/2
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1459,8 +1459,8 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine"]
-    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine
+    #[doc = "SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine"]
+    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1526,8 +1526,8 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine"]
-    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine
+    #[doc = "SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine"]
+    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -1571,8 +1571,8 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine"]
-    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine
+    #[doc = "SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine"]
+    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1690,8 +1690,8 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine"]
-    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine
+    #[doc = "SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine"]
+    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1702,7 +1702,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
             ADelayedSendReachesWhatItsTargetNamesState::Run => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:112 :: run :: _transition_0
+                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:114 :: run :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1735,7 +1735,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:115 :: run :: _transition_1
+                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:117 :: run :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1794,7 +1794,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:121 :: run :: _transition_2
+                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:123 :: run :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1827,7 +1827,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:124 :: run :: _transition_3
+                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:126 :: run :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1886,7 +1886,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:130 :: run :: _transition_4
+                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:132 :: run :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -2058,7 +2058,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                         }
                     }
                     5 => {
-                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:138 :: run :: _transition_5
+                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:140 :: run :: _transition_5
                         // W3C SCXML 3.13: Transition 5 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -2091,7 +2091,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                         }
                     }
                     6 => {
-                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:141 :: run :: _transition_6
+                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:143 :: run :: _transition_6
                         // W3C SCXML 3.13: Transition 6 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -2124,7 +2124,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                         }
                     }
                     7 => {
-                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:144 :: run :: _transition_7
+                        // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:146 :: run :: _transition_7
                         // W3C SCXML 3.13: Transition 7 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {

@@ -1653,6 +1653,11 @@ impl StatePolicy for AiLoopPolicy {
                                 send_id: send_id.to_string(),
                                 // W3C SCXML 5.10: the payload computed above, once, for every arm.
                                 event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1748,6 +1753,11 @@ impl StatePolicy for AiLoopPolicy {
                                 send_id: send_id.to_string(),
                                 // W3C SCXML 5.10: the payload computed above, once, for every arm.
                                 event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1796,6 +1806,11 @@ impl StatePolicy for AiLoopPolicy {
                                 send_id: send_id.to_string(),
                                 // W3C SCXML 5.10: the payload computed above, once, for every arm.
                                 event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1882,6 +1897,11 @@ impl StatePolicy for AiLoopPolicy {
                                 send_id: send_id.to_string(),
                                 // W3C SCXML 5.10: the payload computed above, once, for every arm.
                                 event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1956,6 +1976,11 @@ impl StatePolicy for AiLoopPolicy {
                                 send_id: send_id.to_string(),
                                 // W3C SCXML 5.10: the payload computed above, once, for every arm.
                                 event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -2039,6 +2064,11 @@ impl StatePolicy for AiLoopPolicy {
                                 send_id: send_id.to_string(),
                                 // W3C SCXML 5.10: the payload computed above, once, for every arm.
                                 event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -2107,6 +2137,11 @@ impl StatePolicy for AiLoopPolicy {
                                 send_id: send_id.to_string(),
                                 // W3C SCXML 5.10: the payload computed above, once, for every arm.
                                 event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -2747,6 +2782,11 @@ impl StatePolicy for AiLoopPolicy {
                                         send_id: send_id.to_string(),
                                         // W3C SCXML 5.10: the payload computed above, once, for every arm.
                                         event_data: event_data.to_string(),
+                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                        // processed now, carried back out as a W3C child's send to its
+                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                        // every machine with a host-served send.
+                                        invoke_id: self.pending_event_invokeid.to_string(),
                                     };
                                     let __sce_served = engine.perform_host_send(__sce_request);
                                     // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -2976,6 +3016,11 @@ impl StatePolicy for AiLoopPolicy {
                                         send_id: send_id.to_string(),
                                         // W3C SCXML 5.10: the payload computed above, once, for every arm.
                                         event_data: event_data.to_string(),
+                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                        // processed now, carried back out as a W3C child's send to its
+                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                        // every machine with a host-served send.
+                                        invoke_id: self.pending_event_invokeid.to_string(),
                                     };
                                     let __sce_served = engine.perform_host_send(__sce_request);
                                     // W3C SCXML 6.2: a declared type with no handler registered is,

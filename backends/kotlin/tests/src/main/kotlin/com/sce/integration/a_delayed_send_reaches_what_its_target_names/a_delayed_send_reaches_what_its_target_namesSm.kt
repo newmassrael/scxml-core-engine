@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 853e159a7eb79ab15c04e875f7bec1835f6503b1cce8655a99ae83b3ec39b1dc
+// source-hash: f55f0d50f2ff05a8b6dba1e27e40d55e81b13b70ab29ebc5ee03738d4ee0ecd4
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/a_delayed_send_reaches_what_its_target_names/a_delayed_send_reaches_what_its_target_names.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine
+// SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine
 
 package com.sce.integration.a_delayed_send_reaches_what_its_target_names
 
@@ -624,16 +624,16 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine
+    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine
     override fun onEntry(state: ADelayedSendReachesWhatItsTargetNamesState, isDefaultEntry: Boolean) {
         when (state) {
             is ADelayedSendReachesWhatItsTargetNamesState.Done -> {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:153 :: done :: _state_body
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:155 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is ADelayedSendReachesWhatItsTargetNamesState.Run -> {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:64 :: run :: _state_body
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:66 :: run :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/2
                 run {
 
@@ -719,14 +719,14 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine
+    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine
     override fun onExit(state: ADelayedSendReachesWhatItsTargetNamesState) {
         when (state) {
             is ADelayedSendReachesWhatItsTargetNamesState.Done -> {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:153 :: done :: _state_body
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:155 :: done :: _state_body
             }
             is ADelayedSendReachesWhatItsTargetNamesState.Run -> {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:64 :: run :: _state_body
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:66 :: run :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -739,12 +739,12 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine
+    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine
     override fun executeTransitionContent(source: ADelayedSendReachesWhatItsTargetNamesState, transitionIndex: Int) {
         when (source) {
         is ADelayedSendReachesWhatItsTargetNamesState.Run -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:112 :: run :: _transition_0
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:114 :: run :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("commErrors", "commErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(commErrors, 1)", "commErrors + 1"))) {
@@ -752,7 +752,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             }
             }
             1 -> {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:115 :: run :: _transition_1
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:117 :: run :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("order", "order"), com.sce.runtime.ScriptSource.lua("_scxml_add((order * 10), 1)", "order * 10 + 1"))) {
@@ -769,7 +769,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             }
             }
             2 -> {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:121 :: run :: _transition_2
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:123 :: run :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("order", "order"), com.sce.runtime.ScriptSource.lua("_scxml_add((order * 10), 3)", "order * 10 + 3"))) {
@@ -777,7 +777,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             }
             }
             3 -> {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:124 :: run :: _transition_3
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:126 :: run :: _transition_3
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("lateCount", "lateCount"), com.sce.runtime.ScriptSource.lua("_scxml_add(lateCount, 1)", "lateCount + 1"))) {
@@ -794,7 +794,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             }
             }
             4 -> {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:130 :: run :: _transition_4
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:132 :: run :: _transition_4
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("hellos", "hellos"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
@@ -863,7 +863,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             5 -> {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:138 :: run :: _transition_5
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:140 :: run :: _transition_5
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("hellos", "hellos"), com.sce.runtime.ScriptSource.lua("_scxml_add(hellos, 1)", "hellos + 1"))) {
@@ -871,7 +871,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             }
             }
             6 -> {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:141 :: run :: _transition_6
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:143 :: run :: _transition_6
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("lostArrived", "lostArrived"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
@@ -879,7 +879,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             }
             }
             7 -> {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:144 :: run :: _transition_7
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:146 :: run :: _transition_7
 
 
             if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == 8)", "_event.data === 8"))) {

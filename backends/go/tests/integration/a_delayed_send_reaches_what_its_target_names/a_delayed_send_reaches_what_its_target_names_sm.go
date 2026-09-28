@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 853e159a7eb79ab15c04e875f7bec1835f6503b1cce8655a99ae83b3ec39b1dc
+// source-hash: f55f0d50f2ff05a8b6dba1e27e40d55e81b13b70ab29ebc5ee03738d4ee0ecd4
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:49 :: _machine
+// SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:51 :: _machine
 
 package a_delayed_send_reaches_what_its_target_names
 
@@ -1092,12 +1092,12 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line a_delayed_send_reaches_what_its_target_names.scxml:49
+//line a_delayed_send_reaches_what_its_target_names.scxml:51
 func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteEntryActions(state ADelayedSendReachesWhatItsTargetNamesState, engine *sce.Engine[ADelayedSendReachesWhatItsTargetNamesState, ADelayedSendReachesWhatItsTargetNamesEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case ADelayedSendReachesWhatItsTargetNamesStateRun:
-		//line a_delayed_send_reaches_what_its_target_names.scxml:64
+		//line a_delayed_send_reaches_what_its_target_names.scxml:66
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1192,7 +1192,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteEntryActions(state 
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line a_delayed_send_reaches_what_its_target_names.scxml:49
+//line a_delayed_send_reaches_what_its_target_names.scxml:51
 func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[ADelayedSendReachesWhatItsTargetNamesState, ADelayedSendReachesWhatItsTargetNamesEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1200,7 +1200,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteHistoryDefaultConte
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line a_delayed_send_reaches_what_its_target_names.scxml:49
+//line a_delayed_send_reaches_what_its_target_names.scxml:51
 func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteExitActions(state ADelayedSendReachesWhatItsTargetNamesState, engine *sce.Engine[ADelayedSendReachesWhatItsTargetNamesState, ADelayedSendReachesWhatItsTargetNamesEvent], configurationBeforeExit []ADelayedSendReachesWhatItsTargetNamesState) {
 	p.ensureScriptEngine()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
@@ -1242,7 +1242,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteExitActions(state A
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line a_delayed_send_reaches_what_its_target_names.scxml:49
+//line a_delayed_send_reaches_what_its_target_names.scxml:51
 func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) BindCurrentEvent(event ADelayedSendReachesWhatItsTargetNamesEvent, engine *sce.Engine[ADelayedSendReachesWhatItsTargetNamesState, ADelayedSendReachesWhatItsTargetNamesEvent]) {
 	if event != ADelayedSendReachesWhatItsTargetNamesEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
@@ -1257,7 +1257,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) BindCurrentEvent(event ADe
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line a_delayed_send_reaches_what_its_target_names.scxml:49
+//line a_delayed_send_reaches_what_its_target_names.scxml:51
 func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) FirstEnabledTransition(state ADelayedSendReachesWhatItsTargetNamesState, event ADelayedSendReachesWhatItsTargetNamesEvent, engine *sce.Engine[ADelayedSendReachesWhatItsTargetNamesState, ADelayedSendReachesWhatItsTargetNamesEvent]) (sce.EnabledTransition[ADelayedSendReachesWhatItsTargetNamesState, sce.HistoryID], bool) {
 	switch state {
 	case ADelayedSendReachesWhatItsTargetNamesStateRun:
@@ -1358,14 +1358,14 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) FirstEnabledTransition(sta
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line a_delayed_send_reaches_what_its_target_names.scxml:49
+//line a_delayed_send_reaches_what_its_target_names.scxml:51
 func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(source ADelayedSendReachesWhatItsTargetNamesState, transitionIndex int, engine *sce.Engine[ADelayedSendReachesWhatItsTargetNamesState, ADelayedSendReachesWhatItsTargetNamesEvent]) {
 	p.ensureScriptEngine()
 	switch source {
 	case ADelayedSendReachesWhatItsTargetNamesStateRun:
 		switch transitionIndex {
 		case 0:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:112
+			//line a_delayed_send_reaches_what_its_target_names.scxml:114
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1377,7 +1377,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 
 			}()
 		case 1:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:115
+			//line a_delayed_send_reaches_what_its_target_names.scxml:117
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1399,7 +1399,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 	}
 			}()
 		case 2:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:121
+			//line a_delayed_send_reaches_what_its_target_names.scxml:123
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1411,7 +1411,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 
 			}()
 		case 3:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:124
+			//line a_delayed_send_reaches_what_its_target_names.scxml:126
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1433,7 +1433,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 	}
 			}()
 		case 4:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:130
+			//line a_delayed_send_reaches_what_its_target_names.scxml:132
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1535,7 +1535,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 	}
 			}()
 		case 5:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:138
+			//line a_delayed_send_reaches_what_its_target_names.scxml:140
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1547,7 +1547,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 
 			}()
 		case 6:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:141
+			//line a_delayed_send_reaches_what_its_target_names.scxml:143
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1559,7 +1559,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 
 			}()
 		case 7:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:144
+			//line a_delayed_send_reaches_what_its_target_names.scxml:146
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

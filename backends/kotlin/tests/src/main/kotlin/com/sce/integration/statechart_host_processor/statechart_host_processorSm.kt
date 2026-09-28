@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d70eed386fb1be497072e2a448c260b668c5dcbd8d5e1fa953f0b558b2b8d584
+// source-hash: 525402c05b4c4ac24bc3fdb20cfda83cd34432cc0765e9667256e22eee0911d3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_host_processor.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: statechart_host_processor.scxml:37 :: _machine
+// SCE-MAP: statechart_host_processor.scxml:44 :: _machine
 
 package com.sce.integration.statechart_host_processor
 
@@ -22,6 +22,9 @@ sealed interface StatechartHostProcessorState : State {
 
 sealed interface StatechartHostProcessorEvent : Event {
     data object Advance : StatechartHostProcessorEvent
+    sealed interface Answer : StatechartHostProcessorEvent {
+        data object Please : Answer
+    }
     sealed interface Error : StatechartHostProcessorEvent {
         data object Execution : Error
     }
@@ -32,6 +35,7 @@ sealed interface StatechartHostProcessorEvent : Event {
         data object Done : Turn
     }
     sealed interface Watch : StatechartHostProcessorEvent {
+        data object Answer : Watch
         data object Pairs : Watch
         data object Turn : Watch
     }
@@ -177,6 +181,15 @@ class StatechartHostProcessorStateMachine(
             hasActions = true,
             isInternal = false,
         )
+
+        // W3C SCXML 3.13: pairs's transition 1, as the microstep reads it.
+        val transitionPairsAt1 = EnabledTransition<StatechartHostProcessorState, HistoryId>(
+            StatechartHostProcessorState.Pairs,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -201,9 +214,11 @@ class StatechartHostProcessorStateMachine(
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StatechartHostProcessorEvent? = when (name) {
         "advance" -> StatechartHostProcessorEvent.Advance
+        "answer.please" -> StatechartHostProcessorEvent.Answer.Please
         "error.execution" -> StatechartHostProcessorEvent.Error.Execution
         "plain.arrived" -> StatechartHostProcessorEvent.Plain.Arrived
         "turn.done" -> StatechartHostProcessorEvent.Turn.Done
+        "watch.answer" -> StatechartHostProcessorEvent.Watch.Answer
         "watch.pairs" -> StatechartHostProcessorEvent.Watch.Pairs
         "watch.turn" -> StatechartHostProcessorEvent.Watch.Turn
         else -> null
@@ -212,9 +227,11 @@ class StatechartHostProcessorStateMachine(
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StatechartHostProcessorEvent): String? = when (event) {
         is StatechartHostProcessorEvent.Advance -> "advance"
+        is StatechartHostProcessorEvent.Answer.Please -> "answer.please"
         is StatechartHostProcessorEvent.Error.Execution -> "error.execution"
         is StatechartHostProcessorEvent.Plain.Arrived -> "plain.arrived"
         is StatechartHostProcessorEvent.Turn.Done -> "turn.done"
+        is StatechartHostProcessorEvent.Watch.Answer -> "watch.answer"
         is StatechartHostProcessorEvent.Watch.Pairs -> "watch.pairs"
         is StatechartHostProcessorEvent.Watch.Turn -> "watch.turn"
     }
@@ -488,17 +505,18 @@ class StatechartHostProcessorStateMachine(
         }
         is StatechartHostProcessorState.Pairs -> when {
             event is StatechartHostProcessorEvent.Error.Execution -> transitionPairsAt0
+            event is StatechartHostProcessorEvent.Answer.Please -> transitionPairsAt1
             else -> null
         }
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: statechart_host_processor.scxml:37 :: _machine
+    // SCE-MAP: statechart_host_processor.scxml:44 :: _machine
     override fun onEntry(state: StatechartHostProcessorState, isDefaultEntry: Boolean) {
         when (state) {
             is StatechartHostProcessorState.Dispatching -> {
-                // SCE-MAP: statechart_host_processor.scxml:52 :: dispatching :: _state_body
+                // SCE-MAP: statechart_host_processor.scxml:59 :: dispatching :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -536,7 +554,11 @@ class StatechartHostProcessorStateMachine(
                 content = "",
                 params = sendWireParams,
                 sendId = "__send_1",
-                eventData = sendData
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
             )
             val hostServed = performHostSend(hostRequest)
             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -568,7 +590,7 @@ class StatechartHostProcessorStateMachine(
                 }
             }
             is StatechartHostProcessorState.Pairs -> {
-                // SCE-MAP: statechart_host_processor.scxml:81 :: pairs :: _state_body
+                // SCE-MAP: statechart_host_processor.scxml:88 :: pairs :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -583,13 +605,13 @@ class StatechartHostProcessorStateMachine(
             // one error however many of its names are bad.
             val sendNamelist = mutableListOf<Pair<String, Any?>>()
             if (!argEngine.hasVariable(argSid, "mode")) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send> namelist names 'mode', which is not declared", "__send_3")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send> namelist names 'mode', which is not declared", "__send_4")
                 return@send true
             }
             try {
                 sendNamelist.add("mode" to argEngine.getVariable(argSid, "mode"))
             } catch (_: Exception) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send> namelist entry 'mode' could not be read", "__send_3")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send> namelist entry 'mode' could not be read", "__send_4")
                 return@send true
             }
             ensureScriptEngine()
@@ -624,8 +646,12 @@ class StatechartHostProcessorStateMachine(
                 target = "",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_3",
-                eventData = sendData
+                sendId = "__send_4",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
             )
             val hostServed = performHostSend(hostRequest)
             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -634,7 +660,7 @@ class StatechartHostProcessorStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_3")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_4")
             }
             paramFailed
             }) {
@@ -648,26 +674,26 @@ class StatechartHostProcessorStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: statechart_host_processor.scxml:37 :: _machine
+    // SCE-MAP: statechart_host_processor.scxml:44 :: _machine
     override fun onExit(state: StatechartHostProcessorState) {
         when (state) {
             is StatechartHostProcessorState.Dispatching -> {
-                // SCE-MAP: statechart_host_processor.scxml:52 :: dispatching :: _state_body
+                // SCE-MAP: statechart_host_processor.scxml:59 :: dispatching :: _state_body
             }
             is StatechartHostProcessorState.Pairs -> {
-                // SCE-MAP: statechart_host_processor.scxml:81 :: pairs :: _state_body
+                // SCE-MAP: statechart_host_processor.scxml:88 :: pairs :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: statechart_host_processor.scxml:37 :: _machine
+    // SCE-MAP: statechart_host_processor.scxml:44 :: _machine
     override fun executeTransitionContent(source: StatechartHostProcessorState, transitionIndex: Int) {
         when (source) {
         is StatechartHostProcessorState.Dispatching -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: statechart_host_processor.scxml:66 :: dispatching :: _transition_0
+                // SCE-MAP: statechart_host_processor.scxml:73 :: dispatching :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("plain", "plain"), com.sce.runtime.ScriptSource.lua("_scxml_add(plain, 1)", "plain + 1"))) {
@@ -675,7 +701,7 @@ class StatechartHostProcessorStateMachine(
             }
             }
             1 -> {
-                // SCE-MAP: statechart_host_processor.scxml:69 :: dispatching :: _transition_1
+                // SCE-MAP: statechart_host_processor.scxml:76 :: dispatching :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("served", "served"), com.sce.runtime.ScriptSource.lua("_scxml_add(served, 1)", "served + 1"))) {
@@ -683,7 +709,7 @@ class StatechartHostProcessorStateMachine(
             }
             }
             2 -> {
-                // SCE-MAP: statechart_host_processor.scxml:72 :: dispatching :: _transition_2
+                // SCE-MAP: statechart_host_processor.scxml:79 :: dispatching :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("refused", "refused"), com.sce.runtime.ScriptSource.lua("_scxml_add(refused, 1)", "refused + 1"))) {
@@ -694,12 +720,53 @@ class StatechartHostProcessorStateMachine(
         }
         is StatechartHostProcessorState.Pairs -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: statechart_host_processor.scxml:88 :: pairs :: _transition_0
+                // SCE-MAP: statechart_host_processor.scxml:95 :: pairs :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("paramErrors", "paramErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(paramErrors, 1)", "paramErrors + 1"))) {
                 return
             }
+            }
+            1 -> {
+                // SCE-MAP: statechart_host_processor.scxml:103 :: pairs :: _transition_1
+
+
+            if (run send@{
+            val sendData = ""
+            val sendWireParams = emptyMap<String, List<String>>()
+            // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "watch.answer",
+                target = "",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_3",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_3")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             else -> {}
         }

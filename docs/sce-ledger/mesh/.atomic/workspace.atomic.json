@@ -696,6 +696,10 @@
         {
           "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Rpc.kt",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/host_processor_analyzer.rs",
+          "kind": "references"
         }
       ]
     },

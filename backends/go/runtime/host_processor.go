@@ -64,6 +64,14 @@ type HostSendRequest struct {
 	// router puts it in an envelope — forwards the engine's serialisation
 	// rather than a second one made from Params that could differ from it.
 	EventData string
+	// InvokeID is `_event.invokeid` of the event being processed when the
+	// `<send>` executed, empty when it had none. A send made while handling an
+	// event carries its invokeid back out, as a W3C child's send to its parent
+	// does (§scxml-6.4.1); a Mesh router matches the reply a document sends to
+	// the request it received by nothing else (SCE_MESH.md §mesh-10.7). Taken
+	// when the send executes, so a delayed one carries the invokeid current
+	// then, not when it fires.
+	InvokeID string
 }
 
 // HostSendResponse is one event a host-served act produced.

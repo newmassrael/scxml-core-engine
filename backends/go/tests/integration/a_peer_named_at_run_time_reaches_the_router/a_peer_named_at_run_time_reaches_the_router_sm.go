@@ -754,6 +754,11 @@ func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) ExecuteEntryActions(state AP
 			SendID:        "__send_0",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
 		}
 		_, hostServed := engine.PerformHostSend(hostRequest)
 		// W3C SCXML 6.2: a declared type with no handler registered is, from
@@ -842,6 +847,11 @@ func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) ExecuteEntryActions(state AP
 			SendID:        "__send_1",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
 		}
 		_, hostServed := engine.PerformHostSend(hostRequest)
 		// W3C SCXML 6.2: a declared type with no handler registered is, from

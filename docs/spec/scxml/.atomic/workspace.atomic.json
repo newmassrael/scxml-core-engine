@@ -11029,6 +11029,21 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "perform_host_invoke",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "HostSendRequest",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "HostSendRequest",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/host_processor.py",
+          "symbol": "HostSendRequest",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

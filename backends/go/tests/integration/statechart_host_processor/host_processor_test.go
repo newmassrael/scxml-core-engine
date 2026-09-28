@@ -101,8 +101,25 @@ func TestARegisteredHandlerReceivesTheSendAndItsReplyArrives(t *testing.T) {
 	if got := s.counter(t, "paramErrors"); got != 1 {
 		t.Fatalf("the <param> that cannot be read was not reported: paramErrors = %d", got)
 	}
-	if len(seen) != 2 {
-		t.Fatalf("the handler ran %d times; the served send and the one from `pairs` each run it once", len(seen))
+	// SCE_MESH.md §mesh-10.7: an event raised with an invokeid, as a Mesh
+	// router raises an inbound request; the send made while handling it
+	// carries that invokeid back out.
+	s.engine.RaiseExternalByNameWithMeta("answer.please", sce.EventMetadata{
+		EventType: sce.EventTypeExternal,
+		InvokeID:  "req-7",
+	})
+	s.engine.Step()
+
+	if len(seen) != 3 {
+		t.Fatalf("the handler ran %d times; the served send, the one from `pairs` and the answer each run it once", len(seen))
+	}
+	// Taken from the event current when each send executed: the first two ran
+	// while none carried an invokeid, the third while `answer.please` did.
+	if seen[0].InvokeID != "" || seen[1].InvokeID != "" {
+		t.Fatalf("a send made with no invokeid current carried one: %q, %q", seen[0].InvokeID, seen[1].InvokeID)
+	}
+	if seen[2].EventName != "watch.answer" || seen[2].InvokeID != "req-7" {
+		t.Fatalf("the answer is %q carrying invokeid %q", seen[2].EventName, seen[2].InvokeID)
 	}
 	req := seen[0]
 	// W3C SCXML 5.10: the event data is what a local delivery of this send

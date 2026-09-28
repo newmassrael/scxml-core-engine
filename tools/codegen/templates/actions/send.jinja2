@@ -593,6 +593,10 @@ engine.raise(typename Engine::EventWithMetadata(
     // delivery of this send would carry.
     hostRequest.params = params;
     hostRequest.eventData = eventData;
+    // SCE_MESH.md §mesh-10.7: the invokeid of the event being processed now,
+    // carried back out as a W3C child's send to its parent carries it
+    // (§scxml-6.4.1) — the value the non-host Mesh route already reads.
+    hostRequest.invokeId = engine.currentEventInvokeId();
 {% if action.delayexpr or host_delay_ms > 0 %}
 {% if not action.delayexpr %}
     const auto hostDelayMs = std::chrono::milliseconds{ {{ host_delay_ms }} };

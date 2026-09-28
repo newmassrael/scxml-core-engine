@@ -982,8 +982,10 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
    (which reads the `Payload` sum, not this metadata) — qualify it with
    needs_script_engine so no_std (and std pure-static) machines, where
    `metadata.data` is `#[cfg(not(no_std))]`-elided / unread, don't emit the
-   override. The other flags already imply needs_script_engine. #}
-{% if (model.needs_event_data and model.needs_script_engine) or model.needs_event_type or model.needs_event_sendid or model.needs_event_origin or model.needs_event_origintype %}
+   override. `invokeid` is also read by a host-served `<send>`, which carries it
+   out (SCE_MESH.md §mesh-10.7) on a machine with no script engine, so it is
+   named here in its own right; host sends are std-only, like the field. #}
+{% if (model.needs_event_data and model.needs_script_engine) or model.needs_event_type or model.needs_event_sendid or model.needs_event_origin or model.needs_event_origintype or model.needs_event_invokeid %}
     // W3C SCXML 5.10: Populate pending event metadata from EventWithMetadata
     // Ports C++ EventMetadataHelper::populatePolicyFromMetadata
     fn populate_event_metadata(&mut self, metadata: &sce_rust_runtime::EventMetadata) {

@@ -361,6 +361,10 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
     char host_target[SCE_MAX_URI_LEN];
     char host_content[SCE_MAX_DATA_LEN];
     char host_event_data[SCE_MAX_DATA_LEN];
+    /* The invokeid current when the send executed (SCE_MESH.md
+       §mesh-10.7), kept so the act performed at the deadline carries that
+       one rather than whatever event is being processed then. */
+    char host_invoke_id[SCE_MAX_ID_LEN];
 {% if model.delayed_host_send_max_params > 0 %}
     /* Sized by the widest delayed host-served `<send>` in this document
        ({{ model.delayed_host_send_max_params }}), not by

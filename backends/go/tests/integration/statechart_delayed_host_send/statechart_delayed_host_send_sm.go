@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d70eed386fb1be497072e2a448c260b668c5dcbd8d5e1fa953f0b558b2b8d584
+// source-hash: 525402c05b4c4ac24bc3fdb20cfda83cd34432cc0765e9667256e22eee0911d3
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -227,6 +227,7 @@ func (e StatechartDelayedHostSendEvent) String() string {
 // ======================================================================
 
 type StatechartDelayedHostSendPolicy struct {
+	pendingEventInvokeid string
 	// W3C SCXML 5.10: Session ID
 	SessionID string
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
@@ -455,6 +456,7 @@ func (p *StatechartDelayedHostSendPolicy) ForwardToAutoforwardChildren(_ string,
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).
 // Note: event name is set separately via setCurrentEvent(), not from metadata.
 func (p *StatechartDelayedHostSendPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
+	p.pendingEventInvokeid = meta.InvokeID
 }
 
 // LiftTypedPayload binds the dequeued event's typed `_event.data` view from
@@ -473,6 +475,7 @@ func (p *StatechartDelayedHostSendPolicy) LiftTypedPayload(event StatechartDelay
 
 // ClearEventMetadata resets pending event metadata (W3C SCXML 5.10).
 func (p *StatechartDelayedHostSendPolicy) ClearEventMetadata() {
+	p.pendingEventInvokeid = ""
 }
 
 
@@ -510,6 +513,11 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 			SendID:        "h2",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
 		}
 		hostDelayMs := int64(200)
 		// W3C SCXML 6.2.4: arm it. The engine performs the act when the
@@ -589,6 +597,11 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 			SendID:        "__send_0",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
 		}
 		hostDelayMs := int64(200)
 		// W3C SCXML 6.2.4: arm it. The engine performs the act when the

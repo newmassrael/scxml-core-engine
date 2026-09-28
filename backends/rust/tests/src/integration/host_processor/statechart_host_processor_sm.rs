@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d70eed386fb1be497072e2a448c260b668c5dcbd8d5e1fa953f0b558b2b8d584
+// source-hash: 525402c05b4c4ac24bc3fdb20cfda83cd34432cc0765e9667256e22eee0911d3
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: statechart_host_processor.scxml:37 :: _machine"]
-// SCE-MAP: statechart_host_processor.scxml:37 :: _machine
+#![doc = "SCE-MAP: statechart_host_processor.scxml:44 :: _machine"]
+// SCE-MAP: statechart_host_processor.scxml:44 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -97,9 +97,11 @@ pub enum StatechartHostProcessorState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatechartHostProcessorEvent {
     Advance,
+    AnswerPlease,
     ErrorExecution,
     PlainArrived,
     TurnDone,
+    WatchAnswer,
     WatchPairs,
     WatchTurn,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
@@ -124,6 +126,7 @@ impl StatechartHostProcessorEvent {
     /// on the name.
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [StatechartHostProcessorEvent] = &[
         StatechartHostProcessorEvent::Advance,
+        StatechartHostProcessorEvent::AnswerPlease,
         StatechartHostProcessorEvent::PlainArrived,
         StatechartHostProcessorEvent::TurnDone,
     ];
@@ -697,9 +700,11 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             StatechartHostProcessorEvent::Advance => "advance",
+            StatechartHostProcessorEvent::AnswerPlease => "answer.please",
             StatechartHostProcessorEvent::ErrorExecution => "error.execution",
             StatechartHostProcessorEvent::PlainArrived => "plain.arrived",
             StatechartHostProcessorEvent::TurnDone => "turn.done",
+            StatechartHostProcessorEvent::WatchAnswer => "watch.answer",
             StatechartHostProcessorEvent::WatchPairs => "watch.pairs",
             StatechartHostProcessorEvent::WatchTurn => "watch.turn",
             StatechartHostProcessorEvent::Null => "",
@@ -709,9 +714,11 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "advance" => Some(StatechartHostProcessorEvent::Advance),
+            "answer.please" => Some(StatechartHostProcessorEvent::AnswerPlease),
             "error.execution" => Some(StatechartHostProcessorEvent::ErrorExecution),
             "plain.arrived" => Some(StatechartHostProcessorEvent::PlainArrived),
             "turn.done" => Some(StatechartHostProcessorEvent::TurnDone),
+            "watch.answer" => Some(StatechartHostProcessorEvent::WatchAnswer),
             "watch.pairs" => Some(StatechartHostProcessorEvent::WatchPairs),
             "watch.turn" => Some(StatechartHostProcessorEvent::WatchTurn),
             _ => None,
@@ -779,8 +786,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: statechart_host_processor.scxml:37 :: _machine"]
-    // SCE-MAP: statechart_host_processor.scxml:37 :: _machine
+    #[doc = "SCE-MAP: statechart_host_processor.scxml:44 :: _machine"]
+    // SCE-MAP: statechart_host_processor.scxml:44 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -789,7 +796,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     ) {
         match state {
             StatechartHostProcessorState::Dispatching => {
-                // SCE-MAP: statechart_host_processor.scxml:52 :: dispatching :: _state_body
+                // SCE-MAP: statechart_host_processor.scxml:59 :: dispatching :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -850,6 +857,11 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                                 send_id: send_id.to_string(),
                                 // W3C SCXML 5.10: the payload computed above, once, for every arm.
                                 event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -894,12 +906,12 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                 }
             }
             StatechartHostProcessorState::Pairs => {
-                // SCE-MAP: statechart_host_processor.scxml:81 :: pairs :: _state_body
+                // SCE-MAP: statechart_host_processor.scxml:88 :: pairs :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -1008,6 +1020,11 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                                     send_id: send_id.to_string(),
                                     // W3C SCXML 5.10: the payload computed above, once, for every arm.
                                     event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
                                 };
                                 let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -1046,8 +1063,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: statechart_host_processor.scxml:37 :: _machine"]
-    // SCE-MAP: statechart_host_processor.scxml:37 :: _machine
+    #[doc = "SCE-MAP: statechart_host_processor.scxml:44 :: _machine"]
+    // SCE-MAP: statechart_host_processor.scxml:44 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1062,8 +1079,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: statechart_host_processor.scxml:37 :: _machine"]
-    // SCE-MAP: statechart_host_processor.scxml:37 :: _machine
+    #[doc = "SCE-MAP: statechart_host_processor.scxml:44 :: _machine"]
+    // SCE-MAP: statechart_host_processor.scxml:44 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -1107,8 +1124,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: statechart_host_processor.scxml:37 :: _machine"]
-    // SCE-MAP: statechart_host_processor.scxml:37 :: _machine
+    #[doc = "SCE-MAP: statechart_host_processor.scxml:44 :: _machine"]
+    // SCE-MAP: statechart_host_processor.scxml:44 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1177,6 +1194,17 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                         });
                     }
                 }
+                if event == StatechartHostProcessorEvent::AnswerPlease {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 1,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
                 None
             }
             _ => None,
@@ -1185,8 +1213,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: statechart_host_processor.scxml:37 :: _machine"]
-    // SCE-MAP: statechart_host_processor.scxml:37 :: _machine
+    #[doc = "SCE-MAP: statechart_host_processor.scxml:44 :: _machine"]
+    // SCE-MAP: statechart_host_processor.scxml:44 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1197,7 +1225,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
             StatechartHostProcessorState::Dispatching => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_processor.scxml:66 :: dispatching :: _transition_0
+                        // SCE-MAP: statechart_host_processor.scxml:73 :: dispatching :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1231,7 +1259,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: statechart_host_processor.scxml:69 :: dispatching :: _transition_1
+                        // SCE-MAP: statechart_host_processor.scxml:76 :: dispatching :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1265,7 +1293,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: statechart_host_processor.scxml:72 :: dispatching :: _transition_2
+                        // SCE-MAP: statechart_host_processor.scxml:79 :: dispatching :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1304,7 +1332,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
             StatechartHostProcessorState::Pairs => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_processor.scxml:88 :: pairs :: _transition_0
+                        // SCE-MAP: statechart_host_processor.scxml:95 :: pairs :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1334,6 +1362,55 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                                     // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                                     break 'action_block;
                                 }
+                            }
+                        }
+                    }
+                    1 => {
+                        // SCE-MAP: statechart_host_processor.scxml:103 :: pairs :: _transition_1
+                        // W3C SCXML 3.13: Transition 1 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+
+                                let event_data: &str = "";
+
+                                // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                                // which declared it to this build. Dispatch rather than refuse.
+                                {
+                                    let host_params =
+                                        std::collections::HashMap::<String, Vec<String>>::new();
+                                    let __sce_request = sce_rust_runtime::HostSendRequest {
+                                        processor_type: "x-sce-host".to_string(),
+                                        event_name: "watch.answer".to_string(),
+                                        target: "".to_string(),
+                                        content: "".to_string(),
+                                        params: host_params,
+                                        send_id: send_id.to_string(),
+                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                        event_data: event_data.to_string(),
+                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                        // processed now, carried back out as a W3C child's send to its
+                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                        // every machine with a host-served send.
+                                        invoke_id: self.pending_event_invokeid.to_string(),
+                                    };
+                                    let __sce_served = engine.perform_host_send(__sce_request);
+                                    // W3C SCXML 6.2: a declared type with no handler registered is,
+                                    // from the document's side, a processor the platform does not
+                                    // support — the act it asked for was performed by nobody. Same
+                                    // event, so a wiring mistake cannot read as success.
+                                    if __sce_served.is_none()
+                                        && !engine.has_event_processor("x-sce-host")
+                                    {
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostProcessorEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                        err_meta.metadata.send_id = send_id.clone();
+                                        engine.raise(err_meta);
+                                    }
+                                }
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
                             }
                         }
                     }

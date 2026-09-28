@@ -66,6 +66,14 @@ pub struct HostSendRequest {
     /// in an envelope — forwards the engine's serialisation rather than a
     /// second one made from `params` that could differ from it.
     pub event_data: String,
+    /// `_event.invokeid` of the event being processed when the `<send>`
+    /// executed, empty when it had none. A send made while handling an
+    /// event carries its invokeid back out, as a W3C child's send to its
+    /// parent does (§scxml-6.4.1); a Mesh router matches the reply a document
+    /// sends to the request it received by nothing else (SCE_MESH.md
+    /// §mesh-10.7). Taken when the send executes, so a delayed one carries
+    /// the invokeid current then, not when it fires.
+    pub invoke_id: String,
 }
 
 /// One event a host-served act produced.

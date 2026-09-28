@@ -45,6 +45,7 @@
 #include <string>
 #include <vector>
 
+#include "common/ForwardedEvent.h"
 #include "common/SendHelper.h"
 #include "core/HostProcessor.h"
 #include "scripting/JSEngine.h"
@@ -119,8 +120,24 @@ TEST_F(HostProcessorAotTest, ARegisteredHandlerReceivesTheSendAndItsReplyArrives
     EXPECT_EQ(sm.getPolicy().paramErrors(), std::optional<int64_t>(1))
         << "the <param> that cannot be read was not reported";
 
-    ASSERT_EQ(seen.size(), 2u) << "the handler ran " << seen.size()
-                               << " times; the served send and the one from `pairs` each run it once";
+    // SCE_MESH.md §mesh-10.7: an event raised with an invokeid, as a Mesh
+    // router raises an inbound request; the send made while handling it
+    // carries that invokeid back out.
+    ::SCE::Common::ForwardedEvent answer;
+    answer.name = "answer.please";
+    answer.type = "external";
+    answer.invokeId = "req-7";
+    sm.raiseExternal(answer);
+    sm.step();
+
+    ASSERT_EQ(seen.size(), 3u) << "the handler ran " << seen.size()
+                               << " times; the served send, the one from `pairs` and the answer each run it once";
+    // Taken from the event current when each send executed: the first two ran
+    // while none carried an invokeid, the third while `answer.please` did.
+    EXPECT_EQ(seen[0].invokeId, "");
+    EXPECT_EQ(seen[1].invokeId, "");
+    EXPECT_EQ(seen[2].eventName, "watch.answer");
+    EXPECT_EQ(seen[2].invokeId, "req-7");
     // W3C SCXML 5.10: the event data is what a local delivery of this send
     // would carry in `_event.data`, computed by the engine, not rebuilt by the
     // host from `params`. One key, so its spelling is exact.

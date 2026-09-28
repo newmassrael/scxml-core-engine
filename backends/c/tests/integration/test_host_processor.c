@@ -75,6 +75,11 @@ typedef struct {
     char pairs_kept[64];
     bool pairs_has_broken;
     char pairs_event_data[128];
+    // SCE_MESH.md §mesh-10.7: each call's invokeid, and the third call's
+    // event — the fixture's `watch.answer`, sent while handling an event
+    // raised with one.
+    char invoke_ids[3][64];
+    char answer_event[64];
     // How many replies to report, and under what name. A test sets these
     // to shape the answer rather than needing a handler per scenario.
     int replies;
@@ -93,6 +98,12 @@ static void recording_handler(void *user_data, const sce_host_send_request_t *re
                               sce_host_send_response_list_t *out) {
     recorder_t *rec = (recorder_t *)user_data;
     rec->calls++;
+    if (rec->calls <= 3) {
+        copy_field(rec->invoke_ids[rec->calls - 1], sizeof(rec->invoke_ids[0]), request->invoke_id);
+    }
+    if (rec->calls == 3) {
+        copy_field(rec->answer_event, sizeof(rec->answer_event), request->event_name);
+    }
     if (rec->calls == 2) {
         copy_field(rec->pairs_event, sizeof(rec->pairs_event), request->event_name);
         copy_field(rec->pairs_mode, sizeof(rec->pairs_mode), sce_host_send_param(request, "mode"));
@@ -180,7 +191,27 @@ static int a_registered_handler_receives_the_send_and_its_reply_arrives(void) {
     // W3C SCXML 5.7.1: the `pairs` send's unreadable <param> raised, and the
     // message still went — which the second call confirms.
     bad |= check("served", "paramErrors", counter(&sm, "paramErrors"), 1);
-    bad |= check("served", "handler calls", rec.calls, 2);
+    bad |= check("served", "handler calls before the answer", rec.calls, 2);
+
+    // SCE_MESH.md §mesh-10.7: an event raised with an invokeid, as a Mesh
+    // router raises an inbound request; the send made while handling it
+    // carries that invokeid back out.
+    sce_forwarded_event_t answer;
+    memset(&answer, 0, sizeof(answer));
+    copy_field(answer.name, sizeof(answer.name), "answer.please");
+    copy_field(answer.type, sizeof(answer.type), "external");
+    copy_field(answer.invoke_id, sizeof(answer.invoke_id), "req-7");
+    statechart_host_processor_raise_external_forwarded(&sm, &answer);
+    statechart_host_processor_run(&sm);
+    bad |= check("served", "handler calls", rec.calls, 3);
+    // Taken from the event current when each send executed: the first two ran
+    // while none carried an invokeid, the third while `answer.please` did.
+    if (rec.invoke_ids[0][0] != '\0' || rec.invoke_ids[1][0] != '\0' || strcmp(rec.answer_event, "watch.answer") != 0 ||
+        strcmp(rec.invoke_ids[2], "req-7") != 0) {
+        (void)fprintf(stderr, "host_processor: FAIL [served] - invokeids `%s`, `%s`; the answer `%s` carried `%s`\n",
+                      rec.invoke_ids[0], rec.invoke_ids[1], rec.answer_event, rec.invoke_ids[2]);
+        bad = 1;
+    }
     // W3C SCXML 5.10: the event data is what a local delivery of this send
     // would carry in `_event.data`, computed by the engine, not rebuilt by the
     // host from `params`. One key, so its spelling is exact.

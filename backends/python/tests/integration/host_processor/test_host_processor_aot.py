@@ -89,9 +89,20 @@ def test_a_registered_handler_receives_the_send_and_its_reply_arrives() -> None:
     # W3C SCXML 5.7.1: the second send's unreadable <param> raised, and the
     # message still went — which the second request below confirms.
     assert _counter(engine, "param_errors") == 1, "the <param> that cannot be read was not reported"
-    assert len(seen) == 2, (
-        f"the handler ran {len(seen)} times; the served send and the one from `pairs` each run it once"
+    # SCE_MESH.md §mesh-10.7: an event raised with an invokeid, as a Mesh
+    # router raises an inbound request; the send made while handling it
+    # carries that invokeid back out.
+    engine.send_external_by_name("answer.please", invoke_id="req-7")
+    engine.advance_time(0)
+    assert len(seen) == 3, (
+        f"the handler ran {len(seen)} times; the served send, the one from `pairs` "
+        "and the answer each run it once"
     )
+    # Taken from the event current when each send executed: the first two ran
+    # while none carried an invokeid, the third while `answer.please` did.
+    assert seen[0].invoke_id == "" and seen[1].invoke_id == "", (seen[0].invoke_id, seen[1].invoke_id)
+    assert seen[2].event_name == "watch.answer"
+    assert seen[2].invoke_id == "req-7", seen[2].invoke_id
     request = seen[0]
     # W3C SCXML 5.10: the event data is what a local delivery of this send
     # would carry in `_event.data`, computed by the engine, not rebuilt by the
