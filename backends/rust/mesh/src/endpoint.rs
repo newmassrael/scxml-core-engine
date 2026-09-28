@@ -248,9 +248,15 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
                     data,
                     source,
                     send_id,
+                    invoke_id,
                 } => self.to_engine.push(EngineCall::Raise(EngineEvent {
                     name: event,
-                    metadata: mesh_metadata(data, &source, send_id.unwrap_or_default()),
+                    metadata: EventMetadata {
+                        // §mesh-10.7: an inbound request's invokeid, which a
+                        // reply sent while it is handled carries back.
+                        invoke_id: invoke_id.unwrap_or_default(),
+                        ..mesh_metadata(data, &source, send_id.unwrap_or_default())
+                    },
                 })),
                 Effect::Raise { peer, signal } => self.raise(peer.as_deref(), &signal),
                 Effect::Complete {
@@ -500,6 +506,7 @@ mod tests {
             // its peer at run time, so the one-element set is leaked.
             responders: Box::leak(Box::new([peer])),
             deadline_ms: None,
+            reply_events: &[],
         }
     }
 

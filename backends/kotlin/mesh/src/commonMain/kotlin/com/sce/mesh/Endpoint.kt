@@ -192,7 +192,12 @@ class Endpoint(
             when (effect) {
                 is Effect.Transmit -> transmit(effect.peer, effect.bytes, Attempts())
                 is Effect.Deliver -> toEngine += EngineCall.Raise(
-                    EngineEvent(effect.event, meshMetadata(effect.data, effect.source, effect.sendId ?: "")),
+                    EngineEvent(
+                        effect.event,
+                        // §mesh-10.7: an inbound request's invokeid, which a reply sent while it is handled carries back.
+                        meshMetadata(effect.data, effect.source, effect.sendId ?: "")
+                            .copy(invokeId = effect.invokeId ?: ""),
+                    ),
                 )
                 is Effect.Raise -> raise(effect.peer, effect.signal)
                 is Effect.Complete ->

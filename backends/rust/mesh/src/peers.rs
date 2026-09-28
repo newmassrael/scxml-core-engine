@@ -93,6 +93,7 @@ mod tests {
                 },
                 responders: &["cloud"],
                 deadline_ms: None,
+                reply_events: &[],
             },
             link: PeerLink::WssDial {
                 url: "wss://cal.example",

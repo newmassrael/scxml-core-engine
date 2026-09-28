@@ -127,6 +127,22 @@ fun hex(bytes: ByteArray): String {
 }
 
 /**
+ * The wire invokeid a request's `_event.invokeid` names: [hex] read back. `null`
+ * for text that is not the 32 hex digits of one — an event raised by something
+ * other than a Mesh request.
+ */
+fun unhex(text: String): ByteArray? {
+    if (text.length != 32) return null
+    val out = ByteArray(16)
+    for (i in 0 until 16) {
+        val hi = text[2 * i].digitToIntOrNull(16) ?: return null
+        val lo = text[2 * i + 1].digitToIntOrNull(16) ?: return null
+        out[i] = ((hi shl 4) or lo).toByte()
+    }
+    return out
+}
+
+/**
  * A §mesh-10.7.1 `_event.data` object, written in the order its fields are
  * added: `errorName` and `reason` first, then what the caller adds.
  */

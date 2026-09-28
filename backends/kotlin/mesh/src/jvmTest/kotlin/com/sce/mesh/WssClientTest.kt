@@ -101,6 +101,7 @@ class WssClientTest {
                     delivery = Delivery(dedup = true, ordered = false),
                     responders = listOf(peer),
                     deadlineMs = null,
+                    replyEvents = emptyList(),
                 ),
             )
         }

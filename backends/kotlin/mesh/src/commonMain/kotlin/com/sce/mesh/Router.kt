@@ -37,6 +37,12 @@ data class PeerConfig(
     val responders: List<String>,
     /** deploy.yaml's binding-level request deadline, which a request to this peer takes when it carries no `_mesh_deadline_ms`; `null` lets it wait for its reply indefinitely (§mesh-9.5). */
     val deadlineMs: Long?,
+    /**
+     * The events this machine sends to the peer as replies (`service.response.*`, §mesh-8.1). One goes out as
+     * `RpcReply` with the invokeid of the request being handled, which is how the requester matches it
+     * (§mesh-10.7); every other send is `FireForget`.
+     */
+    val replyEvents: List<String>,
 )
 
 /** One thing the host must do. */
@@ -46,10 +52,18 @@ sealed class Effect {
 
     /**
      * Raise [event] on the engine's external queue with [data] as
-     * `_event.data`; [source] is the machine that sent it and [sendId] the id
-     * its `<send>` carried (§mesh-10.7: the envelope's `subject`).
+     * `_event.data`; [source] is the machine that sent it, [sendId] the id
+     * its `<send>` carried (§mesh-10.7: the envelope's `subject`), and
+     * [invokeId] the request's wire invokeid as hex when the envelope is an
+     * `RpcRequest` — the one field that comes back on the reply (§mesh-10.7).
      */
-    data class Deliver(val event: String, val data: String, val source: String, val sendId: String?) : Effect()
+    data class Deliver(
+        val event: String,
+        val data: String,
+        val source: String,
+        val sendId: String?,
+        val invokeId: String?,
+    ) : Effect()
 
     /** Raise `error.communication` with this §mesh-16.7 row; [peer] names the binding it is about, when there is one. */
     data class Raise(val peer: String?, val signal: Signal) : Effect()
@@ -160,15 +174,23 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
         val peerName = meshPeer(request.target) ?: return Routed.Refused(RouterError.NotMeshTarget(request.target))
         val peer = peers[peerName]
             ?: return Routed.Done(listOf(Effect.Raise(peerName, Signal.TransportUnavailable)))
+        // §mesh-8.1, §mesh-10.7: a reply the deployment names for this peer goes
+        // out as `RpcReply`, carrying the invokeid of the request the document
+        // was handling when it sent it — the one field that makes the round
+        // trip. A reply sent with no request current carries none, and the
+        // requester delivers it as the event it names.
+        val reply = request.eventName in peer.config.replyEvents
         val envelope = Envelope(
             id = id,
             source = machine,
             event_type = request.eventName,
-            pattern = PatternKind.FIRE_FORGET,
+            pattern = if (reply) PatternKind.RPC_REPLY else PatternKind.FIRE_FORGET,
             datacontenttype = payloadCodec(request.eventData),
             data = request.eventData.encodeToByteArray(),
             // §mesh-10.7: the receiver's `_event.sendid` is the envelope's `subject`.
             subject = request.sendId.ifEmpty { null },
+            invoke_id = if (reply) unhex(request.invokeId) else null,
+            rpc_status = if (reply) RpcStatus.OK else null,
         )
         return transmit(peerName, peer, envelope, nowMs)?.let { Routed.Done(it) }
             ?: Routed.Refused(RouterError.Encode)
@@ -433,7 +455,14 @@ private fun saturatingAdd(a: Long, b: Long): Long = if (a > Long.MAX_VALUE - b) 
  */
 private fun deliver(envelope: Envelope, peer: String?): Effect =
     when (val data = payloadText(envelope)) {
-        is PayloadText.Text -> Effect.Deliver(envelope.event_type, data.text, envelope.source, envelope.subject)
+        is PayloadText.Text -> Effect.Deliver(
+            envelope.event_type,
+            data.text,
+            envelope.source,
+            envelope.subject,
+            // §mesh-10.7: `_event.invokeid` of an inbound request is its wire invokeid, as hex.
+            envelope.invoke_id?.takeIf { envelope.pattern == PatternKind.RPC_REQUEST }?.let(::hex),
+        )
         is PayloadText.Unreadable -> Effect.Raise(peer, Signal.EnvelopeCorrupt(envelope.source, data.codec))
     }
 

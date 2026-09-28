@@ -368,6 +368,7 @@ mod tests {
                 // names its peer at run time, so the one-element set is leaked.
                 responders: Box::leak(Box::new([peer])),
                 deadline_ms: None,
+                reply_events: &[],
             },
         );
         Endpoint::new(router, transport, Counting::default())

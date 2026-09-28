@@ -155,6 +155,7 @@ class AMeshRequestReachesTheRouterTest {
                     delivery = Delivery(dedup = true, ordered = false),
                     responders = listOf("motor"),
                     deadlineMs = null,
+                    replyEvents = emptyList(),
                 ),
             )
         }

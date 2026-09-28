@@ -38,6 +38,7 @@ object ClientMeshPeers {
                     delivery = Delivery(dedup = true, ordered = false),
                     responders = listOf("server"),
                     deadlineMs = null,
+                    replyEvents = listOf(),
                 ),
                 link = PeerLink.WssDial(
                     url = "ws://127.0.0.1:8443",

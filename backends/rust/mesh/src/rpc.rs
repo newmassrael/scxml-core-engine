@@ -150,6 +150,22 @@ pub fn hex(bytes: &[u8]) -> String {
     out
 }
 
+/// The wire invokeid a request's `_event.invokeid` names: [`hex`] read back.
+/// `None` for text that is not the 32 hex digits of one — an event raised by
+/// something other than a Mesh request.
+pub fn unhex(text: &str) -> Option<[u8; 16]> {
+    let digits = text.as_bytes();
+    if digits.len() != 32 {
+        return None;
+    }
+    let value = |d: u8| char::from(d).to_digit(16).map(|v| v as u8);
+    let mut out = [0u8; 16];
+    for (byte, pair) in out.iter_mut().zip(digits.chunks_exact(2)) {
+        *byte = value(pair[0])? << 4 | value(pair[1])?;
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

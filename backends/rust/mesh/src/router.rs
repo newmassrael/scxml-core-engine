@@ -59,6 +59,11 @@ pub struct PeerConfig {
     /// peer takes when it carries no `_mesh_deadline_ms`; `None` lets it wait
     /// for its reply indefinitely (§mesh-9.5).
     pub deadline_ms: Option<u64>,
+    /// The events this machine sends to the peer as replies
+    /// (`service.response.*`, §mesh-8.1). One goes out as `RpcReply` with the
+    /// invokeid of the request being handled, which is how the requester
+    /// matches it (§mesh-10.7); every other send is `FireForget`.
+    pub reply_events: &'static [&'static str],
 }
 
 /// One thing the host must do.
@@ -67,13 +72,17 @@ pub enum Effect {
     /// Hand `bytes` to the transport bound to `peer`.
     Transmit { peer: String, bytes: Vec<u8> },
     /// Raise `event` on the engine's external queue with `data` as
-    /// `_event.data`; `source` is the machine that sent it and `send_id` the
-    /// id its `<send>` carried (§mesh-10.7: the envelope's `subject`).
+    /// `_event.data`; `source` is the machine that sent it, `send_id` the
+    /// id its `<send>` carried (§mesh-10.7: the envelope's `subject`), and
+    /// `invoke_id` the request's wire invokeid as hex when the envelope is an
+    /// `RpcRequest` — the one field that comes back on the reply
+    /// (§mesh-10.7).
     Deliver {
         event: String,
         data: String,
         source: String,
         send_id: Option<String>,
+        invoke_id: Option<String>,
     },
     /// Raise `error.communication` with this §mesh-16.7 row. `peer` names the
     /// binding the row is about, when there is one.
@@ -174,16 +183,36 @@ impl Router {
                 signal: Signal::TransportUnavailable,
             }]);
         };
+        // §mesh-8.1, §mesh-10.7: a reply the deployment names for this peer
+        // goes out as `RpcReply`, carrying the invokeid of the request the
+        // document was handling when it sent it — the one field that makes
+        // the round trip. A reply sent with no request current carries none,
+        // and the requester delivers it as the event it names.
+        let reply = peer
+            .config
+            .reply_events
+            .contains(&request.event_name.as_str());
+        let answering = if reply {
+            rpc::unhex(&request.invoke_id)
+        } else {
+            None
+        };
         let envelope = Envelope {
             id: &id,
             source: &self.machine,
             event_type: &request.event_name,
-            pattern: PatternKind::FireForget,
+            pattern: if reply {
+                PatternKind::RpcReply
+            } else {
+                PatternKind::FireForget
+            },
             datacontenttype: payload_codec(&request.event_data),
             data: request.event_data.as_bytes(),
             // §mesh-10.7: the receiver's `_event.sendid` is the envelope's
             // `subject`, so a `<send>`'s id travels there.
             subject: (!request.send_id.is_empty()).then_some(request.send_id.as_str()),
+            invoke_id: answering.as_ref().map(|id| &id[..]),
+            rpc_status: reply.then_some(RpcStatus::Ok),
             ..Envelope::new()
         };
         transmit(peer_name, peer, envelope, now_ms)
@@ -619,6 +648,12 @@ fn deliver(envelope: &Envelope<'_>, peer: Option<&str>) -> Effect {
             data,
             source: envelope.source.to_string(),
             send_id: envelope.subject.map(str::to_string),
+            // §mesh-10.7: `_event.invokeid` of an inbound request is its
+            // wire invokeid, as hex.
+            invoke_id: (envelope.pattern == PatternKind::RpcRequest)
+                .then_some(envelope.invoke_id)
+                .flatten()
+                .map(rpc::hex),
         },
         Err(codec) => Effect::Raise {
             peer: peer.map(str::to_string),
@@ -651,6 +686,7 @@ mod tests {
         // The peer these tests bind is `hmi`; `pair` gives each side its own.
         responders: &["hmi"],
         deadline_ms: None,
+        reply_events: &[],
     };
 
     const UNORDERED: PeerConfig = PeerConfig {
@@ -748,6 +784,7 @@ mod tests {
                 data: r#"{"kph":42}"#.to_string(),
                 source: "ecu".to_string(),
                 send_id: Some("send.1".to_string()),
+                invoke_id: None,
             }]
         );
     }
@@ -766,6 +803,7 @@ mod tests {
                 data: String::new(),
                 source: "ecu".to_string(),
                 send_id: Some("send.1".to_string()),
+                invoke_id: None,
             }]
         );
     }
@@ -1227,6 +1265,113 @@ mod tests {
             ecu.invoke(&ask("hmi", None), WIRE, [1; 16], 0, 0),
             Ok(Invoked::Refused(data)) if data.contains("names no Mesh peer")
         ));
+    }
+
+    // ── §mesh-10.7: the responder's half — the request in, its reply out ──
+
+    const WIRE_HEX: &str = "09090909090909090909090909090909";
+
+    /// `hmi`, answering `ecu`: `service.response.force` is a reply to it.
+    fn responder() -> Router {
+        let mut hmi = Router::new("hmi", 8, 50).unwrap();
+        hmi.add_peer(
+            "ecu",
+            PeerConfig {
+                buffer: None,
+                responders: &["ecu"],
+                reply_events: &["service.response.force"],
+                ..UNORDERED
+            },
+        );
+        hmi
+    }
+
+    fn answer(event: &str, invoke_id: &str) -> HostSendRequest {
+        HostSendRequest {
+            invoke_id: invoke_id.to_string(),
+            ..request("#ecu", event, r#"{"force":12}"#)
+        }
+    }
+
+    fn sent_to_ecu(effects: Result<Vec<Effect>, RouterError>) -> Vec<u8> {
+        match effects.unwrap().as_slice() {
+            [Effect::Transmit { peer, bytes }] if peer == "ecu" => bytes.clone(),
+            other => panic!("expected one transmission to ecu, got {other:?}"),
+        }
+    }
+
+    /// The request arrives as the event it names, with its wire invokeid as
+    /// `_event.invokeid` — the field the reply carries back.
+    #[test]
+    fn a_request_is_delivered_with_its_wire_invokeid() {
+        let bytes = started(&mut requester(None), None);
+        assert_eq!(
+            responder().receive("ecu", bytes, 0).unwrap(),
+            alloc::vec![Effect::Deliver {
+                event: "service.request.force".to_string(),
+                data: r#"{"n":3}"#.to_string(),
+                source: "ecu".to_string(),
+                send_id: None,
+                invoke_id: Some(WIRE_HEX.to_string()),
+            }]
+        );
+    }
+
+    /// The whole round trip: the reply the document sends while handling the
+    /// request goes out as `RpcReply` carrying that invokeid, and completes the
+    /// requester's invocation.
+    #[test]
+    fn a_reply_sent_while_handling_the_request_answers_it() {
+        let mut ecu = requester(None);
+        let mut hmi = responder();
+        hmi.receive("ecu", started(&mut ecu, None), 0).unwrap();
+
+        let bytes = sent_to_ecu(hmi.send(&answer("service.response.force", WIRE_HEX), [5; 16], 0));
+        let reply = Envelope::decode(&mut SceCursor::new(&bytes)).unwrap();
+        assert_eq!(reply.pattern, PatternKind::RpcReply);
+        assert_eq!(reply.invoke_id, Some(&WIRE[..]));
+        assert_eq!(reply.rpc_status, Some(RpcStatus::Ok));
+
+        assert_eq!(
+            ecu.receive("hmi", bytes, 20).unwrap(),
+            alloc::vec![Effect::Complete {
+                invoke_id: "ask".to_string(),
+                token: 7,
+                data: r#"{"force":12}"#.to_string(),
+                source: "hmi".to_string(),
+            }]
+        );
+    }
+
+    /// Only the events the deployment names as replies are stamped: anything
+    /// else the document sends while handling the request stays fire-and-forget,
+    /// so a notification cannot retire the requester's invocation.
+    #[test]
+    fn a_send_that_is_not_a_reply_is_not_stamped_as_one() {
+        let bytes = sent_to_ecu(responder().send(&answer("status.changed", WIRE_HEX), [5; 16], 0));
+        let envelope = Envelope::decode(&mut SceCursor::new(&bytes)).unwrap();
+        assert_eq!(envelope.pattern, PatternKind::FireForget);
+        assert_eq!(envelope.invoke_id, None);
+        assert_eq!(envelope.rpc_status, None);
+    }
+
+    /// A reply sent with no request current has no invokeid to carry; the
+    /// requester then delivers it as the event it names.
+    #[test]
+    fn a_reply_with_no_request_current_carries_no_invokeid() {
+        let bytes =
+            sent_to_ecu(responder().send(&answer("service.response.force", ""), [5; 16], 0));
+        let envelope = Envelope::decode(&mut SceCursor::new(&bytes)).unwrap();
+        assert_eq!(envelope.pattern, PatternKind::RpcReply);
+        assert_eq!(envelope.invoke_id, None);
+    }
+
+    #[test]
+    fn unhex_reads_back_what_hex_wrote_and_nothing_else() {
+        assert_eq!(rpc::unhex(&rpc::hex(&WIRE)), Some(WIRE));
+        assert_eq!(rpc::unhex(""), None);
+        assert_eq!(rpc::unhex("ask"), None);
+        assert_eq!(rpc::unhex(&"zz".repeat(16)), None);
     }
 
     #[test]

@@ -182,6 +182,7 @@ mod through_the_host_core {
                     },
                     responders: &["motor"],
                     deadline_ms: None,
+                    reply_events: &[],
                 },
             );
         }

@@ -63,6 +63,7 @@ class EndpointTest {
                     delivery = Delivery(dedup = true, ordered = false),
                     responders = listOf(peer),
                     deadlineMs = null,
+                    replyEvents = emptyList(),
                 ),
             )
             endpoint = Endpoint(router, transport, environment)

@@ -28,6 +28,7 @@ class RouterTest {
         // The peer these tests bind is `hmi`; `pair` gives each side its own.
         responders = listOf("hmi"),
         deadlineMs = null,
+        replyEvents = emptyList(),
     )
     private val unordered = ordered.copy(stampSequence = false, delivery = Delivery(dedup = true, ordered = false))
 
@@ -74,7 +75,7 @@ class RouterTest {
         val (ecu, hmi) = pair(ordered)
         val bytes = transmitted(ecu.send(request("#hmi", "speed.changed", """{"kph":42}"""), id(1), 0))
         assertEquals(
-            listOf(Effect.Deliver("speed.changed", """{"kph":42}""", "ecu", "send.1")),
+            listOf(Effect.Deliver("speed.changed", """{"kph":42}""", "ecu", "send.1", null)),
             done(hmi.receive("ecu", bytes, 0)),
         )
     }
@@ -91,7 +92,7 @@ class RouterTest {
         val (ecu, hmi) = pair(ordered)
         val bytes = transmitted(ecu.send(request("#hmi", "ping", ""), id(2), 0))
         assertEquals(PayloadCodec.NONE, decode(bytes).datacontenttype)
-        assertEquals(listOf(Effect.Deliver("ping", "", "ecu", "send.1")), done(hmi.receive("ecu", bytes, 0)))
+        assertEquals(listOf(Effect.Deliver("ping", "", "ecu", "send.1", null)), done(hmi.receive("ecu", bytes, 0)))
     }
 
     @Test
@@ -99,7 +100,7 @@ class RouterTest {
         val (ecu, hmi) = pair(ordered)
         val bytes = transmitted(ecu.send(request("#hmi", "ping", "", sendId = ""), id(3), 0))
         assertNull(decode(bytes).subject)
-        assertEquals(listOf(Effect.Deliver("ping", "", "ecu", null)), done(hmi.receive("ecu", bytes, 0)))
+        assertEquals(listOf(Effect.Deliver("ping", "", "ecu", null, null)), done(hmi.receive("ecu", bytes, 0)))
     }
 
     @Test
@@ -415,6 +416,79 @@ class RouterTest {
         )
         val refused = ecu.invoke(ask("hmi", null), wire, id(1), 0, 0)
         assertTrue(refused is Invoked.Refused && refused.data.contains("names no Mesh peer"), "$refused")
+    }
+
+    // ── §mesh-10.7: the responder's half — the request in, its reply out ──
+
+    /** `hmi`, answering `ecu`: `service.response.force` is a reply to it. */
+    private fun responder(): Router = Router("hmi", 8u, 50).also {
+        it.addPeer(
+            "ecu",
+            unordered.copy(buffer = null, responders = listOf("ecu"), replyEvents = listOf("service.response.force")),
+        )
+    }
+
+    private fun answer(event: String, invokeId: String) =
+        request("#ecu", event, """{"force":12}""").copy(invokeId = invokeId)
+
+    private fun sentToEcu(routed: Routed): ByteArray {
+        val only = done(routed).singleOrNull() as? Effect.Transmit ?: fail("expected one transmission, got $routed")
+        assertEquals("ecu", only.peer)
+        return only.bytes
+    }
+
+    /** The request arrives as the event it names, with its wire invokeid as `_event.invokeid`. */
+    @Test
+    fun aRequestIsDeliveredWithItsWireInvokeid() {
+        val bytes = started(requester(null), null)
+        assertEquals(
+            listOf(Effect.Deliver("service.request.force", """{"n":3}""", "ecu", null, wireHex)),
+            done(responder().receive("ecu", bytes, 0)),
+        )
+    }
+
+    /** The whole round trip: the reply sent while handling the request goes out as `RpcReply` and completes it. */
+    @Test
+    fun aReplySentWhileHandlingTheRequestAnswersIt() {
+        val ecu = requester(null)
+        val hmi = responder()
+        done(hmi.receive("ecu", started(ecu, null), 0))
+
+        val bytes = sentToEcu(hmi.send(answer("service.response.force", wireHex), id(5), 0))
+        val reply = decode(bytes)
+        assertEquals(PatternKind.RPC_REPLY, reply.pattern)
+        assertTrue(wire.contentEquals(reply.invoke_id))
+        assertEquals(RpcStatus.OK, reply.rpc_status)
+
+        assertEquals(
+            listOf(Effect.Complete("ask", 7, """{"force":12}""", "hmi")),
+            done(ecu.receive("hmi", bytes, 20)),
+        )
+    }
+
+    /** Only the events the deployment names as replies are stamped; a notification cannot retire the invocation. */
+    @Test
+    fun aSendThatIsNotAReplyIsNotStampedAsOne() {
+        val envelope = decode(sentToEcu(responder().send(answer("status.changed", wireHex), id(5), 0)))
+        assertEquals(PatternKind.FIRE_FORGET, envelope.pattern)
+        assertNull(envelope.invoke_id)
+        assertNull(envelope.rpc_status)
+    }
+
+    /** A reply sent with no request current has no invokeid to carry. */
+    @Test
+    fun aReplyWithNoRequestCurrentCarriesNoInvokeid() {
+        val envelope = decode(sentToEcu(responder().send(answer("service.response.force", ""), id(5), 0)))
+        assertEquals(PatternKind.RPC_REPLY, envelope.pattern)
+        assertNull(envelope.invoke_id)
+    }
+
+    @Test
+    fun unhexReadsBackWhatHexWroteAndNothingElse() {
+        assertTrue(wire.contentEquals(unhex(hex(wire))))
+        assertNull(unhex(""))
+        assertNull(unhex("ask"))
+        assertNull(unhex("zz".repeat(16)))
     }
 
     @Test

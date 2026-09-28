@@ -2134,6 +2134,11 @@ struct HostPeerContext {
     /// request to this peer takes when it carries no `_mesh_deadline_ms`.
     #[serde(skip_serializing_if = "Option::is_none")]
     deadline_ms: Option<u64>,
+    /// §8.1, §10.7: the events this machine sends to the peer as replies
+    /// (`service.response.*`), which go out as `RpcReply` carrying the
+    /// invokeid of the request being answered. Sorted, from the pattern the
+    /// build already resolved for each send.
+    reply_events: Vec<String>,
     /// How the link to the peer is opened — the core's `PeerLink`.
     link: HostLinkContext,
 }
@@ -2293,6 +2298,18 @@ fn generate_host_mesh(
                 ordered: policy.needs_ordering,
                 responders: t.responders.clone(),
                 deadline_ms: t.deadline_ms,
+                reply_events: {
+                    let reply = super::pattern::CommunicationPattern::ServiceResponse.wire_value();
+                    let mut events: Vec<String> = t
+                        .event_patterns
+                        .iter()
+                        .filter(|p| p.pattern_kind_value == reply)
+                        .map(|p| p.event.clone())
+                        .collect();
+                    events.sort();
+                    events.dedup();
+                    events
+                },
                 link,
             }
         })

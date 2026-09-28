@@ -35,6 +35,7 @@ pub const MACHINE: Machine = Machine {
             },
             responders: &["client"],
             deadline_ms: None,
+            reply_events: &[],
         },
         link: PeerLink::WssAccept { keepalive_ms: None },
     }],
