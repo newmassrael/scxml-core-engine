@@ -658,6 +658,48 @@ fn verify_passes_on_real_committed_mesh_envelope_cpp_tree() {
     );
 }
 
+/// The two peer tables the WebSocket loopback builds its routers from
+/// (SCE_MESH.md §mesh-19) are generated from `tests/mesh/wss_loopback/`,
+/// documents AND `deploy.yaml`: a table is a function of the deployment as
+/// much as of the document, so the recompute is handed the deploy file too,
+/// and an edit to either one without a regeneration is a red here.
+#[test]
+fn verify_passes_on_real_committed_mesh_peer_tables() {
+    let workspace = workspace_root();
+    let input_root = workspace.join("tests/mesh/wss_loopback");
+    let deploy = input_root.join("deploy.yaml");
+    for (target, script) in [
+        (
+            workspace.join("backends/rust/mesh/examples/generated"),
+            "backends/rust/mesh/generate.sh",
+        ),
+        (
+            workspace.join("backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/generated/client"),
+            "backends/kotlin/mesh/generate.sh",
+        ),
+    ] {
+        let result = Command::new(env_bin())
+            .arg("verify")
+            .arg(&target)
+            .arg("--input-root")
+            .arg(&input_root)
+            .arg("--deploy")
+            .arg(&deploy)
+            .output()
+            .expect("spawn sce-codegen");
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "verify must pass on {}. A failure here means \
+             tests/mesh/wss_loopback/ or a mesh_router template changed \
+             without a regeneration. Run `{script}` and commit the result. \
+             stderr:\n{}",
+            target.display(),
+            String::from_utf8_lossy(&result.stderr),
+        );
+    }
+}
+
 #[test]
 fn verify_passes_on_real_committed_mesh_rust_tree() {
     let workspace = workspace_root();

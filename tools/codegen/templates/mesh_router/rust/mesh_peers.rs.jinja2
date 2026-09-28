@@ -1,0 +1,74 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- SCE_MESH.md §mesh-19: one machine's peer table for the Rust host Mesh
+    core (backends/rust/mesh). Data only — every value was decided by
+    `mesh::codegen::peer_policy`, the function the C++ router's context is
+    built from, so the two cores cannot read one binding two ways.
+
+    `machine` is the deploy.yaml key — the `source` the machine's envelopes
+    carry — and `document` the SCXML document it was generated from. A
+    host includes the file as a module (`#[path = "…"] mod …;`), which is
+    what lets the marker below be an inner attribute. -#}
+{{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.machine) }}
+// {{ machine }}'s Mesh peers, as deploy.yaml binds them (SCE_MESH.md §mesh-19),
+// generated from {{ document }}.
+//
+// GENERATED — DO NOT EDIT. `sce-codegen generate --deploy <deploy.yaml> --lang rust`.
+// A host builds its router with `MACHINE.router()` and opens one connection per
+// `PeerLink` below; every rule about envelopes lives in `sce_rust_mesh`.
+
+use sce_rust_mesh::inbound::Delivery;
+use sce_rust_mesh::peers::{Machine, Peer, PeerLink};
+use sce_rust_mesh::router::PeerConfig;
+
+/// {{ machine }}'s side of the deployment.
+pub const MACHINE: Machine = Machine {
+    name: "{{ machine | escape_rust }}",
+    dedup_window: {{ dedup_window }},
+    gap_timeout_ms: {{ gap_timeout_ms }},
+    peers: &[
+{%- for peer in peers %}
+        Peer {
+            name: "{{ peer.name | escape_rust }}",
+            config: PeerConfig {
+                transport: "{{ peer.transport }}",
+{%- if peer.buffer %}
+                buffer: Some(sce_rust_mesh::outbound::OutboundBuffer {
+                    max_pending: {{ peer.buffer.max_pending }},
+                    max_age_ms: {{ peer.buffer.max_age_ms }},
+                }),
+{%- else %}
+                buffer: None,
+{%- endif %}
+{%- if peer.retry %}
+                retry: Some(sce_rust_mesh::outbound::RetryPolicy {
+                    max_retries: {{ peer.retry.max_retries }},
+                    initial_backoff_ms: {{ peer.retry.initial_backoff_ms }},
+                    backoff_multiplier: {{ peer.retry.backoff_multiplier }}_f64,
+                    max_backoff_ms: {{ peer.retry.max_backoff_ms }},
+                    jitter_pct: {{ peer.retry.jitter_pct }},
+                }),
+{%- else %}
+                retry: None,
+{%- endif %}
+                stamp_sequence: {{ peer.stamp_sequence }},
+                delivery: Delivery {
+                    dedup: {{ peer.dedup }},
+                    ordered: {{ peer.ordered }},
+                },
+            },
+{%- if peer.link.kind == "wss_dial" %}
+            link: PeerLink::WssDial {
+                url: "{{ peer.link.url | escape_rust }}",
+                keepalive_ms: {% if peer.link.keepalive_ms %}Some({{ peer.link.keepalive_ms }}){% else %}None{% endif %},
+            },
+{%- else %}
+            link: PeerLink::WssAccept {
+                keepalive_ms: {% if peer.link.keepalive_ms %}Some({{ peer.link.keepalive_ms }}){% else %}None{% endif %},
+            },
+{%- endif %}
+        },
+{%- endfor %}
+    ],
+};

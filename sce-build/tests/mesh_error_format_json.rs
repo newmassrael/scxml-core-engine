@@ -264,6 +264,107 @@ topology:
 }
 
 #[test]
+fn a_host_core_backend_refuses_a_transport_the_cpp_router_serves() {
+    // The same rule from the other side: a Rust machine's peer table is
+    // read by a host core, which carries no zenoh arm. The repair offers
+    // what the host cores do carry.
+    let dir = ScratchDir::new("mesh-served-by-host");
+    let scxml = dir.write("client.scxml", CLIENT_SCXML);
+    dir.write("server.scxml", SERVER_SCXML);
+    let deploy = dir.write(
+        "deploy.yaml",
+        r##"
+version: "1.0"
+topology:
+  phone:
+    machines:
+      client:
+        source: client.scxml
+        bindings:
+          "#server": { transport: zenoh, key: "cal/server" }
+  cloud:
+    machines:
+      server: { source: server.scxml }
+"##,
+    );
+    let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());
+    assert!(!out.status.success(), "a host core must refuse zenoh");
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let rec = sole_ndjson_record(&stderr);
+    assert_core_shape(&rec);
+    assert_eq!(
+        rec["code"], "mesh/codegen-unsupported-transport",
+        "record: {rec}"
+    );
+    assert_eq!(
+        rec["fix"]["candidates"],
+        serde_json::json!(["wss"]),
+        "record: {rec}"
+    );
+}
+
+#[test]
+fn a_host_core_refuses_a_feature_only_the_cpp_router_has() {
+    // SCE_MESH.md §mesh-19: a `server:` block is a request/reply server the
+    // C++ router hosts. A host core's peer table has nowhere to put it, so it
+    // is refused rather than left out of a table that would still build.
+    //
+    // The document has to SERVE something for the block to mean anything:
+    // a `server:` section over a machine answering no request builds no
+    // server on any backend, so there would be nothing to refuse.
+    const SERVING_CLIENT: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="client" initial="idle">
+  <state id="idle">
+    <onentry><send target="#server" event="ping"/></onentry>
+    <transition event="service.request.lookup" target="idle">
+      <raise event="service.response.lookup"/>
+    </transition>
+  </state>
+</scxml>
+"##;
+    let dir = ScratchDir::new("mesh-host-core-gap");
+    let scxml = dir.write("client.scxml", SERVING_CLIENT);
+    dir.write("server.scxml", SERVER_SCXML);
+    let deploy = dir.write(
+        "deploy.yaml",
+        r##"
+version: "1.0"
+topology:
+  phone:
+    machines:
+      client:
+        source: client.scxml
+        server: { transport: zenoh, key: "cal/client" }
+        bindings:
+          "#server": { transport: wss, url: "wss://cal.example" }
+  cloud:
+    machines:
+      server: { source: server.scxml }
+"##,
+    );
+    let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());
+    assert!(
+        !out.status.success(),
+        "a host core must refuse a server block"
+    );
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let rec = sole_ndjson_record(&stderr);
+    assert_core_shape(&rec);
+    assert_eq!(
+        rec["code"], "mesh/codegen-host-core-unsupported",
+        "record: {rec}"
+    );
+    assert_eq!(rec["spec"], "SCE Mesh §19", "record: {rec}");
+    assert!(
+        rec["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("`server:` block")),
+        "record: {rec}"
+    );
+}
+
+#[test]
 fn deploy_parse_error_is_ndjson() {
     // Malformed YAML (control character in `version:` scalar) routes
     // through serde_yaml → `mesh/deploy-parse`. Stage taxonomy must

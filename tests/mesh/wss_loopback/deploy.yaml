@@ -1,0 +1,43 @@
+# SCE_MESH.md §mesh-18 / §mesh-19: a client on a phone and a server in the
+# cloud, joined by the WebSocket binding and carried by the host Mesh cores.
+#
+# Its own directory, because a committed tree's source-hash covers every
+# document under the input root it was generated from: this fixture's tables
+# go stale when this directory changes and no other.
+#
+# Generated from this file, and held to it by sce-build/tests/b9_drift_detection.rs:
+#   backends/rust/mesh/examples/generated/server_mesh_peers.rs
+#       (backends/rust/mesh/generate.sh, --lang rust)
+#   backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/generated/client/ClientMeshPeers.kt
+#       (backends/kotlin/mesh/generate.sh, --lang kotlin)
+# The loopback test dials an ephemeral port, so it replaces the client's `url`
+# with the port the server reports; everything else it reads from the table.
+version: "1.0"
+topology:
+  cloud:
+    machines:
+      server:
+        source: server.scxml
+        dedup:
+          window_size: 64
+        outbound_buffer:
+          max_pending_per_target: 64
+        bindings:
+          "#client":
+            transport: wss
+  phone:
+    machines:
+      client:
+        source: client.scxml
+        dedup:
+          window_size: 8
+        ordering:
+          gap_timeout_ms: 50
+          tick_period_ms: 10
+        outbound_buffer:
+          max_pending_per_target: 8
+        bindings:
+          "#server":
+            transport: wss
+            url: "ws://127.0.0.1:8443"
+            keepalive_ms: 30000

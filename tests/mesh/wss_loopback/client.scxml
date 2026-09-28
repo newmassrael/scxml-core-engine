@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_MESH.md §mesh-18 / §mesh-19: the client half of the WebSocket loopback.
+  It pings the server and waits for the answer.
+
+  Its peer table (backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/generated/
+  client/ClientMeshPeers.kt) is generated from deploy.yaml beside it by
+  backends/kotlin/mesh/generate.sh, and the Kotlin CrossLanguageLoopbackTest
+  builds its router from it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="client" initial="asking" datamodel="ecmascript">
+  <state id="asking">
+    <onentry>
+      <send target="#server" event="ping"/>
+    </onentry>
+    <transition event="pong" target="answered"/>
+  </state>
+  <final id="answered"/>
+</scxml>

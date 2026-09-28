@@ -14,13 +14,21 @@
 //! decodes what the Kotlin core encoded and the other way round, over one real
 //! socket, which is the claim two cores held to the same bytes have to make
 //! good on.
+//!
+//! Its router is the one `tests/mesh/wss_loopback/deploy.yaml` describes: the
+//! build generates the peer table below from it (SCE_MESH.md §mesh-19,
+//! `backends/rust/mesh/generate.sh`), and the Kotlin side reads its own table
+//! from the same deployment.
 
 use std::io::Write;
+use std::time::Duration;
 
 use sce_rust_mesh::endpoint::{Endpoint, Environment, MESH_PROCESSOR_TYPE};
-use sce_rust_mesh::inbound::Delivery;
-use sce_rust_mesh::router::{PeerConfig, Router};
+use sce_rust_mesh::peers::PeerLink;
 use sce_rust_mesh::wss::{accept, deliver, LinkEvent, WssTransport, DEFAULT_KEEPALIVE};
+
+#[path = "generated/server_mesh_peers.rs"]
+mod server_mesh_peers;
 use sce_rust_runtime::HostSendRequest;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -57,35 +65,33 @@ async fn main() {
     );
     std::io::stdout().flush().expect("stdout is open");
 
-    let mut router = Router::new("server", 64, 1000).expect("a valid configuration");
-    router.add_peer(
-        "client",
-        PeerConfig {
-            transport: "wss",
-            buffer: Some(sce_rust_mesh::outbound::OutboundBuffer {
-                max_pending: 64,
-                max_age_ms: 0,
-            }),
-            retry: None,
-            stamp_sequence: false,
-            delivery: Delivery {
-                dedup: true,
-                ordered: false,
-            },
-        },
-    );
+    let machine = server_mesh_peers::MACHINE;
+    let router = machine
+        .router()
+        .expect("the deployment is one the core can hold");
+    let client = machine
+        .peer("client")
+        .expect("the deployment binds #client");
+    let keepalive = match client.link {
+        PeerLink::WssAccept { keepalive_ms } => {
+            keepalive_ms.map_or(DEFAULT_KEEPALIVE, |ms| Duration::from_millis(u64::from(ms)))
+        }
+        other => panic!("the server accepts its client, but the deployment says {other:?}"),
+    };
     let transport = WssTransport::new();
     let mut endpoint = Endpoint::new(router, transport.clone(), Counting::default());
 
     let (tx, mut events) = mpsc::unbounded_channel();
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.expect("one client");
+        // §mesh-18.1: a client names itself in the path, and a name the
+        // deployment binds no peer for is refused.
         let _ = accept(
             stream,
-            |name| name == "client",
+            move |name| machine.peer(name).is_some(),
             transport,
             tx,
-            DEFAULT_KEEPALIVE,
+            keepalive,
         )
         .await;
     });

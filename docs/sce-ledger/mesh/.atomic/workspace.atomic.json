@@ -350,6 +350,14 @@
         {
           "file": "backends/rust/mesh/src/router.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Peers.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/peers.rs",
+          "kind": "references"
         }
       ]
     },
@@ -500,6 +508,14 @@
         },
         {
           "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Inbound.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Peers.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/peers.rs",
           "kind": "references"
         }
       ],
@@ -2052,6 +2068,11 @@
           "file": "sce-build/src/mesh/partitions.rs",
           "symbol": "is_machine_partition_listed",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "HostCoreGap",
+          "kind": "references"
         }
       ]
     },
@@ -2531,6 +2552,14 @@
         {
           "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/peers.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Peers.kt",
+          "kind": "references"
         }
       ]
     },
@@ -2800,6 +2829,18 @@
         {
           "file": "sce-build/src/mesh/transport/mod.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/examples/wss_peer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Peers.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/peers.rs",
+          "kind": "references"
         }
       ]
     },
@@ -2848,6 +2889,14 @@
         {
           "file": "sce-build/src/mesh/transport/mod.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Peers.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/peers.rs",
+          "kind": "references"
         }
       ]
     },
@@ -2864,6 +2913,38 @@
       "bindings": [
         {
           "file": "sce-build/src/mesh/transport/mod.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/examples/generated/server_mesh_peers.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/examples/wss_peer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Peers.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/CrossLanguageLoopbackTest.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/peers.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/generated/client/ClientMeshPeers.kt",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
           "kind": "references"
         }
       ]
@@ -3611,6 +3692,16 @@
         {
           "file": "sce-build/src/mesh/transport/mod.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
+          "symbol": "mesh_backend_matches_the_template_tree",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
+          "symbol": "host_peer_table_template",
+          "kind": "references"
         }
       ]
     },
@@ -3803,6 +3894,11 @@
           "file": "sce/include/mesh/PatternKind.h",
           "symbol": "PatternKind",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "HostCoreGap",
+          "kind": "references"
         }
       ]
     },

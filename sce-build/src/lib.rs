@@ -7592,6 +7592,7 @@ pub fn compile_mesh_transport(
     let output = mesh::codegen::generate_mesh(
         mesh::codegen::MeshCodegenInputs {
             machine_name: &model.name,
+            deploy_machine_name: &effective_machine_name,
             targets: &resolved,
             server: server_binding.as_ref(),
             zenoh_session,

@@ -2871,6 +2871,8 @@ pub enum DiagnosticCode {
     MeshCodegenEventNameCollision,
     #[serde(rename = "mesh/codegen-pool-with-rpc-client-unsupported")]
     MeshCodegenPoolWithRpcClientUnsupported,
+    #[serde(rename = "mesh/codegen-host-core-unsupported")]
+    MeshCodegenHostCoreUnsupported,
     // Mesh I/O
     #[serde(rename = "mesh/io")]
     MeshIo,
@@ -3555,6 +3557,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshCodegenTemplateRender,
         MeshCodegenEventNameCollision,
         MeshCodegenPoolWithRpcClientUnsupported,
+        MeshCodegenHostCoreUnsupported,
         // Mesh Io
         MeshIo,
         // Forge generated-source drift detection (SCE Protocol-Synthesis RFC §synth-6.2.6)
@@ -4066,6 +4069,9 @@ impl DiagnosticCode {
 
             // ── Mesh protocol mapping (SCE_MESH.md §8) ───────────
             MeshCodegenUnsupportedTransport => Some("SCE Mesh §8"),
+
+            // ── Host Mesh Router (SCE_MESH.md §19) ───────────────
+            MeshCodegenHostCoreUnsupported => Some("SCE Mesh §19"),
 
             // ── Mesh sequence ordering (SCE_MESH.md §10.6) ──────
             MeshTopologyOrderingCannotBeGuaranteed => Some("SCE Mesh §10.6"),
@@ -4963,6 +4969,7 @@ impl DiagnosticCode {
             MeshCodegenPoolWithRpcClientUnsupported => {
                 "mesh/codegen-pool-with-rpc-client-unsupported"
             }
+            MeshCodegenHostCoreUnsupported => "mesh/codegen-host-core-unsupported",
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
             ForgeSourceHashInputUncovered => "forge/source-hash-input-uncovered",
@@ -14348,7 +14355,7 @@ mod tests {
             (
                 "mesh/codegen-unsupported-language",
                 CodegenError::UnsupportedLanguage("ruby".into()).into(),
-                r#"{"v":1,"id":"fnv1a:7d6e0a4752f9975b","code":"mesh/codegen-unsupported-language","stage":"mesh-codegen","spec":"SCE Mesh §7","message":"mesh codegen not yet supported for language 'ruby'","actual":"ruby","fix":{"kind":"replace_one_of","candidates":["cpp"]}}"#,
+                r#"{"v":1,"id":"fnv1a:7d6e0a4752f9975b","code":"mesh/codegen-unsupported-language","stage":"mesh-codegen","spec":"SCE Mesh §7","message":"mesh codegen not yet supported for language 'ruby'","actual":"ruby","fix":{"kind":"replace_one_of","candidates":["rust","cpp","kotlin"]}}"#,
             ),
             (
                 "mesh/codegen-unsupported-transport",
@@ -14407,6 +14414,17 @@ mod tests {
                 // rejection kind is part of `key_fragments`. Keeps the
                 // two arms independently traceable downstream.
                 r#"{"v":1,"id":"fnv1a:2b42825f2462bed8","code":"mesh/codegen-pool-with-rpc-client-unsupported","stage":"mesh-codegen","message":"machine 'motor_pool': SOME/IP server pool (`server.instances: [...]` with more than one entry) cannot be combined with SOME/IP `<send>` RpcRequest in the same router. Router-scoped correlation tables (`invoke_correlation_` / `active_invokes_` / `pending_rpcs_`) cannot safely alias across hosted sessions. Either remove the RPC client site(s) from this machine or reduce `server.instances:` to a single instance. See SCE_MESH.md §14.4.","actual":"motor_pool"}"#,
+            ),
+            (
+                "mesh/codegen-host-core-unsupported",
+                CodegenError::HostCoreUnsupported {
+                    machine: "calendar".into(),
+                    feature: crate::mesh::error::HostCoreGap::ServerBlock {
+                        transport: "zenoh".into(),
+                    },
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b7033381df436a0b","code":"mesh/codegen-host-core-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §19","message":"machine 'calendar' declares a `server:` block on transport 'zenoh', which the host Mesh cores do not carry (SCE_MESH.md §mesh-19). Generate this machine with `--lang cpp`, or remove it from deploy.yaml.","actual":"calendar"}"#,
             ),
             (
                 "mesh/io",
@@ -15796,6 +15814,7 @@ mod tests {
             | MeshCodegenTemplateRender
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
+            | MeshCodegenHostCoreUnsupported
             | MeshIo
             // ── §synth-6.2.6 generated-source drift (B9). Repair is the
             //    deterministic `sce-codegen <regen-command>` — no
@@ -16479,6 +16498,7 @@ mod tests {
                 | MeshCodegenUnsupportedTransport | MeshCodegenTemplateRead
                 | MeshCodegenTemplateRender | MeshCodegenEventNameCollision
                 | MeshCodegenPoolWithRpcClientUnsupported
+                | MeshCodegenHostCoreUnsupported
                 | MeshIo
                 // B9 §synth-6.2.6 generated-source drift detection
                 | ForgeSourceHashMismatch
@@ -16536,7 +16556,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            397,
+            398,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 397 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
@@ -17439,6 +17459,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshCodegenTemplateRender
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
+            | MeshCodegenHostCoreUnsupported
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered

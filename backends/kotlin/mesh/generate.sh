@@ -47,3 +47,21 @@ for path in "$STDLIB_MESH"/*.scxml; do
 done
 
 echo "Generated $count Kotlin documents under $OUT_DIR"
+
+# The cross-language loopback test's peer table (SCE_MESH.md §mesh-19): the
+# client machine of tests/mesh/wss_loopback/deploy.yaml, which
+# CrossLanguageLoopbackTest builds its router from. Generated with the fixture
+# directory as the input root, which is what the drift check recomputes
+# (sce-build/tests/b9_drift_detection.rs).
+LOOPBACK="$REPO_ROOT/tests/mesh/wss_loopback"
+TEST_OUT="$SCRIPT_DIR/src/jvmTest/kotlin/com/sce/generated"
+find "$TEST_OUT" -mindepth 1 -exec rm -rf {} + 2>/dev/null || true
+mkdir -p "$TEST_OUT"
+"$SCE_CODEGEN" generate "$LOOPBACK/client.scxml" \
+    --deploy "$LOOPBACK/deploy.yaml" \
+    --language kotlin \
+    --transport-only \
+    --input-root "$LOOPBACK" \
+    --output-dir "$TEST_OUT/client/" >/dev/null
+
+echo "Generated the loopback client's peer table under $TEST_OUT"

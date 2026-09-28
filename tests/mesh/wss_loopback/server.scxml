@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_MESH.md §mesh-18 / §mesh-19: the server half of the WebSocket loopback.
+  It answers every `ping` a client sends with a `pong` carrying the same data.
+
+  Its peer table (backends/rust/mesh/examples/generated/server_mesh_peers.rs)
+  is generated from deploy.yaml beside it by backends/rust/mesh/generate.sh,
+  and the Rust example backends/rust/mesh/examples/wss_peer.rs builds its
+  router from it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="server" initial="serving" datamodel="ecmascript">
+  <state id="serving">
+    <transition event="ping" target="serving">
+      <send target="#client" event="pong" expr="_event.data"/>
+    </transition>
+  </state>
+</scxml>

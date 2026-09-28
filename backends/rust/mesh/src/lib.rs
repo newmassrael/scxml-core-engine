@@ -19,7 +19,9 @@
 //! whichever transport the host wires, and the clock is an argument, so the
 //! core runs the same under a test as under a socket. [`endpoint`] is where
 //! a host supplies them — a transport, a clock, randomness — and where the
-//! core meets an engine.
+//! core meets an engine. [`peers`] is what the build generates from
+//! deploy.yaml for one machine: its peers, each one's configuration and how
+//! it is reached.
 
 #![forbid(unsafe_code)]
 
@@ -35,6 +37,7 @@ pub mod endpoint;
 pub mod generated;
 pub mod inbound;
 pub mod outbound;
+pub mod peers;
 pub mod router;
 pub mod signal;
 #[cfg(feature = "wss")]

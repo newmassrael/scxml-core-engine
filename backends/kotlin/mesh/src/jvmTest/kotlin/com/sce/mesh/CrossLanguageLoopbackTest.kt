@@ -8,12 +8,17 @@
 //
 // What it proves is what the two cores' shared literal tests cannot: the Rust
 // core decodes an envelope the Kotlin core encoded, and the Kotlin core
-// decodes one the Rust core encoded, on the wire the binding fixes.
+// decodes one the Rust core encoded, on the wire the binding fixes. Both
+// sides build their routers from the peer tables the build generated from
+// one deployment (tests/mesh/wss_loopback/deploy.yaml, SCE_MESH.md
+// §mesh-19), so the configuration they agree on is the one deploy.yaml says.
 
 package com.sce.mesh
 
+import com.sce.generated.client.ClientMeshPeers
 import com.sce.runtime.StateMachineEngine
 import java.io.File
+import java.time.Duration
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
@@ -53,21 +58,18 @@ class CrossLanguageLoopbackTest {
             val listening = stdout.readLine() ?: fail("the Rust peer exited before it listened")
             val port = listening.removePrefix("LISTENING ").toIntOrNull() ?: fail("unexpected first line: $listening")
 
+            // The machine as tests/mesh/wss_loopback/deploy.yaml binds it, from the
+            // table the build generated. The server's port is the one thing the
+            // deployment cannot know: the Rust peer takes an ephemeral one.
+            val machine = ClientMeshPeers.MACHINE
+            val server = machine.peer("server") ?: fail("the deployment binds no #server")
+            val dial = assertIs<PeerLink.WssDial>(server.link)
+            val base = dial.url.substringBeforeLast(':') + ":$port"
+            val keepalive = dial.keepaliveMs?.let { Duration.ofMillis(it.toLong()) } ?: DEFAULT_KEEPALIVE
+
             val events = LinkedBlockingQueue<LinkEvent>()
-            val link = WssClient(OkHttpClient(), "ws://127.0.0.1:$port", "client", "server") { events += it }
-            val router = Router("client", 8u, 50).also {
-                it.addPeer(
-                    "server",
-                    PeerConfig(
-                        transport = "wss",
-                        buffer = OutboundBuffer(maxPending = 8u, maxAgeMs = 0),
-                        retry = null,
-                        stampSequence = false,
-                        delivery = Delivery(dedup = true, ordered = false),
-                    ),
-                )
-            }
-            val endpoint = Endpoint(router, link, Counting())
+            val link = WssClient(OkHttpClient(), base, machine.name, server.name, keepalive) { events += it }
+            val endpoint = Endpoint(machine.router(), link, Counting())
             link.connect()
             deliver(endpoint, events.next().also { assertEquals(LinkEvent.Ready("server"), it) })
 

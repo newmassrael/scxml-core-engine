@@ -3386,7 +3386,7 @@ does not hold a value it never declared.
 
 ---
 
-## Appendix — `DiagnosticCode` index (383 codes)
+## Appendix — `DiagnosticCode` index (384 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -3763,6 +3763,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/codegen-unsupported-transport` | Mesh Codegen |
 | `mesh/codegen-event-name-collision` | Mesh Codegen |
 | `mesh/codegen-pool-with-rpc-client-unsupported` | Mesh Codegen |
+| `mesh/codegen-host-core-unsupported` | Mesh Codegen |
 
 ### Diagnostic-only
 

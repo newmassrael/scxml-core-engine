@@ -1,0 +1,76 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- SCE_MESH.md §mesh-19: one machine's peer table for the Kotlin host Mesh
+    core (backends/kotlin/mesh). Data only — every value was decided by
+    `mesh::codegen::peer_policy`, the function the C++ router's context is
+    built from, so the two cores cannot read one binding two ways.
+
+    `machine` is the deploy.yaml key — the `source` the machine's envelopes
+    carry — and `document` the SCXML document it was generated from, whose
+    package the table joins. -#}
+{{ sce_map.source_marker(source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.machine) }}
+// {{ machine }}'s Mesh peers, as deploy.yaml binds them (SCE_MESH.md §mesh-19),
+// generated from {{ document }}.
+//
+// GENERATED — DO NOT EDIT. `sce-codegen generate --deploy <deploy.yaml> --lang kotlin`.
+// A host builds its router with `{{ document_pascal }}MeshPeers.MACHINE.router()` and opens
+// one connection per `PeerLink` below; every rule about envelopes lives in `com.sce.mesh`.
+
+package com.sce.generated.{{ document }}
+
+import com.sce.mesh.Delivery
+import com.sce.mesh.MeshMachine
+import com.sce.mesh.Peer
+import com.sce.mesh.PeerConfig
+import com.sce.mesh.PeerLink
+
+object {{ document_pascal }}MeshPeers {
+    /** {{ machine }}'s side of the deployment. */
+    val MACHINE: MeshMachine = MeshMachine(
+        name = "{{ machine | escape_kotlin }}",
+        dedupWindow = {{ dedup_window }}u,
+        gapTimeoutMs = {{ gap_timeout_ms }}L,
+        peers = listOf(
+{%- for peer in peers %}
+            Peer(
+                name = "{{ peer.name | escape_kotlin }}",
+                config = PeerConfig(
+                    transport = "{{ peer.transport }}",
+{%- if peer.buffer %}
+                    buffer = com.sce.mesh.OutboundBuffer(
+                        maxPending = {{ peer.buffer.max_pending }}u,
+                        maxAgeMs = {{ peer.buffer.max_age_ms }}L,
+                    ),
+{%- else %}
+                    buffer = null,
+{%- endif %}
+{%- if peer.retry %}
+                    retry = com.sce.mesh.RetryPolicy(
+                        maxRetries = {{ peer.retry.max_retries }}u,
+                        initialBackoffMs = {{ peer.retry.initial_backoff_ms }}L,
+                        backoffMultiplier = {{ peer.retry.backoff_multiplier }},
+                        maxBackoffMs = {{ peer.retry.max_backoff_ms }}L,
+                        jitterPct = {{ peer.retry.jitter_pct }}L,
+                    ),
+{%- else %}
+                    retry = null,
+{%- endif %}
+                    stampSequence = {{ peer.stamp_sequence }},
+                    delivery = Delivery(dedup = {{ peer.dedup }}, ordered = {{ peer.ordered }}),
+                ),
+{%- if peer.link.kind == "wss_dial" %}
+                link = PeerLink.WssDial(
+                    url = "{{ peer.link.url | escape_kotlin }}",
+                    keepaliveMs = {% if peer.link.keepalive_ms %}{{ peer.link.keepalive_ms }}u{% else %}null{% endif %},
+                ),
+{%- else %}
+                link = PeerLink.WssAccept(
+                    keepaliveMs = {% if peer.link.keepalive_ms %}{{ peer.link.keepalive_ms }}u{% else %}null{% endif %},
+                ),
+{%- endif %}
+            ),
+{%- endfor %}
+        ),
+    )
+}

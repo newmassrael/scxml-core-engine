@@ -2571,6 +2571,67 @@ pub enum CodegenError {
         machine: String,
         kind: RpcClientKind,
     },
+
+    /// SCE_MESH.md §mesh-19: a host Mesh core carries a machine's sends to
+    /// its bound peers and their deliveries, and nothing else. A
+    /// deployment that also asks it for a feature only the generated C++
+    /// router has is refused rather than emitted without it — the peer
+    /// table would build, and the feature would simply never happen.
+    #[error(
+        "machine '{machine}' declares {feature}, which the host Mesh cores do not \
+             carry (SCE_MESH.md §mesh-19). Generate this machine with `--lang cpp`, or \
+             remove it from deploy.yaml."
+    )]
+    HostCoreUnsupported {
+        machine: String,
+        feature: HostCoreGap,
+    },
+}
+
+/// What a [`CodegenError::HostCoreUnsupported`] refused: a deployment
+/// feature the generated C++ `TransportRouter` has and a host core does
+/// not. Each is its own arm so the message names what the author wrote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostCoreGap {
+    /// A `server:` block — a request/reply server on a named transport.
+    ServerBlock { transport: String },
+    /// A device-level listen endpoint (`transports.custom_tcp.listen:`),
+    /// which makes every machine on the device host a server.
+    DeviceListen { transport: String },
+    /// §mesh-16.5 wire-21 routes between partitions of one machine.
+    PartitionRoutes,
+    /// §mesh-9.6 remote `<invoke type="scxml">` to or from a peer machine.
+    RemoteScxmlInvoke { peer: String },
+}
+
+impl std::fmt::Display for HostCoreGap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ServerBlock { transport } => {
+                write!(f, "a `server:` block on transport '{transport}'")
+            }
+            Self::DeviceListen { transport } => {
+                write!(f, "a device `transports.{transport}.listen:` endpoint")
+            }
+            Self::PartitionRoutes => write!(f, "`partitions:` routes between its partitions"),
+            Self::RemoteScxmlInvoke { peer } => {
+                write!(f, "a remote `<invoke type=\"scxml\">` with peer '{peer}'")
+            }
+        }
+    }
+}
+
+impl HostCoreGap {
+    /// Stable short tag for `key_fragments`, so the three shapes keep
+    /// distinct diagnostic ids. Never rendered to users.
+    fn tag(&self) -> &'static str {
+        match self {
+            Self::ServerBlock { .. } => "server-block",
+            Self::DeviceListen { .. } => "device-listen",
+            Self::PartitionRoutes => "partition-routes",
+            Self::RemoteScxmlInvoke { .. } => "remote-scxml-invoke",
+        }
+    }
 }
 
 /// Which router-scoped correlation surface drove a
@@ -4430,11 +4491,15 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             stage: Stage::MeshCodegen,
             actual: Some(lang.clone()),
             expected: None,
-            // Closed set of currently-implemented mesh backends.
-            // More languages will join over time; the structured list
-            // lets consumers decide without regexing the message.
+            // The backends with a mesh emitter, read from the emitter
+            // table itself so a backend gaining one is offered here with
+            // no second edit; the structured list lets consumers decide
+            // without regexing the message.
             fix: Some(Fix::ReplaceOneOf {
-                candidates: vec!["cpp".to_string()],
+                candidates: super::codegen::mesh_backend_languages()
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
             }),
             key_fragments: vec![lang.clone()],
         },
@@ -4505,6 +4570,17 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), rpc_client_kind_tag(kind).to_string()],
+        },
+        CodegenError::HostCoreUnsupported { machine, feature } => DiagnosticPayload {
+            code: DiagnosticCode::MeshCodegenHostCoreUnsupported,
+            stage: Stage::MeshCodegen,
+            actual: Some(machine.clone()),
+            // Two repairs — another backend, or drop the feature — and
+            // which is right depends on what the machine is for, so
+            // neither is offered as the fix.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), feature.tag().to_string()],
         },
     }
 }

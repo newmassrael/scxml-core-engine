@@ -67,3 +67,22 @@ source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$OUT_DIR" "$REPO_ROOT"
 
 echo "Generated ${#documents[@]} Rust modules under $OUT_DIR"
+
+# The WebSocket loopback example's peer table (SCE_MESH.md §mesh-19): the
+# server machine of tests/mesh/wss_loopback/deploy.yaml, which
+# examples/wss_peer.rs builds its router from. Generated with the fixture
+# directory as the input root, which is what the drift check recomputes
+# (sce-build/tests/b9_drift_detection.rs).
+LOOPBACK="$REPO_ROOT/tests/mesh/wss_loopback"
+EXAMPLE_OUT="$SCRIPT_DIR/examples/generated"
+find "$EXAMPLE_OUT" -mindepth 1 -exec rm -rf {} + 2>/dev/null || true
+mkdir -p "$EXAMPLE_OUT"
+"$SCE_CODEGEN" generate "$LOOPBACK/server.scxml" \
+    --deploy "$LOOPBACK/deploy.yaml" \
+    --language rust \
+    --transport-only \
+    --input-root "$LOOPBACK" \
+    --output-dir "$EXAMPLE_OUT/" >/dev/null
+sce_rustfmt_dir "$EXAMPLE_OUT" "$REPO_ROOT"
+
+echo "Generated the loopback server's peer table under $EXAMPLE_OUT"

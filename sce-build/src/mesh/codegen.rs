@@ -1132,7 +1132,14 @@ fn build_server_context(binding: &super::topology::ServerBinding) -> ServerConte
 /// since it picks which entry point runs, not which inputs it sees.
 #[derive(Copy, Clone)]
 pub struct MeshCodegenInputs<'a> {
+    /// The document's name — what the backend names its generated files
+    /// and types after.
     pub machine_name: &'a str,
+    /// The machine's key in deploy.yaml, which is the `source` its
+    /// envelopes carry and the name its peers address it by. Differs from
+    /// [`Self::machine_name`] when a document is deployed under another
+    /// name (deploy.yaml `motor:` with `source: motor_someip_multi.scxml`).
+    pub deploy_machine_name: &'a str,
     pub targets: &'a [ResolvedTarget],
     pub server: Option<&'a super::topology::ServerBinding>,
     pub zenoh_session: Option<&'a ZenohTransportConfig>,
@@ -1207,8 +1214,20 @@ type MeshBackend = fn(MeshCodegenInputs<'_>) -> Result<GeneratedOutput, CodegenE
 fn mesh_backend(language: Language) -> Option<MeshBackend> {
     match language {
         Language::Cpp => Some(generate_cpp_mesh),
+        Language::Rust => Some(generate_rust_mesh),
+        Language::Kotlin => Some(generate_kotlin_mesh),
         _ => None,
     }
+}
+
+/// The backends [`mesh_backend`] has an emitter for, in `Language::ALL`
+/// order — what a `--lang` refusal offers instead.
+pub(crate) fn mesh_backend_languages() -> Vec<&'static str> {
+    Language::ALL
+        .iter()
+        .filter(|language| mesh_backend(**language).is_some())
+        .map(|language| language.canonical_name())
+        .collect()
 }
 
 /// Per-binding dedup decision (SCE_MESH.md §mesh-10.5).
@@ -1286,6 +1305,32 @@ fn compute_needs_ordering(
     default_needs_ordering
 }
 
+/// What one binding asks of the core that carries it: duplicate
+/// suppression (§mesh-10.5), receiver ordering and the sender stamps it
+/// reads (§mesh-10.6), readiness buffering and retry (§mesh-10.10).
+///
+/// One function, read by every mesh emitter, so the generated C++ router
+/// and a host core's peer table cannot answer the same binding differently.
+#[derive(Debug, Clone)]
+struct PeerPolicy {
+    needs_dedup: bool,
+    needs_ordering: bool,
+    /// Whether the transport has a readiness edge a §10.10 buffer gates
+    /// on. The buffer itself is the machine's `outbound_buffer:` section;
+    /// this says whether it reaches this binding.
+    buffers_outbound: bool,
+    retry: Option<RetryPolicyContext>,
+}
+
+fn peer_policy(t: &ResolvedTarget, desc: &transport::TransportDescriptor) -> PeerPolicy {
+    PeerPolicy {
+        needs_dedup: compute_needs_dedup(&t.state, desc.supplies_dedup),
+        needs_ordering: compute_needs_ordering(&t.state, desc.supplies_ordering, t.ordering),
+        buffers_outbound: desc.buffers_outbound,
+        retry: t.retry.map(RetryPolicyContext::from),
+    }
+}
+
 /// SCE_MESH.md §mesh-10.9 invariant 8: classify the pool + RPC-client
 /// rejection surface. The caller has already decided the machine is
 /// a pool router (`n_sessions > 1`); this helper inspects the
@@ -1348,6 +1393,9 @@ fn refuse_transports_not_served_by(
 fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, CodegenError> {
     let MeshCodegenInputs {
         machine_name,
+        // The C++ router is emitted and named per document; the deploy
+        // key reaches it through the resolved targets and the topology.
+        deploy_machine_name: _,
         targets,
         server,
         zenoh_session,
@@ -1527,9 +1575,12 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
             // (notifications), or Field (notifications).
             let has_receive = has_rpc || has_pubsub || has_field;
 
-            let needs_dedup = compute_needs_dedup(&t.state, desc.supplies_dedup);
-            let needs_ordering =
-                compute_needs_ordering(&t.state, desc.supplies_ordering, t.ordering);
+            let PeerPolicy {
+                needs_dedup,
+                needs_ordering,
+                buffers_outbound,
+                retry,
+            } = peer_policy(t, desc);
 
             TargetContext {
                 target: t.target.clone(),
@@ -1543,7 +1594,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
                     .cpp_shape()
                     .expect("refuse_transports_not_served_by admitted only C++-served transports")
                     .has_per_target_field,
-                buffers_outbound: desc.buffers_outbound,
+                buffers_outbound,
                 needs_dedup,
                 needs_ordering,
                 responders: t.responders.clone(),
@@ -1555,7 +1606,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
                 has_receive,
                 invoke_sites: t.invoke_sites.clone(),
                 pool_plan: t.pool_plan.clone(),
-                retry: t.retry.map(RetryPolicyContext::from),
+                retry,
                 auth: t.auth.clone().and_then(AuthPolicyContext::from_config),
             }
         })
@@ -2054,6 +2105,247 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     })
 }
 
+// ── Host Mesh cores (SCE_MESH.md §mesh-19) ───────────────────
+
+/// One peer of a host-core machine, as its peer table spells it.
+#[derive(Debug, Clone, serde::Serialize)]
+struct HostPeerContext {
+    /// The name `#<name>` addresses, without the `#`.
+    name: String,
+    /// The registry's transport name.
+    transport: &'static str,
+    /// The machine's §10.10 buffer, when it declares one and the
+    /// transport has the readiness edge it gates on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    buffer: Option<HostBufferContext>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retry: Option<RetryPolicyContext>,
+    /// §10.6.3: envelopes to this peer carry a `sequence_no`.
+    stamp_sequence: bool,
+    /// §10.5: envelopes from this peer are deduplicated.
+    dedup: bool,
+    /// §10.6: envelopes from this peer are released in sequence order.
+    ordered: bool,
+    /// How the link to the peer is opened — the core's `PeerLink`.
+    link: HostLinkContext,
+}
+
+/// deploy.yaml's `outbound_buffer:` section as a host core reads it.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+struct HostBufferContext {
+    max_pending: u32,
+    /// 0 for no age bound, the cores' reading of an absent `max_age_ms`.
+    max_age_ms: u64,
+}
+
+/// How a host core reaches one peer.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum HostLinkContext {
+    WssDial {
+        url: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        keepalive_ms: Option<u32>,
+    },
+    WssAccept {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        keepalive_ms: Option<u32>,
+    },
+}
+
+/// The peer-table template for a host-core backend, under
+/// `templates/mesh_router/<lang>/`. Deliberately not under
+/// `templates/mesh/<lang>/`: that tree is what lifts the §mesh-9.5
+/// mesh-rpc refusal (`generator::mesh_templates_exist_for`), and a host
+/// core does not lower `<invoke type="sce:mesh-rpc">`.
+fn host_peer_table_template(language: crate::generator::Language) -> Option<&'static str> {
+    match language {
+        crate::generator::Language::Rust => Some("mesh_router/rust/mesh_peers.rs.jinja2"),
+        crate::generator::Language::Kotlin => Some("mesh_router/kotlin/MeshPeers.kt.jinja2"),
+        _ => None,
+    }
+}
+
+/// The file a host-core machine's peer table is written to, named the way
+/// the backend names the machine's other generated files.
+fn host_peer_table_file(machine_name: &str, language: crate::generator::Language) -> String {
+    match language {
+        crate::generator::Language::Kotlin => {
+            format!(
+                "{}MeshPeers.kt",
+                filters::to_pascal_case(machine_name.to_string())
+            )
+        }
+        _ => format!("{machine_name}_mesh_peers.rs"),
+    }
+}
+
+fn generate_rust_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, CodegenError> {
+    generate_host_mesh(inputs, crate::generator::Language::Rust)
+}
+
+fn generate_kotlin_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, CodegenError> {
+    generate_host_mesh(inputs, crate::generator::Language::Kotlin)
+}
+
+/// A host-core machine's peer table (SCE_MESH.md §mesh-19): every peer it
+/// is bound to, with the policy [`peer_policy`] gives the binding — the
+/// same answer the C++ router gets — and how the peer is reached.
+fn generate_host_mesh(
+    inputs: MeshCodegenInputs<'_>,
+    language: crate::generator::Language,
+) -> Result<GeneratedOutput, CodegenError> {
+    let MeshCodegenInputs {
+        machine_name,
+        deploy_machine_name,
+        targets,
+        server,
+        custom_tcp_config,
+        machine_ordering,
+        machine_dedup,
+        machine_outbound_buffer,
+        partition_wire21_outbound,
+        partition_wire21_inbound,
+        scxml_remote_outbound_peers,
+        scxml_remote_inbound_peers,
+        source_location,
+        template_base,
+        ..
+    } = inputs;
+    use super::error::HostCoreGap;
+    use crate::mesh::topology::TransportState;
+    let refuse = |feature: HostCoreGap| CodegenError::HostCoreUnsupported {
+        machine: deploy_machine_name.to_string(),
+        feature,
+    };
+    refuse_transports_not_served_by(targets, transport::ServiceKind::HostCore)?;
+    // What the C++ router has and a host core does not. Each would build a
+    // peer table that silently leaves the feature out.
+    if let Some(server) = server {
+        return Err(refuse(HostCoreGap::ServerBlock {
+            transport: server.state.transport_name().to_string(),
+        }));
+    }
+    if custom_tcp_config.is_some_and(CustomTcpTransportConfig::hosts_server) {
+        return Err(refuse(HostCoreGap::DeviceListen {
+            transport: "custom_tcp".to_string(),
+        }));
+    }
+    if !partition_wire21_outbound.is_empty() || !partition_wire21_inbound.is_empty() {
+        return Err(refuse(HostCoreGap::PartitionRoutes));
+    }
+    if let Some(peer) = scxml_remote_outbound_peers
+        .iter()
+        .chain(scxml_remote_inbound_peers)
+        .next()
+    {
+        return Err(refuse(HostCoreGap::RemoteScxmlInvoke {
+            peer: peer.name.clone(),
+        }));
+    }
+
+    let mut peers: Vec<HostPeerContext> = targets
+        .iter()
+        .map(|t| {
+            let desc = transport::lookup(t.state.transport_name()).expect("transport validated");
+            let policy = peer_policy(t, desc);
+            let link = match &t.state {
+                TransportState::Wss {
+                    url: Some(url),
+                    keepalive_ms,
+                } => HostLinkContext::WssDial {
+                    url: url.clone(),
+                    keepalive_ms: *keepalive_ms,
+                },
+                TransportState::Wss {
+                    url: None,
+                    keepalive_ms,
+                } => HostLinkContext::WssAccept {
+                    keepalive_ms: *keepalive_ms,
+                },
+                other => unreachable!(
+                    "generate_host_mesh: '{}' passed refuse_transports_not_served_by(HostCore) \
+                     but has no host binding arm",
+                    other.transport_name()
+                ),
+            };
+            HostPeerContext {
+                name: t.target.name().to_string(),
+                transport: desc_name(t),
+                buffer: machine_outbound_buffer
+                    .filter(|_| policy.buffers_outbound)
+                    .map(|b| HostBufferContext {
+                        max_pending: b.max_pending_per_target,
+                        max_age_ms: b.max_age_ms.unwrap_or(0),
+                    }),
+                retry: policy.retry,
+                stamp_sequence: policy.needs_ordering,
+                dedup: policy.needs_dedup,
+                ordered: policy.needs_ordering,
+                link,
+            }
+        })
+        .collect();
+    peers.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let template_name = host_peer_table_template(language)
+        .expect("mesh_backend names only host-core languages here");
+    let template_path = template_base.join(template_name);
+    let template_content =
+        std::fs::read_to_string(&template_path).map_err(|e| CodegenError::TemplateRead {
+            path: template_path.display().to_string(),
+            source: e,
+        })?;
+    // The same SCE-MAP marker macro the C++ transport header imports, so the
+    // table carries the traceability marker every emitted file owes.
+    let macro_template_name = "_macros/sce_map_marker.jinja2";
+    let macro_template_path = template_base.join(macro_template_name);
+    let macro_template_content =
+        std::fs::read_to_string(&macro_template_path).map_err(|e| CodegenError::TemplateRead {
+            path: macro_template_path.display().to_string(),
+            source: e,
+        })?;
+    let mut env = minijinja::Environment::new();
+    crate::generator::register_symbol_artifact_global(&mut env);
+    for (name, content) in [
+        (macro_template_name, macro_template_content.as_str()),
+        (template_name, template_content.as_str()),
+    ] {
+        crate::generator::register_template(&mut env, name.to_string(), content, language)
+            .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
+    }
+    let tmpl = env
+        .get_template(template_name)
+        .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
+    let code = tmpl
+        .render(minijinja::context! {
+            machine => deploy_machine_name,
+            document => machine_name,
+            document_pascal => filters::to_pascal_case(machine_name.to_string()),
+            source_location => source_location,
+            // Both fit: deploy validation bounds the window to u32 and the
+            // gap timeout to i64 (`MAX_MESH_MILLIS`).
+            dedup_window => machine_dedup.window_size,
+            gap_timeout_ms => machine_ordering.gap_timeout_ms,
+            peers => peers,
+        })
+        .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
+    Ok(GeneratedOutput {
+        files: vec![(host_peer_table_file(machine_name, language), code)],
+        ..Default::default()
+    })
+}
+
+/// The registry's `'static` spelling of a target's transport name.
+fn desc_name(t: &ResolvedTarget) -> &'static str {
+    let name = t.state.transport_name();
+    transport::known_names()
+        .iter()
+        .copied()
+        .find(|known| *known == name)
+        .expect("transport validated")
+}
+
 /// SCE Mesh RFC F.X-2: compute the per-binary SCE-namespaced vsomeip
 /// Application name. Non-partitioned binaries get `<machine>_sce`;
 /// partitioned binaries get `<machine>_<partition>_sce`. The partition
@@ -2081,20 +2373,44 @@ mod tests {
 
     #[test]
     fn mesh_backend_matches_the_template_tree() {
-        // A language whose `templates/mesh/<lang>/` exists passes the
-        // mesh-rpc refusal, so it must reach an emitter; one without must
-        // not have an emitter the refusal would never let a document reach.
+        // Two template trees, one per core (§mesh-10.4.2 `served_by`):
+        // `templates/mesh/<lang>/` is the C++ router — and what lifts the
+        // §mesh-9.5 mesh-rpc refusal — and `templates/mesh_router/<lang>/`
+        // is a host core's peer table. A backend has an emitter exactly
+        // when one of them exists for it, and never both: a backend in both
+        // would pass the mesh-rpc refusal with an emitter that drops the
+        // invoke.
+        let host_template_embedded = |language: Language| {
+            host_peer_table_template(language).is_some_and(|name| {
+                crate::template_registry::EMBEDDED_TEMPLATES
+                    .iter()
+                    .any(|(embedded, _)| *embedded == name)
+            })
+        };
+        let (mut cpp_router, mut host_core) = (0, 0);
         for &language in Language::ALL {
+            let router_tree = crate::generator::mesh_templates_exist_for(language);
+            let host_tree = host_template_embedded(language);
+            assert!(
+                !(router_tree && host_tree),
+                "{language:?} has both templates/mesh/ and templates/mesh_router/"
+            );
             assert_eq!(
                 mesh_backend(language).is_some(),
-                crate::generator::mesh_templates_exist_for(language),
-                "{language:?}: mesh emitter and templates/mesh/ disagree"
+                router_tree || host_tree,
+                "{language:?}: mesh emitter and the template trees disagree"
             );
+            assert_eq!(
+                host_peer_table_template(language).is_some(),
+                host_tree,
+                "{language:?}: host_peer_table_template names a template that is not embedded"
+            );
+            cpp_router += usize::from(router_tree);
+            host_core += usize::from(host_tree);
         }
-        assert!(
-            Language::ALL.iter().any(|l| mesh_backend(*l).is_some()),
-            "no backend carries a mesh emitter: the comparison above is vacuous"
-        );
+        // Both bounds, so neither half of the equivalence is vacuous.
+        assert!(cpp_router >= 1, "no backend carries the C++ router tree");
+        assert!(host_core >= 1, "no backend carries a host peer-table tree");
     }
 
     // ── RFC F.X-2 sce_app_vsomeip_name ──────────────────────
