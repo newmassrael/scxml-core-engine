@@ -215,6 +215,20 @@ func (p *NestedFinalNotTerminalPolicy) ExecutePendingInvokes(engine *sce.Engine[
 // TickChildren is a no-op (no invokes in this SM).
 func (p *NestedFinalNotTerminalPolicy) TickChildren(engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) {}
 
+// DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
+// over, with the payload an immediate one carries (W3C SCXML 6.2 + 6.4). It
+// waited in this machine's own queue, so `<cancel>` reached it and a child that
+// ended first dropped it — the engine dispatches nothing once final. Emitted for
+// every machine, since the one that needs it is an invoked child, which need not
+// invoke anything itself.
+func (p *NestedFinalNotTerminalPolicy) DeliverToParent(eventName, eventData string) bool {
+	if p.ParentExternalQueue == nil {
+		return false
+	}
+	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
+	return true
+}
+
 // ======================================================================
 // StatePolicy interface implementation
 // ======================================================================

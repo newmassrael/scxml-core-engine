@@ -1141,7 +1141,8 @@ impl StatePolicy for SendParamPayloadPolicy {
                         };
                         let event_data: &str = &event_data_string;
 
-                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
                         {
                             let mut meta = sce_rust_runtime::EventWithMetadata::new(
                                 SendParamPayloadEvent::Escaped,
@@ -1179,7 +1180,8 @@ impl StatePolicy for SendParamPayloadPolicy {
                         // escaped once per boundary (`static_params_json | escape_rust`).
                         let event_data: &str = "{\"carried\":\"kept\"}";
 
-                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
                         {
                             let mut meta = sce_rust_runtime::EventWithMetadata::new(
                                 SendParamPayloadEvent::Loopback,
@@ -1255,7 +1257,8 @@ impl StatePolicy for SendParamPayloadPolicy {
                         };
                         let event_data: &str = &event_data_string;
 
-                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
                         {
                             let mut meta = sce_rust_runtime::EventWithMetadata::new(
                                 SendParamPayloadEvent::WithBadParam,
@@ -1387,7 +1390,8 @@ impl StatePolicy for SendParamPayloadPolicy {
                         };
                         let event_data: &str = &event_data_string;
 
-                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
                         {
                             let mut meta = sce_rust_runtime::EventWithMetadata::new(
                                 SendParamPayloadEvent::Typed,
@@ -1811,6 +1815,41 @@ impl StatePolicy for SendParamPayloadPolicy {
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     fn execute_pending_invokes(&mut self, engine: &mut Engine<Self>) {
         self.do_execute_pending_invokes(engine);
+    }
+
+    // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_<invokeid>">` whose wait
+    // is over, delivered by name. A child whose session has reached its final
+    // state has ended, and is not there to take it (W3C SCXML C.1).
+    fn deliver_to_invocation(
+        &mut self,
+        invoke_id: &str,
+        event_name: &str,
+        event_data: &str,
+    ) -> bool {
+        if invoke_id == "inv_emitter" {
+            if let Some(ref mut child) = self.child_inv_emitter {
+                if !child.is_in_final_state() {
+                    child.raise_external_by_name(event_name, event_data);
+                    return true;
+                }
+            }
+            return false;
+        }
+        false
+    }
+
+    // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_parent">` whose wait is
+    // over, with the payload an immediate one carries. It waited in this
+    // machine's own queue, so `<cancel>` reached it and a child that ended
+    // first dropped it — the engine dispatches nothing once final.
+    fn deliver_to_parent(&mut self, event_name: &str, event_data: &str) -> bool {
+        if let Some(ref parent_queue) = self.parent_external_queue {
+            if let Ok(mut q) = parent_queue.lock() {
+                q.push((event_name.to_string(), event_data.to_string()));
+                return true;
+            }
+        }
+        false
     }
 
     // W3C SCXML 6.4: Tick child state machines

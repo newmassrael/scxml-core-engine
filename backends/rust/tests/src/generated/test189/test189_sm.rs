@@ -393,7 +393,8 @@ impl StatePolicy for Test189Policy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
                         {
                             let mut meta =
                                 sce_rust_runtime::EventWithMetadata::new(Test189Event::Event1);
@@ -484,5 +485,19 @@ impl StatePolicy for Test189Policy {
     ) {
         // W3C SCXML 3.13: no transition in this document has content.
         let _ = (source, transition_index, engine);
+    }
+
+    // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_parent">` whose wait is
+    // over, with the payload an immediate one carries. It waited in this
+    // machine's own queue, so `<cancel>` reached it and a child that ended
+    // first dropped it — the engine dispatches nothing once final.
+    fn deliver_to_parent(&mut self, event_name: &str, event_data: &str) -> bool {
+        if let Some(ref parent_queue) = self.parent_external_queue {
+            if let Ok(mut q) = parent_queue.lock() {
+                q.push((event_name.to_string(), event_data.to_string()));
+                return true;
+            }
+        }
+        false
     }
 }

@@ -1284,6 +1284,36 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) TickChildren(engine *sce.Engine
 }
 
 
+// DeliverToInvocation delivers a delayed `<send target="#_<invokeid>">` whose
+// wait is over, by name — a child need not declare every event its parent
+// sends (W3C SCXML 6.2 + 6.4). It answers whether the invocation was there to
+// take it: one whose session has reached its final state has ended, and the
+// engine reports the send it could not deliver (W3C SCXML C.1).
+func (p *AHybridInvokeCarriesItsArgumentsPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
+	if invokeID == "_invoke_0" {
+		if child := p.childInvoke0; child != nil && !child.IsInFinalState() {
+			child.RaiseExternalByName(eventName, eventData)
+			return true
+		}
+		return false
+	}
+	if invokeID == "_invoke_1" {
+		if child := p.childInvoke1; child != nil && !child.IsInFinalState() {
+			child.RaiseExternalByName(eventName, eventData)
+			return true
+		}
+		return false
+	}
+	if invokeID == "_invoke_2" {
+		if child := p.childInvoke2; child != nil && !child.IsInFinalState() {
+			child.RaiseExternalByName(eventName, eventData)
+			return true
+		}
+		return false
+	}
+	return false
+}
+
 
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
@@ -1367,6 +1397,20 @@ func (w *childEngineWrapperInvoke2Bare) SetCompletionCallback(cb func()) { w.eng
 func (w *childEngineWrapperInvoke2Bare) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvoke2Bare) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 
+
+// DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
+// over, with the payload an immediate one carries (W3C SCXML 6.2 + 6.4). It
+// waited in this machine's own queue, so `<cancel>` reached it and a child that
+// ended first dropped it — the engine dispatches nothing once final. Emitted for
+// every machine, since the one that needs it is an invoked child, which need not
+// invoke anything itself.
+func (p *AHybridInvokeCarriesItsArgumentsPolicy) DeliverToParent(eventName, eventData string) bool {
+	if p.ParentExternalQueue == nil {
+		return false
+	}
+	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
+	return true
+}
 
 // ======================================================================
 // StatePolicy interface implementation

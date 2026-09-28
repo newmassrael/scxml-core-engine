@@ -264,6 +264,20 @@ func (p *ParallelDoneStateIsDeliveredPolicy) ExecutePendingInvokes(engine *sce.E
 // TickChildren is a no-op (no invokes in this SM).
 func (p *ParallelDoneStateIsDeliveredPolicy) TickChildren(engine *sce.Engine[ParallelDoneStateIsDeliveredState, ParallelDoneStateIsDeliveredEvent]) {}
 
+// DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
+// over, with the payload an immediate one carries (W3C SCXML 6.2 + 6.4). It
+// waited in this machine's own queue, so `<cancel>` reached it and a child that
+// ended first dropped it — the engine dispatches nothing once final. Emitted for
+// every machine, since the one that needs it is an invoked child, which need not
+// invoke anything itself.
+func (p *ParallelDoneStateIsDeliveredPolicy) DeliverToParent(eventName, eventData string) bool {
+	if p.ParentExternalQueue == nil {
+		return false
+	}
+	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
+	return true
+}
+
 // ======================================================================
 // StatePolicy interface implementation
 // ======================================================================

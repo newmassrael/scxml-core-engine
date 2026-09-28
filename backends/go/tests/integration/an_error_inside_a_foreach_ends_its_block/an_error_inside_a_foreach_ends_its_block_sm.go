@@ -650,6 +650,20 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecutePendingInvokes(engine *
 // TickChildren is a no-op (no invokes in this SM).
 func (p *AnErrorInsideAForeachEndsItsBlockPolicy) TickChildren(engine *sce.Engine[AnErrorInsideAForeachEndsItsBlockState, AnErrorInsideAForeachEndsItsBlockEvent]) {}
 
+// DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
+// over, with the payload an immediate one carries (W3C SCXML 6.2 + 6.4). It
+// waited in this machine's own queue, so `<cancel>` reached it and a child that
+// ended first dropped it — the engine dispatches nothing once final. Emitted for
+// every machine, since the one that needs it is an invoked child, which need not
+// invoke anything itself.
+func (p *AnErrorInsideAForeachEndsItsBlockPolicy) DeliverToParent(eventName, eventData string) bool {
+	if p.ParentExternalQueue == nil {
+		return false
+	}
+	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
+	return true
+}
+
 // ======================================================================
 // StatePolicy interface implementation
 // ======================================================================
@@ -918,7 +932,8 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteEntryActions(state AnEr
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal")
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
 	{
 		meta := sce.NewEventWithMetadata(AnErrorInsideAForeachEndsItsBlockEventSent)
 		meta.Metadata.Data = eventDataStr
@@ -1211,7 +1226,8 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteTransitionContent(sourc
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal")
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
 	{
 		meta := sce.NewEventWithMetadata(AnErrorInsideAForeachEndsItsBlockEventSent)
 		meta.Metadata.Data = eventDataStr

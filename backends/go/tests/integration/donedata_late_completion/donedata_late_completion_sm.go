@@ -492,6 +492,22 @@ func (p *DonedataLateCompletionPolicy) TickChildren(engine *sce.Engine[DonedataL
 }
 
 
+// DeliverToInvocation delivers a delayed `<send target="#_<invokeid>">` whose
+// wait is over, by name — a child need not declare every event its parent
+// sends (W3C SCXML 6.2 + 6.4). It answers whether the invocation was there to
+// take it: one whose session has reached its final state has ended, and the
+// engine reports the send it could not deliver (W3C SCXML C.1).
+func (p *DonedataLateCompletionPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
+	if invokeID == "inv_late" {
+		if child := p.childInvLate; child != nil && !child.IsInFinalState() {
+			child.RaiseExternalByName(eventName, eventData)
+			return true
+		}
+		return false
+	}
+	return false
+}
+
 // DeliverToChildSession delivers an event addressed to a child's published
 // location (W3C SCXML C.1).
 //
@@ -531,6 +547,20 @@ func (w *childEngineWrapperInvLate) SetCompletionCallback(cb func()) { w.engine.
 func (w *childEngineWrapperInvLate) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvLate) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 
+
+// DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
+// over, with the payload an immediate one carries (W3C SCXML 6.2 + 6.4). It
+// waited in this machine's own queue, so `<cancel>` reached it and a child that
+// ended first dropped it — the engine dispatches nothing once final. Emitted for
+// every machine, since the one that needs it is an invoked child, which need not
+// invoke anything itself.
+func (p *DonedataLateCompletionPolicy) DeliverToParent(eventName, eventData string) bool {
+	if p.ParentExternalQueue == nil {
+		return false
+	}
+	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
+	return true
+}
 
 // ======================================================================
 // StatePolicy interface implementation
@@ -892,8 +922,10 @@ func (p *DonedataLateCompletionPolicy) ExecuteTransitionContent(source DonedataL
 		_ = eventDataStr
 	// W3C SCXML 6.4: Send to invoked child "inv_late". The build
 	// refused a target naming no invocation above, so one matches here.
-	if p.childInvLate != nil {
-		p.childInvLate.RaiseExternalByName("finish", eventDataStr)
+	// A child whose session has reached its final state has ended, and is not
+	// there to address.
+	if child := p.childInvLate; child != nil && !child.IsInFinalState() {
+		child.RaiseExternalByName("finish", eventDataStr)
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.

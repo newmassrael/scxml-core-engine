@@ -810,9 +810,17 @@ impl StatePolicy for HostEventReachesTheChildPolicy {
 
                                 let event_data: &str = "";
 
-                                // W3C SCXML 6.4: Send to child invoke 'inv_probe' via #_inv_probe
-                                if let Some(ref mut child) = self.child_inv_probe {
-                                    child.raise_external_by_name("marker", &event_data);
+                                // W3C SCXML 6.4: Send to child invoke 'inv_probe' via #_inv_probe.
+                                // A child whose session has reached its final state has ended, and is not
+                                // there to address.
+                                if self
+                                    .child_inv_probe
+                                    .as_ref()
+                                    .is_some_and(|child| !child.is_in_final_state())
+                                {
+                                    if let Some(ref mut child) = self.child_inv_probe {
+                                        child.raise_external_by_name("marker", &event_data);
+                                    }
                                 } else {
                                     // W3C SCXML C.1: the invocation is not running, so the session the
                                     // target names is not there to reach.
@@ -836,6 +844,41 @@ impl StatePolicy for HostEventReachesTheChildPolicy {
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     fn execute_pending_invokes(&mut self, engine: &mut Engine<Self>) {
         self.do_execute_pending_invokes(engine);
+    }
+
+    // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_<invokeid>">` whose wait
+    // is over, delivered by name. A child whose session has reached its final
+    // state has ended, and is not there to take it (W3C SCXML C.1).
+    fn deliver_to_invocation(
+        &mut self,
+        invoke_id: &str,
+        event_name: &str,
+        event_data: &str,
+    ) -> bool {
+        if invoke_id == "inv_probe" {
+            if let Some(ref mut child) = self.child_inv_probe {
+                if !child.is_in_final_state() {
+                    child.raise_external_by_name(event_name, event_data);
+                    return true;
+                }
+            }
+            return false;
+        }
+        false
+    }
+
+    // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_parent">` whose wait is
+    // over, with the payload an immediate one carries. It waited in this
+    // machine's own queue, so `<cancel>` reached it and a child that ended
+    // first dropped it — the engine dispatches nothing once final.
+    fn deliver_to_parent(&mut self, event_name: &str, event_data: &str) -> bool {
+        if let Some(ref parent_queue) = self.parent_external_queue {
+            if let Ok(mut q) = parent_queue.lock() {
+                q.push((event_name.to_string(), event_data.to_string()));
+                return true;
+            }
+        }
+        false
     }
 
     // W3C SCXML 6.4: Tick child state machines

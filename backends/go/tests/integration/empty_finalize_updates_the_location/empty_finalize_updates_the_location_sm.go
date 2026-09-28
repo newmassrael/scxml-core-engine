@@ -831,6 +831,36 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) TickChildren(engine *sce.Engine[
 }
 
 
+// DeliverToInvocation delivers a delayed `<send target="#_<invokeid>">` whose
+// wait is over, by name — a child need not declare every event its parent
+// sends (W3C SCXML 6.2 + 6.4). It answers whether the invocation was there to
+// take it: one whose session has reached its final state has ended, and the
+// engine reports the send it could not deliver (W3C SCXML C.1).
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
+	if invokeID == "inv_empty" {
+		if child := p.childInvEmpty; child != nil && !child.IsInFinalState() {
+			child.RaiseExternalByName(eventName, eventData)
+			return true
+		}
+		return false
+	}
+	if invokeID == "inv_absent" {
+		if child := p.childInvAbsent; child != nil && !child.IsInFinalState() {
+			child.RaiseExternalByName(eventName, eventData)
+			return true
+		}
+		return false
+	}
+	if invokeID == "inv_unmatched" {
+		if child := p.childInvUnmatched; child != nil && !child.IsInFinalState() {
+			child.RaiseExternalByName(eventName, eventData)
+			return true
+		}
+		return false
+	}
+	return false
+}
+
 // DeliverToChildSession delivers an event addressed to a child's published
 // location (W3C SCXML C.1).
 //
@@ -951,6 +981,20 @@ func (w *childEngineWrapperInvUnmatched) SetCompletionCallback(cb func()) { w.en
 func (w *childEngineWrapperInvUnmatched) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvUnmatched) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 
+
+// DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
+// over, with the payload an immediate one carries (W3C SCXML 6.2 + 6.4). It
+// waited in this machine's own queue, so `<cancel>` reached it and a child that
+// ended first dropped it — the engine dispatches nothing once final. Emitted for
+// every machine, since the one that needs it is an invoked child, which need not
+// invoke anything itself.
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) DeliverToParent(eventName, eventData string) bool {
+	if p.ParentExternalQueue == nil {
+		return false
+	}
+	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
+	return true
+}
 
 // ======================================================================
 // StatePolicy interface implementation
@@ -1201,16 +1245,13 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 	{
 		eventDataStr := ""
 		_ = eventDataStr
-	// W3C SCXML 6.2: Delayed send
-	{
-		// The build read the static delay once, by the grammar every engine
-		// shares (ARCHITECTURE.md, "Durations").
-		delayDur := time.Duration(3000) * time.Millisecond
-		if delayEvt, delayOk := p.GetEventFromName("timeoutAbsent"); delayOk {
-			// §scxml-C-1: the origin is this session, as on the immediate path.
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr, p.SessionID)
-		}
+	// W3C SCXML 6.2: External send
+	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+	// origin is this session, as on the immediate path.
+	if delayEvt, delayOk := p.GetEventFromName("timeoutAbsent"); delayOk {
+		engine.ScheduleEvent(delayEvt, time.Duration(3000) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 	}
+
 	}
 	}
 		}()
@@ -1234,16 +1275,13 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 	{
 		eventDataStr := ""
 		_ = eventDataStr
-	// W3C SCXML 6.2: Delayed send
-	{
-		// The build read the static delay once, by the grammar every engine
-		// shares (ARCHITECTURE.md, "Durations").
-		delayDur := time.Duration(3000) * time.Millisecond
-		if delayEvt, delayOk := p.GetEventFromName("timeoutEmpty"); delayOk {
-			// §scxml-C-1: the origin is this session, as on the immediate path.
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr, p.SessionID)
-		}
+	// W3C SCXML 6.2: External send
+	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+	// origin is this session, as on the immediate path.
+	if delayEvt, delayOk := p.GetEventFromName("timeoutEmpty"); delayOk {
+		engine.ScheduleEvent(delayEvt, time.Duration(3000) * time.Millisecond, "__send_0", eventDataStr, p.SessionID)
 	}
+
 	}
 	}
 		}()
@@ -1267,16 +1305,13 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 	{
 		eventDataStr := ""
 		_ = eventDataStr
-	// W3C SCXML 6.2: Delayed send
-	{
-		// The build read the static delay once, by the grammar every engine
-		// shares (ARCHITECTURE.md, "Durations").
-		delayDur := time.Duration(3000) * time.Millisecond
-		if delayEvt, delayOk := p.GetEventFromName("timeoutUnmatched"); delayOk {
-			// §scxml-C-1: the origin is this session, as on the immediate path.
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr, p.SessionID)
-		}
+	// W3C SCXML 6.2: External send
+	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+	// origin is this session, as on the immediate path.
+	if delayEvt, delayOk := p.GetEventFromName("timeoutUnmatched"); delayOk {
+		engine.ScheduleEvent(delayEvt, time.Duration(3000) * time.Millisecond, "__send_2", eventDataStr, p.SessionID)
 	}
+
 	}
 	}
 		}()

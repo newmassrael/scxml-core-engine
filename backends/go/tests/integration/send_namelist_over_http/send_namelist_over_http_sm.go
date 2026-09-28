@@ -500,6 +500,20 @@ func (p *SendNamelistOverHttpPolicy) ExecutePendingInvokes(engine *sce.Engine[Se
 // TickChildren is a no-op (no invokes in this SM).
 func (p *SendNamelistOverHttpPolicy) TickChildren(engine *sce.Engine[SendNamelistOverHttpState, SendNamelistOverHttpEvent]) {}
 
+// DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
+// over, with the payload an immediate one carries (W3C SCXML 6.2 + 6.4). It
+// waited in this machine's own queue, so `<cancel>` reached it and a child that
+// ended first dropped it — the engine dispatches nothing once final. Emitted for
+// every machine, since the one that needs it is an invoked child, which need not
+// invoke anything itself.
+func (p *SendNamelistOverHttpPolicy) DeliverToParent(eventName, eventData string) bool {
+	if p.ParentExternalQueue == nil {
+		return false
+	}
+	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
+	return true
+}
+
 // ======================================================================
 // StatePolicy interface implementation
 // ======================================================================
@@ -737,16 +751,13 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 	{
 		eventDataStr := ""
 		_ = eventDataStr
-	// W3C SCXML 6.2: Delayed send
-	{
-		// The build read the static delay once, by the grammar every engine
-		// shares (ARCHITECTURE.md, "Durations").
-		delayDur := time.Duration(2000) * time.Millisecond
-		if delayEvt, delayOk := p.GetEventFromName("timeoutDiscard"); delayOk {
-			// §scxml-C-1: the origin is this session, as on the immediate path.
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_2", eventDataStr, p.SessionID)
-		}
+	// W3C SCXML 6.2: External send
+	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+	// origin is this session, as on the immediate path.
+	if delayEvt, delayOk := p.GetEventFromName("timeoutDiscard"); delayOk {
+		engine.ScheduleEvent(delayEvt, time.Duration(2000) * time.Millisecond, "__send_2", eventDataStr, p.SessionID)
 	}
+
 	}
 	}
 
@@ -847,16 +858,13 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 	{
 		eventDataStr := ""
 		_ = eventDataStr
-	// W3C SCXML 6.2: Delayed send
-	{
-		// The build read the static delay once, by the grammar every engine
-		// shares (ARCHITECTURE.md, "Durations").
-		delayDur := time.Duration(3000) * time.Millisecond
-		if delayEvt, delayOk := p.GetEventFromName("timeoutMap"); delayOk {
-			// §scxml-C-1: the origin is this session, as on the immediate path.
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr, p.SessionID)
-		}
+	// W3C SCXML 6.2: External send
+	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+	// origin is this session, as on the immediate path.
+	if delayEvt, delayOk := p.GetEventFromName("timeoutMap"); delayOk {
+		engine.ScheduleEvent(delayEvt, time.Duration(3000) * time.Millisecond, "__send_0", eventDataStr, p.SessionID)
 	}
+
 	}
 	}
 

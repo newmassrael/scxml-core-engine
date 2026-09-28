@@ -221,6 +221,20 @@ func (p *LateTickHonoursCancelPolicy) ExecutePendingInvokes(engine *sce.Engine[L
 // TickChildren is a no-op (no invokes in this SM).
 func (p *LateTickHonoursCancelPolicy) TickChildren(engine *sce.Engine[LateTickHonoursCancelState, LateTickHonoursCancelEvent]) {}
 
+// DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
+// over, with the payload an immediate one carries (W3C SCXML 6.2 + 6.4). It
+// waited in this machine's own queue, so `<cancel>` reached it and a child that
+// ended first dropped it — the engine dispatches nothing once final. Emitted for
+// every machine, since the one that needs it is an invoked child, which need not
+// invoke anything itself.
+func (p *LateTickHonoursCancelPolicy) DeliverToParent(eventName, eventData string) bool {
+	if p.ParentExternalQueue == nil {
+		return false
+	}
+	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
+	return true
+}
+
 // ======================================================================
 // StatePolicy interface implementation
 // ======================================================================
@@ -429,16 +443,13 @@ func (p *LateTickHonoursCancelPolicy) ExecuteEntryActions(state LateTickHonoursC
 	{
 		eventDataStr := ""
 		_ = eventDataStr
-	// W3C SCXML 6.2: Delayed send
-	{
-		// The build read the static delay once, by the grammar every engine
-		// shares (ARCHITECTURE.md, "Durations").
-		delayDur := time.Duration(100) * time.Millisecond
-		if delayEvt, delayOk := p.GetEventFromName("finish"); delayOk {
-			// §scxml-C-1: the origin is this session, as on the immediate path.
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_1", eventDataStr, p.SessionID)
-		}
+	// W3C SCXML 6.2: External send
+	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+	// origin is this session, as on the immediate path.
+	if delayEvt, delayOk := p.GetEventFromName("finish"); delayOk {
+		engine.ScheduleEvent(delayEvt, time.Duration(100) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 	}
+
 	}
 	}
 		}()
@@ -453,16 +464,13 @@ func (p *LateTickHonoursCancelPolicy) ExecuteEntryActions(state LateTickHonoursC
 	{
 		eventDataStr := ""
 		_ = eventDataStr
-	// W3C SCXML 6.2: Delayed send
-	{
-		// The build read the static delay once, by the grammar every engine
-		// shares (ARCHITECTURE.md, "Durations").
-		delayDur := time.Duration(200) * time.Millisecond
-		if delayEvt, delayOk := p.GetEventFromName("settle"); delayOk {
-			// §scxml-C-1: the origin is this session, as on the immediate path.
-			engine.ScheduleEvent(delayEvt, delayDur, "s1", eventDataStr, p.SessionID)
-		}
+	// W3C SCXML 6.2: External send
+	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+	// origin is this session, as on the immediate path.
+	if delayEvt, delayOk := p.GetEventFromName("settle"); delayOk {
+		engine.ScheduleEvent(delayEvt, time.Duration(200) * time.Millisecond, "s1", eventDataStr, p.SessionID)
 	}
+
 	}
 	}
 
@@ -471,16 +479,13 @@ func (p *LateTickHonoursCancelPolicy) ExecuteEntryActions(state LateTickHonoursC
 	{
 		eventDataStr := ""
 		_ = eventDataStr
-	// W3C SCXML 6.2: Delayed send
-	{
-		// The build read the static delay once, by the grammar every engine
-		// shares (ARCHITECTURE.md, "Durations").
-		delayDur := time.Duration(100) * time.Millisecond
-		if delayEvt, delayOk := p.GetEventFromName("poke"); delayOk {
-			// §scxml-C-1: the origin is this session, as on the immediate path.
-			engine.ScheduleEvent(delayEvt, delayDur, "__send_0", eventDataStr, p.SessionID)
-		}
+	// W3C SCXML 6.2: External send
+	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+	// origin is this session, as on the immediate path.
+	if delayEvt, delayOk := p.GetEventFromName("poke"); delayOk {
+		engine.ScheduleEvent(delayEvt, time.Duration(100) * time.Millisecond, "__send_0", eventDataStr, p.SessionID)
 	}
+
 	}
 	}
 		}()

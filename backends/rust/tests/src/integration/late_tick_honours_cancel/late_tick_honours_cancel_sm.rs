@@ -384,22 +384,18 @@ impl StatePolicy for LateTickHonoursCancelPolicy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (100ms)
-                        {
-                            let delay_ms = 100_u64;
-                            let __sce_delayed_event = Some(LateTickHonoursCancelEvent::Finish);
-                            if let Some(evt) = __sce_delayed_event {
-                                engine.schedule_event(
-                                    evt,
-                                    core::time::Duration::from_millis(delay_ms),
-                                    &send_id,
-                                    event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
-                                );
-                            }
-                        }
+                        // W3C SCXML 6.2: Default send (no target = external event)
+                        // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+                        // origin is this session, as on the immediate path.
+                        engine.schedule_event(
+                            LateTickHonoursCancelEvent::Finish,
+                            core::time::Duration::from_millis(100_u64),
+                            &send_id,
+                            event_data,
+                            &::sce_rust_runtime::sce_string_from_str(
+                                self.session_id.as_deref().unwrap_or(""),
+                            ),
+                        );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                         let _ = send_id; // suppress unused warning when no send operation
@@ -416,22 +412,18 @@ impl StatePolicy for LateTickHonoursCancelPolicy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (200ms)
-                        {
-                            let delay_ms = 200_u64;
-                            let __sce_delayed_event = Some(LateTickHonoursCancelEvent::Settle);
-                            if let Some(evt) = __sce_delayed_event {
-                                engine.schedule_event(
-                                    evt,
-                                    core::time::Duration::from_millis(delay_ms),
-                                    &send_id,
-                                    event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
-                                );
-                            }
-                        }
+                        // W3C SCXML 6.2: Default send (no target = external event)
+                        // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+                        // origin is this session, as on the immediate path.
+                        engine.schedule_event(
+                            LateTickHonoursCancelEvent::Settle,
+                            core::time::Duration::from_millis(200_u64),
+                            &send_id,
+                            event_data,
+                            &::sce_rust_runtime::sce_string_from_str(
+                                self.session_id.as_deref().unwrap_or(""),
+                            ),
+                        );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                         let _ = send_id; // suppress unused warning when no send operation
@@ -442,22 +434,18 @@ impl StatePolicy for LateTickHonoursCancelPolicy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (100ms)
-                        {
-                            let delay_ms = 100_u64;
-                            let __sce_delayed_event = Some(LateTickHonoursCancelEvent::Poke);
-                            if let Some(evt) = __sce_delayed_event {
-                                engine.schedule_event(
-                                    evt,
-                                    core::time::Duration::from_millis(delay_ms),
-                                    &send_id,
-                                    event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
-                                );
-                            }
-                        }
+                        // W3C SCXML 6.2: Default send (no target = external event)
+                        // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+                        // origin is this session, as on the immediate path.
+                        engine.schedule_event(
+                            LateTickHonoursCancelEvent::Poke,
+                            core::time::Duration::from_millis(100_u64),
+                            &send_id,
+                            event_data,
+                            &::sce_rust_runtime::sce_string_from_str(
+                                self.session_id.as_deref().unwrap_or(""),
+                            ),
+                        );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                         let _ = send_id; // suppress unused warning when no send operation
@@ -575,5 +563,19 @@ impl StatePolicy for LateTickHonoursCancelPolicy {
     ) {
         // W3C SCXML 3.13: no transition in this document has content.
         let _ = (source, transition_index, engine);
+    }
+
+    // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_parent">` whose wait is
+    // over, with the payload an immediate one carries. It waited in this
+    // machine's own queue, so `<cancel>` reached it and a child that ended
+    // first dropped it — the engine dispatches nothing once final.
+    fn deliver_to_parent(&mut self, event_name: &str, event_data: &str) -> bool {
+        if let Some(ref parent_queue) = self.parent_external_queue {
+            if let Ok(mut q) = parent_queue.lock() {
+                q.push((event_name.to_string(), event_data.to_string()));
+                return true;
+            }
+        }
+        false
     }
 }

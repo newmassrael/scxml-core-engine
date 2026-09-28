@@ -695,6 +695,22 @@ func (p *SendParamPayloadPolicy) TickChildren(engine *sce.Engine[SendParamPayloa
 }
 
 
+// DeliverToInvocation delivers a delayed `<send target="#_<invokeid>">` whose
+// wait is over, by name — a child need not declare every event its parent
+// sends (W3C SCXML 6.2 + 6.4). It answers whether the invocation was there to
+// take it: one whose session has reached its final state has ended, and the
+// engine reports the send it could not deliver (W3C SCXML C.1).
+func (p *SendParamPayloadPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
+	if invokeID == "inv_emitter" {
+		if child := p.childInvEmitter; child != nil && !child.IsInFinalState() {
+			child.RaiseExternalByName(eventName, eventData)
+			return true
+		}
+		return false
+	}
+	return false
+}
+
 // DeliverToChildSession delivers an event addressed to a child's published
 // location (W3C SCXML C.1).
 //
@@ -734,6 +750,20 @@ func (w *childEngineWrapperInvEmitter) SetCompletionCallback(cb func()) { w.engi
 func (w *childEngineWrapperInvEmitter) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvEmitter) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 
+
+// DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
+// over, with the payload an immediate one carries (W3C SCXML 6.2 + 6.4). It
+// waited in this machine's own queue, so `<cancel>` reached it and a child that
+// ended first dropped it — the engine dispatches nothing once final. Emitted for
+// every machine, since the one that needs it is an invoked child, which need not
+// invoke anything itself.
+func (p *SendParamPayloadPolicy) DeliverToParent(eventName, eventData string) bool {
+	if p.ParentExternalQueue == nil {
+		return false
+	}
+	p.ParentExternalQueue.Push(sce.ParentEvent{Name: eventName, Data: eventData})
+	return true
+}
 
 // ======================================================================
 // StatePolicy interface implementation
@@ -1039,7 +1069,8 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal")
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
 	{
 		meta := sce.NewEventWithMetadata(SendParamPayloadEventEscaped)
 		meta.Metadata.Data = eventDataStr
@@ -1073,7 +1104,8 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		// is escaped once per boundary.
 		eventDataStr := "{\"carried\":\"kept\"}"
 		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal")
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
 	{
 		meta := sce.NewEventWithMetadata(SendParamPayloadEventLoopback)
 		meta.Metadata.Data = eventDataStr
@@ -1112,7 +1144,8 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal")
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
 	{
 		meta := sce.NewEventWithMetadata(SendParamPayloadEventWithBadParam)
 		meta.Metadata.Data = eventDataStr
@@ -1173,7 +1206,8 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal")
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
 	{
 		meta := sce.NewEventWithMetadata(SendParamPayloadEventTyped)
 		meta.Metadata.Data = eventDataStr

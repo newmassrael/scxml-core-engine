@@ -1447,23 +1447,18 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (3s)
-                        {
-                            let delay_ms = 3000_u64;
-                            let __sce_delayed_event =
-                                Some(EmptyFinalizeUpdatesTheLocationEvent::TimeoutAbsent);
-                            if let Some(evt) = __sce_delayed_event {
-                                engine.schedule_event(
-                                    evt,
-                                    core::time::Duration::from_millis(delay_ms),
-                                    &send_id,
-                                    event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
-                                );
-                            }
-                        }
+                        // W3C SCXML 6.2: Default send (no target = external event)
+                        // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+                        // origin is this session, as on the immediate path.
+                        engine.schedule_event(
+                            EmptyFinalizeUpdatesTheLocationEvent::TimeoutAbsent,
+                            core::time::Duration::from_millis(3000_u64),
+                            &send_id,
+                            event_data,
+                            &::sce_rust_runtime::sce_string_from_str(
+                                self.session_id.as_deref().unwrap_or(""),
+                            ),
+                        );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                         let _ = send_id; // suppress unused warning when no send operation
@@ -1496,23 +1491,18 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (3s)
-                        {
-                            let delay_ms = 3000_u64;
-                            let __sce_delayed_event =
-                                Some(EmptyFinalizeUpdatesTheLocationEvent::TimeoutEmpty);
-                            if let Some(evt) = __sce_delayed_event {
-                                engine.schedule_event(
-                                    evt,
-                                    core::time::Duration::from_millis(delay_ms),
-                                    &send_id,
-                                    event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
-                                );
-                            }
-                        }
+                        // W3C SCXML 6.2: Default send (no target = external event)
+                        // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+                        // origin is this session, as on the immediate path.
+                        engine.schedule_event(
+                            EmptyFinalizeUpdatesTheLocationEvent::TimeoutEmpty,
+                            core::time::Duration::from_millis(3000_u64),
+                            &send_id,
+                            event_data,
+                            &::sce_rust_runtime::sce_string_from_str(
+                                self.session_id.as_deref().unwrap_or(""),
+                            ),
+                        );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                         let _ = send_id; // suppress unused warning when no send operation
@@ -1545,23 +1535,18 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (3s)
-                        {
-                            let delay_ms = 3000_u64;
-                            let __sce_delayed_event =
-                                Some(EmptyFinalizeUpdatesTheLocationEvent::TimeoutUnmatched);
-                            if let Some(evt) = __sce_delayed_event {
-                                engine.schedule_event(
-                                    evt,
-                                    core::time::Duration::from_millis(delay_ms),
-                                    &send_id,
-                                    event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
-                                );
-                            }
-                        }
+                        // W3C SCXML 6.2: Default send (no target = external event)
+                        // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+                        // origin is this session, as on the immediate path.
+                        engine.schedule_event(
+                            EmptyFinalizeUpdatesTheLocationEvent::TimeoutUnmatched,
+                            core::time::Duration::from_millis(3000_u64),
+                            &send_id,
+                            event_data,
+                            &::sce_rust_runtime::sce_string_from_str(
+                                self.session_id.as_deref().unwrap_or(""),
+                            ),
+                        );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                         let _ = send_id; // suppress unused warning when no send operation
@@ -1905,6 +1890,59 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     fn execute_pending_invokes(&mut self, engine: &mut Engine<Self>) {
         self.do_execute_pending_invokes(engine);
+    }
+
+    // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_<invokeid>">` whose wait
+    // is over, delivered by name. A child whose session has reached its final
+    // state has ended, and is not there to take it (W3C SCXML C.1).
+    fn deliver_to_invocation(
+        &mut self,
+        invoke_id: &str,
+        event_name: &str,
+        event_data: &str,
+    ) -> bool {
+        if invoke_id == "inv_empty" {
+            if let Some(ref mut child) = self.child_inv_empty {
+                if !child.is_in_final_state() {
+                    child.raise_external_by_name(event_name, event_data);
+                    return true;
+                }
+            }
+            return false;
+        }
+        if invoke_id == "inv_absent" {
+            if let Some(ref mut child) = self.child_inv_absent {
+                if !child.is_in_final_state() {
+                    child.raise_external_by_name(event_name, event_data);
+                    return true;
+                }
+            }
+            return false;
+        }
+        if invoke_id == "inv_unmatched" {
+            if let Some(ref mut child) = self.child_inv_unmatched {
+                if !child.is_in_final_state() {
+                    child.raise_external_by_name(event_name, event_data);
+                    return true;
+                }
+            }
+            return false;
+        }
+        false
+    }
+
+    // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_parent">` whose wait is
+    // over, with the payload an immediate one carries. It waited in this
+    // machine's own queue, so `<cancel>` reached it and a child that ended
+    // first dropped it — the engine dispatches nothing once final.
+    fn deliver_to_parent(&mut self, event_name: &str, event_data: &str) -> bool {
+        if let Some(ref parent_queue) = self.parent_external_queue {
+            if let Ok(mut q) = parent_queue.lock() {
+                q.push((event_name.to_string(), event_data.to_string()));
+                return true;
+            }
+        }
+        false
     }
 
     // W3C SCXML 6.4: Tick child state machines
