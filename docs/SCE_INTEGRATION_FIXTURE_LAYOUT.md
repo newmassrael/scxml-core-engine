@@ -560,6 +560,21 @@ invoke names a type nobody runs, `refused` 1 (W3C §6.4.1). Each ends in
 `done`. Run on Rust, Go, Kotlin, Python and C11; not on C++, whose generated
 router takes the request itself and is built only from a `deploy.yaml`.
 
+`a_send_content_expr_is_the_payload` covers W3C §5.6.2 on a `<send>`: a
+`<content expr>` is evaluated when the send is, and its VALUE is `_event.data`
+— a number arrives as a number, an object as an object, a string as the
+string. Its last send fails, and what that costs is §5.6.2's to say, not
+§6.2's "discard the message": error.execution, and the empty string as the
+content's value, so the event still arrives carrying `''`; like a failing
+`<param>` (`a_bad_send_param_ends_its_block`), the error then ends the block,
+which the `<assign>` after the send shows by not running. The empty string
+travels in its JSON spelling on every channel, because a bare empty wire is
+"no data" and binds nothing. Measured 2026-09-28, three engines — the
+Interpreter, Go and Rust — never read the `expr`, Kotlin and Python discarded
+the message on failure, and the C++ AOT sent it without ending the block.
+Expected: `numberOk`, `objectOk`, `textOk`, `errors`, `badArrived` and
+`badEmpty` 1, `afterBad` 0, ending in `done`.
+
 `invoke_expression_failure_is_reported` covers W3C §6.4.3: an `<invoke>` that
 names its target through an expression must evaluate that expression when the
 element fires, and raise `error.execution` when it cannot. The axis is the

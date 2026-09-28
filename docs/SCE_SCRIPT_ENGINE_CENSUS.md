@@ -100,20 +100,20 @@ documents-floor 700
 documents-judged-floor 450
 engine-documents 257
 native-prefix-documents 2
-datamodel-variable-init 389
-transition-guard 235
-assign-action 332
+datamodel-variable-init 397
+transition-guard 238
+assign-action 339
 child-invoke-needs-script-engine 52
 log-expr 46
 send-param-expr 49
-send-dynamic-attr 43
+send-dynamic-attr 47
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
 donedata-content 9
 inline-script-action 3
 send-namelist 8
-if-condition 12
+if-condition 13
 elseif-condition 3
 global-script 3
 mesh-rpc-srcexpr 2
@@ -288,10 +288,17 @@ never spelled correctly.
   `datamodel-variable-init` and `assign-action` by three and
   `transition-guard` by two. Its Mesh request's `<param>`s are literals, so
   the new `mesh-rpc-request-expr` cause has no population in the tree yet.
+  Then
+  `integration_resources/a_send_content_expr_is_the_payload/` (one engine
+  document: eight data items, seven assigns, three guards over `_event.data`,
+  one `<if>`, and four `<content expr>` sends) raised `engine-documents` by
+  one, `datamodel-variable-init` by eight, `assign-action` by seven,
+  `transition-guard` by three, `if-condition` by one and `send-dynamic-attr`
+  by four.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
-- **50% of judged documents need an engine** (257 of 513). The remaining
+- **50% of judged documents need an engine** (258 of 514). The remaining
   50% already compile without one, which is what makes "the engine is a
   fallback" a description of the tree rather than an aspiration.
   ⚠ This figure was previously stated as 32%, taken over the 736 walked

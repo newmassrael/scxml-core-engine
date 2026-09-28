@@ -1,0 +1,61 @@
+# Mutation cases for §scxml-5.6.2 on a `<send>` — a `<content expr>` is the
+# payload as a value, and one that fails sends '' and ends the block.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_send_content_expr_is_the_payload.cases`.
+#
+# Measured 2026-09-28: the C++ Interpreter, Go and Rust never read the `expr`
+# at all, Kotlin and Python discarded the message on failure, and the C++ AOT
+# sent it without ending the block. §5.6.2 names the value a failing
+# `<content>` takes — the empty string — so the message goes, and the error
+# ends the block as a failing `<param>`'s does (§4.9).
+#
+# The C++ AOT and C11 targets are the TEMPLATES the built binaries carry. The
+# Rust, Go, Kotlin and Python halves have no round here (the harness reaches
+# cargo and ctest only); the same fixture holds them in their suites.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_a_send_content_expr_is_the_payload)$'
+mutation_targets sce/src/runtime/ActionExecutorImpl.cpp tools/codegen/templates/actions/send.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles tests/integration/ASendContentExprIsThePayloadTest.cpp tests/integration/ASendContentExprIsThePayloadAotTest.cpp backends/c/tests/integration/test_a_send_content_expr_is_the_payload.c
+
+# ── Interpreter: the expression is parsed and never read ───────────
+
+mutation_case "the interpreter never reads a send's content expr" <<'PY'
+edit("sce/src/runtime/ActionExecutorImpl.cpp",
+     "        if (!action.getContentExpr().empty()) {\n            DoneDataHelper::evaluateContent(",
+     "        if (false) {\n            DoneDataHelper::evaluateContent(")
+PY
+
+# ── Interpreter: a failure delivers no data instead of '' ──────────
+
+mutation_case "the interpreter delivers no data for a failing content expr" <<'PY'
+edit("sce/src/runtime/ActionExecutorImpl.cpp",
+     "                contentData = \"\\\"\\\"\";",
+     "                contentData = \"\";")
+PY
+
+# ── C++ AOT: a failing content expr does not end the block ─────────
+
+mutation_case "the C++ AOT runs the rest of the block after a failing content expr" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     """        ::SCE::DoneDataHelper::emitContentLiteral("", eventData, &typedData);
+        paramFailed = true;""",
+     """        ::SCE::DoneDataHelper::emitContentLiteral("", eventData, &typedData);""")
+PY
+
+# ── C11: a failure delivers no data, and the block runs on ─────────
+
+mutation_case "C11 delivers no data for a failing content expr" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """                    memcpy(_ed, "\\"\\"", sizeof("\\"\\""));""",
+     """                    _ed[0] = '\\0';""")
+PY
+
+mutation_case "C11 runs the rest of the block after a failing content expr" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """                    memcpy(_ed, "\\"\\"", sizeof("\\"\\""));
+                    _param_failed = true;""",
+     """                    memcpy(_ed, "\\"\\"", sizeof("\\"\\""));""")
+PY

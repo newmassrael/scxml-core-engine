@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 5.6.2 + 6.2: a `<send>`'s `<content expr>` is evaluated when the
+  send is, and its value — not its text — is the event's `_event.data`.
+
+  "When the SCXML Processor evaluates the <content> element, if the 'expr'
+  value expression is present, the Processor MUST evaluate it and use the
+  result as the output of the <content> element. If the evaluation of 'expr'
+  produces an error, the Processor MUST place error.execution in the internal
+  event queue and use the empty string as the value of the <content> element."
+
+  The second sentence decides what a failure costs, and it is §5.6.2's rather
+  than §6.2's "discard the message": the clause names the value the content
+  takes, which only means something if the message goes. It is the same
+  reading `a_bad_send_param_ends_its_block` records for a failing `<param>`
+  (§5.7.1): reported, the message still sent with what survived, and the error
+  ends the block it was raised in (§4.9).
+
+  Measured 2026-09-28: the C++ Interpreter, Go and Rust never read the `expr`
+  at all — the event arrived with no data — Kotlin and Python discarded the
+  message on failure, and the C++ AOT sent it but did not end the block.
+
+    number   `<content expr="40 + 2"/>`    arrives as 42
+    object   `<content expr="({a: 1})"/>`  arrives with `a === 1`
+    text     `<content expr="'hi'"/>`      arrives as 'hi'
+    failing  `<content expr="obj.missing.deep"/>` raises error.execution, and
+             `bad` still arrives with '' as its data; the `<assign>` after
+             the send in the same block does not run.
+
+    numberOk 1, objectOk 1, textOk 1, errors 1, badArrived 1, badEmpty 1,
+    afterBad 0, ending in `done`.
+
+  This fixture is the canonical source for all 7 channels — see
+  docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test locations.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="run"
+       name="a_send_content_expr_is_the_payload">
+  <datamodel>
+    <data id="obj" expr="({})"/>
+    <data id="numberOk" expr="0"/>
+    <data id="objectOk" expr="0"/>
+    <data id="textOk" expr="0"/>
+    <data id="errors" expr="0"/>
+    <data id="badArrived" expr="0"/>
+    <data id="badEmpty" expr="0"/>
+    <data id="afterBad" expr="0"/>
+  </datamodel>
+
+  <state id="run">
+    <onentry>
+      <send event="number"><content expr="40 + 2"/></send>
+      <send event="object"><content expr="({a: 1})"/></send>
+      <send event="text"><content expr="'hi'"/></send>
+    </onentry>
+    <onentry>
+      <send event="bad"><content expr="obj.missing.deep"/></send>
+      <assign location="afterBad" expr="1"/>
+    </onentry>
+    <onentry>
+      <send event="settle"/>
+    </onentry>
+
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <transition event="number" cond="_event.data === 42">
+      <assign location="numberOk" expr="1"/>
+    </transition>
+    <transition event="object" cond="_event.data.a === 1">
+      <assign location="objectOk" expr="1"/>
+    </transition>
+    <transition event="text" cond="_event.data === 'hi'">
+      <assign location="textOk" expr="1"/>
+    </transition>
+    <transition event="bad">
+      <assign location="badArrived" expr="1"/>
+      <if cond="_event.data === ''">
+        <assign location="badEmpty" expr="1"/>
+      </if>
+    </transition>
+    <transition event="settle" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>
