@@ -533,6 +533,21 @@ at all — two defects that cancel on the one test that sees them. Expected:
 `immediateOk` 1, `replied` 1, `delayedOk` 1, `unreachable` 1, `strayed` 0,
 ending in `done`.
 
+`a_peer_named_at_run_time_reaches_the_router` covers SCE_MESH.md §mesh-19's
+run-time half: a `targetexpr` that evaluates to a Mesh peer (`#hmi`) reaches
+the host's Mesh router, the `sce:mesh` host-served processor, as a literal
+`#peer` target does — the build cannot lower it, because the peer is only
+named once the expression is evaluated. Beside it, a `targetexpr` naming
+`#_internal` is not a peer (`#_` stays W3C's) and still reaches this session.
+The axis is the ROUTE, so each driver runs it twice: with a router registered
+the router sees one request (processor `sce:mesh`, target `#hmi`, event
+`ping`) and `refused` is 0; with none it is a send to a host processor nobody
+serves, `refused` 1 (W3C §6.2.5). `looped` is 1 and the run ends in `done`
+either way. Run on Rust, Go, Kotlin, Python and C11; not on C++, whose Mesh
+route is the deploy-built `TransportRouter` the integration lane does not
+build (`channel_cannot_host` in `sce-build/tests/integration_stem_registration.rs`
+says so, and why).
+
 `invoke_expression_failure_is_reported` covers W3C §6.4.3: an `<invoke>` that
 names its target through an expression must evaluate that expression when the
 element fires, and raise `error.execution` when it cannot. The axis is the

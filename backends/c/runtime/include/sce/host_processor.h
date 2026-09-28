@@ -274,6 +274,20 @@ static inline bool sce_is_reserved_host_type(const char *type) {
 }
 
 /**
+ * Whether a `<send>` target names a Mesh peer (SCE_MESH.md §mesh-19): `#`
+ * followed by at least one character that is not `_`, which stays W3C's
+ * (§scxml-6.2.4 `#_internal`, `#_parent`, `#_<invokeid>`).
+ *
+ * The C11 copy of the rule, asked of a `targetexpr` once it is evaluated —
+ * the build decides the literal targets itself. Every copy reads
+ * `tests/mesh/mesh_target_cases.json`, so a target one of them routes over
+ * Mesh is one they all route.
+ */
+static inline bool sce_is_mesh_target(const char *target) {
+    return target != NULL && target[0] == '#' && target[1] != '\0' && target[1] != '_';
+}
+
+/**
  * Put `handler` in the slot for `type`, replacing any handler already there.
  *
  * The one body behind `sce_host_registry_register` and

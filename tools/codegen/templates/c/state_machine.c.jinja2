@@ -559,6 +559,124 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
    `foreach_depth`, which names the lua global each depth caches its
    collection in — so a nested <foreach> walks its own array and leaves its
    enclosing one's intact. #}
+{#- §scxml-6.2.5 host-served send: the one hand-off every host-served `<send>`
+    takes, whether its type named a host processor or its evaluated target
+    named a Mesh peer (SCE_MESH.md §mesh-19). `processor_type` is the C string
+    literal the request carries. `resolved_target` names a buffer that already
+    holds the evaluated `targetexpr` — the dynamic Mesh branch evaluates it to
+    decide that this is a Mesh send at all, and evaluating it twice would run
+    the expression's side effects twice. -#}
+{% macro host_send_arm(action, processor_type, resolved_target=none) %}
+            {
+{% if action.eventexpr %}
+                char _host_event[SCE_MAX_ID_LEN];
+                bool _host_event_ok = false;
+{{ se.lua_eval_to_string(action.eventexpr, '_host_event', 'sizeof(_host_event)', '_host_event_ok') }}
+                (void)_host_event_ok;
+{% endif %}
+{% if action.targetexpr and not resolved_target %}
+                char _host_target[SCE_MAX_URI_LEN];
+                bool _host_target_ok = false;
+{{ se.lua_eval_to_string(action.targetexpr, '_host_target', 'sizeof(_host_target)', '_host_target_ok') }}
+                (void)_host_target_ok;
+{% endif %}
+{# W3C SCXML 5.10: the payload a local delivery of this send would carry,
+   evaluated once. `_ed` is that payload's text, which the host receives as
+   the request's event data; the host's text params are the same evaluation's
+   pairs, read in document order with repeats kept, so no `<param>` is
+   evaluated twice. A literal-only payload is finished at codegen time and its
+   pairs are the literals themselves, so nothing is evaluated at all. #}
+{% set host_pair_cap = (action.params | default([]) | length) + ((action.namelist or '').split() | length) %}
+{% set host_literal_only = not action.namelist and (action.params | rejectattr("is_static_literal") | list | length == 0) %}
+{% if action.params or action.namelist %}
+{{ send_payload_json(action.params, action.namelist, csym_prefix, model.name, true) }}
+                sce_host_send_param_t _host_params[{{ host_pair_cap }}];
+                int _host_param_count = 0;
+{% if host_literal_only %}
+{{ param_macros.collect_host_params_into(action.params, model, csym_prefix, '_host_params', '_host_param_count', '_host_param', '<send>', '                ', '_param_failed') -}}
+{% else %}
+                char _host_param_names[{{ host_pair_cap }}][SCE_MAX_ID_LEN];
+                char _host_param_values[{{ host_pair_cap }}][SCE_MAX_DATA_LEN];
+                if (luaL_dostring(sm->L,
+{{ se.lua_wire_string_fn() }}
+                    "local o = {} "
+                    "for _, p in ipairs(_sce_send_pairs or {}) do o[#o + 1] = p[1]; o[#o + 1] = _w(p[2]) end "
+                    "_sce_send_pairs = nil "
+                    "return o") == 0) {
+                    const lua_Integer _host_pairs = (lua_Integer)lua_rawlen(sm->L, -1) / 2;
+                    for (lua_Integer _hp = 0; _hp < _host_pairs && _host_param_count < {{ host_pair_cap }}; ++_hp) {
+                        lua_rawgeti(sm->L, -1, 2 * _hp + 1);
+                        sce_copy_bounded_id(_host_param_names[_host_param_count], lua_tostring(sm->L, -1));
+                        lua_pop(sm->L, 1);
+                        lua_rawgeti(sm->L, -1, 2 * _hp + 2);
+                        sce_copy_bounded_data(_host_param_values[_host_param_count], lua_tostring(sm->L, -1));
+                        lua_pop(sm->L, 1);
+                        _host_params[_host_param_count].name = _host_param_names[_host_param_count];
+                        _host_params[_host_param_count].value = _host_param_values[_host_param_count];
+                        _host_param_count++;
+                    }
+                }
+                lua_pop(sm->L, 1);
+{% endif %}
+{% elif action.content or action.contentexpr %}
+{{ send_content_json(action, csym_prefix, model.name) }}
+{% endif %}
+                sce_host_send_request_t _host_req;
+                _host_req.processor_type = {{ processor_type }};
+                _host_req.event_name = {% if action.eventexpr %}_host_event{% else %}"{{ action.event | default('', true) | escape_c }}"{% endif %};
+                _host_req.target = {% if resolved_target %}{{ resolved_target }}{% elif action.targetexpr %}_host_target{% else %}"{{ action.target | default('', true) | escape_c }}"{% endif %};
+                _host_req.content = "{{ action.content | default('', true) | escape_c }}";
+                _host_req.send_id = "{% if action.id %}{{ action.id | escape_c }}{% else %}{{ action.auto_send_id | default('', true) | escape_c }}{% endif %}";
+{% if action.params or action.namelist %}
+                _host_req.params = _host_params;
+                _host_req.param_count = _host_param_count;
+{% else %}
+                _host_req.params = NULL;
+                _host_req.param_count = 0;
+{% endif %}
+{% if action.params or action.namelist or action.content or action.contentexpr %}
+                _host_req.event_data = _ed;
+{% else %}
+                _host_req.event_data = "";
+{% endif %}
+{% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
+{% if action.delayexpr or host_delay_ms > 0 %}
+                /* W3C SCXML 6.2.4: a `delay` is a property of the SEND, not
+                   of the processor it named, so this waits exactly as an
+                   ordinary send does. Decided here rather than in the delay
+                   arms below, because this arm claims every host-served send
+                   before they are reached — which is how `delay` came to be
+                   discarded on every backend at once.
+                   W3C SCXML 6.3: it lands in the delayed-send queue under
+                   this send's id, so a `<cancel>` reaches it and the host
+                   never sees the act. */
+{% if action.delayexpr %}
+                /* The wait is read by the one duration reader every engine
+                   shares (ARCHITECTURE.md, "Durations"); an expression that
+                   fails, or a value that is not a CSS2 time, is the W3C
+                   SCXML 6.2 argument error and nothing is scheduled. */
+                uint64_t _host_delay_ms;
+                bool _host_delay_evaluated;
+                bool _host_delay_is_time;
+{{ se.lua_eval_delayexpr(action.delayexpr, '_host_delay_ms', '_host_delay_evaluated', '_host_delay_is_time') }}
+                if (!_host_delay_evaluated || !_host_delay_is_time) {
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        _host_delay_evaluated ? "<send> delayexpr is not a CSS2 time"
+                                              : "<send> delayexpr could not be evaluated",
+                        _host_req.send_id);
+                    return;
+                }
+{% else %}
+                const uint64_t _host_delay_ms = {{ host_delay_ms }}u;
+{% endif %}
+                scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,
+                                    _host_req.send_id, &_host_req);
+{% else %}
+                {{ csym_prefix }}{{ model.name }}_perform_host_send(sm, &_host_req);
+{% endif %}
+            }
+{%- endmacro %}
 {% macro emit_action(action, in_foreach=false, foreach_depth=0) %}
 {% if action.type == 'raise' %}
         {
@@ -702,115 +820,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                templates place it first: the type decides the destination,
                and falling through would ALSO enqueue the event locally, so
                the document would see the act twice. */
-            {
-{% if action.eventexpr %}
-                char _host_event[SCE_MAX_ID_LEN];
-                bool _host_event_ok = false;
-{{ se.lua_eval_to_string(action.eventexpr, '_host_event', 'sizeof(_host_event)', '_host_event_ok') }}
-                (void)_host_event_ok;
-{% endif %}
-{% if action.targetexpr %}
-                char _host_target[SCE_MAX_URI_LEN];
-                bool _host_target_ok = false;
-{{ se.lua_eval_to_string(action.targetexpr, '_host_target', 'sizeof(_host_target)', '_host_target_ok') }}
-                (void)_host_target_ok;
-{% endif %}
-{# W3C SCXML 5.10: the payload a local delivery of this send would carry,
-   evaluated once. `_ed` is that payload's text, which the host receives as
-   the request's event data; the host's text params are the same evaluation's
-   pairs, read in document order with repeats kept, so no `<param>` is
-   evaluated twice. A literal-only payload is finished at codegen time and its
-   pairs are the literals themselves, so nothing is evaluated at all. #}
-{% set host_pair_cap = (action.params | default([]) | length) + ((action.namelist or '').split() | length) %}
-{% set host_literal_only = not action.namelist and (action.params | rejectattr("is_static_literal") | list | length == 0) %}
-{% if action.params or action.namelist %}
-{{ send_payload_json(action.params, action.namelist, csym_prefix, model.name, true) }}
-                sce_host_send_param_t _host_params[{{ host_pair_cap }}];
-                int _host_param_count = 0;
-{% if host_literal_only %}
-{{ param_macros.collect_host_params_into(action.params, model, csym_prefix, '_host_params', '_host_param_count', '_host_param', '<send>', '                ', '_param_failed') -}}
-{% else %}
-                char _host_param_names[{{ host_pair_cap }}][SCE_MAX_ID_LEN];
-                char _host_param_values[{{ host_pair_cap }}][SCE_MAX_DATA_LEN];
-                if (luaL_dostring(sm->L,
-{{ se.lua_wire_string_fn() }}
-                    "local o = {} "
-                    "for _, p in ipairs(_sce_send_pairs or {}) do o[#o + 1] = p[1]; o[#o + 1] = _w(p[2]) end "
-                    "_sce_send_pairs = nil "
-                    "return o") == 0) {
-                    const lua_Integer _host_pairs = (lua_Integer)lua_rawlen(sm->L, -1) / 2;
-                    for (lua_Integer _hp = 0; _hp < _host_pairs && _host_param_count < {{ host_pair_cap }}; ++_hp) {
-                        lua_rawgeti(sm->L, -1, 2 * _hp + 1);
-                        sce_copy_bounded_id(_host_param_names[_host_param_count], lua_tostring(sm->L, -1));
-                        lua_pop(sm->L, 1);
-                        lua_rawgeti(sm->L, -1, 2 * _hp + 2);
-                        sce_copy_bounded_data(_host_param_values[_host_param_count], lua_tostring(sm->L, -1));
-                        lua_pop(sm->L, 1);
-                        _host_params[_host_param_count].name = _host_param_names[_host_param_count];
-                        _host_params[_host_param_count].value = _host_param_values[_host_param_count];
-                        _host_param_count++;
-                    }
-                }
-                lua_pop(sm->L, 1);
-{% endif %}
-{% elif action.content or action.contentexpr %}
-{{ send_content_json(action, csym_prefix, model.name) }}
-{% endif %}
-                sce_host_send_request_t _host_req;
-                _host_req.processor_type = "{{ action.send_type | escape_c }}";
-                _host_req.event_name = {% if action.eventexpr %}_host_event{% else %}"{{ action.event | default('', true) | escape_c }}"{% endif %};
-                _host_req.target = {% if action.targetexpr %}_host_target{% else %}"{{ action.target | default('', true) | escape_c }}"{% endif %};
-                _host_req.content = "{{ action.content | default('', true) | escape_c }}";
-                _host_req.send_id = "{% if action.id %}{{ action.id | escape_c }}{% else %}{{ action.auto_send_id | default('', true) | escape_c }}{% endif %}";
-{% if action.params or action.namelist %}
-                _host_req.params = _host_params;
-                _host_req.param_count = _host_param_count;
-{% else %}
-                _host_req.params = NULL;
-                _host_req.param_count = 0;
-{% endif %}
-{% if action.params or action.namelist or action.content or action.contentexpr %}
-                _host_req.event_data = _ed;
-{% else %}
-                _host_req.event_data = "";
-{% endif %}
-{% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
-{% if action.delayexpr or host_delay_ms > 0 %}
-                /* W3C SCXML 6.2.4: a `delay` is a property of the SEND, not
-                   of the processor it named, so this waits exactly as an
-                   ordinary send does. Decided here rather than in the delay
-                   arms below, because this arm claims every host-served send
-                   before they are reached — which is how `delay` came to be
-                   discarded on every backend at once.
-                   W3C SCXML 6.3: it lands in the delayed-send queue under
-                   this send's id, so a `<cancel>` reaches it and the host
-                   never sees the act. */
-{% if action.delayexpr %}
-                /* The wait is read by the one duration reader every engine
-                   shares (ARCHITECTURE.md, "Durations"); an expression that
-                   fails, or a value that is not a CSS2 time, is the W3C
-                   SCXML 6.2 argument error and nothing is scheduled. */
-                uint64_t _host_delay_ms;
-                bool _host_delay_evaluated;
-                bool _host_delay_is_time;
-{{ se.lua_eval_delayexpr(action.delayexpr, '_host_delay_ms', '_host_delay_evaluated', '_host_delay_is_time') }}
-                if (!_host_delay_evaluated || !_host_delay_is_time) {
-                    {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        _host_delay_evaluated ? "<send> delayexpr is not a CSS2 time"
-                                              : "<send> delayexpr could not be evaluated",
-                        _host_req.send_id);
-                    return;
-                }
-{% else %}
-                const uint64_t _host_delay_ms = {{ host_delay_ms }}u;
-{% endif %}
-                scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,
-                                    _host_req.send_id, &_host_req);
-{% else %}
-                {{ csym_prefix }}{{ model.name }}_perform_host_send(sm, &_host_req);
-{% endif %}
-            }
+{{ host_send_arm(action, '"' ~ (action.send_type | escape_c) ~ '"') }}
 {% elif action.eventexpr and not action.target and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test172): dynamic event name via `eventexpr`,
                no target = external queue. The event name string is matched
@@ -1232,6 +1242,19 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
                     "<send> targetexpr evaluated to nothing, so there is no target to reach");
                 return;
+{% if 'sce:mesh' in (model.host_processor_types or []) %}
+            } else if (sce_is_mesh_target(_send_target_buf)) {
+                /* SCE_MESH.md §mesh-19: the evaluated target names a Mesh
+                   peer, so the send goes to the host's Mesh router as a
+                   literal `#peer` does — the build could not lower it,
+                   because the peer is only named now. The machine carries
+                   the host-send surface because `lower_mesh_sends` saw a
+                   `targetexpr` that could name one. The typeexpr arm below
+                   has no such branch: a `typeexpr` makes the processor a
+                   run-time choice, which `may_name_a_mesh_peer` excludes on
+                   every backend. */
+{{ host_send_arm(action, 'SCE_MESH_PROCESSOR_TYPE', '_send_target_buf') }}
+{% endif %}
 {% for invoke_info in model.invokes | scxml %}
             } else if (sm->child_{{ invoke_info.field_suffix }}.scxml_location[0] != '\0' &&
                        strcmp(_send_target_buf, sm->child_{{ invoke_info.field_suffix }}.scxml_location) == 0) {

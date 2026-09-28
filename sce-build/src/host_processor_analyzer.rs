@@ -566,10 +566,6 @@ pub fn mesh_peer(target: &str) -> Option<&str> {
         .filter(|peer| !peer.is_empty() && !peer.starts_with('_'))
 }
 
-/// Whether `action` is a `<send>` to a Mesh peer that the build can see as
-/// one: a literal `target` naming a peer, through the SCXML Event I/O
-/// Processor (written or defaulted), with no `typeexpr` or `targetexpr` that
-/// could make it something else at run time.
 /// Whether `action` is a `<send>` whose `targetexpr` may name a Mesh peer once
 /// evaluated: the send templates' dynamic Mesh branch (SCE_MESH.md §mesh-19)
 /// asks the evaluated target, and the machine needs the host-send surface
@@ -583,17 +579,26 @@ fn may_name_a_mesh_peer(action: &Action) -> bool {
         && (action.send_type.is_empty() || action.send_type == SCXML_EVENT_PROCESSOR_TYPE)
 }
 
-/// Whether `language`'s send templates carry the dynamic Mesh branch. C11 does
-/// not: its host registry is emitted only for a machine that serves a host
-/// type, and a registry in every machine with a `targetexpr` is a cost the
-/// MCU profile does not pay for a route it cannot name at build time.
+/// Whether `language`'s send templates carry the dynamic Mesh branch: every
+/// backend §mesh-19 lowers for, which is every one but C++ (whose generated
+/// `TransportRouter` takes a Mesh send through its own hook).
+///
+/// C11 included. Its host registry is emitted only for a machine that serves
+/// a host type, so this puts one in every C11 machine with a `targetexpr` that
+/// could name a peer — and that is the price of the document meaning the
+/// same thing on C11 as elsewhere: without the branch, a `targetexpr` naming a
+/// peer reaches no router on C11 and the router on every other engine.
 fn routes_dynamic_mesh(language: Language) -> bool {
     matches!(
         language,
-        Language::Rust | Language::Go | Language::Kotlin | Language::Python
+        Language::Rust | Language::Go | Language::Kotlin | Language::Python | Language::C11
     )
 }
 
+/// Whether `action` is a `<send>` to a Mesh peer that the build can see as
+/// one: a literal `target` naming a peer, through the SCXML Event I/O
+/// Processor (written or defaulted), with no `typeexpr` or `targetexpr` that
+/// could make it something else at run time.
 fn is_static_mesh_send(action: &Action) -> bool {
     action.action_type == "send"
         && action.targetexpr.is_empty()
@@ -910,9 +915,10 @@ mod tests {
 
     /// A `targetexpr` that may name a peer once evaluated needs the host-send
     /// surface behind the send templates' dynamic branch, so the host serves
-    /// `sce:mesh` for the machine on every backend that carries the branch —
-    /// and on none that does not, C11 among them. The sends are left as they
-    /// were: only the evaluated target can make one a Mesh send.
+    /// `sce:mesh` for the machine on every backend §mesh-19 covers — C11
+    /// among them, so the document means the same on C11 as elsewhere — and
+    /// not on C++, whose `TransportRouter` keeps its own route. The sends are
+    /// left as they were: only the evaluated target can make one a Mesh send.
     #[test]
     fn a_targetexpr_that_may_name_a_peer_needs_the_host_send_surface() {
         let model = parse(&doc(r#"<datamodel><data id="t" expr="'#hmi'"/></datamodel>
@@ -923,6 +929,7 @@ mod tests {
             Language::Go,
             Language::Kotlin,
             Language::Python,
+            Language::C11,
         ] {
             let lowered = lower_mesh_sends(&model, language);
             assert_eq!(
@@ -932,12 +939,13 @@ mod tests {
             );
             assert_eq!(sends(&lowered), sends(&model), "{language:?}");
         }
-        for language in [Language::C11, Language::Cpp] {
-            assert!(
-                matches!(lower_mesh_sends(&model, language), Cow::Borrowed(_)),
-                "{language:?}"
-            );
-        }
+        assert!(
+            matches!(lower_mesh_sends(&model, Language::Cpp), Cow::Borrowed(_)),
+            "C++ keeps its own route"
+        );
+        // Every backend is named above, so a backend added to `Language`
+        // has to be placed on one side of this rule deliberately.
+        assert_eq!(Language::ALL.len(), 6);
     }
 
     #[test]

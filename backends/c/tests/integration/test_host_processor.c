@@ -541,6 +541,48 @@ static int registration_refuses_the_reserved_types_the_shared_table_names(void) 
     return bad;
 }
 
+// tests/mesh/mesh_target_cases.json: which targets name a Mesh peer, the
+// table every copy of the rule reads. `peer` is the peer's name, or null.
+static int the_mesh_target_rule_matches_the_shared_table(void) {
+    static char text[8192];
+    FILE *file = fopen(SCE_MESH_TARGET_TABLE, "rb");
+    if (file == NULL) {
+        (void)fprintf(stderr, "host_processor: FAIL [mesh target] - cannot read %s\n", SCE_MESH_TARGET_TABLE);
+        return 1;
+    }
+    size_t len = fread(text, 1, sizeof(text) - 1, file);
+    (void)fclose(file);
+    text[len] = '\0';
+
+    int bad = 0;
+    int cases = 0;
+    const char *cursor = strstr(text, "\"cases\"");
+    while (cursor != NULL && (cursor = strstr(cursor, "\"target\": \"")) != NULL) {
+        char target[128];
+        cursor = read_json_string(cursor + strlen("\"target\": \""), target, sizeof(target));
+        const char *peer = cursor == NULL ? NULL : strstr(cursor, "\"peer\": ");
+        if (peer == NULL) {
+            (void)fprintf(stderr, "host_processor: FAIL [mesh target] - case %d is not a {target, peer} pair\n", cases);
+            return 1;
+        }
+        peer += strlen("\"peer\": ");
+        const bool names_a_peer = strncmp(peer, "null", 4) != 0;
+        cursor = peer;
+        cases++;
+        if (sce_is_mesh_target(target) != names_a_peer) {
+            (void)fprintf(stderr, "host_processor: FAIL [mesh target] - \"%s\": predicate=%d, want %d\n", target,
+                          sce_is_mesh_target(target), names_a_peer);
+            bad = 1;
+        }
+    }
+    // A floor: an empty sweep would pass every assertion above.
+    if (cases < 10) {
+        (void)fprintf(stderr, "host_processor: FAIL [mesh target] - the table lost cases: %d\n", cases);
+        bad = 1;
+    }
+    return bad;
+}
+
 // The router's door serves the type the general one refuses.
 static int a_mesh_router_is_registered_through_its_own_door(void) {
     sce_host_processor_registry_t wiring;
@@ -567,11 +609,12 @@ int main(void) {
     bad |= an_entry_too_large_for_its_slot_is_refused();
     bad |= registration_refuses_the_reserved_types_the_shared_table_names();
     bad |= a_mesh_router_is_registered_through_its_own_door();
+    bad |= the_mesh_target_rule_matches_the_shared_table();
 
     if (bad != 0) {
         (void)fprintf(stderr, "host_processor: FAIL - see the scenario(s) named above\n");
         return 1;
     }
-    (void)printf("host_processor: PASS - 10 scenarios\n");
+    (void)printf("host_processor: PASS - 11 scenarios\n");
     return 0;
 }

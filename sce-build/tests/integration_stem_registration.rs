@@ -208,6 +208,21 @@ fn channel_cannot_host(stem: &str, channel: &str) -> bool {
         // Rust, Go, Python and C11 all host it: each already drives the
         // echoing listener from its own lane.
         "send_namelist_over_http" => channel.starts_with("C++") || channel == "Kotlin AOT driver",
+        // SCE_MESH.md §mesh-19: the fixture asks whether a `targetexpr` naming
+        // a Mesh peer reaches the host's Mesh router, the `sce:mesh`
+        // host-served processor. That route is how every backend but C++
+        // reaches a Mesh core; C++ reaches one through the generated
+        // `TransportRouter`'s mesh-send hook, which the build emits only from
+        // a `deploy.yaml` — and the integration lane generates without one,
+        // so there is no router for a C++ driver to register or observe.
+        //
+        // ⚠ Not an engine exemption. What C++ does meanwhile is recorded as
+        // debt rather than asserted here: with no hook installed,
+        // `StaticExecutionEngine::raiseExternal` delivers a `#peer` send to
+        // this session's own queue (measured 2026-09-28), where §mesh-19
+        // would make an unserved Mesh send error.execution. A C++ mesh lane
+        // that drives the `TransportRouter` is where that belongs.
+        "a_peer_named_at_run_time_reaches_the_router" => channel.starts_with("C++"),
         _ => false,
     }
 }

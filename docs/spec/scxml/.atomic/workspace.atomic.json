@@ -8663,6 +8663,10 @@
           "file": "backends/python/runtime/sce_runtime/send.py",
           "symbol": "mesh_peer",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

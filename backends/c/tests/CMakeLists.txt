@@ -1745,6 +1745,35 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # SCE_MESH.md §mesh-19: a `targetexpr` that evaluates to a Mesh peer
+    # reaches the host's Mesh router, and with none registered is
+    # error.execution. The machine carries the host-send surface because the
+    # build saw a `targetexpr` that could name a peer.
+    sce_generate_static_integration_c_test(a_peer_named_at_run_time_reaches_the_router "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_a_peer_named_at_run_time_reaches_the_router
+        integration/test_a_peer_named_at_run_time_reaches_the_router.c
+        ${INTEGRATION_C_TEST_a_peer_named_at_run_time_reaches_the_router_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_a_peer_named_at_run_time_reaches_the_router PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_a_peer_named_at_run_time_reaches_the_router PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_peer_named_at_run_time_reaches_the_router PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_peer_named_at_run_time_reaches_the_router
+        COMMAND sce_c_integration_a_peer_named_at_run_time_reaches_the_router
+    )
+    set_tests_properties(c11_integration_a_peer_named_at_run_time_reaches_the_router PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach
     # the datamodel as a value. Every other fixture here leaves the carrier's
     # `data` field zeroed, so this edge — the one a downstream MCU consumer
@@ -2113,6 +2142,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # by this test from the checkout.
     target_compile_definitions(sce_c_integration_host_processor PRIVATE
         SCE_RESERVED_TYPE_TABLE="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/reserved_type_cases.json"
+        SCE_MESH_TARGET_TABLE="${CMAKE_SOURCE_DIR}/tests/mesh/mesh_target_cases.json"
     )
     set_target_properties(sce_c_integration_host_processor PROPERTIES
         C_STANDARD 11
