@@ -107,24 +107,40 @@ pub struct Diagram {
     pub figures: Vec<Figure>,
 }
 
-/// Split `model` into figures, expanding each figure `depth` levels below
-/// its root (`depth >= 1`).
+/// Split `model` into figures. Every figure is one CONTAINER — the document,
+/// or a compound / parallel state — and what lies `depth` levels inside it;
+/// a compound deeper than that is folded there and is the container of a
+/// figure of its own (`depth >= 1`).
+///
+/// The document is a container like any state. So at depth 1 every figure
+/// is flat — a container and its direct children, compound children folded
+/// — and a layout never meets a box nested inside another box it must also
+/// draw. The prototype expanded top-level compounds in the document's
+/// figure, which needed Graphviz clusters to lay out.
 pub fn split(model: &SCXMLModel, depth: usize) -> Diagram {
     let depth = depth.max(1);
     let tree = Tree::of(model);
 
     // Plan: which states each figure expands and folds, in document order.
     let mut plans: Vec<(FigureName, Vec<String>, Vec<String>)> = Vec::new();
-    let mut queue: Vec<(FigureName, Vec<String>)> =
-        vec![(FigureName::Document, tree.roots.clone())];
+    let mut queue: Vec<FigureName> = vec![FigureName::Document];
     while !queue.is_empty() {
-        let (name, roots) = queue.remove(0);
+        let name = queue.remove(0);
         let (mut expanded, mut folded) = (Vec::new(), Vec::new());
-        for root in &roots {
-            tree.plan(root, 0, depth, &mut expanded, &mut folded);
+        let inside = match &name {
+            FigureName::Document => tree.roots.clone(),
+            FigureName::Inside(container) => {
+                // The container is drawn as itself here: its frame, its body,
+                // its own transitions.
+                expanded.push(container.clone());
+                tree.children.get(container).cloned().unwrap_or_default()
+            }
+        };
+        for child in &inside {
+            tree.plan(child, 0, depth, &mut expanded, &mut folded);
         }
         for f in &folded {
-            queue.push((FigureName::Inside(f.clone()), vec![f.clone()]));
+            queue.push(FigureName::Inside(f.clone()));
         }
         plans.push((name, expanded, folded));
     }
@@ -194,6 +210,10 @@ impl Tree {
         self.children.get(sid).is_some_and(|c| !c.is_empty())
     }
 
+    /// Place `sid`, which lies `level` levels inside its figure's container
+    /// (0 = a direct child): folded when it is a compound at the figure's
+    /// depth, otherwise drawn as itself with what lies inside it placed in
+    /// turn.
     fn plan(
         &self,
         sid: &str,
@@ -202,13 +222,13 @@ impl Tree {
         expanded: &mut Vec<String>,
         folded: &mut Vec<String>,
     ) {
+        if self.has_children(sid) && level + 1 >= depth {
+            folded.push(sid.to_string());
+            return;
+        }
         expanded.push(sid.to_string());
         for child in self.children.get(sid).into_iter().flatten() {
-            if self.has_children(child) && level + 1 >= depth {
-                folded.push(child.clone());
-            } else {
-                self.plan(child, level + 1, depth, expanded, folded);
-            }
+            self.plan(child, level + 1, depth, expanded, folded);
         }
     }
 
@@ -400,24 +420,37 @@ mod tests {
         }
     }
 
-    /// Depth 1 draws the top level with `released` open and `relocking`
-    /// folded inside it. The arrow that leaves the box for `locked` comes
-    /// from `armed`, and says so; it is described in `relocking`'s own
-    /// figure, where `locked` is the one drawn elsewhere.
+    /// Depth 1 gives flat figures: the document holds `locked` and `released`
+    /// folded; `released`'s figure holds `unlocked` and `relocking` folded.
+    /// There, the arrow that leaves the `relocking` box for `locked` comes
+    /// from `armed` inside it, and says so; it is described in
+    /// `relocking`'s own figure.
     #[test]
     fn an_arrow_leaving_a_folded_box_names_its_real_source() {
         let d = split(&parse(LOCK), 1);
-        let top = &d.figures[0];
-        assert_eq!(top.name, FigureName::Document);
-        assert_eq!(top.folded, ["relocking"]);
-        let leaving: Vec<&Arrow> = top
+        let names: Vec<&FigureName> = d.figures.iter().map(|f| &f.name).collect();
+        assert_eq!(
+            names,
+            [
+                &FigureName::Document,
+                &FigureName::Inside("released".into()),
+                &FigureName::Inside("relocking".into()),
+            ]
+        );
+        assert_eq!(d.figures[0].states, ["locked"]);
+        assert_eq!(d.figures[0].folded, ["released"]);
+
+        let released = &d.figures[1];
+        assert_eq!(released.states, ["released", "unlocked"]);
+        assert_eq!(released.folded, ["relocking"]);
+        let leaving: Vec<&Arrow> = released
             .arrows
             .iter()
             .filter(|a| a.from == End::Shown("relocking".into()))
             .collect();
-        assert_eq!(leaving.len(), 1, "{top:#?}");
+        assert_eq!(leaving.len(), 1, "{released:#?}");
         assert_eq!(leaving[0].from_inside.as_deref(), Some("armed"));
-        assert_eq!(leaving[0].to, End::Shown("locked".into()));
+        assert_eq!(leaving[0].to, End::Elsewhere("locked".into()));
         assert_eq!(
             leaving[0].described_in,
             [FigureName::Inside("relocking".into())],
@@ -427,7 +460,7 @@ mod tests {
         // In `relocking`'s own figure both neighbours are elsewhere: the
         // `released` that enters it (`speed.high`) and the `locked` that
         // `armed` leaves for — gathered in order of first use.
-        let inside = &d.figures[1];
+        let inside = &d.figures[2];
         assert_eq!(inside.name, FigureName::Inside("relocking".into()));
         assert_eq!(inside.elsewhere, ["released", "locked"]);
     }
