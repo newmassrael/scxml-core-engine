@@ -323,6 +323,23 @@ pub struct Manifest<'a> {
     /// spans backends has no single answer and reports none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub needs_mesh_router: Option<bool>,
+    /// Whether this machine sends to its parent session
+    /// (`<send target="#_parent">`), and so can only run as a child.
+    ///
+    /// The same kind of answer as [`Self::needs_host_processor`]: the
+    /// document is valid SCXML, and started on its own every such send
+    /// raises `error.communication` (§scxml-6.2.4) at a state the host may
+    /// not enter for hours. Whether a parent exists is a fact about the
+    /// deployment, so a single-document run publishes the need rather than
+    /// judging it. Present exactly when the run is one statechart document;
+    /// a document-set run's answer depends on who invokes whom and is not
+    /// this union, so it reports none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub needs_parent: Option<bool>,
+    /// Which sites made [`Self::needs_parent`] true. Omitted (not `[]`)
+    /// when there are none, matching [`Self::host_processor_causes`].
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    pub parent_sends: &'a [crate::parent_send_analyzer::ParentSend],
     /// Which sites made [`Self::needs_host_processor`] true. Omitted
     /// (not `[]`) when there are none, matching
     /// [`Self::script_engine_causes`].
@@ -578,6 +595,8 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             needs_mesh_router: None,
+            needs_parent: None,
+            parent_sends: &[],
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -606,6 +625,8 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             needs_mesh_router: None,
+            needs_parent: None,
+            parent_sends: &[],
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -640,6 +661,8 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             needs_mesh_router: None,
+            needs_parent: None,
+            parent_sends: &[],
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -695,6 +718,8 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: true,
             needs_mesh_router: None,
+            needs_parent: None,
+            parent_sends: &[],
             host_processor_causes: &causes,
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -735,6 +760,8 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             needs_mesh_router: None,
+            needs_parent: None,
+            parent_sends: &[],
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -783,6 +810,8 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             needs_mesh_router: None,
+            needs_parent: None,
+            parent_sends: &[],
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -815,6 +844,8 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             needs_mesh_router: None,
+            needs_parent: None,
+            parent_sends: &[],
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -854,6 +885,8 @@ mod tests {
             // build just arranged not to emit.
             needs_host_processor: false,
             needs_mesh_router: None,
+            needs_parent: None,
+            parent_sends: &[],
             host_processor_causes: &[],
             host_processor_types: &declared,
             // The invoke half declared beside it, because the two travel
@@ -895,6 +928,8 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             needs_mesh_router: None,
+            needs_parent: None,
+            parent_sends: &[],
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],

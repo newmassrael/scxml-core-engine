@@ -787,6 +787,18 @@ impl Action {
         blocks
     }
 
+    /// Visit this action and every action nested inside it, depth first
+    /// in document order, through [`Self::nested_blocks`] — so a reader
+    /// that walks with this cannot stop at a depth of its own choosing.
+    pub fn walk<'a>(&'a self, visit: &mut impl FnMut(&'a Action)) {
+        visit(self);
+        for block in self.nested_blocks() {
+            for action in block.actions {
+                action.walk(visit);
+            }
+        }
+    }
+
     /// An `<if>` carrying one `then` block.
     ///
     /// ⭐ The third thing a definition of "inside an action" owes its
@@ -3258,6 +3270,29 @@ pub enum PartitionRole {
 pub(crate) const MAX_STATE_DEPTH: usize = 20;
 
 impl State {
+    /// Every block of executable content this state holds DIRECTLY: each
+    /// transition's actions, `<onentry>` / `<onexit>`, the `<initial>`
+    /// transition's, and its history default's.
+    ///
+    /// The state-level half of what [`Action::nested_blocks`] is for the
+    /// action level — one definition of where executable content sits, so
+    /// an analyzer asking "which actions does this state carry" walks this
+    /// and [`Action::walk`] instead of listing the fields itself. Several
+    /// older analyzers still list them; a block added here reaches every
+    /// reader that uses it and none that does not.
+    ///
+    /// `<finalize>` is absent: the model keeps it as unparsed text
+    /// (`finalize_content`), so there is no action to walk.
+    pub fn executable_blocks(&self) -> Vec<&[Action]> {
+        let mut blocks: Vec<&[Action]> = Vec::new();
+        blocks.extend(self.on_entry_blocks.iter().map(Vec::as_slice));
+        blocks.extend(self.on_exit_blocks.iter().map(Vec::as_slice));
+        blocks.extend(self.transitions.iter().map(|t| t.actions.as_slice()));
+        blocks.push(self.initial_transition_actions.as_slice());
+        blocks.push(self.initial_history_default_actions.as_slice());
+        blocks
+    }
+
     /// True iff the state declares any [`Invoke::Scxml`] (a W3C static
     /// SCXML-session invoke). Equivalent to iterating `invokes` and matching
     /// on the variant; kept as a method so call sites read at the intent

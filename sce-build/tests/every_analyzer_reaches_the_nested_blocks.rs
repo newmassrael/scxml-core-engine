@@ -38,7 +38,7 @@
 
 use sce_build::model::{Action, ElseIfBranch, SCXMLModel};
 use sce_build::parser::SCXMLParser;
-use sce_build::{analyzer, host_processor_analyzer, script_engine_analyzer};
+use sce_build::{analyzer, host_processor_analyzer, parent_send_analyzer, script_engine_analyzer};
 
 /// Every container the model defines, by the path `nested_blocks` names
 /// it with.
@@ -132,6 +132,11 @@ const PROBES: &[Probe] = &[
         analyzer: "host_processor_analyzer::needs_host_processor",
         trigger: r#"<send event="e" type="BasicHTTPEventProcessor" target="http://h/x"/>"#,
         ask: host_processor_analyzer::needs_host_processor,
+    },
+    Probe {
+        analyzer: "parent_send_analyzer::needs_parent",
+        trigger: r##"<send event="e" target="#_parent"/>"##,
+        ask: parent_send_analyzer::needs_parent,
     },
     Probe {
         analyzer: "analyzer::analyze -> model.uses_cancel",

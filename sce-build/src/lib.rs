@@ -156,6 +156,10 @@ pub mod model;
 /// How far a misspelling is from what the author meant — the one edit
 /// distance every "did you mean" in this crate is measured with.
 pub mod near_miss;
+/// The sites that send to the parent session (`<send target="#_parent">`)
+/// — the fact that a machine needs one, which only a deployment can
+/// satisfy. Published on the manifest as `needs_parent`.
+pub mod parent_send_analyzer;
 pub mod parser;
 /// Byte-level mapping from an expanded SCXML document back to its
 /// source origins. Consumed by the parser boundary to remap

@@ -8840,6 +8840,14 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "scheduleChildSend",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parent_send_analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/manifest.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

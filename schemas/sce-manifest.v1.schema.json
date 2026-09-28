@@ -63,6 +63,16 @@
       "description": "Whether the host must register a Mesh router — the Event I/O Processor sce:mesh and the invoker sce:mesh-rpc — for this machine: it sends to a Mesh peer (<send target=\"#peer\">, SCE_MESH.md 18) or requests one (<invoke type=\"sce:mesh-rpc\">, SCE_MESH.md 9.5), and on this run's target language the peer is reached through a router the host supplies. false on C++, whose generated TransportRouter carries both itself. The same kind of answer as needs_host_processor: without it a host learns that the machine talks to other machines from the first error.execution. Present exactly when the run has one target language; a run that spans backends has no single answer and omits it.",
       "type": "boolean"
     },
+    "needs_parent": {
+      "description": "Whether this machine sends to its parent session (<send target=\"#_parent\">), and so can only run as a child: started on its own, every such send raises error.communication (W3C SCXML 6.2.4). The document is valid SCXML; whether a parent exists is a fact about the deployment, so a single-document run publishes the need rather than judging it. Present exactly when the run is one statechart document; a document-set run's answer depends on who invokes whom, is not the union of its documents' answers, and is omitted.",
+      "type": "boolean"
+    },
+    "parent_sends": {
+      "description": "Why needs_parent is true — one record per <send target=\"#_parent\">, in the order written. Present exactly when needs_parent is true; omitted (not []) otherwise. Only a literal target is a site: a targetexpr resolves at runtime.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/parentSend" }
+    },
     "host_processor_causes": {
       "description": "Why needs_host_processor is true — one record per site naming a type this build has no path for. Present exactly when the flag is true; omitted (not []) otherwise. Non-fatal: generation succeeded, and the emitted code refuses these sites at runtime exactly as the specification requires.",
       "type": "array",
@@ -171,6 +181,24 @@
         "invoke": {
           "description": "<invoke id=\"…\">, for the invoke-anchored cause.",
           "type": "string"
+        },
+        "location": { "$ref": "#/definitions/location" }
+      }
+    },
+    "parentSend": {
+      "type": "object",
+      "required": ["state"],
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "description": "The event attribute verbatim. Absent when the site names its event with eventexpr: the parent is still required, and what it receives is decided at runtime.",
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "description": "The state whose executable content carries the send.",
+          "type": "string",
+          "minLength": 1
         },
         "location": { "$ref": "#/definitions/location" }
       }

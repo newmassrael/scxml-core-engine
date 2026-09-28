@@ -927,6 +927,11 @@ struct GenerateReport {
     /// the manifest qualifies it by the run's one target language to answer
     /// whether the host must register a Mesh router.
     talks_to_a_mesh_peer: bool,
+    /// Every `<send target="#_parent">` of the ONE statechart this run
+    /// read; `None` when the run is not one statechart document (a forge
+    /// kind, or a document set, whose answer is not a union — see
+    /// `Manifest::needs_parent`).
+    parent_sends: Option<Vec<sce_build::parent_send_analyzer::ParentSend>>,
     host_processor_causes: Vec<sce_build::host_processor_analyzer::HostProcessorCauseRecord>,
     /// The `--host-processor` declarations this run was given, echoed so
     /// a consumer can check the build's half of the contract against the
@@ -1030,6 +1035,8 @@ fn build_manifest<'a>(
             report.talks_to_a_mesh_peer
                 && sce_build::host_processor_analyzer::routes_mesh_through_host(language)
         }),
+        needs_parent: report.parent_sends.as_ref().map(|sends| !sends.is_empty()),
+        parent_sends: report.parent_sends.as_deref().unwrap_or(&[]),
         host_processor_causes: &report.host_processor_causes,
         host_processor_types: &report.host_processor_types,
         host_invoker_types: &report.host_invoker_types,
@@ -3876,6 +3883,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
 
             report.needs_script_engine = Some(model.needs_script_engine);
             report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());
+            report.parent_sends = Some(sce_build::parent_send_analyzer::records(&model));
             report.script_engine_causes = model.script_engine_cause_records();
             report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
             report.talks_to_a_mesh_peer =
@@ -4907,6 +4915,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
 
         report.needs_script_engine = Some(model.needs_script_engine);
         report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());
+        report.parent_sends = Some(sce_build::parent_send_analyzer::records(&model));
         // Projected from the list the analyzer stored on the model in the
         // same statement that set the flag — not recomputed here, which
         // would re-derive it from a model later passes have since touched.
