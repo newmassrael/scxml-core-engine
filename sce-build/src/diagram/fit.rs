@@ -20,6 +20,7 @@
 use super::boxes::{self, BoxError, Style};
 use super::layout::{self, Laid};
 use super::metrics::{self, Face};
+use super::route::{self, Marker, Point, Routed};
 use super::words;
 use super::{split, FigureName, TransitionRef};
 use crate::forge::page::Lexicon;
@@ -67,13 +68,25 @@ pub struct Row {
     pub cells: [String; 2],
 }
 
-/// A figure ready to print: laid out, with its table and its total size.
+/// A figure ready to print: laid out and routed, with its table and its
+/// total size. Everything a renderer needs is here, placed; a renderer
+/// decides nothing (see [`super::svg`]).
+///
+/// The printed figure's own coordinates run from its top-left corner: the
+/// title, then the drawing — whose laid-out coordinates are moved by
+/// `drawing_at` — then the table from `table_top`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Printed {
     pub laid: Laid,
+    pub arrows: Vec<Routed>,
+    pub marker: Option<Marker>,
     pub title: String,
+    pub drawing_at: Point,
     pub table: Vec<Row>,
-    pub table_height: f64,
+    pub table_top: f64,
+    /// Where each of the table's three columns starts: number, ends, event.
+    pub columns: [f64; 3],
+    pub style: Style,
     pub width: f64,
     pub height: f64,
 }
@@ -145,23 +158,61 @@ pub fn print(model: &SCXMLModel, lexicon: &Lexicon, page: Page) -> Result<Vec<Pr
             }
         }
 
-        // The table is set in the body face; each row is one line whose width
-        // is the number column plus both cells.
-        let line = style.body_pt * style.leading;
-        let mut table_width: f64 = 0.0;
-        for row in &table {
-            let text = format!("{}  {}  {}", row.number, row.cells[0], row.cells[1]);
-            table_width = table_width.max(
-                metrics::width_pt(Face::Mono, &text, style.body_pt)
-                    .map_err(|e| Refusal::Box(BoxError::Unmeasured(e)))?,
-            );
+        let (arrows, marker) =
+            route::route(figure, &laid, &table, lexicon, style).map_err(Refusal::Box)?;
+
+        // The drawing's extent: its boxes, and whatever its arrows, their
+        // labels and the initial marker reach beyond them — a label is part
+        // of the figure the page has to hold.
+        let (mut x0, mut y0, mut x1, mut y1) = (0.0f64, 0.0f64, laid.width, laid.height);
+        let mut reach = |(x, y): Point| {
+            x0 = x0.min(x);
+            y0 = y0.min(y);
+            x1 = x1.max(x);
+            y1 = y1.max(y);
+        };
+        for a in &arrows {
+            a.path.iter().copied().for_each(&mut reach);
+            reach(a.label_at);
+            reach((a.label_at.0 + a.label_size.0, a.label_at.1 + a.label_size.1));
         }
-        let table_height = line * table.len() as f64;
+        if let Some(m) = &marker {
+            reach((m.dot.0 - m.radius, m.dot.1 - m.radius));
+        }
+
+        // The table is set in the mono face, one line a row, its columns
+        // as wide as their widest cell and two spaces apart.
+        let mono = |text: &str| {
+            metrics::width_pt(Face::Mono, text, style.body_pt)
+                .map_err(|e| Refusal::Box(BoxError::Unmeasured(e)))
+        };
+        let space = mono("  ")?;
+        let mut widths = [0.0f64; 3];
+        for row in &table {
+            let cells = [
+                row.number.to_string(),
+                row.cells[0].clone(),
+                row.cells[1].clone(),
+            ];
+            for (w, cell) in widths.iter_mut().zip(&cells) {
+                *w = w.max(mono(cell)?);
+            }
+        }
+        let columns = [0.0, widths[0] + space, widths[0] + widths[1] + 2.0 * space];
+        let table_width = if table.is_empty() {
+            0.0
+        } else {
+            columns[2] + widths[2]
+        };
+
+        let line = style.body_pt * style.leading;
         let title_height = style.title_pt * style.leading;
         let title_width = metrics::width_pt(Face::Proportional, &title, style.title_pt)
             .map_err(|e| Refusal::Box(BoxError::Unmeasured(e)))?;
-        let width = laid.width.max(table_width).max(title_width);
-        let height = title_height + laid.height + line + table_height;
+        let drawing_at = (-x0, title_height + line - y0);
+        let table_top = drawing_at.1 + y1 + line;
+        let width = (x1 - x0).max(table_width).max(title_width);
+        let height = table_top + line * table.len() as f64;
         if width > area.0 || height > area.1 {
             return Err(Refusal::DoesNotFit {
                 figure: figure.name.clone(),
@@ -171,9 +222,14 @@ pub fn print(model: &SCXMLModel, lexicon: &Lexicon, page: Page) -> Result<Vec<Pr
         }
         out.push(Printed {
             laid,
+            arrows,
+            marker,
             title,
+            drawing_at,
             table,
-            table_height,
+            table_top,
+            columns,
+            style,
             width,
             height,
         });

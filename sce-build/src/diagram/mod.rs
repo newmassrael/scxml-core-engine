@@ -34,6 +34,8 @@ pub mod boxes;
 pub mod fit;
 pub mod layout;
 pub mod metrics;
+pub mod route;
+pub mod svg;
 pub mod words;
 
 /// Which figure — named by the state it opens, never by a number, because a

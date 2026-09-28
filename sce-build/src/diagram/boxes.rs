@@ -12,13 +12,13 @@
 
 use super::metrics::{self, Face, Unmeasured};
 use super::words::{self, Phrase};
-use super::{Diagram, Figure, FigureName};
+use super::{Diagram, End, Figure, FigureName};
 use crate::forge::page::{Lexicon, Word};
 use crate::forge::pseudo::{action_lines, Unsupported};
 use crate::model::SCXMLModel;
 
 /// Type sizes and spacing, in points.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Style {
     /// A box's title line.
     pub title_pt: f64,
@@ -54,11 +54,28 @@ pub enum BoxKind {
     Elsewhere(String),
 }
 
+/// How a box is outlined — decided here, so no renderer re-reads the model
+/// and two renderers cannot draw one state two ways.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Outline {
+    /// An atomic or compound state.
+    Plain,
+    /// A `<final>` state: a double border.
+    Final,
+    /// A `<parallel>` state: a dashed border (and so nothing else is dashed).
+    Parallel,
+    /// A folded compound: a plain border with a folded corner.
+    Folded,
+    /// A state of another figure: grey fill, solid border (rule 4 — dashed
+    /// already means parallel).
+    Elsewhere,
+}
+
 /// One line of a box.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Line {
     pub text: String,
-    #[serde(skip)]
     pub face: Face,
     pub size_pt: f64,
 }
@@ -67,6 +84,7 @@ pub struct Line {
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct SizedBox {
     pub kind: BoxKind,
+    pub outline: Outline,
     pub lines: Vec<Line>,
     pub width: f64,
     pub height: f64,
@@ -81,6 +99,9 @@ pub enum BoxError {
     Unsupported(Unsupported),
     /// A lexicon the figure's phrases do not cover.
     NoPhrases(&'static str),
+    /// An arrow end with no box in the laid-out figure — the split and the
+    /// layout disagreeing about what the figure draws.
+    Unplaced(End),
 }
 
 impl std::fmt::Display for BoxError {
@@ -89,6 +110,7 @@ impl std::fmt::Display for BoxError {
             BoxError::Unmeasured(u) => u.fmt(f),
             BoxError::Unsupported(u) => write!(f, "{u:?}"),
             BoxError::NoPhrases(name) => write!(f, "the figure has no phrases in lexicon {name:?}"),
+            BoxError::Unplaced(end) => write!(f, "the arrow end {end:?} has no box in its figure"),
         }
     }
 }
@@ -127,10 +149,13 @@ pub fn boxes(
     for sid in &figure.states {
         let s = &model.states[sid];
         let mut head = sid.clone();
+        let mut outline = Outline::Plain;
         if s.is_final {
             head = format!("{head}  {}", word(Word::Final));
+            outline = Outline::Final;
         } else if s.is_parallel {
             head = format!("{head}  {}", word(Word::Parallel));
+            outline = Outline::Parallel;
         }
         let mut lines = vec![title(head)];
         for (heading, blocks) in [
@@ -156,7 +181,7 @@ pub fn boxes(
             }
             lines.push(code(text));
         }
-        out.push(sized(BoxKind::State(sid.clone()), lines, style)?);
+        out.push(sized(BoxKind::State(sid.clone()), outline, lines, style)?);
     }
     for f in &figure.folded {
         let opens = format!(
@@ -166,6 +191,7 @@ pub fn boxes(
         );
         out.push(sized(
             BoxKind::Folded(f.clone()),
+            Outline::Folded,
             vec![title(f.clone()), prose(opens)],
             style,
         )?);
@@ -175,12 +201,22 @@ pub fn boxes(
         if let Some(home) = diagram.home_of(e) {
             lines.push(prose(format!("({})", title_of(home)?)));
         }
-        out.push(sized(BoxKind::Elsewhere(e.clone()), lines, style)?);
+        out.push(sized(
+            BoxKind::Elsewhere(e.clone()),
+            Outline::Elsewhere,
+            lines,
+            style,
+        )?);
     }
     Ok(out)
 }
 
-fn sized(kind: BoxKind, lines: Vec<Line>, style: Style) -> Result<SizedBox, BoxError> {
+fn sized(
+    kind: BoxKind,
+    outline: Outline,
+    lines: Vec<Line>,
+    style: Style,
+) -> Result<SizedBox, BoxError> {
     let mut width: f64 = 0.0;
     let mut height = 0.0;
     for l in &lines {
@@ -190,6 +226,7 @@ fn sized(kind: BoxKind, lines: Vec<Line>, style: Style) -> Result<SizedBox, BoxE
     }
     Ok(SizedBox {
         kind,
+        outline,
         lines,
         width: width + 2.0 * style.padding,
         height: height + 2.0 * style.padding,

@@ -87,6 +87,19 @@ def main():
         f'pub const FONT_VERSION: &str = "{versions.pop()}";',
     ]
     for key, name in FACES.items():
+        os2 = fonts[key]["OS/2"]
+        if os2.sTypoAscender - os2.sTypoDescender != 1000:
+            sys.exit(f"{name}: typo ascender and descender do not span one em")
+        lines += [
+            "",
+            "/// The family a renderer names, so it sets the face these widths",
+            "/// were measured in.",
+            f'pub const {key}_FAMILY: &str = "{name}";',
+            "",
+            f"/// {name}: the typographic ascender, where a line's baseline sits",
+            "/// below the top of its em box.",
+            f"pub const {key}_ASCENT: u16 = {os2.sTypoAscender};",
+        ]
         lines += ["", f"/// {name}.", f"pub const {key}: &[(u32, u32, u16)] = &["]
         lines += [f"    (0x{lo:04X}, 0x{hi:04X}, {width})," for lo, hi, width in runs(fonts[key])]
         lines.append("];")

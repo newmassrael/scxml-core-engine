@@ -5,6 +5,14 @@
 
 pub const FONT_VERSION: &str = "Version 2.004;hotconv 1.0.118;makeotfexe 2.5.65603";
 
+/// The family a renderer names, so it sets the face these widths
+/// were measured in.
+pub const PROPORTIONAL_FAMILY: &str = "Noto Sans CJK KR";
+
+/// Noto Sans CJK KR: the typographic ascender, where a line's baseline sits
+/// below the top of its em box.
+pub const PROPORTIONAL_ASCENT: u16 = 880;
+
 /// Noto Sans CJK KR.
 pub const PROPORTIONAL: &[(u32, u32, u16)] = &[
     (0x0020, 0x0020, 224),
@@ -170,6 +178,14 @@ pub const PROPORTIONAL: &[(u32, u32, u16)] = &[
     (0xAC00, 0xD7A3, 920),
     (0xFF01, 0xFF5E, 1000),
 ];
+
+/// The family a renderer names, so it sets the face these widths
+/// were measured in.
+pub const MONO_FAMILY: &str = "Noto Sans Mono CJK KR";
+
+/// Noto Sans Mono CJK KR: the typographic ascender, where a line's baseline sits
+/// below the top of its em box.
+pub const MONO_ASCENT: u16 = 880;
 
 /// Noto Sans Mono CJK KR.
 pub const MONO: &[(u32, u32, u16)] = &[

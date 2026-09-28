@@ -48,6 +48,13 @@ pub struct Laid {
     pub inner: Vec<Placed>,
     /// States of other figures, in one column at the right.
     pub edge: Vec<Placed>,
+    /// The index in `inner` of the container's default entry (§scxml-3.3),
+    /// drawn with the initial marker in the lead space left of the ranks.
+    pub initial: Option<usize>,
+    /// The container's region — the header and its ranked children, not
+    /// the edge column — which the frame is drawn around.
+    pub body_width: f64,
+    pub body_height: f64,
     pub width: f64,
     pub height: f64,
 }
@@ -203,11 +210,19 @@ pub fn lay_out(model: &SCXMLModel, figure: &Figure, boxes: Vec<SizedBox>, style:
         layer.iter().map(|&v| inner[v].width).sum::<f64>()
             + gap * layer.len().saturating_sub(1) as f64
     };
-    let body_width = layers.iter().map(row_width).fold(0.0, f64::max);
+    // The initial marker — a dot and a short arrow — stands left of the
+    // initial child, so every rank leaves that much room on the left.
+    let lead = if initial.is_some() {
+        style.body_pt * 3.0
+    } else {
+        0.0
+    };
+    let rows_width = layers.iter().map(row_width).fold(0.0, f64::max);
+    let body_width = lead + rows_width;
     let mut xy = vec![(0.0, 0.0); n];
     let mut y = header;
     for layer in &layers {
-        let mut x = (body_width - row_width(layer)) / 2.0;
+        let mut x = lead + (rows_width - row_width(layer)) / 2.0;
         let tallest = layer.iter().map(|&v| inner[v].height).fold(0.0, f64::max);
         for &v in layer {
             xy[v] = (x, y);
@@ -266,6 +281,9 @@ pub fn lay_out(model: &SCXMLModel, figure: &Figure, boxes: Vec<SizedBox>, style:
         frame,
         inner,
         edge,
+        initial,
+        body_width: body_width.max(frame_width),
+        body_height,
         width: (column_x + column_width).max(frame_width),
         height: body_height.max(edge_height),
     }

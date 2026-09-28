@@ -6866,7 +6866,7 @@ fn serialize_node_inner(node: &roxmltree::Node, inherited: &[Binding<'_>], c14n:
 /// Character data as canonical XML writes it: `&`, `<` and `>` escaped, and
 /// a carriage return as a reference, since a literal one does not survive
 /// being read back.
-fn escape_xml_text(text: &str) -> String {
+pub(crate) fn escape_xml_text(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
         match ch {
@@ -6883,7 +6883,7 @@ fn escape_xml_text(text: &str) -> String {
 /// An attribute value as canonical XML writes it between double quotes:
 /// `&`, `<` and `"` escaped, and the whitespace a reader would otherwise
 /// normalise to a space written as references.
-fn escape_xml_attribute(value: &str) -> String {
+pub(crate) fn escape_xml_attribute(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for ch in value.chars() {
         match ch {

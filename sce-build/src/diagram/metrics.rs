@@ -18,7 +18,8 @@ mod table;
 pub use table::FONT_VERSION;
 
 /// The face a run of text is set in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Face {
     /// Names, events and prose.
     Proportional,
@@ -40,6 +41,26 @@ impl std::fmt::Display for Unmeasured {
             "U+{:04X} ({:?}) in {:?} has no measured width in the diagram's font table",
             self.character as u32, self.character, self.text
         )
+    }
+}
+
+impl Face {
+    /// The font family this face's widths were measured in — the one a
+    /// renderer must name, or its text runs wider than the fit assumed.
+    pub fn family(self) -> &'static str {
+        match self {
+            Face::Proportional => table::PROPORTIONAL_FAMILY,
+            Face::Mono => table::MONO_FAMILY,
+        }
+    }
+
+    /// How far below the top of a line's em box its baseline sits, as a
+    /// fraction of the point size.
+    pub fn ascent(self) -> f64 {
+        f64::from(match self {
+            Face::Proportional => table::PROPORTIONAL_ASCENT,
+            Face::Mono => table::MONO_ASCENT,
+        }) / 1000.0
     }
 }
 
