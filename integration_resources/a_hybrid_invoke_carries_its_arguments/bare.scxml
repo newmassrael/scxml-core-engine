@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The candidate the parent's value does NOT name. It declares `nowhere`,
+     the one name `keeper` does not, so a backend that seeds by this
+     document's declarations instead of the chosen one's leaks it into
+     `keeper`. Started by mistake, it says so. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="up" name="bare">
+  <datamodel>
+    <data id="nowhere" expr="'unset'"/>
+  </datamodel>
+  <state id="up">
+    <transition target="gone">
+      <send target="#_parent" event="wrongChild"/>
+    </transition>
+  </state>
+  <final id="gone"/>
+</scxml>

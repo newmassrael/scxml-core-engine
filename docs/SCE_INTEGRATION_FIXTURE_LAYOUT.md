@@ -505,6 +505,19 @@ path would be a trap rather than a contract.
 than its string. A fixture whose candidates answered alike would have gone
 green over it.
 
+`a_hybrid_invoke_carries_its_arguments` is the same invoke's other axis: its
+ARGUMENTS (W3C §6.4.1 + §6.4.3). The value always names `keeper`; the second
+candidate, `bare`, exists to disagree — it declares `nowhere`, the one name
+`keeper` does not — so a backend that filters by the wrong candidate's
+`<data>`, or by all of them, hands `keeper` a variable it never declared, and
+`keeper` reports `typeof nowhere` rather than leaving the leak to be inferred
+from an absence. Three phases, each with its own invoke: four `<param>`s (an
+expression, a `location`, `location=""`, and a name `keeper` does not keep), a
+`namelist`, and an unreadable `namelist` beside a readable `<param>`, which
+must start nothing. `keeper` reports from an eventless transition so every
+backend has seeded it first. Expected: `errors` 2, `started` 2, `paramsOk` 1,
+`namelistOk` 1, ending in `done`.
+
 `invoke_expression_failure_is_reported` covers W3C §6.4.3: an `<invoke>` that
 names its target through an expression must evaluate that expression when the
 element fires, and raise `error.execution` when it cannot. The axis is the

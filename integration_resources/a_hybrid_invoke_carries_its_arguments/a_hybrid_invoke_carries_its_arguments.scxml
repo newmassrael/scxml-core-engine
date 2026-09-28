@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 6.4.1 + 6.4.3: an <invoke> whose child is named by an expression
+  carries its arguments exactly as one whose child is fixed does.
+
+  How the child was named decides WHICH document runs; it does not change
+  what the invoke's arguments are. So each <param> and `namelist` item is
+  evaluated in the invoking session, a failure costs what it costs a static
+  invoke, and a value reaches the child only under a name the CHOSEN child's
+  own top-level <data> declares. `a_bad_invoke_argument_is_reported_once` is
+  the same contract for a fixed child; this is its twin for a hybrid one.
+
+  ⚠ THE CANDIDATES DISAGREE ON PURPOSE. `keeper` declares `seed`, `fromLoc`
+  and `emptyLoc`; `bare` declares `nowhere` and nothing else. The value always
+  names `keeper`. A backend that filtered by the wrong candidate's
+  declarations, or by all of them, hands `keeper` a `nowhere` it never
+  declared — and `keeper` reports `typeof nowhere`, so the leak is named
+  rather than inferred from an absence.
+
+  `params`   four <param>s:
+               seed      expr="seed + 1"   — keeper's `seed` becomes 42
+               fromLoc   location="v"      — keeper's `fromLoc` becomes 7
+               emptyLoc  location=""       — error.execution, left out
+               nowhere   expr="'leaked'"   — evaluated, keeper does not keep it
+  `namelist` namelist="seed" — keeper's `seed` becomes 41, the parent's value;
+             no <param> is given, so the others keep their 'unset' default.
+  `refused`  namelist="undeclaredA" beside a readable <param>: the namelist is
+             an argument error of the element — one error.execution, and no
+             child. A child that starts anyway announces itself, and that is
+             the failure this phase lands in its own <final>.
+
+    errors  2 (emptyLoc in `params`, the namelist in `refused`)
+    started 2 (only `params` and `namelist` start a child)
+    paramsOk 1, namelistOk 1 — each phase's child saw exactly what it should
+    and the run ends in `done`.
+
+  This fixture is the canonical source for all 7 channels — see
+  docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test locations.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="ecmascript" initial="run"
+       name="a_hybrid_invoke_carries_its_arguments">
+  <datamodel>
+    <data id="pick" expr="'file:keeper.scxml'"/>
+    <data id="v" expr="7"/>
+    <data id="seed" expr="41"/>
+    <data id="errors" expr="0"/>
+    <data id="started" expr="0"/>
+    <data id="paramsOk" expr="0"/>
+    <data id="namelistOk" expr="0"/>
+  </datamodel>
+
+  <state id="run" initial="paramsPhase">
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <transition event="wrongChild" target="failWrongChild"/>
+
+    <state id="paramsPhase">
+      <invoke type="scxml" srcexpr="pick"
+              sce:candidates="keeper.scxml bare.scxml">
+        <param name="seed" expr="seed + 1"/>
+        <param name="fromLoc" location="v"/>
+        <param name="emptyLoc" location=""/>
+        <param name="nowhere" expr="'leaked'"/>
+      </invoke>
+      <transition event="childUp" target="namelistPhase">
+        <assign location="started" expr="started + 1"/>
+        <if cond="_event.data.seed === 42 &amp;&amp; _event.data.fromLoc === 7 &amp;&amp; _event.data.emptyLoc === 'unset' &amp;&amp; _event.data.leak === 'undefined'">
+          <assign location="paramsOk" expr="1"/>
+        </if>
+      </transition>
+    </state>
+
+    <state id="namelistPhase">
+      <invoke type="scxml" srcexpr="pick" namelist="seed"
+              sce:candidates="keeper.scxml bare.scxml"/>
+      <transition event="childUp" target="refusedPhase">
+        <assign location="started" expr="started + 1"/>
+        <if cond="_event.data.seed === 41 &amp;&amp; _event.data.fromLoc === 'unset' &amp;&amp; _event.data.leak === 'undefined'">
+          <assign location="namelistOk" expr="1"/>
+        </if>
+      </transition>
+    </state>
+
+    <state id="refusedPhase">
+      <invoke type="scxml" srcexpr="pick" namelist="undeclaredA"
+              sce:candidates="keeper.scxml bare.scxml">
+        <param name="seed" expr="seed"/>
+      </invoke>
+      <!-- More specific than `run`'s counter, so it counts as well. -->
+      <transition event="error.execution" target="done">
+        <assign location="errors" expr="errors + 1"/>
+      </transition>
+      <transition event="childUp" target="failRefusedChildStarted"/>
+    </state>
+  </state>
+
+  <final id="done"/>
+  <final id="failWrongChild"/>
+  <final id="failRefusedChildStarted"/>
+</scxml>

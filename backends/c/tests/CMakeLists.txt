@@ -1824,6 +1824,36 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 6.4.1 + 6.4.3: a hybrid invoke's arguments reach the chosen
+    # candidate, filtered by THAT candidate's `<data>` — the two declare
+    # different names so a wrong filter leaks one into `keeper`.
+    sce_generate_static_integration_c_test(a_hybrid_invoke_carries_its_arguments
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        HYBRID_INVOKE_CHILDREN keeper bare)
+
+    add_executable(sce_c_integration_a_hybrid_invoke_carries_its_arguments
+        integration/test_a_hybrid_invoke_carries_its_arguments.c
+        ${INTEGRATION_C_TEST_a_hybrid_invoke_carries_its_arguments_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_a_hybrid_invoke_carries_its_arguments PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_a_hybrid_invoke_carries_its_arguments PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_hybrid_invoke_carries_its_arguments PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_hybrid_invoke_carries_its_arguments
+        COMMAND sce_c_integration_a_hybrid_invoke_carries_its_arguments
+    )
+    set_tests_properties(c11_integration_a_hybrid_invoke_carries_its_arguments PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     sce_generate_static_integration_c_test(invoke_expression_failure_is_reported
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         HYBRID_INVOKE_CHILDREN invoke_expression_failure_is_reported_hybrid0)

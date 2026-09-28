@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The candidate the parent's value names. It declares the names the
+     parent's arguments may fill and reports what it holds, including whether
+     a name it never declared became a variable. It reports from an eventless
+     transition rather than <onentry>, so every backend has seeded it first. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="up" name="keeper">
+  <datamodel>
+    <data id="seed" expr="'unset'"/>
+    <data id="fromLoc" expr="'unset'"/>
+    <data id="emptyLoc" expr="'unset'"/>
+  </datamodel>
+  <state id="up">
+    <transition target="gone">
+      <send target="#_parent" event="childUp">
+        <param name="seed" expr="seed"/>
+        <param name="fromLoc" expr="fromLoc"/>
+        <param name="emptyLoc" expr="emptyLoc"/>
+        <param name="leak" expr="typeof nowhere"/>
+      </send>
+    </transition>
+  </state>
+  <final id="gone"/>
+</scxml>

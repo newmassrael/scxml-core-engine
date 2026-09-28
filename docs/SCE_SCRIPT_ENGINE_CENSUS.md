@@ -98,14 +98,14 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 251
+engine-documents 254
 native-prefix-documents 2
-datamodel-variable-init 363
+datamodel-variable-init 374
 transition-guard 232
-assign-action 314
-child-invoke-needs-script-engine 49
+assign-action 320
+child-invoke-needs-script-engine 52
 log-expr 46
-send-param-expr 45
+send-param-expr 49
 send-dynamic-attr 39
 foreach-action 20
 static-invoke-namelist 11
@@ -113,11 +113,11 @@ donedata-param 10
 donedata-content 9
 inline-script-action 3
 send-namelist 8
-if-condition 8
+if-condition 10
 elseif-condition 3
 global-script 3
 mesh-rpc-srcexpr 2
-hybrid-invoke 4
+hybrid-invoke 7
 cancel-expr 3
 ```
 
@@ -256,12 +256,20 @@ never spelled correctly.
   six assigns, and two `<send delayexpr>`s — one whose value is a bare number
   and one that races a static delay) raised `engine-documents` by one,
   `datamodel-variable-init` and `assign-action` by six and `send-dynamic-attr`
-  by two.
+  by two. Then `integration_resources/a_hybrid_invoke_carries_its_arguments/`
+  (three engine documents: the parent's seven data items, six assigns and
+  two `<if>`s over its three hybrid invokes, the `keeper` candidate's three
+  data items and four `<send>` `<param>`s, `bare`'s one data item) raised
+  `engine-documents` by three, `datamodel-variable-init` by eleven,
+  `assign-action` by six, `send-param-expr` by four, `if-condition` by two
+  and `hybrid-invoke` by three — and `child-invoke-needs-script-engine` by
+  three, because a candidate that runs an engine is now the same cause a
+  static child is.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
-- **49% of judged documents need an engine** (251 of 504). The remaining
-  51% already compile without one, which is what makes "the engine is a
+- **50% of judged documents need an engine** (254 of 508). The remaining
+  50% already compile without one, which is what makes "the engine is a
   fallback" a description of the tree rather than an aspiration.
   ⚠ This figure was previously stated as 32%, taken over the 736 walked
   documents rather than the 475 the causes were measured over. The

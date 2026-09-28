@@ -1116,6 +1116,8 @@ add_executable(integration_tests
     integration/InvokeExpressionFailureIsReportedAotTest.cpp
     integration/InvokeCandidateSelectsTheChildTest.cpp
     integration/InvokeCandidateSelectsTheChildAotTest.cpp
+    integration/AHybridInvokeCarriesItsArgumentsTest.cpp
+    integration/AHybridInvokeCarriesItsArgumentsAotTest.cpp
     integration/LateTickHonoursCancelTest.cpp
     integration/LateTickHonoursCancelAotTest.cpp
     integration/NestedFinalNotTerminalTest.cpp
@@ -1810,6 +1812,14 @@ sce_generate_static_integration_test(invoke_expression_failure_is_reported
 sce_generate_static_integration_test(invoke_candidate_selects_the_child
     ${STATIC_INTEGRATION_OUTPUT_DIR}
     HYBRID_INVOKE_CHILDREN chosen other)
+
+# W3C SCXML 6.4.1 + 6.4.3: a hybrid invoke's `<param>`s and `namelist` reach
+# the chosen candidate exactly as a static invoke's reach its child — filtered
+# by THAT candidate's `<data>`, which is why the two candidates declare
+# different names.
+sce_generate_static_integration_test(a_hybrid_invoke_carries_its_arguments
+    ${STATIC_INTEGRATION_OUTPUT_DIR}
+    HYBRID_INVOKE_CHILDREN keeper bare)
 
 # W3C SCXML 5.5 + 6.3.1: donedata rides `done.invoke.<id>` wherever the child
 # reaches its final state, not only where it finalises during start-up. The

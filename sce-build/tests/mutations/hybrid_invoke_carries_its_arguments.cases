@@ -1,0 +1,94 @@
+# Mutation cases for §scxml-6.4.1 + §scxml-6.4.3 on a HYBRID `<invoke>` — one
+# whose child a `srcexpr` names out of the set `sce:candidates` declares.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/hybrid_invoke_carries_its_arguments.cases`.
+#
+# How the child was named decides which document runs; it does not change
+# what the invoke's arguments are. Measured 2026-09-28: the C++ Interpreter
+# read a hybrid invoke's `<param>`s and `namelist` against the child it
+# loaded, while every AOT channel evaluated none of them — the parser did not
+# even keep a hybrid invoke's `namelist` — and the candidates were started
+# with the invoke-level child metadata, which is never populated for a hybrid
+# invoke. `a_hybrid_invoke_carries_its_arguments` makes the gap observable:
+# the two candidates declare different names, so seeding by the wrong one's
+# declarations leaks a name into the child the value chose.
+#
+# The C++ AOT and C11 targets are TEMPLATES, for the reason
+# `invoke_param_seeds_declared_child_data.cases` gives. Rust, Go, Kotlin and
+# Python share the same macros per language and are held by the same fixture
+# in their own suites (the harness reaches cargo and ctest only).
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_a_hybrid_invoke_carries_its_arguments)$'
+mutation_targets sce-build/src/parser.rs sce-build/src/bin/sce_codegen.rs tools/codegen/templates/invoke_methods.jinja2 tools/codegen/templates/c/invoke_methods.jinja2
+mutation_oracles tests/integration/AHybridInvokeCarriesItsArgumentsAotTest.cpp backends/c/tests/integration/test_a_hybrid_invoke_carries_its_arguments.c
+
+# ── The build forgets what each candidate declares ─────────────────
+#
+# The candidate keeps its engine but loses its `<data>` list, so every
+# argument is evaluated and none is kept — `paramsOk` and `namelistOk` stay 0
+# on both template channels.
+
+mutation_case "a candidate's declared names are not recorded" <<'PY'
+edit("sce-build/src/parser.rs",
+     "    candidate.child_datamodel_vars = common.child_datamodel_vars;",
+     "    candidate.child_datamodel_vars = None;")
+PY
+
+# ── The build looks for a candidate only beside a staged copy ──────
+#
+# A CMake build parses the fixture's staged copy, and the candidates are
+# staged beside it only after that parse. Without the input root every
+# candidate reads as unreadable and declares nothing — the defect the first
+# run of this fixture found on both template channels.
+
+mutation_case "candidates are not looked for under the input root" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        .with_candidate_roots(input_root_override.map(PathBuf::from).into_iter().collect());",
+     "        .with_candidate_roots(Vec::new());")
+PY
+
+# ── C++ AOT: the candidate is seeded by the invoke's metadata ──────
+#
+# The shape every AOT channel had: the invoke-level fields, never populated
+# for a hybrid invoke, stand in for the chosen child.
+
+mutation_case "the C++ AOT seeds a candidate by the invoke's own metadata" <<'PY'
+edit("tools/codegen/templates/invoke_methods.jinja2",
+     "{{ invoke_seed_child(invoke_info, child, slot, model) }}",
+     "{{ invoke_seed_child(invoke_info, invoke_info, slot, model) }}")
+PY
+
+# ── C++ AOT: an unreadable namelist still starts a candidate ───────
+
+mutation_case "the C++ AOT starts a candidate whose namelist cannot be read" <<'PY'
+edit("tools/codegen/templates/invoke_methods.jinja2",
+     """{{ invoke_namelist_guard(invoke_info) }}
+
+                        // W3C SCXML 6.5: Generate child session ID
+""",
+     """
+                        // W3C SCXML 6.5: Generate child session ID
+""")
+PY
+
+# ── C11: the same two ──────────────────────────────────────────────
+
+mutation_case "C11 seeds a candidate by the invoke's own metadata" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     """{{ invoke_seed_child(invoke_info, candidate, "sm->child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem ~ ".L", model, csym_prefix, se) }}""",
+     """{{ invoke_seed_child(invoke_info, invoke_info, "sm->child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem ~ ".L", model, csym_prefix, se) }}""")
+PY
+
+mutation_case "C11 starts a candidate whose namelist cannot be read" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     """                continue;
+            }
+{{ invoke_namelist_guard(invoke_info, model, csym_prefix) }}
+{% for candidate in invoke_info.candidates %}""",
+     """                continue;
+            }
+{% for candidate in invoke_info.candidates %}""")
+PY
