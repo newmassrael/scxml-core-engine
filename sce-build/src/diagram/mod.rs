@@ -303,73 +303,119 @@ impl Tree {
             arrows: Vec::new(),
             in_place: Vec::new(),
         };
-        let mut ordered: Vec<_> = model.states.values().collect();
-        ordered.sort_by(|a, b| (a.document_order, &a.id).cmp(&(b.document_order, &b.id)));
-        for s in ordered {
-            let owner = &home[&s.id];
-            for (index, t) in s.transitions.iter().enumerate() {
-                if t.targets.is_empty() {
-                    if owner == name {
-                        fig.in_place.push(TransitionRef {
-                            source: s.id.clone(),
-                            index,
-                            target: None,
-                        });
-                    }
-                    continue;
-                }
-                for target in &t.targets {
-                    let (src_v, tgt_v) =
-                        (self.visible(&s.id, &shown), self.visible(target, &shown));
-                    if src_v.is_none() && tgt_v.is_none() {
-                        continue;
-                    }
-                    // Wholly inside one folded box: drawn in that box's figure.
-                    if src_v.is_some()
-                        && src_v == tgt_v
-                        && folded_set.contains(src_v.as_deref().unwrap_or(""))
-                    {
-                        continue;
-                    }
-                    let end = |v: Option<String>, sid: &str, fig: &mut Figure| match v {
-                        Some(v) => End::Shown(v),
-                        None => {
-                            if !fig.elsewhere.iter().any(|e| e == sid) {
-                                fig.elsewhere.push(sid.to_string());
-                            }
-                            End::Elsewhere(sid.to_string())
-                        }
-                    };
-                    let from_inside = src_v.as_ref().filter(|v| *v != &s.id).map(|_| s.id.clone());
-                    let from = end(src_v, &s.id, &mut fig);
-                    let to = end(tgt_v, target, &mut fig);
-                    let r = TransitionRef {
-                        source: s.id.clone(),
+        for (source, index, targets) in transitions(model) {
+            let owner = &home[source];
+            if targets.is_empty() {
+                if owner == name {
+                    fig.in_place.push(TransitionRef {
+                        source: source.to_string(),
                         index,
-                        target: Some(target.clone()),
-                    };
-                    // A brief arrow joins others described elsewhere between
-                    // the same two ends; a described arrow is always its own.
-                    if owner != name {
-                        if let Some(a) = fig.arrows.iter_mut().find(|a| {
-                            a.from == from && a.to == to && a.described_in.iter().all(|d| d != name)
-                        }) {
-                            a.transitions.push(r);
-                            a.described_in.push(owner.clone());
-                            continue;
-                        }
-                    }
-                    fig.arrows.push(Arrow {
-                        from,
-                        to,
-                        transitions: vec![r],
-                        described_in: vec![owner.clone()],
-                        from_inside,
+                        target: None,
                     });
                 }
+                continue;
+            }
+            for target in targets {
+                let (src_v, tgt_v) = (self.visible(source, &shown), self.visible(target, &shown));
+                if src_v.is_none() && tgt_v.is_none() {
+                    continue;
+                }
+                // Wholly inside one folded box: drawn in that box's figure.
+                if src_v.is_some()
+                    && src_v == tgt_v
+                    && folded_set.contains(src_v.as_deref().unwrap_or(""))
+                {
+                    continue;
+                }
+                let end = |v: Option<String>, sid: &str, fig: &mut Figure| match v {
+                    Some(v) => End::Shown(v),
+                    None => {
+                        if !fig.elsewhere.iter().any(|e| e == sid) {
+                            fig.elsewhere.push(sid.to_string());
+                        }
+                        End::Elsewhere(sid.to_string())
+                    }
+                };
+                let from_inside = src_v
+                    .as_ref()
+                    .filter(|v| v.as_str() != source)
+                    .map(|_| source.to_string());
+                let from = end(src_v, source, &mut fig);
+                let to = end(tgt_v, target, &mut fig);
+                let r = TransitionRef {
+                    source: source.to_string(),
+                    index,
+                    target: Some(target.clone()),
+                };
+                // A brief arrow joins others described elsewhere between
+                // the same two ends; a described arrow is always its own.
+                if owner != name {
+                    if let Some(a) = fig.arrows.iter_mut().find(|a| {
+                        a.from == from && a.to == to && a.described_in.iter().all(|d| d != name)
+                    }) {
+                        a.transitions.push(r);
+                        a.described_in.push(owner.clone());
+                        continue;
+                    }
+                }
+                fig.arrows.push(Arrow {
+                    from,
+                    to,
+                    transitions: vec![r],
+                    described_in: vec![owner.clone()],
+                    from_inside,
+                });
             }
         }
         fig
+    }
+}
+
+/// Every transition of the document, as (source, index, targets): each
+/// state's transitions in document order, then each `<history>`'s default
+/// transition (§scxml-3.10.2), by history id — the order the page writes
+/// them in. A history's default is a transition like any other: it has a
+/// source and targets, so it is drawn and described once too.
+pub fn transitions(model: &SCXMLModel) -> Vec<(&str, usize, &[String])> {
+    let mut states: Vec<_> = model.states.values().collect();
+    states.sort_by(|a, b| (a.document_order, &a.id).cmp(&(b.document_order, &b.id)));
+    let mut out: Vec<(&str, usize, &[String])> = Vec::new();
+    for s in states {
+        for (index, t) in s.transitions.iter().enumerate() {
+            out.push((s.id.as_str(), index, t.targets.as_slice()));
+        }
+    }
+    for (id, h) in &model.history_states {
+        if !h.default_targets.is_empty() {
+            out.push((id.as_str(), 0, h.default_targets.as_slice()));
+        }
+    }
+    out
+}
+
+impl TransitionRef {
+    /// This transition as the statechart page writes it, in `lexicon` —
+    /// a state's transition through [`crate::forge::pseudo::transition_lines`],
+    /// a history's default through [`crate::forge::pseudo::history_lines`].
+    pub fn page_lines(
+        &self,
+        model: &SCXMLModel,
+        lexicon: &crate::forge::page::Lexicon,
+    ) -> Result<Vec<String>, boxes::BoxError> {
+        use crate::forge::pseudo::{history_lines, transition_lines};
+        if let Some(t) = model
+            .states
+            .get(&self.source)
+            .and_then(|s| s.transitions.get(self.index))
+        {
+            return transition_lines(t, lexicon).map_err(boxes::BoxError::Unsupported);
+        }
+        match model.history_states.get(&self.source) {
+            Some(h) if self.index == 0 => {
+                history_lines(&self.source, h, lexicon).map_err(boxes::BoxError::Unsupported)
+            }
+            _ => Err(boxes::BoxError::NotInModel(self.source.clone())),
+        }
     }
 }
 
@@ -386,6 +432,7 @@ mod tests {
 
     const LOCK: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="released">
   <state id="released" initial="unlocked">
+    <history id="back"><transition target="unlocked"/></history>
     <state id="unlocked">
       <transition event="lock.request" target="locked"/>
       <transition event="tick"/>
@@ -428,8 +475,25 @@ mod tests {
                 }
             }
         }
+        // §scxml-3.10.2: a history's default transition is a transition
+        // too, held apart from the states — derived here from the model's
+        // own map, not through `transitions`, so a walk that dropped it
+        // would red this test.
+        for (id, h) in &m.history_states {
+            for target in &h.default_targets {
+                expected.push(TransitionRef {
+                    source: id.clone(),
+                    index: 0,
+                    target: Some(target.clone()),
+                });
+            }
+        }
         expected.sort();
-        assert!(expected.len() >= 6, "the fixture must exercise the rule");
+        assert!(expected.len() >= 7, "the fixture must exercise the rule");
+        assert!(
+            expected.iter().any(|t| t.source == "back"),
+            "the fixture must carry a history default"
+        );
 
         for depth in 1..=3 {
             let d = split(&m, depth);
@@ -450,7 +514,7 @@ mod tests {
             }
             described.sort();
             assert_eq!(described, expected, "depth {depth}: {d:#?}");
-            for s in m.states.keys() {
+            for s in m.states.keys().chain(m.history_states.keys()) {
                 assert!(
                     drawn.contains_key(s.as_str()),
                     "depth {depth}: {s} is in no figure"
@@ -480,7 +544,7 @@ mod tests {
         assert_eq!(d.figures[0].folded, ["released"]);
 
         let released = &d.figures[1];
-        assert_eq!(released.states, ["released", "unlocked"]);
+        assert_eq!(released.states, ["released", "unlocked", "back"]);
         assert_eq!(released.folded, ["relocking"]);
         let leaving: Vec<&Arrow> = released
             .arrows

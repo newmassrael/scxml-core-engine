@@ -68,6 +68,7 @@ pub fn render(printed: &Printed) -> String {
             frame.sized.outline,
             (0.0, 0.0, laid.body_width, laid.body_height),
             stroke,
+            s.padding,
         );
         write_lines(&mut out, frame, s.padding, s.leading);
         let _ = writeln!(
@@ -84,6 +85,7 @@ pub fn render(printed: &Printed) -> String {
             p.sized.outline,
             (p.x, p.y, p.sized.width, p.sized.height),
             stroke,
+            s.padding,
         );
         write_lines(&mut out, p, s.padding, s.leading);
     }
@@ -124,23 +126,29 @@ pub fn render(printed: &Printed) -> String {
     }
     out.push_str("</g>\n");
 
-    for (i, row) in printed.table.iter().enumerate() {
-        let y = printed.table_top + i as f64 * s.body_pt * s.leading;
-        let cells = [
-            row.number.to_string(),
-            row.cells[0].clone(),
-            row.cells[1].clone(),
-        ];
-        for (x, cell) in printed.columns.iter().zip(cells) {
+    let line = s.body_pt * s.leading;
+    let mono = |text: String| Line {
+        text,
+        face: Face::Mono,
+        size_pt: s.body_pt,
+    };
+    for row in &printed.table {
+        let y = printed.table_top + row.top;
+        let [number_x, source_x, lines_x] = printed.columns;
+        write_line(
+            &mut out,
+            &mono(row.number.to_string()),
+            number_x,
+            y,
+            s.leading,
+        );
+        write_line(&mut out, &mono(row.source.clone()), source_x, y, s.leading);
+        for (i, l) in row.lines.iter().enumerate() {
             write_line(
                 &mut out,
-                &Line {
-                    text: cell,
-                    face: Face::Mono,
-                    size_pt: s.body_pt,
-                },
-                *x,
-                y,
+                &mono(l.clone()),
+                lines_x,
+                y + i as f64 * line,
                 s.leading,
             );
         }
@@ -160,8 +168,23 @@ fn n(v: f64) -> String {
     }
 }
 
-fn outline(out: &mut String, o: Outline, (x, y, w, h): (f64, f64, f64, f64), stroke: f64) {
-    let radius = stroke * 30.0;
+/// A box's border. Every size here — corner radius, the final state's
+/// inner border, the folded corner — is taken from `padding`, the gap the
+/// box leaves between its border and its text, so no decoration reaches
+/// the text (a corner of radius r stays clear of a text block set in by
+/// `padding` while r <= padding * (2 + sqrt 2); these stay at or below 2).
+fn outline(
+    out: &mut String,
+    o: Outline,
+    (x, y, w, h): (f64, f64, f64, f64),
+    stroke: f64,
+    padding: f64,
+) {
+    let radius = match o {
+        // Rounder than a state, so a pseudo-state reads as one.
+        Outline::History => padding * 2.0,
+        _ => padding,
+    };
     let (fill, dash) = match o {
         Outline::Elsewhere => (ELSEWHERE_FILL, ""),
         Outline::Parallel => (PAPER, r#" stroke-dasharray="4 2""#),
@@ -179,7 +202,7 @@ fn outline(out: &mut String, o: Outline, (x, y, w, h): (f64, f64, f64, f64), str
     );
     match o {
         Outline::Final => {
-            let inset = stroke * 15.0;
+            let inset = padding / 2.0;
             let _ = writeln!(
                 out,
                 r#"<rect x="{}" y="{}" width="{}" height="{}" rx="{r}" fill="none" stroke="{INK}" stroke-width="{sw}"/>"#,
@@ -193,7 +216,7 @@ fn outline(out: &mut String, o: Outline, (x, y, w, h): (f64, f64, f64, f64), str
         }
         Outline::Folded => {
             // A folded corner, top right.
-            let c = stroke * 40.0;
+            let c = padding;
             let _ = writeln!(
                 out,
                 r#"<path d="M{},{} L{},{} L{},{}" fill="none" stroke="{INK}" stroke-width="{sw}"/>"#,
@@ -255,6 +278,7 @@ mod tests {
 
     const DOC: &str = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="released">
   <state id="released" initial="unlocked">
+    <history id="where" type="deep"><transition target="unlocked"/></history>
     <state id="unlocked"><transition event="lock.request" target="locked"/></state>
     <state id="relocking" initial="waiting">
       <state id="waiting"><transition event="timer" target="armed"/></state>
@@ -302,8 +326,10 @@ mod tests {
                 }
             }
             for r in &p.table {
-                assert!(texts.contains(&r.cells[0].as_str()), "{r:?}");
-                assert!(texts.contains(&r.cells[1].as_str()), "{r:?}");
+                assert!(texts.contains(&r.source.as_str()), "{r:?}");
+                for l in &r.lines {
+                    assert!(texts.contains(&l.as_str()), "{l:?} in {texts:?}");
+                }
             }
             for a in &p.arrows {
                 for l in &a.label {

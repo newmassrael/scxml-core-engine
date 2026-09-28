@@ -65,14 +65,15 @@ pub fn route(
     let no_phrase = || BoxError::NoPhrases(lexicon.name);
     let mut labels: Vec<(Vec<String>, bool)> = Vec::new();
     for arrow in &figure.arrows {
-        let here: Vec<usize> = arrow
+        let mut here: Vec<usize> = arrow
             .transitions
             .iter()
             .zip(&arrow.described_in)
             .filter(|(_, at)| *at == &figure.name)
-            .filter_map(|(t, _)| table.iter().find(|r| &r.transition == t))
+            .filter_map(|(t, _)| table.iter().find(|r| r.describes(t)))
             .map(|r| r.number)
             .collect();
+        here.dedup();
         if !here.is_empty() {
             let numbers: Vec<String> = here.iter().map(|n| n.to_string()).collect();
             labels.push((vec![numbers.join(", ")], false));

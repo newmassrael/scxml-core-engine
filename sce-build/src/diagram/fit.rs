@@ -81,14 +81,29 @@ impl Page {
     }
 }
 
-/// One row of a figure's transition table.
+/// One row of a figure's transition table: one transition, however many
+/// targets it has — each of its arrows carries this row's number, so the
+/// transition is described once.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Row {
-    /// The number the arrow carries, 1-based within the figure.
+    /// The number its arrows carry, 1-based within the figure.
     pub number: usize,
-    pub transition: TransitionRef,
-    /// `source -> target`, `event [cond]`.
-    pub cells: [String; 2],
+    /// The state (or history) the transition belongs to, and its position
+    /// there — the same two fields as [`TransitionRef`].
+    pub source: String,
+    pub index: usize,
+    /// The transition as the statechart page writes it: its head, then its
+    /// traceability and actions (see [`TransitionRef::page_lines`]).
+    pub lines: Vec<String>,
+    /// Where the row starts, below `Printed::table_top`.
+    pub top: f64,
+}
+
+impl Row {
+    /// Whether `t` is one of this row's arrows.
+    pub fn describes(&self, t: &TransitionRef) -> bool {
+        self.source == t.source && self.index == t.index
+    }
 }
 
 /// A figure ready to print: laid out and routed, with its table and its
@@ -107,7 +122,8 @@ pub struct Printed {
     pub drawing_at: Point,
     pub table: Vec<Row>,
     pub table_top: f64,
-    /// Where each of the table's three columns starts: number, ends, event.
+    /// Where each of the table's three columns starts: number, source,
+    /// the transition's lines.
     pub columns: [f64; 3],
     pub style: Style,
     pub width: f64,
@@ -157,27 +173,24 @@ pub fn print(model: &SCXMLModel, lexicon: &Lexicon, page: Page) -> Result<Vec<Pr
         let title = words::figure_title(lexicon, &figure.name)
             .ok_or(Refusal::Box(BoxError::NoPhrases(lexicon.name)))?;
 
-        let mut table = Vec::new();
+        let line = style.body_pt * style.leading;
+        let mut table: Vec<Row> = Vec::new();
+        let mut rows_height = 0.0;
         for arrow in &figure.arrows {
             for (t, at) in arrow.transitions.iter().zip(&arrow.described_in) {
-                if at != &figure.name {
+                if at != &figure.name || table.iter().any(|r| r.describes(t)) {
                     continue;
                 }
-                let tr = &model.states[&t.source].transitions[t.index];
-                let target = t.target.clone().unwrap_or_default();
-                let mut what = if tr.event.is_empty() {
-                    "*".to_string()
-                } else {
-                    tr.event.clone()
-                };
-                if !tr.cond.is_empty() {
-                    what = format!("{what} [{}]", tr.cond);
-                }
+                let lines = t.page_lines(model, lexicon).map_err(Refusal::Box)?;
+                let height = line * lines.len().max(1) as f64;
                 table.push(Row {
                     number: table.len() + 1,
-                    transition: t.clone(),
-                    cells: [format!("{} -> {target}", t.source), what],
+                    source: t.source.clone(),
+                    index: t.index,
+                    lines,
+                    top: rows_height,
                 });
+                rows_height += height;
             }
         }
 
@@ -203,8 +216,9 @@ pub fn print(model: &SCXMLModel, lexicon: &Lexicon, page: Page) -> Result<Vec<Pr
             reach((m.dot.0 - m.radius, m.dot.1 - m.radius));
         }
 
-        // The table is set in the mono face, one line a row, its columns
-        // as wide as their widest cell and two spaces apart.
+        // The table is set in the mono face: the number, the source, and
+        // the transition's page lines one under another, each column as
+        // wide as its widest cell and two spaces from the next.
         let mono = |text: &str| {
             metrics::width_pt(Face::Mono, text, style.body_pt)
                 .map_err(|e| Refusal::Box(BoxError::Unmeasured(e)))
@@ -212,13 +226,10 @@ pub fn print(model: &SCXMLModel, lexicon: &Lexicon, page: Page) -> Result<Vec<Pr
         let space = mono("  ")?;
         let mut widths = [0.0f64; 3];
         for row in &table {
-            let cells = [
-                row.number.to_string(),
-                row.cells[0].clone(),
-                row.cells[1].clone(),
-            ];
-            for (w, cell) in widths.iter_mut().zip(&cells) {
-                *w = w.max(mono(cell)?);
+            widths[0] = widths[0].max(mono(&row.number.to_string())?);
+            widths[1] = widths[1].max(mono(&row.source)?);
+            for l in &row.lines {
+                widths[2] = widths[2].max(mono(l)?);
             }
         }
         let columns = [0.0, widths[0] + space, widths[0] + widths[1] + 2.0 * space];
@@ -228,14 +239,13 @@ pub fn print(model: &SCXMLModel, lexicon: &Lexicon, page: Page) -> Result<Vec<Pr
             columns[2] + widths[2]
         };
 
-        let line = style.body_pt * style.leading;
         let title_height = style.title_pt * style.leading;
         let title_width = metrics::width_pt(Face::Proportional, &title, style.title_pt)
             .map_err(|e| Refusal::Box(BoxError::Unmeasured(e)))?;
         let drawing_at = (-x0, title_height + line - y0);
         let table_top = drawing_at.1 + y1 + line;
         let width = (x1 - x0).max(table_width).max(title_width);
-        let height = table_top + line * table.len() as f64;
+        let height = table_top + rows_height;
         if width > area.0 || height > area.1 {
             return Err(Refusal::DoesNotFit {
                 figure: figure.name.clone(),
@@ -274,6 +284,7 @@ mod tests {
 
     const LOCK: &str = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="released">
   <state id="released" initial="unlocked">
+    <history id="where" type="shallow"><transition target="unlocked"/></history>
     <state id="unlocked"><transition event="lock.request" target="locked"/></state>
     <state id="relocking" initial="waiting">
       <state id="waiting"><transition event="timer" target="armed"/></state>
@@ -285,30 +296,42 @@ mod tests {
 </scxml>"##;
 
     /// A small machine fits A4 at 7 pt, every figure inside the area, and
-    /// every transition that has a target is one table row in exactly one
-    /// figure — the numbered form of "described once".
+    /// every transition that has a target — a history's default included —
+    /// is one table row in exactly one figure, written as the page writes
+    /// it: the numbered form of "described once".
     #[test]
     fn a_small_machine_fits_and_each_transition_has_one_row() {
         let m = parse(LOCK);
         let page = Page::a4_portrait(7.0);
         let printed = print(&m, &EN, page).expect("fits");
         let area = page.area_pt();
-        let mut rows: Vec<&TransitionRef> = Vec::new();
+        let mut rows: Vec<(String, usize)> = Vec::new();
         for p in &printed {
             assert!(p.width <= area.0 && p.height <= area.1, "{p:?}");
             for (i, r) in p.table.iter().enumerate() {
                 assert_eq!(r.number, i + 1, "numbers run 1.. within a figure");
-                rows.push(&r.transition);
+                let t = TransitionRef {
+                    source: r.source.clone(),
+                    index: r.index,
+                    target: None,
+                };
+                assert_eq!(r.lines, t.page_lines(&m, &EN).expect("renders"));
+                rows.push((r.source.clone(), r.index));
             }
         }
-        let with_target: usize = m
-            .states
-            .values()
-            .map(|s| s.transitions.iter().map(|t| t.targets.len()).sum::<usize>())
-            .sum();
-        rows.sort();
-        rows.dedup();
-        assert_eq!(rows.len(), with_target, "one row per transition-target");
+        let expected: Vec<(String, usize)> = crate::diagram::transitions(&m)
+            .into_iter()
+            .filter(|(_, _, targets)| !targets.is_empty())
+            .map(|(s, i, _)| (s.to_string(), i))
+            .collect();
+        let (mut got, mut want) = (rows.clone(), expected.clone());
+        got.sort();
+        want.sort();
+        assert_eq!(got, want, "one row per transition, none twice");
+        assert!(
+            want.iter().any(|(s, _)| s == "where"),
+            "the history's default is a transition too: {want:?}"
+        );
     }
 
     /// A container with more children than a row of A4 holds, at a type

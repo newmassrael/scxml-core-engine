@@ -1999,10 +1999,44 @@ pub fn action_lines(
     actions: &[crate::model::Action],
     lexicon: &crate::forge::page::Lexicon,
 ) -> Result<Vec<String>, Unsupported> {
+    page_lines(lexicon, |out| {
+        for a in actions {
+            render_scxml_action(a, out);
+        }
+    })
+}
+
+/// The lines one transition is written as on the statechart page — its
+/// head (`on E -> T [type] when C`), then its traceability and actions
+/// nested under it — for the same reason as [`action_lines`]: a figure's
+/// table describes each transition in the page's own words.
+pub fn transition_lines(
+    t: &crate::model::Transition,
+    lexicon: &crate::forge::page::Lexicon,
+) -> Result<Vec<String>, Unsupported> {
+    page_lines(lexicon, |out| render_scxml_transition(t, out))
+}
+
+/// The lines one `<history>` pseudo-state is written as on the page —
+/// `history <id> <type> -> <default>` and its default transition's
+/// actions (§scxml-3.10.2) — for the same reason as [`action_lines`].
+pub fn history_lines(
+    id: &str,
+    h: &crate::model::HistoryInfo,
+    lexicon: &crate::forge::page::Lexicon,
+) -> Result<Vec<String>, Unsupported> {
+    page_lines(lexicon, |out| render_history(id, h, out))
+}
+
+/// What `render` writes into a fresh page, as its lines in the indent
+/// shape — the one path every seam above takes, so none of them can lay
+/// a line out differently from the page.
+fn page_lines(
+    lexicon: &crate::forge::page::Lexicon,
+    render: impl FnOnce(&mut Out<'_>),
+) -> Result<Vec<String>, Unsupported> {
     let mut out = Out::new();
-    for a in actions {
-        render_scxml_action(a, &mut out);
-    }
+    render(&mut out);
     if let Some(gap) = out.refused {
         return Err(Unsupported::feature("statechart", gap));
     }

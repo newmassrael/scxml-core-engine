@@ -15,6 +15,7 @@ use std::process::{Command, Output};
 
 const LOCK: &str = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="released">
   <state id="released" initial="unlocked">
+    <history id="back" type="deep"><transition target="unlocked"/></history>
     <state id="unlocked"><transition event="lock.request" target="locked"/></state>
     <state id="relocking" initial="waiting">
       <state id="waiting"><transition event="timer" target="armed"/></state>

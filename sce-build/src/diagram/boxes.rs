@@ -67,6 +67,8 @@ pub enum Outline {
     Parallel,
     /// A folded compound: a plain border with a folded corner.
     Folded,
+    /// A `<history>` pseudo-state: a fully rounded border.
+    History,
     /// A state of another figure: grey fill, solid border (rule 4 — dashed
     /// already means parallel).
     Elsewhere,
@@ -102,6 +104,10 @@ pub enum BoxError {
     /// An arrow end with no box in the laid-out figure — the split and the
     /// layout disagreeing about what the figure draws.
     Unplaced(End),
+    /// A state or transition source the figure names and the machine holds
+    /// neither as a state nor as a `<history>` — the split and the model
+    /// disagreeing.
+    NotInModel(String),
 }
 
 impl std::fmt::Display for BoxError {
@@ -111,6 +117,10 @@ impl std::fmt::Display for BoxError {
             BoxError::Unsupported(u) => write!(f, "{u:?}"),
             BoxError::NoPhrases(name) => write!(f, "the figure has no phrases in lexicon {name:?}"),
             BoxError::Unplaced(end) => write!(f, "the arrow end {end:?} has no box in its figure"),
+            BoxError::NotInModel(id) => write!(
+                f,
+                "the figure names '{id}', which the machine holds neither as a state nor as a history"
+            ),
         }
     }
 }
@@ -147,7 +157,23 @@ pub fn boxes(
 
     let mut out = Vec::new();
     for sid in &figure.states {
-        let s = &model.states[sid];
+        // §scxml-3.10: a `<history>` is drawn where its parent is opened,
+        // as a pseudo-state — its id and type. Its default transition is
+        // an arrow like any other and is described in the table.
+        if let Some(h) = model.history_states.get(sid) {
+            let head = format!("{sid}  {} {}", word(Word::History), h.history_type);
+            out.push(sized(
+                BoxKind::State(sid.clone()),
+                Outline::History,
+                vec![title(head)],
+                style,
+            )?);
+            continue;
+        }
+        let s = model
+            .states
+            .get(sid)
+            .ok_or_else(|| BoxError::NotInModel(sid.clone()))?;
         let mut head = sid.clone();
         let mut outline = Outline::Plain;
         if s.is_final {
@@ -169,17 +195,12 @@ pub fn boxes(
                 }
             }
         }
+        // A targetless transition stays in its state, so it is described
+        // in the state's box — in full, as the page writes it.
         for t in figure.in_place.iter().filter(|t| &t.source == sid) {
-            let tr = &s.transitions[t.index];
-            let mut text = if tr.event.is_empty() {
-                "*".to_string()
-            } else {
-                tr.event.clone()
-            };
-            if !tr.cond.is_empty() {
-                text = format!("{text} [{}]", tr.cond);
+            for l in t.page_lines(model, lexicon)? {
+                lines.push(code(l));
             }
-            lines.push(code(text));
         }
         out.push(sized(BoxKind::State(sid.clone()), outline, lines, style)?);
     }
@@ -289,9 +310,16 @@ mod tests {
             text.iter().any(|t| t.contains("indicator.update")),
             "{text:?}"
         );
+        let tick = crate::diagram::TransitionRef {
+            source: "unlocked".into(),
+            index: 0,
+            target: None,
+        }
+        .page_lines(&m, &EN)
+        .expect("renders");
         assert!(
-            text.contains(&"tick"),
-            "the targetless transition: {text:?}"
+            tick.iter().all(|l| text.contains(&l.as_str())) && tick[0].contains("tick"),
+            "the targetless transition, as the page writes it: {text:?}"
         );
         for b in &b {
             assert!(b.width > 0.0 && b.height > 0.0, "{b:?}");
