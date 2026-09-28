@@ -399,6 +399,82 @@ fn every_backend_serves_the_fixture_by_the_route_the_contract_names() {
     }
 }
 
+/// The other half of the §9.5 fixture: the document that answers it.
+const SERVER_FIXTURE: &str = "tests/mesh/motor_invoke.scxml";
+/// The peer the server's `<send>` names — the requester it answers.
+const SERVER_REPLY_TARGET: &str = "\"#brake_invoke\"";
+
+/// The C++ server's reply is handed to the engine WITH the peer it names.
+///
+/// The request side above is only half of a round trip. A generated C++
+/// machine reaches its Mesh router through `raiseExternal`, which gives a
+/// send whose target names a peer to `performMeshSend` instead of the local
+/// queue — so the target has to arrive there as an argument. On 2026-09-28 a
+/// rewrite of `send.jinja2` gave `#<peer>` targets an arm of their own that
+/// only said the target had been validated at build time; it claimed the
+/// send and emitted no call, every reply was lost, and the requester waited
+/// out its deadline. Nothing at build time said so: the fixture generated,
+/// compiled and ran, and only the C++ runtime test could see it.
+///
+/// Read with comments removed, because the arm that dropped the send quoted
+/// the target in its own comment — a text search over the whole file finds
+/// the peer's name there and passes.
+#[test]
+fn the_cpp_server_hands_its_reply_to_the_peer_it_names() {
+    let out_dir = repo_root()
+        .join("target")
+        .join("mesh_rpc_backend_contract")
+        .join("cpp-server");
+    let _ = std::fs::remove_dir_all(&out_dir);
+    std::fs::create_dir_all(&out_dir).expect("scratch dir");
+
+    let result = Command::new(codegen_bin())
+        .args([
+            "generate",
+            SERVER_FIXTURE,
+            "-l",
+            "cpp",
+            "-o",
+            out_dir.to_str().expect("utf-8 path"),
+            "--no-format",
+        ])
+        .current_dir(repo_root())
+        .output()
+        .expect("sce-codegen runs");
+    let stdout = String::from_utf8_lossy(&result.stdout).to_string();
+    assert!(
+        result.status.success(),
+        "`sce-codegen generate -l cpp` refused {SERVER_FIXTURE}.\nstderr:\n{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let text = artifacts_text(&manifest(&stdout));
+    let code: Vec<&str> = text
+        .lines()
+        .map(str::trim_start)
+        .filter(|l| !l.starts_with("//") && !l.starts_with("#line"))
+        .collect();
+    // Floor. The generator wrote the machine; an output this pass reduced to
+    // nothing would satisfy the absence of a dropped send as well.
+    assert!(
+        code.len() > 100,
+        "{SERVER_FIXTURE} generated only {} code lines",
+        code.len()
+    );
+    let deliveries: Vec<&&str> = code
+        .iter()
+        .filter(|l| l.contains("raiseExternal(") && l.contains(SERVER_REPLY_TARGET))
+        .collect();
+    assert_eq!(
+        deliveries.len(),
+        1,
+        "{SERVER_FIXTURE}'s one `<send target={SERVER_REPLY_TARGET}>` must reach the engine \
+         as exactly one `raiseExternal(..., {SERVER_REPLY_TARGET})` — the call that hands a \
+         peer-named send to the Mesh router (SCE_MESH.md §mesh-9.5). Found {}: {deliveries:?}",
+        deliveries.len()
+    );
+}
+
 /// The retirement is recorded where the gate was, and it names its contract.
 ///
 /// A refusal removed without a word at its site is one the next reader may

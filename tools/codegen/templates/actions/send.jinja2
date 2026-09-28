@@ -203,7 +203,14 @@ engine.raiseExternal({{ event_cpp }}, eventData, "", {{ target_cpp }});
 {% endmacro %}
 {# W3C SCXML 6.2 / C.1: deliver the event on the internal queue for
    `#_internal` and on the external queue otherwise. `event_cpp` is the event
-   to deliver — an enumerator, or `*sendEvent` for an `eventexpr`. #}
+   to deliver — an enumerator, or `*sendEvent` for an `eventexpr`.
+
+   SCE_MESH.md §mesh-9.5: this is also the Mesh route. A `#<peer>` target is
+   handed to `raiseExternal` with the target it names, and the engine gives a
+   send that names a peer to the Mesh router instead of its own queue. So a
+   `#<peer>` send needs no arm of its own in the delivery chain: an arm there
+   that only stated the target had been validated at build time claimed the
+   send and delivered nothing, and every reply a server sent was lost. #}
 {% macro send_dispatch_local(action, model, event_cpp) %}
 {% set target_cpp = 'dynamicTarget' if action.targetexpr else '"' ~ action.target ~ '"' %}
 {# A static target is decided here, at build time, so only the branch it takes
@@ -563,11 +570,6 @@ engine.raise(typename Engine::EventWithMetadata(
     Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", "", sendId));
 {{ block_end or 'return;' }}
 {% endif %}
-{% elif not action.targetexpr and action.target.startswith('#') and not action.target.startswith('#_') %}
-// SCE Mesh: send to mesh target "{{ action.target }}". Validated at
-// build time by the deploy.yaml topology pipeline — no runtime
-// isInvalidTarget check needed (avoids requiring Event::Error_execution
-// on server-only machines that have no error handling states).
 {% elif action.send_type_host_served %}
 {# §scxml-6.2.5: the type is served by the HOST, which declared it to this
    build. Dispatch rather than refuse — and take the whole send, because a
