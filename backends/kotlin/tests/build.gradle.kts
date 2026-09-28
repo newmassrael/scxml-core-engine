@@ -127,6 +127,10 @@ val generateScxml by tasks.registering(Exec::class) {
     // An overlay run compiles machines the caller generated, so regenerating
     // the committed ones would be work whose output nothing reads.
     enabled = hasCodegen && overlayMachines == null
+    // The committed machines are regenerated in place, so the generator must
+    // be the one these sources build — never an older binary that happens to
+    // be lying around (gradle/sce-codegen.gradle.kts states the measurement).
+    dependsOn(":buildSceCodegen")
 
     workingDir = File(rootDir)
     commandLine(sceCodegenBinary ?: "sce-codegen", "generate-w3c", "-l", "kotlin")

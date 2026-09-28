@@ -35,8 +35,6 @@ version = "0.1.0"
 // business, not this module's — see that file for why no build script
 // names one.
 apply(from = rootProject.file("gradle/sce-codegen.gradle.kts"))
-val sceCodegenBuildArgs: List<String> by rootProject.extra
-val sceCodegenBuiltRelative: String by rootProject.extra
 val sceCodegenRelative: String by rootProject.extra
 
 // Cross-language numerical conformance: invoke the sce-codegen CLI on every
@@ -148,45 +146,12 @@ abstract class GenerateForgeFixtures : DefaultTask() {
     }
 }
 
-// Rebuild sce-codegen from the current sce-build sources when the Rust
-// toolchain is available (local dev). Gradle's up-to-date check via
-// inputs/outputs short-circuits the task when nothing changed; cargo's
-// own incremental build handles any drift Gradle's input tracking misses.
-// The value is eliminating the stale-binary foot-gun where a schema
-// change in conformance.rs would otherwise be silently ignored by the
-// Kotlin jvmTest calling the old binary.
-//
-// In CI, the conformance-kotlin job downloads a pre-built artifact from
-// the build-codegen job and has no Rust toolchain; the `onlyIf` check
-// evaluates PATH at task-execution time and skips this task, so
-// GenerateForgeFixtures consumes the downloaded binary directly.
-//
-// The cargo-on-PATH check is inlined inside `onlyIf` on purpose: a top-
-// level `fun` or `val` would be a script-level reference that Gradle's
-// configuration cache refuses to serialize.
-val buildSceCodegen by tasks.registering(Exec::class) {
-    workingDir = rootProject.projectDir
-    commandLine(sceCodegenBuildArgs)
-    inputs.dir(rootProject.layout.projectDirectory.dir("sce-build/src"))
-        .withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.file(rootProject.layout.projectDirectory.file("sce-build/Cargo.toml"))
-        .withPathSensitivity(PathSensitivity.RELATIVE)
-    outputs.file(rootProject.layout.projectDirectory.file(sceCodegenBuiltRelative))
-    onlyIf {
-        val path = System.getenv("PATH") ?: return@onlyIf false
-        val sep = File.pathSeparator
-        for (dir in path.split(sep)) {
-            val candidate = File(dir, "cargo")
-            if (candidate.exists() && candidate.canExecute()) {
-                return@onlyIf true
-            }
-        }
-        false
-    }
-}
-
+// The generator is rebuilt from this checkout's sources by the root build's
+// `:buildSceCodegen` whenever cargo is on PATH, so a schema change in
+// conformance.rs cannot be silently ignored by a jvmTest calling an old binary.
+// In CI the task is skipped and the downloaded artifact is used.
 val generateForgeFixtures by tasks.registering(GenerateForgeFixtures::class) {
-    dependsOn(buildSceCodegen)
+    dependsOn(":buildSceCodegen")
     sceCodegen.set(rootProject.layout.projectDirectory.file(sceCodegenRelative))
     resourceDir.set(rootProject.layout.projectDirectory.dir("tests/forge/resources"))
     manifest.set(rootProject.layout.projectDirectory.file("tests/forge/conformance/fixtures.json"))
@@ -250,7 +215,7 @@ abstract class GenerateRoundTripFixtures : DefaultTask() {
 }
 
 val generateRoundTripFixtures by tasks.registering(GenerateRoundTripFixtures::class) {
-    dependsOn(buildSceCodegen)
+    dependsOn(":buildSceCodegen")
     sceCodegen.set(rootProject.layout.projectDirectory.file(sceCodegenRelative))
     resourceDir.set(rootProject.layout.projectDirectory.dir("tests/forge/resources"))
     outputDir.set(layout.buildDirectory.dir("generated/round_trip/kotlin"))

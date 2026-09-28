@@ -225,6 +225,7 @@ val generateLoweredMachines = artifacts.map { (stem, language) ->
         description = "Generate the $stem Kotlin artifact with --script-engine $language"
 
         dependsOn(generateLoweredFixture)
+        dependsOn(":buildSceCodegen")
         enabled = sceCodegenBinary != null
 
         codegen.set(sceCodegenBinary ?: "sce-codegen")

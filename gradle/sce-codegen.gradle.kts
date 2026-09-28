@@ -63,13 +63,18 @@ rootProject.extra["sceCodegenRelative"] =
     if (sceCargoOnPath) sceCodegenBuiltRelative
     else sceCodegenExistingRelative ?: sceCodegenBuiltRelative
 
-// Absolute path of an existing binary, PATH included, or null. For
-// builds that degrade gracefully when no generator is available rather
-// than building one.
+// Absolute path of the binary a generating task should run, or null when
+// this checkout has none and cannot build one — for builds that degrade
+// gracefully (the committed trees stand) rather than fail. The same
+// choice as `sceCodegenRelative`, so a task that depends on the root
+// build's `:buildSceCodegen` runs what that task just built.
+//
+// ⚠ Never a binary found on PATH. One there is of unknown age and
+// provenance, and what it emits is not what these sources emit: measured
+// 2026-09-28, a checkout that had never built the generator resolved a
+// three-day-old `~/.local/bin/sce-codegen`, regenerated 682 committed
+// Kotlin files with it, and failed to compile what it wrote. A build
+// that has no generator of its own should keep the committed trees.
 rootProject.extra["sceCodegenAbsoluteOrNull"] =
-    sceCodegenExistingRelative?.let { File(sceRootDir, it).absolutePath }
-        ?: System.getenv("PATH")
-            ?.split(File.pathSeparator)
-            ?.map { File(it, "sce-codegen") }
-            ?.firstOrNull { it.exists() }
-            ?.absolutePath
+    if (sceCargoOnPath) File(sceRootDir, sceCodegenBuiltRelative).absolutePath
+    else sceCodegenExistingRelative?.let { File(sceRootDir, it).absolutePath }
