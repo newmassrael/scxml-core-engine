@@ -407,7 +407,7 @@ pub struct ResolvedTarget {
     /// have it folded into [`MeshRpcInvokeSite::deadline_ms`]; it is kept
     /// here as well because a host core resolves the peer only at run
     /// time (`srcexpr`) and so reads the fallback per peer.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub deadline_ms: Option<u64>,
     /// SCE_MESH.md §mesh-16.7 row 3 retry policy. `None` ⇒ no retry layer
     /// (codegen wires the OutboundBuffer dispatcher directly to the

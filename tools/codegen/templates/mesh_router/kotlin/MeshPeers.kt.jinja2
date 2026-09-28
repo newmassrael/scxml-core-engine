@@ -59,7 +59,7 @@ object {{ document_pascal }}MeshPeers {
                     stampSequence = {{ peer.stamp_sequence }},
                     delivery = Delivery(dedup = {{ peer.dedup }}, ordered = {{ peer.ordered }}),
                     responders = listOf({% for r in peer.responders %}"{{ r | escape_kotlin }}"{% if not loop.last %}, {% endif %}{% endfor %}),
-                    deadlineMs = {% if peer.deadline_ms is defined %}{{ peer.deadline_ms }}L{% else %}null{% endif %},
+                    deadlineMs = {% if peer.deadline_ms is not none %}{{ peer.deadline_ms }}L{% else %}null{% endif %},
                     replyEvents = listOf({% for e in peer.reply_events %}"{{ e | escape_kotlin }}"{% if not loop.last %}, {% endif %}{% endfor %}),
                 ),
 {%- if peer.link.kind == "wss_dial" %}

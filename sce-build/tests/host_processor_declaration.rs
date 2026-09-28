@@ -176,11 +176,12 @@ fn without_a_declaration_the_build_names_the_unserved_send() {
         .unwrap_or_else(|| panic!("no host_processor_causes: {m}"));
     let send: Vec<&serde_json::Value> =
         causes.iter().filter(|c| c["kind"] == "send-type").collect();
-    // One per site: the fixture sends to the host from `dispatching` and
-    // again from `pairs`, and a repair has to find both.
+    // One per site: the fixture sends to the host from `dispatching`, again
+    // from `pairs` on entry, and from `pairs` on `answer.please`, and a
+    // repair has to find all three.
     assert_eq!(
         send.len(),
-        2,
+        3,
         "expected one send cause per site: {causes:?}"
     );
     for cause in &send {
@@ -192,8 +193,13 @@ fn without_a_declaration_the_build_names_the_unserved_send() {
             "the cause carries no line: {cause}"
         );
     }
-    assert_ne!(
-        send[0]["location"]["line"], send[1]["location"]["line"],
+    let lines: std::collections::BTreeSet<String> = send
+        .iter()
+        .map(|c| c["location"]["line"].to_string())
+        .collect();
+    assert_eq!(
+        lines.len(),
+        send.len(),
         "two causes name one site: {causes:?}"
     );
     // Not a rejection. The document is valid SCXML with defined meaning.

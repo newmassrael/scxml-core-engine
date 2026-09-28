@@ -2132,7 +2132,8 @@ struct HostPeerContext {
     responders: Vec<String>,
     /// §9.5: deploy.yaml's binding-level request deadline, the fallback a
     /// request to this peer takes when it carries no `_mesh_deadline_ms`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Serialised as `null` when absent, which the templates read with
+    /// `is not none`.
     deadline_ms: Option<u64>,
     /// §8.1, §10.7: the events this machine sends to the peer as replies
     /// (`service.response.*`), which go out as `RpcReply` carrying the
