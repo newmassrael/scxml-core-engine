@@ -2135,6 +2135,10 @@
         {
           "file": "sce-build/src/forge/pseudo.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/diagram/layout.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2416,6 +2420,10 @@
         },
         {
           "file": "sce-build/src/forge/pseudo.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/diagram/layout.rs",
           "kind": "references"
         }
       ],
