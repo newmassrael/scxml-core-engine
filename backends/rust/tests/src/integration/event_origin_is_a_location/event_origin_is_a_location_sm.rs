@@ -1098,41 +1098,78 @@ impl StatePolicy for EventOriginIsALocationPolicy {
                                     if let Some(ref _rt) = _resolved_target {
                                         let event_data: &str = "";
 
-                                        // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
-                                        if _rt == "#_internal" {
+                                        if ::sce_rust_runtime::helpers::send::is_mesh_target(_rt) {
+                                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                                            // which declared it to this build. Dispatch rather than refuse.
                                             {
-                                                let mut meta =
-                                                    sce_rust_runtime::EventWithMetadata::new(
-                                                        EventOriginIsALocationEvent::Reply,
-                                                    );
-                                                meta.set_event_data(event_data);
-                                                engine.raise(meta);
+                                                let host_params = std::collections::HashMap::<
+                                                    String,
+                                                    Vec<String>,
+                                                >::new(
+                                                );
+                                                let __sce_request =
+                                                    sce_rust_runtime::HostSendRequest {
+                                                        processor_type: "sce:mesh".to_string(),
+                                                        event_name: "reply".to_string(),
+                                                        target: _rt.to_string(),
+                                                        content: "".to_string(),
+                                                        params: host_params,
+                                                        send_id: send_id.to_string(),
+                                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                                        event_data: event_data.to_string(),
+                                                    };
+                                                let __sce_served =
+                                                    engine.perform_host_send(__sce_request);
+                                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                                // from the document's side, a processor the platform does not
+                                                // support — the act it asked for was performed by nobody. Same
+                                                // event, so a wiring mistake cannot read as success.
+                                                if __sce_served.is_none()
+                                                    && !engine.has_event_processor("sce:mesh")
+                                                {
+                                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(EventOriginIsALocationEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                                    err_meta.metadata.send_id = send_id.clone();
+                                                    engine.raise(err_meta);
+                                                }
                                             }
                                         } else {
-                                            {
-                                                // W3C SCXML C.1: a target that decodes to one of our children's
-                                                // published locations is addressed to that child. Without this the
-                                                // address a peer was told to answer at routes back into the
-                                                // sender's own queue, so the location compares equal and still
-                                                // reaches nobody.
-                                                let __sce_addressed_child =
+                                            // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
+                                            if _rt == "#_internal" {
+                                                {
+                                                    let mut meta =
+                                                        sce_rust_runtime::EventWithMetadata::new(
+                                                            EventOriginIsALocationEvent::Reply,
+                                                        );
+                                                    meta.set_event_data(event_data);
+                                                    engine.raise(meta);
+                                                }
+                                            } else {
+                                                {
+                                                    // W3C SCXML C.1: a target that decodes to one of our children's
+                                                    // published locations is addressed to that child. Without this the
+                                                    // address a peer was told to answer at routes back into the
+                                                    // sender's own queue, so the location compares equal and still
+                                                    // reaches nobody.
+                                                    let __sce_addressed_child =
                 sce_rust_runtime::helpers::io_processors::session_id_from_scxml_location(&_rt);
-                                                if !self.deliver_to_child_session(
-                                                    &__sce_addressed_child,
-                                                    "reply",
-                                                    &event_data,
-                                                ) {
-                                                    let __sce_external_event =
-                                                        Some(EventOriginIsALocationEvent::Reply);
-                                                    if let Some(evt) = __sce_external_event {
-                                                        let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
-                                                        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::SceString::new());
-                                                        meta.set_event_data(event_data);
-                                                        engine.raise_external_with_meta(meta);
+                                                    if !self.deliver_to_child_session(
+                                                        &__sce_addressed_child,
+                                                        "reply",
+                                                        &event_data,
+                                                    ) {
+                                                        let __sce_external_event = Some(
+                                                            EventOriginIsALocationEvent::Reply,
+                                                        );
+                                                        if let Some(evt) = __sce_external_event {
+                                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
+                                                            meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::SceString::new());
+                                                            meta.set_event_data(event_data);
+                                                            engine.raise_external_with_meta(meta);
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
+                                        } // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
 
                                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                                     } // end of if let Some(ref _rt) = _resolved_target

@@ -8608,6 +8608,11 @@
           "file": "sce-build/src/generator.rs",
           "symbol": "check_actions",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/send.rs",
+          "symbol": "mesh_peer",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

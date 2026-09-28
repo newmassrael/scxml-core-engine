@@ -127,6 +127,24 @@ pub fn is_unreachable_target(target: &str) -> bool {
     target.is_empty() || target == "undefined"
 }
 
+/// The peer a `<send target>` names, when it names one: `#` followed by at
+/// least one character, where `#_` stays reserved for the targets
+/// §scxml-6.2.4 defines (`#_internal`, `#_parent`, `#_<invokeid>`, ...).
+///
+/// Ports C++ `SendHelper::isMeshTarget`. Every copy of the predicate — the
+/// C++ core's, the build's, this one — reads `tests/mesh/mesh_target_cases.json`,
+/// so a target one of them routes over Mesh is one they all do.
+pub fn mesh_peer(target: &str) -> Option<&str> {
+    target
+        .strip_prefix('#')
+        .filter(|peer| !peer.is_empty() && !peer.starts_with('_'))
+}
+
+/// Whether a `<send target>` names a Mesh peer (see [`mesh_peer`]).
+pub fn is_mesh_target(target: &str) -> bool {
+    mesh_peer(target).is_some()
+}
+
 /// §scxml-C-2: Check if send type requires a target attribute.
 ///
 /// BasicHTTP Event I/O Processor requires a target URL.
@@ -234,6 +252,46 @@ fn strip_suffix_ignore_case<'a>(text: &'a [u8], suffix: &[u8]) -> Option<&'a [u8
     text[split..]
         .eq_ignore_ascii_case(suffix)
         .then(|| &text[..split])
+}
+
+#[cfg(all(test, not(feature = "no_std")))]
+mod mesh_target_table {
+    use super::{is_mesh_target, mesh_peer};
+    use crate::json::{parse, Value};
+
+    /// tests/mesh/mesh_target_cases.json: the table the C++ core's
+    /// `SendHelper::isMeshTarget`, the build and the Kotlin core read too.
+    #[test]
+    fn a_mesh_peer_is_named_as_the_shared_table_names_it() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/mesh/mesh_target_cases.json"
+        );
+        let table = std::fs::read_to_string(path).expect("the shared Mesh-target table");
+        let Value::Object(members) = parse(&table).expect("the table is JSON") else {
+            panic!("the table is an object");
+        };
+        let Some((_, Value::Array(cases))) = members.iter().find(|(key, _)| key == "cases") else {
+            panic!("the table has cases");
+        };
+        assert!(cases.len() >= 10, "the table lost cases: {}", cases.len());
+        for case in cases {
+            let Value::Object(fields) = case else {
+                panic!("a case is an object");
+            };
+            let field = |name: &str| fields.iter().find(|(key, _)| key == name).map(|(_, v)| v);
+            let Some(Value::Text(target)) = field("target") else {
+                panic!("a case's target is a string");
+            };
+            let expected = match field("peer") {
+                Some(Value::Text(peer)) => Some(peer.as_str()),
+                Some(Value::Null) => None,
+                other => panic!("{target:?}: peer is a string or null, got {other:?}"),
+            };
+            assert_eq!(mesh_peer(target), expected, "{target:?}");
+            assert_eq!(is_mesh_target(target), expected.is_some(), "{target:?}");
+        }
+    }
 }
 
 #[cfg(all(test, not(feature = "no_std")))]

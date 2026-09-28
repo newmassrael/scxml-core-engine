@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_MESH.md §mesh-19: a `targetexpr` that evaluates to a Mesh peer reaches
+  the host's Mesh router, the Event I/O Processor `sce:mesh`, as a literal
+  `#peer` target does — the build cannot lower it, because the peer is only
+  named once the expression is evaluated. Two sends in `s0`'s onentry:
+
+    1  targetexpr="peer", where `peer` holds '#hmi' — a Mesh peer. The host
+       router receives it (processor `sce:mesh`, target `#hmi`, event
+       `ping`); with no router registered, it is a send to a host processor
+       nobody serves, so error.execution (W3C SCXML 6.2.5).
+    2  targetexpr="here", where `here` holds '#_internal' — not a peer
+       (`#_` stays W3C's), so it is delivered to this session as always.
+
+  `loopback` ends the run in `done`.
+
+    refused  0 with a router registered, 1 without — the one error.execution.
+    looped   1 — the non-peer target still reaches this session.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="a_peer_named_at_run_time_reaches_the_router" datamodel="ecmascript"
+       initial="s0">
+
+  <datamodel>
+    <data id="peer" expr="'#hmi'"/>
+    <data id="here" expr="'#_internal'"/>
+    <data id="refused" expr="0"/>
+    <data id="looped" expr="0"/>
+  </datamodel>
+
+  <state id="s0">
+    <onentry>
+      <send event="ping" targetexpr="peer"/>
+      <send event="loopback" targetexpr="here"/>
+    </onentry>
+
+    <transition event="error.execution">
+      <assign location="refused" expr="refused + 1"/>
+    </transition>
+    <transition event="loopback" target="done">
+      <assign location="looped" expr="looped + 1"/>
+    </transition>
+  </state>
+
+  <final id="done"/>
+</scxml>

@@ -316,18 +316,10 @@ pub enum RouterError {
     Encode(CodecError),
 }
 
-/// The peer a `<send target>` names, when it names one: `#` followed by at
-/// least one character, where `#_` stays reserved for the targets
-/// §scxml-6.2.4 defines (`#_internal`, `#_parent`, `#_<invokeid>`, ...).
-///
-/// The same predicate as the C++ core's `SendHelper::isMeshTarget`
-/// (sce/include/common/SendHelper.h); a target one core routes over Mesh
-/// and the other does not would be the same document meaning two things.
-pub fn mesh_peer(target: &str) -> Option<&str> {
-    target
-        .strip_prefix('#')
-        .filter(|peer| !peer.is_empty() && !peer.starts_with('_'))
-}
+/// The peer a `<send target>` names, when it names one — the runtime's
+/// predicate, so the router and a generated send site's choice to reach it
+/// are one answer rather than two copies of it.
+pub use sce_rust_runtime::helpers::send::mesh_peer;
 
 /// Turn what the receive half released into effects, in release order,
 /// followed by the rows it observed.
@@ -576,39 +568,6 @@ mod tests {
                 ecu.send(&request(target, "a", ""), [1; 16], 0),
                 Err(RouterError::NotMeshTarget(target.to_string()))
             );
-        }
-    }
-
-    #[test]
-    fn the_mesh_target_predicate_is_read_by_the_shared_table() {
-        // tests/mesh/mesh_target_cases.json: the table the C++ core's
-        // SendHelper::isMeshTarget, the build and the Kotlin core read too.
-        use sce_rust_runtime::json::{parse, Value};
-        let table = parse(include_str!(
-            "../../../../tests/mesh/mesh_target_cases.json"
-        ))
-        .expect("the table is JSON");
-        let Value::Object(members) = table else {
-            panic!("the table is an object");
-        };
-        let Some((_, Value::Array(cases))) = members.iter().find(|(key, _)| key == "cases") else {
-            panic!("the table has cases");
-        };
-        assert!(cases.len() >= 10, "the table lost cases: {}", cases.len());
-        for case in cases {
-            let Value::Object(fields) = case else {
-                panic!("a case is an object");
-            };
-            let field = |name: &str| fields.iter().find(|(key, _)| key == name).map(|(_, v)| v);
-            let Some(Value::Text(target)) = field("target") else {
-                panic!("a case's target is a string");
-            };
-            let expected = match field("peer") {
-                Some(Value::Text(peer)) => Some(peer.as_str()),
-                Some(Value::Null) => None,
-                other => panic!("a case's peer is a string or null, got {other:?}"),
-            };
-            assert_eq!(mesh_peer(target), expected, "{target:?}");
         }
     }
 

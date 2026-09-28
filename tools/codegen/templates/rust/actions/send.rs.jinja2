@@ -12,6 +12,80 @@
 {# W3C SCXML 5.7: `<param>` collection is shared with the host invoke; see
    `param_macros.rs.jinja2`. #}
 {% from 'param_macros.rs.jinja2' import collect_params_into %}
+{# §scxml-6.2.5: the act a host-served send performs, for `processor_type`.
+   One body for the two ways a send reaches it: a type the build saw served by
+   the host (`send_type_host_served`, a Mesh send the build lowered among them)
+   and a `targetexpr` that turns out, at run time, to name a Mesh peer. #}
+{% macro host_send_arm(action, model, machine_name, processor_type, dyn_event, has_params, has_dynamic_params, has_namelist) %}
+{# §scxml-6.2.4: a `delay` is a property of the SEND, not of the processor it
+   named, so a host-served send with one waits exactly as an ordinary send
+   does. Chosen here rather than in the delay arms below because those are
+   reached only by a send this chain has not already claimed, and the host arm
+   claims every host-served send — which is how `delay` came to be discarded on
+   every backend at once. The scheduled form performs the same act from
+   `Engine::tick` when the deadline arrives, including the §scxml-6.2 report
+   for an act nobody performed. #}
+{% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
+{% set host_is_delayed = action.delayexpr or host_delay_ms > 0 %}
+    // W3C SCXML 6.2.5: "{{ processor_type }}" is served by the host,
+    // which declared it to this build. Dispatch rather than refuse.
+    {
+{# `mut` only when something fills it: a `<send>` with no `<param>` would
+   otherwise emit an unused-mut warning into the consumer's crate, and a
+   generated file is not a place a host can silence one. #}
+{% if has_dynamic_params or has_namelist %}
+        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+{% elif has_params %}
+        let mut host_params = std::collections::HashMap::<String, Vec<String>>::new();
+{{ collect_params_into(action.params, model, 'host_params', machine_name, '<send>', 'send') }}
+{% else %}
+        let host_params = std::collections::HashMap::<String, Vec<String>>::new();
+{% endif %}
+        let __sce_request = sce_rust_runtime::HostSendRequest {
+            processor_type: "{{ processor_type | escape_rust }}".to_string(),
+            event_name: {% if dyn_event %}_send_event_name.clone(){% else %}"{{ action.event | default('', true) }}".to_string(){% endif %},
+            target: {% if action.targetexpr %}_rt.to_string(){% else %}"{{ action.target | escape_rust }}".to_string(){% endif %},
+            content: "{{ action.content | default('', true) | escape_rust }}".to_string(),
+            params: host_params,
+            send_id: send_id.to_string(),
+            // W3C SCXML 5.10: the payload computed above, once, for every arm.
+            event_data: event_data.to_string(),
+        };
+{% if host_is_delayed %}
+{% if action.delayexpr %}
+        let __sce_delay_ms = _send_delay_ms;
+{% else %}
+        let __sce_delay_ms = {{ host_delay_ms }}_u64;
+{% endif %}
+        // W3C SCXML 6.2.4: arm it. The engine performs the act when the
+        // deadline arrives and reports it there if nobody does, so the
+        // unregistered-handler branch below belongs only to the immediate
+        // form — this site has returned long before the deadline.
+        // W3C SCXML 6.3: it lands in the delayed-send queue under `send_id`,
+        // so a `<cancel>` reaches it and the host never sees the act at all.
+        engine.schedule_host_send(
+            __sce_request,
+            core::time::Duration::from_millis(__sce_delay_ms),
+            &send_id,
+        );
+{% else %}
+        let __sce_served = engine.perform_host_send(__sce_request);
+{% if 'error.execution' in model.events %}
+        // W3C SCXML 6.2: a declared type with no handler registered is,
+        // from the document's side, a processor the platform does not
+        // support — the act it asked for was performed by nobody. Same
+        // event, so a wiring mistake cannot read as success.
+        if __sce_served.is_none() && !engine.has_event_processor("{{ processor_type | escape_rust }}") {
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send type='{{ processor_type }}'> names a processor the host declared but never registered");
+            {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
+            engine.raise(err_meta);
+        }
+{% else %}
+        let _ = __sce_served;
+{% endif %}
+{% endif %}
+    }
+{% endmacro %}
 {% set in_block = in_action_block is defined and in_action_block %}
 {
 {% if action.id %}
@@ -380,6 +454,16 @@
     let event_data: &str = "";
 {% endif %}
 
+{# SCE_MESH.md §mesh-19: a `targetexpr` may name a Mesh peer only once it is
+   evaluated, so the build could not lower it. The same act the lowering
+   arranges for a literal `#peer` is chosen here, on the one evaluated target,
+   ahead of every other route — a peer is not a local session. #}
+{% set dynamic_mesh = action.targetexpr and model.needs_script_engine and not action.typeexpr and not action.send_type_host_served and not action.send_type_unsupported and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') %}
+{% if dynamic_mesh %}
+    if ::sce_rust_runtime::helpers::send::is_mesh_target(_rt) {
+{{ host_send_arm(action, model, machine_name, 'sce:mesh', dyn_event, has_params, has_dynamic_params, has_namelist) }}
+    } else {
+{% endif %}
 {% if action.send_type_unsupported %}
     // W3C SCXML 6.2: Unsupported send type "{{ action.send_type }}" raises error.execution
 {% if 'error.execution' in model.events %}
@@ -393,74 +477,7 @@
     break 'action_block;
 {% endif %}
 {% elif action.send_type_host_served %}
-{# §scxml-6.2.4: a `delay` is a property of the SEND, not of the processor it
-   named, so a host-served send with one waits exactly as an ordinary send
-   does. Chosen here rather than in the delay arms below because those are
-   reached only by a send this chain has not already claimed, and the host arm
-   claims every host-served send — which is how `delay` came to be discarded on
-   every backend at once. The scheduled form performs the same act from
-   `Engine::tick` when the deadline arrives, including the §scxml-6.2 report
-   for an act nobody performed. #}
-{% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
-{% set host_is_delayed = action.delayexpr or host_delay_ms > 0 %}
-    // W3C SCXML 6.2.5: "{{ action.send_type }}" is served by the host,
-    // which declared it to this build. Dispatch rather than refuse.
-    {
-{# `mut` only when something fills it: a `<send>` with no `<param>` would
-   otherwise emit an unused-mut warning into the consumer's crate, and a
-   generated file is not a place a host can silence one. #}
-{% if has_dynamic_params or has_namelist %}
-        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-{% elif has_params %}
-        let mut host_params = std::collections::HashMap::<String, Vec<String>>::new();
-{{ collect_params_into(action.params, model, 'host_params', machine_name, '<send>', 'send') }}
-{% else %}
-        let host_params = std::collections::HashMap::<String, Vec<String>>::new();
-{% endif %}
-        let __sce_request = sce_rust_runtime::HostSendRequest {
-            processor_type: "{{ action.send_type | escape_rust }}".to_string(),
-            event_name: {% if dyn_event %}_send_event_name.clone(){% else %}"{{ action.event | default('', true) }}".to_string(){% endif %},
-            target: {% if action.targetexpr %}_rt.to_string(){% else %}"{{ action.target | escape_rust }}".to_string(){% endif %},
-            content: "{{ action.content | default('', true) | escape_rust }}".to_string(),
-            params: host_params,
-            send_id: send_id.to_string(),
-            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-            event_data: event_data.to_string(),
-        };
-{% if host_is_delayed %}
-{% if action.delayexpr %}
-        let __sce_delay_ms = _send_delay_ms;
-{% else %}
-        let __sce_delay_ms = {{ host_delay_ms }}_u64;
-{% endif %}
-        // W3C SCXML 6.2.4: arm it. The engine performs the act when the
-        // deadline arrives and reports it there if nobody does, so the
-        // unregistered-handler branch below belongs only to the immediate
-        // form — this site has returned long before the deadline.
-        // W3C SCXML 6.3: it lands in the delayed-send queue under `send_id`,
-        // so a `<cancel>` reaches it and the host never sees the act at all.
-        engine.schedule_host_send(
-            __sce_request,
-            core::time::Duration::from_millis(__sce_delay_ms),
-            &send_id,
-        );
-{% else %}
-        let __sce_served = engine.perform_host_send(__sce_request);
-{% if 'error.execution' in model.events %}
-        // W3C SCXML 6.2: a declared type with no handler registered is,
-        // from the document's side, a processor the platform does not
-        // support — the act it asked for was performed by nobody. Same
-        // event, so a wiring mistake cannot read as success.
-        if __sce_served.is_none() && !engine.has_event_processor("{{ action.send_type | escape_rust }}") {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send type='{{ action.send_type }}'> names a processor the host declared but never registered");
-            {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
-            engine.raise(err_meta);
-        }
-{% else %}
-        let _ = __sce_served;
-{% endif %}
-{% endif %}
-    }
+{{ host_send_arm(action, model, machine_name, action.send_type, dyn_event, has_params, has_dynamic_params, has_namelist) }}
 {% elif not action.targetexpr and action.target and action.target is startingwith('!') %}
     // W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
 {% if 'error.execution' in model.events %}
@@ -681,6 +698,9 @@
         engine.raise_external_with_meta(meta);
     }
 {% endif %}
+{% endif %}
+{% if dynamic_mesh %}
+    } // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
 {% endif %}
 
 
