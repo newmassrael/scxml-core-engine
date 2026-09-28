@@ -111,6 +111,17 @@ function(apply_sce_test_policies target_name)
             SCE_TEST_TARGET=1  # For test target identification
     )
 
+    # GCC 13+ false positive: -Wmaybe-uninitialized inside libstdc++'s
+    # std::variant move constructor, reached whenever a ScriptValue is moved
+    # through an inlined path at -O2. Whether it fires is an inlining decision,
+    # not a property of the target, so it is set here for every test target
+    # rather than per target. It was per target (js_engine_tests alone) until
+    # mesh_dds_pool_test tripped it the first time a CycloneDDS host built it:
+    # its generated <onentry> moves a <param> ScriptValue into the send list.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13)
+        target_compile_options(${target_name} PRIVATE -Wno-maybe-uninitialized)
+    endif()
+
     # WASM: Apply pthread configuration to test executables
     if(EMSCRIPTEN)
         target_compile_options(${target_name} PRIVATE
@@ -217,13 +228,6 @@ target_link_libraries(js_engine_tests
         GTest::gtest_main
         pthread
 )
-
-# GCC 13+ false positive: -Wmaybe-uninitialized in std::variant move constructor
-# Occurs in JSEngineBasicTest.cpp with RelWithDebInfo (-O2) optimization
-# Reference: tests/engine/JSEngineBasicTest.cpp:1094-1095 - ScriptValue variant moves
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13)
-    target_compile_options(js_engine_tests PRIVATE -Wno-maybe-uninitialized)
-endif()
 
 # WASM: Add Emscripten-specific link options for HTTP support
 if(EMSCRIPTEN)
