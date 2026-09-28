@@ -117,6 +117,7 @@
         "scxml/static-datamodel-rule",
         "scxml/unreachable-state",
         "scxml/dead-transition",
+        "scxml/parent-send-without-parent",
         "scxml/non-exhaustive-event-handling",
         "scxml/contradictory-unhandled-declaration",
         "scxml/stale-unhandled-declaration",

@@ -8848,6 +8848,18 @@
         {
           "file": "sce-build/src/manifest.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

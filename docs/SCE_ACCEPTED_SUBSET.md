@@ -2969,6 +2969,32 @@ is a Statechart-graph rule with no analog on the Forge-kind side
 
 ---
 
+### A document set whose member sends to a parent nobody is
+
+`<send target="#_parent">` (W3C SCXML §6.2.4) names the session that
+invoked this one. A machine started on its own has none, and every such
+send raises `error.communication` at runtime — while the document is
+valid SCXML and builds. Whether a parent exists is a fact about the
+deployment, so a single document only PUBLISHES the need (the manifest's
+`needs_parent` / `parent_sends`, SCE_ERROR_CONTRACT.md §10) and the
+document SET judges it: the set compile (`orchestrate`, and `check` over
+`--scxml-set`) refuses a member that sends to `#_parent` when no member
+invokes it, as `scxml/parent-send-without-parent`, located on the
+member's first such `<send>`.
+
+A member counts as invoked when another member's `<invoke>` names it —
+by the child name a static `<invoke src>` resolves to, or by `#<name>`
+as a Mesh target. It runs with the design-time lints (the set compile
+runs them on every member), because the set cannot see a member
+invoked from OUTSIDE it: a host that supplies the parent itself, or a
+peer in another build, looks exactly like this from inside. Two cases
+are not judged, and are said to be: a set in which any member names a
+child by expression (`srcexpr`), since whom it invokes is decided at
+runtime; and a set compiled against a deploy topology, whose machines
+may be invoked by peers the set does not contain.
+
+---
+
 ### Statechart event-set exhaustiveness (NL→IR Mapping Roadmap Item 3 Phase B)
 
 A compound `<state>`'s sibling children are expected to agree on
@@ -3656,6 +3682,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/static-datamodel-rule` | Validation |
 | `scxml/unreachable-state` | Validation |
 | `scxml/dead-transition` | Validation |
+| `scxml/parent-send-without-parent` | Validation |
 | `scxml/non-exhaustive-event-handling` | Validation |
 | `scxml/contradictory-unhandled-declaration` | Validation |
 | `scxml/stale-unhandled-declaration` | Validation |

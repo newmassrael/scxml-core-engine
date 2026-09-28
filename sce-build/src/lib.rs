@@ -3365,6 +3365,27 @@ fn compile_document_set(
         )?;
     }
 
+    // §scxml-6.2.4: a member that sends to `#_parent` needs a parent, and
+    // the set is the only place the build can see who invokes whom. Judged
+    // beside the design-time lints every member already passed through
+    // `compile_model`, and for their reason: a member invoked from outside
+    // the set looks the same from inside it (docs/SCE_ACCEPTED_SUBSET.md,
+    // "A document set whose member sends to a parent nobody is"). Not
+    // judged against a deploy topology, whose machines may be invoked by
+    // peers this build does not contain.
+    if deploy.is_none() {
+        let labels: Vec<String> = scxml_models
+            .iter()
+            .map(|(path, _)| path.to_string_lossy().into_owned())
+            .collect();
+        let members: Vec<(&str, &SCXMLModel)> = labels
+            .iter()
+            .zip(&scxml_models)
+            .map(|(label, (_, model))| (label.as_str(), model))
+            .collect();
+        parent_send_analyzer::refuse_orphans(&members)?;
+    }
+
     // ── EventSchema receive- + send-side typecheck ──
     //
     // Runs inside the parser, not here. The typecheck must validate the

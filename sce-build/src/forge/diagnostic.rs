@@ -911,6 +911,11 @@ pub enum DiagnosticCode {
     ScxmlUnreachableState,
     #[serde(rename = "scxml/dead-transition")]
     ScxmlDeadTransition,
+    // ── §scxml-6.2.4 — a document-set member sends to `#_parent` and no
+    //    member invokes it. Judged by the set compile, as a lint: a member
+    //    invoked from outside the set looks the same from inside it. ───
+    #[serde(rename = "scxml/parent-send-without-parent")]
+    ScxmlParentSendWithoutParent,
     // ── NL→IR Mapping Roadmap Item 3 — event-set
     //    exhaustiveness. Fires when a compound `<state>` has sibling
     //    children that disagree on whether a given event is handled,
@@ -3273,6 +3278,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // NL→IR Mapping Roadmap Item 3 — Statechart graph reachability
         ScxmlUnreachableState,
         ScxmlDeadTransition,
+        // §scxml-6.2.4 — a set member nobody invokes sends to `#_parent`
+        ScxmlParentSendWithoutParent,
         // NL→IR Mapping Roadmap Item 3 — event-set exhaustiveness
         ScxmlNonExhaustiveEventHandling,
         ScxmlContradictoryUnhandledDeclaration,
@@ -3848,6 +3855,9 @@ impl DiagnosticCode {
 
             // ── SCXML §5.8 top-level script (§wire-W5) ─────────────
             ScxmlTopLevelScriptUnloaded => Some("W3C SCXML §5.8"),
+
+            // ── §scxml-6.2.4 `#_parent` with no parent session ─────────
+            ScxmlParentSendWithoutParent => Some("W3C SCXML §6.2.4"),
 
             // ── SCXML data models ──────────────────────────────────
             // The attribute is defined in §3.2 and the data models it
@@ -4636,6 +4646,7 @@ impl DiagnosticCode {
             ScxmlStaticDatamodelRule => "scxml/static-datamodel-rule",
             ScxmlUnreachableState => "scxml/unreachable-state",
             ScxmlDeadTransition => "scxml/dead-transition",
+            ScxmlParentSendWithoutParent => "scxml/parent-send-without-parent",
             ScxmlNonExhaustiveEventHandling => "scxml/non-exhaustive-event-handling",
             ScxmlContradictoryUnhandledDeclaration => "scxml/contradictory-unhandled-declaration",
             ScxmlStaleUnhandledDeclaration => "scxml/stale-unhandled-declaration",
@@ -9744,6 +9755,21 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 target.clone(),
             ],
         },
+        ScxmlSemanticError::ParentSendWithoutParent { machine, event } => DiagnosticPayload {
+            // `actual` names the machine: the repair is to the set (add
+            // the document that invokes it) or to the machine (send to
+            // somewhere that exists), never to the event name.
+            code: DiagnosticCode::ScxmlParentSendWithoutParent,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(machine.clone()),
+            fix: None,
+            key_fragments: vec![
+                "scxml-parent-send-without-parent".to_string(),
+                machine.clone(),
+                event.clone().unwrap_or_default(),
+            ],
+        },
         ScxmlSemanticError::AlwaysFalseGuard { state, cond } => DiagnosticPayload {
             // NEW — NL→IR Mapping Roadmap Item 3 guard analysis. The
             // `actual` slot carries the raw guard text so consumers
@@ -10869,6 +10895,17 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:c6afb255ec2689b7","code":"scxml/dead-transition","stage":"validation","message":"Transition in unreachable state 'ghost_branch' targets 'armed' — source state is never entered","actual":"armed"}"#,
+            ),
+            (
+                // §scxml-6.2.4 — a document-set member sends to
+                // `#_parent` and no member of the set invokes it.
+                "forge/scxml-parent-send-without-parent",
+                crate::scxml_semantic::ScxmlSemanticError::ParentSendWithoutParent {
+                    machine: "notifier".into(),
+                    event: Some("indicator.update".into()),
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:86099a275d115ab1","code":"scxml/parent-send-without-parent","stage":"validation","spec":"W3C SCXML §6.2.4","message":"'notifier' sends 'indicator.update' to its parent session (#_parent), but no document in this set invokes it — started on its own it has no parent, and the send raises error.communication","actual":"notifier"}"##,
             ),
             (
                 // NL→IR Mapping Roadmap Item 3 — non-exhaustive
@@ -16022,6 +16059,10 @@ mod tests {
             // not.
             | ScxmlUnreachableState
             | ScxmlDeadTransition
+            // Two repairs of different kinds — add the invoking document
+            // to the set, or send somewhere that exists — so no closed
+            // candidate set either.
+            | ScxmlParentSendWithoutParent
             // NL→IR Mapping Roadmap Item 3 — non-exhaustive
             // event handling. Repair has three axes (add the
             // transition, add a parent-level fallthrough, or declare
@@ -16354,6 +16395,7 @@ mod tests {
                 | ScxmlStaticDatamodelRule
                 | ScxmlUnreachableState
                 | ScxmlDeadTransition
+                | ScxmlParentSendWithoutParent
                 | ScxmlNonExhaustiveEventHandling
                 | ScxmlContradictoryUnhandledDeclaration
                 | ScxmlStaleUnhandledDeclaration
@@ -16651,9 +16693,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            399,
+            400,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 399 distinct variants to match the DiagnosticCode \
+             expected 400 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17100,6 +17142,11 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ScxmlStaleUnhandledDeclaration
             | ScxmlAlwaysFalseGuard
             | ScxmlShadowedTransition => Carries,
+
+            // Judged by the document-set compile, which locates it on the
+            // `<send target="#_parent">` and resolves the enclosing anchor
+            // at that boundary the same way `lint_statechart` does.
+            ScxmlParentSendWithoutParent => Carries,
 
             // The four no_std axes, resolved at the third boundary —
             // `validate_no_std_compatibility` — added by Item 8
@@ -18942,6 +18989,20 @@ mod anchor_contract_tests {
                      </state>
                    </scxml>"#,
             ),
+            // `scxml/parent-send-without-parent` — a one-member set: the
+            // `<send>` inside the anchored state is what the record points
+            // at, and nothing in the set can be this machine's parent.
+            (
+                "scxml/parent-send-without-parent",
+                r##"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                          xmlns:sce="http://sce.dev/ext"
+                          version="1.0" initial="live">
+                     <state id="live" sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <onentry><send target="#_parent" event="ready"/></onentry>
+                       <transition event="go" target="live"/>
+                     </state>
+                   </scxml>"##,
+            ),
             // The four no_std axes — Item 8 Atomic 4. Each document is
             // one a W3C Interpreter runs and every earlier stage
             // accepts; what refuses it is the `--no-std` target, so
@@ -19211,6 +19272,13 @@ mod anchor_contract_tests {
         // where they are in the pipeline, and the three scenarios above
         // must keep raising the codes they are named for.
         if let Err(e) = crate::lint_statechart(&model, label) {
+            return e.to_diagnostics();
+        }
+        // The document-set judgment, a sixth regime: it holds several
+        // finished models and judges them together. A lone document is a
+        // one-member set — nothing in it can be its parent — so the
+        // scenario reaches the set compile's own call with one member.
+        if let Err(e) = crate::parent_send_analyzer::refuse_orphans(&[(label, &model)]) {
             return e.to_diagnostics();
         }
         // The ECMAScript acceptance walk, added with Item 8 Atomic 5.

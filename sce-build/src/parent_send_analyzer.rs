@@ -110,6 +110,96 @@ pub fn records(model: &SCXMLModel) -> Vec<ParentSend> {
     sends
 }
 
+/// What a document set can say about its members' parents.
+#[derive(Debug)]
+pub enum SetVerdict<'m> {
+    /// Every member that sends to `#_parent` is invoked by another member.
+    Satisfied,
+    /// These members send to `#_parent` and no member invokes them, each
+    /// with the first site that does.
+    Orphaned(Vec<(&'m SCXMLModel, ParentSend)>),
+    /// The set cannot be judged: some member names a child by expression
+    /// (`srcexpr`), so whom it invokes is decided at runtime.
+    Undecidable,
+}
+
+/// Judge a document set: which members send to a parent that no member
+/// of the set can be.
+///
+/// A member is invoked when another member's `<invoke>` names it — by the
+/// child name a static `<invoke src>` resolves to (its file stem, the name
+/// the set registers it under), or by `#<name>` as a Mesh target. The
+/// judgment is only as good as the set: a member invoked from OUTSIDE it
+/// (a host, a peer in another build) looks orphaned here, which is why the
+/// callers treat this as design advice (`--lint`), not as a refusal.
+pub fn judge_set<'m>(models: &[&'m SCXMLModel]) -> SetVerdict<'m> {
+    use crate::model::Invoke;
+    let mut invoked: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for model in models {
+        for state in model.states.values() {
+            for invoke in &state.invokes {
+                match invoke {
+                    Invoke::Scxml(info) => {
+                        invoked.insert(info.child_name.clone());
+                        if let Some(peer) = info.src.strip_prefix('#') {
+                            invoked.insert(peer.to_string());
+                        }
+                    }
+                    Invoke::MeshRpc(info) => match info.target.src_literal() {
+                        Some(src) => {
+                            invoked.insert(src.trim_start_matches('#').to_string());
+                        }
+                        None => return SetVerdict::Undecidable,
+                    },
+                    Invoke::Hybrid(_) => return SetVerdict::Undecidable,
+                    Invoke::Unsupported(_) => {}
+                }
+            }
+        }
+    }
+    // `analyze`, not `records`: the caller places the refusal through
+    // `SCXMLModel::locate`, which maps an expanded position to the authored
+    // one itself — mapping it here first would map it twice.
+    let orphaned: Vec<(&SCXMLModel, ParentSend)> = models
+        .iter()
+        .filter(|m| !invoked.contains(&m.name))
+        .filter_map(|m| analyze(m).into_iter().next().map(|first| (*m, first)))
+        .collect();
+    if orphaned.is_empty() {
+        SetVerdict::Satisfied
+    } else {
+        SetVerdict::Orphaned(orphaned)
+    }
+}
+
+/// Refuse a document set's first member that sends to `#_parent` and that
+/// no member invokes, as `scxml/parent-send-without-parent` located on the
+/// send and carrying the enclosing anchor (SCE_ERROR_CONTRACT.md §2.1.2).
+///
+/// `members` pairs each model with the label its diagnostics carry. The
+/// one construction of this refusal: the set compile and the anchor
+/// contract's scenario runner both call it, so the record a test observes
+/// is the record a build emits.
+pub fn refuse_orphans(
+    members: &[(&str, &SCXMLModel)],
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    let models: Vec<&SCXMLModel> = members.iter().map(|(_, m)| *m).collect();
+    let SetVerdict::Orphaned(orphans) = judge_set(&models) else {
+        return Ok(());
+    };
+    let (model, send) = &orphans[0];
+    let label = members
+        .iter()
+        .find(|(_, m)| std::ptr::eq(*m, *model))
+        .map(|(label, _)| *label)
+        .unwrap_or_default();
+    let refusal = crate::scxml_semantic::ScxmlSemanticError::ParentSendWithoutParent {
+        machine: model.name.clone(),
+        event: send.event.clone(),
+    };
+    Err(model.with_enclosing_anchor(model.locate(refusal.into(), send.location.as_ref(), label)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

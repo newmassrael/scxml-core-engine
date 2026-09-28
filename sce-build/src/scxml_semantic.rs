@@ -492,6 +492,30 @@ pub enum ScxmlSemanticError {
         target: String,
     },
 
+    /// A member of a document set sends to its parent session
+    /// (`<send target="#_parent">`) and no member of the set invokes it.
+    ///
+    /// §scxml-6.2.4: started on its own, the machine has no parent, and
+    /// each such send raises `error.communication` at runtime. The set is
+    /// the only place the build can see who invokes whom, so this is judged
+    /// there — and only as design advice, because a member invoked from
+    /// OUTSIDE the set (a host supplying the parent, a peer in another
+    /// build) looks exactly like this from inside it. Reported once per
+    /// member, at its first such send.
+    #[error(
+        "'{machine}' sends{event_clause} to its parent session (#_parent), but no \
+         document in this set invokes it — started on its own it has no \
+         parent, and the send raises error.communication",
+        event_clause = event.as_deref().map(|e| format!(" '{e}'")).unwrap_or_default()
+    )]
+    ParentSendWithoutParent {
+        /// The member's name — its file stem, the name the set registers
+        /// it under and a static `<invoke src>` resolves to.
+        machine: String,
+        /// The first site's `event`, or `None` when it uses `eventexpr`.
+        event: Option<String>,
+    },
+
     /// A compound `<state>` has sibling children that disagree on
     /// whether a given event is handled, with no parent-level
     /// fallthrough to absorb the gap. AI-generated SCXML produces
@@ -883,6 +907,10 @@ mod tests {
                 state: "ghost".into(),
                 target: "armed".into(),
             },
+            ScxmlSemanticError::ParentSendWithoutParent {
+                machine: "notifier".into(),
+                event: Some("indicator.update".into()),
+            },
             ScxmlSemanticError::NonExhaustiveEventHandling {
                 parent: "dispatch".into(),
                 event: "cmd.stop".into(),
@@ -939,7 +967,7 @@ mod tests {
 
     /// Number of arms in [`variant_name`]. Kept next to it so the two
     /// move together.
-    const VARIANT_COUNT: usize = 16;
+    const VARIANT_COUNT: usize = 17;
 
     /// Exhaustive discriminant projection — the compile-time half of
     /// `every_variant_routes_through_forge_error`'s coverage claim.
@@ -960,6 +988,7 @@ mod tests {
             ScxmlSemanticError::TopLevelScriptUnloaded { .. } => "TopLevelScriptUnloaded",
             ScxmlSemanticError::UnreachableState { .. } => "UnreachableState",
             ScxmlSemanticError::DeadTransition { .. } => "DeadTransition",
+            ScxmlSemanticError::ParentSendWithoutParent { .. } => "ParentSendWithoutParent",
             ScxmlSemanticError::NonExhaustiveEventHandling { .. } => "NonExhaustiveEventHandling",
             ScxmlSemanticError::ContradictoryUnhandledDeclaration { .. } => {
                 "ContradictoryUnhandledDeclaration"

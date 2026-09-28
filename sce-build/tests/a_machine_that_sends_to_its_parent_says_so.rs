@@ -146,3 +146,79 @@ fn a_machine_that_never_sends_to_its_parent_says_it_needs_none() {
     assert_eq!(m["needs_parent"], false, "{m}");
     assert!(m.get("parent_sends").is_none(), "omitted, not []: {m}");
 }
+
+const NOTIFIER: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" initial="idle">
+  <state id="idle">
+    <onentry>
+      <send target="#_parent" event="indicator.update"/>
+    </onentry>
+  </state>
+</scxml>
+"##;
+
+/// `check` over a document set: exit status and every record's code and row.
+fn check_set(label: &str, docs: &[(&str, &str)]) -> (i32, Vec<(String, u64)>) {
+    let dir = scratch(label);
+    let mut cmd = Command::new(sce_codegen_bin());
+    cmd.args(["--error-format", "json", "check", "-l", "rust"]);
+    for (name, body) in docs {
+        let path = dir.join(name);
+        std::fs::write(&path, body).expect("write fixture");
+        cmd.arg("--scxml").arg(&path);
+    }
+    let out = cmd.output().expect("run sce-codegen check");
+    let _ = std::fs::remove_dir_all(&dir);
+    let records = String::from_utf8_lossy(&out.stderr)
+        .lines()
+        .filter(|l| l.starts_with('{'))
+        .map(|l| {
+            let v: serde_json::Value = serde_json::from_str(l).expect("NDJSON record");
+            (
+                v["code"].as_str().expect("code").to_string(),
+                v["location"]["line"].as_u64().unwrap_or(0),
+            )
+        })
+        .collect();
+    (out.status.code().unwrap_or(-1), records)
+}
+
+/// The set is where the need is judged: alone in a set, nothing can be
+/// the notifier's parent, and the refusal lands on the send.
+#[test]
+fn a_set_member_nobody_invokes_is_refused_at_its_send() {
+    let (status, records) = check_set("orphan-set", &[("notifier.scxml", NOTIFIER)]);
+    assert_ne!(status, 0, "{records:?}");
+    assert_eq!(
+        records,
+        [("scxml/parent-send-without-parent".to_string(), 6)],
+        "one record, on the <send>"
+    );
+}
+
+/// The control: the same notifier, invoked by a member of the set, has
+/// its parent — so the refusal above is about the missing invoker and
+/// nothing else about the document.
+#[test]
+fn a_set_member_another_member_invokes_has_its_parent() {
+    let parent = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" initial="running">
+  <state id="running">
+    <invoke type="http://www.w3.org/TR/scxml/" src="notifier.scxml"/>
+    <transition event="indicator.update" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"##;
+    let (status, records) = check_set(
+        "invoked-set",
+        &[("host.scxml", parent), ("notifier.scxml", NOTIFIER)],
+    );
+    assert_eq!(
+        status, 0,
+        "the invoked notifier has its parent: {records:?}"
+    );
+    assert!(records.is_empty(), "{records:?}");
+}
