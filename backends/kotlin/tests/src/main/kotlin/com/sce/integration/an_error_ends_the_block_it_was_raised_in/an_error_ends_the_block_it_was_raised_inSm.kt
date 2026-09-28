@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a2c2cff50069419be8be154770909e1b36918691efa802737abe7a86046c62a8
+// source-hash: b0ef9e173278564420c2e6be5ad06d376c615a4162d9ec67007ff7e1f2e21834
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/an_error_ends_the_block_it_was_raised_in/an_error_ends_the_block_it_was_raised_in.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine
+// SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine
 
 package com.sce.integration.an_error_ends_the_block_it_was_raised_in
 
@@ -119,6 +119,102 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
      */
     fun afterIf(): Long? =
         com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "afterIf")
+
+    /**
+     * §scxml-5.3: what the `ifThen` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `ifThen` was assigned a value of another type, or the engine refused.
+     */
+    fun ifThen(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "ifThen")
+
+    /**
+     * §scxml-5.3: what the `ifElse` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `ifElse` was assigned a value of another type, or the engine refused.
+     */
+    fun ifElse(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "ifElse")
+
+    /**
+     * §scxml-5.3: what the `afterIfCond` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `afterIfCond` was assigned a value of another type, or the engine refused.
+     */
+    fun afterIfCond(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "afterIfCond")
+
+    /**
+     * §scxml-5.3: what the `elseifThen` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `elseifThen` was assigned a value of another type, or the engine refused.
+     */
+    fun elseifThen(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "elseifThen")
+
+    /**
+     * §scxml-5.3: what the `elseifElse` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `elseifElse` was assigned a value of another type, or the engine refused.
+     */
+    fun elseifElse(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "elseifElse")
+
+    /**
+     * §scxml-5.3: what the `afterElseifCond` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `afterElseifCond` was assigned a value of another type, or the engine refused.
+     */
+    fun afterElseifCond(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "afterElseifCond")
+
+    /**
+     * §scxml-5.3: what the `afterNestedIf` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `afterNestedIf` was assigned a value of another type, or the engine refused.
+     */
+    fun afterNestedIf(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "afterNestedIf")
+
+    /**
+     * §scxml-5.3: what the `afterOuterIf` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `afterOuterIf` was assigned a value of another type, or the engine refused.
+     */
+    fun afterOuterIf(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "afterOuterIf")
 
     /**
      * §scxml-5.3: what the `afterSingle` datamodel variable is holding now.
@@ -456,6 +552,62 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
         } catch (e: Exception) {
             raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterIf'> expr failed to evaluate")
         }
+        // W3C SCXML 5.3: Initialize variable 'ifThen' with expr
+        try {
+            val initResult_ifThen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "ifThen", initResult_ifThen)
+        } catch (e: Exception) {
+            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='ifThen'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'ifElse' with expr
+        try {
+            val initResult_ifElse = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "ifElse", initResult_ifElse)
+        } catch (e: Exception) {
+            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='ifElse'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'afterIfCond' with expr
+        try {
+            val initResult_afterIfCond = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "afterIfCond", initResult_afterIfCond)
+        } catch (e: Exception) {
+            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterIfCond'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'elseifThen' with expr
+        try {
+            val initResult_elseifThen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "elseifThen", initResult_elseifThen)
+        } catch (e: Exception) {
+            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='elseifThen'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'elseifElse' with expr
+        try {
+            val initResult_elseifElse = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "elseifElse", initResult_elseifElse)
+        } catch (e: Exception) {
+            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='elseifElse'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'afterElseifCond' with expr
+        try {
+            val initResult_afterElseifCond = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "afterElseifCond", initResult_afterElseifCond)
+        } catch (e: Exception) {
+            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterElseifCond'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'afterNestedIf' with expr
+        try {
+            val initResult_afterNestedIf = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "afterNestedIf", initResult_afterNestedIf)
+        } catch (e: Exception) {
+            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterNestedIf'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'afterOuterIf' with expr
+        try {
+            val initResult_afterOuterIf = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "afterOuterIf", initResult_afterOuterIf)
+        } catch (e: Exception) {
+            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterOuterIf'> expr failed to evaluate")
+        }
         // W3C SCXML 5.3: Initialize variable 'afterSingle' with expr
         try {
             val initResult_afterSingle = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -553,15 +705,31 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
     // never left to guess which it got. The C++ sibling
     // (`process_transition.jinja2`) takes the same argument for the same
     // reason.
-    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean =
+        evaluateGuardRaising(guardExpr, "a <transition> cond failed to evaluate") ?: false
+
+    // W3C SCXML 5.9.1 + 4.9: an <if> or <elseif> cond, evaluated and reported
+    // as a transition guard is. A failure also runs [onFailure]: the <if>
+    // still selects on `false`, and is then the element whose processing
+    // raised, so its block ends after it.
+    @Suppress("unused")
+    private inline fun evaluateIfCond(guardExpr: com.sce.runtime.ScriptSource, onFailure: () -> Unit): Boolean {
+        val result = evaluateGuardRaising(guardExpr, "an <if> cond failed to evaluate")
+        if (result == null) onFailure()
+        return result ?: false
+    }
+
+    // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
+    // `null` says so, where a bare `false` could not.
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "a <transition> cond failed to evaluate")
-            false
+            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, reason)
+            null
         }
     }
 
@@ -727,16 +895,16 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine
+    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine
     override fun onEntry(state: AnErrorEndsTheBlockItWasRaisedInState, isDefaultEntry: Boolean) {
         when (state) {
             is AnErrorEndsTheBlockItWasRaisedInState.Done -> {
-                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:112 :: done :: _state_body
+                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:156 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AnErrorEndsTheBlockItWasRaisedInState.P -> {
-                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:57 :: p :: _state_body
+                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:74 :: p :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -766,8 +934,8 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                 }
             }
             is AnErrorEndsTheBlockItWasRaisedInState.Q -> {
-                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:77 :: q :: _state_body
-                // W3C SCXML 3.8: Onentry block 1/6
+                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:94 :: q :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/9
                 run {
 
 
@@ -780,7 +948,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                 return@run
             }
                 }
-                // W3C SCXML 3.8: Onentry block 2/6
+                // W3C SCXML 3.8: Onentry block 2/9
                 run {
 
 
@@ -795,7 +963,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                 return@run
             }
                 }
-                // W3C SCXML 3.8: Onentry block 3/6
+                // W3C SCXML 3.8: Onentry block 3/9
                 run {
 
             // W3C SCXML 4.7: Log expression evaluation. An expression that fails
@@ -818,7 +986,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                 return@run
             }
                 }
-                // W3C SCXML 3.8: Onentry block 4/6
+                // W3C SCXML 3.8: Onentry block 4/9
                 run {
 
 
@@ -847,11 +1015,12 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                 return@run
             }
                 }
-                // W3C SCXML 3.8: Onentry block 5/6
+                // W3C SCXML 3.8: Onentry block 5/9
                 run {
 
 
-            if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("true", "true"))) {
+            var ifCondFailed1 = false
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("true", "true")) { ifCondFailed1 = true }) {
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
@@ -863,13 +1032,110 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                 return@run
             }
             }
+            if (ifCondFailed1) {
+                return@run
+            }
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterIf", "afterIf"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return@run
             }
                 }
-                // W3C SCXML 3.8: Onentry block 6/6
+                // W3C SCXML 3.8: Onentry block 6/9
+                run {
+
+
+            var ifCondFailed2 = false
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("_scxml_truthy(obj.missing.deep)", "obj.missing.deep")) { ifCondFailed2 = true }) {
+
+
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("ifThen", "ifThen"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
+            }
+            } else {
+
+
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("ifElse", "ifElse"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
+            }
+            }
+            if (ifCondFailed2) {
+                return@run
+            }
+
+
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterIfCond", "afterIfCond"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
+            }
+                }
+                // W3C SCXML 3.8: Onentry block 7/9
+                run {
+
+
+            var ifCondFailed3 = false
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("false", "false")) { ifCondFailed3 = true }) {
+
+
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("elseifThen", "elseifThen"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
+                return@run
+            }
+            } else if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("_scxml_truthy(obj.missing.deep)", "obj.missing.deep")) { ifCondFailed3 = true }) {
+
+
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("elseifThen", "elseifThen"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
+            }
+            } else {
+
+
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("elseifElse", "elseifElse"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
+            }
+            }
+            if (ifCondFailed3) {
+                return@run
+            }
+
+
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterElseifCond", "afterElseifCond"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
+            }
+                }
+                // W3C SCXML 3.8: Onentry block 8/9
+                run {
+
+
+            var ifCondFailed4 = false
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("true", "true")) { ifCondFailed4 = true }) {
+
+
+            var ifCondFailed5 = false
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("_scxml_truthy(obj.missing.deep)", "obj.missing.deep")) { ifCondFailed5 = true }) {
+
+
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("ifThen", "ifThen"), com.sce.runtime.ScriptSource.lua("2", "2"))) {
+                return@run
+            }
+            }
+            if (ifCondFailed5) {
+                return@run
+            }
+
+
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterNestedIf", "afterNestedIf"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
+            }
+            }
+            if (ifCondFailed4) {
+                return@run
+            }
+
+
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterOuterIf", "afterOuterIf"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
+            }
+                }
+                // W3C SCXML 3.8: Onentry block 9/9
                 run {
 
 
@@ -927,29 +1193,29 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine
+    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine
     override fun onExit(state: AnErrorEndsTheBlockItWasRaisedInState) {
         when (state) {
             is AnErrorEndsTheBlockItWasRaisedInState.Done -> {
-                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:112 :: done :: _state_body
+                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:156 :: done :: _state_body
             }
             is AnErrorEndsTheBlockItWasRaisedInState.P -> {
-                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:57 :: p :: _state_body
+                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:74 :: p :: _state_body
             }
             is AnErrorEndsTheBlockItWasRaisedInState.Q -> {
-                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:77 :: q :: _state_body
+                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:94 :: q :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine
+    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine
     override fun executeTransitionContent(source: AnErrorEndsTheBlockItWasRaisedInState, transitionIndex: Int) {
         when (source) {
         is AnErrorEndsTheBlockItWasRaisedInState.P -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:68 :: p :: _transition_0
+                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:85 :: p :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("errors", "errors"), com.sce.runtime.ScriptSource.lua("_scxml_add(errors, 1)", "errors + 1"))) {
@@ -957,7 +1223,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             }
             }
             1 -> {
-                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:71 :: p :: _transition_1
+                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:88 :: p :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"), com.sce.runtime.ScriptSource.lua("1", "1"))) {

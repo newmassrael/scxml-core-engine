@@ -389,15 +389,31 @@ class ASelfSentEventNamesItsOriginStateMachine(
     // never left to guess which it got. The C++ sibling
     // (`process_transition.jinja2`) takes the same argument for the same
     // reason.
-    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean =
+        evaluateGuardRaising(guardExpr, "a <transition> cond failed to evaluate") ?: false
+
+    // W3C SCXML 5.9.1 + 4.9: an <if> or <elseif> cond, evaluated and reported
+    // as a transition guard is. A failure also runs [onFailure]: the <if>
+    // still selects on `false`, and is then the element whose processing
+    // raised, so its block ends after it.
+    @Suppress("unused")
+    private inline fun evaluateIfCond(guardExpr: com.sce.runtime.ScriptSource, onFailure: () -> Unit): Boolean {
+        val result = evaluateGuardRaising(guardExpr, "an <if> cond failed to evaluate")
+        if (result == null) onFailure()
+        return result ?: false
+    }
+
+    // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
+    // `null` says so, where a bare `false` could not.
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "a <transition> cond failed to evaluate")
-            false
+            raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, reason)
+            null
         }
     }
 
@@ -779,12 +795,16 @@ class ASelfSentEventNamesItsOriginStateMachine(
                 // SCE-MAP: a_self_sent_event_names_its_origin.scxml:71 :: delayed :: _transition_0
 
 
-            if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.origin == _ioprocessors.scxml.location)", "_event.origin === _ioprocessors['scxml'].location"))) {
+            var ifCondFailed2 = false
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(_event.origin == _ioprocessors.scxml.location)", "_event.origin === _ioprocessors['scxml'].location")) { ifCondFailed2 = true }) {
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("delayedOk", "delayedOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
+            }
+            if (ifCondFailed2) {
+                return
             }
             }
             else -> {}
@@ -794,12 +814,16 @@ class ASelfSentEventNamesItsOriginStateMachine(
                 // SCE-MAP: a_self_sent_event_names_its_origin.scxml:53 :: immediate :: _transition_0
 
 
-            if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.origin == _ioprocessors.scxml.location)", "_event.origin === _ioprocessors['scxml'].location"))) {
+            var ifCondFailed1 = false
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(_event.origin == _ioprocessors.scxml.location)", "_event.origin === _ioprocessors['scxml'].location")) { ifCondFailed1 = true }) {
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("immediateOk", "immediateOk"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
+            }
+            if (ifCondFailed1) {
+                return
             }
 
 

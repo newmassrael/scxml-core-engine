@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a2c2cff50069419be8be154770909e1b36918691efa802737abe7a86046c62a8
+// source-hash: b0ef9e173278564420c2e6be5ad06d376c615a4162d9ec67007ff7e1f2e21834
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine
+// SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine
 
 package an_error_ends_the_block_it_was_raised_in
 
@@ -294,6 +294,102 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) AfterIf() (int64, bool) {
 	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "afterIf")
 }
 
+// IfThen reports what the `ifThen` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `ifThen` was assigned a value of another type, or the engine refused.
+func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) IfThen() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "ifThen")
+}
+
+// IfElse reports what the `ifElse` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `ifElse` was assigned a value of another type, or the engine refused.
+func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) IfElse() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "ifElse")
+}
+
+// AfterIfCond reports what the `afterIfCond` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `afterIfCond` was assigned a value of another type, or the engine refused.
+func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) AfterIfCond() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "afterIfCond")
+}
+
+// ElseifThen reports what the `elseifThen` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `elseifThen` was assigned a value of another type, or the engine refused.
+func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ElseifThen() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "elseifThen")
+}
+
+// ElseifElse reports what the `elseifElse` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `elseifElse` was assigned a value of another type, or the engine refused.
+func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ElseifElse() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "elseifElse")
+}
+
+// AfterElseifCond reports what the `afterElseifCond` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `afterElseifCond` was assigned a value of another type, or the engine refused.
+func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) AfterElseifCond() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "afterElseifCond")
+}
+
+// AfterNestedIf reports what the `afterNestedIf` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `afterNestedIf` was assigned a value of another type, or the engine refused.
+func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) AfterNestedIf() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "afterNestedIf")
+}
+
+// AfterOuterIf reports what the `afterOuterIf` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `afterOuterIf` was assigned a value of another type, or the engine refused.
+func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) AfterOuterIf() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "afterOuterIf")
+}
+
 // AfterSingle reports what the `afterSingle` datamodel variable is holding now
 // (W3C SCXML 5.3).
 //
@@ -541,6 +637,86 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) InitializeDataModel(eng *sce.En
 			_ = engine.SetVariable(sessionID, "afterIf", nil)
 		}
 	}
+	// W3C SCXML 5.2/5.3: Initialize ifThen from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "ifThen", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<data id='ifThen'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "ifThen", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize ifElse from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "ifElse", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<data id='ifElse'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "ifElse", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize afterIfCond from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "afterIfCond", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<data id='afterIfCond'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "afterIfCond", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize elseifThen from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "elseifThen", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<data id='elseifThen'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "elseifThen", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize elseifElse from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "elseifElse", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<data id='elseifElse'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "elseifElse", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize afterElseifCond from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "afterElseifCond", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<data id='afterElseifCond'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "afterElseifCond", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize afterNestedIf from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "afterNestedIf", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<data id='afterNestedIf'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "afterNestedIf", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize afterOuterIf from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "afterOuterIf", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<data id='afterOuterIf'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "afterOuterIf", nil)
+		}
+	}
 	// W3C SCXML 5.2/5.3: Initialize afterSingle from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)
@@ -663,14 +839,34 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) InitializeDataModel(eng *sce.En
 // W3C SCXML 4.3.2: If a condition expression cannot be evaluated, the processor
 // MUST treat it as false and MUST raise error.execution.
 func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) evaluateGuard(guard string, eng *sce.Engine[AnErrorEndsTheBlockItWasRaisedInState, AnErrorEndsTheBlockItWasRaisedInEvent]) bool {
+	value, _ := p.evaluateGuardRaising(guard, eng, "a <transition> cond failed to evaluate")
+	return value
+}
+
+// evaluateIfCond evaluates an <if> or <elseif> cond as evaluateGuard does, and
+// also records a failure in condFailed. W3C SCXML 5.9.1 + 4.9: the <if> still
+// selects on false, and is then the element whose processing raised, so its
+// block ends after it.
+func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) evaluateIfCond(guard string, eng *sce.Engine[AnErrorEndsTheBlockItWasRaisedInState, AnErrorEndsTheBlockItWasRaisedInEvent], condFailed *bool) bool {
+	value, ok := p.evaluateGuardRaising(guard, eng, "an <if> cond failed to evaluate")
+	if !ok {
+		*condFailed = true
+	}
+	return value
+}
+
+// evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
+// be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
+// not say so.
+func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnErrorEndsTheBlockItWasRaisedInState, AnErrorEndsTheBlockItWasRaisedInEvent], reason string) (value bool, ok bool) {
 	p.ensureScriptEngine()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "a <transition> cond failed to evaluate"))
-		return false
+		eng.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, reason))
+		return false, false
 	}
-	return sce.ScriptToBool(result)
+	return sce.ScriptToBool(result), true
 }
 
 // executeScript executes a script block via script engine.
@@ -984,12 +1180,12 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line an_error_ends_the_block_it_was_raised_in.scxml:33
+//line an_error_ends_the_block_it_was_raised_in.scxml:42
 func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteEntryActions(state AnErrorEndsTheBlockItWasRaisedInState, engine *sce.Engine[AnErrorEndsTheBlockItWasRaisedInState, AnErrorEndsTheBlockItWasRaisedInEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case AnErrorEndsTheBlockItWasRaisedInStateP:
-		//line an_error_ends_the_block_it_was_raised_in.scxml:57
+		//line an_error_ends_the_block_it_was_raised_in.scxml:74
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1023,7 +1219,7 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteEntryActions(state AnErr
 			}()
 		}
 	case AnErrorEndsTheBlockItWasRaisedInStateQ:
-		//line an_error_ends_the_block_it_was_raised_in.scxml:77
+		//line an_error_ends_the_block_it_was_raised_in.scxml:94
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1112,7 +1308,9 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteEntryActions(state AnErr
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
 
-	if p.evaluateGuard(`true`, engine) {
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`true`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="obj.missing.deep" expr="1">
 	if err := p.assignVariable(`obj.missing.deep`, `1`); err != nil {
@@ -1128,6 +1326,11 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteEntryActions(state AnErr
 	}
 
 	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
 
 	// W3C SCXML 5.3: <assign location="afterIf" expr="1">
 	if err := p.assignVariable(`afterIf`, `1`); err != nil {
@@ -1137,6 +1340,131 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteEntryActions(state AnErr
 
 		}()
 		// W3C SCXML 3.8 + 4.9: onentry block 5, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
+
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`_scxml_truthy(obj.missing.deep)`, engine, &ifCondFailed) {
+
+	// W3C SCXML 5.3: <assign location="ifThen" expr="1">
+	if err := p.assignVariable(`ifThen`, `1`); err != nil {
+		engine.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<assign> to 'ifThen' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+	} else {
+
+	// W3C SCXML 5.3: <assign location="ifElse" expr="1">
+	if err := p.assignVariable(`ifElse`, `1`); err != nil {
+		engine.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<assign> to 'ifElse' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
+
+	// W3C SCXML 5.3: <assign location="afterIfCond" expr="1">
+	if err := p.assignVariable(`afterIfCond`, `1`); err != nil {
+		engine.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<assign> to 'afterIfCond' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+		}()
+		// W3C SCXML 3.8 + 4.9: onentry block 6, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
+
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`false`, engine, &ifCondFailed) {
+
+	// W3C SCXML 5.3: <assign location="elseifThen" expr="2">
+	if err := p.assignVariable(`elseifThen`, `2`); err != nil {
+		engine.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<assign> to 'elseifThen' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+	} else if p.evaluateIfCond(`_scxml_truthy(obj.missing.deep)`, engine, &ifCondFailed) {
+
+	// W3C SCXML 5.3: <assign location="elseifThen" expr="1">
+	if err := p.assignVariable(`elseifThen`, `1`); err != nil {
+		engine.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<assign> to 'elseifThen' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+	} else {
+
+	// W3C SCXML 5.3: <assign location="elseifElse" expr="1">
+	if err := p.assignVariable(`elseifElse`, `1`); err != nil {
+		engine.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<assign> to 'elseifElse' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
+
+	// W3C SCXML 5.3: <assign location="afterElseifCond" expr="1">
+	if err := p.assignVariable(`afterElseifCond`, `1`); err != nil {
+		engine.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<assign> to 'afterElseifCond' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+		}()
+		// W3C SCXML 3.8 + 4.9: onentry block 7, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
+
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`true`, engine, &ifCondFailed) {
+
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`_scxml_truthy(obj.missing.deep)`, engine, &ifCondFailed) {
+
+	// W3C SCXML 5.3: <assign location="ifThen" expr="2">
+	if err := p.assignVariable(`ifThen`, `2`); err != nil {
+		engine.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<assign> to 'ifThen' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
+
+	// W3C SCXML 5.3: <assign location="afterNestedIf" expr="1">
+	if err := p.assignVariable(`afterNestedIf`, `1`); err != nil {
+		engine.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<assign> to 'afterNestedIf' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
+
+	// W3C SCXML 5.3: <assign location="afterOuterIf" expr="1">
+	if err := p.assignVariable(`afterOuterIf`, `1`); err != nil {
+		engine.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<assign> to 'afterOuterIf' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+		}()
+		// W3C SCXML 3.8 + 4.9: onentry block 8, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
 
@@ -1230,7 +1558,7 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteEntryActions(state AnErr
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line an_error_ends_the_block_it_was_raised_in.scxml:33
+//line an_error_ends_the_block_it_was_raised_in.scxml:42
 func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[AnErrorEndsTheBlockItWasRaisedInState, AnErrorEndsTheBlockItWasRaisedInEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1238,7 +1566,7 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteHistoryDefaultContent(hi
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line an_error_ends_the_block_it_was_raised_in.scxml:33
+//line an_error_ends_the_block_it_was_raised_in.scxml:42
 func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteExitActions(state AnErrorEndsTheBlockItWasRaisedInState, engine *sce.Engine[AnErrorEndsTheBlockItWasRaisedInState, AnErrorEndsTheBlockItWasRaisedInEvent], configurationBeforeExit []AnErrorEndsTheBlockItWasRaisedInState) {
 	p.ensureScriptEngine()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
@@ -1256,7 +1584,7 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteExitActions(state AnErro
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line an_error_ends_the_block_it_was_raised_in.scxml:33
+//line an_error_ends_the_block_it_was_raised_in.scxml:42
 func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) BindCurrentEvent(event AnErrorEndsTheBlockItWasRaisedInEvent, engine *sce.Engine[AnErrorEndsTheBlockItWasRaisedInState, AnErrorEndsTheBlockItWasRaisedInEvent]) {
 	if event != AnErrorEndsTheBlockItWasRaisedInEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
@@ -1271,7 +1599,7 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) BindCurrentEvent(event AnErrorE
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line an_error_ends_the_block_it_was_raised_in.scxml:33
+//line an_error_ends_the_block_it_was_raised_in.scxml:42
 func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) FirstEnabledTransition(state AnErrorEndsTheBlockItWasRaisedInState, event AnErrorEndsTheBlockItWasRaisedInEvent, engine *sce.Engine[AnErrorEndsTheBlockItWasRaisedInState, AnErrorEndsTheBlockItWasRaisedInEvent]) (sce.EnabledTransition[AnErrorEndsTheBlockItWasRaisedInState, sce.HistoryID], bool) {
 	switch state {
 	case AnErrorEndsTheBlockItWasRaisedInStateP:
@@ -1312,14 +1640,14 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) FirstEnabledTransition(state An
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line an_error_ends_the_block_it_was_raised_in.scxml:33
+//line an_error_ends_the_block_it_was_raised_in.scxml:42
 func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteTransitionContent(source AnErrorEndsTheBlockItWasRaisedInState, transitionIndex int, engine *sce.Engine[AnErrorEndsTheBlockItWasRaisedInState, AnErrorEndsTheBlockItWasRaisedInEvent]) {
 	p.ensureScriptEngine()
 	switch source {
 	case AnErrorEndsTheBlockItWasRaisedInStateP:
 		switch transitionIndex {
 		case 0:
-			//line an_error_ends_the_block_it_was_raised_in.scxml:68
+			//line an_error_ends_the_block_it_was_raised_in.scxml:85
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1331,7 +1659,7 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteTransitionContent(source
 
 			}()
 		case 1:
-			//line an_error_ends_the_block_it_was_raised_in.scxml:71
+			//line an_error_ends_the_block_it_was_raised_in.scxml:88
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

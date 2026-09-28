@@ -451,14 +451,34 @@ func (p *ASelfSentEventNamesItsOriginPolicy) InitializeDataModel(eng *sce.Engine
 // W3C SCXML 4.3.2: If a condition expression cannot be evaluated, the processor
 // MUST treat it as false and MUST raise error.execution.
 func (p *ASelfSentEventNamesItsOriginPolicy) evaluateGuard(guard string, eng *sce.Engine[ASelfSentEventNamesItsOriginState, ASelfSentEventNamesItsOriginEvent]) bool {
+	value, _ := p.evaluateGuardRaising(guard, eng, "a <transition> cond failed to evaluate")
+	return value
+}
+
+// evaluateIfCond evaluates an <if> or <elseif> cond as evaluateGuard does, and
+// also records a failure in condFailed. W3C SCXML 5.9.1 + 4.9: the <if> still
+// selects on false, and is then the element whose processing raised, so its
+// block ends after it.
+func (p *ASelfSentEventNamesItsOriginPolicy) evaluateIfCond(guard string, eng *sce.Engine[ASelfSentEventNamesItsOriginState, ASelfSentEventNamesItsOriginEvent], condFailed *bool) bool {
+	value, ok := p.evaluateGuardRaising(guard, eng, "an <if> cond failed to evaluate")
+	if !ok {
+		*condFailed = true
+	}
+	return value
+}
+
+// evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
+// be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
+// not say so.
+func (p *ASelfSentEventNamesItsOriginPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ASelfSentEventNamesItsOriginState, ASelfSentEventNamesItsOriginEvent], reason string) (value bool, ok bool) {
 	p.ensureScriptEngine()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "a <transition> cond failed to evaluate"))
-		return false
+		eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, reason))
+		return false, false
 	}
-	return sce.ScriptToBool(result)
+	return sce.ScriptToBool(result), true
 }
 
 // executeScript executes a script block via script engine.
@@ -1111,7 +1131,9 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
-	if p.evaluateGuard(`(_event.origin == _ioprocessors.scxml.location)`, engine) {
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`(_event.origin == _ioprocessors.scxml.location)`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="delayedOk" expr="1">
 	if err := p.assignVariable(`delayedOk`, `1`); err != nil {
@@ -1120,6 +1142,11 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 	}
 
 	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
 			}()
 		}
 	case ASelfSentEventNamesItsOriginStateImmediate:
@@ -1129,7 +1156,9 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
-	if p.evaluateGuard(`(_event.origin == _ioprocessors.scxml.location)`, engine) {
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`(_event.origin == _ioprocessors.scxml.location)`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="immediateOk" expr="1">
 	if err := p.assignVariable(`immediateOk`, `1`); err != nil {
@@ -1138,6 +1167,11 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 	}
 
 	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{

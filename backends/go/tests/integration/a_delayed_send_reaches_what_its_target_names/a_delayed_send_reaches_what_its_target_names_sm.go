@@ -508,14 +508,34 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) InitializeDataModel(eng *s
 // W3C SCXML 4.3.2: If a condition expression cannot be evaluated, the processor
 // MUST treat it as false and MUST raise error.execution.
 func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) evaluateGuard(guard string, eng *sce.Engine[ADelayedSendReachesWhatItsTargetNamesState, ADelayedSendReachesWhatItsTargetNamesEvent]) bool {
+	value, _ := p.evaluateGuardRaising(guard, eng, "a <transition> cond failed to evaluate")
+	return value
+}
+
+// evaluateIfCond evaluates an <if> or <elseif> cond as evaluateGuard does, and
+// also records a failure in condFailed. W3C SCXML 5.9.1 + 4.9: the <if> still
+// selects on false, and is then the element whose processing raised, so its
+// block ends after it.
+func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) evaluateIfCond(guard string, eng *sce.Engine[ADelayedSendReachesWhatItsTargetNamesState, ADelayedSendReachesWhatItsTargetNamesEvent], condFailed *bool) bool {
+	value, ok := p.evaluateGuardRaising(guard, eng, "an <if> cond failed to evaluate")
+	if !ok {
+		*condFailed = true
+	}
+	return value
+}
+
+// evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
+// be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
+// not say so.
+func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ADelayedSendReachesWhatItsTargetNamesState, ADelayedSendReachesWhatItsTargetNamesEvent], reason string) (value bool, ok bool) {
 	p.ensureScriptEngine()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ADelayedSendReachesWhatItsTargetNamesEventErrorExecution, "a <transition> cond failed to evaluate"))
-		return false
+		eng.Raise(sce.NewPlatformError(ADelayedSendReachesWhatItsTargetNamesEventErrorExecution, reason))
+		return false, false
 	}
-	return sce.ScriptToBool(result)
+	return sce.ScriptToBool(result), true
 }
 
 // executeScript executes a script block via script engine.
@@ -1388,7 +1408,9 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 	}
 
 
-	if p.evaluateGuard(`(_event.type == "internal")`, engine) {
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`(_event.type == "internal")`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="innerInternal" expr="1">
 	if err := p.assignVariable(`innerInternal`, `1`); err != nil {
@@ -1397,6 +1419,11 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 	}
 
 	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
 			}()
 		case 2:
 			//line a_delayed_send_reaches_what_its_target_names.scxml:123
@@ -1422,7 +1449,9 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 	}
 
 
-	if p.evaluateGuard(`(_event.data == 5)`, engine) {
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`(_event.data == 5)`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="lateOk" expr="1">
 	if err := p.assignVariable(`lateOk`, `1`); err != nil {
@@ -1431,6 +1460,11 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 	}
 
 	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
 			}()
 		case 4:
 			//line a_delayed_send_reaches_what_its_target_names.scxml:132
@@ -1563,7 +1597,9 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
-	if p.evaluateGuard(`(_event.data == 8)`, engine) {
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`(_event.data == 8)`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="pongOk" expr="1">
 	if err := p.assignVariable(`pongOk`, `1`); err != nil {
@@ -1572,6 +1608,11 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 	}
 
 	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
 
 	// W3C SCXML 6.2: send id="__send_3"
 	{

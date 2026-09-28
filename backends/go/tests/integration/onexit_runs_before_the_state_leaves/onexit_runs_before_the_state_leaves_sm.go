@@ -449,14 +449,34 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) InitializeDataModel(eng *sce.Engi
 // W3C SCXML 4.3.2: If a condition expression cannot be evaluated, the processor
 // MUST treat it as false and MUST raise error.execution.
 func (p *OnexitRunsBeforeTheStateLeavesPolicy) evaluateGuard(guard string, eng *sce.Engine[OnexitRunsBeforeTheStateLeavesState, OnexitRunsBeforeTheStateLeavesEvent]) bool {
+	value, _ := p.evaluateGuardRaising(guard, eng, "a <transition> cond failed to evaluate")
+	return value
+}
+
+// evaluateIfCond evaluates an <if> or <elseif> cond as evaluateGuard does, and
+// also records a failure in condFailed. W3C SCXML 5.9.1 + 4.9: the <if> still
+// selects on false, and is then the element whose processing raised, so its
+// block ends after it.
+func (p *OnexitRunsBeforeTheStateLeavesPolicy) evaluateIfCond(guard string, eng *sce.Engine[OnexitRunsBeforeTheStateLeavesState, OnexitRunsBeforeTheStateLeavesEvent], condFailed *bool) bool {
+	value, ok := p.evaluateGuardRaising(guard, eng, "an <if> cond failed to evaluate")
+	if !ok {
+		*condFailed = true
+	}
+	return value
+}
+
+// evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
+// be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
+// not say so.
+func (p *OnexitRunsBeforeTheStateLeavesPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[OnexitRunsBeforeTheStateLeavesState, OnexitRunsBeforeTheStateLeavesEvent], reason string) (value bool, ok bool) {
 	p.ensureScriptEngine()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "a <transition> cond failed to evaluate"))
-		return false
+		eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, reason))
+		return false, false
 	}
-	return sce.ScriptToBool(result)
+	return sce.ScriptToBool(result), true
 }
 
 // executeScript executes a script block via script engine.
@@ -857,6 +877,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 
 	}
 
+
 	if p.IsStateActive("outer") {
 
 	// W3C SCXML 5.3: <assign location="parentInInner" expr="1">
@@ -866,6 +887,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 	}
 
 	}
+
 		}()
 	case OnexitRunsBeforeTheStateLeavesStateOuter:
 		//line onexit_runs_before_the_state_leaves.scxml:45
@@ -890,6 +912,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 
 	}
 
+
 	if p.IsStateActive("inner") {
 
 	// W3C SCXML 5.3: <assign location="childInOuter" expr="1">
@@ -899,6 +922,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 	}
 
 	}
+
 		}()
 	default:
 		// No exit actions

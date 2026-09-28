@@ -447,14 +447,34 @@ func (p *WildcardInDocumentOrderPolicy) InitializeDataModel(eng *sce.Engine[Wild
 // W3C SCXML 4.3.2: If a condition expression cannot be evaluated, the processor
 // MUST treat it as false and MUST raise error.execution.
 func (p *WildcardInDocumentOrderPolicy) evaluateGuard(guard string, eng *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent]) bool {
+	value, _ := p.evaluateGuardRaising(guard, eng, "a <transition> cond failed to evaluate")
+	return value
+}
+
+// evaluateIfCond evaluates an <if> or <elseif> cond as evaluateGuard does, and
+// also records a failure in condFailed. W3C SCXML 5.9.1 + 4.9: the <if> still
+// selects on false, and is then the element whose processing raised, so its
+// block ends after it.
+func (p *WildcardInDocumentOrderPolicy) evaluateIfCond(guard string, eng *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent], condFailed *bool) bool {
+	value, ok := p.evaluateGuardRaising(guard, eng, "an <if> cond failed to evaluate")
+	if !ok {
+		*condFailed = true
+	}
+	return value
+}
+
+// evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
+// be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
+// not say so.
+func (p *WildcardInDocumentOrderPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent], reason string) (value bool, ok bool) {
 	p.ensureScriptEngine()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, "a <transition> cond failed to evaluate"))
-		return false
+		eng.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, reason))
+		return false, false
 	}
-	return sce.ScriptToBool(result)
+	return sce.ScriptToBool(result), true
 }
 
 // executeScript executes a script block via script engine.

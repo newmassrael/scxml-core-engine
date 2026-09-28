@@ -341,14 +341,34 @@ func (p *EventTypeNamesItsQueuePolicy) InitializeDataModel(eng *sce.Engine[Event
 // W3C SCXML 4.3.2: If a condition expression cannot be evaluated, the processor
 // MUST treat it as false and MUST raise error.execution.
 func (p *EventTypeNamesItsQueuePolicy) evaluateGuard(guard string, eng *sce.Engine[EventTypeNamesItsQueueState, EventTypeNamesItsQueueEvent]) bool {
+	value, _ := p.evaluateGuardRaising(guard, eng, "a <transition> cond failed to evaluate")
+	return value
+}
+
+// evaluateIfCond evaluates an <if> or <elseif> cond as evaluateGuard does, and
+// also records a failure in condFailed. W3C SCXML 5.9.1 + 4.9: the <if> still
+// selects on false, and is then the element whose processing raised, so its
+// block ends after it.
+func (p *EventTypeNamesItsQueuePolicy) evaluateIfCond(guard string, eng *sce.Engine[EventTypeNamesItsQueueState, EventTypeNamesItsQueueEvent], condFailed *bool) bool {
+	value, ok := p.evaluateGuardRaising(guard, eng, "an <if> cond failed to evaluate")
+	if !ok {
+		*condFailed = true
+	}
+	return value
+}
+
+// evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
+// be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
+// not say so.
+func (p *EventTypeNamesItsQueuePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EventTypeNamesItsQueueState, EventTypeNamesItsQueueEvent], reason string) (value bool, ok bool) {
 	p.ensureScriptEngine()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "a <transition> cond failed to evaluate"))
-		return false
+		eng.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, reason))
+		return false, false
 	}
-	return sce.ScriptToBool(result)
+	return sce.ScriptToBool(result), true
 }
 
 // executeScript executes a script block via script engine.
@@ -829,7 +849,9 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
-	if p.evaluateGuard(`_scxml_eq(_event.type, "internal")`, engine) {
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`_scxml_eq(_event.type, "internal")`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="intCode" expr="1">
 	if err := p.assignVariable(`intCode`, `1`); err != nil {
@@ -837,7 +859,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-	} else if p.evaluateGuard(`_scxml_eq(_event.type, "external")`, engine) {
+	} else if p.evaluateIfCond(`_scxml_eq(_event.type, "external")`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="intCode" expr="2">
 	if err := p.assignVariable(`intCode`, `2`); err != nil {
@@ -854,13 +876,20 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 	}
 
 	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
 			}()
 		case 1:
 			//line event_type_names_its_queue.scxml:58
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
-	if p.evaluateGuard(`_scxml_eq(_event.type, "internal")`, engine) {
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`_scxml_eq(_event.type, "internal")`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="sendCode" expr="1">
 	if err := p.assignVariable(`sendCode`, `1`); err != nil {
@@ -868,7 +897,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-	} else if p.evaluateGuard(`_scxml_eq(_event.type, "external")`, engine) {
+	} else if p.evaluateIfCond(`_scxml_eq(_event.type, "external")`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="sendCode" expr="2">
 	if err := p.assignVariable(`sendCode`, `2`); err != nil {
@@ -885,13 +914,20 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 	}
 
 	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
 			}()
 		case 2:
 			//line event_type_names_its_queue.scxml:68
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
-	if p.evaluateGuard(`_scxml_eq(_event.type, "internal")`, engine) {
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`_scxml_eq(_event.type, "internal")`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="extCode" expr="1">
 	if err := p.assignVariable(`extCode`, `1`); err != nil {
@@ -899,7 +935,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-	} else if p.evaluateGuard(`_scxml_eq(_event.type, "external")`, engine) {
+	} else if p.evaluateIfCond(`_scxml_eq(_event.type, "external")`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="extCode" expr="2">
 	if err := p.assignVariable(`extCode`, `2`); err != nil {
@@ -916,6 +952,11 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 	}
 
 	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
 			}()
 		}
 	}

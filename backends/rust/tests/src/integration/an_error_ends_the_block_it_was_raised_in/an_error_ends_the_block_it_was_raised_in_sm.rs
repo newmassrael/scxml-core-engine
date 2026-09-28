@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a2c2cff50069419be8be154770909e1b36918691efa802737abe7a86046c62a8
+// source-hash: b0ef9e173278564420c2e6be5ad06d376c615a4162d9ec67007ff7e1f2e21834
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine"]
-// SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine
+#![doc = "SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine"]
+// SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -284,6 +284,126 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
             self.script_engine.as_ref(),
             self.session_id.as_deref(),
             "afterIf",
+        )
+    }
+
+    /// §scxml-5.3: what the `ifThen` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `ifThen` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn if_then(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "ifThen",
+        )
+    }
+
+    /// §scxml-5.3: what the `ifElse` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `ifElse` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn if_else(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "ifElse",
+        )
+    }
+
+    /// §scxml-5.3: what the `afterIfCond` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `afterIfCond` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn after_if_cond(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "afterIfCond",
+        )
+    }
+
+    /// §scxml-5.3: what the `elseifThen` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `elseifThen` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn elseif_then(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "elseifThen",
+        )
+    }
+
+    /// §scxml-5.3: what the `elseifElse` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `elseifElse` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn elseif_else(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "elseifElse",
+        )
+    }
+
+    /// §scxml-5.3: what the `afterElseifCond` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `afterElseifCond` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn after_elseif_cond(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "afterElseifCond",
+        )
+    }
+
+    /// §scxml-5.3: what the `afterNestedIf` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `afterNestedIf` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn after_nested_if(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "afterNestedIf",
+        )
+    }
+
+    /// §scxml-5.3: what the `afterOuterIf` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `afterOuterIf` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn after_outer_if(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "afterOuterIf",
         )
     }
 
@@ -570,6 +690,80 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
+        // W3C SCXML 5.2/5.3: Initialize 'ifThen' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "ifThen", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'ifElse' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "ifElse", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'afterIfCond' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "afterIfCond",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'elseifThen' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "elseifThen",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'elseifElse' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "elseifElse",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'afterElseifCond' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "afterElseifCond",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'afterNestedIf' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "afterNestedIf",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'afterOuterIf' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "afterOuterIf",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
         // W3C SCXML 5.2/5.3: Initialize 'afterSingle' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se,
@@ -764,6 +958,112 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
             ));
         }
 
+        // W3C SCXML 5.2/5.3: Initialize 'ifThen' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "ifThen", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                "<data id='ifThen'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'ifElse' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "ifElse", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                "<data id='ifElse'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'afterIfCond' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "afterIfCond",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                "<data id='afterIfCond'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'elseifThen' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "elseifThen",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                "<data id='elseifThen'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'elseifElse' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "elseifElse",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                "<data id='elseifElse'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'afterElseifCond' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "afterElseifCond",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                "<data id='afterElseifCond'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'afterNestedIf' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "afterNestedIf",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                "<data id='afterNestedIf'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'afterOuterIf' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "afterOuterIf",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                "<data id='afterOuterIf'> expr failed to evaluate",
+            ));
+        }
+
         // W3C SCXML 5.2/5.3: Initialize 'afterSingle' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se,
@@ -885,19 +1185,47 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
 
     // W3C SCXML 5.9: Safe guard evaluation with error handling
     fn safe_evaluate_guard(&mut self, cond: &str, engine: &mut Engine<Self>) -> bool {
+        self.evaluate_guard_raising(cond, engine, "a <transition> cond failed to evaluate")
+            .unwrap_or(false)
+    }
+
+    // W3C SCXML 5.9.1 + 4.9: an <if> or <elseif> cond. It is evaluated and
+    // reported as a transition guard is, and a failure is also recorded in
+    // `cond_failed`: the <if> still selects on `false`, and is then the
+    // element whose processing raised, so its block ends after it.
+    #[allow(dead_code)]
+    fn evaluate_if_cond(
+        &mut self,
+        cond: &str,
+        engine: &mut Engine<Self>,
+        cond_failed: &mut bool,
+    ) -> bool {
+        let result = self.evaluate_guard_raising(cond, engine, "an <if> cond failed to evaluate");
+        *cond_failed = *cond_failed || result.is_none();
+        result.unwrap_or(false)
+    }
+
+    // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
+    // `None` says so, where a bare `false` could not.
+    fn evaluate_guard_raising(
+        &mut self,
+        cond: &str,
+        engine: &mut Engine<Self>,
+        reason: &str,
+    ) -> Option<bool> {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, cond) {
-            Ok(val) => val.to_bool(),
+            Ok(val) => Some(val.to_bool()),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                    "a <transition> cond failed to evaluate",
+                    reason,
                 ));
-                false
+                None
             }
         }
     }
@@ -1199,8 +1527,8 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine"]
-    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine
+    #[doc = "SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine"]
+    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1209,7 +1537,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
     ) {
         match state {
             AnErrorEndsTheBlockItWasRaisedInState::P => {
-                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:57 :: p :: _state_body
+                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:74 :: p :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1301,8 +1629,8 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                 }
             }
             AnErrorEndsTheBlockItWasRaisedInState::Q => {
-                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:77 :: q :: _state_body
-                // W3C SCXML 3.8: onentry block 1/6
+                // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:94 :: q :: _state_body
+                // W3C SCXML 3.8: onentry block 1/9
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
@@ -1357,7 +1685,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                         }
                     }
                 }
-                // W3C SCXML 3.8: onentry block 2/6
+                // W3C SCXML 3.8: onentry block 2/9
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
@@ -1403,7 +1731,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                         }
                     }
                 }
-                // W3C SCXML 3.8: onentry block 3/6
+                // W3C SCXML 3.8: onentry block 3/9
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     // W3C SCXML 4.7: <log> with script engine expression
@@ -1458,7 +1786,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                         }
                     }
                 }
-                // W3C SCXML 3.8: onentry block 4/6
+                // W3C SCXML 3.8: onentry block 4/9
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     // W3C SCXML 6.3: <cancel sendidexpr="obj.missing.deep">
@@ -1516,61 +1844,71 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                         }
                     }
                 }
-                // W3C SCXML 3.8: onentry block 5/6
+                // W3C SCXML 3.8: onentry block 5/9
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 5.9: Script engine guard (true)
-                    if self.safe_evaluate_guard("true", engine) {
-                        {
-                            // W3C SCXML 5.3: <assign location="obj.missing.deep">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "1";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "obj.missing.deep", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'obj.missing.deep': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                                    "<assign> to 'obj.missing.deep' failed",
-                                ));
-                                // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                break 'action_block;
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: Script engine guard (true)
+                        if self.evaluate_if_cond("true", engine, &mut if_cond_failed) {
+                            {
+                                // W3C SCXML 5.3: <assign location="obj.missing.deep">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "1";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "obj.missing.deep", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'obj.missing.deep': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                                            "<assign> to 'obj.missing.deep' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
+                            }
+
+                            {
+                                // W3C SCXML 5.3: <assign location="afterIfInner">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "1";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "afterIfInner", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'afterIfInner': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                                            "<assign> to 'afterIfInner' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
                             }
                         }
-
-                        {
-                            // W3C SCXML 5.3: <assign location="afterIfInner">
-                            self.ensure_script_engine();
-                            let sid = self.session_id.as_ref().unwrap().clone();
-                            let se = self.script_engine.clone();
-                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "1";
-                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                            // through evaluate_expression + set_variable would round-trip through ScriptValue
-                            // and create a fresh table, breaking reference equality.
-                            let assign_script = format!("{} = {}", "afterIfInner", expr);
-                            if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                ::sce_rust_runtime::sce_log_error!(
-                                    "Assign failed for 'afterIfInner': {}",
-                                    e
-                                );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                                    "<assign> to 'afterIfInner' failed",
-                                ));
-                                // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                break 'action_block;
-                            }
+                        if if_cond_failed {
+                            break 'action_block;
                         }
                     }
 
@@ -1600,7 +1938,333 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                         }
                     }
                 }
-                // W3C SCXML 3.8: onentry block 6/6
+                // W3C SCXML 3.8: onentry block 6/9
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: Script engine guard (obj.missing.deep)
+                        if self.evaluate_if_cond(
+                            "_scxml_truthy(obj.missing.deep)",
+                            engine,
+                            &mut if_cond_failed,
+                        ) {
+                            {
+                                // W3C SCXML 5.3: <assign location="ifThen">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "1";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "ifThen", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'ifThen': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                                            "<assign> to 'ifThen' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
+                            }
+                        } else {
+                            {
+                                // W3C SCXML 5.3: <assign location="ifElse">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "1";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "ifElse", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'ifElse': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                                            "<assign> to 'ifElse' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
+                            }
+                        }
+                        if if_cond_failed {
+                            break 'action_block;
+                        }
+                    }
+
+                    {
+                        // W3C SCXML 5.3: <assign location="afterIfCond">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "1";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "afterIfCond", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'afterIfCond': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                                "<assign> to 'afterIfCond' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+                // W3C SCXML 3.8: onentry block 7/9
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: Script engine guard (false)
+                        if self.evaluate_if_cond("false", engine, &mut if_cond_failed) {
+                            {
+                                // W3C SCXML 5.3: <assign location="elseifThen">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "2";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "elseifThen", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'elseifThen': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                                            "<assign> to 'elseifThen' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
+                            }
+                        } else if self.evaluate_if_cond(
+                            "_scxml_truthy(obj.missing.deep)",
+                            engine,
+                            &mut if_cond_failed,
+                        ) {
+                            {
+                                // W3C SCXML 5.3: <assign location="elseifThen">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "1";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "elseifThen", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'elseifThen': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                                            "<assign> to 'elseifThen' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
+                            }
+                        } else {
+                            {
+                                // W3C SCXML 5.3: <assign location="elseifElse">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "1";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "elseifElse", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'elseifElse': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                                            "<assign> to 'elseifElse' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
+                            }
+                        }
+                        if if_cond_failed {
+                            break 'action_block;
+                        }
+                    }
+
+                    {
+                        // W3C SCXML 5.3: <assign location="afterElseifCond">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "1";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "afterElseifCond", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'afterElseifCond': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                                "<assign> to 'afterElseifCond' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+                // W3C SCXML 3.8: onentry block 8/9
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: Script engine guard (true)
+                        if self.evaluate_if_cond("true", engine, &mut if_cond_failed) {
+                            {
+                                let mut if_cond_failed = false;
+                                // W3C SCXML 5.9: Script engine guard (obj.missing.deep)
+                                if self.evaluate_if_cond(
+                                    "_scxml_truthy(obj.missing.deep)",
+                                    engine,
+                                    &mut if_cond_failed,
+                                ) {
+                                    {
+                                        // W3C SCXML 5.3: <assign location="ifThen">
+                                        self.ensure_script_engine();
+                                        let sid = self.session_id.as_ref().unwrap().clone();
+                                        let se = self.script_engine.clone();
+                                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                        let expr = "2";
+                                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                        // and create a fresh table, breaking reference equality.
+                                        let assign_script = format!("{} = {}", "ifThen", expr);
+                                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                            ::sce_rust_runtime::sce_log_error!(
+                                                "Assign failed for 'ifThen': {}",
+                                                e
+                                            );
+                                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution, "<assign> to 'ifThen' failed"));
+                                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                            break 'action_block;
+                                        }
+                                    }
+                                }
+                                if if_cond_failed {
+                                    break 'action_block;
+                                }
+                            }
+
+                            {
+                                // W3C SCXML 5.3: <assign location="afterNestedIf">
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                let expr = "1";
+                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                // and create a fresh table, breaking reference equality.
+                                let assign_script = format!("{} = {}", "afterNestedIf", expr);
+                                if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Assign failed for 'afterNestedIf': {}",
+                                        e
+                                    );
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                                            "<assign> to 'afterNestedIf' failed",
+                                        ),
+                                    );
+                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                    break 'action_block;
+                                }
+                            }
+                        }
+                        if if_cond_failed {
+                            break 'action_block;
+                        }
+                    }
+
+                    {
+                        // W3C SCXML 5.3: <assign location="afterOuterIf">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "1";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "afterOuterIf", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'afterOuterIf': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                                "<assign> to 'afterOuterIf' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+                // W3C SCXML 3.8: onentry block 9/9
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
@@ -1786,8 +2450,8 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine"]
-    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine
+    #[doc = "SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine"]
+    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1802,8 +2466,8 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine"]
-    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine
+    #[doc = "SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine"]
+    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -1847,8 +2511,8 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine"]
-    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine
+    #[doc = "SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine"]
+    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1900,8 +2564,8 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine"]
-    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:33 :: _machine
+    #[doc = "SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine"]
+    // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:42 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1912,7 +2576,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
             AnErrorEndsTheBlockItWasRaisedInState::P => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:68 :: p :: _transition_0
+                        // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:85 :: p :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1946,7 +2610,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:71 :: p :: _transition_1
+                        // SCE-MAP: an_error_ends_the_block_it_was_raised_in.scxml:88 :: p :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {

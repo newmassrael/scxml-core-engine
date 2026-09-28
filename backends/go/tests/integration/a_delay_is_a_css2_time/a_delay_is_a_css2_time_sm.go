@@ -407,14 +407,34 @@ func (p *ADelayIsACss2TimePolicy) InitializeDataModel(eng *sce.Engine[ADelayIsAC
 // W3C SCXML 4.3.2: If a condition expression cannot be evaluated, the processor
 // MUST treat it as false and MUST raise error.execution.
 func (p *ADelayIsACss2TimePolicy) evaluateGuard(guard string, eng *sce.Engine[ADelayIsACss2TimeState, ADelayIsACss2TimeEvent]) bool {
+	value, _ := p.evaluateGuardRaising(guard, eng, "a <transition> cond failed to evaluate")
+	return value
+}
+
+// evaluateIfCond evaluates an <if> or <elseif> cond as evaluateGuard does, and
+// also records a failure in condFailed. W3C SCXML 5.9.1 + 4.9: the <if> still
+// selects on false, and is then the element whose processing raised, so its
+// block ends after it.
+func (p *ADelayIsACss2TimePolicy) evaluateIfCond(guard string, eng *sce.Engine[ADelayIsACss2TimeState, ADelayIsACss2TimeEvent], condFailed *bool) bool {
+	value, ok := p.evaluateGuardRaising(guard, eng, "an <if> cond failed to evaluate")
+	if !ok {
+		*condFailed = true
+	}
+	return value
+}
+
+// evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
+// be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
+// not say so.
+func (p *ADelayIsACss2TimePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ADelayIsACss2TimeState, ADelayIsACss2TimeEvent], reason string) (value bool, ok bool) {
 	p.ensureScriptEngine()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "a <transition> cond failed to evaluate"))
-		return false
+		eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, reason))
+		return false, false
 	}
-	return sce.ScriptToBool(result)
+	return sce.ScriptToBool(result), true
 }
 
 // executeScript executes a script block via script engine.

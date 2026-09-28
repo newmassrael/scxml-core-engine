@@ -478,14 +478,34 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) InitializeDataModel(eng *sce.En
 // W3C SCXML 4.3.2: If a condition expression cannot be evaluated, the processor
 // MUST treat it as false and MUST raise error.execution.
 func (p *AHybridInvokeCarriesItsArgumentsPolicy) evaluateGuard(guard string, eng *sce.Engine[AHybridInvokeCarriesItsArgumentsState, AHybridInvokeCarriesItsArgumentsEvent]) bool {
+	value, _ := p.evaluateGuardRaising(guard, eng, "a <transition> cond failed to evaluate")
+	return value
+}
+
+// evaluateIfCond evaluates an <if> or <elseif> cond as evaluateGuard does, and
+// also records a failure in condFailed. W3C SCXML 5.9.1 + 4.9: the <if> still
+// selects on false, and is then the element whose processing raised, so its
+// block ends after it.
+func (p *AHybridInvokeCarriesItsArgumentsPolicy) evaluateIfCond(guard string, eng *sce.Engine[AHybridInvokeCarriesItsArgumentsState, AHybridInvokeCarriesItsArgumentsEvent], condFailed *bool) bool {
+	value, ok := p.evaluateGuardRaising(guard, eng, "an <if> cond failed to evaluate")
+	if !ok {
+		*condFailed = true
+	}
+	return value
+}
+
+// evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
+// be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
+// not say so.
+func (p *AHybridInvokeCarriesItsArgumentsPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AHybridInvokeCarriesItsArgumentsState, AHybridInvokeCarriesItsArgumentsEvent], reason string) (value bool, ok bool) {
 	p.ensureScriptEngine()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "a <transition> cond failed to evaluate"))
-		return false
+		eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, reason))
+		return false, false
 	}
-	return sce.ScriptToBool(result)
+	return sce.ScriptToBool(result), true
 }
 
 // executeScript executes a script block via script engine.
@@ -1839,7 +1859,9 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteTransitionContent(source
 	}
 
 
-	if p.evaluateGuard(`(((_event.data.seed == 41) and (_event.data.fromLoc == "unset")) and (_event.data.leak == "undefined"))`, engine) {
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`(((_event.data.seed == 41) and (_event.data.fromLoc == "unset")) and (_event.data.leak == "undefined"))`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="namelistOk" expr="1">
 	if err := p.assignVariable(`namelistOk`, `1`); err != nil {
@@ -1848,6 +1870,11 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteTransitionContent(source
 	}
 
 	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
 			}()
 		}
 	case AHybridInvokeCarriesItsArgumentsStateParamsPhase:
@@ -1864,7 +1891,9 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteTransitionContent(source
 	}
 
 
-	if p.evaluateGuard(`((((_event.data.seed == 42) and (_event.data.fromLoc == 7)) and (_event.data.emptyLoc == "unset")) and (_event.data.leak == "undefined"))`, engine) {
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`((((_event.data.seed == 42) and (_event.data.fromLoc == 7)) and (_event.data.emptyLoc == "unset")) and (_event.data.leak == "undefined"))`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="paramsOk" expr="1">
 	if err := p.assignVariable(`paramsOk`, `1`); err != nil {
@@ -1873,6 +1902,11 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteTransitionContent(source
 	}
 
 	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
 			}()
 		}
 	case AHybridInvokeCarriesItsArgumentsStateRefusedPhase:

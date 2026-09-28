@@ -378,15 +378,31 @@ class ASendContentExprIsThePayloadStateMachine(
     // never left to guess which it got. The C++ sibling
     // (`process_transition.jinja2`) takes the same argument for the same
     // reason.
-    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean {
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean =
+        evaluateGuardRaising(guardExpr, "a <transition> cond failed to evaluate") ?: false
+
+    // W3C SCXML 5.9.1 + 4.9: an <if> or <elseif> cond, evaluated and reported
+    // as a transition guard is. A failure also runs [onFailure]: the <if>
+    // still selects on `false`, and is then the element whose processing
+    // raised, so its block ends after it.
+    @Suppress("unused")
+    private inline fun evaluateIfCond(guardExpr: com.sce.runtime.ScriptSource, onFailure: () -> Unit): Boolean {
+        val result = evaluateGuardRaising(guardExpr, "an <if> cond failed to evaluate")
+        if (result == null) onFailure()
+        return result ?: false
+    }
+
+    // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
+    // `null` says so, where a bare `false` could not.
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "a <transition> cond failed to evaluate")
-            false
+            raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, reason)
+            null
         }
     }
 
@@ -767,12 +783,16 @@ class ASendContentExprIsThePayloadStateMachine(
             }
 
 
-            if (safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.data == \"\")", "_event.data === ''"))) {
+            var ifCondFailed1 = false
+            if (evaluateIfCond(com.sce.runtime.ScriptSource.lua("(_event.data == \"\")", "_event.data === ''")) { ifCondFailed1 = true }) {
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("badEmpty", "badEmpty"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
                 return
             }
+            }
+            if (ifCondFailed1) {
+                return
             }
             }
             else -> {}

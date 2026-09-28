@@ -462,14 +462,34 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) InitializeDataModel(eng *sce.En
 // W3C SCXML 4.3.2: If a condition expression cannot be evaluated, the processor
 // MUST treat it as false and MUST raise error.execution.
 func (p *ABadInvokeArgumentIsReportedOncePolicy) evaluateGuard(guard string, eng *sce.Engine[ABadInvokeArgumentIsReportedOnceState, ABadInvokeArgumentIsReportedOnceEvent]) bool {
+	value, _ := p.evaluateGuardRaising(guard, eng, "a <transition> cond failed to evaluate")
+	return value
+}
+
+// evaluateIfCond evaluates an <if> or <elseif> cond as evaluateGuard does, and
+// also records a failure in condFailed. W3C SCXML 5.9.1 + 4.9: the <if> still
+// selects on false, and is then the element whose processing raised, so its
+// block ends after it.
+func (p *ABadInvokeArgumentIsReportedOncePolicy) evaluateIfCond(guard string, eng *sce.Engine[ABadInvokeArgumentIsReportedOnceState, ABadInvokeArgumentIsReportedOnceEvent], condFailed *bool) bool {
+	value, ok := p.evaluateGuardRaising(guard, eng, "an <if> cond failed to evaluate")
+	if !ok {
+		*condFailed = true
+	}
+	return value
+}
+
+// evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
+// be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
+// not say so.
+func (p *ABadInvokeArgumentIsReportedOncePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ABadInvokeArgumentIsReportedOnceState, ABadInvokeArgumentIsReportedOnceEvent], reason string) (value bool, ok bool) {
 	p.ensureScriptEngine()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "a <transition> cond failed to evaluate"))
-		return false
+		eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, reason))
+		return false, false
 	}
-	return sce.ScriptToBool(result)
+	return sce.ScriptToBool(result), true
 }
 
 // executeScript executes a script block via script engine.
@@ -1476,7 +1496,9 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecuteTransitionContent(source
 	}
 
 
-	if p.evaluateGuard(`(_event.data.emptyLoc == "unset")`, engine) {
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`(_event.data.emptyLoc == "unset")`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="emptyLocLeftOut" expr="1">
 	if err := p.assignVariable(`emptyLocLeftOut`, `1`); err != nil {
@@ -1485,8 +1507,15 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecuteTransitionContent(source
 	}
 
 	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
 
-	if p.evaluateGuard(`(_event.data.broken == "unset")`, engine) {
+
+	{
+	ifCondFailed := false
+	if p.evaluateIfCond(`(_event.data.broken == "unset")`, engine, &ifCondFailed) {
 
 	// W3C SCXML 5.3: <assign location="brokenLeftOut" expr="1">
 	if err := p.assignVariable(`brokenLeftOut`, `1`); err != nil {
@@ -1495,6 +1524,11 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecuteTransitionContent(source
 	}
 
 	}
+	if ifCondFailed {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
 			}()
 		}
 	}

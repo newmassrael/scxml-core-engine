@@ -364,19 +364,47 @@ impl Test153Policy {
 
     // W3C SCXML 5.9: Safe guard evaluation with error handling
     fn safe_evaluate_guard(&mut self, cond: &str, engine: &mut Engine<Self>) -> bool {
+        self.evaluate_guard_raising(cond, engine, "a <transition> cond failed to evaluate")
+            .unwrap_or(false)
+    }
+
+    // W3C SCXML 5.9.1 + 4.9: an <if> or <elseif> cond. It is evaluated and
+    // reported as a transition guard is, and a failure is also recorded in
+    // `cond_failed`: the <if> still selects on `false`, and is then the
+    // element whose processing raised, so its block ends after it.
+    #[allow(dead_code)]
+    fn evaluate_if_cond(
+        &mut self,
+        cond: &str,
+        engine: &mut Engine<Self>,
+        cond_failed: &mut bool,
+    ) -> bool {
+        let result = self.evaluate_guard_raising(cond, engine, "an <if> cond failed to evaluate");
+        *cond_failed = *cond_failed || result.is_none();
+        result.unwrap_or(false)
+    }
+
+    // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
+    // `None` says so, where a bare `false` could not.
+    fn evaluate_guard_raising(
+        &mut self,
+        cond: &str,
+        engine: &mut Engine<Self>,
+        reason: &str,
+    ) -> Option<bool> {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, cond) {
-            Ok(val) => val.to_bool(),
+            Ok(val) => Some(val.to_bool()),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test153Event::ErrorExecution,
-                    "a <transition> cond failed to evaluate",
+                    reason,
                 ));
-                false
+                None
             }
         }
     }
@@ -722,58 +750,72 @@ impl StatePolicy for Test153Policy {
                                         // W3C SCXML 4.6: Execute body actions. A failing one raises its
                                         // own error and leaves the enclosing block from here.
 
-                                        // W3C SCXML 5.9: Script engine guard (Var1 < Var2)
-                                        if self.safe_evaluate_guard("(Var1 < Var2)", engine) {
-                                            {
-                                                // W3C SCXML 5.3: <assign location="Var1">
-                                                self.ensure_script_engine();
-                                                let sid = self.session_id.as_ref().unwrap().clone();
-                                                let se = self.script_engine.clone();
-                                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                                let expr = "Var2";
-                                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                                // and create a fresh table, breaking reference equality.
-                                                let assign_script =
-                                                    format!("{} = {}", "Var1", expr);
-                                                if let Err(e) =
-                                                    se.execute_script(&sid, &assign_script)
+                                        {
+                                            let mut if_cond_failed = false;
+                                            // W3C SCXML 5.9: Script engine guard (Var1 < Var2)
+                                            if self.evaluate_if_cond(
+                                                "(Var1 < Var2)",
+                                                engine,
+                                                &mut if_cond_failed,
+                                            ) {
                                                 {
-                                                    ::sce_rust_runtime::sce_log_error!(
-                                                        "Assign failed for 'Var1': {}",
-                                                        e
-                                                    );
-                                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test153Event::ErrorExecution, "<assign> to 'Var1' failed"));
-                                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                                    break 'action_block;
+                                                    // W3C SCXML 5.3: <assign location="Var1">
+                                                    self.ensure_script_engine();
+                                                    let sid =
+                                                        self.session_id.as_ref().unwrap().clone();
+                                                    let se = self.script_engine.clone();
+                                                    let se: &dyn sce_rust_runtime::IScriptEngine =
+                                                        &*se;
+                                                    let expr = "Var2";
+                                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                                    // and create a fresh table, breaking reference equality.
+                                                    let assign_script =
+                                                        format!("{} = {}", "Var1", expr);
+                                                    if let Err(e) =
+                                                        se.execute_script(&sid, &assign_script)
+                                                    {
+                                                        ::sce_rust_runtime::sce_log_error!(
+                                                            "Assign failed for 'Var1': {}",
+                                                            e
+                                                        );
+                                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test153Event::ErrorExecution, "<assign> to 'Var1' failed"));
+                                                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                                        break 'action_block;
+                                                    }
+                                                }
+                                            } else {
+                                                {
+                                                    // W3C SCXML 5.3: <assign location="Var4">
+                                                    self.ensure_script_engine();
+                                                    let sid =
+                                                        self.session_id.as_ref().unwrap().clone();
+                                                    let se = self.script_engine.clone();
+                                                    let se: &dyn sce_rust_runtime::IScriptEngine =
+                                                        &*se;
+                                                    let expr = "0";
+                                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                                    // and create a fresh table, breaking reference equality.
+                                                    let assign_script =
+                                                        format!("{} = {}", "Var4", expr);
+                                                    if let Err(e) =
+                                                        se.execute_script(&sid, &assign_script)
+                                                    {
+                                                        ::sce_rust_runtime::sce_log_error!(
+                                                            "Assign failed for 'Var4': {}",
+                                                            e
+                                                        );
+                                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test153Event::ErrorExecution, "<assign> to 'Var4' failed"));
+                                                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                                        break 'action_block;
+                                                    }
                                                 }
                                             }
-                                        } else {
-                                            {
-                                                // W3C SCXML 5.3: <assign location="Var4">
-                                                self.ensure_script_engine();
-                                                let sid = self.session_id.as_ref().unwrap().clone();
-                                                let se = self.script_engine.clone();
-                                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                                let expr = "0";
-                                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                                // and create a fresh table, breaking reference equality.
-                                                let assign_script =
-                                                    format!("{} = {}", "Var4", expr);
-                                                if let Err(e) =
-                                                    se.execute_script(&sid, &assign_script)
-                                                {
-                                                    ::sce_rust_runtime::sce_log_error!(
-                                                        "Assign failed for 'Var4': {}",
-                                                        e
-                                                    );
-                                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test153Event::ErrorExecution, "<assign> to 'Var4' failed"));
-                                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                                    break 'action_block;
-                                                }
+                                            if if_cond_failed {
+                                                break 'action_block;
                                             }
                                         }
                                     }

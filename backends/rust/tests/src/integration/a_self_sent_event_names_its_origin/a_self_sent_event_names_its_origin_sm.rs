@@ -501,19 +501,47 @@ impl ASelfSentEventNamesItsOriginPolicy {
 
     // W3C SCXML 5.9: Safe guard evaluation with error handling
     fn safe_evaluate_guard(&mut self, cond: &str, engine: &mut Engine<Self>) -> bool {
+        self.evaluate_guard_raising(cond, engine, "a <transition> cond failed to evaluate")
+            .unwrap_or(false)
+    }
+
+    // W3C SCXML 5.9.1 + 4.9: an <if> or <elseif> cond. It is evaluated and
+    // reported as a transition guard is, and a failure is also recorded in
+    // `cond_failed`: the <if> still selects on `false`, and is then the
+    // element whose processing raised, so its block ends after it.
+    #[allow(dead_code)]
+    fn evaluate_if_cond(
+        &mut self,
+        cond: &str,
+        engine: &mut Engine<Self>,
+        cond_failed: &mut bool,
+    ) -> bool {
+        let result = self.evaluate_guard_raising(cond, engine, "an <if> cond failed to evaluate");
+        *cond_failed = *cond_failed || result.is_none();
+        result.unwrap_or(false)
+    }
+
+    // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
+    // `None` says so, where a bare `false` could not.
+    fn evaluate_guard_raising(
+        &mut self,
+        cond: &str,
+        engine: &mut Engine<Self>,
+        reason: &str,
+    ) -> Option<bool> {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, cond) {
-            Ok(val) => val.to_bool(),
+            Ok(val) => Some(val.to_bool()),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASelfSentEventNamesItsOriginEvent::ErrorExecution,
-                    "a <transition> cond failed to evaluate",
+                    reason,
                 ));
-                false
+                None
             }
         }
     }
@@ -1319,37 +1347,39 @@ impl StatePolicy for ASelfSentEventNamesItsOriginPolicy {
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
-                            // W3C SCXML 5.9: Script engine guard (_event.origin === _ioprocessors['scxml'].location)
-                            if self.safe_evaluate_guard(
-                                "(_event.origin == _ioprocessors.scxml.location)",
-                                engine,
-                            ) {
-                                {
-                                    // W3C SCXML 5.3: <assign location="delayedOk">
-                                    self.ensure_script_engine();
-                                    let sid = self.session_id.as_ref().unwrap().clone();
-                                    let se = self.script_engine.clone();
-                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                    let expr = "1";
-                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                    // and create a fresh table, breaking reference equality.
-                                    let assign_script = format!("{} = {}", "delayedOk", expr);
-                                    if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                        ::sce_rust_runtime::sce_log_error!(
-                                            "Assign failed for 'delayedOk': {}",
-                                            e
-                                        );
-                                        engine.raise(
-                                            sce_rust_runtime::EventWithMetadata::platform_error(
-                                                ASelfSentEventNamesItsOriginEvent::ErrorExecution,
-                                                "<assign> to 'delayedOk' failed",
-                                            ),
-                                        );
-                                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                        break 'action_block;
+                            {
+                                let mut if_cond_failed = false;
+                                // W3C SCXML 5.9: Script engine guard (_event.origin === _ioprocessors['scxml'].location)
+                                if self.evaluate_if_cond(
+                                    "(_event.origin == _ioprocessors.scxml.location)",
+                                    engine,
+                                    &mut if_cond_failed,
+                                ) {
+                                    {
+                                        // W3C SCXML 5.3: <assign location="delayedOk">
+                                        self.ensure_script_engine();
+                                        let sid = self.session_id.as_ref().unwrap().clone();
+                                        let se = self.script_engine.clone();
+                                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                        let expr = "1";
+                                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                        // and create a fresh table, breaking reference equality.
+                                        let assign_script = format!("{} = {}", "delayedOk", expr);
+                                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                            ::sce_rust_runtime::sce_log_error!(
+                                                "Assign failed for 'delayedOk': {}",
+                                                e
+                                            );
+                                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(ASelfSentEventNamesItsOriginEvent::ErrorExecution, "<assign> to 'delayedOk' failed"));
+                                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                            break 'action_block;
+                                        }
                                     }
+                                }
+                                if if_cond_failed {
+                                    break 'action_block;
                                 }
                             }
                         }
@@ -1364,37 +1394,39 @@ impl StatePolicy for ASelfSentEventNamesItsOriginPolicy {
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
-                            // W3C SCXML 5.9: Script engine guard (_event.origin === _ioprocessors['scxml'].location)
-                            if self.safe_evaluate_guard(
-                                "(_event.origin == _ioprocessors.scxml.location)",
-                                engine,
-                            ) {
-                                {
-                                    // W3C SCXML 5.3: <assign location="immediateOk">
-                                    self.ensure_script_engine();
-                                    let sid = self.session_id.as_ref().unwrap().clone();
-                                    let se = self.script_engine.clone();
-                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                    let expr = "1";
-                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                    // and create a fresh table, breaking reference equality.
-                                    let assign_script = format!("{} = {}", "immediateOk", expr);
-                                    if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                        ::sce_rust_runtime::sce_log_error!(
-                                            "Assign failed for 'immediateOk': {}",
-                                            e
-                                        );
-                                        engine.raise(
-                                            sce_rust_runtime::EventWithMetadata::platform_error(
-                                                ASelfSentEventNamesItsOriginEvent::ErrorExecution,
-                                                "<assign> to 'immediateOk' failed",
-                                            ),
-                                        );
-                                        // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                        break 'action_block;
+                            {
+                                let mut if_cond_failed = false;
+                                // W3C SCXML 5.9: Script engine guard (_event.origin === _ioprocessors['scxml'].location)
+                                if self.evaluate_if_cond(
+                                    "(_event.origin == _ioprocessors.scxml.location)",
+                                    engine,
+                                    &mut if_cond_failed,
+                                ) {
+                                    {
+                                        // W3C SCXML 5.3: <assign location="immediateOk">
+                                        self.ensure_script_engine();
+                                        let sid = self.session_id.as_ref().unwrap().clone();
+                                        let se = self.script_engine.clone();
+                                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                        let expr = "1";
+                                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                        // and create a fresh table, breaking reference equality.
+                                        let assign_script = format!("{} = {}", "immediateOk", expr);
+                                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                            ::sce_rust_runtime::sce_log_error!(
+                                                "Assign failed for 'immediateOk': {}",
+                                                e
+                                            );
+                                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(ASelfSentEventNamesItsOriginEvent::ErrorExecution, "<assign> to 'immediateOk' failed"));
+                                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                                            break 'action_block;
+                                        }
                                     }
+                                }
+                                if if_cond_failed {
+                                    break 'action_block;
                                 }
                             }
 
