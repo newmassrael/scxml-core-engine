@@ -1610,10 +1610,42 @@ fn stamped_action(
         spellings: crate::attribute_spelling::AttributeSpellings::of(node),
         ..Default::default()
     };
-    (action.req, action.provenance) =
-        collect_sce_traceability(node, || format!("<{tag}>"), source_name)?;
-    action.unresolved = collect_sce_unresolved(node, source_name);
+    Traceability {
+        req: action.req,
+        provenance: action.provenance,
+        unresolved: action.unresolved,
+    } = read_traceability(node, || format!("<{tag}>"), source_name)?;
     Ok(action)
+}
+
+/// The three `docs/SCE_ACCEPTED_SUBSET.md` §2.10 families one annotatable
+/// node carries: `sce:req`, `sce:provenance` and the `sce:unresolved` /
+/// `sce:assumed` markers.
+///
+/// ⚠ One reader for all three, because the three were read inline at
+/// every site that builds an annotatable node — nine of them — and an
+/// inline triple is exactly what lets a new builder copy two of the
+/// three. `stamped_action` exists because a top-level `<script>` copied
+/// one (S2, 2026-09-15); a site that destructures this struct cannot
+/// forget a field without the compiler saying so.
+pub(crate) struct Traceability {
+    pub(crate) req: Vec<crate::provenance::RequirementId>,
+    pub(crate) provenance: Vec<crate::provenance::SpecProvenance>,
+    pub(crate) unresolved: Vec<crate::provenance::UnresolvedMarker>,
+}
+
+/// Read every §2.10 annotation `node` carries. See [`Traceability`].
+pub(crate) fn read_traceability(
+    node: &roxmltree::Node,
+    element_label_fn: impl Fn() -> String,
+    source_name: &str,
+) -> Result<Traceability, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    let (req, provenance) = collect_sce_traceability(node, element_label_fn, source_name)?;
+    Ok(Traceability {
+        req,
+        provenance,
+        unresolved: collect_sce_unresolved(node, source_name),
+    })
 }
 
 fn collect_sce_traceability(
@@ -2893,9 +2925,11 @@ impl SCXMLParser {
                 ..Default::default()
             };
             let state_label = || format!("<state id=\"{state_id}\">");
-            (state.req, state.provenance) =
-                collect_sce_traceability(&child, state_label, source_name)?;
-            state.unresolved = collect_sce_unresolved(&child, source_name);
+            Traceability {
+                req: state.req,
+                provenance: state.provenance,
+                unresolved: state.unresolved,
+            } = read_traceability(&child, state_label, source_name)?;
             state.unhandled = parse_sce_unhandled(&child, state_label, source_name)
                 .map_err(|e| e.with_spec_provenance(state.provenance.clone()))?;
 
@@ -3028,9 +3062,11 @@ impl SCXMLParser {
                 ..Default::default()
             };
             let final_label = || format!("<final id=\"{final_id}\">");
-            (state.req, state.provenance) =
-                collect_sce_traceability(&child, final_label, source_name)?;
-            state.unresolved = collect_sce_unresolved(&child, source_name);
+            Traceability {
+                req: state.req,
+                provenance: state.provenance,
+                unresolved: state.unresolved,
+            } = read_traceability(&child, final_label, source_name)?;
             // A `<final>` is excluded from the exhaustiveness comparison
             // (it has no transition surface), so it can never be a
             // non-handler and any declaration here is stale. Reading the
@@ -3082,9 +3118,11 @@ impl SCXMLParser {
                 ..Default::default()
             };
             let parallel_label = || format!("<parallel id=\"{parallel_id}\">");
-            (state.req, state.provenance) =
-                collect_sce_traceability(&child, parallel_label, source_name)?;
-            state.unresolved = collect_sce_unresolved(&child, source_name);
+            Traceability {
+                req: state.req,
+                provenance: state.provenance,
+                unresolved: state.unresolved,
+            } = read_traceability(&child, parallel_label, source_name)?;
             // A `<parallel>` carrying transitions is a sibling in the
             // exhaustiveness comparison exactly like a `<state>`, so it
             // can be a non-handler and needs the same way to say the gap
@@ -3263,14 +3301,15 @@ impl SCXMLParser {
                 },
             )
         };
-        // Passed by value to both collectors: the closure captures only
-        // `elem`, a shared reference, so it is `Copy` and the first call
-        // does not consume it. Borrowing here would satisfy the same
+        // Passed by value: the closure captures only `elem`, a shared
+        // reference, so it is `Copy`. Borrowing here would satisfy the same
         // bounds and `clippy::needless_borrows_for_generic_args` is what
         // rejects it.
-        (transition.req, transition.provenance) =
-            collect_sce_traceability(elem, transition_label, source_name)?;
-        transition.unresolved = collect_sce_unresolved(elem, source_name);
+        Traceability {
+            req: transition.req,
+            provenance: transition.provenance,
+            unresolved: transition.unresolved,
+        } = read_traceability(elem, transition_label, source_name)?;
 
         transition.actions = self.parse_executable_content(elem, model, source_name)?;
 
@@ -4092,12 +4131,11 @@ impl SCXMLParser {
                     }
                 }
             }
-            let (invoke_req, invoke_provenance) = collect_sce_traceability(
-                elem,
-                || format!("<invoke id=\"{invoke_id}\">"),
-                source_name,
-            )?;
-            let invoke_unresolved = collect_sce_unresolved(elem, source_name);
+            let Traceability {
+                req: invoke_req,
+                provenance: invoke_provenance,
+                unresolved: invoke_unresolved,
+            } = read_traceability(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
             return Ok(Some(Invoke::Hybrid(HybridInvokeInfo {
                 common: InvokeSessionCommon {
                     base: InvokeBase {
@@ -4214,12 +4252,11 @@ impl SCXMLParser {
                     (src.clone(), String::new(), None, None)
                 };
 
-            let (invoke_req, invoke_provenance) = collect_sce_traceability(
-                elem,
-                || format!("<invoke id=\"{invoke_id}\">"),
-                source_name,
-            )?;
-            let invoke_unresolved = collect_sce_unresolved(elem, source_name);
+            let Traceability {
+                req: invoke_req,
+                provenance: invoke_provenance,
+                unresolved: invoke_unresolved,
+            } = read_traceability(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
             let mut scxml_info = ScxmlInvokeInfo {
                 common: InvokeSessionCommon {
                     base: InvokeBase {
@@ -4275,12 +4312,11 @@ impl SCXMLParser {
         // `typeexpr` resolves the type at runtime, so a document carrying
         // one cannot be classified statically and is left alone.
         if !scxml_type && elem.attribute("typeexpr").is_none() {
-            let (invoke_req, invoke_provenance) = collect_sce_traceability(
-                elem,
-                || format!("<invoke id=\"{invoke_id}\">"),
-                source_name,
-            )?;
-            let invoke_unresolved = collect_sce_unresolved(elem, source_name);
+            let Traceability {
+                req: invoke_req,
+                provenance: invoke_provenance,
+                unresolved: invoke_unresolved,
+            } = read_traceability(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
             // §scxml-6.4.1: an `idlocation` with no `id` asks for a generated
             // id of the form `stateid.platformid`, written to that location,
             // and that id is the invocation's `_event.invokeid`. For an invoke
@@ -4524,9 +4560,11 @@ impl SCXMLParser {
             })
         })?;
 
-        let (invoke_req, invoke_provenance) =
-            collect_sce_traceability(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
-        let invoke_unresolved = collect_sce_unresolved(elem, source_name);
+        let Traceability {
+            req: invoke_req,
+            provenance: invoke_provenance,
+            unresolved: invoke_unresolved,
+        } = read_traceability(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
         Ok(MeshRpcInvokeInfo {
             base: InvokeBase {
                 source_location: source_location_of(elem, source_name),
