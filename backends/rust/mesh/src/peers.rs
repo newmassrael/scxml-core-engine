@@ -91,6 +91,8 @@ mod tests {
                     dedup: true,
                     ordered: false,
                 },
+                responders: &["cloud"],
+                deadline_ms: None,
             },
             link: PeerLink::WssDial {
                 url: "wss://cal.example",

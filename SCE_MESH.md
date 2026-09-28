@@ -1420,7 +1420,7 @@ The `srcexpr` expression must evaluate to a string of the form `"#<machine_name>
 | Failure class | Event | Where the status surfaces |
 |---|---|---|
 | Pre-envelope setup failure (binding miss, pool instance out-of-range, srcexpr shape violation, unknown method on target) | `error.execution` | `_event.data.reason` per §10.7.1 (catalogue: `INVOKE_SRC_NOT_FOUND`, etc.) |
-| Reply arrived with `rpc_status != Ok` (including synthetic deadline reply) | `error.invoke.<id>` | `rpc_status` on the delivered envelope (CBOR key 10) surfaces via the runtime's §10.7 wiring |
+| Reply arrived with `rpc_status != Ok` (including synthetic deadline reply) | `error.invoke.<id>` | `_event.data.reason` = the `rpc_status` (CBOR key 10) by its declared name, per §10.7.1 `errorName: "invoke"` |
 | Transport-layer fault after send (peer partitioned, backpressure drop, delivery exhausted) | `error.communication` | `_event.data.reason` per §16.7 catalogue |
 
 The W3C foreign-processor fallback (see the **Graceful degradation** paragraph below) raises `error.execution` on unknown invoke type; the pre-envelope tier above is the native counterpart, so author handlers of the form `<transition event="error.execution">` work identically whether the processor is SCE or a reference W3C 1.0 impl for this class of fault.
@@ -1446,7 +1446,7 @@ The wire `invoke_id` is **not** the SCXML invoke id. The requester mints it per 
 
 **Runtime mapping to `_event`** (on reply delivery to parent):
 - `_event.name` = `done.invoke.<id>` (success) or `error.invoke.<id>` (non-Ok status)
-- `_event.data` = deserialized reply payload (for success) or the structured error object defined in §10.7 (for error)
+- `_event.data` = deserialized reply payload (for success) or the structured error object defined in §10.7.1 with `errorName: "invoke"` (for error)
 - `_event.invokeid` = the SCXML invoke id
 - `_event.origin` = `mesh://<envelope.source>` (URI form per §10.7)
 - `_event.origintype` = `"sce:mesh-rpc"`
@@ -2050,15 +2050,24 @@ W3C SCXML 1.0 does not prescribe a `_event.data` schema for `error.execution` / 
 
 ```
 _event.data = {
-  "errorName":    "execution" | "communication",
+  "errorName":    "execution" | "communication" | "invoke",
   "reason":       "<machine-readable reason code>",       // required
   "detail":       "<human-readable detail, optional>",
-  "source":       "<envelope.source or null>",            // communication only
+  "source":       "<envelope.source or null>",            // communication, invoke
   "sendid":       "<originating sendid or null>",         // when applicable
   "envelope_id":  "<UUID v7 hex or null>",                // communication only
   "invoke_id":    "<UUID v7 hex or null>"                 // invoke-related only
 }
 ```
+
+`errorName: "invoke"` is the `_event.data` of `error.invoke.<id>` raised for a `<invoke type="sce:mesh-rpc">` whose reply carried a non-`Ok` `rpc_status`, or whose deadline elapsed before any reply (§9.5). Its fields:
+
+- `reason` — the `rpc_status` as the name `stdlib/mesh/rpc_status.scxml` declares for it (`deadlineExceeded`, `unavailable`, …), read through the generated enum's declared-name accessor rather than a list kept beside it, so the vocabulary of record is the only spelling. The enum is a closed set, so an envelope carrying an undeclared status never decodes and never reaches this path.
+- `detail` — the reply's `rpc_error_message`, or absent when it carries none.
+- `source` — the replying envelope's `source`; absent for the deadline the requester synthesizes itself, since no peer answered.
+- `invoke_id` — the request's wire `invoke_id` as hex, the value the reply correlated on.
+
+The synthesized deadline takes the same shape as a peer's `DeadlineExceeded` reply, so one transition guard serves both.
 
 Reason code catalog for `error.communication` is in §16.7. `error.execution` reason codes are SCE-internal; the canonical list is:
 

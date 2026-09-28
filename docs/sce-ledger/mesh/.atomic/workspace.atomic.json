@@ -688,6 +688,10 @@
         {
           "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/rpc.rs",
+          "kind": "references"
         }
       ]
     },
@@ -743,6 +747,14 @@
         },
         {
           "file": "backends/rust/mesh/src/signal.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/rpc.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/router.rs",
           "kind": "references"
         }
       ]
@@ -1587,6 +1599,22 @@
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "reply_from_yaml",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/rpc.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/router.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/signal.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
+          "kind": "references"
         }
       ]
     },
@@ -2560,6 +2588,10 @@
         {
           "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Peers.kt",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/rpc.rs",
+          "kind": "references"
         }
       ]
     },
@@ -2964,6 +2996,10 @@
         {
           "file": "sce-build/src/host_processor_analyzer.rs",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/rpc.rs",
+          "kind": "references"
         }
       ]
     },
@@ -3724,6 +3760,31 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "completeHostInvoke",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/rpc.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/router.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/endpoint.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/review.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "ResolvedTarget",
           "kind": "references"
         }
       ]

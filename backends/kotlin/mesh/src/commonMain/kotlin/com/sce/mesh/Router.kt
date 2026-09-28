@@ -31,6 +31,10 @@ data class PeerConfig(
     val stampSequence: Boolean,
     /** How envelopes FROM this peer are delivered (§mesh-10.5, §mesh-10.6). */
     val delivery: Delivery,
+    /** The machines whose reply may answer a request sent to this peer — the binding's `reply_from:`, or the peer alone (§mesh-14.6). Never empty. */
+    val responders: List<String>,
+    /** deploy.yaml's binding-level request deadline, which a request to this peer takes when it carries no `_mesh_deadline_ms`; `null` lets it wait for its reply indefinitely (§mesh-9.5). */
+    val deadlineMs: Long?,
 )
 
 /** One thing the host must do. */

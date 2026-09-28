@@ -10,29 +10,37 @@
 //! §mesh-16.7 row; an event the router releases, and every row it raises, becomes
 //! an [`EngineEvent`] carrying the `_event` fields the C++ core gives the
 //! same event (sce/include/mesh/MeshDispatch.h), so a document cannot tell
-//! which core it runs beside.
+//! which core it runs beside. A Mesh request the router ends becomes the
+//! call that ends its invocation (§mesh-9.5).
 //!
-//! Engine-bound events are queued rather than handed back from the send
-//! handler. The engine raises a handler's answer with no origin, where the
-//! C++ core raises a row as an envelope from its own machine; one queue,
-//! drained by [`raise_into`], is what keeps the two cores' `_event`
-//! identical for a row observed while sending and one observed while
-//! receiving.
+//! What the engine must be told is queued rather than handed back from the
+//! send handler. The engine raises a handler's answer with no origin, where
+//! the C++ core raises a row as an envelope from its own machine; one queue,
+//! drained by [`apply_to`], is what keeps the two cores' `_event` identical
+//! for a row observed while sending and one observed while receiving, and
+//! keeps an invocation's end in order with the events around it.
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use std::sync::{Arc, Mutex};
 
 use sce_rust_runtime::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE;
-use sce_rust_runtime::{Engine, EventMetadata, EventType, HostSendRequest, StatePolicy};
+use sce_rust_runtime::{
+    Engine, EventMetadata, EventType, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse,
+    HostSendRequest, StatePolicy,
+};
 
 use crate::outbound::{AfterFailure, Attempts};
-use crate::router::{Effect, Router, RouterError};
+use crate::router::{Effect, Invoked, Router, RouterError};
 use crate::signal::Signal;
 
 /// The `<send type>` a Mesh send is lowered to — the runtime's constant, so
 /// the type this crate serves is the one the engine's router door registers.
 pub use sce_rust_runtime::MESH_PROCESSOR_TYPE;
+
+/// The `<invoke type>` a Mesh request is lowered to, and the
+/// `_event.origintype` of the event that ends it (§mesh-9.5).
+pub use sce_rust_runtime::MESH_RPC_INVOKE_TYPE;
 
 /// `_event.origin` of a Mesh-delivered event is this scheme and the sending
 /// machine's name (§mesh-10.7) — the C++ core's `kMeshOriginScheme`.
@@ -59,7 +67,11 @@ pub trait Transport: Send {
 pub trait Environment: Send {
     /// A monotonic clock, in milliseconds.
     fn now_ms(&mut self) -> i64;
-    /// A fresh envelope id (§mesh-7.5: a UUID v7).
+    /// The wall clock, in milliseconds since the Unix epoch — what a
+    /// request's `deadline_unix_ms` is written in (§mesh-9.5).
+    fn now_unix_ms(&mut self) -> u64;
+    /// A fresh UUID v7 (§mesh-7.5): an envelope's id, or the wire
+    /// `invoke_id` a request is correlated by.
     fn envelope_id(&mut self) -> [u8; 16];
     /// A non-negative number drawn uniformly, for a retry's jitter.
     fn jitter_draw(&mut self) -> i64;
@@ -70,6 +82,25 @@ pub trait Environment: Send {
 pub struct EngineEvent {
     pub name: String,
     pub metadata: EventMetadata,
+}
+
+/// One thing the host must tell its engine, in the order the endpoint came
+/// to know it.
+#[derive(Debug, Clone)]
+pub enum EngineCall {
+    /// Raise this event on the external queue.
+    Raise(EngineEvent),
+    /// End the start `token` of the Mesh request `invoke_id` — with
+    /// `done.invoke`, or with `error.invoke` when `failed` — carrying `data`
+    /// as `_event.data`. `source` is the machine that answered, `None` for a
+    /// deadline the requester reached itself.
+    EndInvoke {
+        invoke_id: String,
+        token: u64,
+        failed: bool,
+        data: String,
+        source: Option<String>,
+    },
 }
 
 /// A transmission waiting out its backoff.
@@ -86,7 +117,7 @@ pub struct Endpoint<T, E> {
     transport: T,
     environment: E,
     retries: Vec<Retry>,
-    to_engine: Vec<EngineEvent>,
+    to_engine: Vec<EngineCall>,
     host_errors: Vec<RouterError>,
 }
 
@@ -108,6 +139,44 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         let now = self.environment.now_ms();
         let effects = self.router.send(request, id, now);
         self.apply(effects);
+    }
+
+    /// Start an `<invoke type="sce:mesh-rpc">` the engine handed its host,
+    /// answering the engine as a host invoker does: with nothing when the
+    /// request is on its way — its end is queued later — or with a refusal
+    /// when it cannot reach the wire (§mesh-9.5's pre-envelope tier).
+    pub fn invoke(&mut self, request: &HostInvokeRequest) -> HostInvokeResponse {
+        let wire_id = self.environment.envelope_id();
+        let id = self.environment.envelope_id();
+        let now = self.environment.now_ms();
+        let now_unix = self.environment.now_unix_ms();
+        match self.router.invoke(request, wire_id, id, now, now_unix) {
+            Ok(Invoked::Started(effects)) => {
+                self.apply(Ok(effects));
+                HostInvokeResponse::default()
+            }
+            Ok(Invoked::Refused(data)) => HostInvokeResponse {
+                refusal: Some(data),
+                ..HostInvokeResponse::default()
+            },
+            // Only the host can act on it; the document is told the request
+            // could not start rather than left waiting on one that never
+            // left.
+            Err(error) => {
+                let refusal = alloc::format!("{error:?}");
+                self.host_errors.push(error);
+                HostInvokeResponse {
+                    refusal: Some(refusal),
+                    ..HostInvokeResponse::default()
+                }
+            }
+        }
+    }
+
+    /// The state that started the start `token` of the Mesh request
+    /// `invoke_id` exited.
+    pub fn cancel_invoke(&mut self, invoke_id: &str, token: u64) {
+        self.router.cancel_invoke(invoke_id, token);
     }
 
     /// Envelope `bytes` the transport received from `peer`.
@@ -154,8 +223,8 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         self.after_failure(peer.to_string(), bytes, Attempts::default(), failure);
     }
 
-    /// The events the engine must now raise, in the order they arose.
-    pub fn take_events(&mut self) -> Vec<EngineEvent> {
+    /// What the engine must now be told, in the order it arose.
+    pub fn take_calls(&mut self) -> Vec<EngineCall> {
         core::mem::take(&mut self.to_engine)
     }
 
@@ -179,11 +248,35 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
                     data,
                     source,
                     send_id,
-                } => self.to_engine.push(EngineEvent {
+                } => self.to_engine.push(EngineCall::Raise(EngineEvent {
                     name: event,
                     metadata: mesh_metadata(data, &source, send_id.unwrap_or_default()),
-                }),
+                })),
                 Effect::Raise { peer, signal } => self.raise(peer.as_deref(), &signal),
+                Effect::Complete {
+                    invoke_id,
+                    token,
+                    data,
+                    source,
+                } => self.to_engine.push(EngineCall::EndInvoke {
+                    invoke_id,
+                    token,
+                    failed: false,
+                    data,
+                    source: Some(source),
+                }),
+                Effect::Fail {
+                    invoke_id,
+                    token,
+                    data,
+                    source,
+                } => self.to_engine.push(EngineCall::EndInvoke {
+                    invoke_id,
+                    token,
+                    failed: true,
+                    data,
+                    source,
+                }),
             }
         }
     }
@@ -228,10 +321,10 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     fn raise(&mut self, peer: Option<&str>, signal: &Signal) {
         let data = signal.event_data(self.router.binding(peer));
         let machine = self.router.machine().to_string();
-        self.to_engine.push(EngineEvent {
+        self.to_engine.push(EngineCall::Raise(EngineEvent {
             name: "error.communication".to_string(),
             metadata: mesh_metadata(data, &machine, String::new()),
-        });
+        }));
     }
 }
 
@@ -251,11 +344,42 @@ fn mesh_metadata(data: String, source: &str, send_id: String) -> EventMetadata {
     }
 }
 
-/// Raise `events` on `engine`'s external queue, in order. A name the
-/// machine does not declare is dropped, as the engine drops any such event.
-pub fn raise_into<P: StatePolicy>(engine: &mut Engine<P>, events: Vec<EngineEvent>) {
-    for event in events {
-        engine.raise_external_by_name_with_meta(&event.name, &event.metadata);
+/// Tell `engine` what `calls` say, in order. An event name the machine does
+/// not declare is dropped, as the engine drops any such event; an
+/// invocation's end the engine no longer waits for — its state exited, or
+/// it was started again — is refused by the engine's own token check.
+///
+/// An answer carries `_event.origin` `mesh://<source>` and origin type
+/// `sce:mesh-rpc` (§mesh-9.5); a deadline the requester reached itself has
+/// no peer to name, and carries neither.
+pub fn apply_to<P: StatePolicy>(engine: &mut Engine<P>, calls: Vec<EngineCall>) {
+    for call in calls {
+        match call {
+            EngineCall::Raise(event) => {
+                engine.raise_external_by_name_with_meta(&event.name, &event.metadata);
+            }
+            EngineCall::EndInvoke {
+                invoke_id,
+                token,
+                failed,
+                data,
+                source,
+            } => {
+                let (origin, origin_type) = match &source {
+                    Some(source) => (
+                        alloc::format!("{MESH_ORIGIN_SCHEME}{source}"),
+                        MESH_RPC_INVOKE_TYPE,
+                    ),
+                    None => (String::new(), ""),
+                };
+                let (id, kind) = (invoke_id.as_str(), MESH_RPC_INVOKE_TYPE);
+                if failed {
+                    engine.fail_host_invoke(kind, id, token, &data, &origin, origin_type);
+                } else {
+                    engine.complete_host_invoke_from(kind, id, token, &data, &origin, origin_type);
+                }
+            }
+        }
     }
 }
 
@@ -263,24 +387,36 @@ pub fn raise_into<P: StatePolicy>(engine: &mut Engine<P>, events: Vec<EngineEven
 /// feeds it receipts and ticks.
 pub type SharedEndpoint<T, E> = Arc<Mutex<Endpoint<T, E>>>;
 
-/// Serve `<send type="sce:mesh">` on `engine` with `endpoint`.
+/// Serve `<send type="sce:mesh">` and `<invoke type="sce:mesh-rpc">` on
+/// `engine` with `endpoint`.
 ///
-/// The handler answers the engine with nothing: what a send produces for the
-/// document is queued on the endpoint, and the host raises it with
-/// [`raise_into`] after the step that sent it.
+/// The send handler answers the engine with nothing, and a request that
+/// starts is answered with nothing too: what either produces for the
+/// document is queued on the endpoint, and the host applies it with
+/// [`apply_to`] after the step that sent it.
 pub fn register<P, T, E>(engine: &mut Engine<P>, endpoint: &SharedEndpoint<T, E>)
 where
     P: StatePolicy,
     T: Transport + 'static,
     E: Environment + 'static,
 {
-    let endpoint = Arc::clone(endpoint);
+    const HELD: &str =
+        "a Mesh endpoint is never left mid-update: nothing in it panics while locked";
+    let sender = Arc::clone(endpoint);
     engine.register_mesh_router(move |request| {
-        endpoint
-            .lock()
-            .expect("a Mesh endpoint is never left mid-update: nothing in it panics while locked")
-            .send(&request);
+        sender.lock().expect(HELD).send(&request);
         Vec::new()
+    });
+    let invoker = Arc::clone(endpoint);
+    engine.register_mesh_rpc_invoker(move |event| {
+        let mut endpoint = invoker.lock().expect(HELD);
+        match event {
+            HostInvokeEvent::Start(request) => Some(endpoint.invoke(&request)),
+            HostInvokeEvent::Cancel(cancel) => {
+                endpoint.cancel_invoke(&cancel.invoke_id, cancel.token);
+                None
+            }
+        }
     });
 }
 
@@ -321,6 +457,11 @@ mod tests {
         fn now_ms(&mut self) -> i64 {
             self.now
         }
+        /// The wall clock a fixed distance ahead of the monotonic one, so a
+        /// wire deadline and a kept one can be told apart.
+        fn now_unix_ms(&mut self) -> u64 {
+            1_000_000 + self.now as u64
+        }
         fn envelope_id(&mut self) -> [u8; 16] {
             self.ids += 1;
             [self.ids; 16]
@@ -330,7 +471,19 @@ mod tests {
         }
     }
 
-    fn config(retry: Option<RetryPolicy>) -> PeerConfig {
+    /// The events `endpoint` queued, which in these tests are all it queued.
+    fn raised(endpoint: &mut Endpoint<Recorder, Fixed>) -> Vec<EngineEvent> {
+        endpoint
+            .take_calls()
+            .into_iter()
+            .map(|call| match call {
+                EngineCall::Raise(event) => event,
+                other => panic!("expected only events, got {other:?}"),
+            })
+            .collect()
+    }
+
+    fn config(peer: &'static str, retry: Option<RetryPolicy>) -> PeerConfig {
         PeerConfig {
             transport: "wss",
             buffer: Some(crate::outbound::OutboundBuffer {
@@ -343,16 +496,20 @@ mod tests {
                 dedup: true,
                 ordered: false,
             },
+            // A generated peer table holds this as a `const`; a test names
+            // its peer at run time, so the one-element set is leaked.
+            responders: Box::leak(Box::new([peer])),
+            deadline_ms: None,
         }
     }
 
     fn endpoint(
         machine: &str,
-        peer: &str,
+        peer: &'static str,
         retry: Option<RetryPolicy>,
     ) -> Endpoint<Recorder, Fixed> {
         let mut router = Router::new(machine, 8, 50).unwrap();
-        router.add_peer(peer, config(retry));
+        router.add_peer(peer, config(peer, retry));
         let mut endpoint = Endpoint::new(router, Recorder::default(), Fixed::default());
         endpoint.peer_ready(peer);
         endpoint
@@ -385,7 +542,7 @@ mod tests {
         assert_eq!(peer, "hmi");
         hmi.receive("ecu", bytes);
 
-        let events = hmi.take_events();
+        let events = raised(&mut hmi);
         let [event] = events.as_slice() else {
             panic!("expected one event, got {events:?}");
         };
@@ -404,7 +561,7 @@ mod tests {
         ecu.send(&send("go", ""));
         let (_, bytes) = ecu.transport.sent.pop().unwrap();
         hmi.receive("ecu", bytes);
-        assert_eq!(hmi.take_events()[0].metadata.send_id, "");
+        assert_eq!(raised(&mut hmi)[0].metadata.send_id, "");
     }
 
     #[test]
@@ -413,7 +570,7 @@ mod tests {
         ecu.transport.failures.push_back(failure(true));
         ecu.send(&send("go", "s-1"));
 
-        let events = ecu.take_events();
+        let events = raised(&mut ecu);
         let [event] = events.as_slice() else {
             panic!("expected one row, got {events:?}");
         };
@@ -440,7 +597,7 @@ mod tests {
         ecu.transport.failures.push_back(failure(true));
         ecu.send(&send("go", "s-1"));
         assert!(ecu.transport.sent.is_empty());
-        assert!(ecu.take_events().is_empty());
+        assert!(raised(&mut ecu).is_empty());
 
         ecu.environment.now = 99;
         ecu.tick();
@@ -449,7 +606,7 @@ mod tests {
         ecu.environment.now = 100;
         ecu.tick();
         assert_eq!(ecu.transport.sent.len(), 1);
-        assert!(ecu.take_events().is_empty());
+        assert!(raised(&mut ecu).is_empty());
     }
 
     #[test]
@@ -469,7 +626,7 @@ mod tests {
         ecu.environment.now = 10;
         ecu.tick();
 
-        let events = ecu.take_events();
+        let events = raised(&mut ecu);
         assert_eq!(events.len(), 1, "{events:?}");
         assert_eq!(
             events[0].metadata.data,
@@ -489,7 +646,7 @@ mod tests {
         let mut ecu = endpoint("ecu", "hmi", Some(policy));
         ecu.transport.failures.push_back(failure(false));
         ecu.send(&send("go", "s-1"));
-        let events = ecu.take_events();
+        let events = raised(&mut ecu);
         assert_eq!(events.len(), 1, "{events:?}");
         assert!(events[0].metadata.data.contains(r#""attempts":1"#));
         ecu.environment.now = 1000;
@@ -501,7 +658,7 @@ mod tests {
     fn what_only_the_host_can_act_on_never_reaches_the_document() {
         let mut ecu = endpoint("ecu", "hmi", None);
         ecu.receive("stranger", vec![0xFF]);
-        assert!(ecu.take_events().is_empty());
+        assert!(raised(&mut ecu).is_empty());
         assert_eq!(
             ecu.take_host_errors(),
             vec![RouterError::UnknownPeer("stranger".to_string())]

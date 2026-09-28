@@ -54,6 +54,8 @@ class EndpointTest {
                     retry = retry,
                     stampSequence = false,
                     delivery = Delivery(dedup = true, ordered = false),
+                    responders = listOf(peer),
+                    deadlineMs = null,
                 ),
             )
             endpoint = Endpoint(router, transport, environment)

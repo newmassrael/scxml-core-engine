@@ -22,14 +22,16 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use sce_forge_runtime::algorithm::AlgorithmError;
-use sce_forge_runtime::codec::CodecError;
-use sce_rust_runtime::HostSendRequest;
+use sce_forge_runtime::codec::{CodecError, SceCursor};
+use sce_rust_runtime::{HostInvokeRequest, HostSendRequest};
 
 use crate::generated::envelope::Envelope;
 use crate::generated::pattern_kind::PatternKind;
 use crate::generated::payload_codec::PayloadCodec;
+use crate::generated::rpc_status::RpcStatus;
 use crate::inbound::{AdmitError, ConfigError, Delivery, Inbound, Outcome};
 use crate::outbound::{Admitted, Outbound, OutboundBuffer, RetryPolicy};
+use crate::rpc::{self, Answer, Correlation, Pending, MESH_DEADLINE_PARAM, MESH_EVENT_PARAM};
 use crate::signal::{Binding, Signal};
 
 /// What deployment says about one peer this machine talks to.
@@ -49,6 +51,14 @@ pub struct PeerConfig {
     pub stamp_sequence: bool,
     /// How envelopes FROM this peer are delivered (§mesh-10.5, §mesh-10.6).
     pub delivery: Delivery,
+    /// The machines whose reply may answer a request sent to this peer —
+    /// the binding's `reply_from:`, or the peer alone (§mesh-14.6). Never
+    /// empty.
+    pub responders: &'static [&'static str],
+    /// deploy.yaml's binding-level request deadline, which a request to this
+    /// peer takes when it carries no `_mesh_deadline_ms`; `None` lets it wait
+    /// for its reply indefinitely (§mesh-9.5).
+    pub deadline_ms: Option<u64>,
 }
 
 /// One thing the host must do.
@@ -71,6 +81,38 @@ pub enum Effect {
         peer: Option<String>,
         signal: Signal,
     },
+    /// End the start `token` of the SCXML invocation `invoke_id` with
+    /// `done.invoke.<invoke_id>`: `data` is the reply's payload text and
+    /// `source` the machine that answered, whose `mesh://<source>` is the
+    /// event's `_event.origin` (§mesh-9.5).
+    Complete {
+        invoke_id: String,
+        token: u64,
+        data: String,
+        source: String,
+    },
+    /// End it with `error.invoke.<invoke_id>` instead: `data` is the
+    /// §mesh-10.7.1 `errorName: "invoke"` object, and `source` the machine
+    /// that answered — `None` when the requester's own deadline ended it.
+    Fail {
+        invoke_id: String,
+        token: u64,
+        data: String,
+        source: Option<String>,
+    },
+}
+
+/// What became of a request [`Router::invoke`] was handed.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Invoked {
+    /// It is on its way (or queued for its peer); these are the effects of
+    /// sending it, and its answer arrives later as [`Effect::Complete`] or
+    /// [`Effect::Fail`].
+    Started(Vec<Effect>),
+    /// It could not reach the wire, so the invocation never starts: the host
+    /// refuses it with this `_event.data`, and the engine raises
+    /// `error.execution` (§mesh-9.5's pre-envelope tier).
+    Refused(String),
 }
 
 struct Peer {
@@ -84,6 +126,7 @@ pub struct Router {
     machine: String,
     inbound: Inbound,
     peers: BTreeMap<String, Peer>,
+    requests: Correlation,
 }
 
 impl Router {
@@ -94,6 +137,7 @@ impl Router {
             machine: machine.to_string(),
             inbound: Inbound::new(dedup_window, gap_timeout_ms)?,
             peers: BTreeMap::new(),
+            requests: Correlation::default(),
         })
     }
 
@@ -130,46 +174,94 @@ impl Router {
                 signal: Signal::TransportUnavailable,
             }]);
         };
-        let bytes = Envelope {
+        let envelope = Envelope {
             id: &id,
             source: &self.machine,
             event_type: &request.event_name,
             pattern: PatternKind::FireForget,
-            // The payload is the sending engine's own `_event.data` text, so
-            // it travels as JSON, or as nothing when there is none — the rule
-            // the C++ core applies to a child's donedata
-            // (sce/include/mesh/ChildSessionAdapter.h).
-            datacontenttype: if request.event_data.is_empty() {
-                PayloadCodec::None
-            } else {
-                PayloadCodec::Json
-            },
+            datacontenttype: payload_codec(&request.event_data),
             data: request.event_data.as_bytes(),
             // §mesh-10.7: the receiver's `_event.sendid` is the envelope's
             // `subject`, so a `<send>`'s id travels there.
             subject: (!request.send_id.is_empty()).then_some(request.send_id.as_str()),
-            sequence_no: peer.config.stamp_sequence.then_some(peer.next_sequence),
             ..Envelope::new()
-        }
-        .encode_to_vec()
-        .map_err(RouterError::Encode)?;
-        // §mesh-10.6.3: the counter advances once per envelope written, so
-        // one that could not be written leaves no hole; and it has no wrap
-        // guard, 2^64 sends being beyond any deployment's lifetime.
-        if peer.config.stamp_sequence {
-            peer.next_sequence = peer.next_sequence.wrapping_add(1);
-        }
-        Ok(match peer.outbound.admit(bytes, now_ms) {
-            Admitted::Send(bytes) => alloc::vec![Effect::Transmit {
-                peer: peer_name.to_string(),
-                bytes,
-            }],
-            Admitted::Queued => Vec::new(),
-            Admitted::Dropped(signal) => alloc::vec![Effect::Raise {
-                peer: Some(peer_name.to_string()),
-                signal,
-            }],
-        })
+        };
+        transmit(peer_name, peer, envelope, now_ms)
+    }
+
+    /// Start an `<invoke type="sce:mesh-rpc">` the engine handed the host
+    /// (§mesh-9.5): write its `RpcRequest` and keep it until its reply, its
+    /// deadline or its cancellation ends it.
+    ///
+    /// `wire_id` is the `invoke_id` the host minted for this invocation and
+    /// `id` the envelope's own id — two UUID v7s, so correlation and dedup
+    /// never share a key (§mesh-9.5). `now_ms` is the host's monotonic clock,
+    /// which the deadline is kept against, and `now_unix_ms` its wall clock,
+    /// which the wire's `deadline_unix_ms` is written in.
+    ///
+    /// A target that names no Mesh peer, or one this router has no binding
+    /// for, cannot reach the wire: the invocation is [`Invoked::Refused`].
+    pub fn invoke(
+        &mut self,
+        request: &HostInvokeRequest,
+        wire_id: [u8; 16],
+        id: [u8; 16],
+        now_ms: i64,
+        now_unix_ms: u64,
+    ) -> Result<Invoked, RouterError> {
+        let Some(peer_name) = mesh_peer(&request.src) else {
+            return Ok(Invoked::Refused(rpc::src_not_found_data(&alloc::format!(
+                "'{}' names no Mesh peer",
+                request.src
+            ))));
+        };
+        let Some(peer) = self.peers.get_mut(peer_name) else {
+            return Ok(Invoked::Refused(rpc::src_not_found_data(&alloc::format!(
+                "no binding for '#{peer_name}'"
+            ))));
+        };
+        let event =
+            param(request, MESH_EVENT_PARAM).ok_or(RouterError::MissingParam(MESH_EVENT_PARAM))?;
+        // §mesh-9.5 deadline precedence: the invoke's own param, else the
+        // binding's, else none.
+        let deadline_ms = match param(request, MESH_DEADLINE_PARAM) {
+            Some(text) => Some(text.parse::<u64>().map_err(|_| RouterError::BadParam {
+                name: MESH_DEADLINE_PARAM,
+                value: text.to_string(),
+            })?),
+            None => peer.config.deadline_ms,
+        };
+        let envelope = Envelope {
+            id: &id,
+            source: &self.machine,
+            event_type: event,
+            pattern: PatternKind::RpcRequest,
+            datacontenttype: payload_codec(&request.event_data),
+            data: request.event_data.as_bytes(),
+            invoke_id: Some(&wire_id),
+            deadline_unix_ms: deadline_ms.map(|ms| now_unix_ms.saturating_add(ms)),
+            ..Envelope::new()
+        };
+        let responders = peer.config.responders;
+        let effects = transmit(peer_name, peer, envelope, now_ms)?;
+        self.requests.register(
+            wire_id,
+            Pending {
+                invoke_id: request.invoke_id.clone(),
+                token: request.token,
+                responders,
+                expires_ms: deadline_ms
+                    .map(|ms| now_ms.saturating_add(i64::try_from(ms).unwrap_or(i64::MAX))),
+            },
+        );
+        Ok(Invoked::Started(effects))
+    }
+
+    /// The state that started the start `token` of `invoke_id` exited: stop
+    /// waiting for its answer. Nothing goes on the wire, and an answer that
+    /// arrives later is dropped (§mesh-9.5, `<cancel>`).
+    pub fn cancel_invoke(&mut self, invoke_id: &str, token: u64) {
+        self.requests.cancel(invoke_id, token);
     }
 
     /// `peer`'s transport became ready: release what waited for it.
@@ -262,8 +354,16 @@ impl Router {
                 signal,
             }])
         };
+        // §mesh-14.6: a reply is checked against its request's responder set
+        // on arrival, while the binding it came in on is still known — an
+        // ordered binding may hold it and release it on a later tick. One
+        // from outside the set is refused before the dedup window or the
+        // ordering hold sees it, so it takes no slot in either.
+        if let Some(signal) = self.undeclared_reply(&bytes, peer) {
+            return raise(signal);
+        }
         match self.inbound.admit(bytes, delivery, now_ms) {
-            Ok(outcome) => Ok(effects_of(outcome, Some(peer))),
+            Ok(outcome) => Ok(self.effects_of(outcome, Some(peer))),
             // The bytes are the envelope's CBOR (§mesh-7.5); nothing in
             // them can be trusted to name a source.
             Err(AdmitError::Malformed(_)) => raise(Signal::EnvelopeCorrupt {
@@ -280,17 +380,139 @@ impl Router {
         }
     }
 
-    /// End every ordering gap that has waited out its timeout by `now_ms`.
+    /// End every ordering gap that has waited out its timeout by `now_ms`,
+    /// then every request whose deadline has passed: each ends in
+    /// `error.invoke` with `deadlineExceeded`, the same shape a peer's
+    /// `DeadlineExceeded` reply takes (§mesh-10.7.1).
     pub fn tick(&mut self, now_ms: i64) -> Result<Vec<Effect>, RouterError> {
-        match self.inbound.tick(now_ms) {
-            Ok(outcome) => Ok(effects_of(outcome, None)),
-            Err(AdmitError::Rule(error)) => Err(RouterError::Rule(error)),
-            Err(AdmitError::HoldFull) => Err(RouterError::HoldFull { peer: None }),
+        let mut effects = match self.inbound.tick(now_ms) {
+            Ok(outcome) => self.effects_of(outcome, None),
+            Err(AdmitError::Rule(error)) => return Err(RouterError::Rule(error)),
+            Err(AdmitError::HoldFull) => return Err(RouterError::HoldFull { peer: None }),
             // A tick reads no bytes and stamps nothing.
             Err(AdmitError::Malformed(_)) | Err(AdmitError::Unstamped) => {
                 unreachable!("Inbound::tick decodes no envelope")
             }
+        };
+        effects.extend(
+            self.requests
+                .expire(now_ms)
+                .into_iter()
+                .map(|(wire_id, pending)| Effect::Fail {
+                    invoke_id: pending.invoke_id,
+                    token: pending.token,
+                    data: rpc::invoke_error_data(RpcStatus::DeadlineExceeded, None, None, &wire_id),
+                    source: None,
+                }),
+        );
+        Ok(effects)
+    }
+
+    /// Row 14 for `bytes`, if they are a reply to a live request that
+    /// arrived on a binding outside its responder set. Bytes that do not
+    /// decode are left for the receive half to report.
+    fn undeclared_reply(&self, bytes: &[u8], peer: &str) -> Option<Signal> {
+        let envelope = Envelope::decode(&mut SceCursor::new(bytes)).ok()?;
+        if envelope.pattern != PatternKind::RpcReply {
+            return None;
         }
+        let wire_id: [u8; 16] = envelope.invoke_id?.try_into().ok()?;
+        match self.requests.check(&wire_id, peer) {
+            Answer::Undeclared => Some(Signal::RpcReplyFromUndeclaredPeer {
+                source: envelope.source.to_string(),
+                invoke_id: rpc::hex(&wire_id),
+            }),
+            Answer::Admitted | Answer::Unknown => None,
+        }
+    }
+
+    /// Turn what the receive half released into effects, in release order,
+    /// followed by the rows it observed.
+    fn effects_of(&mut self, outcome: Outcome, peer: Option<&str>) -> Vec<Effect> {
+        let mut effects: Vec<Effect> = outcome
+            .released
+            .iter()
+            .filter_map(|received| {
+                let envelope = received.envelope();
+                match reply_to(&envelope) {
+                    // Its responder was checked on arrival.
+                    Some(wire_id) => self.answer(&envelope, &wire_id, peer),
+                    None => Some(deliver(&envelope, peer)),
+                }
+            })
+            .collect();
+        effects.extend(outcome.signals.into_iter().map(|signal| Effect::Raise {
+            peer: peer.map(str::to_string),
+            signal,
+        }));
+        effects
+    }
+}
+
+/// The wire id of the request `envelope` answers, when it is a reply that
+/// carries one. A reply to a request this router never sent, or one already
+/// retired, is then dropped rather than delivered: this core sends every
+/// request with an `invoke_id`, so nothing else can be waiting for it.
+fn reply_to(envelope: &Envelope<'_>) -> Option<[u8; 16]> {
+    if envelope.pattern != PatternKind::RpcReply {
+        return None;
+    }
+    envelope.invoke_id?.try_into().ok()
+}
+
+impl Router {
+    /// How a released reply ends the request `wire_id` (§mesh-9.5), or
+    /// `None` when no request is waiting on it any more — it was answered,
+    /// cancelled or expired, and a late answer is dropped.
+    ///
+    /// `Ok` — or no status at all, which the requester reads as `Ok` as the
+    /// C++ core does — completes it with the reply's payload; any other
+    /// status fails it. An `Ok` whose payload the engine cannot be handed is
+    /// §mesh-16.7 row 4 and ends nothing: the request stays waiting for an
+    /// answer it can use, or for its deadline.
+    fn answer(
+        &mut self,
+        envelope: &Envelope<'_>,
+        wire_id: &[u8; 16],
+        peer: Option<&str>,
+    ) -> Option<Effect> {
+        let source = envelope.source.to_string();
+        let status = envelope.rpc_status.unwrap_or(RpcStatus::Ok);
+        let completion = match status {
+            RpcStatus::Ok => match payload_text(envelope) {
+                Ok(data) => Ok(data),
+                Err(codec) => {
+                    return self.requests.is_waiting(wire_id).then(|| Effect::Raise {
+                        peer: peer.map(str::to_string),
+                        signal: Signal::EnvelopeCorrupt {
+                            source: Some(source),
+                            codec,
+                        },
+                    });
+                }
+            },
+            status => Err(status),
+        };
+        let pending = self.requests.retire(wire_id)?;
+        Some(match completion {
+            Ok(data) => Effect::Complete {
+                invoke_id: pending.invoke_id,
+                token: pending.token,
+                data,
+                source,
+            },
+            Err(status) => Effect::Fail {
+                invoke_id: pending.invoke_id,
+                token: pending.token,
+                data: rpc::invoke_error_data(
+                    status,
+                    envelope.rpc_error_message,
+                    Some(&source),
+                    wire_id,
+                ),
+                source: Some(source),
+            },
+        })
     }
 }
 
@@ -313,6 +535,11 @@ pub enum RouterError {
     /// The envelope could not be written within the bounds its document
     /// declares — an event whose data is longer than an envelope carries.
     Encode(CodecError),
+    /// A Mesh request reached [`Router::invoke`] without a reserved param
+    /// the build always gives it — a request the lowering did not make.
+    MissingParam(&'static str),
+    /// A reserved param's value is not what the build writes there.
+    BadParam { name: &'static str, value: String },
 }
 
 /// The peer a `<send target>` names, when it names one — the runtime's
@@ -320,29 +547,52 @@ pub enum RouterError {
 /// are one answer rather than two copies of it.
 pub use sce_rust_runtime::helpers::send::mesh_peer;
 
-/// Turn what the receive half released into effects, in release order,
-/// followed by the rows it observed.
-fn effects_of(outcome: Outcome, peer: Option<&str>) -> Vec<Effect> {
-    let mut effects: Vec<Effect> = outcome
-        .released
-        .iter()
-        .map(|received| deliver(&received.envelope(), peer))
-        .collect();
-    effects.extend(outcome.signals.into_iter().map(|signal| Effect::Raise {
-        peer: peer.map(str::to_string),
-        signal,
-    }));
-    effects
+/// Write `envelope` for `peer` and hand it to that peer's send half: what
+/// [`Router::send`] and [`Router::invoke`] share once they know what to say.
+fn transmit(
+    peer_name: &str,
+    peer: &mut Peer,
+    mut envelope: Envelope<'_>,
+    now_ms: i64,
+) -> Result<Vec<Effect>, RouterError> {
+    envelope.sequence_no = peer.config.stamp_sequence.then_some(peer.next_sequence);
+    let bytes = envelope.encode_to_vec().map_err(RouterError::Encode)?;
+    // §mesh-10.6.3: the counter advances once per envelope written, so one
+    // that could not be written leaves no hole; and it has no wrap guard,
+    // 2^64 sends being beyond any deployment's lifetime.
+    if peer.config.stamp_sequence {
+        peer.next_sequence = peer.next_sequence.wrapping_add(1);
+    }
+    Ok(match peer.outbound.admit(bytes, now_ms) {
+        Admitted::Send(bytes) => alloc::vec![Effect::Transmit {
+            peer: peer_name.to_string(),
+            bytes,
+        }],
+        Admitted::Queued => Vec::new(),
+        Admitted::Dropped(signal) => alloc::vec![Effect::Raise {
+            peer: Some(peer_name.to_string()),
+            signal,
+        }],
+    })
 }
 
-/// The event an admitted envelope raises. A JSON or empty payload is the
-/// `_event.data` text the sender's engine wrote. A payload in another codec
-/// is bytes the engine's text surface cannot be handed, so it is §mesh-16.7 row 4
-/// naming that codec rather than a string made from bytes that are not one.
-/// `peer` is the binding it arrived on, when a receipt rather than a tick
-/// released it.
-fn deliver(envelope: &Envelope<'_>, peer: Option<&str>) -> Effect {
-    let text = match envelope.datacontenttype {
+/// The codec a payload of the sending engine's own `_event.data` text
+/// travels in: JSON, or nothing when there is none — the rule the C++ core
+/// applies to a child's donedata (sce/include/mesh/ChildSessionAdapter.h).
+fn payload_codec(event_data: &str) -> PayloadCodec {
+    if event_data.is_empty() {
+        PayloadCodec::None
+    } else {
+        PayloadCodec::Json
+    }
+}
+
+/// An envelope's payload as the text the engine is handed. A JSON or empty
+/// payload is the `_event.data` text the sender's engine wrote; a payload in
+/// another codec is bytes the engine's text surface cannot be handed, named
+/// by that codec so §mesh-16.7 row 4 can say which.
+fn payload_text(envelope: &Envelope<'_>) -> Result<String, &'static str> {
+    match envelope.datacontenttype {
         PayloadCodec::None => Ok(String::new()),
         PayloadCodec::Json => core::str::from_utf8(envelope.data)
             .map(str::to_string)
@@ -350,8 +600,20 @@ fn deliver(envelope: &Envelope<'_>, peer: Option<&str>) -> Effect {
         PayloadCodec::Cbor => Err("cbor"),
         PayloadCodec::Typed => Err("typed"),
         PayloadCodec::Raw => Err("raw"),
-    };
-    match text {
+    }
+}
+
+/// The first value the request carries for the `<param>` `name`.
+fn param<'a>(request: &'a HostInvokeRequest, name: &str) -> Option<&'a str> {
+    request.params.get(name)?.first().map(String::as_str)
+}
+
+/// The event an admitted envelope raises, or §mesh-16.7 row 4 when its
+/// payload is not text the engine can be handed (see [`payload_text`]).
+/// `peer` is the binding it arrived on, when a receipt rather than a tick
+/// released it.
+fn deliver(envelope: &Envelope<'_>, peer: Option<&str>) -> Effect {
+    match payload_text(envelope) {
         Ok(data) => Effect::Deliver {
             event: envelope.event_type.to_string(),
             data,
@@ -386,6 +648,9 @@ mod tests {
             dedup: true,
             ordered: true,
         },
+        // The peer these tests bind is `hmi`; `pair` gives each side its own.
+        responders: &["hmi"],
+        deadline_ms: None,
     };
 
     const UNORDERED: PeerConfig = PeerConfig {
@@ -422,8 +687,20 @@ mod tests {
     fn pair(config: PeerConfig) -> (Router, Router) {
         let mut ecu = Router::new("ecu", 8, 50).unwrap();
         let mut hmi = Router::new("hmi", 8, 50).unwrap();
-        ecu.add_peer("hmi", config);
-        hmi.add_peer("ecu", config);
+        ecu.add_peer(
+            "hmi",
+            PeerConfig {
+                responders: &["hmi"],
+                ..config
+            },
+        );
+        hmi.add_peer(
+            "ecu",
+            PeerConfig {
+                responders: &["ecu"],
+                ..config
+            },
+        );
         assert!(ecu.peer_ready("hmi", 0).unwrap().is_empty());
         (ecu, hmi)
     }
@@ -678,6 +955,288 @@ mod tests {
         assert_eq!(
             hmi.peer_ready("ecu", 0),
             Err(RouterError::UnknownPeer("ecu".to_string()))
+        );
+    }
+
+    // ── §mesh-9.5: `<invoke type="sce:mesh-rpc">`, the requester's half ──
+
+    const WIRE: [u8; 16] = [9; 16];
+
+    /// `ecu` bound to `hmi` with a binding-level deadline, and to `mallory`,
+    /// which is not in `hmi`'s responder set.
+    fn requester(deadline_ms: Option<u64>) -> Router {
+        let mut ecu = Router::new("ecu", 8, 50).unwrap();
+        let config = PeerConfig {
+            buffer: None,
+            responders: &["hmi"],
+            deadline_ms,
+            ..UNORDERED
+        };
+        ecu.add_peer("hmi", config);
+        ecu.add_peer(
+            "mallory",
+            PeerConfig {
+                responders: &["mallory"],
+                ..config
+            },
+        );
+        ecu
+    }
+
+    fn ask(src: &str, deadline_ms: Option<&str>) -> HostInvokeRequest {
+        let mut params = std::collections::HashMap::new();
+        params.insert(
+            MESH_EVENT_PARAM.to_string(),
+            alloc::vec!["service.request.force".to_string()],
+        );
+        if let Some(ms) = deadline_ms {
+            params.insert(MESH_DEADLINE_PARAM.to_string(), alloc::vec![ms.to_string()]);
+        }
+        HostInvokeRequest {
+            processor_type: "sce:mesh-rpc".to_string(),
+            invoke_id: "ask".to_string(),
+            src: src.to_string(),
+            params,
+            event_data: r#"{"n":3}"#.to_string(),
+            token: 7,
+            ..HostInvokeRequest::default()
+        }
+    }
+
+    /// Start `ask("#hmi")` at monotonic 10, wall 1000, returning the request
+    /// envelope's bytes.
+    fn started(ecu: &mut Router, deadline_ms: Option<&str>) -> Vec<u8> {
+        match ecu.invoke(&ask("#hmi", deadline_ms), WIRE, [1; 16], 10, 1000) {
+            Ok(Invoked::Started(effects)) => transmitted(Ok(effects)),
+            other => panic!("expected the request to start, got {other:?}"),
+        }
+    }
+
+    fn reply(id: u8, status: Option<RpcStatus>, message: Option<&str>, data: &str) -> Vec<u8> {
+        Envelope {
+            id: &[id; 16],
+            source: "hmi",
+            event_type: "service.response.force",
+            pattern: PatternKind::RpcReply,
+            datacontenttype: payload_codec(data),
+            data: data.as_bytes(),
+            invoke_id: Some(&WIRE),
+            rpc_status: status,
+            rpc_error_message: message,
+            ..Envelope::new()
+        }
+        .encode_to_vec()
+        .unwrap()
+    }
+
+    #[test]
+    fn a_request_carries_its_event_payload_and_wire_ids() {
+        let mut ecu = requester(Some(500));
+        let bytes = started(&mut ecu, None);
+        let envelope = Envelope::decode(&mut SceCursor::new(&bytes)).unwrap();
+        assert_eq!(envelope.pattern, PatternKind::RpcRequest);
+        assert_eq!(envelope.event_type, "service.request.force");
+        assert_eq!(envelope.data, br#"{"n":3}"#);
+        assert_eq!(envelope.datacontenttype, PayloadCodec::Json);
+        assert_eq!(envelope.invoke_id, Some(&WIRE[..]));
+        assert_eq!(envelope.id, &[1; 16]);
+        // §mesh-9.5 precedence: the binding's deadline when the invoke gives none.
+        assert_eq!(envelope.deadline_unix_ms, Some(1500));
+    }
+
+    #[test]
+    fn the_invokes_own_deadline_wins_over_the_bindings() {
+        let mut ecu = requester(Some(500));
+        let bytes = started(&mut ecu, Some("200"));
+        let envelope = Envelope::decode(&mut SceCursor::new(&bytes)).unwrap();
+        assert_eq!(envelope.deadline_unix_ms, Some(1200));
+    }
+
+    #[test]
+    fn a_request_with_no_deadline_carries_none() {
+        let mut ecu = requester(None);
+        let bytes = started(&mut ecu, None);
+        let envelope = Envelope::decode(&mut SceCursor::new(&bytes)).unwrap();
+        assert_eq!(envelope.deadline_unix_ms, None);
+        assert!(
+            ecu.tick(i64::MAX).unwrap().is_empty(),
+            "no deadline, no expiry"
+        );
+    }
+
+    #[test]
+    fn an_ok_reply_completes_the_invocation_once() {
+        let mut ecu = requester(None);
+        started(&mut ecu, None);
+        let answer = reply(2, Some(RpcStatus::Ok), None, r#"{"force":12}"#);
+        assert_eq!(
+            ecu.receive("hmi", answer, 20).unwrap(),
+            alloc::vec![Effect::Complete {
+                invoke_id: "ask".to_string(),
+                token: 7,
+                data: r#"{"force":12}"#.to_string(),
+                source: "hmi".to_string(),
+            }]
+        );
+        // A second answer finds nothing waiting.
+        assert!(ecu
+            .receive("hmi", reply(3, Some(RpcStatus::Ok), None, "1"), 21)
+            .unwrap()
+            .is_empty());
+    }
+
+    /// The key is optional on the wire; the requester reads its absence as
+    /// `Ok`, as the C++ core does.
+    #[test]
+    fn a_reply_with_no_status_is_ok() {
+        let mut ecu = requester(None);
+        started(&mut ecu, None);
+        assert!(matches!(
+            ecu.receive("hmi", reply(2, None, None, ""), 20).unwrap().as_slice(),
+            [Effect::Complete { data, .. }] if data.is_empty()
+        ));
+    }
+
+    #[test]
+    fn a_failed_reply_fails_the_invocation_with_the_status_by_name() {
+        let mut ecu = requester(None);
+        started(&mut ecu, None);
+        let answer = reply(2, Some(RpcStatus::Unavailable), Some("busy"), "");
+        assert_eq!(
+            ecu.receive("hmi", answer, 20).unwrap(),
+            alloc::vec![Effect::Fail {
+                invoke_id: "ask".to_string(),
+                token: 7,
+                data: r#"{"errorName":"invoke","reason":"unavailable","detail":"busy","source":"hmi","invoke_id":"09090909090909090909090909090909"}"#.to_string(),
+                source: Some("hmi".to_string()),
+            }]
+        );
+    }
+
+    /// §mesh-14.6: a reply from outside the responder set is row 14 and
+    /// leaves the request answerable by a declared responder.
+    #[test]
+    fn a_reply_from_an_undeclared_peer_is_refused_and_the_request_stays() {
+        let mut ecu = requester(None);
+        started(&mut ecu, None);
+        assert_eq!(
+            ecu.receive("mallory", reply(2, Some(RpcStatus::Ok), None, "1"), 20)
+                .unwrap(),
+            alloc::vec![Effect::Raise {
+                peer: Some("mallory".to_string()),
+                signal: Signal::RpcReplyFromUndeclaredPeer {
+                    // The envelope's word, reported as written; what refused
+                    // it was the binding it came in on.
+                    source: "hmi".to_string(),
+                    invoke_id: "09090909090909090909090909090909".to_string(),
+                },
+            }]
+        );
+        assert!(matches!(
+            ecu.receive("hmi", reply(3, Some(RpcStatus::Ok), None, "2"), 21)
+                .unwrap()
+                .as_slice(),
+            [Effect::Complete { data, .. }] if data == "2"
+        ));
+    }
+
+    /// §mesh-9.5 `<cancel>`: nothing on the wire, and a later answer is
+    /// dropped rather than ending an invocation that is gone.
+    #[test]
+    fn a_cancelled_request_drops_its_answer() {
+        let mut ecu = requester(Some(100));
+        started(&mut ecu, None);
+        ecu.cancel_invoke("ask", 7);
+        assert!(ecu
+            .receive("hmi", reply(2, Some(RpcStatus::Ok), None, "1"), 20)
+            .unwrap()
+            .is_empty());
+        assert!(
+            ecu.tick(1000).unwrap().is_empty(),
+            "a cancelled request has no deadline"
+        );
+    }
+
+    #[test]
+    fn a_deadline_fails_the_invocation_as_deadline_exceeded_with_no_source() {
+        let mut ecu = requester(Some(100));
+        started(&mut ecu, None);
+        // Kept against the monotonic clock the request started at (10).
+        assert!(ecu.tick(109).unwrap().is_empty());
+        assert_eq!(
+            ecu.tick(110).unwrap(),
+            alloc::vec![Effect::Fail {
+                invoke_id: "ask".to_string(),
+                token: 7,
+                data: r#"{"errorName":"invoke","reason":"deadlineExceeded","invoke_id":"09090909090909090909090909090909"}"#.to_string(),
+                source: None,
+            }]
+        );
+        assert!(ecu
+            .receive("hmi", reply(2, Some(RpcStatus::Ok), None, "1"), 120)
+            .unwrap()
+            .is_empty());
+    }
+
+    /// An `Ok` the engine cannot be handed is row 4 and ends nothing: the
+    /// request still waits for an answer it can use.
+    #[test]
+    fn an_unreadable_ok_reply_leaves_the_request_waiting() {
+        let mut ecu = requester(None);
+        started(&mut ecu, None);
+        let raw = Envelope {
+            id: &[2; 16],
+            source: "hmi",
+            event_type: "service.response.force",
+            pattern: PatternKind::RpcReply,
+            datacontenttype: PayloadCodec::Raw,
+            data: &[0xFF],
+            invoke_id: Some(&WIRE),
+            ..Envelope::new()
+        }
+        .encode_to_vec()
+        .unwrap();
+        assert!(matches!(
+            ecu.receive("hmi", raw, 20).unwrap().as_slice(),
+            [Effect::Raise {
+                signal: Signal::EnvelopeCorrupt { codec: "raw", .. },
+                ..
+            }]
+        ));
+        assert!(matches!(
+            ecu.receive("hmi", reply(3, Some(RpcStatus::Ok), None, "1"), 21)
+                .unwrap()
+                .as_slice(),
+            [Effect::Complete { .. }]
+        ));
+    }
+
+    /// §mesh-9.5's pre-envelope tier: a target that cannot reach the wire
+    /// refuses the invocation, which the engine raises as `error.execution`.
+    #[test]
+    fn a_request_that_cannot_reach_the_wire_is_refused() {
+        let mut ecu = requester(None);
+        assert_eq!(
+            ecu.invoke(&ask("#nobody", None), WIRE, [1; 16], 0, 0),
+            Ok(Invoked::Refused(
+                r##"{"errorName":"execution","reason":"INVOKE_SRC_NOT_FOUND","detail":"no binding for '#nobody'"}"##
+                    .to_string()
+            ))
+        );
+        assert!(matches!(
+            ecu.invoke(&ask("hmi", None), WIRE, [1; 16], 0, 0),
+            Ok(Invoked::Refused(data)) if data.contains("names no Mesh peer")
+        ));
+    }
+
+    #[test]
+    fn a_request_without_its_event_param_is_the_hosts_error() {
+        let mut ecu = requester(None);
+        let mut request = ask("#hmi", None);
+        request.params.remove(MESH_EVENT_PARAM);
+        assert_eq!(
+            ecu.invoke(&request, WIRE, [1; 16], 0, 0),
+            Err(RouterError::MissingParam(MESH_EVENT_PARAM))
         );
     }
 }

@@ -59,6 +59,11 @@ pub enum Signal {
         attempts: u32,
         transport_error: Option<String>,
     },
+    /// RPC_REPLY_FROM_UNDECLARED_PEER (row 14): a reply from `source` named
+    /// the live request `invoke_id` (the wire id, hex) but arrived on a
+    /// binding outside that request's responder set (§mesh-14.6). The
+    /// request stays answerable.
+    RpcReplyFromUndeclaredPeer { source: String, invoke_id: String },
 }
 
 /// The deployment binding a row is observed on: the peer it names and the
@@ -83,6 +88,7 @@ impl Signal {
             Signal::TransportUnavailable => "TRANSPORT_UNAVAILABLE",
             Signal::SendFailed { .. } => "SEND_FAILED",
             Signal::DeliveryExhausted { .. } => "DELIVERY_EXHAUSTED",
+            Signal::RpcReplyFromUndeclaredPeer { .. } => "RPC_REPLY_FROM_UNDECLARED_PEER",
         }
     }
 
@@ -100,11 +106,14 @@ impl Signal {
     /// name them; a row observed with no binding (a gap ended by a tick)
     /// has neither column.
     pub fn event_data(&self, binding: Option<Binding<'_>>) -> String {
-        let mut json = Json::new(self.reason());
+        let mut json = Json::new("communication", self.reason());
         let (source, sending, transport_row) = match self {
             Signal::OrderingGap { source, .. }
             | Signal::DedupWindowOverflow { source, .. }
-            | Signal::MissingSequence { source } => (Some(source.as_str()), false, false),
+            | Signal::MissingSequence { source }
+            | Signal::RpcReplyFromUndeclaredPeer { source, .. } => {
+                (Some(source.as_str()), false, false)
+            }
             Signal::EnvelopeCorrupt { source, .. } => (source.as_deref(), false, true),
             Signal::BackpressureDrop { .. }
             | Signal::OutboundStaleDrop { .. }
@@ -153,20 +162,26 @@ impl Signal {
                 json.number("lost_seq_lo", *lost_lo);
                 json.number("lost_seq_hi", *lost_hi);
             }
+            // §mesh-16.7 row 14's columns: `source`, then the request it
+            // tried to retire. The C++ core's order puts `invoke_id` right
+            // after `source` as well.
+            Signal::RpcReplyFromUndeclaredPeer { invoke_id, .. } => {
+                json.string("invoke_id", invoke_id)
+            }
             Signal::MissingSequence { .. } | Signal::TransportUnavailable => {}
         }
         json.finish()
     }
 }
 
-/// A flat JSON object written in the order its fields are added.
-struct Json(String);
+/// A §mesh-10.7.1 `_event.data` object, written in the order its fields are
+/// added: `errorName` and `reason` first, then what the caller adds.
+pub(crate) struct Json(String);
 
 impl Json {
-    fn new(reason: &str) -> Self {
+    pub(crate) fn new(error_name: &str, reason: &str) -> Self {
         let mut json = Json(String::from("{"));
-        json.field("errorName");
-        json.0.push_str("\"communication\"");
+        json.string("errorName", error_name);
         json.string("reason", reason);
         json
     }
@@ -180,7 +195,7 @@ impl Json {
         self.0.push_str("\":");
     }
 
-    fn string(&mut self, key: &str, value: &str) {
+    pub(crate) fn string(&mut self, key: &str, value: &str) {
         self.field(key);
         self.0.push('"');
         self.0.push_str(&escape_json_string(value));
@@ -194,7 +209,7 @@ impl Json {
         let _ = write!(self.0, "{value}");
     }
 
-    fn finish(mut self) -> String {
+    pub(crate) fn finish(mut self) -> String {
         self.0.push('}');
         self.0
     }
@@ -284,6 +299,20 @@ mod tests {
             }
             .event_data(WSS_TO_HMI),
             r#"{"errorName":"communication","reason":"DEDUP_WINDOW_OVERFLOW","source":"ecu","window_size":256}"#
+        );
+    }
+
+    /// Row 14 carries the columns §mesh-16.7 names for it and no binding:
+    /// the binding it arrived on is the one the reply was refused for.
+    #[test]
+    fn an_undeclared_responder_names_its_source_and_the_request() {
+        assert_eq!(
+            Signal::RpcReplyFromUndeclaredPeer {
+                source: "mallory".to_string(),
+                invoke_id: "019200000000700080000000000000ab".to_string(),
+            }
+            .event_data(WSS_TO_HMI),
+            r#"{"errorName":"communication","reason":"RPC_REPLY_FROM_UNDECLARED_PEER","source":"mallory","invoke_id":"019200000000700080000000000000ab"}"#
         );
     }
 

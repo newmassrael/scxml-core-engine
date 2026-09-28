@@ -201,6 +201,7 @@ fn facts_for(target: &ResolvedTarget) -> Vec<Fact> {
         invoke_sites,
         ordering,
         responders,
+        deadline_ms,
         retry,
         auth,
         pool_plan,
@@ -221,6 +222,12 @@ fn facts_for(target: &ResolvedTarget) -> Vec<Fact> {
     push_nested_list("invoke", invoke_sites, &mut facts);
     push_nested("ordering", ordering, &mut facts);
     push_list("responders", responders, &mut facts);
+    // Absent is not a default: a request with no deadline of its own
+    // waits for its reply indefinitely (§mesh-9.5).
+    match deadline_ms {
+        Some(ms) => facts.push(Fact::new("deadline-ms", ms.to_string())),
+        None => facts.push(Fact::new("deadline-ms", "(none)")),
+    }
     push_optional("retry", retry.as_ref(), &mut facts);
     match auth {
         Some(a) => push_auth("auth", a, &mut facts),

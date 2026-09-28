@@ -23,7 +23,7 @@
 use std::io::Write;
 use std::time::Duration;
 
-use sce_rust_mesh::endpoint::{Endpoint, Environment, MESH_PROCESSOR_TYPE};
+use sce_rust_mesh::endpoint::{Endpoint, EngineCall, Environment, MESH_PROCESSOR_TYPE};
 use sce_rust_mesh::peers::PeerLink;
 use sce_rust_mesh::wss::{accept, deliver, LinkEvent, WssTransport, DEFAULT_KEEPALIVE};
 
@@ -44,6 +44,13 @@ impl Environment for Counting {
     fn now_ms(&mut self) -> i64 {
         self.now += 1;
         self.now
+    }
+    fn now_unix_ms(&mut self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| {
+                u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+            })
     }
     fn envelope_id(&mut self) -> [u8; 16] {
         self.ids = self.ids.wrapping_add(1);
@@ -100,7 +107,10 @@ async fn main() {
     while let Some(event) = events.recv().await {
         let lost = matches!(event, LinkEvent::Lost(..));
         deliver(&mut endpoint, event);
-        for delivered in endpoint.take_events() {
+        for call in endpoint.take_calls() {
+            let EngineCall::Raise(delivered) = call else {
+                continue;
+            };
             if delivered.name != "ping" {
                 continue;
             }

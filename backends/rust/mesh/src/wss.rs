@@ -318,6 +318,9 @@ mod tests {
             self.now += 1;
             self.now
         }
+        fn now_unix_ms(&mut self) -> u64 {
+            self.now as u64
+        }
         fn envelope_id(&mut self) -> [u8; 16] {
             self.ids += 1;
             [self.ids; 16]
@@ -327,9 +330,23 @@ mod tests {
         }
     }
 
+    /// The events `endpoint` queued, which in these tests are all it queued.
+    fn raised(
+        endpoint: &mut Endpoint<WssTransport, Counting>,
+    ) -> Vec<crate::endpoint::EngineEvent> {
+        endpoint
+            .take_calls()
+            .into_iter()
+            .map(|call| match call {
+                crate::endpoint::EngineCall::Raise(event) => event,
+                other => panic!("expected only events, got {other:?}"),
+            })
+            .collect()
+    }
+
     fn endpoint(
         machine: &str,
-        peer: &str,
+        peer: &'static str,
         transport: WssTransport,
     ) -> Endpoint<WssTransport, Counting> {
         let mut router = Router::new(machine, 8, 50).unwrap();
@@ -347,6 +364,10 @@ mod tests {
                     dedup: true,
                     ordered: false,
                 },
+                // A generated peer table holds this as a `const`; a test
+                // names its peer at run time, so the one-element set is leaked.
+                responders: Box::leak(Box::new([peer])),
+                deadline_ms: None,
             },
         );
         Endpoint::new(router, transport, Counting::default())
@@ -424,7 +445,7 @@ mod tests {
         assert!(matches!(&received, LinkEvent::Received(peer, _) if peer == "client"));
         deliver(&mut server, received);
 
-        let events = server.take_events();
+        let events = raised(&mut server);
         let [event] = events.as_slice() else {
             panic!("expected one event, got {events:?}");
         };
@@ -515,7 +536,7 @@ mod tests {
         );
         deliver(&mut client, lost);
 
-        let events = client.take_events();
+        let events = raised(&mut client);
         let [event] = events.as_slice() else {
             panic!("expected one row, got {events:?}");
         };

@@ -24,6 +24,9 @@ class RouterTest {
         retry = null,
         stampSequence = true,
         delivery = Delivery(dedup = true, ordered = true),
+        // The peer these tests bind is `hmi`; `pair` gives each side its own.
+        responders = listOf("hmi"),
+        deadlineMs = null,
     )
     private val unordered = ordered.copy(stampSequence = false, delivery = Delivery(dedup = true, ordered = false))
 
@@ -42,8 +45,8 @@ class RouterTest {
     private fun pair(config: PeerConfig): Pair<Router, Router> {
         val ecu = Router("ecu", 8u, 50)
         val hmi = Router("hmi", 8u, 50)
-        ecu.addPeer("hmi", config)
-        hmi.addPeer("ecu", config)
+        ecu.addPeer("hmi", config.copy(responders = listOf("hmi")))
+        hmi.addPeer("ecu", config.copy(responders = listOf("ecu")))
         assertTrue(done(ecu.peerReady("hmi", 0)).isEmpty())
         return ecu to hmi
     }

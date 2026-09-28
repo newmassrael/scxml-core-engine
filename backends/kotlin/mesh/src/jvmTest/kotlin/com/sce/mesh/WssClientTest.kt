@@ -93,6 +93,8 @@ class WssClientTest {
                     retry = null,
                     stampSequence = false,
                     delivery = Delivery(dedup = true, ordered = false),
+                    responders = listOf(peer),
+                    deadlineMs = null,
                 ),
             )
         }

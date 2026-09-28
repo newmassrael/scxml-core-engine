@@ -401,6 +401,14 @@ pub struct ResolvedTarget {
     /// `pending_rpcs_`.
     #[serde(default)]
     pub responders: Vec<String>,
+    /// SCE_MESH.md §mesh-9.5 binding-level request deadline — deploy.yaml
+    /// `bindings.<target>.deadline_ms`, the fallback a request takes when
+    /// its `<invoke>` carries no `_mesh_deadline_ms`. Static sites already
+    /// have it folded into [`MeshRpcInvokeSite::deadline_ms`]; it is kept
+    /// here as well because a host core resolves the peer only at run
+    /// time (`srcexpr`) and so reads the fallback per peer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deadline_ms: Option<u64>,
     /// SCE_MESH.md §mesh-16.7 row 3 retry policy. `None` ⇒ no retry layer
     /// (codegen wires the OutboundBuffer dispatcher directly to the
     /// transport-send closure, Stage 1/2 behaviour); `Some(_)` ⇒
@@ -1769,6 +1777,9 @@ pub(crate) struct PartialTarget {
     /// `reply_from:` by [`responder_set`]. Carried through the partial
     /// so the merge step does not have to revisit deploy.yaml.
     pub responders: Vec<String>,
+    /// See [`ResolvedTarget::deadline_ms`]. Copied verbatim from the
+    /// `BindingConfig`.
+    pub deadline_ms: Option<u64>,
     /// SCE_MESH.md §mesh-16.7 row 3 retry policy, copied verbatim from the
     /// `BindingConfig`. `None` ⇒ no retry layer; OutboundBuffer's
     /// dispatcher goes straight to the transport. `Some(_)` ⇒ codegen
@@ -1887,6 +1898,7 @@ pub(crate) fn contribute_send_partials(
                     invoke_sites: merged_sites,
                     ordering: binding.ordering,
                     responders: responder_set(target, binding),
+                    deadline_ms: binding.deadline_ms,
                     retry: binding.retry,
                     auth: binding.auth.clone(),
                     instance_from: binding.instance_from.clone(),
@@ -2221,6 +2233,7 @@ pub(crate) fn contribute_subscription_partials(
                 invoke_sites: Vec::new(),
                 ordering: binding.ordering,
                 responders: responder_set(&source_target, binding),
+                deadline_ms: binding.deadline_ms,
                 retry: binding.retry,
                 auth: binding.auth.clone(),
                 instance_from: binding.instance_from.clone(),
@@ -2299,6 +2312,7 @@ pub(crate) fn contribute_srcexpr_partials(
                 invoke_sites,
                 ordering: binding.ordering,
                 responders: responder_set(&target, binding),
+                deadline_ms: binding.deadline_ms,
                 retry: binding.retry,
                 auth: binding.auth.clone(),
                 instance_from: binding.instance_from.clone(),
@@ -2654,6 +2668,7 @@ pub(crate) fn finalize_targets(
             invoke_sites: pt.invoke_sites,
             ordering: pt.ordering,
             responders: pt.responders,
+            deadline_ms: pt.deadline_ms,
             retry: pt.retry,
             auth: pt.auth,
             pool_plan,
@@ -4000,6 +4015,7 @@ mod tests {
             invoke_sites: Vec::new(),
             ordering: crate::mesh::deploy::OrderingRequirement::None,
             responders: vec!["motor".to_string()],
+            deadline_ms: None,
             retry: None,
             auth: None,
             pool_plan: None,

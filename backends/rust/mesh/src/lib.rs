@@ -39,6 +39,7 @@ pub mod inbound;
 pub mod outbound;
 pub mod peers;
 pub mod router;
+pub mod rpc;
 pub mod signal;
 #[cfg(feature = "wss")]
 pub mod wss;

@@ -2126,6 +2126,14 @@ struct HostPeerContext {
     dedup: bool,
     /// §10.6: envelopes from this peer are released in sequence order.
     ordered: bool,
+    /// §14.6: the machines whose reply may answer a request sent to this
+    /// peer — [`crate::mesh::topology::ResolvedTarget::responders`], never
+    /// empty.
+    responders: Vec<String>,
+    /// §9.5: deploy.yaml's binding-level request deadline, the fallback a
+    /// request to this peer takes when it carries no `_mesh_deadline_ms`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    deadline_ms: Option<u64>,
     /// How the link to the peer is opened — the core's `PeerLink`.
     link: HostLinkContext,
 }
@@ -2283,6 +2291,8 @@ fn generate_host_mesh(
                 stamp_sequence: policy.needs_ordering,
                 dedup: policy.needs_dedup,
                 ordered: policy.needs_ordering,
+                responders: t.responders.clone(),
+                deadline_ms: t.deadline_ms,
                 link,
             }
         })

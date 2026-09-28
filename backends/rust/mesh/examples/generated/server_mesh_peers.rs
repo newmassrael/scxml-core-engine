@@ -33,6 +33,8 @@ pub const MACHINE: Machine = Machine {
                 dedup: true,
                 ordered: false,
             },
+            responders: &["client"],
+            deadline_ms: None,
         },
         link: PeerLink::WssAccept { keepalive_ms: None },
     }],

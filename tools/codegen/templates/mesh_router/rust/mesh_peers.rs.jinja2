@@ -57,6 +57,8 @@ pub const MACHINE: Machine = Machine {
                     dedup: {{ peer.dedup }},
                     ordered: {{ peer.ordered }},
                 },
+                responders: &[{% for r in peer.responders %}"{{ r | escape_rust }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+                deadline_ms: {% if peer.deadline_ms is defined %}Some({{ peer.deadline_ms }}){% else %}None{% endif %},
             },
 {%- if peer.link.kind == "wss_dial" %}
             link: PeerLink::WssDial {
