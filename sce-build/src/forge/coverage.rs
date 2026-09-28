@@ -190,7 +190,7 @@ fn value_space_of(
 /// The asymmetry is the point: the gap is a question, and a question is
 /// raised when someone asks for it; the acknowledgement is an assertion
 /// the document makes about itself, and an assertion nothing checks is
-/// how the roster's own `sce:codec-id` sat unread for so long. An author
+/// how `sce:codec-id` sat unread in 79 documents until 2026-09-28. An author
 /// who can silence the question with a name that means nothing has a
 /// worse tool than one with no way to silence it at all.
 pub fn check(

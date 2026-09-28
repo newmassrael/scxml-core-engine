@@ -9850,7 +9850,7 @@ fn parent_tag_write_round_trip_fixture(
         r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_b5nu_keyexpr.scxml" kind="codec" as="codec_b5nu_keyexpr">
     <sce:variant-dispatch flag="header.M"/>
   </sce:import>
@@ -9868,7 +9868,7 @@ fn parent_tag_write_round_trip_fixture(
     let keyexpr = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_keyexpr" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_b5nu_local.scxml" kind="codec" as="codec_b5nu_local"/>
   <sce:import src="codec_b5nu_nonlocal.scxml" kind="codec" as="codec_b5nu_nonlocal"/>
   <datamodel>
@@ -9882,7 +9882,7 @@ fn parent_tag_write_round_trip_fixture(
     let local = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_local" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
   </datamodel>
@@ -9891,7 +9891,7 @@ fn parent_tag_write_round_trip_fixture(
     let nonlocal = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_nonlocal" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
   </datamodel>
@@ -10009,7 +10009,7 @@ fn parent_tag_inversion_write_round_trip_fixture() -> (std::path::PathBuf, std::
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_b5nu_keyexpr.scxml" kind="codec" as="codec_b5nu_keyexpr">
     <sce:variant-dispatch flag="header.M"/>
   </sce:import>
@@ -10025,7 +10025,7 @@ fn parent_tag_inversion_write_round_trip_fixture() -> (std::path::PathBuf, std::
     let keyexpr = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_keyexpr" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_b5nu_local.scxml" kind="codec" as="codec_b5nu_local"/>
   <sce:import src="codec_b5nu_nonlocal.scxml" kind="codec" as="codec_b5nu_nonlocal"/>
   <datamodel>
@@ -10039,7 +10039,7 @@ fn parent_tag_inversion_write_round_trip_fixture() -> (std::path::PathBuf, std::
     let local = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_local" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
   </datamodel>
@@ -10048,7 +10048,7 @@ fn parent_tag_inversion_write_round_trip_fixture() -> (std::path::PathBuf, std::
     let nonlocal = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_nonlocal" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
   </datamodel>
@@ -10127,7 +10127,7 @@ fn forge_parent_tag_inversion_flag_not_resolved_rejects() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_b5nu_keyexpr.scxml" kind="codec" as="codec_b5nu_keyexpr">
     <sce:variant-dispatch flag="header.X"/>
   </sce:import>
@@ -10143,7 +10143,7 @@ fn forge_parent_tag_inversion_flag_not_resolved_rejects() {
     let keyexpr = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_keyexpr" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_b5nu_local.scxml" kind="codec" as="codec_b5nu_local"/>
   <sce:import src="codec_b5nu_nonlocal.scxml" kind="codec" as="codec_b5nu_nonlocal"/>
   <datamodel>
@@ -10157,7 +10157,7 @@ fn forge_parent_tag_inversion_flag_not_resolved_rejects() {
     let local = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_local" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
   </datamodel>
@@ -10166,7 +10166,7 @@ fn forge_parent_tag_inversion_flag_not_resolved_rejects() {
     let nonlocal = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_nonlocal" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
   </datamodel>
@@ -10234,7 +10234,7 @@ fn parent_tag_inversion_beta_write_fixture() -> (std::path::PathBuf, std::path::
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_beta_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_b5nu_beta_keyexpr.scxml" kind="codec" as="codec_b5nu_beta_keyexpr">
     <sce:variant-dispatch flag="header.M"/>
   </sce:import>
@@ -10250,7 +10250,7 @@ fn parent_tag_inversion_beta_write_fixture() -> (std::path::PathBuf, std::path::
     let keyexpr = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_beta_keyexpr" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_b5nu_beta_local.scxml" kind="codec" as="codec_b5nu_beta_local"/>
   <sce:import src="codec_b5nu_beta_nonlocal.scxml" kind="codec" as="codec_b5nu_beta_nonlocal"/>
   <datamodel>
@@ -10264,7 +10264,7 @@ fn parent_tag_inversion_beta_write_fixture() -> (std::path::PathBuf, std::path::
     let local = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_beta_local" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
   </datamodel>
@@ -10273,7 +10273,7 @@ fn parent_tag_inversion_beta_write_fixture() -> (std::path::PathBuf, std::path::
     let nonlocal = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_beta_nonlocal" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
   </datamodel>
@@ -10456,7 +10456,7 @@ fn forge_parent_tag_inversion_dispatch_carrier_after_embed_rejects() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_qD5_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_b5nu_qD5_keyexpr.scxml" kind="codec" as="codec_b5nu_qD5_keyexpr">
     <sce:variant-dispatch flag="header.M"/>
   </sce:import>
@@ -10470,7 +10470,7 @@ fn forge_parent_tag_inversion_dispatch_carrier_after_embed_rejects() {
     let keyexpr = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_qD5_keyexpr" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_b5nu_qD5_local.scxml" kind="codec" as="codec_b5nu_qD5_local"/>
   <sce:import src="codec_b5nu_qD5_nonlocal.scxml" kind="codec" as="codec_b5nu_qD5_nonlocal"/>
   <datamodel>
@@ -10483,7 +10483,7 @@ fn forge_parent_tag_inversion_dispatch_carrier_after_embed_rejects() {
     let local = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_qD5_local" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
   </datamodel>
@@ -10491,7 +10491,7 @@ fn forge_parent_tag_inversion_dispatch_carrier_after_embed_rejects() {
     let nonlocal = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_b5nu_qD5_nonlocal" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
   </datamodel>
@@ -10588,7 +10588,7 @@ fn forge_parent_tag_consumer_parity_alias_neq_stem_rust() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_consumer_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="b5nu_consumer_disp.scxml" kind="codec" as="renamed_alias">
     <sce:variant-dispatch flag="header.M"/>
   </sce:import>
@@ -10604,7 +10604,7 @@ fn forge_parent_tag_consumer_parity_alias_neq_stem_rust() {
     let disp = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_consumer_disp" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="b5nu_consumer_local.scxml" kind="codec" as="b5nu_consumer_local"/>
   <sce:import src="b5nu_consumer_nonlocal.scxml" kind="codec" as="b5nu_consumer_nonlocal"/>
   <datamodel>
@@ -10618,7 +10618,7 @@ fn forge_parent_tag_consumer_parity_alias_neq_stem_rust() {
     let local = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_consumer_local" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
   </datamodel>
@@ -10627,7 +10627,7 @@ fn forge_parent_tag_consumer_parity_alias_neq_stem_rust() {
     let nonlocal = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_consumer_nonlocal" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
   </datamodel>
@@ -10726,7 +10726,7 @@ fn forge_parent_tag_consumer_parity_present_if_gated_rust() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_consumer_gated_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="b5nu_consumer_gated_disp.scxml" kind="codec" as="b5nu_consumer_gated_disp">
     <sce:variant-dispatch flag="header.M"/>
   </sce:import>
@@ -10742,7 +10742,7 @@ fn forge_parent_tag_consumer_parity_present_if_gated_rust() {
     let disp = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_consumer_gated_disp" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="b5nu_consumer_gated_local.scxml" kind="codec" as="b5nu_consumer_gated_local"/>
   <sce:import src="b5nu_consumer_gated_nonlocal.scxml" kind="codec" as="b5nu_consumer_gated_nonlocal"/>
   <datamodel>
@@ -10756,7 +10756,7 @@ fn forge_parent_tag_consumer_parity_present_if_gated_rust() {
     let local = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_consumer_gated_local" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
   </datamodel>
@@ -10765,7 +10765,7 @@ fn forge_parent_tag_consumer_parity_present_if_gated_rust() {
     let nonlocal = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_consumer_gated_nonlocal" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
   </datamodel>
@@ -10842,7 +10842,7 @@ fn forge_parent_tag_consumer_parity_chain_forwarding_resolves() {
     let dispatcher = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_chain_disp" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="b5nu_chain_arm_a.scxml" kind="codec" as="b5nu_chain_arm_a">
     <sce:flag-bind input="N" source="N"/>
   </sce:import>
@@ -10864,7 +10864,7 @@ fn forge_parent_tag_consumer_parity_chain_forwarding_resolves() {
     let arm_a = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_chain_arm_a" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
   </sce:flag-inputs>
@@ -10876,7 +10876,7 @@ fn forge_parent_tag_consumer_parity_chain_forwarding_resolves() {
     let arm_b = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_chain_arm_b" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
   </datamodel>
@@ -10983,7 +10983,7 @@ fn parent_tag_dsg_write_fixture(namespace: &str) -> (std::path::PathBuf, String,
         r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="{disp_id}" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="{arm_a_id}.scxml" kind="codec" as="{arm_a_id}">
     <sce:flag-bind input="N" source="N"/>
   </sce:import>
@@ -11000,34 +11000,30 @@ fn parent_tag_dsg_write_fixture(namespace: &str) -> (std::path::PathBuf, String,
 </scxml>"#
     );
 
-    let arm_a = format!(
-        r#"<?xml version="1.0"?>
+    let arm_a = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="{arm_a_id}" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
   </sce:flag-inputs>
   <datamodel>
     <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8" sce:present-if="N"/>
   </datamodel>
-</scxml>"#
-    );
+</scxml>"#;
 
-    let arm_b = format!(
-        r#"<?xml version="1.0"?>
+    let arm_b = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="{arm_b_id}" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
   </datamodel>
-</scxml>"#
-    );
+</scxml>"#;
 
     std::fs::write(dir.join(format!("{disp_id}.scxml")), &dispatcher).expect("write disp");
-    std::fs::write(dir.join(format!("{arm_a_id}.scxml")), &arm_a).expect("write arm_a");
-    std::fs::write(dir.join(format!("{arm_b_id}.scxml")), &arm_b).expect("write arm_b");
+    std::fs::write(dir.join(format!("{arm_a_id}.scxml")), arm_a).expect("write arm_a");
+    std::fs::write(dir.join(format!("{arm_b_id}.scxml")), arm_b).expect("write arm_b");
 
     (dir, disp_id, arm_a_id, arm_b_id)
 }
@@ -11505,7 +11501,7 @@ fn forge_parent_tag_consumer_field_presence_dispatch_go() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_go_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="b5nu_go_disp.scxml" kind="codec" as="b5nu_go_disp">
     <sce:variant-dispatch flag="header.M"/>
   </sce:import>
@@ -11520,7 +11516,7 @@ fn forge_parent_tag_consumer_field_presence_dispatch_go() {
     let disp = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_go_disp" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="b5nu_go_local.scxml" kind="codec" as="b5nu_go_local"/>
   <sce:import src="b5nu_go_nonlocal.scxml" kind="codec" as="b5nu_go_nonlocal"/>
   <datamodel>
@@ -11533,7 +11529,7 @@ fn forge_parent_tag_consumer_field_presence_dispatch_go() {
     let local = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_go_local" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
   </datamodel>
@@ -11541,7 +11537,7 @@ fn forge_parent_tag_consumer_field_presence_dispatch_go() {
     let nonlocal = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_go_nonlocal" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
   </datamodel>
@@ -11614,7 +11610,7 @@ fn forge_parent_tag_consumer_kind_string_dispatch_python() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_py_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="b5nu_py_disp.scxml" kind="codec" as="b5nu_py_disp">
     <sce:variant-dispatch flag="header.M"/>
   </sce:import>
@@ -11629,7 +11625,7 @@ fn forge_parent_tag_consumer_kind_string_dispatch_python() {
     let disp = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_py_disp" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="b5nu_py_local.scxml" kind="codec" as="b5nu_py_local"/>
   <sce:import src="b5nu_py_nonlocal.scxml" kind="codec" as="b5nu_py_nonlocal"/>
   <datamodel>
@@ -11642,7 +11638,7 @@ fn forge_parent_tag_consumer_kind_string_dispatch_python() {
     let local = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_py_local" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
   </datamodel>
@@ -11650,7 +11646,7 @@ fn forge_parent_tag_consumer_kind_string_dispatch_python() {
     let nonlocal = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_py_nonlocal" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
   </datamodel>
@@ -13596,7 +13592,7 @@ fn flag_inversion_write_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_leaf.scxml" kind="codec" as="codec_axis1_leaf">
     <sce:flag-bind input="has_suffix" source="header.N"/>
   </sce:import>
@@ -13612,7 +13608,7 @@ fn flag_inversion_write_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
     let leaf = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_leaf" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="has_suffix" width="1"/>
   </sce:flag-inputs>
@@ -13673,7 +13669,7 @@ fn flag_inversion_input_unbound_rejects() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_unbound_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_unbound_leaf.scxml" kind="codec" as="codec_axis1_unbound_leaf"/>
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
@@ -13686,7 +13682,7 @@ fn flag_inversion_input_unbound_rejects() {
     let leaf = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_unbound_leaf" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="has_suffix" width="1"/>
   </sce:flag-inputs>
@@ -13748,7 +13744,7 @@ fn flag_inversion_bind_input_not_declared_rejects() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_undeclared_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_undeclared_leaf.scxml" kind="codec" as="codec_axis1_undeclared_leaf">
     <sce:flag-bind input="is_admin" source="header.N"/>
   </sce:import>
@@ -13763,7 +13759,7 @@ fn flag_inversion_bind_input_not_declared_rejects() {
     let leaf = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_undeclared_leaf" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="has_suffix" width="1"/>
   </sce:flag-inputs>
@@ -13830,7 +13826,7 @@ fn flag_inversion_bind_source_not_resolved_rejects() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_unresolved_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_unresolved_leaf.scxml" kind="codec" as="codec_axis1_unresolved_leaf">
     <sce:flag-bind input="has_suffix" source="header.K"/>
   </sce:import>
@@ -13845,7 +13841,7 @@ fn flag_inversion_bind_source_not_resolved_rejects() {
     let leaf = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_unresolved_leaf" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="has_suffix" width="1"/>
   </sce:flag-inputs>
@@ -13910,7 +13906,7 @@ fn flag_inversion_chain_forwarder_bare_name_validates() {
     let middle = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_chain_middle" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="has_suffix" width="1"/>
   </sce:flag-inputs>
@@ -13926,7 +13922,7 @@ fn flag_inversion_chain_forwarder_bare_name_validates() {
     let inner = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_chain_inner" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="has_suffix" width="1"/>
   </sce:flag-inputs>
@@ -13975,7 +13971,7 @@ fn flag_inversion_write_consuming_fixture() -> (std::path::PathBuf, std::path::P
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_b_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_b_leaf.scxml" kind="codec" as="codec_axis1_b_leaf">
     <sce:flag-bind input="has_suffix" source="header.N"/>
   </sce:import>
@@ -13991,7 +13987,7 @@ fn flag_inversion_write_consuming_fixture() -> (std::path::PathBuf, std::path::P
     let leaf = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_b_leaf" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="has_suffix" width="1"/>
   </sce:flag-inputs>
@@ -14135,7 +14131,7 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_d1_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_d1_with_input.scxml" kind="codec" as="codec_axis1_d1_with_input">
     <sce:flag-bind input="S" source="header.S"/>
   </sce:import>
@@ -14156,7 +14152,7 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
     let with_input = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_d1_with_input" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="S" width="1"/>
   </sce:flag-inputs>
@@ -14170,7 +14166,7 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
     let no_input = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_d1_no_input" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="reason" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
   </datamodel>
@@ -14310,7 +14306,7 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_embed_disp_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_embed_disp.scxml" kind="codec" as="codec_axis1_embed_disp">
     <sce:variant-dispatch flag="header.M"/>
     <sce:flag-bind input="N" source="header.N"/>
@@ -14331,7 +14327,7 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
     let dispatcher = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_embed_disp" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_arm_a.scxml" kind="codec" as="codec_axis1_arm_a">
     <sce:flag-bind input="N" source="N"/>
   </sce:import>
@@ -14354,7 +14350,7 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
     let arm_a = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_arm_a" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
   </sce:flag-inputs>
@@ -14371,7 +14367,7 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
     let arm_b = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_arm_b" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="reason" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
   </datamodel>
@@ -14774,7 +14770,7 @@ fn axis1_inversion_variant_arm_body_caller_tag_rejected() {
     let d1 = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_nested_d1" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_nested_d2.scxml" kind="codec" as="codec_axis1_nested_d2"/>
   <sce:import src="codec_axis1_nested_arm_b.scxml" kind="codec" as="codec_axis1_nested_arm_b"/>
   <datamodel>
@@ -14794,7 +14790,7 @@ fn axis1_inversion_variant_arm_body_caller_tag_rejected() {
     let d2 = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_nested_d2" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_nested_d2_arm_a.scxml" kind="codec" as="codec_axis1_nested_d2_arm_a"/>
   <sce:import src="codec_axis1_nested_d2_arm_b.scxml" kind="codec" as="codec_axis1_nested_d2_arm_b"/>
   <datamodel>
@@ -14805,11 +14801,11 @@ fn axis1_inversion_variant_arm_body_caller_tag_rejected() {
   </datamodel>
 </scxml>"#;
 
-    let leaf = |id: &str, field: &str| -> String {
+    let leaf = |field: &str| -> String {
         format!(
             r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="{id}" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel><sce:field id="{field}" sce:type="uint8" sce:byte="0" sce:bit-size="8"/></datamodel>
 </scxml>"#
         )
@@ -14817,21 +14813,11 @@ fn axis1_inversion_variant_arm_body_caller_tag_rejected() {
 
     std::fs::write(dir.join("codec_axis1_nested_d1.scxml"), d1).expect("write d1");
     std::fs::write(dir.join("codec_axis1_nested_d2.scxml"), d2).expect("write d2");
-    std::fs::write(
-        dir.join("codec_axis1_nested_d2_arm_a.scxml"),
-        leaf("codec_axis1_nested_d2_arm_a", "x"),
-    )
-    .expect("write d2_arm_a");
-    std::fs::write(
-        dir.join("codec_axis1_nested_d2_arm_b.scxml"),
-        leaf("codec_axis1_nested_d2_arm_b", "y"),
-    )
-    .expect("write d2_arm_b");
-    std::fs::write(
-        dir.join("codec_axis1_nested_arm_b.scxml"),
-        leaf("codec_axis1_nested_arm_b", "z"),
-    )
-    .expect("write arm_b");
+    std::fs::write(dir.join("codec_axis1_nested_d2_arm_a.scxml"), leaf("x"))
+        .expect("write d2_arm_a");
+    std::fs::write(dir.join("codec_axis1_nested_d2_arm_b.scxml"), leaf("y"))
+        .expect("write d2_arm_b");
+    std::fs::write(dir.join("codec_axis1_nested_arm_b.scxml"), leaf("z")).expect("write arm_b");
 
     // Run codegen on D1 — the validator must reject before any code
     // is emitted. Targeting Rust is sufficient since the validator
@@ -14916,7 +14902,7 @@ fn axis1_inversion_multi_flag_input_order() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_multi_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_multi_disp.scxml" kind="codec" as="codec_multi_disp">
     <sce:flag-bind input="N" source="header.N"/>
     <sce:flag-bind input="M" source="header.M"/>
@@ -14938,7 +14924,7 @@ fn axis1_inversion_multi_flag_input_order() {
     let dispatcher = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_multi_disp" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_multi_arm_a.scxml" kind="codec" as="codec_multi_arm_a">
     <sce:flag-bind input="N" source="N"/>
     <sce:flag-bind input="M" source="M"/>
@@ -14968,7 +14954,7 @@ fn axis1_inversion_multi_flag_input_order() {
     let arm_a = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_multi_arm_a" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
     <sce:flag-input name="M" width="1"/>
@@ -14984,7 +14970,7 @@ fn axis1_inversion_multi_flag_input_order() {
 
     let arm_b = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_multi_arm_b" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel><sce:field id="r" sce:type="uint8" sce:byte="0" sce:bit-size="8"/></datamodel>
 </scxml>"#;
 
@@ -15149,7 +15135,7 @@ fn axis1_inversion_variant_default_arm_caller_tag_rejected() {
             r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_default_d1" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_default_arm_b.scxml" kind="codec" as="codec_axis1_default_arm_b"/>
   <sce:import src="codec_axis1_default_d2.scxml" kind="codec" as="{alias}"/>
   <datamodel>
@@ -15167,7 +15153,7 @@ fn axis1_inversion_variant_default_arm_caller_tag_rejected() {
     let d2 = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_axis1_default_d2" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_default_d2_arm_a.scxml" kind="codec" as="codec_axis1_default_d2_arm_a"/>
   <sce:import src="codec_axis1_default_d2_arm_b.scxml" kind="codec" as="codec_axis1_default_d2_arm_b"/>
   <datamodel>
@@ -15178,11 +15164,11 @@ fn axis1_inversion_variant_default_arm_caller_tag_rejected() {
   </datamodel>
 </scxml>"#;
 
-    let leaf = |id: &str, field: &str| -> String {
+    let leaf = |field: &str| -> String {
         format!(
             r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="{id}" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel><sce:field id="{field}" sce:type="uint8" sce:byte="0" sce:bit-size="8"/></datamodel>
 </scxml>"#
         )
@@ -15194,21 +15180,11 @@ fn axis1_inversion_variant_default_arm_caller_tag_rejected() {
     )
     .expect("write d1");
     std::fs::write(dir.join("codec_axis1_default_d2.scxml"), d2).expect("write d2");
-    std::fs::write(
-        dir.join("codec_axis1_default_arm_b.scxml"),
-        leaf("codec_axis1_default_arm_b", "z"),
-    )
-    .expect("write arm_b");
-    std::fs::write(
-        dir.join("codec_axis1_default_d2_arm_a.scxml"),
-        leaf("codec_axis1_default_d2_arm_a", "x"),
-    )
-    .expect("write d2_arm_a");
-    std::fs::write(
-        dir.join("codec_axis1_default_d2_arm_b.scxml"),
-        leaf("codec_axis1_default_d2_arm_b", "y"),
-    )
-    .expect("write d2_arm_b");
+    std::fs::write(dir.join("codec_axis1_default_arm_b.scxml"), leaf("z")).expect("write arm_b");
+    std::fs::write(dir.join("codec_axis1_default_d2_arm_a.scxml"), leaf("x"))
+        .expect("write d2_arm_a");
+    std::fs::write(dir.join("codec_axis1_default_d2_arm_b.scxml"), leaf("y"))
+        .expect("write d2_arm_b");
 
     // Once under the codec's own name, once under an alias that is not
     // it: the record names the import by its alias and the codec by its
@@ -15314,7 +15290,7 @@ fn axis1_present_if_camelcase_field_compiles() {
     let leaf = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="codec_camelcase_repro" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
   </sce:flag-inputs>
@@ -15414,7 +15390,7 @@ fn axis1_camelcase_field_kinds_compile() {
     let inner = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="camelcase_inner" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="b" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
   </datamodel>
@@ -15426,7 +15402,7 @@ fn axis1_camelcase_field_kinds_compile() {
     let tlv_entry = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="camelcase_tlv_entry" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="entry_type" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="entry_len"  sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
@@ -15441,7 +15417,7 @@ fn axis1_camelcase_field_kinds_compile() {
     let repeat_parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="camelcase_repeat_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="camelcase_inner.scxml" kind="codec" as="camelcase_inner"/>
   <datamodel>
     <sce:field  id="lenN"     sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
@@ -15453,7 +15429,7 @@ fn axis1_camelcase_field_kinds_compile() {
     let embed_parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="camelcase_embed_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="camelcase_inner.scxml" kind="codec" as="camelcase_inner"/>
   <datamodel>
     <sce:embed id="myChild" type="camelcase_inner" sce:byte="0"/>
@@ -15463,7 +15439,7 @@ fn axis1_camelcase_field_kinds_compile() {
     let tlv_parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="camelcase_tlv_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="camelcase_tlv_entry.scxml" kind="codec" as="camelcase_tlv_entry"/>
   <datamodel>
     <sce:tlv-chain id="myChain" type="camelcase_tlv_entry"
@@ -15573,7 +15549,7 @@ fn axis1_camelcase_cross_codec_refs_compile() {
     let inner = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="camelcase_xref_inner" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="M" width="1"/>
   </sce:flag-inputs>
@@ -15590,7 +15566,7 @@ fn axis1_camelcase_cross_codec_refs_compile() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="camelcase_xref_parent" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="camelcase_xref_inner.scxml" kind="codec" as="camelcase_xref_inner">
     <sce:flag-bind input="M" source="myHeader.M"/>
   </sce:import>

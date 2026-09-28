@@ -88,6 +88,7 @@
         "validation/mesh-rpc-missing-target",
         "validation/mesh-rpc-duplicate-target",
         "validation/removed-attribute",
+        "validation/sce-attribute-unread",
         "validation/bytes-max-size-violation",
         "validation/duplicate-requirement-id",
         "validation/provenance-malformed",

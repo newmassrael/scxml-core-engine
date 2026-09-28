@@ -151,6 +151,7 @@ impl AttributeSpelling {
         let attribute = node
             .attributes()
             .find(|a| a.name() == local && a.namespace() == namespace)?;
+        crate::sce_attr::note(node, &attribute);
         let document = node.document();
         let range = attribute.range_value();
         let at = document.text_pos_at(range.start);

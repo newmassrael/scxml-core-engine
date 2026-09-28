@@ -1082,6 +1082,21 @@ pub enum ValidationError {
         event: Option<String>,
     },
 
+    /// `sce:` attributes on W3C-namespace elements that no reader of the
+    /// document consumes (`crate::sce_attr`).
+    ///
+    /// ⚠ The grammar cannot refuse these: `schemas/sce-forge.xsd` takes a
+    /// W3C element's attributes as `anyAttribute ##other lax`, which lets
+    /// an undeclared `sce:*` through unvalidated. Before this refusal an
+    /// annotation on an element SCE does not read it from — or a
+    /// misspelled attribute — built with exit 0 and meant nothing.
+    ///
+    /// One variant for every such attribute in the document: each fans
+    /// out to a record of its own, located at the attribute, so an author
+    /// sees them all in one run rather than one per build.
+    #[error("{}", unread_sce_summary(.0))]
+    UnreadSceAttributes(Vec<crate::read_ledger::Unread>),
+
     /// `<invoke type="sce:mesh-rpc">` is missing both `src` and
     /// `srcexpr`. Exactly one must be present (SCE_MESH.md §9.5).
     #[error("<invoke type=\"sce:mesh-rpc\"> must declare exactly one of `src` or `srcexpr` — both are missing. Add `src=\"#<machine>\"` for a build-time target, or `srcexpr=\"...\"` to pick among declared bindings at runtime.")]
@@ -4866,6 +4881,31 @@ pub fn joined_or_none(candidates: &[String]) -> String {
         return "<none>".to_string();
     }
     candidates.join(", ")
+}
+
+/// The message one record of [`ValidationError::UnreadSceAttributes`]
+/// carries — the same words whether the list fans out or is summarised.
+pub fn unread_sce_message(unread: &crate::read_ledger::Unread) -> String {
+    format!(
+        "{} on <{}> is not read by SCE: nothing gives it a meaning on this element. \
+         Remove it, or move it to an element that takes it (docs/SCE_ACCEPTED_SUBSET.md \
+         lists which)",
+        unread.attribute, unread.element
+    )
+}
+
+/// The one-line message of [`ValidationError::UnreadSceAttributes`] as a
+/// whole: the first record's, and how many follow it.
+fn unread_sce_summary(unread: &[crate::read_ledger::Unread]) -> String {
+    match unread {
+        [] => "no unread sce: attribute".to_string(),
+        [only] => unread_sce_message(only),
+        [first, rest @ ..] => format!(
+            "{} (and {} more unread sce: attribute(s))",
+            unread_sce_message(first),
+            rest.len()
+        ),
+    }
 }
 
 /// The message of [`ValidationError::ExactlyOneAttribute`]: which attributes

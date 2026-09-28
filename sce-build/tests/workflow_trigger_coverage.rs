@@ -71,6 +71,13 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // so a filter written over today's fixture trees names the carriers it
     // already has and cannot start on the arrival.
     "a_name_the_generated_code_spells_is_a_code_identifier",
+    // Parses every committed `*.scxml` and refuses one carrying an `sce:`
+    // attribute nothing reads, then writes an invented one on each W3C
+    // element name the documents use. The attribute that proves a reader
+    // missing arrives in whichever document an author writes next, in any
+    // directory, so a filter over today's fixture trees names the documents
+    // already known to pass.
+    "an_sce_attribute_nothing_reads_is_refused_not_ignored",
     // Asks `git ls-files` for every tracked file and decodes each one,
     // refusing a line of prose written in a script this tree does not write
     // prose in unless the file argues for it. What it exists for is a

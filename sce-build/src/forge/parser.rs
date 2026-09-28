@@ -12,7 +12,7 @@ use crate::forge::error::{
 };
 use crate::forge::expression_site::{ExpressionSite, WrittenAt};
 use crate::forge::model::*;
-use crate::forge::read_ledger;
+use crate::read_ledger;
 use crate::DocumentLabel;
 
 /// Construct a [`Located<ForgeError>`] from a node + the enclosing
@@ -137,7 +137,8 @@ fn written_tag(node: &roxmltree::Node) -> String {
 }
 
 /// Refuse the first SCE element under `root` the parse just recorded in
-/// `recording` did not read — one written where no reader looks for it.
+/// `recording` did not read — one written where no reader looks for it —
+/// and hand back the ledger for the attribute check its caller owns.
 ///
 /// ⚠ Such an element was dropped without a word until 2026-09-24: a
 /// `<sce:helper>` written under a procedure's `<scxml>` root rather than its
@@ -147,11 +148,12 @@ fn refuse_unread(
     recording: read_ledger::Recording,
     root: &roxmltree::Node,
     doc_name: &str,
-) -> Result<(), Located<ForgeError>> {
+) -> Result<read_ledger::Ledger, Located<ForgeError>> {
     let ledger = recording.finish();
     read_ledger::refuse_unread(&ledger, root, |child, parent, asked| {
         unexpected_child(child, doc_name, format!("<{}>", written_tag(parent)), asked)
-    })
+    })?;
+    Ok(ledger)
 }
 
 /// The refusal of an element that takes exactly one of several FORMS —
@@ -353,6 +355,11 @@ pub fn parse_forge_with_imports_and_plugin(
         .map_err(|e| Located::new(XmlError::Parse(e.to_string()).into(), diag, None, None))?;
     let root = doc.root_element();
 
+    // Open before the first read: `sce:kind` below is an `sce:` attribute
+    // the parse asks for, and a read made before the recording opened
+    // would be refused as unread when it closes.
+    let recording = read_ledger::Recording::open(&root);
+
     let kind = match detect_kind_from_node(&root) {
         Ok(None) => return Ok(None),
         Ok(Some(ForgeKind::Statechart)) => return Ok(None),
@@ -399,7 +406,6 @@ pub fn parse_forge_with_imports_and_plugin(
         crate::scxml_identifier::Dialect::Forge,
     )?;
 
-    let recording = read_ledger::Recording::open(&root);
     let imports = parse_imports(&root, diag)?;
     let mut externs = parse_externs(&root, diag, plugin)?;
     let document = parse_forge_from_node(&root, label, kind)?;
@@ -422,7 +428,11 @@ pub fn parse_forge_with_imports_and_plugin(
     }
 
     let cycles = parse_cycles(&root, diag)?;
-    refuse_unread(recording, &root, diag)?;
+    let ledger = refuse_unread(recording, &root, diag)?;
+    // ⚠ The schema admits any `sce:` attribute on a W3C element laxly, so
+    // one nothing reads was dropped without a word until 2026-09-28
+    // (`crate::read_ledger` says why the grammar cannot say it).
+    read_ledger::refuse_unread_attributes(&ledger, &root, diag)?;
 
     Ok(Some(ParsedForge {
         document,
@@ -465,6 +475,10 @@ pub fn parse_inline_forge(
     let externs = parse_externs(element, diag, &[])?;
     let document = parse_forge_from_node(element, label, kind)?;
     let cycles = parse_cycles(element, diag)?;
+    // The `sce:` attributes are the statechart's to check: its parse read
+    // this element's `sce:kind` before this recording opened, and this
+    // recording hands what it read outward when it closes
+    // (`crate::read_ledger`).
     refuse_unread(recording, element, diag)?;
 
     Ok(ParsedForge {
@@ -1248,8 +1262,7 @@ fn parse_enum(
 ) -> Result<EnumModel, Located<ForgeError>> {
     // 1. sce:underlying-type attribute — required, must be one of the
     //    four supported unsigned-integer carriers.
-    let declared = root
-        .attribute((SCE_NAMESPACE, "underlying-type"))
+    let declared = crate::sce_attr::read(root, "underlying-type")
         .ok_or_else(|| {
             located(
                 root,
@@ -1435,10 +1448,7 @@ fn parse_enum(
     // canonical `"true"` / `"false"` so authors get a typed
     // diagnostic rather than a silent accept on typos like
     // `sce:strict-variants="no"`.
-    let strict_variants = match root
-        .attribute((SCE_NAMESPACE, "strict-variants"))
-        .map(str::trim)
-    {
+    let strict_variants = match crate::sce_attr::read(root, "strict-variants").map(str::trim) {
         None | Some("true") => true,
         Some("false") => false,
         Some(other) => {
@@ -1666,6 +1676,7 @@ fn parse_cbor_codec(
     for data in data_children(&datamodel) {
         // The input frame names no field; its length means nothing in a map.
         if sce_attr(&data, "direction").as_deref() == Some("in") {
+            judge_input_frame_type(&data, doc)?;
             continue;
         }
         entries.push(parse_cbor_entry(&data, doc, &entries)?);
@@ -1851,6 +1862,29 @@ fn parse_cbor_entry(
     })
 }
 
+/// A codec's input frame — its `<data sce:direction="in">` — is the bytes
+/// the codec decodes, whichever encoding it has, so the one `sce:type` it
+/// may declare is `bytes`. Read rather than skipped: until 2026-09-28 both
+/// codec readers passed over the frame without looking, so `sce:type`
+/// there was never checked, and a frame declared `uint32` built as though
+/// it were bytes.
+fn judge_input_frame_type(data: &roxmltree::Node, doc: &str) -> Result<(), Located<ForgeError>> {
+    match sce_attr(data, "type") {
+        None => Ok(()),
+        Some(ty) if ty.trim() == "bytes" => Ok(()),
+        Some(ty) => Err(located(
+            data,
+            doc,
+            ValidationError::InvalidAttribute {
+                element: "Codec input".into(),
+                attr: "sce:type".into(),
+                value: ty,
+                allowed: vec!["bytes".into()],
+            },
+        )),
+    }
+}
+
 fn parse_codec(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,
@@ -1893,6 +1927,7 @@ fn parse_codec(
         let dir = sce_attr(&data, "direction");
 
         if dir.as_deref() == Some("in") {
+            judge_input_frame_type(&data, label.diagnostic_label)?;
             if let Some(len_str) = sce_attr(&data, "length") {
                 input_length = Some(parse_int(&len_str).ok_or_else(|| {
                     located(
@@ -2485,7 +2520,7 @@ fn parse_peek_byte_from_variant_node(
     // `<sce:flags sce:type="...">` (both carry width semantics on a
     // flags-bearing carrier), but its enumeration is currently
     // restricted to `uint8`.
-    let ty = node.attribute((SCE_NAMESPACE, "type")).ok_or_else(|| {
+    let ty = crate::sce_attr::read(&node, "type").ok_or_else(|| {
         located(
             &node,
             label.diagnostic_label,
@@ -9770,7 +9805,7 @@ fn require_attr(
 }
 
 /// The first SCE child of `node` named `local`. The ask and what it finds
-/// go on the parse's read ledger ([`crate::forge::read_ledger`]).
+/// go on the parse's read ledger ([`crate::read_ledger`]).
 fn find_sce_child<'a>(node: &'a roxmltree::Node, local: &str) -> Option<roxmltree::Node<'a, 'a>> {
     read_ledger::asked(node, local);
     let found = node.children().find(|n| {
@@ -10032,10 +10067,10 @@ pub fn parse_imports_only(
 
 // ── Shared helpers ─────────────────────────────────────────────
 
-/// Read an `sce:xxx` attribute from a node (namespace-qualified).
+/// Read an `sce:xxx` attribute from a node (namespace-qualified), through
+/// the channel that records the read ([`crate::sce_attr`]).
 fn sce_attr(node: &roxmltree::Node, local_name: &str) -> Option<String> {
-    node.attribute((SCE_NAMESPACE, local_name))
-        .map(|s| s.to_string())
+    crate::sce_attr::read(node, local_name).map(|s| s.to_string())
 }
 
 /// The aliases of every `<sce:import kind="enum">` in `node`'s document —
@@ -10273,9 +10308,11 @@ fn value_as_written(node: &roxmltree::Node, attr: &str, decoded: &str) -> String
 ///
 /// ⚠⚠⚠ THIS IS A NAME CHECK, NOT A PLACEMENT CHECK. It answers "is this
 /// a name the tree knows", not "is this name legal on this element". A
-/// valid name on the wrong element still passes here. Saying so is the
-/// point: the gap is stated rather than left for a reader to assume
-/// otherwise.
+/// valid name on the wrong element passes here — and, on a W3C element,
+/// is refused when the parse ends by the placement rule, which derives
+/// what each element takes from the parser's own reads
+/// (`crate::read_ledger`, since 2026-09-28). This roster still answers
+/// first, for the near-miss suggestions a placement rule cannot give.
 const KNOWN_SCE_ATTRS: &[&str] = &[
     "addr",
     "alpha",
@@ -10288,14 +10325,13 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "bit-size",
     "byte",
     "capacity",
-    // ⚠ `codec-id` is read by NOTHING in this tree and appears in no
-    // committed `.scxml` — so both halves of the derivation below missed
-    // it, and adding the check turned 29 conformance cases red at once.
-    // It is listed rather than deleted because the 79 sites that carry it
-    // are consistent and deliberate, and the roster's own policy is to err
-    // wide: a name that is merely unread still costs the check nothing,
-    // while refusing a document the tree builds costs it everything.
-    "codec-id",
+    // ⚠ `codec-id` left this roster on 2026-09-28. It was read by NOTHING
+    // and was kept because "a name that is merely unread costs the check
+    // nothing" — but it did cost: 79 conformance documents carried a
+    // declaration that meant nothing, and the reader of each believed it
+    // named the codec. The placement rule (`crate::read_ledger`) refuses
+    // an unread `sce:` attribute on a W3C element, so the sites were
+    // removed rather than excused.
     "compute-at",
     "default",
     // The answering half of the value-space coverage report — the
@@ -10567,6 +10603,16 @@ fn parse_forge_field(
             )
         })?
         .to_string();
+
+    // SCE_FORGE.md §3.3 defines `sce:unit` as documentation only, with no
+    // codegen effect — a unit the build checks is `sce:quantity`, read by
+    // `parse_quantity_attrs`. Left unread on purpose, which is not the same
+    // as unread (`crate::sce_attr`).
+    crate::sce_attr::acknowledge(
+        data,
+        "unit",
+        "documentation only per SCE_FORGE.md §3.3; sce:quantity is the checked unit",
+    );
 
     let type_str = sce_attr(data, "type").ok_or_else(|| {
         located(
@@ -10874,7 +10920,7 @@ fn parse_quantity_attrs(
 }
 
 /// Find a direct child element by local name. What it finds goes on the
-/// parse's read ledger ([`crate::forge::read_ledger`]).
+/// parse's read ledger ([`crate::read_ledger`]).
 fn find_child<'a>(node: &'a roxmltree::Node, name: &str) -> Option<roxmltree::Node<'a, 'a>> {
     let found = node
         .children()
@@ -10941,7 +10987,7 @@ fn read_unsigned_attr(
     admits: UnsignedInt,
 ) -> Result<Option<u32>, Located<ForgeError>> {
     let raw = if namespaced {
-        node.attribute((SCE_NAMESPACE, attr))
+        crate::sce_attr::read(node, attr)
     } else {
         node.attribute(attr)
     };

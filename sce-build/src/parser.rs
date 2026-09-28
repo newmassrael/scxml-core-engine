@@ -787,7 +787,7 @@ fn enforce_static_datamodel(
             continue;
         }
 
-        if name == "data" && node.attribute((SCE_NAMESPACE, "kind")).is_none() {
+        if name == "data" && crate::sce_attr::read(&node, "kind").is_none() {
             let id = node.attribute("id").unwrap_or("");
             if attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "type").is_none() {
                 return Err(refused(
@@ -830,7 +830,7 @@ fn enforce_static_datamodel(
             // children, as an algorithm's record local is (SCE_FORGE.md
             // §4.12): those children are its initial value, so it takes no
             // `expr`, and they are not the untyped content refused below.
-            let is_record = node.attribute((SCE_NAMESPACE, "type")).is_some_and(|t| {
+            let is_record = crate::sce_attr::read(&node, "type").is_some_and(|t| {
                 t.trim()
                     .starts_with(crate::forge::model::AlgorithmValueType::RECORD_PREFIX)
             });
@@ -863,7 +863,7 @@ fn enforce_static_datamodel(
             // a bound instead of an initial value. The bound is the one the
             // machine keeps on every backend, so it is required, and it
             // means nothing on any other variable.
-            let is_list = node.attribute((SCE_NAMESPACE, "type")).is_some_and(|t| {
+            let is_list = crate::sce_attr::read(&node, "type").is_some_and(|t| {
                 t.trim()
                     .starts_with(crate::forge::model::AlgorithmValueType::LIST_PREFIX)
             });
@@ -874,8 +874,7 @@ fn enforce_static_datamodel(
                 // append and the per-element snapshot a statechart list does
                 // not lower yet, so it is refused rather than accepted as a
                 // list nothing can fill or publish.
-                let record_list = node
-                    .attribute((SCE_NAMESPACE, "type"))
+                let record_list = crate::sce_attr::read(&node, "type")
                     .and_then(crate::forge::model::AlgorithmValueType::from_attr)
                     .and_then(|t| {
                         t.list_elem()
@@ -1016,6 +1015,7 @@ fn attribute_as_written_ns<'input>(
     let attr = node
         .attributes()
         .find(|a| a.name() == name && a.namespace() == namespace)?;
+    crate::sce_attr::note(node, &attr);
     let document = node.document();
     Some((
         &document.input_text()[attr.range_value()],
@@ -1075,17 +1075,15 @@ pub(crate) fn collect_sce_unresolved(
     let mut markers: Vec<UnresolvedMarker> = Vec::new();
     for kind in MarkerKind::ALL {
         let attr = kind.attr();
-        if let Some(attribute) = node.attribute_node((SCE_NAMESPACE, attr)) {
+        if let Some(attribute) = crate::sce_attr::attribute(node, attr) {
             let id = attribute.value();
             if !id.is_empty() {
                 markers.push(UnresolvedMarker {
                     id: id.to_string(),
                     kind,
-                    reason: node
-                        .attribute((SCE_NAMESPACE, &*format!("{attr}-reason")))
+                    reason: crate::sce_attr::read(node, &format!("{attr}-reason"))
                         .map(|s| s.to_string()),
-                    candidates: node
-                        .attribute((SCE_NAMESPACE, &*format!("{attr}-candidates")))
+                    candidates: crate::sce_attr::read(node, &format!("{attr}-candidates"))
                         .map(split)
                         .unwrap_or_default(),
                     location: at(node, attribute.range().start),
@@ -1187,6 +1185,7 @@ fn collect_typed_invoke_attrs(
             "result" => (&mut attrs.result, &mut attrs.result_at),
             _ => continue,
         };
+        crate::sce_attr::note(node, &attribute);
         let alias = attribute.value().to_string();
         let refusal = if !host_runnable {
             Some(format!(
@@ -1259,11 +1258,10 @@ fn collect_invoke_candidates(
     crate::forge::error::Located<crate::forge::error::ForgeError>,
 > {
     use crate::forge::error::{Located, ValidationError};
-    use crate::forge::model::SCE_NAMESPACE;
     use crate::model::InvokeCandidate;
     use std::collections::HashSet;
 
-    let raw = match node.attribute((SCE_NAMESPACE, "candidates")) {
+    let raw = match crate::sce_attr::read(node, "candidates") {
         Some(s) => s,
         None => return Ok(Vec::new()),
     };
@@ -1347,10 +1345,9 @@ pub(crate) fn collect_sce_req(
     crate::forge::error::Located<crate::forge::error::ForgeError>,
 > {
     use crate::forge::error::{Located, ValidationError};
-    use crate::forge::model::SCE_NAMESPACE;
     use crate::provenance::RequirementId;
     use std::collections::HashSet;
-    let raw = match node.attribute((SCE_NAMESPACE, "req")) {
+    let raw = match crate::sce_attr::read(node, "req") {
         Some(s) => s,
         None => return Ok(Vec::new()),
     };
@@ -1468,7 +1465,7 @@ pub(crate) fn collect_sce_provenance(
     // occurrence, which is the one the author deletes.
     let mut anchors: Vec<(SpecProvenance, roxmltree::TextPos)> = Vec::new();
 
-    if let Some(raw) = node.attribute((SCE_NAMESPACE, "provenance")) {
+    if let Some(raw) = crate::sce_attr::read(node, "provenance") {
         let parsed = SpecProvenance::parse_compact(raw).ok_or_else(|| {
             locate(
                 ValidationError::MalformedProvenance {
@@ -1719,7 +1716,6 @@ fn parse_sce_unhandled(
     source_name: &str,
 ) -> Result<Vec<String>, crate::forge::error::Located<crate::forge::error::ForgeError>> {
     use crate::forge::error::{Located, ValidationError};
-    use crate::forge::model::SCE_NAMESPACE;
 
     let pos_of = || node.document().text_pos_at(node.range().start);
     let reject = |attr: &str, value: String, rule: String| {
@@ -1738,7 +1734,7 @@ fn parse_sce_unhandled(
         )
     };
 
-    if let Some(withdrawn) = node.attribute((SCE_NAMESPACE, "exhaustive")) {
+    if let Some(withdrawn) = crate::sce_attr::read(node, "exhaustive") {
         return Err(reject(
             "sce:exhaustive",
             withdrawn.to_string(),
@@ -1749,7 +1745,7 @@ fn parse_sce_unhandled(
         ));
     }
 
-    let raw = match node.attribute((SCE_NAMESPACE, "unhandled")) {
+    let raw = match crate::sce_attr::read(node, "unhandled") {
         Some(s) => s,
         None => return Ok(Vec::new()),
     };
@@ -2106,6 +2102,11 @@ impl SCXMLParser {
         })?;
         let root = doc.root_element();
 
+        // What this parse reads of the document, so an `sce:` attribute
+        // nothing reads is refused when it ends rather than dropped. Open
+        // before the first read (`sce:kind`, just below).
+        let recording = crate::read_ledger::Recording::open(&root);
+
         // §wire-W4 D2: catch the previously-silent failure mode where
         // the SCXML pipeline is asked to compile a non-SCXML document
         // (root tag isn't `<scxml>` in the SCXML namespace). Without
@@ -2208,27 +2209,26 @@ impl SCXMLParser {
         // `compile_forge_with_deploy`). The value feeds the
         // `EVENT_QUEUE_CAPACITY` bound of the heapless event queue
         // in `--no-std` emission.
-        let event_queue_capacity =
-            match root.attribute((crate::forge::model::SCE_NAMESPACE, "capacity")) {
-                None => None,
-                Some(raw) => match raw.parse::<u32>() {
-                    Ok(n) if n > 0 => Some(n),
-                    _ => {
-                        return Err(crate::forge::error::Located::new(
-                            crate::forge::error::ValidationError::AttributeRuleViolated {
-                                element: "scxml".to_string(),
-                                attr: "sce:capacity".to_string(),
-                                value: raw.to_string(),
-                                rule: "positive u32".to_string(),
-                            }
-                            .into(),
-                            diag_label,
-                            None,
-                            None,
-                        ));
-                    }
-                },
-            };
+        let event_queue_capacity = match crate::sce_attr::read(&root, "capacity") {
+            None => None,
+            Some(raw) => match raw.parse::<u32>() {
+                Ok(n) if n > 0 => Some(n),
+                _ => {
+                    return Err(crate::forge::error::Located::new(
+                        crate::forge::error::ValidationError::AttributeRuleViolated {
+                            element: "scxml".to_string(),
+                            attr: "sce:capacity".to_string(),
+                            value: raw.to_string(),
+                            rule: "positive u32".to_string(),
+                        }
+                        .into(),
+                        diag_label,
+                        None,
+                        None,
+                    ));
+                }
+            },
+        };
 
         // SCE Protocol-Synthesis RFC §synth-5-O: anchor the model at the
         // `<scxml>` root element's post-preprocessor position. Codegen
@@ -2580,6 +2580,12 @@ impl SCXMLParser {
         // ones the parse could not finish reading.
         model.anchor_index = crate::anchor_index::AnchorIndex::build(root, diag_label);
 
+        // ⚠ The schema admits any `sce:` attribute on a W3C element laxly,
+        // so one nothing reads — an invented name, or a real one on an
+        // element that does not take it — built without a word until
+        // 2026-09-28. Last, so every reader above has recorded its reads.
+        crate::read_ledger::refuse_unread_attributes(&recording.finish(), &root, diag_label)?;
+
         Ok(model)
     }
 
@@ -2627,7 +2633,7 @@ impl SCXMLParser {
     {
         use crate::forge::model::SCE_NAMESPACE;
 
-        if let Some(kind_attr) = data.attribute((SCE_NAMESPACE, "kind")) {
+        if let Some(kind_attr) = crate::sce_attr::read(data, "kind") {
             let inline = Self::parse_inline_kind(
                 data,
                 kind_attr,
@@ -2659,8 +2665,7 @@ impl SCXMLParser {
         // `<sce:set>` children. A `list<T>` variable (E8's list) is read by the
         // same reader, which holds its element to the types a list admits.
         let element = format!("<data id=\"{id}\">");
-        let value_type = data
-            .attribute((SCE_NAMESPACE, "type"))
+        let value_type = crate::sce_attr::read(data, "type")
             .filter(|_| model.datamodel == Datamodel::SceStatic)
             .map(|text| {
                 let text_trimmed = text.trim();
@@ -2699,17 +2704,24 @@ impl SCXMLParser {
         };
         // A list's declared bound; `enforce_static_datamodel` has already
         // required it on a list and refused it anywhere else.
-        let capacity = data
-            .attribute((SCE_NAMESPACE, "capacity"))
+        let capacity = crate::sce_attr::read(data, "capacity")
             .filter(|_| model.datamodel == Datamodel::SceStatic)
             .and_then(|text| text.trim().parse::<u32>().ok().filter(|n| *n > 0));
         // Whether the host sees the variable; `enforce_static_datamodel` has
         // already refused a direction this data model gives no meaning to.
         let direction = (model.datamodel == Datamodel::SceStatic).then(|| {
-            data.attribute((SCE_NAMESPACE, "direction"))
+            crate::sce_attr::read(data, "direction")
                 .and_then(|text| crate::forge::model::Direction::from_attr(text.trim()))
                 .unwrap_or(crate::forge::model::Direction::Internal)
         });
+        if direction.is_none() {
+            crate::sce_attr::acknowledge(
+                data,
+                "direction",
+                "under any data model but sce-static it is the authoring tool's \
+                 input/output declaration, which the model does not carry",
+            );
+        }
         // §2.10 annotations, read by the reader every other annotatable
         // node uses. A variable's initial value is where a guessed
         // threshold lives, and a marker written there used to be dropped.
@@ -3544,7 +3556,6 @@ impl SCXMLParser {
         // remains — third-party documents must migrate before building
         // against Session E1 or later.
         use crate::forge::error::{Located, ValidationError};
-        use crate::forge::model::SCE_NAMESPACE;
         for removed_attr in [
             "qos",
             "pattern",
@@ -3553,7 +3564,7 @@ impl SCXMLParser {
             "deadline",
             "priority",
         ] {
-            if elem.attribute((SCE_NAMESPACE, removed_attr)).is_some() {
+            if crate::sce_attr::read(elem, removed_attr).is_some() {
                 let pos = elem.document().text_pos_at(elem.range().start);
                 return Err(Located::new(
                     ValidationError::RemovedAttribute {
@@ -6323,6 +6334,10 @@ pub fn validate_on_sample_link_references(
 /// the backends ship, which mirror pugixml's default mode — sees the
 /// author's own spellings. An element with no content closes itself.
 fn serialize_node(node: &roxmltree::Node) -> String {
+    // A value carried as written, not markup this parser interprets: an
+    // `sce:` attribute inside it is the value's, and whoever reads the
+    // value — a child session's own parse, a host — judges it.
+    crate::read_ledger::delegated(node);
     serialize_node_inner(node, &inherited_bindings(node), false)
 }
 
@@ -6498,6 +6513,8 @@ fn content_body(content: &roxmltree::Node) -> String {
 /// [`serialize_node`], closing every element with an explicit end tag — the
 /// canonical-XML convention, which `<data>` and `<assign>` both take.
 fn serialize_node_c14n(node: &roxmltree::Node) -> String {
+    // Carried as written, for the reason `serialize_node` gives.
+    crate::read_ledger::delegated(node);
     serialize_node_inner(node, &inherited_bindings(node), true)
 }
 

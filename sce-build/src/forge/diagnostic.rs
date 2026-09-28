@@ -179,7 +179,66 @@ pub(crate) fn forge_to_diagnostics<T: SingleDiagnostic>(
     if let ForgeError::Xml(XmlError::SchemaValidation(xsd_errors)) = inner {
         return xsd_errors.to_diagnostics();
     }
+    if let ForgeError::Validation(validation) = inner {
+        if let crate::forge::error::ValidationError::UnreadSceAttributes(unread) = &**validation {
+            return unread_sce_diagnostics(&outer.to_single_diagnostic(), unread);
+        }
+    }
     vec![outer.to_single_diagnostic()]
+}
+
+/// One record per unread `sce:` attribute, each at the attribute itself.
+///
+/// Everything the attributes share — the file, the generator, the anchors
+/// enclosing the document — comes from `base`, the record the wrapper
+/// would have emitted; what differs per attribute is its payload, its
+/// message and its row, so the `id` is recomputed from those.
+fn unread_sce_diagnostics(
+    base: &Diagnostic,
+    unread: &[crate::read_ledger::Unread],
+) -> Vec<Diagnostic> {
+    unread
+        .iter()
+        .map(|u| {
+            let payload = unread_sce_payload(u);
+            let location = base.location.clone().map(|l| Location {
+                line: Some(u.row),
+                col: Some(u.col),
+                ..l
+            });
+            Diagnostic {
+                id: compute_id(
+                    payload.code,
+                    payload.stage,
+                    location.as_ref().map(|l| l.file.as_str()),
+                    &payload.key_fragments,
+                ),
+                message: crate::forge::error::unread_sce_message(u),
+                location,
+                expected: payload.expected,
+                actual: payload.actual,
+                fix: payload.fix,
+                ..base.clone()
+            }
+        })
+        .collect()
+}
+
+/// The payload of one unread `sce:` attribute: the attribute is `actual`,
+/// and the repair is to remove it from the element that carries it.
+fn unread_sce_payload(unread: &crate::read_ledger::Unread) -> DiagnosticPayload {
+    let attribute = unread.attribute.clone();
+    DiagnosticPayload {
+        code: DiagnosticCode::ValidationSceAttributeUnread,
+        stage: Stage::Validation,
+        expected: None,
+        actual: Some(attribute.clone()),
+        fix: Some(Fix::RemoveFields {
+            location: format!("<{}>", unread.element),
+            fields: vec![attribute.clone()],
+        }),
+        key_fragments: vec![unread.element.clone(), attribute],
+    }
 }
 
 // ── Top-level diagnostic record ────────────────────────────────
@@ -693,6 +752,10 @@ pub enum DiagnosticCode {
     ValidationMeshRpcDuplicateTarget,
     #[serde(rename = "validation/removed-attribute")]
     ValidationRemovedAttribute,
+    /// An `sce:` attribute on a W3C element that nothing reads
+    /// (`crate::sce_attr`). One record per attribute.
+    #[serde(rename = "validation/sce-attribute-unread")]
+    ValidationSceAttributeUnread,
     // ── Forge bytes-typed slot capacity contract. The
     //    inconsistency is between two SCXML-declared caps (e.g.
     //    `sce:response-max-size` on a `<send>` exceeds
@@ -3169,6 +3232,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMeshRpcMissingTarget,
         ValidationMeshRpcDuplicateTarget,
         ValidationRemovedAttribute,
+        ValidationSceAttributeUnread,
         ValidationBytesMaxSizeViolation,
         // NL→IR Mapping Roadmap Item 1: sce:req traceability
         ValidationDuplicateRequirementId,
@@ -4399,6 +4463,9 @@ impl DiagnosticCode {
             | ValidationUnresolvedPlaceholder
             | ValidationProvenanceMalformed
             | ValidationProvenanceDuplicate
+            // Which `sce:` attributes an element takes is SCE's own
+            // vocabulary; no external spec states it.
+            | ValidationSceAttributeUnread
             // NL→IR Mapping Roadmap Item 2 — cross-kind typed binding
             // diagnostics also originate from
             // `nl_to_ir_mapping_roadmap.md` (Item 2). No external spec
@@ -4538,6 +4605,7 @@ impl DiagnosticCode {
             ValidationMeshRpcMissingTarget => "validation/mesh-rpc-missing-target",
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
             ValidationRemovedAttribute => "validation/removed-attribute",
+            ValidationSceAttributeUnread => "validation/sce-attribute-unread",
             ValidationBytesMaxSizeViolation => "validation/bytes-max-size-violation",
             ValidationDuplicateRequirementId => "validation/duplicate-requirement-id",
             ValidationProvenanceMalformed => "validation/provenance-malformed",
@@ -6335,6 +6403,20 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                     k.push(ev.clone());
                 }
                 k
+            },
+        },
+        // The summary shape, about the first unread attribute. A consumer
+        // normally never sees it: `forge_to_diagnostics` fans the list
+        // out to one record per attribute through `unread_sce_payload`.
+        ValidationError::UnreadSceAttributes(unread) => match unread.first() {
+            Some(first) => unread_sce_payload(first),
+            None => DiagnosticPayload {
+                code: DiagnosticCode::ValidationSceAttributeUnread,
+                stage: Stage::Validation,
+                expected: None,
+                actual: None,
+                fix: None,
+                key_fragments: Vec::new(),
             },
         },
         ValidationError::MeshRpcMissingTarget => DiagnosticPayload {
@@ -10678,6 +10760,17 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:79f17de8d89256c7","code":"validation/removed-attribute","stage":"validation","spec":"SCE Mesh §13","message":"deprecated attribute sce:qos on <send event=\"brake.activate\"> was removed in SCE Mesh §13 path B; pattern is now inferred from event-name conventions and RPC reply pairing from topology structure. Remove the attribute.","actual":"sce:qos","fix":{"kind":"remove_fields","location":"<send event=\"brake.activate\">","fields":["sce:qos"]}}"#,
+            ),
+            (
+                "forge/sce-attribute-unread",
+                ValidationError::UnreadSceAttributes(vec![crate::read_ledger::Unread {
+                    element: "data".into(),
+                    attribute: "sce:invented".into(),
+                    row: 3,
+                    col: 9,
+                }])
+                .into(),
+                r#"{"v":1,"id":"fnv1a:a6397e4867994104","code":"validation/sce-attribute-unread","stage":"validation","message":"sce:invented on <data> is not read by SCE: nothing gives it a meaning on this element. Remove it, or move it to an element that takes it (docs/SCE_ACCEPTED_SUBSET.md lists which)","actual":"sce:invented","fix":{"kind":"remove_fields","location":"<data>","fields":["sce:invented"]}}"#,
             ),
             (
                 "forge/bytes-max-size-violation",
@@ -15385,6 +15478,7 @@ mod tests {
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
             | ValidationRemovedAttribute
+            | ValidationSceAttributeUnread
             | ValidationBytesMaxSizeViolation
             | MemPoolTooLarge
             | MemInterPoolPaddingNotEmitted
@@ -16231,6 +16325,7 @@ mod tests {
                 | ValidationMeshRpcMissingTarget
                 | ValidationMeshRpcDuplicateTarget
                 | ValidationRemovedAttribute
+                | ValidationSceAttributeUnread
                 | ValidationBytesMaxSizeViolation
                 | ValidationDuplicateRequirementId
                 | ValidationProvenanceMalformed
@@ -16556,9 +16651,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            398,
+            399,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 397 distinct variants to match the DiagnosticCode \
+             expected 399 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17193,6 +17288,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
             | ValidationRemovedAttribute
+            | ValidationSceAttributeUnread
             | ValidationBytesMaxSizeViolation
             | ValidationCrossKindFieldNotFound
             | ValidationCrossKindTypeMismatch

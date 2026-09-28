@@ -114,6 +114,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # committed document carries that attribute, and the carrier of the next row
 # can arrive in any directory.
 #
+# `an_sce_attribute_nothing_reads_is_refused_not_ignored` parses every
+# committed `*.scxml` against the rule that an `sce:` attribute on a W3C
+# element must have a reader, and writes an invented one on each W3C element
+# name the documents use. The document that carries an unread attribute next
+# can be written in any directory, which is this workflow's reason.
+#
 # `non_latin_prose_declares_why_it_is_here` decodes every tracked file and
 # refuses a line of prose written in a script this tree does not write prose
 # in, unless the file argues in one line that the characters are what it
@@ -159,6 +165,7 @@ cargo test -p sce-build --features cli,ffi \
     --test spec_citations_carry_no_line_numbers \
     --test an_identifier_is_checked_against_the_grammar_w3c_gives_it \
     --test a_name_the_generated_code_spells_is_a_code_identifier \
+    --test an_sce_attribute_nothing_reads_is_refused_not_ignored \
     --test non_latin_prose_declares_why_it_is_here \
     --test ffi_header_parity \
     --test roadmap_marker_gate \

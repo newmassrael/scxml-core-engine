@@ -77,6 +77,26 @@ target="done*/Z">` generated without a diagnostic — the ids became
 code identifiers, `…_STATE_S0*/X` in C and `S0*/X = 1` in Python, so
 the emitted source did not compile.
 
+**An `sce:` attribute on a W3C element has a reader, or is refused.**
+The same `lax` wildcard admits any `sce:*` attribute on a W3C element,
+and XSD 1.0 cannot say which global attribute may sit on which element.
+So both parsers read every `sce:` attribute through one channel
+(`sce_attr`) that records the read on the parse's ledger
+(`read_ledger`), and when the parse ends every `sce:` attribute on a W3C
+element that nothing asked for is refused as
+`validation/sce-attribute-unread`, one record per attribute at its own
+row. What an element takes is therefore the parser's own reads, not a
+list kept beside them. Until 2026-09-28 none of this was checked:
+`sce:unresolved` on an `<onentry>`, `sce:req` on a forge root, a CBOR
+codec's input `sce:type`, and 79 conformance documents' `sce:codec-id`
+were all accepted and read by nobody. Two kinds of attribute are left
+alone on purpose: one a reader consults and chooses not to carry
+(`sce:unit`, documentation only per SCE_FORGE.md §3.3; a `<data>`'s
+typed I/O declaration outside `datamodel="sce-static"`), which is
+acknowledged at the site that makes the choice; and one inside a value
+carried as written — `<content>`, a `<data>` or `<assign>` value — which
+is the value's, for whoever reads it.
+
 This was never the comment-encoding problem §2.10 describes, and the
 repair is not an encoder. The comments are already safe: the
 generator encodes every value a template writes into one, ids and
@@ -1054,7 +1074,7 @@ shapes); it carries no `tag=` attribute and no
 
 ```xml
 <!-- Leaf: pure body, no parent reference -->
-<scxml sce:kind="codec" sce:codec-id="codec_zenoh_keyexpr">
+<scxml sce:kind="codec" name="codec_zenoh_keyexpr">
   <datamodel>
     <sce:variant>
       <sce:arm value="0x00" type="codec_keyexpr_nonlocal" default="true"/>
@@ -1064,7 +1084,7 @@ shapes); it carries no `tag=` attribute and no
 </scxml>
 
 <!-- Parent declares dispatch at the import site -->
-<scxml sce:kind="codec" sce:codec-id="codec_zenoh_push">
+<scxml sce:kind="codec" name="codec_zenoh_push">
   <sce:import src="codec_zenoh_keyexpr.scxml" kind="codec" as="key">
     <sce:variant-dispatch flag="header.M"/>
   </sce:import>
@@ -3513,6 +3533,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/mesh-rpc-missing-target` | Validation |
 | `validation/mesh-rpc-duplicate-target` | Validation |
 | `validation/removed-attribute` | Validation |
+| `validation/sce-attribute-unread` | Validation |
 | `validation/bytes-max-size-violation` | Validation |
 | `validation/duplicate-requirement-id` | Validation |
 | `validation/provenance-malformed` | Validation |
@@ -3847,7 +3868,7 @@ or SCE-internal issues.
 | `cli/acceptance-lapsed` | Cli | `sce-codegen acceptance-check` found that the manifest, the variant or a file the design was read from moved since the acceptance record was taken; not preventable by authoring SCXML (a person accepts again with `sce-codegen accept`, or reverts what moved) |
 | `cli/reserved-host-type` | Cli | A host declared a `<send>` or `<invoke>` type under `sce:` (`--host-processor`, `--host-invoker`, or the same lists on the `build.rs` facade) — the prefix SCE keeps for the processors it defines itself (`sce:mesh`, `sce:mesh-rpc`), so the declaration would replace one of them with nothing on the wire saying so; not preventable by authoring SCXML (the host picks another prefix, such as `x-`) |
 | `cli/requirement-closure-broken` | Cli | `sce-codegen requirement-closure` found a claim that points out of its document and does not land in the manifests given — a `delegated` destination that never took the requirement, a delegation cycle, a decomposition child that does not exist, or a destination no manifest on the command line describes; not preventable by authoring SCXML (edit the manifest, or name the missing manifest) |
-| `cli/review-table-unavailable` | Cli | `sce-codegen review-table` was asked for a kind SCE reads no requirement annotation in — no node of that kind is read for `sce:req`, so the requirement column would be empty on every row for a reason that is about SCE rather than about the document; reported instead of rendering an empty table, which a reviewer would read as a clean result. ⚠ "reads", not "the grammar refuses": a `sce:req` on a W3C-namespace element of a forge document (the `<scxml>` root, a `<data>`) is accepted by `schemas/sce-forge.xsd` — its `processContents="lax"` wildcards accept any attribute carrying no global declaration — and then read by nobody, which is a separate silent-drop defect of row S2's class. Not preventable by authoring (the repair is to admit `sce:req` on that kind's nodes in `schemas/sce-forge-ext.xsd`, read it through `collect_sce_req`, and answer for the kind in `forge::requirement_nodes`) |
+| `cli/review-table-unavailable` | Cli | `sce-codegen review-table` was asked for a kind SCE reads no requirement annotation in — no node of that kind is read for `sce:req`, so the requirement column would be empty on every row for a reason that is about SCE rather than about the document; reported instead of rendering an empty table, which a reviewer would read as a clean result. ⚠ "reads", not "the grammar refuses": a `sce:req` on a W3C-namespace element of a forge document (the `<scxml>` root, a `<data>`) is accepted by `schemas/sce-forge.xsd` — its `processContents="lax"` wildcards accept any attribute carrying no global declaration — and, being read by nobody, is refused when the parse ends as `validation/sce-attribute-unread` (since 2026-09-28; before that it was dropped in silence). Not preventable by authoring (the repair is to admit `sce:req` on that kind's nodes in `schemas/sce-forge-ext.xsd`, read it through `collect_sce_req`, and answer for the kind in `forge::requirement_nodes`) |
 | `cli/pseudo-unavailable` | Cli | `sce-codegen pseudo` was given a document carrying a construct `forge::pseudo::render` does not cover. The rendering exists so that a reviewer who approves it has approved the document, which makes it total by contract: every field of the model reaches the output. A document is therefore rendered in full or refused by name, never abbreviated — a text missing part of the document reads exactly like one missing none of it, and signing it would turn an unreviewed document into a signed one. ⚠ The refusal is per DOCUMENT, not per kind: all eighteen kinds render, and the message names the construct (an `<invoke>`, an `<sce:on-sample>` block, an `<sce:context>` object) because naming the kind alone once told an author their kind was unrendered when it was not. ⚠⚠ Distinct from `cli/review-table-unavailable`, which is about a kind carrying no `sce:req` site at all; this one says nothing about annotation. Not preventable by authoring (the repair is to render the construct in `forge::pseudo`) |
 | `forge/source-hash-mismatch` | Cli | `sce-codegen verify` detected drift between an emitted file's embedded §6.2.6 header hash and the recomputed value over current source + template state; not preventable by authoring SCXML (regenerate via `sce-codegen` to repair) |
 | `forge/source-hash-input-uncovered` | Cli | the §6.2.6 `source-hash` about to be embedded in generated output would not describe the input that produced it — the collected set is empty (the header would carry the empty-input digest) or, where the root was inferred from the input's own location, omits that input; an invocation-layout failure, not an authoring one (re-point `--input-root` at a directory containing the input) |

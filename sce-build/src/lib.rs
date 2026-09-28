@@ -169,6 +169,9 @@ pub mod position_map;
 /// report, unresolved-placeholder report, and provenance emit would
 /// fragment into incompatible representations if each grew its own.
 pub mod provenance;
+/// What a parse read of a document — its SCE elements and its `sce:`
+/// attributes — so what it did not read is refused rather than ignored.
+pub mod read_ledger;
 /// §scxml-5.3: the one place a `<data>` id becomes a target-language reader
 /// name, and the decision of which variables get readers at all.
 pub mod reader_names;
@@ -196,6 +199,7 @@ pub mod resolve;
 /// [`forge::generator`]). Promoted out of `forge/` so neither engine
 /// reaches into the other's namespace for shared derive policy.
 pub mod rust_derive_policy;
+pub mod sce_attr;
 pub mod script_engine_analyzer;
 /// Event-set exhaustiveness
 /// validator. Flags compound `<state>` parents whose sibling children

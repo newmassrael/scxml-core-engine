@@ -926,6 +926,7 @@ references against a real document and drift silently.
 | `validation/require-either` | `validation` | `add_one_of` |  |
 | `validation/reserved-code-identifier` | `validation` | no | SCE Accepted Subset §2.14 |
 | `validation/reserved-context-id` | `validation` | no |  |
+| `validation/sce-attribute-unread` | `validation` | `remove_fields` |  |
 | `validation/send-operand-type` | `validation` | no | SCE Forge §4.5 |
 | `validation/singleton-violation` | `validation` | no |  |
 | `validation/transform-output-cycle` | `validation` | no |  |

@@ -473,10 +473,14 @@ mod tests {
        xmlns:sce="http://sce.dev/ext" version="1.0"
        sce:kind="codec" name="ping_frame" datamodel="ecmascript">
   <datamodel>
-    <data id="opcode" sce:type="uint8"/>
-    <data id="payload" sce:type="uint8"/>
+    <data id="opcode" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="payload" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
   </datamodel>
 </scxml>"#;
+        // ⚠ The two fields carry `sce:byte`. Without it a positional
+        // codec does not read a `<data>` at all, so this fixture was a
+        // codec with no fields whose `sce:type`s meant nothing — which
+        // the unread-attribute rule refuses (2026-09-28).
         let label = crate::DocumentLabel::symmetric("ping_frame.scxml");
         let doc = crate::forge::parser::parse_forge(codec, label)
             .expect("parses cleanly")
