@@ -219,9 +219,13 @@ TOOLS = [
     {
         "name": "validate_scxml",
         "description": (
-            "Run sce-codegen check on an existing SCXML document. Needs only "
-            "the document path, not a pack or binding. Checks the model's "
-            "structure; a pass does not say it matches the prose specification."
+            "Run sce-codegen check --lint on an existing SCXML document. "
+            "Needs only the document path, not a pack or binding. Returns "
+            "JSON: verdict (accepted/refused), the manifest, and EVERY "
+            "diagnostic record -- all lint findings in one run, not the "
+            "first. Checks the model's structure and design (unreachable "
+            "states, unhandled sibling events, dead guards); a pass does not "
+            "say it matches the prose specification."
         ),
         "inputSchema": {
             "type": "object",

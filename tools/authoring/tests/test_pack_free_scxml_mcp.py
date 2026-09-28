@@ -48,7 +48,8 @@ class PackFreeScxmlMcp(unittest.TestCase):
         checked = call("validate_scxml", document=str(self.document))
         self.assertFalse(checked.get("isError"), checked["content"][0]["text"])
         report = json.loads(checked["content"][0]["text"])
-        self.assertEqual("check", report["kind"])
+        self.assertEqual(("accepted", "check"),
+                         (report["verdict"], report["manifest"]["kind"]))
 
         shown = call("render_scxml_pseudocode", document=str(self.document))
         self.assertFalse(shown.get("isError"), shown["content"][0]["text"])
@@ -97,8 +98,47 @@ class PackFreeScxmlMcp(unittest.TestCase):
                                lambda: pathlib.Path(sys.executable)):
             result = call("validate_scxml", document=str(self.document))
         self.assertFalse(result.get("isError"))
-        self.assertEqual([str(pathlib.Path(sys.executable)), "check", str(self.document)],
+        self.assertEqual([str(pathlib.Path(sys.executable)), "--error-format", "json",
+                          "check", str(self.document), "--lint"],
                          seen["argv"])
+        report = json.loads(result["content"][0]["text"])
+        self.assertEqual(("accepted", {"kind": "check"}, []),
+                         (report["verdict"], report["manifest"], report["diagnostics"]))
+
+    def test_every_record_reaches_the_caller_as_data(self):
+        # The product reports every lint finding in one run; a caller that
+        # got the first line of prose saw one problem and fixed one.
+        records = [{"code": "scxml/unreachable-state"},
+                   {"code": "scxml/always-false-guard"}]
+        stderr = "".join(json.dumps(r) + "\n" for r in records)
+
+        def fake_run(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 20, stdout="", stderr=stderr)
+
+        with mock.patch.object(verify.subprocess, "run", fake_run), \
+             mock.patch.object(verify, "_default_codegen",
+                               lambda: pathlib.Path(sys.executable)):
+            result = call("validate_scxml", document=str(self.document))
+        self.assertTrue(result.get("isError"))
+        report = json.loads(result["content"][0]["text"])
+        self.assertEqual(("refused", None, records),
+                         (report["verdict"], report["manifest"], report["diagnostics"]))
+
+    def test_a_record_on_an_accepted_run_is_not_dropped(self):
+        # SCE_ERROR_CONTRACT.md §1: records, exit 0, manifest.
+        record = {"code": "validation/refused-expression"}
+
+        def fake_run(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 0, stdout='{"kind":"check"}\n',
+                                               stderr=json.dumps(record) + "\n")
+
+        with mock.patch.object(verify.subprocess, "run", fake_run), \
+             mock.patch.object(verify, "_default_codegen",
+                               lambda: pathlib.Path(sys.executable)):
+            result = call("validate_scxml", document=str(self.document))
+        self.assertFalse(result.get("isError"))
+        self.assertEqual([record],
+                         json.loads(result["content"][0]["text"])["diagnostics"])
 
     def test_missing_document_is_a_refusal(self):
         for name in ("validate_scxml", "render_scxml_pseudocode"):

@@ -42,7 +42,8 @@ for the other case and none of them write it down.
 ## What the core does
 
 The MCP server also exposes two tools that accept an SCXML file directly:
-`validate_scxml` runs `sce-codegen check` and returns its structural diagnostic;
+`validate_scxml` runs `sce-codegen check --lint --error-format=json` and returns
+every diagnostic record with the verdict and manifest, as JSON;
 `render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page.
 Both require only the `document` path. Neither checks whether the SCXML agrees
 with the prose specification; the specification owner compares the page with

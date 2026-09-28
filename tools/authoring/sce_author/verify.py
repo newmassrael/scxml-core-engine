@@ -665,22 +665,78 @@ def validate_scxml(document: pathlib.Path,
                    codegen: pathlib.Path | None = None) -> tuple[str, str]:
     """Run the product's SCXML check without a pack or binding.
 
+    Returns `(report, refusal)`, exactly one of them non-empty, each the
+    same JSON object: `verdict` (`accepted` / `refused`), the generator's
+    `manifest` (null on a refusal), and every `diagnostics` record it wrote.
+
     Keep subprocess access in this module, as for ``pseudo_page``. The MCP
     adapter returns the generator's report or refusal without interpreting it
     as a judgment about whether the document matches its prose specification.
+
+    ⚠ `--lint`, always. The design-time lints are off in the product only
+    because the W3C conformance corpus declares unreachable states on
+    purpose (docs/SCE_ACCEPTED_SUBSET.md, "Design-time lints are opt-in");
+    a caller of this tool is an author, with no such excuse, and without
+    the flag an orphan state or a sibling missing a handler passed here as
+    `accepted`.
+
+    ⚠ `--error-format=json`, so a caller gets every record as data instead
+    of the first line of prose. The product reports every lint finding in
+    one run, and a record can accompany an ACCEPTED run too
+    (SCE_ERROR_CONTRACT.md §1: records, exit 0, manifest) — reading only a
+    refusal's stderr would drop those.
     """
     codegen = pathlib.Path(codegen) if codegen else _default_codegen()
     if not codegen.exists():
         raise VerifyError(
             f"{codegen}: the code generator is not there, so no document can "
             f"be checked. Build sce-codegen before using this tool.")
-    argv = [str(codegen), "check", str(document)]
+    argv = [str(codegen), "--error-format", "json", "check", str(document),
+            "--lint"]
     run = subprocess.run(argv, capture_output=True, text=True)
-    if run.returncode != 0:
-        return "", (run.stderr.strip() or run.stdout.strip()
-                    or f"the code generator refused with status "
-                       f"{run.returncode}")
-    return run.stdout, ""
+    refused = run.returncode != 0
+    report = {
+        "verdict": "refused" if refused else "accepted",
+        "manifest": None if refused else _manifest_line(run.stdout),
+        "diagnostics": _diagnostic_records(run.stderr),
+    }
+    if refused and not report["diagnostics"]:
+        # SCE_ERROR_CONTRACT.md §6: a non-zero exit with no record is the
+        # product's defect. Said, not hidden behind an empty list.
+        report["diagnostics"] = [{
+            "unparsed": run.stderr.strip() or run.stdout.strip(),
+            "status": run.returncode,
+        }]
+    text = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
+    return ("", text) if refused else (text, "")
+
+
+def _manifest_line(stdout: str):
+    """The one JSON manifest line `check` writes on success, or the raw
+    text when it is not one -- never dropped."""
+    line = stdout.strip()
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError:
+        return {"unparsed": line}
+
+
+def _diagnostic_records(stderr: str) -> list:
+    """Every NDJSON record on stderr, in the order written.
+
+    A line that is not one is kept as `{"unparsed": ...}`: the contract
+    says every stderr line is a record under `--error-format=json`, so a
+    line that is not is something the caller should see, not lose.
+    """
+    records = []
+    for line in stderr.splitlines():
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            records.append({"unparsed": line})
+    return records
 
 
 def pseudo_page(document: pathlib.Path, codegen: pathlib.Path | None,
