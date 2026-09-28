@@ -11096,6 +11096,10 @@
           "file": "backends/python/runtime/sce_runtime/host_processor.py",
           "symbol": "HostSendRequest",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/page.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

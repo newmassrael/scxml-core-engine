@@ -3057,8 +3057,14 @@ fn parse_scxml_invoke(
         .strip_prefix("invoke")
         .unwrap_or("")
         .trim();
+    // The renderer marks an id the document did not write.
+    let (id, id_generated) = match id.strip_suffix("(generated)") {
+        Some(written) => (written.trim_end(), true),
+        None => (id, false),
+    };
     let mut base = InvokeBase {
         invoke_id: undo(id, line.number)?,
+        id_generated,
         ..Default::default()
     };
     let mut kind = String::new();

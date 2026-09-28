@@ -4114,6 +4114,10 @@
             "finalize_content": {
               "type": "string"
             },
+            "id_generated": {
+              "description": "Whether [`Self::invoke_id`] was generated because the document wrote no `id` (§scxml-6.4.1), rather than written by the author.\n\nA generated id is real at runtime — `done.invoke._invoke_0` names it and a transition may handle that event — so readers still show it, but never as the author's: the page marks it generated and reads the mark back, and the GUI structure omits it, as the C++ engine does.",
+              "type": "boolean"
+            },
             "idlocation": {
               "type": "string"
             },
@@ -4255,6 +4259,10 @@
               "description": "Identifier suffix derived from [`Self::invoke_id`] by trimming the SCXML auto-id leading underscore. User-supplied ids round-trip unchanged. Used by Rust/C++ templates to compose field names like `child_{field_suffix}` without producing double underscores.",
               "type": "string"
             },
+            "id_generated": {
+              "description": "Whether [`Self::invoke_id`] was generated because the document wrote no `id` (§scxml-6.4.1), rather than written by the author.\n\nA generated id is real at runtime — `done.invoke._invoke_0` names it and a transition may handle that event — so readers still show it, but never as the author's: the page marks it generated and reads the mark back, and the GUI structure omits it, as the C++ engine does.",
+              "type": "boolean"
+            },
             "idlocation": {
               "type": "string"
             },
@@ -4381,6 +4389,10 @@
               "description": "Identifier suffix derived from [`Self::invoke_id`] by trimming the SCXML auto-id leading underscore. User-supplied ids round-trip unchanged. Used by Rust/C++ templates to compose field names like `child_{field_suffix}` without producing double underscores.",
               "type": "string"
             },
+            "id_generated": {
+              "description": "Whether [`Self::invoke_id`] was generated because the document wrote no `id` (§scxml-6.4.1), rather than written by the author.\n\nA generated id is real at runtime — `done.invoke._invoke_0` names it and a transition may handle that event — so readers still show it, but never as the author's: the page marks it generated and reads the mark back, and the GUI structure omits it, as the C++ engine does.",
+              "type": "boolean"
+            },
             "idlocation": {
               "type": "string"
             },
@@ -4468,6 +4480,10 @@
             "host_served": {
               "default": false,
               "description": "`true` when the host has declared it serves [`Self::invoke_type`] (§scxml-6.4.1 leaves the set of invokable types to the platform, exactly as §scxml-6.2.5 does for `<send>`).\n\nThe variant stays `Unsupported` rather than becoming a third kind: what a declaration changes is not the classification but the lowering. Both shapes ride the same deferred-invoke queue and the same entry chain; only the execute step differs — a raise for one, a dispatch into the host's invoker for the other. Set by [`crate::host_processor_analyzer::declare_host_processors`].",
+              "type": "boolean"
+            },
+            "id_generated": {
+              "description": "Whether [`Self::invoke_id`] was generated because the document wrote no `id` (§scxml-6.4.1), rather than written by the author.\n\nA generated id is real at runtime — `done.invoke._invoke_0` names it and a transition may handle that event — so readers still show it, but never as the author's: the page marks it generated and reads the mark back, and the GUI structure omits it, as the C++ engine does.",
               "type": "boolean"
             },
             "idlocation": {

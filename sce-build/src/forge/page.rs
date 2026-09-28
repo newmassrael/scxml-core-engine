@@ -148,6 +148,9 @@ pub enum Word {
     Default,
     Unhandled,
     NoTarget,
+    /// After an `<invoke>` id the document did not write: the parser
+    /// generated it (§scxml-6.4.1).
+    GeneratedId,
     NativeGuard,
     Index,
     Elif,
@@ -289,6 +292,7 @@ impl Word {
         Word::Default,
         Word::Unhandled,
         Word::NoTarget,
+        Word::GeneratedId,
         Word::NativeGuard,
         Word::Index,
         Word::Elif,
@@ -440,6 +444,7 @@ fn en_word(w: Word) -> &'static str {
         // state and staying put. A lexicon that left it English would
         // leave the one clause a reviewer most needs to read untranslated.
         Word::NoTarget => "(no target)",
+        Word::GeneratedId => "(generated)",
         Word::NativeGuard => "native-guard",
         Word::Index => "index",
         Word::Elif => "elif",
@@ -939,6 +944,7 @@ fn ko_word(w: Word) -> &'static str {
         Word::Default => "기본",
         Word::Unhandled => "미처리",
         Word::NoTarget => "(목표 없음)",
+        Word::GeneratedId => "(자동 생성)",
         Word::NativeGuard => "네이티브가드",
         Word::Index => "색인",
         Word::Elif => "아니면만약",

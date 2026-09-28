@@ -1798,6 +1798,7 @@ impl Default for SCXMLParser {
 /// 7-arg ceiling without losing the per-field meaning.
 struct MeshRpcInvokeAttrs {
     invoke_id: String,
+    id_generated: bool,
     field_suffix: String,
     src: String,
     srcexpr: String,
@@ -3970,7 +3971,8 @@ impl SCXMLParser {
         // identifiers (`child_<suffix>`) consume `field_suffix` instead so the
         // leading underscore does not double up.
         let mut invoke_id = elem.attribute("id").unwrap_or("").to_string();
-        if invoke_id.is_empty() {
+        let id_generated = invoke_id.is_empty();
+        if id_generated {
             invoke_id = format!("_invoke_{}", self.invoke_counter);
             self.invoke_counter += 1;
         }
@@ -4035,6 +4037,7 @@ impl SCXMLParser {
                 source_name,
                 MeshRpcInvokeAttrs {
                     invoke_id,
+                    id_generated,
                     field_suffix,
                     src: src.clone(),
                     srcexpr: srcexpr.clone(),
@@ -4194,6 +4197,7 @@ impl SCXMLParser {
                     base: InvokeBase {
                         source_location: source_location_of(elem, source_name),
                         invoke_id,
+                        id_generated,
                         field_suffix,
                         state_name: state_id.to_string(),
                         params: hybrid_params,
@@ -4315,6 +4319,7 @@ impl SCXMLParser {
                     base: InvokeBase {
                         source_location: source_location_of(elem, source_name),
                         invoke_id,
+                        id_generated,
                         field_suffix,
                         state_name: state_id.to_string(),
                         params: static_params,
@@ -4403,6 +4408,7 @@ impl SCXMLParser {
                 base: InvokeBase {
                     source_location: source_location_of(elem, source_name),
                     invoke_id,
+                    id_generated,
                     field_suffix,
                     state_name: state_id.to_string(),
                     // Delivered to a host that RUNS the type (§scxml-6.4.1);
@@ -4478,6 +4484,7 @@ impl SCXMLParser {
         use crate::forge::error::{Located, ValidationError};
         let MeshRpcInvokeAttrs {
             invoke_id,
+            id_generated,
             field_suffix,
             src,
             srcexpr,
@@ -4622,6 +4629,7 @@ impl SCXMLParser {
             base: InvokeBase {
                 source_location: source_location_of(elem, source_name),
                 invoke_id,
+                id_generated,
                 field_suffix,
                 state_name: state_id.to_string(),
                 params: payload_params,

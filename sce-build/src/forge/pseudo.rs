@@ -2077,6 +2077,11 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
     let mut head = vec![Part::Word(Word::Invoke)];
     if !base.invoke_id.is_empty() {
         head.push(Part::Text(text(&base.invoke_id).into_owned()));
+        // A generated id is real at runtime (`done.invoke.<id>`), so the
+        // page shows it — marked, so it is never read as the author's.
+        if base.id_generated {
+            head.push(Part::Word(Word::GeneratedId));
+        }
     }
     head.push(Part::Glued(":".into()));
     out.line_of(head);

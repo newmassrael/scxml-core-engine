@@ -1346,6 +1346,15 @@ pub struct UnsupportedInvokeInfo {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct InvokeBase {
     pub invoke_id: String,
+    /// Whether [`Self::invoke_id`] was generated because the document wrote
+    /// no `id` (§scxml-6.4.1), rather than written by the author.
+    ///
+    /// A generated id is real at runtime — `done.invoke._invoke_0` names it
+    /// and a transition may handle that event — so readers still show it,
+    /// but never as the author's: the page marks it generated and reads the
+    /// mark back, and the GUI structure omits it, as the C++ engine does.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub id_generated: bool,
     /// Identifier suffix derived from [`Self::invoke_id`] by trimming the
     /// SCXML auto-id leading underscore. User-supplied ids round-trip
     /// unchanged. Used by Rust/C++ templates to compose field names like
