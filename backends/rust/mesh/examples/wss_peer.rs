@@ -111,16 +111,24 @@ async fn main() {
             let EngineCall::Raise(delivered) = call else {
                 continue;
             };
-            if delivered.name != "ping" {
-                continue;
-            }
+            // What tests/mesh/wss_loopback/server.scxml says: `ping` is
+            // answered with `pong`, and the request `service.request.echo`
+            // with its reply — sent while the request's invokeid is current,
+            // as the engine hands it to a `<send>` (§mesh-10.7), so the core
+            // stamps it as that request's RpcReply.
+            let reply = match delivered.name.as_str() {
+                "ping" => "pong",
+                "service.request.echo" => "service.response.echo",
+                _ => continue,
+            };
             answered += 1;
             endpoint.send(&HostSendRequest {
                 processor_type: MESH_PROCESSOR_TYPE.to_string(),
-                event_name: "pong".to_string(),
+                event_name: reply.to_string(),
                 target: "#client".to_string(),
                 send_id: format!("reply-{answered}"),
                 event_data: delivered.metadata.data.clone(),
+                invoke_id: delivered.metadata.invoke_id.clone(),
                 ..HostSendRequest::default()
             });
         }

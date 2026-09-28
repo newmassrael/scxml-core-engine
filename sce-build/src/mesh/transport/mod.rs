@@ -1263,12 +1263,15 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
     // pair, spoken by the host cores and by no C++ arm.
     static WSS: TransportDescriptor = TransportDescriptor {
         served_by: TransportService::HostCore,
-        // What the host cores route today: a `<send>` to a peer and its
-        // delivery. They keep no reply correlation (§mesh-9.5 mesh-rpc is
-        // not lowered for them) and no subscription or field state, so a
-        // pattern needing one is refused at build time rather than sent
-        // into a core that would deliver it as a plain event.
-        capabilities: &[FireForget],
+        // What the host cores route: a `<send>` to a peer and its delivery,
+        // and a request with its reply — `<invoke type="sce:mesh-rpc">` is
+        // lowered to their mesh-rpc door, kept by wire invokeid until its
+        // reply, deadline or cancel (§mesh-9.5), and a `service.response.*`
+        // the peer table names goes out stamped as that request's reply
+        // (§mesh-10.7). They keep no subscription or field state, so a
+        // pattern needing one is refused at build time rather than sent into
+        // a core that would deliver it as a plain event.
+        capabilities: &[FireForget, RequestReply],
         implemented: true,
         // A server binding names nothing (the client dials it, §mesh-18.1),
         // so no key is required; a client binding names the server's `url`.
@@ -1298,7 +1301,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         supports_multi_instance_server: false,
         // Inter-machine by design (§mesh-18: a phone and a server).
         supports_inter_partition_ipc: false,
-        // No RequestReply capability; the question does not arise.
+        // The host core checks a reply against its request's responder set
+        // by the binding it arrived on (§mesh-14.6), which a wider set would
+        // need; no test holds a reply from a second peer yet, so the wider
+        // `reply_from:` stays refused until one does.
         supports_cross_target_reply: false,
         // No server arm holds a request handle.
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
@@ -1448,6 +1454,12 @@ mod tests {
         assert!(d.implemented);
         assert_eq!(implemented_names_served_by(ServiceKind::HostCore), ["wss"]);
         assert!(!implemented_names_served_by(ServiceKind::CppTemplate).contains(&"wss"));
+        // What the host cores route (§mesh-9.5, §mesh-10.7), and no more:
+        // no subscription or field state is kept.
+        assert!(d.capabilities.contains(&FireForget));
+        assert!(d.capabilities.contains(&RequestReply));
+        assert!(!d.capabilities.contains(&PubSub));
+        assert!(!d.capabilities.contains(&FieldAccess));
     }
 
     #[test]

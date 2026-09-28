@@ -1220,7 +1220,7 @@ question from whether the transport *supplies* ordering.
 | `zenoh` | C++ template | yes | RFPA | `key:` | no | no | yes | Open | StringSegment | yes | yes | no | no | no | DropSilently |
 | `dds` | C++ template | yes | RFPA | `topic:` | no | no | yes | Bounded | StringSegment | yes | no | no | no | no | ActiveError |
 | `can` | C++ template | no | FA | — | no | no | no | None | None | no | no | no | no | no | Unsupported |
-| `wss` | host core | yes | F | — | no | no | yes | None | None | no | yes | no | no | no | Unsupported |
+| `wss` | host core | yes | RF | — | no | no | yes | None | None | no | yes | no | no | no | Unsupported |
 <!-- END transport-capability-matrix -->
 
 If SCXML uses a pattern that the bound transport does not support, sce-build emits a **build error** with the specific pattern/transport mismatch. The same holds for every other column: a deploy.yaml asking for something the row does not offer is rejected at parse or codegen time, never silently degraded.
@@ -4197,7 +4197,7 @@ The binding a host-level Mesh core — the Rust `sce-rust-mesh` crate and the Ko
 
 It is not a generated C++ transport: `mesh_transport.h.jinja2` has no arm for it, and the §10.4.2 registry lists it as `served_by: HostCore`, so a machine generated for C++ with a `wss` binding is refused. What this section fixes is the wire, so that any two implementations of it interoperate.
 
-A binding names it as `transport: wss`. The side that dials carries `url: wss://<host>[:<port>][<base>]`, with no query or fragment, because the core appends the §18.1 path after it. `ws://` is accepted only for a loopback host. The side that accepts carries no `url`, so which side dials is read from the binding and cannot disagree with a second key. `keepalive_ms` sets the §18.3 ping interval. What the host cores route over it today is a `<send>` and its delivery (`FireForget`, §8.2): a pattern that needs a reply, a subscription or a field is refused at build time, rather than delivered as a plain event by a core that keeps no correlation for it.
+A binding names it as `transport: wss`. The side that dials carries `url: wss://<host>[:<port>][<base>]`, with no query or fragment, because the core appends the §18.1 path after it. `ws://` is accepted only for a loopback host. The side that accepts carries no `url`, so which side dials is read from the binding and cannot disagree with a second key. `keepalive_ms` sets the §18.3 ping interval. What the host cores route over it is a `<send>` and its delivery (`FireForget`, §8.2), and a request with its reply (`RequestReply`): an `<invoke type="sce:mesh-rpc">` is kept by its wire `invoke_id` until the reply, its deadline or its cancel ends it (§9.5), and a `service.response.*` the peer table names goes out as the reply to the request being handled (§10.7). A pattern that needs a subscription or a field is refused at build time, rather than delivered as a plain event by a core that keeps no state for it. A `reply_from:` wider than the binding's own target stays refused until a reply from a second peer is under test.
 
 ### 18.1 Connection and Peer Identity
 

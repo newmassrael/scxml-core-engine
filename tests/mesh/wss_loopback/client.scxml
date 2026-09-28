@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   SCE_MESH.md §mesh-18 / §mesh-19: the client half of the WebSocket loopback.
-  It pings the server and waits for the answer.
+  It pings the server and waits for the answer, then asks the server to echo
+  a value through `<invoke type="sce:mesh-rpc">` and waits for the invoke to
+  complete (§mesh-9.5).
 
   Its peer table (backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/generated/
   client/ClientMeshPeers.kt) is generated from deploy.yaml beside it by
@@ -14,7 +16,14 @@
     <onentry>
       <send target="#server" event="ping"/>
     </onentry>
-    <transition event="pong" target="answered"/>
+    <transition event="pong" target="echoing"/>
+  </state>
+  <state id="echoing">
+    <invoke id="echo" type="sce:mesh-rpc" src="#server">
+      <param name="_mesh_event" expr="'service.request.echo'"/>
+      <param name="x" expr="1"/>
+    </invoke>
+    <transition event="done.invoke.echo" target="answered"/>
   </state>
   <final id="answered"/>
 </scxml>

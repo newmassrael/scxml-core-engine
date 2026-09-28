@@ -103,9 +103,34 @@ class CrossLanguageLoopbackTest {
             assertEquals("reply-1", pong.metadata.sendId)
             assertEquals("mesh://server", pong.metadata.origin)
 
+            // §mesh-9.5, §mesh-10.7: a request and its reply. The Kotlin core
+            // writes the RpcRequest; the Rust core delivers it with its wire
+            // invokeid, and stamps the reply the server sends while handling
+            // it; the Kotlin core matches that reply to the invocation.
+            val started = endpoint.invoke(
+                StateMachineEngine.HostInvokeRequest(
+                    processorType = MESH_RPC_INVOKE_TYPE,
+                    invokeId = "echo",
+                    src = "#server",
+                    params = mapOf(MESH_EVENT_PARAM to listOf("service.request.echo")),
+                    eventData = """{"x":1}""",
+                    token = 1,
+                ),
+            )
+            assertEquals(null, started.refusal, "the request was refused: ${started.refusal}")
+            assertTrue(endpoint.takeHostErrors().isEmpty())
+
+            val answer = events.next()
+            assertIs<LinkEvent.Received>(answer)
+            deliver(endpoint, answer)
+            assertEquals(
+                listOf(EngineCall.EndInvoke("echo", 1, failed = false, data = """{"x":1}""", source = "server")),
+                endpoint.takeCalls(),
+            )
+
             link.close()
             assertTrue(peer.waitFor(10, TimeUnit.SECONDS), "the Rust peer did not exit after the link closed")
-            assertEquals("DONE 1", stdout.readLine())
+            assertEquals("DONE 2", stdout.readLine())
             assertEquals(0, peer.exitValue())
         } finally {
             peer.destroyForcibly()

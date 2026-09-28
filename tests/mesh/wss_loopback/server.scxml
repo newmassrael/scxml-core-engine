@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   SCE_MESH.md §mesh-18 / §mesh-19: the server half of the WebSocket loopback.
-  It answers every `ping` a client sends with a `pong` carrying the same data.
+  It answers every `ping` a client sends with a `pong` carrying the same data,
+  and every `service.request.echo` with a `service.response.echo` carrying
+  the same data — a reply (§mesh-8.1), so the core sends it as the RpcReply
+  of the request being handled (§mesh-10.7).
 
   Its peer table (backends/rust/mesh/examples/generated/server_mesh_peers.rs)
   is generated from deploy.yaml beside it by backends/rust/mesh/generate.sh,
@@ -13,6 +16,9 @@
   <state id="serving">
     <transition event="ping" target="serving">
       <send target="#client" event="pong" expr="_event.data"/>
+    </transition>
+    <transition event="service.request.echo" target="serving">
+      <send target="#client" event="service.response.echo" expr="_event.data"/>
     </transition>
   </state>
 </scxml>

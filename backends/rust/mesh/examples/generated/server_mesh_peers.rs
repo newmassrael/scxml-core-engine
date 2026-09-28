@@ -1,8 +1,8 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 34aaab241046b30864ac859c2172c0519c3149860e3abe044095473301ada5f1
+// source-hash: e4650a76927b3206a04139b6ffa61f18ef1cc19215577a9104ba3cce6eabf23b
 
-#![doc = "SCE-MAP: server.scxml:11 :: _machine"]
-// SCE-MAP: server.scxml:11 :: _machine
+#![doc = "SCE-MAP: server.scxml:14 :: _machine"]
+// SCE-MAP: server.scxml:14 :: _machine
 // server's Mesh peers, as deploy.yaml binds them (SCE_MESH.md §mesh-19),
 // generated from server.
 //
@@ -35,7 +35,7 @@ pub const MACHINE: Machine = Machine {
             },
             responders: &["client"],
             deadline_ms: None,
-            reply_events: &[],
+            reply_events: &["service.response.echo"],
         },
         link: PeerLink::WssAccept { keepalive_ms: None },
     }],

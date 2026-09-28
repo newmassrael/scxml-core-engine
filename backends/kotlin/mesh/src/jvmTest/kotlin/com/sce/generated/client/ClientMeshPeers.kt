@@ -1,8 +1,8 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 34aaab241046b30864ac859c2172c0519c3149860e3abe044095473301ada5f1
+// source-hash: e4650a76927b3206a04139b6ffa61f18ef1cc19215577a9104ba3cce6eabf23b
 
 
-// SCE-MAP: client.scxml:11 :: _machine
+// SCE-MAP: client.scxml:13 :: _machine
 // client's Mesh peers, as deploy.yaml binds them (SCE_MESH.md §mesh-19),
 // generated from client.
 //
