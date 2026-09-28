@@ -1624,7 +1624,7 @@ When a child event arrives at the parent as `ChildEvent`:
 | `_event.sendid` | envelope `subject` (child's sendid, transparent) |
 | `_event.origin` | child session endpoint URI: `mesh://<child_device>/<child_machine>/<child_session_id>` |
 | `_event.origintype` | `"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"` (standard; remote transport transparent per §6.2) |
-| `_event.invokeid` | envelope `invoke_id` (UUID v7 as hex string) |
+| `_event.invokeid` | envelope `invoke_id` (UUID v7 as RFC 4122 canonical text) |
 | `_event.data` | deserialized payload according to envelope `datacontenttype` |
 
 The reverse applies to `ParentEvent` arriving at the child: `_event.origin` points at the parent endpoint, `_event.invokeid` is the same UUID v7, and `_event.type = "external"`.
@@ -2037,7 +2037,7 @@ W3C §5.10.1 defines the standard `_event` fields. SCE Mesh populates them deter
 | `sendid` | `<send>`'s id attribute or generated | envelope `subject` (or unset if not `<send>`-originated) |
 | `origin` | unset (internal) | `mesh://<envelope.source>` (URI form; portable target spec) |
 | `origintype` | unset (internal) | `"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"` for inter-SCXML mesh traffic; transport-specific URIs for bridged traffic (e.g., `"sce:mesh/someip"` for raw bus events) |
-| `invokeid` | unset | envelope `invoke_id` as hex string, or unset if the envelope carries none |
+| `invokeid` | unset | envelope `invoke_id` as RFC 4122 §3 canonical text (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, lowercase), or unset if the envelope carries none |
 | `data` | payload | deserialized per envelope `datacontenttype` |
 
 These fields are surface-compatible with local execution — an author's `<transition cond="_event.origin == 'mesh://chassis'">` works identically whether the event arrives locally or via any transport.
@@ -2055,8 +2055,8 @@ _event.data = {
   "detail":       "<human-readable detail, optional>",
   "source":       "<envelope.source or null>",            // communication, invoke
   "sendid":       "<originating sendid or null>",         // when applicable
-  "envelope_id":  "<UUID v7 hex or null>",                // communication only
-  "invoke_id":    "<UUID v7 hex or null>"                 // invoke-related only
+  "envelope_id":  "<UUID v7 as RFC 4122 text, or null>",  // communication only
+  "invoke_id":    "<UUID v7 as RFC 4122 text, or null>"   // invoke-related only
 }
 ```
 
@@ -2065,7 +2065,7 @@ _event.data = {
 - `reason` — the `rpc_status` as the name `stdlib/mesh/rpc_status.scxml` declares for it (`deadlineExceeded`, `unavailable`, …), read through the generated enum's declared-name accessor rather than a list kept beside it, so the vocabulary of record is the only spelling. The enum is a closed set, so an envelope carrying an undeclared status never decodes and never reaches this path.
 - `detail` — the reply's `rpc_error_message`, or absent when it carries none.
 - `source` — the replying envelope's `source`; absent for the deadline the requester synthesizes itself, since no peer answered.
-- `invoke_id` — the request's wire `invoke_id` as hex, the value the reply correlated on.
+- `invoke_id` — the request's wire `invoke_id` as RFC 4122 text (the form of `_event.invokeid`, §10.7), the value the reply correlated on.
 
 The synthesized deadline takes the same shape as a peer's `DeadlineExceeded` reply, so one transition guard serves both.
 

@@ -59,7 +59,7 @@ internal class Correlation {
     private val pending = mutableMapOf<String, Pending>()
 
     fun register(wireId: ByteArray, request: Pending) {
-        pending[hex(wireId)] = request
+        pending[uuidText(wireId)] = request
     }
 
     /**
@@ -68,15 +68,15 @@ internal class Correlation {
      * envelope's `source`, which the sender writes (§mesh-9.5).
      */
     fun check(wireId: ByteArray, peer: String): Answer {
-        val request = pending[hex(wireId)] ?: return Answer.UNKNOWN
+        val request = pending[uuidText(wireId)] ?: return Answer.UNKNOWN
         return if (peer in request.responders) Answer.ADMITTED else Answer.UNDECLARED
     }
 
     /** Whether a request is still waiting on [wireId]. */
-    fun isWaiting(wireId: ByteArray): Boolean = hex(wireId) in pending
+    fun isWaiting(wireId: ByteArray): Boolean = uuidText(wireId) in pending
 
     /** Retire the request [wireId], returning it if it was still waiting. */
-    fun retire(wireId: ByteArray): Pending? = pending.remove(hex(wireId))
+    fun retire(wireId: ByteArray): Pending? = pending.remove(uuidText(wireId))
 
     /** Forget the request for the start [token] of [invokeId]: its state exited, and nothing goes on the wire (§mesh-9.5). */
     fun cancel(invokeId: String, token: Long) {
@@ -127,11 +127,21 @@ fun invokeErrorData(status: RpcStatus, detail: String?, source: String?, wireIdH
 fun srcNotFoundData(detail: String): String =
     ErrorData("execution", "INVOKE_SRC_NOT_FOUND").apply { text("detail", detail) }.finish()
 
-/** [bytes] as lowercase hex, the form §mesh-10.7 gives an `invoke_id`. */
-fun hex(bytes: ByteArray): String {
+/** Where RFC 4122 §3's canonical text puts its dashes. */
+private val UUID_DASHES = setOf(8, 13, 18, 23)
+
+/**
+ * A 16-byte [id] — an envelope's, or a request's wire `invoke_id` — as
+ * RFC 4122 §3's canonical text (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+ * lowercase): the form §mesh-10.7 gives `_event.invokeid` and §mesh-10.7.1 an
+ * `invoke_id` field, and the one the C++ core writes (`SCE::uuid::to_string`),
+ * so a document cannot tell which core it runs beside.
+ */
+fun uuidText(id: ByteArray): String {
     val digits = "0123456789abcdef"
-    val out = StringBuilder(bytes.size * 2)
-    for (byte in bytes) {
+    val out = StringBuilder(36)
+    for ((i, byte) in id.withIndex()) {
+        if (i == 4 || i == 6 || i == 8 || i == 10) out.append('-')
         val value = byte.toInt() and 0xFF
         out.append(digits[value ushr 4]).append(digits[value and 0x0F])
     }
@@ -139,16 +149,17 @@ fun hex(bytes: ByteArray): String {
 }
 
 /**
- * The wire invokeid a request's `_event.invokeid` names: [hex] read back. `null`
- * for text that is not the 32 hex digits of one — an event raised by something
- * other than a Mesh request.
+ * The id a request's `_event.invokeid` names: [uuidText] read back, either
+ * case, as the C++ core's `SCE::uuid::from_string` reads it. `null` for text
+ * that is not one — an event raised by something other than a Mesh request.
  */
-fun unhex(text: String): ByteArray? {
-    if (text.length != 32) return null
+fun parseUuidText(text: String): ByteArray? {
+    if (text.length != 36 || UUID_DASHES.any { text[it] != '-' }) return null
+    val digits = text.filterIndexed { i, _ -> i !in UUID_DASHES }
     val out = ByteArray(16)
     for (i in 0 until 16) {
-        val hi = text[2 * i].digitToIntOrNull(16) ?: return null
-        val lo = text[2 * i + 1].digitToIntOrNull(16) ?: return null
+        val hi = digits[2 * i].digitToIntOrNull(16) ?: return null
+        val lo = digits[2 * i + 1].digitToIntOrNull(16) ?: return null
         out[i] = ((hi shl 4) or lo).toByte()
     }
     return out

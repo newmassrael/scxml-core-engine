@@ -231,7 +231,7 @@ class RouterTest {
     // ── §mesh-9.5: `<invoke type="sce:mesh-rpc">`, the requester's half ──
 
     private val wire = ByteArray(16) { 9 }
-    private val wireHex = "09090909090909090909090909090909"
+    private val wireText = "09090909-0909-0909-0909-090909090909"
 
     /** `ecu` bound to `hmi` with a binding-level deadline, and to `mallory`, which is not in `hmi`'s responder set. */
     private fun requester(deadlineMs: Long?): Router {
@@ -328,7 +328,7 @@ class RouterTest {
                 Effect.Fail(
                     "ask",
                     7,
-                    """{"errorName":"invoke","reason":"unavailable","detail":"busy","source":"hmi","invoke_id":"$wireHex"}""",
+                    """{"errorName":"invoke","reason":"unavailable","detail":"busy","source":"hmi","invoke_id":"$wireText"}""",
                     "hmi",
                 ),
             ),
@@ -343,7 +343,7 @@ class RouterTest {
         started(ecu, null)
         assertEquals(
             // The envelope's word, reported as written; what refused it was the binding it came in on.
-            listOf(Effect.Raise("mallory", Signal.RpcReplyFromUndeclaredPeer("hmi", wireHex))),
+            listOf(Effect.Raise("mallory", Signal.RpcReplyFromUndeclaredPeer("hmi", wireText))),
             done(ecu.receive("mallory", reply(2, RpcStatus.OK, null, "1"), 20)),
         )
         assertEquals(
@@ -373,7 +373,7 @@ class RouterTest {
                 Effect.Fail(
                     "ask",
                     7,
-                    """{"errorName":"invoke","reason":"deadlineExceeded","invoke_id":"$wireHex"}""",
+                    """{"errorName":"invoke","reason":"deadlineExceeded","invoke_id":"$wireText"}""",
                     null,
                 ),
             ),
@@ -442,7 +442,7 @@ class RouterTest {
     fun aRequestIsDeliveredWithItsWireInvokeid() {
         val bytes = started(requester(null), null)
         assertEquals(
-            listOf(Effect.Deliver("service.request.force", """{"n":3}""", "ecu", null, wireHex)),
+            listOf(Effect.Deliver("service.request.force", """{"n":3}""", "ecu", null, wireText)),
             done(responder().receive("ecu", bytes, 0)),
         )
     }
@@ -454,7 +454,7 @@ class RouterTest {
         val hmi = responder()
         done(hmi.receive("ecu", started(ecu, null), 0))
 
-        val bytes = sentToEcu(hmi.send(answer("service.response.force", wireHex), id(5), 0))
+        val bytes = sentToEcu(hmi.send(answer("service.response.force", wireText), id(5), 0))
         val reply = decode(bytes)
         assertEquals(PatternKind.RPC_REPLY, reply.pattern)
         assertTrue(wire.contentEquals(reply.invoke_id))
@@ -469,7 +469,7 @@ class RouterTest {
     /** Only the events the deployment names as replies are stamped; a notification cannot retire the invocation. */
     @Test
     fun aSendThatIsNotAReplyIsNotStampedAsOne() {
-        val envelope = decode(sentToEcu(responder().send(answer("status.changed", wireHex), id(5), 0)))
+        val envelope = decode(sentToEcu(responder().send(answer("status.changed", wireText), id(5), 0)))
         assertEquals(PatternKind.FIRE_FORGET, envelope.pattern)
         assertNull(envelope.invoke_id)
         assertNull(envelope.rpc_status)
@@ -489,7 +489,7 @@ class RouterTest {
         val ecu = requester(100)
         started(ecu, null)
         assertEquals(
-            listOf(Effect.Raise("hmi", Signal.InvokeChildLost(wireHex, "hmi"))),
+            listOf(Effect.Raise("hmi", Signal.InvokeChildLost(wireText, "hmi"))),
             done(ecu.peerNotReady("hmi")),
         )
         assertTrue(done(ecu.receive("hmi", reply(2, RpcStatus.OK, null, "1"), 20)).isEmpty())
@@ -497,11 +497,14 @@ class RouterTest {
     }
 
     @Test
-    fun unhexReadsBackWhatHexWroteAndNothingElse() {
-        assertTrue(wire.contentEquals(unhex(hex(wire))))
-        assertNull(unhex(""))
-        assertNull(unhex("ask"))
-        assertNull(unhex("zz".repeat(16)))
+    fun uuidTextReadsBackWhatItWroteInEitherCaseAndNothingElse() {
+        assertTrue(wire.contentEquals(parseUuidText(uuidText(wire))))
+        assertTrue(wire.contentEquals(parseUuidText(uuidText(wire).uppercase())))
+        assertNull(parseUuidText(""))
+        assertNull(parseUuidText("ask"))
+        // The 32 digits without the dashes are not the canonical text.
+        assertNull(parseUuidText("09".repeat(16)))
+        assertNull(parseUuidText("zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz"))
     }
 
     @Test

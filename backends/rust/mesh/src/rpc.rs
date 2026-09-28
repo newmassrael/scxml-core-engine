@@ -143,7 +143,7 @@ pub fn invoke_error_data(
     if let Some(source) = source {
         json.string("source", source);
     }
-    json.string("invoke_id", &hex(wire_id));
+    json.string("invoke_id", &uuid_text(wire_id));
     json.finish()
 }
 
@@ -156,29 +156,45 @@ pub fn src_not_found_data(detail: &str) -> String {
     json.finish()
 }
 
-/// `bytes` as lowercase hex, the form §mesh-10.7 gives an `invoke_id`.
-pub fn hex(bytes: &[u8]) -> String {
+/// Where RFC 4122 §3's canonical text puts its dashes.
+const UUID_DASHES: [usize; 4] = [8, 13, 18, 23];
+
+/// A 16-byte id — an envelope's, or a request's wire `invoke_id` — as
+/// RFC 4122 §3's canonical text (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+/// lowercase): the form §mesh-10.7 gives `_event.invokeid` and §mesh-10.7.1
+/// an `invoke_id` field, and the one the C++ core writes
+/// (`SCE::uuid::to_string`), so a document cannot tell which core it runs
+/// beside.
+pub fn uuid_text(id: &[u8; 16]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
+    let mut out = String::with_capacity(36);
+    for (i, byte) in id.iter().enumerate() {
+        if matches!(i, 4 | 6 | 8 | 10) {
+            out.push('-');
+        }
         out.push(DIGITS[usize::from(byte >> 4)] as char);
         out.push(DIGITS[usize::from(byte & 0x0f)] as char);
     }
     out
 }
 
-/// The wire invokeid a request's `_event.invokeid` names: [`hex`] read back.
-/// `None` for text that is not the 32 hex digits of one — an event raised by
-/// something other than a Mesh request.
-pub fn unhex(text: &str) -> Option<[u8; 16]> {
-    let digits = text.as_bytes();
-    if digits.len() != 32 {
+/// The id a request's `_event.invokeid` names: [`uuid_text`] read back,
+/// either case, as the C++ core's `SCE::uuid::from_string` reads it. `None`
+/// for text that is not one — an event raised by something other than a
+/// Mesh request.
+pub fn parse_uuid_text(text: &str) -> Option<[u8; 16]> {
+    let chars = text.as_bytes();
+    if chars.len() != 36 || UUID_DASHES.iter().any(|&i| chars[i] != b'-') {
         return None;
     }
-    let value = |d: u8| char::from(d).to_digit(16).map(|v| v as u8);
+    let mut digits = chars
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !UUID_DASHES.contains(i))
+        .map(|(_, &d)| char::from(d).to_digit(16).map(|v| v as u8));
     let mut out = [0u8; 16];
-    for (byte, pair) in out.iter_mut().zip(digits.chunks_exact(2)) {
-        *byte = value(pair[0])? << 4 | value(pair[1])?;
+    for byte in &mut out {
+        *byte = digits.next()?? << 4 | digits.next()??;
     }
     Some(out)
 }
@@ -199,7 +215,7 @@ mod tests {
     fn a_failed_reply_names_its_status_by_the_declared_name() {
         assert_eq!(
             invoke_error_data(RpcStatus::Unavailable, Some("busy"), Some("cloud"), &WIRE),
-            r#"{"errorName":"invoke","reason":"unavailable","detail":"busy","source":"cloud","invoke_id":"019200000000700080000000000000ab"}"#
+            r#"{"errorName":"invoke","reason":"unavailable","detail":"busy","source":"cloud","invoke_id":"01920000-0000-7000-8000-0000000000ab"}"#
         );
     }
 
@@ -207,7 +223,7 @@ mod tests {
     fn a_synthesised_deadline_has_no_source() {
         assert_eq!(
             invoke_error_data(RpcStatus::DeadlineExceeded, None, None, &WIRE),
-            r#"{"errorName":"invoke","reason":"deadlineExceeded","invoke_id":"019200000000700080000000000000ab"}"#
+            r#"{"errorName":"invoke","reason":"deadlineExceeded","invoke_id":"01920000-0000-7000-8000-0000000000ab"}"#
         );
     }
 

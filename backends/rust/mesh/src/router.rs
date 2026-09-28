@@ -74,7 +74,7 @@ pub enum Effect {
     /// Raise `event` on the engine's external queue with `data` as
     /// `_event.data`; `source` is the machine that sent it, `send_id` the
     /// id its `<send>` carried (§mesh-10.7: the envelope's `subject`), and
-    /// `invoke_id` the request's wire invokeid as hex when the envelope is an
+    /// `invoke_id` the request's wire invokeid as RFC 4122 text when the envelope is an
     /// `RpcRequest` — the one field that comes back on the reply
     /// (§mesh-10.7).
     Deliver {
@@ -193,7 +193,7 @@ impl Router {
             .reply_events
             .contains(&request.event_name.as_str());
         let answering = if reply {
-            rpc::unhex(&request.invoke_id)
+            rpc::parse_uuid_text(&request.invoke_id)
         } else {
             None
         };
@@ -345,7 +345,7 @@ impl Router {
                 .into_iter()
                 .map(|wire_id| {
                     raise(Signal::InvokeChildLost {
-                        invoke_id: rpc::hex(&wire_id),
+                        invoke_id: rpc::uuid_text(&wire_id),
                         target: peer.to_string(),
                     })
                 }),
@@ -467,7 +467,7 @@ impl Router {
         match self.requests.check(&wire_id, peer) {
             Answer::Undeclared => Some(Signal::RpcReplyFromUndeclaredPeer {
                 source: envelope.source.to_string(),
-                invoke_id: rpc::hex(&wire_id),
+                invoke_id: rpc::uuid_text(&wire_id),
             }),
             Answer::Admitted | Answer::Unknown => None,
         }
@@ -667,11 +667,12 @@ fn deliver(envelope: &Envelope<'_>, peer: Option<&str>) -> Effect {
             source: envelope.source.to_string(),
             send_id: envelope.subject.map(str::to_string),
             // §mesh-10.7: `_event.invokeid` of an inbound request is its
-            // wire invokeid, as hex.
+            // wire invokeid, as RFC 4122 text.
             invoke_id: (envelope.pattern == PatternKind::RpcRequest)
                 .then_some(envelope.invoke_id)
                 .flatten()
-                .map(rpc::hex),
+                .and_then(|id| <&[u8; 16]>::try_from(id).ok())
+                .map(rpc::uuid_text),
         },
         Err(codec) => Effect::Raise {
             peer: peer.map(str::to_string),
@@ -1163,7 +1164,7 @@ mod tests {
             alloc::vec![Effect::Fail {
                 invoke_id: "ask".to_string(),
                 token: 7,
-                data: r#"{"errorName":"invoke","reason":"unavailable","detail":"busy","source":"hmi","invoke_id":"09090909090909090909090909090909"}"#.to_string(),
+                data: r#"{"errorName":"invoke","reason":"unavailable","detail":"busy","source":"hmi","invoke_id":"09090909-0909-0909-0909-090909090909"}"#.to_string(),
                 source: Some("hmi".to_string()),
             }]
         );
@@ -1184,7 +1185,7 @@ mod tests {
                     // The envelope's word, reported as written; what refused
                     // it was the binding it came in on.
                     source: "hmi".to_string(),
-                    invoke_id: "09090909090909090909090909090909".to_string(),
+                    invoke_id: "09090909-0909-0909-0909-090909090909".to_string(),
                 },
             }]
         );
@@ -1224,7 +1225,7 @@ mod tests {
             alloc::vec![Effect::Fail {
                 invoke_id: "ask".to_string(),
                 token: 7,
-                data: r#"{"errorName":"invoke","reason":"deadlineExceeded","invoke_id":"09090909090909090909090909090909"}"#.to_string(),
+                data: r#"{"errorName":"invoke","reason":"deadlineExceeded","invoke_id":"09090909-0909-0909-0909-090909090909"}"#.to_string(),
                 source: None,
             }]
         );
@@ -1287,7 +1288,7 @@ mod tests {
 
     // ── §mesh-10.7: the responder's half — the request in, its reply out ──
 
-    const WIRE_HEX: &str = "09090909090909090909090909090909";
+    const WIRE_TEXT: &str = "09090909-0909-0909-0909-090909090909";
 
     /// `hmi`, answering `ecu`: `service.response.force` is a reply to it.
     fn responder() -> Router {
@@ -1330,7 +1331,7 @@ mod tests {
                 data: r#"{"n":3}"#.to_string(),
                 source: "ecu".to_string(),
                 send_id: None,
-                invoke_id: Some(WIRE_HEX.to_string()),
+                invoke_id: Some(WIRE_TEXT.to_string()),
             }]
         );
     }
@@ -1344,7 +1345,7 @@ mod tests {
         let mut hmi = responder();
         hmi.receive("ecu", started(&mut ecu, None), 0).unwrap();
 
-        let bytes = sent_to_ecu(hmi.send(&answer("service.response.force", WIRE_HEX), [5; 16], 0));
+        let bytes = sent_to_ecu(hmi.send(&answer("service.response.force", WIRE_TEXT), [5; 16], 0));
         let reply = Envelope::decode(&mut SceCursor::new(&bytes)).unwrap();
         assert_eq!(reply.pattern, PatternKind::RpcReply);
         assert_eq!(reply.invoke_id, Some(&WIRE[..]));
@@ -1366,7 +1367,7 @@ mod tests {
     /// so a notification cannot retire the requester's invocation.
     #[test]
     fn a_send_that_is_not_a_reply_is_not_stamped_as_one() {
-        let bytes = sent_to_ecu(responder().send(&answer("status.changed", WIRE_HEX), [5; 16], 0));
+        let bytes = sent_to_ecu(responder().send(&answer("status.changed", WIRE_TEXT), [5; 16], 0));
         let envelope = Envelope::decode(&mut SceCursor::new(&bytes)).unwrap();
         assert_eq!(envelope.pattern, PatternKind::FireForget);
         assert_eq!(envelope.invoke_id, None);
@@ -1396,7 +1397,7 @@ mod tests {
             alloc::vec![Effect::Raise {
                 peer: Some("hmi".to_string()),
                 signal: Signal::InvokeChildLost {
-                    invoke_id: WIRE_HEX.to_string(),
+                    invoke_id: WIRE_TEXT.to_string(),
                     target: "hmi".to_string(),
                 },
             }]
@@ -1409,11 +1410,20 @@ mod tests {
     }
 
     #[test]
-    fn unhex_reads_back_what_hex_wrote_and_nothing_else() {
-        assert_eq!(rpc::unhex(&rpc::hex(&WIRE)), Some(WIRE));
-        assert_eq!(rpc::unhex(""), None);
-        assert_eq!(rpc::unhex("ask"), None);
-        assert_eq!(rpc::unhex(&"zz".repeat(16)), None);
+    fn uuid_text_reads_back_what_it_wrote_in_either_case_and_nothing_else() {
+        assert_eq!(rpc::parse_uuid_text(&rpc::uuid_text(&WIRE)), Some(WIRE));
+        assert_eq!(
+            rpc::parse_uuid_text(&rpc::uuid_text(&WIRE).to_uppercase()),
+            Some(WIRE)
+        );
+        assert_eq!(rpc::parse_uuid_text(""), None);
+        assert_eq!(rpc::parse_uuid_text("ask"), None);
+        // The 32 digits without the dashes are not the canonical text.
+        assert_eq!(rpc::parse_uuid_text(&"09".repeat(16)), None);
+        assert_eq!(
+            rpc::parse_uuid_text("zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz"),
+            None
+        );
     }
 
     #[test]

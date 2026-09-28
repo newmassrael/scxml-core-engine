@@ -45,7 +45,7 @@ sealed class Signal {
 
     /**
      * RPC_REPLY_FROM_UNDECLARED_PEER (row 14): a reply from [source] named the
-     * live request [invokeId] (the wire id, hex) but arrived on a binding
+     * live request [invokeId] (the wire id, RFC 4122 text) but arrived on a binding
      * outside that request's responder set (§mesh-14.6). The request stays
      * answerable.
      */
@@ -53,7 +53,7 @@ sealed class Signal {
 
     /**
      * INVOKE_CHILD_LOST (row 5): the link to [target] was lost while the
-     * request [invokeId] (the wire id, hex) waited on it. The request is
+     * request [invokeId] (the wire id, RFC 4122 text) waited on it. The request is
      * forgotten, as a cancel forgets it (§mesh-9.5), since no reply can arrive
      * on a link that is gone.
      */

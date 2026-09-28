@@ -60,12 +60,12 @@ pub enum Signal {
         transport_error: Option<String>,
     },
     /// RPC_REPLY_FROM_UNDECLARED_PEER (row 14): a reply from `source` named
-    /// the live request `invoke_id` (the wire id, hex) but arrived on a
+    /// the live request `invoke_id` (the wire id, RFC 4122 text) but arrived on a
     /// binding outside that request's responder set (§mesh-14.6). The
     /// request stays answerable.
     RpcReplyFromUndeclaredPeer { source: String, invoke_id: String },
     /// INVOKE_CHILD_LOST (row 5): the link to `target` was lost while the
-    /// request `invoke_id` (the wire id, hex) waited on it. The request is
+    /// request `invoke_id` (the wire id, RFC 4122 text) waited on it. The request is
     /// forgotten, as a cancel forgets it (§mesh-9.5), since no reply can
     /// arrive on a link that is gone.
     InvokeChildLost { invoke_id: String, target: String },
@@ -322,10 +322,10 @@ mod tests {
         assert_eq!(
             Signal::RpcReplyFromUndeclaredPeer {
                 source: "mallory".to_string(),
-                invoke_id: "019200000000700080000000000000ab".to_string(),
+                invoke_id: "01920000-0000-7000-8000-0000000000ab".to_string(),
             }
             .event_data(WSS_TO_HMI),
-            r#"{"errorName":"communication","reason":"RPC_REPLY_FROM_UNDECLARED_PEER","source":"mallory","invoke_id":"019200000000700080000000000000ab"}"#
+            r#"{"errorName":"communication","reason":"RPC_REPLY_FROM_UNDECLARED_PEER","source":"mallory","invoke_id":"01920000-0000-7000-8000-0000000000ab"}"#
         );
     }
 
@@ -335,11 +335,11 @@ mod tests {
     fn a_request_whose_link_is_lost_names_it_and_its_target() {
         assert_eq!(
             Signal::InvokeChildLost {
-                invoke_id: "019200000000700080000000000000ab".to_string(),
+                invoke_id: "01920000-0000-7000-8000-0000000000ab".to_string(),
                 target: "hmi".to_string(),
             }
             .event_data(WSS_TO_HMI),
-            r#"{"errorName":"communication","reason":"INVOKE_CHILD_LOST","invoke_id":"019200000000700080000000000000ab","target":"hmi"}"#
+            r#"{"errorName":"communication","reason":"INVOKE_CHILD_LOST","invoke_id":"01920000-0000-7000-8000-0000000000ab","target":"hmi"}"#
         );
     }
 

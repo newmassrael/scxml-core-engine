@@ -21,16 +21,16 @@ class RpcTest {
     @Test
     fun aFailedReplyNamesItsStatusByTheDeclaredName() {
         assertEquals(
-            """{"errorName":"invoke","reason":"unavailable","detail":"busy","source":"cloud","invoke_id":"019200000000700080000000000000ab"}""",
-            invokeErrorData(RpcStatus.UNAVAILABLE, "busy", "cloud", hex(wire)),
+            """{"errorName":"invoke","reason":"unavailable","detail":"busy","source":"cloud","invoke_id":"01920000-0000-7000-8000-0000000000ab"}""",
+            invokeErrorData(RpcStatus.UNAVAILABLE, "busy", "cloud", uuidText(wire)),
         )
     }
 
     @Test
     fun aSynthesisedDeadlineHasNoSource() {
         assertEquals(
-            """{"errorName":"invoke","reason":"deadlineExceeded","invoke_id":"019200000000700080000000000000ab"}""",
-            invokeErrorData(RpcStatus.DEADLINE_EXCEEDED, null, null, hex(wire)),
+            """{"errorName":"invoke","reason":"deadlineExceeded","invoke_id":"01920000-0000-7000-8000-0000000000ab"}""",
+            invokeErrorData(RpcStatus.DEADLINE_EXCEEDED, null, null, uuidText(wire)),
         )
     }
 
@@ -45,8 +45,8 @@ class RpcTest {
     @Test
     fun anUndeclaredResponderNamesItsSourceAndTheRequest() {
         assertEquals(
-            """{"errorName":"communication","reason":"RPC_REPLY_FROM_UNDECLARED_PEER","source":"mallory","invoke_id":"019200000000700080000000000000ab"}""",
-            Signal.RpcReplyFromUndeclaredPeer("mallory", hex(wire)).eventData(Binding("hmi", "wss")),
+            """{"errorName":"communication","reason":"RPC_REPLY_FROM_UNDECLARED_PEER","source":"mallory","invoke_id":"01920000-0000-7000-8000-0000000000ab"}""",
+            Signal.RpcReplyFromUndeclaredPeer("mallory", uuidText(wire)).eventData(Binding("hmi", "wss")),
         )
     }
 
@@ -60,7 +60,7 @@ class RpcTest {
         val other = wire.copyOf().also { it[15] = 0xac.toByte() }
         table.register(wire, pending("ask", 1, 100))
         table.register(other, pending("look", 2, null).copy(target = "hmi"))
-        assertEquals(listOf(hex(wire)), table.forgetSentTo("cloud"))
+        assertEquals(listOf(uuidText(wire)), table.forgetSentTo("cloud"))
         assertTrue(!table.isWaiting(wire))
         assertTrue(table.isWaiting(other))
         assertTrue(table.expire(1000).isEmpty(), "a forgotten request has no deadline")
@@ -69,8 +69,8 @@ class RpcTest {
     @Test
     fun aRequestWhoseLinkIsLostNamesItAndItsTarget() {
         assertEquals(
-            """{"errorName":"communication","reason":"INVOKE_CHILD_LOST","invoke_id":"019200000000700080000000000000ab","target":"hmi"}""",
-            Signal.InvokeChildLost(hex(wire), "hmi").eventData(Binding("hmi", "wss")),
+            """{"errorName":"communication","reason":"INVOKE_CHILD_LOST","invoke_id":"01920000-0000-7000-8000-0000000000ab","target":"hmi"}""",
+            Signal.InvokeChildLost(uuidText(wire), "hmi").eventData(Binding("hmi", "wss")),
         )
     }
 

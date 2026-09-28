@@ -54,7 +54,7 @@ sealed class Effect {
      * Raise [event] on the engine's external queue with [data] as
      * `_event.data`; [source] is the machine that sent it, [sendId] the id
      * its `<send>` carried (§mesh-10.7: the envelope's `subject`), and
-     * [invokeId] the request's wire invokeid as hex when the envelope is an
+     * [invokeId] the request's wire invokeid as RFC 4122 text when the envelope is an
      * `RpcRequest` — the one field that comes back on the reply (§mesh-10.7).
      */
     data class Deliver(
@@ -189,7 +189,7 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
             data = request.eventData.encodeToByteArray(),
             // §mesh-10.7: the receiver's `_event.sendid` is the envelope's `subject`.
             subject = request.sendId.ifEmpty { null },
-            invoke_id = if (reply) unhex(request.invokeId) else null,
+            invoke_id = if (reply) parseUuidText(request.invokeId) else null,
             rpc_status = if (reply) RpcStatus.OK else null,
         )
         return transmit(peerName, peer, envelope, nowMs)?.let { Routed.Done(it) }
@@ -364,7 +364,7 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
         val envelope = Envelope.decode(SceCursor(bytes)) ?: return null
         val wireId = replyTo(envelope) ?: return null
         return when (requests.check(wireId, peer)) {
-            Answer.UNDECLARED -> Signal.RpcReplyFromUndeclaredPeer(envelope.source, hex(wireId))
+            Answer.UNDECLARED -> Signal.RpcReplyFromUndeclaredPeer(envelope.source, uuidText(wireId))
             Answer.ADMITTED, Answer.UNKNOWN -> null
         }
     }
@@ -408,7 +408,7 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
         return Effect.Fail(
             pending.invokeId,
             pending.token,
-            invokeErrorData(status, envelope.rpc_error_message, envelope.source, hex(wireId)),
+            invokeErrorData(status, envelope.rpc_error_message, envelope.source, uuidText(wireId)),
             envelope.source,
         )
     }
@@ -470,8 +470,8 @@ private fun deliver(envelope: Envelope, peer: String?): Effect =
             data.text,
             envelope.source,
             envelope.subject,
-            // §mesh-10.7: `_event.invokeid` of an inbound request is its wire invokeid, as hex.
-            envelope.invoke_id?.takeIf { envelope.pattern == PatternKind.RPC_REQUEST }?.let(::hex),
+            // §mesh-10.7: `_event.invokeid` of an inbound request is its wire invokeid, as RFC 4122 text.
+            envelope.invoke_id?.takeIf { envelope.pattern == PatternKind.RPC_REQUEST && it.size == 16 }?.let(::uuidText),
         )
         is PayloadText.Unreadable -> Effect.Raise(peer, Signal.EnvelopeCorrupt(envelope.source, data.codec))
     }
