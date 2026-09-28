@@ -1202,8 +1202,8 @@ struct Cli {
     /// changes bytes. Pass the same arguments that produced the files; a
     /// tree post-processed after generating (a formatter run in place)
     /// holds bytes the generator did not write, and cannot pass.
-    /// Accepted by `generate`, `orchestrate`, `generate-w3c` and
-    /// `generate-conformance`. `generate-integration` refuses it, because
+    /// Accepted by `generate`, `orchestrate`, `generate-w3c`,
+    /// `generate-conformance` and `diagram`. `generate-integration` refuses it, because
     /// each of its stems is a shell pipeline writing through its own copy
     /// and formatter, which this process cannot see; so do
     /// `generate-w3c --clean` and `--list`, which generate nothing.
@@ -2131,6 +2131,45 @@ enum Commands {
         )]
         lexicon: String,
     },
+    /// Draw a statechart as print figures — one SVG per container, the
+    /// document's top level and each compound or parallel state — for a
+    /// printed specification. Writes `<out>/document.svg` and
+    /// `<out>/inside-<state>.svg`, and prints each path written.
+    ///
+    /// Every transition is described once: numbered on its arrow in the
+    /// figure of the state it leaves, with its row in the table under
+    /// that figure. Box text is the pseudocode page's own words.
+    ///
+    /// ⚠ Exits with `cli/diagram-does-not-fit` when a figure is larger
+    /// than the page at `--min-pt`. It is never shrunk below that size:
+    /// the minimum is what the reader was promised.
+    Diagram {
+        /// Statechart (SCXML) document path
+        document: String,
+        /// Directory the SVG files are written into
+        #[arg(short, long, value_name = "DIR")]
+        out: String,
+        /// The page each figure has to fit, margins included.
+        #[arg(
+            long,
+            value_name = "NAME",
+            default_value = "a4-portrait",
+            value_parser = registered_pages()
+        )]
+        page: String,
+        /// The smallest type size on the page, in points. Titles are set
+        /// one point larger.
+        #[arg(long, value_name = "PT", default_value_t = 7.0)]
+        min_pt: f64,
+        /// What the figure's own words and the page's words are called.
+        #[arg(
+            long,
+            value_name = "NAME",
+            default_value = "en",
+            value_parser = registered_lexicons()
+        )]
+        lexicon: String,
+    },
     /// Emit what a diagram must be told to draw the annotation family —
     /// NL→IR closure ledger row G2. One JSON object on stdout.
     ///
@@ -2800,6 +2839,13 @@ fn main() {
             shape,
             lexicon,
         } => cmd_pseudo(&document, deploy.as_deref(), &shape, &lexicon, error_format),
+        Commands::Diagram {
+            document,
+            out,
+            page,
+            min_pt,
+            lexicon,
+        } => cmd_diagram(&document, &out, &page, min_pt, &lexicon, error_format),
         Commands::AnnotationOverlay { scxml } => cmd_annotation_overlay(&scxml, error_format),
         Commands::AcceptanceReport {
             scxml,
@@ -2891,7 +2937,7 @@ fn main() {
 /// never compared.
 fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
     const NOT_A_GENERATOR: &str = "--assert-unchanged applies only to the commands that \
-        generate files: generate, orchestrate, generate-w3c and generate-conformance";
+        generate files: generate, orchestrate, generate-w3c, generate-conformance and diagram";
     match command {
         // Both modes generate nothing, so a run in either would pass
         // having compared nothing.
@@ -2903,7 +2949,8 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         Commands::Generate(_)
         | Commands::Orchestrate(_)
         | Commands::GenerateW3c(_)
-        | Commands::GenerateConformance { .. } => None,
+        | Commands::GenerateConformance { .. }
+        | Commands::Diagram { .. } => None,
         Commands::GenerateIntegration { .. } => Some(
             "--assert-unchanged cannot apply to generate-integration: each stem is a shell \
              pipeline writing through its own copy and formatter, out of this process's \
@@ -8022,6 +8069,112 @@ fn registered_shapes() -> clap::builder::PossibleValuesParser {
 /// The lexicon names `--lexicon` accepts, for the same reason.
 fn registered_lexicons() -> clap::builder::PossibleValuesParser {
     clap::builder::PossibleValuesParser::new(sce_build::forge::page::lexicon_names())
+}
+
+/// The page names `diagram --page` accepts: the diagram's own list.
+fn registered_pages() -> clap::builder::PossibleValuesParser {
+    clap::builder::PossibleValuesParser::new(
+        sce_build::diagram::fit::PAGES
+            .iter()
+            .map(|(name, _, _)| *name),
+    )
+}
+
+/// Draw `document` as print figures, one SVG per figure, into `out`.
+///
+/// Refused whole — nothing written — when any figure cannot be drawn or
+/// does not fit: a set of figures missing one reads like a complete set.
+fn cmd_diagram(
+    document: &str,
+    out: &str,
+    page: &str,
+    min_pt: f64,
+    lexicon: &str,
+    error_format: ErrorFormat,
+) {
+    use sce_build::diagram::fit::{self, Page, Refusal};
+
+    if !(min_pt.is_finite() && min_pt > 0.0) {
+        cli_exit(CliError::Usage {
+            detail: format!("--min-pt must be a positive number of points, got {min_pt}"),
+        });
+    }
+    let model = sce_build::parser::SCXMLParser::new()
+        .parse_file(document)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    // Clap has refused names neither registry carries; a miss here is the
+    // parser and a registry disagreeing, and says which.
+    let lexicon = sce_build::forge::page::lexicon_named(lexicon).unwrap_or_else(|| {
+        cli_exit(CliError::DiagramUnavailable {
+            feature: format!("the '{lexicon}' lexicon is not in this build's registry"),
+        })
+    });
+    let page = Page::named(page, min_pt).unwrap_or_else(|| {
+        cli_exit(CliError::DiagramUnavailable {
+            feature: format!("the '{page}' page is not in the diagram's page list"),
+        })
+    });
+
+    let printed = match fit::print(&model, lexicon, page) {
+        Ok(p) => p,
+        Err(Refusal::Box(e)) => cli_exit(CliError::DiagramUnavailable {
+            feature: e.to_string(),
+        }),
+        Err(Refusal::DoesNotFit {
+            figure,
+            need_pt,
+            area_pt,
+        }) => cli_exit(CliError::DiagramDoesNotFit {
+            figure: sce_build::diagram::words::figure_title(lexicon, &figure)
+                .unwrap_or_else(|| format!("{figure:?}")),
+            min_pt,
+            need_w: need_pt.0,
+            need_h: need_pt.1,
+            area_w: area_pt.0,
+            area_h: area_pt.1,
+        }),
+    };
+
+    // Every name is decided before anything is written, so a refusal
+    // leaves no partial set behind.
+    let stems: Vec<String> = printed
+        .iter()
+        .map(|p| {
+            p.laid.name.file_stem().unwrap_or_else(|| {
+                cli_exit(CliError::DiagramUnavailable {
+                    feature: format!(
+                        "the figure {:?} has no file name: its state id carries a path \
+                         separator or a control character",
+                        p.laid.name
+                    ),
+                })
+            })
+        })
+        .collect();
+    let dir = Path::new(out);
+    ensure_output_dir(dir).unwrap_or_else(|e| {
+        cli_exit(CliError::CreateOutputDir {
+            path: out.to_string(),
+            source: e,
+        })
+    });
+    let mut written = Vec::new();
+    for (p, stem) in printed.iter().zip(&stems) {
+        let path = dir.join(format!("{stem}.svg"));
+        emit_generated(
+            &path,
+            sce_build::diagram::svg::render(p).as_bytes(),
+            WritePolicy::IfChanged,
+        );
+        written.push(path);
+    }
+    finish_generated_output();
+    out_stream(|w| {
+        for path in &written {
+            writeln!(w, "{}", path.display())?;
+        }
+        Ok(())
+    });
 }
 
 fn cmd_pseudo(

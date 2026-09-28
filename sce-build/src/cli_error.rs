@@ -409,6 +409,33 @@ pub enum CliError {
     /// misnames the cause sends the reader to the wrong question.
     #[error("{kind}: no pseudocode — this document carries {feature}")]
     PseudoUnavailable { kind: String, feature: String },
+
+    /// A print figure was asked for of a document carrying something a
+    /// figure cannot say ([`crate::diagram::boxes::BoxError`]). Refused
+    /// for the same reason as [`Self::PseudoUnavailable`]: a figure is
+    /// read as the whole document, so it is drawn whole or not at all.
+    #[error("no print figure — {feature}")]
+    DiagramUnavailable { feature: String },
+
+    /// A print figure larger than its page at the minimum type size.
+    ///
+    /// ⚠ Never answered by shrinking: the minimum is what the reader was
+    /// promised. The message carries both sizes, so the author can tell
+    /// a figure a larger page would hold from one whose container has to
+    /// be split.
+    #[error(
+        "the figure '{figure}' needs {need_w:.0} x {need_h:.0} pt at {min_pt} pt type, \
+         and the page gives {area_w:.0} x {area_h:.0} pt; it is not shrunk below \
+         that size — use a larger page, or split the container's children"
+    )]
+    DiagramDoesNotFit {
+        figure: String,
+        min_pt: f64,
+        need_w: f64,
+        need_h: f64,
+        area_w: f64,
+        area_h: f64,
+    },
 }
 
 impl CliError {
@@ -737,6 +764,30 @@ impl SingleDiagnostic for CliError {
                 DiagnosticCode::CliPseudoUnavailable,
                 vec![feature.clone()],
                 Some(format!("{kind}: {feature}")),
+                None,
+            ),
+            CliError::DiagramUnavailable { feature } => (
+                DiagnosticCode::CliDiagramUnavailable,
+                vec![feature.clone()],
+                Some(feature.clone()),
+                None,
+            ),
+            // Keyed by the figure: the same container too large is one
+            // finding however the page is chosen.
+            CliError::DiagramDoesNotFit {
+                figure,
+                min_pt,
+                need_w,
+                need_h,
+                area_w,
+                area_h,
+            } => (
+                DiagnosticCode::CliDiagramDoesNotFit,
+                vec![figure.clone()],
+                Some(format!(
+                    "{figure}: {need_w:.0} x {need_h:.0} pt at {min_pt} pt, \
+                     page {area_w:.0} x {area_h:.0} pt"
+                )),
                 None,
             ),
         };

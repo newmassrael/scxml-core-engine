@@ -38,15 +38,38 @@ pub struct Page {
     pub min_pt: f64,
 }
 
+/// The page sizes a caller may name, as (name, width mm, height mm). One
+/// list, so the CLI's choices and any other caller's are the same.
+pub const PAGES: &[(&str, f64, f64)] = &[
+    ("a4-portrait", 210.0, 297.0),
+    ("a4-landscape", 297.0, 210.0),
+    ("a3-portrait", 297.0, 420.0),
+    ("a3-landscape", 420.0, 297.0),
+    ("letter-portrait", 215.9, 279.4),
+    ("letter-landscape", 279.4, 215.9),
+];
+
+/// The margin every named page keeps on each side.
+const MARGIN_MM: f64 = 15.0;
+
 impl Page {
     /// ISO A4, portrait, 15 mm margins.
     pub fn a4_portrait(min_pt: f64) -> Self {
-        Page {
-            width_mm: 210.0,
-            height_mm: 297.0,
-            margin_mm: 15.0,
-            min_pt,
-        }
+        Self::named("a4-portrait", min_pt).expect("a4-portrait is in PAGES")
+    }
+
+    /// The page `PAGES` calls `name`, or `None` for a name it does not
+    /// carry.
+    pub fn named(name: &str, min_pt: f64) -> Option<Self> {
+        PAGES
+            .iter()
+            .find(|(n, _, _)| *n == name)
+            .map(|&(_, width_mm, height_mm)| Page {
+                width_mm,
+                height_mm,
+                margin_mm: MARGIN_MM,
+                min_pt,
+            })
     }
 
     /// The printable area, in points.

@@ -974,6 +974,8 @@ references against a real document and drift silently.
 | `cli/acceptance-lapsed` | `cli` | no |  |
 | `cli/closure-input-unusable` | `cli` | no |  |
 | `cli/create-output-dir` | `cli` | no |  |
+| `cli/diagram-does-not-fit` | `cli` | no |  |
+| `cli/diagram-unavailable` | `cli` | no |  |
 | `cli/format-failed` | `cli` | no |  |
 | `cli/format-style-not-found` | `cli` | no |  |
 | `cli/formatter-unavailable` | `cli` | no |  |

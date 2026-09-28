@@ -288,6 +288,8 @@
         "cli/requirement-closure-broken",
         "cli/review-table-unavailable",
         "cli/pseudo-unavailable",
+        "cli/diagram-unavailable",
+        "cli/diagram-does-not-fit",
         "mesh/deploy-read",
         "mesh/deploy-parse",
         "mesh/deploy-unsupported-version",

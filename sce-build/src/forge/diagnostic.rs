@@ -2417,6 +2417,22 @@ pub enum DiagnosticCode {
     #[serde(rename = "cli/pseudo-unavailable")]
     CliPseudoUnavailable,
 
+    /// A print figure was asked for of a document carrying something a
+    /// figure cannot say: a construct the page's action lines refuse, a
+    /// character the font table has no width for, or a page language
+    /// the figure's phrases do not cover. Refused rather than drawn
+    /// without it, for the pseudocode's reason — a figure missing part
+    /// of the document reads exactly like one missing none of it.
+    #[serde(rename = "cli/diagram-unavailable")]
+    CliDiagramUnavailable,
+
+    /// A print figure does not fit its page at the minimum type size.
+    /// Refused with the measured size rather than shrunk: the minimum
+    /// is a promise to the reader, and the prototype that shrank to fit
+    /// kept only two of five figures legible on A4.
+    #[serde(rename = "cli/diagram-does-not-fit")]
+    CliDiagramDoesNotFit,
+
     // ── Mesh pipeline ────────────────────────────────────────
     // Deploy stage
     #[serde(rename = "mesh/deploy-read")]
@@ -3503,6 +3519,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliRequirementClosureBroken,
         CliReviewTableUnavailable,
         CliPseudoUnavailable,
+        CliDiagramUnavailable,
+        CliDiagramDoesNotFit,
         // Mesh Deploy
         MeshDeployRead,
         MeshDeployParse,
@@ -4430,6 +4448,8 @@ impl DiagnosticCode {
             | CliRequirementClosureBroken
             | CliReviewTableUnavailable
             | CliPseudoUnavailable
+            | CliDiagramUnavailable
+            | CliDiagramDoesNotFit
             | MeshDeployRead
             | MeshExternalRead
             | MeshExternalParse
@@ -4861,6 +4881,8 @@ impl DiagnosticCode {
             CliRequirementClosureBroken => "cli/requirement-closure-broken",
             CliReviewTableUnavailable => "cli/review-table-unavailable",
             CliPseudoUnavailable => "cli/pseudo-unavailable",
+            CliDiagramUnavailable => "cli/diagram-unavailable",
+            CliDiagramDoesNotFit => "cli/diagram-does-not-fit",
             MeshDeployRead => "mesh/deploy-read",
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
@@ -14934,6 +14956,25 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:4634ffbae78e91b7","code":"cli/pseudo-unavailable","stage":"cli","message":"statechart: no pseudocode — this document carries an <invoke>","actual":"statechart: an <invoke>"}"#,
             ),
+            (
+                "cli/diagram-unavailable",
+                CliError::DiagramUnavailable {
+                    feature: "the page's action lines refuse an <invoke>".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:dcfc2cd874018f17","code":"cli/diagram-unavailable","stage":"cli","message":"no print figure — the page's action lines refuse an <invoke>","actual":"the page's action lines refuse an <invoke>"}"#,
+            ),
+            (
+                "cli/diagram-does-not-fit",
+                CliError::DiagramDoesNotFit {
+                    figure: "whole document".into(),
+                    min_pt: 7.0,
+                    need_w: 900.0,
+                    need_h: 300.0,
+                    area_w: 510.0,
+                    area_h: 757.0,
+                },
+                r#"{"v":1,"id":"fnv1a:c5ba580e20672c22","code":"cli/diagram-does-not-fit","stage":"cli","message":"the figure 'whole document' needs 900 x 300 pt at 7 pt type, and the page gives 510 x 757 pt; it is not shrunk below that size — use a larger page, or split the container's children","actual":"whole document: 900 x 300 pt at 7 pt, page 510 x 757 pt"}"#,
+            ),
         ]
     }
 
@@ -15822,6 +15863,11 @@ mod tests {
             // an SCE edit rather than a choice among names a fix could
             // offer.
             | CliPseudoUnavailable
+            // Same: the repair is an SCE edit (render the construct,
+            // measure the character) or a different page, and a page
+            // is not a name a fix could offer.
+            | CliDiagramUnavailable
+            | CliDiagramDoesNotFit
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployDuplicateMachine
@@ -16533,6 +16579,7 @@ mod tests {
                 | CliUsage | CliQueryNoMatch | CliClosureInputUnusable
                 | CliAcceptanceLapsed | CliReservedHostType | CliRequirementClosureBroken
                 | CliReviewTableUnavailable | CliPseudoUnavailable
+                | CliDiagramUnavailable | CliDiagramDoesNotFit
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployInvalidDedupWindow
@@ -16693,9 +16740,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            400,
+            402,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 400 distinct variants to match the DiagnosticCode \
+             expected 402 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17679,7 +17726,9 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CliReservedHostType
             | CliRequirementClosureBroken
             | CliReviewTableUnavailable
-            | CliPseudoUnavailable => Registered(NoAnchor::NoAuthoredArtefact),
+            | CliPseudoUnavailable
+            | CliDiagramUnavailable
+            | CliDiagramDoesNotFit => Registered(NoAnchor::NoAuthoredArtefact),
         }
 }
 
@@ -18339,8 +18388,8 @@ mod anchor_contract_tests {
         // by measuring nothing at all.
         assert_eq!(
             filed.len(),
-            29,
-            "expected the 29 `cli`/`io` codes to be filed as permanent \
+            31,
+            "expected the 31 `cli`/`io` codes to be filed as permanent \
              exemptions; got {}: {filed:?}. If the code set genuinely \
              changed, re-derive this number from the namespace census \
              rather than editing it to match.",

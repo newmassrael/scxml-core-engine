@@ -279,6 +279,13 @@ name = "a_machine_that_sends_to_its_parent_says_so"
 path = "tests/a_machine_that_sends_to_its_parent_says_so.rs"
 required-features = ["cli"]
 
+# `sce-codegen diagram` on the binary: files named by state, a refusal
+# that writes nothing, and the written set checkable for drift.
+[[test]]
+name = "diagram_cli"
+path = "tests/diagram_cli.rs"
+required-features = ["cli"]
+
 # End-to-end CLI contract test for the mesh pipeline (--deploy). Shares
 # the binary target of `error_format_json` and the same `cli` feature
 # gate so mesh codegen errors get the same NDJSON wire-format coverage

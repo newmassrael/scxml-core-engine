@@ -50,6 +50,28 @@ pub enum FigureName {
     Inside(String),
 }
 
+impl FigureName {
+    /// The file name a figure is written under, without extension —
+    /// `document`, or `inside-<state>`. Named by state, like the figure,
+    /// so adding a state never renames another figure's file.
+    ///
+    /// `None` for a state id carrying a path separator or a control
+    /// character: such a name would write somewhere other than the
+    /// directory asked for, so it is refused rather than rewritten into a
+    /// name that could collide with another state's.
+    pub fn file_stem(&self) -> Option<String> {
+        match self {
+            FigureName::Document => Some("document".to_string()),
+            FigureName::Inside(s)
+                if s.chars().any(|c| matches!(c, '/' | '\\') || c.is_control()) =>
+            {
+                None
+            }
+            FigureName::Inside(s) => Some(format!("inside-{s}")),
+        }
+    }
+}
+
 /// One transition of the document, as the model holds it: the state that
 /// carries it, its position in that state's list, and one target (a
 /// multi-target transition is one arrow per target).
