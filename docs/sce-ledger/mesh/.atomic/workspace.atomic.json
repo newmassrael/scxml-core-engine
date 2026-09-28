@@ -692,6 +692,10 @@
         {
           "file": "backends/rust/mesh/src/rpc.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Rpc.kt",
+          "kind": "references"
         }
       ]
     },
@@ -756,6 +760,14 @@
         {
           "file": "backends/rust/mesh/src/router.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Rpc.kt",
+          "kind": "implements"
         }
       ]
     },
@@ -1614,6 +1626,22 @@
         },
         {
           "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Rpc.kt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Signal.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/RouterTest.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/RpcTest.kt",
           "kind": "references"
         }
       ]
@@ -2592,6 +2620,10 @@
         {
           "file": "backends/rust/mesh/src/rpc.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Rpc.kt",
+          "kind": "references"
         }
       ]
     },
@@ -2999,6 +3031,10 @@
         },
         {
           "file": "backends/rust/mesh/src/rpc.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Rpc.kt",
           "kind": "references"
         }
       ]
@@ -3776,7 +3812,7 @@
         },
         {
           "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
-          "kind": "references"
+          "kind": "implements"
         },
         {
           "file": "sce-build/src/mesh/review.rs",
@@ -3785,6 +3821,18 @@
         {
           "file": "sce-build/src/mesh/topology.rs",
           "symbol": "ResolvedTarget",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Endpoint.kt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Rpc.kt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/RouterTest.kt",
           "kind": "references"
         }
       ]
@@ -4324,6 +4372,36 @@
       "target_kind": "section",
       "target_id": "mesh-10.7.1",
       "reason": "match the file-level references bindings the Rust Mesh core's other citations carry"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-9.5",
+      "reason": "Router.kt now carries the requester's half of sce:mesh-rpc (invoke, responder check, deadline), the Kotlin twin of router.rs"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-14.6",
+      "reason": "Router.kt now carries the requester's half of sce:mesh-rpc (invoke, responder check, deadline), the Kotlin twin of router.rs"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-9.5",
+      "reason": "the ledger files no verification run yet, so a test is bound as the other mesh tests are: references"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-14.6",
+      "reason": "the ledger files no verification run yet, so a test is bound as the other mesh tests are: references"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-14.6",
+      "reason": "the ledger files no verification run yet, so a test is bound as the other mesh tests are: references"
     }
   ],
   "frames": {},

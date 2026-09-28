@@ -14,9 +14,11 @@ package com.sce.mesh
 
 import com.sce.forge.runtime.AlgorithmError
 import com.sce.forge.runtime.AlgorithmResult
+import com.sce.forge.runtime.SceCursor
 import com.sce.generated.envelope.Envelope
 import com.sce.generated.pattern_kind.PatternKind
 import com.sce.generated.payload_codec.PayloadCodec
+import com.sce.generated.rpc_status.RpcStatus
 import com.sce.runtime.StateMachineEngine
 
 /** What deployment says about one peer this machine talks to. */
@@ -51,6 +53,37 @@ sealed class Effect {
 
     /** Raise `error.communication` with this §mesh-16.7 row; [peer] names the binding it is about, when there is one. */
     data class Raise(val peer: String?, val signal: Signal) : Effect()
+
+    /**
+     * End the start [token] of the SCXML invocation [invokeId] with
+     * `done.invoke.<invokeId>`: [data] is the reply's payload text and [source]
+     * the machine that answered, whose `mesh://<source>` is the event's
+     * `_event.origin` (§mesh-9.5).
+     */
+    data class Complete(val invokeId: String, val token: Long, val data: String, val source: String) : Effect()
+
+    /**
+     * End it with `error.invoke.<invokeId>` instead: [data] is the §mesh-10.7.1
+     * `errorName: "invoke"` object, and [source] the machine that answered —
+     * `null` when the requester's own deadline ended it.
+     */
+    data class Fail(val invokeId: String, val token: Long, val data: String, val source: String?) : Effect()
+}
+
+/** What became of a request [Router.invoke] was handed. */
+sealed class Invoked {
+    /** It is on its way (or queued for its peer); its answer arrives later as [Effect.Complete] or [Effect.Fail]. */
+    class Started(val effects: List<Effect>) : Invoked()
+
+    /**
+     * It could not reach the wire, so the invocation never starts: the host
+     * refuses it with this `_event.data`, and the engine raises
+     * `error.execution` (§mesh-9.5's pre-envelope tier).
+     */
+    data class Refused(val data: String) : Invoked()
+
+    /** Only the host can act on it (see [RouterError]). */
+    data class Failed(val error: RouterError) : Invoked()
 }
 
 /** Why the router could not do what the host asked. None of these is a §mesh-16.7 row: each is the host's to act on. */
@@ -66,6 +99,12 @@ sealed class RouterError {
 
     /** The envelope could not be written within the bounds its document declares. */
     data object Encode : RouterError()
+
+    /** A Mesh request reached [Router.invoke] without a reserved param the build always gives it. */
+    data class MissingParam(val name: String) : RouterError()
+
+    /** A reserved param's value is not what the build writes there. */
+    data class BadParam(val name: String, val value: String) : RouterError()
 }
 
 /** A router call's answer: the effects to perform, or why there are none. */
@@ -94,6 +133,7 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
 
     private val inbound = Inbound(dedupWindow, gapTimeoutMs)
     private val peers = mutableMapOf<String, Peer>()
+    private val requests = Correlation()
 
     /** Bind [peer] — the name a document writes as `#peer`. */
     fun addPeer(peer: String, config: PeerConfig) {
@@ -120,28 +160,97 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
         val peerName = meshPeer(request.target) ?: return Routed.Refused(RouterError.NotMeshTarget(request.target))
         val peer = peers[peerName]
             ?: return Routed.Done(listOf(Effect.Raise(peerName, Signal.TransportUnavailable)))
-        val bytes = Envelope(
+        val envelope = Envelope(
             id = id,
             source = machine,
             event_type = request.eventName,
             pattern = PatternKind.FIRE_FORGET,
-            // The sending engine's own `_event.data` text, as JSON, or nothing
-            // — the rule the C++ core applies (ChildSessionAdapter.h).
-            datacontenttype = if (request.eventData.isEmpty()) PayloadCodec.NONE else PayloadCodec.JSON,
+            datacontenttype = payloadCodec(request.eventData),
             data = request.eventData.encodeToByteArray(),
             // §mesh-10.7: the receiver's `_event.sendid` is the envelope's `subject`.
             subject = request.sendId.ifEmpty { null },
-            sequence_no = if (peer.config.stampSequence) peer.nextSequence else null,
-        ).encodeToByteArray() ?: return Routed.Refused(RouterError.Encode)
+        )
+        return transmit(peerName, peer, envelope, nowMs)?.let { Routed.Done(it) }
+            ?: Routed.Refused(RouterError.Encode)
+    }
+
+    /**
+     * Start an `<invoke type="sce:mesh-rpc">` the engine handed the host
+     * (§mesh-9.5): write its `RpcRequest` and keep it until its reply, its
+     * deadline or its cancellation ends it.
+     *
+     * [wireId] is the `invoke_id` the host minted for this invocation and [id]
+     * the envelope's own id — two UUID v7s, so correlation and dedup never
+     * share a key. [nowMs] is the host's monotonic clock, which the deadline is
+     * kept against, and [nowUnixMs] its wall clock, which the wire's
+     * `deadline_unix_ms` is written in.
+     *
+     * A target that names no Mesh peer, or one this router has no binding for,
+     * cannot reach the wire: the invocation is [Invoked.Refused].
+     */
+    fun invoke(
+        request: StateMachineEngine.HostInvokeRequest,
+        wireId: ByteArray,
+        id: ByteArray,
+        nowMs: Long,
+        nowUnixMs: Long,
+    ): Invoked {
+        val peerName = meshPeer(request.src)
+            ?: return Invoked.Refused(srcNotFoundData("'${request.src}' names no Mesh peer"))
+        val peer = peers[peerName] ?: return Invoked.Refused(srcNotFoundData("no binding for '#$peerName'"))
+        val event = request.params[MESH_EVENT_PARAM]?.firstOrNull()
+            ?: return Invoked.Failed(RouterError.MissingParam(MESH_EVENT_PARAM))
+        // §mesh-9.5 deadline precedence: the invoke's own param, else the binding's, else none.
+        val deadlineMs = when (val text = request.params[MESH_DEADLINE_PARAM]?.firstOrNull()) {
+            null -> peer.config.deadlineMs
+            // Read as the Rust core reads it — any u64 — and held as a Long,
+            // beyond which no deadline is distinguishable from none.
+            else -> text.toULongOrNull()?.let { minOf(it, Long.MAX_VALUE.toULong()).toLong() }
+                ?: return Invoked.Failed(RouterError.BadParam(MESH_DEADLINE_PARAM, text))
+        }
+        val envelope = Envelope(
+            id = id,
+            source = machine,
+            event_type = event,
+            pattern = PatternKind.RPC_REQUEST,
+            datacontenttype = payloadCodec(request.eventData),
+            data = request.eventData.encodeToByteArray(),
+            invoke_id = wireId,
+            deadline_unix_ms = deadlineMs?.let { saturatingAdd(nowUnixMs, it).toULong() },
+        )
+        val effects = transmit(peerName, peer, envelope, nowMs) ?: return Invoked.Failed(RouterError.Encode)
+        requests.register(
+            wireId,
+            Pending(request.invokeId, request.token, peer.config.responders, deadlineMs?.let { saturatingAdd(nowMs, it) }),
+        )
+        return Invoked.Started(effects)
+    }
+
+    /**
+     * The state that started the start [token] of [invokeId] exited: stop
+     * waiting for its answer. Nothing goes on the wire, and an answer that
+     * arrives later is dropped (§mesh-9.5, `<cancel>`).
+     */
+    fun cancelInvoke(invokeId: String, token: Long) {
+        requests.cancel(invokeId, token)
+    }
+
+    /**
+     * Write [envelope] for [peerName] and hand it to that peer's send half:
+     * what [send] and [invoke] share once they know what to say. `null` when
+     * it could not be written.
+     */
+    private fun transmit(peerName: String, peer: Peer, envelope: Envelope, nowMs: Long): List<Effect>? {
+        envelope.sequence_no = if (peer.config.stampSequence) peer.nextSequence else null
+        val bytes = envelope.encodeToByteArray() ?: return null
         // §mesh-10.6.3: the counter advances once per envelope written, and has
         // no wrap guard.
         if (peer.config.stampSequence) peer.nextSequence += 1u
-        val effects = when (val admitted = peer.outbound.admit(bytes, nowMs)) {
+        return when (val admitted = peer.outbound.admit(bytes, nowMs)) {
             is Admitted.Send -> listOf(Effect.Transmit(peerName, admitted.bytes))
             Admitted.Queued -> emptyList()
             is Admitted.Dropped -> listOf(Effect.Raise(peerName, admitted.signal))
         }
-        return Routed.Done(effects)
     }
 
     /** [peer]'s transport became ready: release what waited for it. */
@@ -170,6 +279,12 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
      */
     fun receive(peer: String, bytes: ByteArray, nowMs: Long): Routed {
         val delivery = peers[peer]?.config?.delivery ?: return Routed.Refused(RouterError.UnknownPeer(peer))
+        // §mesh-14.6: a reply is checked against its request's responder set on
+        // arrival, while the binding it came in on is still known — an ordered
+        // binding may hold it and release it on a later tick. One from outside
+        // the set is refused before the dedup window or the ordering hold sees
+        // it, so it takes no slot in either.
+        undeclaredReply(bytes, peer)?.let { return Routed.Done(listOf(Effect.Raise(peer, it))) }
         return when (val admission = inbound.admit(bytes, delivery, nowMs)) {
             is Admission.Admitted -> Routed.Done(effectsOf(admission.outcome, peer))
             is Admission.Refused -> when (val error = admission.error) {
@@ -182,21 +297,132 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
         }
     }
 
-    /** End every ordering gap that has waited out its timeout by [nowMs]. */
-    fun tick(nowMs: Long): Routed =
-        when (val admission = inbound.tick(nowMs)) {
-            is Admission.Admitted -> Routed.Done(effectsOf(admission.outcome, null))
+    /**
+     * End every ordering gap that has waited out its timeout by [nowMs], then
+     * every request whose deadline has passed: each ends in `error.invoke` with
+     * `deadlineExceeded`, the same shape a peer's `DeadlineExceeded` reply takes
+     * (§mesh-10.7.1).
+     */
+    fun tick(nowMs: Long): Routed {
+        val gaps = when (val admission = inbound.tick(nowMs)) {
+            is Admission.Admitted -> effectsOf(admission.outcome, null)
             is Admission.Refused -> when (val error = admission.error) {
-                is AdmitError.Rule -> Routed.Refused(RouterError.Rule(error.error))
+                is AdmitError.Rule -> return Routed.Refused(RouterError.Rule(error.error))
                 // A tick reads no bytes and stamps nothing.
                 AdmitError.Malformed, AdmitError.Unstamped -> error("Inbound.tick decodes no envelope")
             }
         }
+        val expired = requests.expire(nowMs).map { (wireIdHex, pending) ->
+            Effect.Fail(
+                pending.invokeId,
+                pending.token,
+                invokeErrorData(RpcStatus.DEADLINE_EXCEEDED, null, null, wireIdHex),
+                null,
+            )
+        }
+        return Routed.Done(gaps + expired)
+    }
+
+    /**
+     * Row 14 for [bytes], if they are a reply to a live request that arrived on
+     * a binding outside its responder set. Bytes that do not decode are left for
+     * the receive half to report.
+     */
+    private fun undeclaredReply(bytes: ByteArray, peer: String): Signal? {
+        val envelope = Envelope.decode(SceCursor(bytes)) ?: return null
+        val wireId = replyTo(envelope) ?: return null
+        return when (requests.check(wireId, peer)) {
+            Answer.UNDECLARED -> Signal.RpcReplyFromUndeclaredPeer(envelope.source, hex(wireId))
+            Answer.ADMITTED, Answer.UNKNOWN -> null
+        }
+    }
+
+    /** What the receive half released, as effects, in release order, followed by the rows it observed. */
+    private fun effectsOf(outcome: Outcome, peer: String?): List<Effect> =
+        outcome.released.mapNotNull { envelope ->
+            // A reply's responder was checked on arrival.
+            when (val wireId = replyTo(envelope)) {
+                null -> deliver(envelope, peer)
+                else -> answer(envelope, wireId, peer)
+            }
+        } + outcome.signals.map { Effect.Raise(peer, it) }
+
+    /**
+     * How a released reply ends the request [wireId] (§mesh-9.5), or `null`
+     * when no request is waiting on it any more — it was answered, cancelled or
+     * expired, and a late answer is dropped.
+     *
+     * `Ok` — or no status at all, which the requester reads as `Ok` as the C++
+     * core does — completes it with the reply's payload; any other status fails
+     * it. An `Ok` whose payload the engine cannot be handed is §mesh-16.7 row 4
+     * and ends nothing: the request stays waiting for an answer it can use, or
+     * for its deadline.
+     */
+    private fun answer(envelope: Envelope, wireId: ByteArray, peer: String?): Effect? {
+        val status = envelope.rpc_status ?: RpcStatus.OK
+        if (status == RpcStatus.OK) {
+            val data = payloadText(envelope)
+            if (data is PayloadText.Unreadable) {
+                return if (requests.isWaiting(wireId)) {
+                    Effect.Raise(peer, Signal.EnvelopeCorrupt(envelope.source, data.codec))
+                } else {
+                    null
+                }
+            }
+            val pending = requests.retire(wireId) ?: return null
+            return Effect.Complete(pending.invokeId, pending.token, (data as PayloadText.Text).text, envelope.source)
+        }
+        val pending = requests.retire(wireId) ?: return null
+        return Effect.Fail(
+            pending.invokeId,
+            pending.token,
+            invokeErrorData(status, envelope.rpc_error_message, envelope.source, hex(wireId)),
+            envelope.source,
+        )
+    }
 }
 
-/** What the receive half released, as effects, in release order, followed by the rows it observed. */
-private fun effectsOf(outcome: Outcome, peer: String?): List<Effect> =
-    outcome.released.map { deliver(it, peer) } + outcome.signals.map { Effect.Raise(peer, it) }
+/**
+ * The wire id of the request [envelope] answers, when it is a reply that
+ * carries one. A reply to a request this router never sent, or one already
+ * retired, is then dropped rather than delivered: this core sends every
+ * request with an `invoke_id`, so nothing else can be waiting for it.
+ */
+private fun replyTo(envelope: Envelope): ByteArray? =
+    envelope.invoke_id?.takeIf { envelope.pattern == PatternKind.RPC_REPLY && it.size == 16 }
+
+/**
+ * The codec a payload of the sending engine's own `_event.data` text travels
+ * in: JSON, or nothing when there is none — the rule the C++ core applies to a
+ * child's donedata (ChildSessionAdapter.h).
+ */
+private fun payloadCodec(eventData: String): PayloadCodec =
+    if (eventData.isEmpty()) PayloadCodec.NONE else PayloadCodec.JSON
+
+/** An envelope's payload as the text the engine is handed, or the codec that makes it unreadable. */
+private sealed class PayloadText {
+    class Text(val text: String) : PayloadText()
+
+    class Unreadable(val codec: String) : PayloadText()
+}
+
+/**
+ * A JSON or empty payload is the `_event.data` text the sender's engine wrote;
+ * a payload in another codec is bytes the engine's text surface cannot be
+ * handed, named by that codec so §mesh-16.7 row 4 can say which.
+ */
+private fun payloadText(envelope: Envelope): PayloadText =
+    when (envelope.datacontenttype) {
+        PayloadCodec.NONE -> PayloadText.Text("")
+        PayloadCodec.JSON -> envelope.data.decodeToStringOrNull()?.let { PayloadText.Text(it) }
+            ?: PayloadText.Unreadable("json")
+        PayloadCodec.CBOR -> PayloadText.Unreadable("cbor")
+        PayloadCodec.TYPED -> PayloadText.Unreadable("typed")
+        PayloadCodec.RAW -> PayloadText.Unreadable("raw")
+    }
+
+/** [a] + [b] for non-negative [b], held at `Long.MAX_VALUE` rather than wrapping. */
+private fun saturatingAdd(a: Long, b: Long): Long = if (a > Long.MAX_VALUE - b) Long.MAX_VALUE else a + b
 
 /**
  * The event an admitted envelope raises. A JSON or empty payload is the
@@ -205,20 +431,11 @@ private fun effectsOf(outcome: Outcome, peer: String?): List<Effect> =
  * naming that codec. [peer] is the binding it arrived on, when a receipt
  * rather than a tick released it.
  */
-private fun deliver(envelope: Envelope, peer: String?): Effect {
-    val codec = when (envelope.datacontenttype) {
-        PayloadCodec.NONE -> return Effect.Deliver(envelope.event_type, "", envelope.source, envelope.subject)
-        PayloadCodec.JSON -> {
-            val text = envelope.data.decodeToStringOrNull()
-            if (text != null) return Effect.Deliver(envelope.event_type, text, envelope.source, envelope.subject)
-            "json"
-        }
-        PayloadCodec.CBOR -> "cbor"
-        PayloadCodec.TYPED -> "typed"
-        PayloadCodec.RAW -> "raw"
+private fun deliver(envelope: Envelope, peer: String?): Effect =
+    when (val data = payloadText(envelope)) {
+        is PayloadText.Text -> Effect.Deliver(envelope.event_type, data.text, envelope.source, envelope.subject)
+        is PayloadText.Unreadable -> Effect.Raise(peer, Signal.EnvelopeCorrupt(envelope.source, data.codec))
     }
-    return Effect.Raise(peer, Signal.EnvelopeCorrupt(envelope.source, codec))
-}
 
 /** The bytes as UTF-8 text, or `null` when they are not UTF-8. */
 private fun ByteArray.decodeToStringOrNull(): String? =

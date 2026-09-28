@@ -9,6 +9,7 @@ import com.sce.forge.runtime.SceCursor
 import com.sce.generated.envelope.Envelope
 import com.sce.generated.pattern_kind.PatternKind
 import com.sce.generated.payload_codec.PayloadCodec
+import com.sce.generated.rpc_status.RpcStatus
 import com.sce.runtime.StateMachineEngine
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -224,5 +225,204 @@ class RouterTest {
             hmi.receive("ecu", byteArrayOf(0xFF.toByte()), 0),
         )
         assertEquals(Routed.Refused(RouterError.UnknownPeer("ecu")), hmi.peerReady("ecu", 0))
+    }
+
+    // ── §mesh-9.5: `<invoke type="sce:mesh-rpc">`, the requester's half ──
+
+    private val wire = ByteArray(16) { 9 }
+    private val wireHex = "09090909090909090909090909090909"
+
+    /** `ecu` bound to `hmi` with a binding-level deadline, and to `mallory`, which is not in `hmi`'s responder set. */
+    private fun requester(deadlineMs: Long?): Router {
+        val ecu = Router("ecu", 8u, 50)
+        val config = unordered.copy(buffer = null, responders = listOf("hmi"), deadlineMs = deadlineMs)
+        ecu.addPeer("hmi", config)
+        ecu.addPeer("mallory", config.copy(responders = listOf("mallory")))
+        return ecu
+    }
+
+    private fun ask(src: String, deadlineMs: String?) = StateMachineEngine.HostInvokeRequest(
+        processorType = "sce:mesh-rpc",
+        invokeId = "ask",
+        src = src,
+        params = buildMap {
+            put(MESH_EVENT_PARAM, listOf("service.request.force"))
+            deadlineMs?.let { put(MESH_DEADLINE_PARAM, listOf(it)) }
+        },
+        eventData = """{"n":3}""",
+        token = 7,
+    )
+
+    /** Start `ask("#hmi")` at monotonic 10, wall 1000, returning the request envelope's bytes. */
+    private fun started(ecu: Router, deadlineMs: String?): ByteArray =
+        when (val invoked = ecu.invoke(ask("#hmi", deadlineMs), wire, id(1), 10, 1000)) {
+            is Invoked.Started -> transmitted(Routed.Done(invoked.effects))
+            else -> fail("expected the request to start, got $invoked")
+        }
+
+    private fun reply(n: Int, status: RpcStatus?, message: String?, data: String): ByteArray =
+        Envelope(
+            id = id(n),
+            source = "hmi",
+            event_type = "service.response.force",
+            pattern = PatternKind.RPC_REPLY,
+            datacontenttype = if (data.isEmpty()) PayloadCodec.NONE else PayloadCodec.JSON,
+            data = data.encodeToByteArray(),
+            invoke_id = wire,
+            rpc_status = status,
+            rpc_error_message = message,
+        ).encodeToByteArray() ?: fail("reply did not encode")
+
+    @Test
+    fun aRequestCarriesItsEventPayloadAndWireIds() {
+        val envelope = decode(started(requester(500), null))
+        assertEquals(PatternKind.RPC_REQUEST, envelope.pattern)
+        assertEquals("service.request.force", envelope.event_type)
+        assertEquals("""{"n":3}""", envelope.data.decodeToString())
+        assertEquals(PayloadCodec.JSON, envelope.datacontenttype)
+        assertTrue(wire.contentEquals(envelope.invoke_id))
+        assertTrue(id(1).contentEquals(envelope.id))
+        // §mesh-9.5 precedence: the binding's deadline when the invoke gives none.
+        assertEquals(1500uL, envelope.deadline_unix_ms)
+    }
+
+    @Test
+    fun theInvokesOwnDeadlineWinsOverTheBindings() {
+        assertEquals(1200uL, decode(started(requester(500), "200")).deadline_unix_ms)
+    }
+
+    @Test
+    fun aRequestWithNoDeadlineCarriesNone() {
+        val ecu = requester(null)
+        assertNull(decode(started(ecu, null)).deadline_unix_ms)
+        assertTrue(done(ecu.tick(Long.MAX_VALUE)).isEmpty(), "no deadline, no expiry")
+    }
+
+    @Test
+    fun anOkReplyCompletesTheInvocationOnce() {
+        val ecu = requester(null)
+        started(ecu, null)
+        assertEquals(
+            listOf(Effect.Complete("ask", 7, """{"force":12}""", "hmi")),
+            done(ecu.receive("hmi", reply(2, RpcStatus.OK, null, """{"force":12}"""), 20)),
+        )
+        // A second answer finds nothing waiting.
+        assertTrue(done(ecu.receive("hmi", reply(3, RpcStatus.OK, null, "1"), 21)).isEmpty())
+    }
+
+    /** The key is optional on the wire; the requester reads its absence as `Ok`, as the C++ core does. */
+    @Test
+    fun aReplyWithNoStatusIsOk() {
+        val ecu = requester(null)
+        started(ecu, null)
+        assertEquals(listOf(Effect.Complete("ask", 7, "", "hmi")), done(ecu.receive("hmi", reply(2, null, null, ""), 20)))
+    }
+
+    @Test
+    fun aFailedReplyFailsTheInvocationWithTheStatusByName() {
+        val ecu = requester(null)
+        started(ecu, null)
+        assertEquals(
+            listOf(
+                Effect.Fail(
+                    "ask",
+                    7,
+                    """{"errorName":"invoke","reason":"unavailable","detail":"busy","source":"hmi","invoke_id":"$wireHex"}""",
+                    "hmi",
+                ),
+            ),
+            done(ecu.receive("hmi", reply(2, RpcStatus.UNAVAILABLE, "busy", ""), 20)),
+        )
+    }
+
+    /** §mesh-14.6: a reply from outside the responder set is row 14 and leaves the request answerable. */
+    @Test
+    fun aReplyFromAnUndeclaredPeerIsRefusedAndTheRequestStays() {
+        val ecu = requester(null)
+        started(ecu, null)
+        assertEquals(
+            // The envelope's word, reported as written; what refused it was the binding it came in on.
+            listOf(Effect.Raise("mallory", Signal.RpcReplyFromUndeclaredPeer("hmi", wireHex))),
+            done(ecu.receive("mallory", reply(2, RpcStatus.OK, null, "1"), 20)),
+        )
+        assertEquals(
+            listOf(Effect.Complete("ask", 7, "2", "hmi")),
+            done(ecu.receive("hmi", reply(3, RpcStatus.OK, null, "2"), 21)),
+        )
+    }
+
+    /** §mesh-9.5 `<cancel>`: nothing on the wire, and a later answer is dropped. */
+    @Test
+    fun aCancelledRequestDropsItsAnswer() {
+        val ecu = requester(100)
+        started(ecu, null)
+        ecu.cancelInvoke("ask", 7)
+        assertTrue(done(ecu.receive("hmi", reply(2, RpcStatus.OK, null, "1"), 20)).isEmpty())
+        assertTrue(done(ecu.tick(1000)).isEmpty(), "a cancelled request has no deadline")
+    }
+
+    @Test
+    fun aDeadlineFailsTheInvocationAsDeadlineExceededWithNoSource() {
+        val ecu = requester(100)
+        started(ecu, null)
+        // Kept against the monotonic clock the request started at (10).
+        assertTrue(done(ecu.tick(109)).isEmpty())
+        assertEquals(
+            listOf(
+                Effect.Fail(
+                    "ask",
+                    7,
+                    """{"errorName":"invoke","reason":"deadlineExceeded","invoke_id":"$wireHex"}""",
+                    null,
+                ),
+            ),
+            done(ecu.tick(110)),
+        )
+        assertTrue(done(ecu.receive("hmi", reply(2, RpcStatus.OK, null, "1"), 120)).isEmpty())
+    }
+
+    /** An `Ok` the engine cannot be handed is row 4 and ends nothing: the request still waits for an answer it can use. */
+    @Test
+    fun anUnreadableOkReplyLeavesTheRequestWaiting() {
+        val ecu = requester(null)
+        started(ecu, null)
+        val raw = Envelope(
+            id = id(2),
+            source = "hmi",
+            event_type = "service.response.force",
+            pattern = PatternKind.RPC_REPLY,
+            datacontenttype = PayloadCodec.RAW,
+            data = byteArrayOf(0xFF.toByte()),
+            invoke_id = wire,
+        ).encodeToByteArray() ?: fail("reply did not encode")
+        assertEquals(
+            listOf(Effect.Raise("hmi", Signal.EnvelopeCorrupt("hmi", "raw"))),
+            done(ecu.receive("hmi", raw, 20)),
+        )
+        assertEquals(
+            listOf(Effect.Complete("ask", 7, "1", "hmi")),
+            done(ecu.receive("hmi", reply(3, RpcStatus.OK, null, "1"), 21)),
+        )
+    }
+
+    /** §mesh-9.5's pre-envelope tier: a target that cannot reach the wire refuses the invocation. */
+    @Test
+    fun aRequestThatCannotReachTheWireIsRefused() {
+        val ecu = requester(null)
+        assertEquals(
+            Invoked.Refused("""{"errorName":"execution","reason":"INVOKE_SRC_NOT_FOUND","detail":"no binding for '#nobody'"}"""),
+            ecu.invoke(ask("#nobody", null), wire, id(1), 0, 0),
+        )
+        val refused = ecu.invoke(ask("hmi", null), wire, id(1), 0, 0)
+        assertTrue(refused is Invoked.Refused && refused.data.contains("names no Mesh peer"), "$refused")
+    }
+
+    @Test
+    fun aRequestWithoutItsEventParamIsTheHostsError() {
+        val request = ask("#hmi", null).let { it.copy(params = it.params - MESH_EVENT_PARAM) }
+        assertEquals(
+            Invoked.Failed(RouterError.MissingParam(MESH_EVENT_PARAM)),
+            requester(null).invoke(request, wire, id(1), 0, 0),
+        )
     }
 }

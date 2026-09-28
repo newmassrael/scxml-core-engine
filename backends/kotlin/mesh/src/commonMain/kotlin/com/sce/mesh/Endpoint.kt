@@ -10,9 +10,12 @@
 // event the router releases, and every row it raises, becomes an
 // [EngineEvent] carrying the `_event` fields the C++ core gives the same event
 // (sce/include/mesh/MeshDispatch.h), so a document cannot tell which core it
-// runs beside. Engine-bound events are queued rather than handed back from the
-// send handler: the engine raises a handler's answer with no origin, where the
-// C++ core raises a row as an envelope from its own machine.
+// runs beside; a Mesh request the router ends becomes the call that ends its
+// invocation (§mesh-9.5). What the engine must be told is queued rather than
+// handed back from the send handler: the engine raises a handler's answer with
+// no origin, where the C++ core raises a row as an envelope from its own
+// machine, and one queue keeps an invocation's end in order with the events
+// around it.
 //
 // Confined to one thread — the one that steps the engine. The send handler
 // already runs there; a transport that receives on its own thread hands the
@@ -32,6 +35,9 @@ import com.sce.runtime.StateMachineEngine
  * type this core serves is the one the engine's router door registers.
  */
 const val MESH_PROCESSOR_TYPE = com.sce.runtime.MESH_PROCESSOR_TYPE
+
+/** The `<invoke type>` a Mesh request is lowered to, and the `_event.origintype` of the event that ends it (§mesh-9.5). */
+const val MESH_RPC_INVOKE_TYPE = com.sce.runtime.MESH_RPC_INVOKE_TYPE
 
 /** `_event.origin` of a Mesh-delivered event is this scheme and the sending machine's name (§mesh-10.7). */
 const val MESH_ORIGIN_SCHEME = "mesh://"
@@ -55,7 +61,10 @@ interface Environment {
     /** A monotonic clock, in milliseconds. */
     fun nowMs(): Long
 
-    /** A fresh envelope id (§mesh-7.5: a UUID v7). */
+    /** The wall clock, in milliseconds since the Unix epoch — what a request's `deadline_unix_ms` is written in (§mesh-9.5). */
+    fun nowUnixMs(): Long
+
+    /** A fresh UUID v7 (§mesh-7.5): an envelope's id, or the wire `invoke_id` a request is correlated by. */
     fun envelopeId(): ByteArray
 
     /** A non-negative number drawn uniformly, for a retry's jitter. */
@@ -64,6 +73,26 @@ interface Environment {
 
 /** An event for the engine's external queue, by name, with its `_event`. */
 data class EngineEvent(val name: String, val metadata: EventMetadata)
+
+/** One thing the host must tell its engine, in the order the endpoint came to know it. */
+sealed class EngineCall {
+    /** Raise this event on the external queue. */
+    data class Raise(val event: EngineEvent) : EngineCall()
+
+    /**
+     * End the start [token] of the Mesh request [invokeId] — with `done.invoke`,
+     * or with `error.invoke` when [failed] — carrying [data] as `_event.data`.
+     * [source] is the machine that answered, `null` for a deadline the
+     * requester reached itself.
+     */
+    data class EndInvoke(
+        val invokeId: String,
+        val token: Long,
+        val failed: Boolean,
+        val data: String,
+        val source: String?,
+    ) : EngineCall()
+}
 
 /** One machine's Mesh endpoint on a host. */
 class Endpoint(
@@ -74,13 +103,42 @@ class Endpoint(
     private class Retry(val peer: String, val bytes: ByteArray, val attempts: Attempts, val dueMs: Long)
 
     private val retries = mutableListOf<Retry>()
-    private val toEngine = mutableListOf<EngineEvent>()
+    private val toEngine = mutableListOf<EngineCall>()
     private val hostErrors = mutableListOf<RouterError>()
 
     /** Perform a `<send type="sce:mesh">` the engine handed its host. */
     fun send(request: StateMachineEngine.HostSendRequest) {
         val id = environment.envelopeId()
         apply(router.send(request, id, environment.nowMs()))
+    }
+
+    /**
+     * Start an `<invoke type="sce:mesh-rpc">` the engine handed its host,
+     * answering the engine as a host invoker does: with nothing when the
+     * request is on its way — its end is queued later — or with a refusal when
+     * it cannot reach the wire (§mesh-9.5's pre-envelope tier).
+     */
+    fun invoke(request: StateMachineEngine.HostInvokeRequest): StateMachineEngine.HostInvokeResponse {
+        val wireId = environment.envelopeId()
+        val id = environment.envelopeId()
+        return when (val invoked = router.invoke(request, wireId, id, environment.nowMs(), environment.nowUnixMs())) {
+            is Invoked.Started -> {
+                apply(Routed.Done(invoked.effects))
+                StateMachineEngine.HostInvokeResponse()
+            }
+            is Invoked.Refused -> StateMachineEngine.HostInvokeResponse(refusal = invoked.data)
+            // Only the host can act on it; the document is told the request
+            // could not start rather than left waiting on one that never left.
+            is Invoked.Failed -> {
+                hostErrors += invoked.error
+                StateMachineEngine.HostInvokeResponse(refusal = invoked.error.toString())
+            }
+        }
+    }
+
+    /** The state that started the start [token] of the Mesh request [invokeId] exited. */
+    fun cancelInvoke(invokeId: String, token: Long) {
+        router.cancelInvoke(invokeId, token)
     }
 
     /** Envelope [bytes] the transport received from [peer]. */
@@ -113,8 +171,8 @@ class Endpoint(
         }
     }
 
-    /** The events the engine must now raise, in the order they arose. */
-    fun takeEvents(): List<EngineEvent> = toEngine.toList().also { toEngine.clear() }
+    /** What the engine must now be told, in the order it arose. */
+    fun takeCalls(): List<EngineCall> = toEngine.toList().also { toEngine.clear() }
 
     /**
      * What went wrong that only the host can act on. None of these reaches the
@@ -133,11 +191,14 @@ class Endpoint(
         for (effect in effects) {
             when (effect) {
                 is Effect.Transmit -> transmit(effect.peer, effect.bytes, Attempts())
-                is Effect.Deliver -> toEngine += EngineEvent(
-                    effect.event,
-                    meshMetadata(effect.data, effect.source, effect.sendId ?: ""),
+                is Effect.Deliver -> toEngine += EngineCall.Raise(
+                    EngineEvent(effect.event, meshMetadata(effect.data, effect.source, effect.sendId ?: "")),
                 )
                 is Effect.Raise -> raise(effect.peer, effect.signal)
+                is Effect.Complete ->
+                    toEngine += EngineCall.EndInvoke(effect.invokeId, effect.token, false, effect.data, effect.source)
+                is Effect.Fail ->
+                    toEngine += EngineCall.EndInvoke(effect.invokeId, effect.token, true, effect.data, effect.source)
             }
         }
     }
@@ -176,9 +237,11 @@ class Endpoint(
 
     /** Queue the `error.communication` a row raises, as the C++ core raises it: an envelope from its own machine. */
     private fun raise(peer: String?, signal: Signal) {
-        toEngine += EngineEvent(
-            "error.communication",
-            meshMetadata(signal.eventData(router.binding(peer)), router.machine, ""),
+        toEngine += EngineCall.Raise(
+            EngineEvent(
+                "error.communication",
+                meshMetadata(signal.eventData(router.binding(peer)), router.machine, ""),
+            ),
         )
     }
 }
@@ -197,22 +260,48 @@ private fun meshMetadata(data: String, source: String, sendId: String): EventMet
         originType = IoProcessors.SCXML_PROCESSOR,
     )
 
-/** Raise [events] on [engine]'s external queue, in order; a name the machine does not declare is dropped. */
-fun raiseInto(engine: StateMachineEngine<*, *>, events: List<EngineEvent>) {
-    for (event in events) {
-        engine.sendEventByName(event.name, event.metadata)
+/**
+ * Tell [engine] what [calls] say, in order. An event name the machine does not
+ * declare is dropped, as the engine drops any such event; an invocation's end
+ * the engine no longer waits for — its state exited, or it was started again —
+ * is refused by the engine's own token check.
+ *
+ * An answer carries `_event.origin` `mesh://<source>` and origin type
+ * `sce:mesh-rpc` (§mesh-9.5); a deadline the requester reached itself has no
+ * peer to name, and carries neither.
+ */
+fun applyTo(engine: StateMachineEngine<*, *>, calls: List<EngineCall>) {
+    for (call in calls) {
+        when (call) {
+            is EngineCall.Raise -> engine.sendEventByName(call.event.name, call.event.metadata)
+            is EngineCall.EndInvoke -> {
+                val origin = call.source?.let { MESH_ORIGIN_SCHEME + it } ?: ""
+                val originType = if (call.source != null) MESH_RPC_INVOKE_TYPE else ""
+                if (call.failed) {
+                    engine.failHostInvoke(MESH_RPC_INVOKE_TYPE, call.invokeId, call.token, call.data, origin, originType)
+                } else {
+                    engine.completeHostInvoke(MESH_RPC_INVOKE_TYPE, call.invokeId, call.token, call.data, origin, originType)
+                }
+            }
+        }
     }
 }
 
 /**
- * Serve `<send type="sce:mesh">` on [engine] with [endpoint]. The handler
- * answers the engine with nothing: what a send produces for the document is
- * queued on the endpoint, and the host raises it with [raiseInto] after the
- * step that sent it.
+ * Serve `<send type="sce:mesh">` and `<invoke type="sce:mesh-rpc">` on
+ * [engine] with [endpoint]. The send handler answers the engine with nothing,
+ * and a request that starts is answered with nothing too: what either produces
+ * for the document is queued on the endpoint, and the host applies it with
+ * [applyTo] after the step that sent it.
  */
 fun register(engine: StateMachineEngine<*, *>, endpoint: Endpoint) {
     engine.registerMeshRouter { request ->
         endpoint.send(request)
         emptyList()
+    }
+    engine.registerMeshRpcInvoker { event ->
+        event.start?.let { return@registerMeshRpcInvoker endpoint.invoke(it) }
+        event.cancel?.let { endpoint.cancelInvoke(it.invokeId, it.token) }
+        null
     }
 }

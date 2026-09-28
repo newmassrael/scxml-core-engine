@@ -35,6 +35,8 @@ class CrossLanguageLoopbackTest {
 
         override fun nowMs(): Long = ++now
 
+        override fun nowUnixMs(): Long = System.currentTimeMillis()
+
         override fun envelopeId(): ByteArray {
             ids += 1
             return ByteArray(16) { (0x30 + ids).toByte() }
@@ -42,6 +44,10 @@ class CrossLanguageLoopbackTest {
 
         override fun jitterDraw(): Long = 0
     }
+
+    /** The events [this] endpoint queued, which in this test are all it queued. */
+    private fun Endpoint.takeEvents(): List<EngineEvent> =
+        takeCalls().map { (it as? EngineCall.Raise ?: error("expected only events, got $it")).event }
 
     private fun <T> LinkedBlockingQueue<T>.next(): T = poll(10, TimeUnit.SECONDS) ?: fail("nothing within ten seconds")
 

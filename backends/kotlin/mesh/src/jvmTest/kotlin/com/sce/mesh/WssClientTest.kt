@@ -75,6 +75,8 @@ class WssClientTest {
 
         override fun nowMs(): Long = ++now
 
+        override fun nowUnixMs(): Long = now
+
         override fun envelopeId(): ByteArray {
             ids += 1
             return ByteArray(16) { ids.toByte() }
@@ -82,6 +84,10 @@ class WssClientTest {
 
         override fun jitterDraw(): Long = 0
     }
+
+    /** The events [this] endpoint queued, which in these tests are all it queued. */
+    private fun Endpoint.takeEvents(): List<EngineEvent> =
+        takeCalls().map { (it as? EngineCall.Raise ?: error("expected only events, got $it")).event }
 
     private fun router(machine: String, peer: String): Router =
         Router(machine, 8u, 50).also {

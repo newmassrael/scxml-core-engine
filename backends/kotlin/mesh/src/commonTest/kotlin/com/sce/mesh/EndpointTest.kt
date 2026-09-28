@@ -31,6 +31,9 @@ class EndpointTest {
 
         override fun nowMs(): Long = now
 
+        /** The wall clock a fixed distance ahead of the monotonic one, so a wire deadline and a kept one can be told apart. */
+        override fun nowUnixMs(): Long = 1_000_000 + now
+
         override fun envelopeId(): ByteArray {
             ids += 1
             return ByteArray(16) { ids.toByte() }
@@ -38,6 +41,10 @@ class EndpointTest {
 
         override fun jitterDraw(): Long = 0
     }
+
+    /** The events [this] endpoint queued, which in these tests are all it queued. */
+    private fun Endpoint.takeEvents(): List<EngineEvent> =
+        takeCalls().map { (it as? EngineCall.Raise ?: error("expected only events, got $it")).event }
 
     private class Host(machine: String, peer: String, retry: RetryPolicy?) {
         val transport = Recorder()

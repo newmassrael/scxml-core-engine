@@ -8,8 +8,6 @@
 
 package com.sce.mesh
 
-import com.sce.runtime.Json
-
 /** One §mesh-16.7 row, with the extras the row carries. */
 sealed class Signal {
     /** ORDERING_GAP (row 12): [source]'s sequences [lostLo]..[lostHi] waited out the gap timeout. */
@@ -45,6 +43,14 @@ sealed class Signal {
     /** DELIVERY_EXHAUSTED (row 3): given up after [attempts] sends. */
     data class DeliveryExhausted(val attempts: UInt, val transportError: String?) : Signal()
 
+    /**
+     * RPC_REPLY_FROM_UNDECLARED_PEER (row 14): a reply from [source] named the
+     * live request [invokeId] (the wire id, hex) but arrived on a binding
+     * outside that request's responder set (§mesh-14.6). The request stays
+     * answerable.
+     */
+    data class RpcReplyFromUndeclaredPeer(val source: String, val invokeId: String) : Signal()
+
     /** The row's `reason`, as §mesh-16.7 spells it. */
     val reason: String
         get() = when (this) {
@@ -57,6 +63,7 @@ sealed class Signal {
             TransportUnavailable -> "TRANSPORT_UNAVAILABLE"
             is SendFailed -> "SEND_FAILED"
             is DeliveryExhausted -> "DELIVERY_EXHAUSTED"
+            is RpcReplyFromUndeclaredPeer -> "RPC_REPLY_FROM_UNDECLARED_PEER"
         }
 
     /**
@@ -67,18 +74,15 @@ sealed class Signal {
      * `target` and `transport` to the rows whose columns name them.
      */
     fun eventData(binding: Binding?): String {
-        val fields = mutableListOf("\"errorName\":\"communication\"", "\"reason\":" + Json.quote(reason))
-        fun text(key: String, value: String) {
-            fields += "\"$key\":" + Json.quote(value)
-        }
-        fun number(key: String, value: Any) {
-            fields += "\"$key\":$value"
-        }
+        val json = ErrorData("communication", reason)
+        fun text(key: String, value: String) = json.text(key, value)
+        fun number(key: String, value: Any) = json.number(key, value)
         val source = when (this) {
             is OrderingGap -> source
             is DedupWindowOverflow -> source
             is MissingSequence -> source
             is EnvelopeCorrupt -> source
+            is RpcReplyFromUndeclaredPeer -> source
             else -> null
         }
         val sending = this is BackpressureDrop || this is OutboundStaleDrop || this == TransportUnavailable ||
@@ -106,9 +110,11 @@ sealed class Signal {
                 number("lost_seq_lo", lostLo)
                 number("lost_seq_hi", lostHi)
             }
+            // §mesh-16.7 row 14's columns: `source`, then the request it tried to retire.
+            is RpcReplyFromUndeclaredPeer -> text("invoke_id", invokeId)
             is MissingSequence, TransportUnavailable -> Unit
         }
-        return fields.joinToString(",", "{", "}")
+        return json.finish()
     }
 }
 
