@@ -136,8 +136,8 @@ PY
 # doing both jobs, as with the comment strip above.
 mutation_case "the lint lane drops the flag the declaration made it need" <<'PY'
 edit("scripts/gates/clippy.sh",
-     "cargo clippy --workspace --all-targets --features cli -- -D warnings",
-     "cargo clippy --workspace --all-targets -- -D warnings")
+     "--features cli,sce-rust-mesh/wss -- -D warnings",
+     "--features sce-rust-mesh/wss -- -D warnings")
 PY
 
 # ...and the two ways the reader stops seeing that lane at all. Neither is
