@@ -20,8 +20,7 @@ class RouterTest {
     /** A binding with ordering required on a transport that does not order. */
     private val ordered = PeerConfig(
         transport = "wss",
-        maxPending = 4u,
-        maxAgeMs = 0,
+        buffer = OutboundBuffer(maxPending = 4u, maxAgeMs = 0),
         retry = null,
         stampSequence = true,
         delivery = Delivery(dedup = true, ordered = true),
@@ -74,6 +73,13 @@ class RouterTest {
             listOf(Effect.Deliver("speed.changed", """{"kph":42}""", "ecu", "send.1")),
             done(hmi.receive("ecu", bytes, 0)),
         )
+    }
+
+    @Test
+    fun withoutABufferASendIsTransmittedBeforeThePeerIsReady() {
+        val ecu = Router("ecu", 8u, 50)
+        ecu.addPeer("hmi", unordered.copy(buffer = null))
+        transmitted(ecu.send(request("#hmi", "ping", ""), id(7), 0))
     }
 
     @Test

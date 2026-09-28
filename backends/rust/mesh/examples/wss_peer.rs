@@ -62,8 +62,10 @@ async fn main() {
         "client",
         PeerConfig {
             transport: "wss",
-            max_pending: 64,
-            max_age_ms: 0,
+            buffer: Some(sce_rust_mesh::outbound::OutboundBuffer {
+                max_pending: 64,
+                max_age_ms: 0,
+            }),
             retry: None,
             stamp_sequence: false,
             delivery: Delivery {

@@ -23,10 +23,8 @@ import com.sce.runtime.StateMachineEngine
 data class PeerConfig(
     /** The binding's transport kind (`"wss"`, `"custom_tcp"`, ...): the `transport` column of its §mesh-16.7 rows. */
     val transport: String,
-    /** deploy.yaml's `max_pending_per_target` (§mesh-10.10). */
-    val maxPending: UInt,
-    /** deploy.yaml's `max_age_ms`, 0 for no bound (§mesh-10.10). */
-    val maxAgeMs: Long,
+    /** deploy.yaml's `outbound_buffer:` section, or `null` when the machine declares none and every send is dispatched directly (§mesh-10.10). */
+    val buffer: OutboundBuffer?,
     /** deploy.yaml's `retry` block, if the binding has one (§mesh-10.10). */
     val retry: RetryPolicy?,
     /** Whether envelopes TO this peer carry a `sequence_no`: `ordering: required` on a transport that does not order (§mesh-10.6.3). */
@@ -86,7 +84,7 @@ fun meshPeer(target: String): String? = com.sce.runtime.SendHelper.meshPeer(targ
  */
 class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
     private class Peer(val config: PeerConfig) {
-        val outbound = Outbound(config.maxPending, config.maxAgeMs)
+        val outbound = Outbound(config.buffer)
         var nextSequence: ULong = 1u
     }
 

@@ -89,8 +89,7 @@ class WssClientTest {
                 peer,
                 PeerConfig(
                     transport = "wss",
-                    maxPending = 8u,
-                    maxAgeMs = 0,
+                    buffer = OutboundBuffer(maxPending = 8u, maxAgeMs = 0),
                     retry = null,
                     stampSequence = false,
                     delivery = Delivery(dedup = true, ordered = false),

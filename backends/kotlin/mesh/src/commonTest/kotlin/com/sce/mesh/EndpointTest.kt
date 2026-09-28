@@ -50,8 +50,7 @@ class EndpointTest {
                 peer,
                 PeerConfig(
                     transport = "wss",
-                    maxPending = 4u,
-                    maxAgeMs = 0,
+                    buffer = OutboundBuffer(maxPending = 4u, maxAgeMs = 0),
                     retry = retry,
                     stampSequence = false,
                     delivery = Delivery(dedup = true, ordered = false),

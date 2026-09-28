@@ -29,7 +29,7 @@ use crate::generated::envelope::Envelope;
 use crate::generated::pattern_kind::PatternKind;
 use crate::generated::payload_codec::PayloadCodec;
 use crate::inbound::{AdmitError, ConfigError, Delivery, Inbound, Outcome};
-use crate::outbound::{Admitted, Outbound, RetryPolicy};
+use crate::outbound::{Admitted, Outbound, OutboundBuffer, RetryPolicy};
 use crate::signal::{Binding, Signal};
 
 /// What deployment says about one peer this machine talks to.
@@ -38,10 +38,9 @@ pub struct PeerConfig {
     /// The binding's transport kind (`"wss"`, `"custom_tcp"`, ...): the
     /// `transport` column of the §mesh-16.7 rows observed on it.
     pub transport: &'static str,
-    /// deploy.yaml's `max_pending_per_target` (§mesh-10.10).
-    pub max_pending: u32,
-    /// deploy.yaml's `max_age_ms`, 0 for no bound (§mesh-10.10).
-    pub max_age_ms: i64,
+    /// deploy.yaml's `outbound_buffer:` section, or `None` when the machine
+    /// declares none — then every envelope is dispatched directly (§mesh-10.10).
+    pub buffer: Option<OutboundBuffer>,
     /// deploy.yaml's `retry` block, if the binding has one (§mesh-10.10).
     pub retry: Option<RetryPolicy>,
     /// Whether envelopes TO this peer carry a `sequence_no`: the binding
@@ -103,7 +102,7 @@ impl Router {
         self.peers.insert(
             peer.to_string(),
             Peer {
-                outbound: Outbound::new(config.max_pending, config.max_age_ms),
+                outbound: Outbound::new(config.buffer),
                 config,
                 next_sequence: 1,
             },
@@ -377,8 +376,10 @@ mod tests {
     /// the sender stamps and the receiver orders.
     const ORDERED: PeerConfig = PeerConfig {
         transport: "wss",
-        max_pending: 4,
-        max_age_ms: 0,
+        buffer: Some(OutboundBuffer {
+            max_pending: 4,
+            max_age_ms: 0,
+        }),
         retry: None,
         stamp_sequence: true,
         delivery: Delivery {
@@ -395,6 +396,27 @@ mod tests {
         },
         ..ORDERED
     };
+
+    /// §mesh-10.10: a binding on a machine with no `outbound_buffer:` section
+    /// is dispatched directly — a send to a peer nothing has called ready is
+    /// transmitted at once rather than held, and the transport reports what it
+    /// could not deliver.
+    #[test]
+    fn without_a_buffer_a_send_is_transmitted_before_the_peer_is_ready() {
+        let mut ecu = Router::new("ecu", 8, 50).unwrap();
+        ecu.add_peer(
+            "hmi",
+            PeerConfig {
+                buffer: None,
+                ..UNORDERED
+            },
+        );
+        let effects = ecu.send(&request("#hmi", "ping", ""), [7; 16], 0).unwrap();
+        assert!(
+            matches!(effects.as_slice(), [Effect::Transmit { peer, .. }] if peer == "hmi"),
+            "{effects:?}"
+        );
+    }
 
     /// Two routers bound to each other, the sender's transport ready.
     fn pair(config: PeerConfig) -> (Router, Router) {

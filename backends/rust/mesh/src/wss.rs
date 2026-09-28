@@ -337,8 +337,10 @@ mod tests {
             peer,
             PeerConfig {
                 transport: "wss",
-                max_pending: 8,
-                max_age_ms: 0,
+                buffer: Some(crate::outbound::OutboundBuffer {
+                    max_pending: 8,
+                    max_age_ms: 0,
+                }),
                 retry: None,
                 stamp_sequence: false,
                 delivery: Delivery {

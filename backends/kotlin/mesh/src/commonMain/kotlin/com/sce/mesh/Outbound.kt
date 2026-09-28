@@ -41,11 +41,20 @@ class Drained {
 }
 
 /**
- * One target's outbound buffer, with deploy.yaml's `max_pending_per_target`
- * and `max_age_ms` (0 for no bound). A target starts not ready: nothing has
- * said it is.
+ * deploy.yaml's `outbound_buffer:` section (§mesh-10.10): how many envelopes
+ * may wait for a target to become ready ([maxPending],
+ * `max_pending_per_target`), and for how long ([maxAgeMs], 0 for no bound).
  */
-class Outbound(private val maxPending: UInt, private val maxAgeMs: Long) {
+data class OutboundBuffer(val maxPending: UInt, val maxAgeMs: Long)
+
+/**
+ * One target's outbound side: its readiness, and the [buffer] that holds
+ * envelopes until it is ready when the deployment declares one. `null` when
+ * the machine declares no `outbound_buffer:` section: then §mesh-10.10
+ * dispatches every envelope directly, ready or not, and the transport reports
+ * what it could not send. A target starts not ready: nothing has said it is.
+ */
+class Outbound(private val buffer: OutboundBuffer?) {
     private class Queued(val bytes: ByteArray, val enqueuedAtMs: Long)
 
     private var ready = false
@@ -55,14 +64,16 @@ class Outbound(private val maxPending: UInt, private val maxAgeMs: Long) {
     val depth: UInt get() = queue.size.toUInt()
 
     /**
-     * Admit [bytes], sent by the host at [nowMs]: sent at once only when the
-     * target is ready and nothing waits ahead of it — an envelope sent past a
-     * queue would overtake the ones waiting.
+     * Admit [bytes], sent by the host at [nowMs]. Without a buffer it is sent
+     * at once (§mesh-10.10's opt-in gate). With one, it is sent at once only
+     * when the target is ready and nothing waits ahead of it — an envelope
+     * sent past a queue would overtake the ones waiting.
      */
     fun admit(bytes: ByteArray, nowMs: Long): Admitted {
+        val buffer = buffer ?: return Admitted.Send(bytes)
         val depth = depth
         if (outboundSendsNow(ready, depth)) return Admitted.Send(bytes)
-        if (outboundOverflows(depth, maxPending)) return Admitted.Dropped(Signal.BackpressureDrop(depth))
+        if (outboundOverflows(depth, buffer.maxPending)) return Admitted.Dropped(Signal.BackpressureDrop(depth))
         queue.addLast(Queued(bytes, nowMs))
         return Admitted.Queued
     }
@@ -74,6 +85,8 @@ class Outbound(private val maxPending: UInt, private val maxAgeMs: Long) {
     fun markReady(nowMs: Long): AlgorithmResult<Drained> {
         ready = true
         val out = Drained()
+        // Without a buffer nothing was queued, so there is nothing to release.
+        val maxAgeMs = buffer?.maxAgeMs ?: 0L
         while (queue.isNotEmpty()) {
             val queued = queue.removeFirst()
             when (val stale = outboundStale(queued.enqueuedAtMs, nowMs, maxAgeMs)) {

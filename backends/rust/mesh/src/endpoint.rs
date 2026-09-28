@@ -333,8 +333,10 @@ mod tests {
     fn config(retry: Option<RetryPolicy>) -> PeerConfig {
         PeerConfig {
             transport: "wss",
-            max_pending: 4,
-            max_age_ms: 0,
+            buffer: Some(crate::outbound::OutboundBuffer {
+                max_pending: 4,
+                max_age_ms: 0,
+            }),
             retry,
             stamp_sequence: false,
             delivery: Delivery {

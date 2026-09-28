@@ -52,36 +52,52 @@ struct Queued {
     enqueued_at_ms: i64,
 }
 
-/// One target's outbound buffer.
+/// deploy.yaml's `outbound_buffer:` section (§mesh-10.10): how many envelopes
+/// may wait for a target to become ready, and for how long.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OutboundBuffer {
+    /// `max_pending_per_target`.
+    pub max_pending: u32,
+    /// `max_age_ms`; 0 means no bound (deploy.yaml omits it).
+    pub max_age_ms: i64,
+}
+
+/// One target's outbound side: its readiness, and the buffer that holds
+/// envelopes until it is ready when the deployment declares one.
 pub struct Outbound {
-    max_pending: u32,
-    /// 0 means no bound (deploy.yaml omits `max_age_ms`).
-    max_age_ms: i64,
+    /// `None` when the machine declares no `outbound_buffer:` section: then
+    /// §mesh-10.10 dispatches every envelope directly, ready or not, and the
+    /// transport reports what it could not send.
+    buffer: Option<OutboundBuffer>,
     ready: bool,
     queue: VecDeque<Queued>,
 }
 
 impl Outbound {
-    /// A buffer with deploy.yaml's `max_pending_per_target` and `max_age_ms`
-    /// (0 for none). A target starts not ready: nothing has said it is.
-    pub fn new(max_pending: u32, max_age_ms: i64) -> Self {
+    /// A target's outbound side with deploy.yaml's `outbound_buffer:`, or
+    /// `None` for direct dispatch. A target starts not ready: nothing has
+    /// said it is.
+    pub fn new(buffer: Option<OutboundBuffer>) -> Self {
         Self {
-            max_pending,
-            max_age_ms,
+            buffer,
             ready: false,
             queue: VecDeque::new(),
         }
     }
 
-    /// Admit `bytes`, sent by the host at `now_ms`: sent at once only when
-    /// the target is ready and nothing waits ahead of it — an envelope sent
-    /// past a queue would overtake the ones waiting.
+    /// Admit `bytes`, sent by the host at `now_ms`. Without a buffer it is
+    /// sent at once (§mesh-10.10's opt-in gate). With one, it is sent at once
+    /// only when the target is ready and nothing waits ahead of it — an
+    /// envelope sent past a queue would overtake the ones waiting.
     pub fn admit(&mut self, bytes: Vec<u8>, now_ms: i64) -> Admitted {
+        let Some(buffer) = self.buffer else {
+            return Admitted::Send(bytes);
+        };
         let depth = self.depth();
         if outbound_sends_now(self.ready, depth) {
             return Admitted::Send(bytes);
         }
-        if outbound_overflows(depth, self.max_pending) {
+        if outbound_overflows(depth, buffer.max_pending) {
             return Admitted::Dropped(Signal::BackpressureDrop { depth });
         }
         self.queue.push_back(Queued {
@@ -98,11 +114,13 @@ impl Outbound {
     pub fn mark_ready(&mut self, now_ms: i64) -> Result<Drained, AlgorithmError> {
         self.ready = true;
         let mut out = Drained::default();
+        // Without a buffer nothing was queued, so there is nothing to release.
+        let max_age_ms = self.buffer.map_or(0, |b| b.max_age_ms);
         while let Some(queued) = self.queue.pop_front() {
-            if outbound_stale(queued.enqueued_at_ms, now_ms, self.max_age_ms)? {
+            if outbound_stale(queued.enqueued_at_ms, now_ms, max_age_ms)? {
                 out.signals.push(Signal::OutboundStaleDrop {
                     age_ms: now_ms - queued.enqueued_at_ms,
-                    max_age_ms: self.max_age_ms,
+                    max_age_ms,
                 });
                 continue;
             }
@@ -201,16 +219,36 @@ mod tests {
         vec![tag]
     }
 
+    fn buffered(max_pending: u32, max_age_ms: i64) -> Outbound {
+        Outbound::new(Some(OutboundBuffer {
+            max_pending,
+            max_age_ms,
+        }))
+    }
+
+    /// §mesh-10.10's opt-in gate: a machine with no `outbound_buffer:`
+    /// section dispatches directly, whether or not the target is ready, and
+    /// still reports losing a readiness it had.
+    #[test]
+    fn without_a_buffer_every_envelope_is_sent_at_once() {
+        let mut out = Outbound::new(None);
+        assert_eq!(out.admit(bytes(1), 0), Admitted::Send(bytes(1)));
+        out.mark_ready(0).unwrap();
+        assert_eq!(out.mark_not_ready(), Some(Signal::TransportUnavailable));
+        assert_eq!(out.admit(bytes(2), 0), Admitted::Send(bytes(2)));
+        assert_eq!(out.depth(), 0);
+    }
+
     #[test]
     fn a_ready_target_with_nothing_waiting_sends_at_once() {
-        let mut out = Outbound::new(4, 0);
+        let mut out = buffered(4, 0);
         out.mark_ready(0).unwrap();
         assert_eq!(out.admit(bytes(1), 0), Admitted::Send(bytes(1)));
     }
 
     #[test]
     fn a_target_not_yet_ready_queues_and_releases_in_order() {
-        let mut out = Outbound::new(4, 0);
+        let mut out = buffered(4, 0);
         assert_eq!(out.admit(bytes(1), 0), Admitted::Queued);
         assert_eq!(out.admit(bytes(2), 0), Admitted::Queued);
         let drained = out.mark_ready(10).unwrap();
@@ -221,7 +259,7 @@ mod tests {
 
     #[test]
     fn a_full_queue_drops_the_newest_and_says_how_deep_it_was() {
-        let mut out = Outbound::new(2, 0);
+        let mut out = buffered(2, 0);
         out.admit(bytes(1), 0);
         out.admit(bytes(2), 0);
         assert_eq!(
@@ -233,7 +271,7 @@ mod tests {
 
     #[test]
     fn an_envelope_that_waited_past_the_bound_is_dropped_not_sent() {
-        let mut out = Outbound::new(4, 50);
+        let mut out = buffered(4, 50);
         out.admit(bytes(1), 100);
         out.admit(bytes(2), 130);
         let drained = out.mark_ready(151).unwrap();
@@ -249,7 +287,7 @@ mod tests {
 
     #[test]
     fn losing_readiness_signals_once_and_only_after_being_ready() {
-        let mut out = Outbound::new(4, 0);
+        let mut out = buffered(4, 0);
         assert_eq!(out.mark_not_ready(), None);
         out.mark_ready(0).unwrap();
         assert_eq!(out.mark_not_ready(), Some(Signal::TransportUnavailable));
