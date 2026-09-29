@@ -1786,14 +1786,14 @@ struct CheckArgs {
     /// Input SCXML file path. Shorthand for a single-document run;
     /// `--scxml` names the rest of a set.
     ///
-    /// Exempted by the same three ids that put the run on the
+    /// Exempted by the same ids that put the run on the
     /// document-set route and that the single-document-only flags below
     /// conflict with. Exempting `--scxml` alone made a forge-only or
     /// deploy-only set — both of which `orchestrate` accepts and builds
     /// — unnameable to `check`: the only spelling left forced a forge
     /// document into this statechart slot, where it was read as a
     /// statechart and refused for having no initial state.
-    #[arg(required_unless_present_any = ["scxml_set", "forge", "deploy"])]
+    #[arg(required_unless_present_any = ["scxml_set", "forge", "document", "deploy"])]
     scxml: Option<String>,
     /// Statechart document joining the set, mirroring `orchestrate`'s
     /// `--scxml`. Repeatable. Naming one puts the run on the
@@ -1806,6 +1806,18 @@ struct CheckArgs {
     /// and `<sce:outbox ref>` references resolve.
     #[arg(long = "forge", value_name = "PATH")]
     forge: Vec<String>,
+    /// A document of either pipeline joining the set: SCE reads its root
+    /// and files it as `--scxml` or `--forge` itself, by the rule every
+    /// other route uses (`classify_document`). Repeatable.
+    ///
+    /// For a caller that holds documents and not their kinds — an author
+    /// handing over a set through the authoring MCP — so the one rule that
+    /// decides which pipeline reads a document is not copied into every
+    /// client. `--scxml` and `--forge` stay for a caller that states the
+    /// pipeline, and a document named both ways is read twice, as it
+    /// would be if listed twice.
+    #[arg(long = "document", value_name = "PATH")]
+    document: Vec<String>,
     /// Path to `deploy.yaml`, mirroring `orchestrate`'s `--deploy`.
     /// Fires the deploy-aware cross-doc validators — link-vs-deploy
     /// declaration, burst absorption, reassembly — which otherwise
@@ -1836,7 +1848,7 @@ struct CheckArgs {
     #[arg(
         long = "script-engine",
         value_name = "LANG",
-        conflicts_with_all = ["scxml_set", "forge", "deploy"]
+        conflicts_with_all = ["scxml_set", "forge", "document", "deploy"]
     )]
     script_engine: Option<String>,
     /// Additional directories searched (in declaration order) to
@@ -1852,7 +1864,7 @@ struct CheckArgs {
         short = 'I',
         long = "include-dir",
         value_name = "DIR",
-        conflicts_with_all = ["scxml_set", "forge", "deploy"]
+        conflicts_with_all = ["scxml_set", "forge", "document", "deploy"]
     )]
     include_dir: Vec<String>,
     /// Reject the document when it carries any `<sce:unresolved>`
@@ -1861,13 +1873,13 @@ struct CheckArgs {
     /// Single-document runs only — `orchestrate` has no counterpart, and
     /// a `check` stricter than the producer it mirrors would refuse
     /// document sets that build.
-    #[arg(long, conflicts_with_all = ["scxml_set", "forge", "deploy"])]
+    #[arg(long, conflicts_with_all = ["scxml_set", "forge", "document", "deploy"])]
     strict_unresolved: bool,
     /// Run the design-time statechart lints. Mirrors
     /// `generate --lint` — same `sce_build::lint_statechart` call, so
     /// `check --lint` and `generate --lint` cannot disagree about a
     /// document.
-    #[arg(long, conflicts_with_all = ["scxml_set", "forge", "deploy"])]
+    #[arg(long, conflicts_with_all = ["scxml_set", "forge", "document", "deploy"])]
     lint: bool,
     /// Go module path hosting the generated forge packages. Required to
     /// check any Go crossfile document; ignored for other backends.
@@ -1882,7 +1894,7 @@ struct CheckArgs {
     /// Single-document runs only: the document-set route renders through
     /// the multi-doc compile entry point, which has no `no_std` variant
     /// to render, so the flag has no producer to agree with there.
-    #[arg(long, conflicts_with_all = ["scxml_set", "forge", "deploy"])]
+    #[arg(long, conflicts_with_all = ["scxml_set", "forge", "document", "deploy"])]
     no_std: bool,
     /// Declare an Event I/O Processor `type` this build's host serves,
     /// mirroring `generate --host-processor`. Repeatable.
@@ -3596,6 +3608,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         scxml,
         scxml_set,
         forge,
+        document,
         deploy,
         language,
         // The document-set route renders every backend it was given; the
@@ -3622,12 +3635,29 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
 
     // The positional is shorthand for the first statechart, so a set may
     // be written either way round; order is input order in both cases.
-    let scxml_paths: Vec<PathBuf> = scxml
+    let mut scxml_paths: Vec<PathBuf> = scxml
         .into_iter()
         .chain(scxml_set)
         .map(PathBuf::from)
         .collect();
-    let forge_paths: Vec<PathBuf> = forge.into_iter().map(PathBuf::from).collect();
+    let mut forge_paths: Vec<PathBuf> = forge.into_iter().map(PathBuf::from).collect();
+    // `--document`: filed by the rule every route reads a document by, in
+    // the order given after the ones whose pipeline was stated.
+    for path in document {
+        let content = fs::read_to_string(&path).unwrap_or_else(|e| {
+            error_format.emit_and_exit(
+                &CliError::ReadInput {
+                    path: path.clone(),
+                    source: e,
+                },
+                "",
+            )
+        });
+        match sce_build::classify_document(&content) {
+            sce_build::Pipeline::Scxml => scxml_paths.push(PathBuf::from(path)),
+            sce_build::Pipeline::Forge => forge_paths.push(PathBuf::from(path)),
+        }
+    }
     let scxml_refs: Vec<&Path> = scxml_paths.iter().map(|p| p.as_path()).collect();
     let forge_refs: Vec<&Path> = forge_paths.iter().map(|p| p.as_path()).collect();
 
@@ -3715,7 +3745,11 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
     // route mirroring exactly one producer — a single route would have
     // to agree with both, and the two producers do not agree with each
     // other about what a document set means.
-    if !args.scxml_set.is_empty() || !args.forge.is_empty() || args.deploy.is_some() {
+    if !args.scxml_set.is_empty()
+        || !args.forge.is_empty()
+        || !args.document.is_empty()
+        || args.deploy.is_some()
+    {
         cmd_check_document_set(args, error_format);
         return;
     }
@@ -3723,6 +3757,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         scxml,
         scxml_set: _,
         forge: _,
+        document: _,
         deploy: _,
         language,
         script_engine,

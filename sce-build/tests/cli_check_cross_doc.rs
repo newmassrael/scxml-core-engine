@@ -960,3 +960,61 @@ fn check_reaches_both_directions_of_the_deploy_link_join() {
         "a parse failure must not be reported as a join failure",
     );
 }
+
+/// `--document` files each document by its root, and the run it makes is
+/// the run the stated form makes: same exit, same code, same manifest —
+/// on a set the deploy accepts and on one it refuses.
+///
+/// A caller holding documents and not their kinds (the authoring MCP)
+/// relies on this, so the rule that decides which pipeline reads a
+/// document stays the product's and is not copied into every client.
+#[test]
+fn a_set_named_without_its_pipelines_checks_as_the_stated_one() {
+    let staged = ScratchDir::new("check-xdoc-document-in");
+    let docs = stage_doc_set(staged.path());
+    let cwd = repo_root();
+    let mut refused = 0usize;
+    for deploy in [&docs.deploy_ok, &docs.deploy_missing_link] {
+        let deploy = deploy.to_str().unwrap();
+        let stated = run(
+            &[
+                "check",
+                "--scxml",
+                docs.scxml.to_str().unwrap(),
+                "--forge",
+                docs.pool.to_str().unwrap(),
+                "--forge",
+                docs.link.to_str().unwrap(),
+                "--deploy",
+                deploy,
+                "-l",
+                "rust",
+            ],
+            &cwd,
+        );
+        let unstated = run(
+            &[
+                "check",
+                "--document",
+                docs.scxml.to_str().unwrap(),
+                "--document",
+                docs.pool.to_str().unwrap(),
+                "--document",
+                docs.link.to_str().unwrap(),
+                "--deploy",
+                deploy,
+                "-l",
+                "rust",
+            ],
+            &cwd,
+        );
+        assert_eq!(stated, unstated, "deploy {deploy}");
+        if stated.0.exit != Some(0) {
+            refused += 1;
+        }
+    }
+    assert_eq!(
+        refused, 1,
+        "one variant must be refused, or the comparison covered only acceptance"
+    );
+}
