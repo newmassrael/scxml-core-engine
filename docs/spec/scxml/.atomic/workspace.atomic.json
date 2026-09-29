@@ -4595,11 +4595,6 @@
         },
         {
           "file": "sce/src/events/InternalEventTarget.cpp",
-          "symbol": "InternalEventTarget::buildEventData",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/events/InternalEventTarget.cpp",
           "symbol": "InternalEventTarget::send",
           "kind": "implements"
         },
@@ -5401,11 +5396,6 @@
         {
           "file": "sce/include/common/EventMetadataHelper.h",
           "symbol": "createDoneInvokeEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/SendHelper.h",
-          "symbol": "SendHelper",
           "kind": "implements"
         },
         {
@@ -8497,6 +8487,11 @@
           "file": "backends/go/runtime/invoke.go",
           "symbol": "ChildEngine",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/types.h",
+          "symbol": "sce_parse_delay_ms",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -8598,11 +8593,6 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "kind": "references"
-        },
-        {
-          "file": "backends/c/runtime/include/sce/types.h",
-          "symbol": "sce_parse_delay_ms",
-          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -11572,11 +11562,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/common/SendHelper.h",
-          "symbol": "SendHelper",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/parser.rs",
           "kind": "implements"
         },
@@ -12275,11 +12260,6 @@
         {
           "file": "sce/src/common/EventDataHelper.cpp",
           "symbol": "scriptValueToJson",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/events/InternalEventTarget.cpp",
-          "symbol": "InternalEventTarget::buildEventData",
           "kind": "implements"
         },
         {
@@ -20770,6 +20750,36 @@
       "target_kind": "section",
       "target_id": "scxml-C-1",
       "reason": "The generated C++ AOT delivers #_parent sends by event name through the policy's deliverToParent into StaticExecutionEngine::raiseExternal(ForwardedEvent), already bound here; the SendHelper parent helpers have no caller and are removed."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "The _event fields a #_parent send carries were set by SendHelper's parent helpers, removed in c0b9808b26; StaticExecutionEngine::raiseExternal(ForwardedEvent), already bound here, sets them now, and nothing in SendHelper cites the section."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.5",
+      "reason": "SendHelper stamped a #_parent send's origin for <finalize> matching in a parent helper removed in c0b9808b26; StaticExecutionEngine's external-event preamble, already bound here, is where finalize is matched, and nothing in SendHelper cites the section."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-2",
+      "reason": "InternalEventTarget::buildEventData was removed in ee01d5cbdfe; the ECMAScript conversion of event data is EventDataHelper's, whose four functions are bound here."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "InternalEventTarget::buildEventData was removed in ee01d5cbdfe; the binding stood only because the file cites the section in InternalEventTarget::send, which is bound here separately."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2.2",
+      "reason": "2ffe887dc0 read every engine's send delay as the one CSS2 time and cites it as §scxml-6.2 in all seven engines; the C parser is bound to §scxml-6.2 with its six siblings."
     }
   ],
   "frames": {},

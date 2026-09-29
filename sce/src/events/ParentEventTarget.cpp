@@ -29,7 +29,7 @@ ParentEventTarget::ParentEventTarget(const std::string &childSessionId, std::sha
 }
 
 std::future<SendResult> ParentEventTarget::send(const EventDescriptor &event) {
-    // W3C SCXML 6.2: a delayed event reaches here once the dispatcher's delay
+    // §scxml-6.2: a delayed event reaches here once the dispatcher's delay
     // has elapsed, so this delivers now, whatever `event.delay` still says.
     SCE_LOG_DEBUG("ParentEventTarget::send() - ENTRY: event='{}', target='{}', sessionId='{}'", event.eventName,
                   event.target, event.sessionId);
