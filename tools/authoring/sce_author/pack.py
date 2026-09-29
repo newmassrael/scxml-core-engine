@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 import yaml
 
-from .errors import READ_ERRORS, PackError, describe_path
+from .errors import READ_ERRORS, AuthoringError, PackError, describe_path
 
 try:
     import jsonschema
@@ -52,19 +52,26 @@ def _read(path: pathlib.Path):
         raise PackError(f"{path}: not well-formed ({first})") from exc
 
 
-def _validate(doc, schema_name: str, path: pathlib.Path) -> None:
+def _validate(doc, schema_name: str, path: pathlib.Path,
+              error: type[AuthoringError] = PackError) -> None:
+    """Refuse `doc` unless it validates against `schema_name`, as `error`.
+
+    `error` because not every file this core validates is part of a pack: the
+    owner's decision record is read against its own schema, and a refusal of
+    it saying "pack" would send its reader to the wrong file."""
     if jsonschema is None:
-        raise PackError(
-            "jsonschema is not installed, so a pack cannot be validated. "
-            "Refusing rather than loading an unchecked pack."
+        raise error(
+            f"jsonschema is not installed, so {path} cannot be validated. "
+            "Refusing rather than loading an unchecked file."
         )
     schema = json.loads((SCHEMA_DIR / schema_name).read_text(encoding="utf-8"))
-    validator = jsonschema.Draft202012Validator(schema)
+    validator = jsonschema.Draft202012Validator(
+        schema, format_checker=jsonschema.Draft202012Validator.FORMAT_CHECKER)
     errors = sorted(validator.iter_errors(doc), key=lambda e: list(e.path))
     if errors:
         first = errors[0]
         where = " -> ".join(str(p) for p in first.path) or "(document root)"
-        raise PackError(f"{path}: {where}: {first.message}")
+        raise error(f"{path}: {where}: {first.message}")
 
 
 @dataclass(frozen=True)

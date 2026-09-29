@@ -14,6 +14,8 @@
 #   share/sce/templates/    the templates it renders; an installed binary
 #                           has no source tree to find them in
 #   python/sce_author/      the MCP server
+#   python/schema/          the schemas it reads a pack and a decision record
+#                           against, found beside the package (`SCHEMA_DIR`)
 #   LICENSE*                the terms the bundle is distributed under
 #
 # WHY A BUNDLE. `scripts/sce_author_mcp.sh` runs the server out of a
@@ -65,6 +67,7 @@ mkdir -p "$bundle/bin" "$bundle/share/sce" "$bundle/python"
 cp "$codegen" "$bundle/bin/sce-codegen"
 cp -R "$repo_root/tools/codegen/templates" "$bundle/share/sce/templates"
 cp -R "$repo_root/tools/authoring/sce_author" "$bundle/python/sce_author"
+cp -R "$repo_root/tools/authoring/schema" "$bundle/python/schema"
 find "$bundle/python" -name '__pycache__' -type d -prune -exec rm -rf {} +
 cp "$repo_root"/LICENSE "$repo_root"/LICENSE-*.md "$bundle/"
 
@@ -99,8 +102,10 @@ and point the client at http://HOST:8765/mcp with the header
 "Authorization: Bearer <the token>". A remote client hands every document
 over as text (document_text); a path is refused.
 
-Needs Python 3.10 or later with PyYAML. Nothing else is installed or read
-outside this directory. The AI client may send the specification, the
+Needs Python 3.10 or later with PyYAML, and jsonschema to read a decision
+record or a pack (without it, those tools refuse and say why). Nothing
+else is installed or read outside this directory. The AI client may send
+the specification, the
 drafts and the tool results to its model service: check that against the
 agreement the specification is under before using restricted material.
 README

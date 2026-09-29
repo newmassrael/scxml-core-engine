@@ -21,6 +21,8 @@ from .compare import summary as compare_summary
 from .counterfactual import MAX_RUNS, explore
 from .counterfactual import lines as counterfactual_lines
 from .coverage import coverage as run_coverage
+from .decisions import hold as hold_decisions
+from .decisions import summary as decisions_summary
 from .errors import AuthoringError
 from .gaps import ORDER as GAP_ORDER
 from .gaps import report as gap_report
@@ -360,6 +362,25 @@ def cmd_compare(args) -> int:
     return 0
 
 
+def cmd_decisions(args) -> int:
+    """A draft held to the owner's decision record.
+
+    Exit 1 when the draft guessed where no answer licenses it, or the
+    product could not read it; a new question alone is not a failure, since
+    the specification may have a gap nobody saw."""
+    report, refused = hold_decisions(pathlib.Path(args.document),
+                                     pathlib.Path(args.decisions), args.codegen)
+    answer = json.loads(report or refused)
+    if "findings" in answer:
+        print(decisions_summary(answer))
+    else:
+        # The product's own refusal of the document, which names it.
+        print(refused, end="")
+    if args.out:
+        pathlib.Path(args.out).write_text(report or refused, encoding="utf-8")
+    return 1 if refused else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="sce_author", description=__doc__)
     sub = ap.add_subparsers(dest="command", required=True)
@@ -423,6 +444,18 @@ def main(argv=None) -> int:
                    help=f"steps per drive (default {STEPS})")
     m.add_argument("--out", help="write the whole report as JSON as well")
     m.set_defaults(fn=cmd_compare)
+
+    # ⚠ No `--pack`: the record is the owner's answers, and a draft is held
+    # to them whatever pack it was written with, or none.
+    d = sub.add_parser(
+        "decisions", help="hold a draft to the owner's decision record")
+    d.add_argument("--document", required=True, help="the draft")
+    d.add_argument("--decisions", required=True,
+                   help="the owner's decision record (decisions.v1 JSON)")
+    d.add_argument("--codegen",
+                   help="the product's code generator (default: the one in this tree)")
+    d.add_argument("--out", help="write the whole report as JSON as well")
+    d.set_defaults(fn=cmd_decisions)
 
     c = with_pack(sub.add_parser("check", help="judge a written document against the model"))
     c.add_argument("--binding", required=True, help="the binding file, which names its own document")

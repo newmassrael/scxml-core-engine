@@ -210,6 +210,54 @@ What the prose decided came out alike; what moved was names and which
 open questions each draft chose to mark. The vending case leaves its
 interface open, and each draft invented a different one.
 
+#### The owner's decision record
+
+What a draft does where the specification is silent is the difference
+that matters most to an owner, and every draft meets those places on its
+own. The **decision record** (`schema/decisions.v1.schema.json`) is a file
+beside the specification where the owner answers each question once:
+
+    {
+      "record": "sce-decision-record",
+      "v": 1,
+      "specification": {"doc_id": "door-spec", "rev": "3"},
+      "decisions": [
+        {"id": "D1",
+         "anchor": {"doc_id": "door-spec", "section": "1", "at": {"page": 2}},
+         "question": "Does an open request while the door is open restart the 20 seconds?",
+         "answer": "Yes, it restarts the full 20 seconds.",
+         "candidates": ["true", "false"],
+         "chosen": "true",
+         "answered": "2026-09-29"},
+        {"id": "D2",
+         "question": "What does an open request do while the door is closing?"}
+      ]
+    }
+
+A decision without an `answer` is a question asked and still open. The
+`anchor` has the fields of the product's `spec_provenance` record — the
+fields a document's `sce:provenance` is read into — and names the clause
+the question is about; `candidates` and `chosen` are for an answer that is
+a value. The `specification` names which specification the answers are
+for; the acceptance record, not this, pins its files (`--source`).
+
+A draft cites the record: `sce:assumed="D1"` where it applies an answer,
+`sce:unresolved="D2"` where it asks a question the owner has not answered,
+and a new id only for a question the record does not hold. **decisions**
+(the MCP tool of that name, or `python3 -m sce_author decisions --document
+draft.scxml --decisions decisions.json`) reads the draft's markers through
+the product (`sce-codegen unresolved`) and holds them to the record. It
+refuses a guess that cites no decision, a guess on a question not yet
+answered (a draft may ask it, not guess it), a question the owner already
+answered, and a decision variable — a `<data>` whose `expr` is the decided
+value, with `sce:assumed-candidates` — holding a value other than `chosen`.
+It reports, and never refuses, a new question the record has not seen,
+shown beside every recorded question on the same clause, since whether two
+sentences ask the same thing is the owner's reading; and an answer no
+marker cites. `--codegen` names the product's generator and `--out` writes
+the whole report as JSON. The record may quote the specification: keep it
+where the specification is kept.
+
 Connecting SCE supplies tools and usage instructions; it
 does not supply the prose or decide policies absent from it. A host may choose
 not to pass MCP server instructions to the AI, so confirm the tool calls in the

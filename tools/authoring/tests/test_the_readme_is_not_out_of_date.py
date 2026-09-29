@@ -124,6 +124,20 @@ class TheReadmeIsNotOutOfDate(unittest.TestCase):
     def test_the_binding_example_validates(self):
         self.validating("binding.v1.schema.json", r"^document:")
 
+    def test_the_decision_record_example_validates(self):
+        self.validating("decisions.v1.schema.json", r'"record": "sce-decision-record"')
+
+    def test_every_decision_property_is_written_down(self):
+        schema = self.schema("decisions.v1.schema.json")
+        keys = set(schema["properties"]) | set(schema["$defs"]["decision"]["properties"])
+        keys |= set(schema["$defs"]["anchor"]["properties"])
+        missing = sorted(k for k in keys
+                         if not re.search(rf"(?<![A-Za-z0-9_]){re.escape(k)}"
+                                          rf"(?![A-Za-z0-9_])", self.text))
+        self.assertEqual([], missing,
+                         f"the decision record schema publishes these and the "
+                         f"README never says them: {missing}")
+
     # ------------------------------------------------- the vocabulary itself
 
     def test_every_published_binding_key_is_written_down(self):

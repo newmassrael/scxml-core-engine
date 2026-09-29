@@ -28,7 +28,11 @@ FIXTURES = REPO / "sce-build" / "tests" / "fixtures" / "requirement_closure"
 MANIFEST = "iso13400_2_nl_socket_handling.manifest.json"
 DOCUMENT = "doip_nl_connection_states.scxml"
 PROSE = "The connection closes after the inactivity timeout.\n"
-DECISIONS = '{"decisions": [{"id": "D1", "answer": "5 minutes"}]}\n'
+DECISIONS = json.dumps({
+    "record": "sce-decision-record", "v": 1,
+    "specification": {"doc_id": "doip-nl"},
+    "decisions": [{"id": "D1", "question": "How long is the inactivity timeout?",
+                   "answer": "5 minutes"}]}) + "\n"
 
 
 def body(answer: dict) -> dict:
@@ -93,6 +97,22 @@ class AnAcceptedDesignIsHandedBack(unittest.TestCase):
     def test_leaving_out_the_decision_record_is_a_different_question(self):
         answer = self.ask(decisions=None)
         self.assertEqual(answer["verdict"], "lapsed")
+
+    def test_a_file_that_is_not_a_decision_record_is_not_pinned_as_one(self):
+        # The specification and the record sit side by side; handing over the
+        # first as the second would pin it, and every later question asked
+        # with the real record would then read as a revision.
+        answer = call_tool("scxml_accept", {
+            "document": str(self.root / "design" / DOCUMENT),
+            "manifest": str(self.root / "spec" / MANIFEST),
+            "variant": "base", "root": str(self.root),
+            "out": str(self.root / "second.json"),
+            "sources": [str(self.root / "spec" / "prose.md")],
+            "decisions": str(self.root / "spec" / "prose.md"),
+        })
+        self.assertTrue(answer.get("isError"))
+        self.assertIn("prose.md", answer["content"][0]["text"])
+        self.assertFalse((self.root / "second.json").exists())
 
     def test_the_question_needs_a_specification(self):
         answer = call_tool("scxml_accepted_for", {

@@ -61,7 +61,8 @@ class TheBundle(unittest.TestCase):
 
     def test_it_carries_what_it_runs_on(self):
         for part in ("bin/sce-author-mcp", "bin/sce-codegen", "share/sce/templates",
-                     "python/sce_author/mcp.py", "LICENSE", "README.txt"):
+                     "python/sce_author/mcp.py", "python/schema/decisions.v1.schema.json",
+                     "LICENSE", "README.txt"):
             with self.subTest(part=part):
                 self.assertTrue((self.bundle / part).exists(), part)
         self.assertTrue(self.archive.is_file())
@@ -75,6 +76,15 @@ class TheBundle(unittest.TestCase):
                         "arguments": {"document_text": DOOR, "document_name": "door.scxml"}}},
             {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
              "params": {"name": "scxml_kinds", "arguments": {"kind": "timer"}}},
+            # ⚠ The decision record is read against a schema that sits
+            # BESIDE the package, not in it; a bundle carrying only the
+            # package refused every record it was handed.
+            {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+             "params": {"name": "decisions", "arguments": {
+                 "document_text": DOOR, "document_name": "door.scxml",
+                 "decisions_text": json.dumps({
+                     "record": "sce-decision-record", "v": 1,
+                     "specification": {"doc_id": "door"}, "decisions": []})}}},
         ]
         with tempfile.TemporaryDirectory() as elsewhere:
             run = subprocess.run(
@@ -83,7 +93,10 @@ class TheBundle(unittest.TestCase):
                 capture_output=True, text=True, cwd=elsewhere, env=clean_env(),
                 timeout=300)
         replies = [json.loads(line) for line in run.stdout.splitlines() if line.strip()]
-        self.assertEqual([1, 2, 3], [r["id"] for r in replies], run.stderr)
+        self.assertEqual([1, 2, 3, 4], [r["id"] for r in replies], run.stderr)
+        held = replies[3]["result"]
+        self.assertFalse(held.get("isError"), held)
+        self.assertEqual("holds", json.loads(held["content"][0]["text"])["verdict"])
         checked = replies[1]["result"]
         self.assertFalse(checked.get("isError"), checked)
         self.assertEqual("accepted", json.loads(checked["content"][0]["text"])["verdict"])

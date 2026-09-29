@@ -62,6 +62,8 @@ from .compare import compare as compare_drafts
 from .compare import summary as compare_summary
 from .counterfactual import MAX_RUNS, explore
 from .coverage import coverage as run_coverage
+from .decisions import hold as hold_decisions
+from .decisions import load_record as load_decision_record
 from .errors import AuthoringError, describe_path
 from .gaps import ORDER as GAP_ORDER
 from .gaps import report as gap_report
@@ -132,7 +134,14 @@ SERVER_INSTRUCTIONS = (
     "render_scxml_pseudocode. Show its returned text verbatim in a fenced "
     "block: do not translate, summarize, rename labels, or add a source "
     "fact as if it were a rendered line. List decisions the source leaves "
-    "open in prose outside that block, not inside it. Explain that these "
+    "open in prose outside that block, not inside it. "
+    "When the owner keeps a decision record, a draft cites it: "
+    "sce:assumed=\"<id>\" where it applies an answer, sce:unresolved=\"<id>\" "
+    "where it asks a recorded question still unanswered, and a new id only "
+    "for a question the record does not hold. Call decisions on the draft "
+    "with that record and fix what it refuses; ask the owner each new "
+    "question it reports, beside any recorded question on the same clause, "
+    "and record their answer before drafting again. Explain that these "
     "tools describe kinds and inspect SCXML; they do not choose a kind "
     "from prose, convert prose, or prove agreement with it. The owner "
     "reviews the pseudocode against the source. Never call scxml_accept "
@@ -437,6 +446,44 @@ TOOLS = [
                 "documents_text": {
                     "type": "array",
                     "description": "The drafts themselves, each under its own name.",
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "text"],
+                        "properties": {"name": {"type": "string"},
+                                       "text": {"type": "string"}},
+                    },
+                },
+            },
+        },
+    },
+    {
+        "name": "decisions",
+        "description": (
+            "Hold a draft to the owner's decision record: their answers to "
+            "what the specification leaves open, each under an id the draft "
+            "cites (sce:assumed=\"<id>\" where it applied an answer, "
+            "sce:unresolved=\"<id>\" where it asks a question still open). "
+            "Refused: a guess citing no decision, a guess on a question not "
+            "answered yet, a question the owner already answered, and a "
+            "decision variable holding a value other than the one chosen. "
+            "Reported, never refused: a new question the record has not seen, "
+            "shown beside every recorded question on the same clause, and an "
+            "answer no marker cites. Returns JSON: verdict, findings (each "
+            "with the marker, the decision and a message), next. Ask the "
+            "owner each new question and record the answer before drafting "
+            "again; whether a new question is one already recorded is the "
+            "owner's reading."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                **_DOCUMENT_INPUT,
+                **_file_input("decisions", "the owner's decision record"),
+                "files_text": {
+                    "type": "array",
+                    "description": (
+                        "Files the document imports, as text, under the names "
+                        "it imports them by (with document_text only)."),
                     "items": {
                         "type": "object",
                         "required": ["name", "text"],
@@ -1140,6 +1187,24 @@ def _compare_tool(args: dict, staging: _Staging) -> dict:
     return _text(json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n")
 
 
+def _decisions_tool(args: dict, staging: _Staging) -> dict:
+    document = staging.file(args, "document", "the draft", "document.scxml")
+    record = staging.file(args, "decisions", "the owner's decision record", "decisions.json")
+    files = args.get("files_text")
+    if files is not None:
+        if args.get("document_text") is None:
+            raise ToolArgumentError(
+                "'files_text' goes with 'document_text': a document read by "
+                "path imports the files beside it")
+        if not isinstance(files, list):
+            raise ToolArgumentError("'files_text' has to be a list of files")
+        for entry in files:
+            if not isinstance(entry, dict):
+                raise ToolArgumentError("each 'files_text' entry has a name and a text")
+            staging.write(entry.get("name"), entry.get("text"), "files")
+    return _answer(*hold_decisions(document, record, cwd=staging.dir))
+
+
 def _pseudocode_tool(args: dict, staging: _Staging) -> dict:
     document = staging.file(args, "document", "the SCXML document", "document.scxml")
     shape, lexicon = args.get("shape"), args.get("lexicon")
@@ -1225,6 +1290,12 @@ def _authored_from(args: dict, staging: _Staging, *, aside: bool = False):
     else:
         decisions = staging.file(args, "decisions", "the owner's decision record",
                                  "decisions.json", required=False)
+    if decisions is not None:
+        # ⚠ Read, not only pinned. The acceptance record hashes whatever file
+        # it is given, so a specification handed over as the decision record
+        # -- the two sit side by side -- would be pinned as one and every
+        # later question asked with the real record would read as a revision.
+        load_decision_record(decisions if decisions.is_absolute() else staging.dir / decisions)
     return sources, decisions
 
 
@@ -1348,6 +1419,7 @@ _PACK_FREE = {
     "validate_scxml": _validate_tool,
     "validate_scxml_set": _validate_set_tool,
     "compare": _compare_tool,
+    "decisions": _decisions_tool,
     "render_scxml_pseudocode": _pseudocode_tool,
     "render_scxml_diagram": _diagram_tool,
     "scxml_unresolved": _unresolved_tool,

@@ -33,6 +33,12 @@ class PackFreeScxmlMcp(unittest.TestCase):
             'version="1.0" initial="Idle">\n'
             '  <state id="Idle"/>\n'
             '</scxml>\n', encoding="utf-8")
+        self.decisions = pathlib.Path(temporary.name) / "decisions.json"
+        self.decisions.write_text(json.dumps({
+            "record": "sce-decision-record", "v": 1,
+            "specification": {"doc_id": "client"},
+            "decisions": [{"id": "D1", "question": "How long is idle?",
+                           "answer": "5 minutes"}]}), encoding="utf-8")
 
     def test_tools_take_the_document_by_path_or_as_text(self):
         for name in ("validate_scxml", "render_scxml_pseudocode"):
@@ -239,6 +245,7 @@ class PackFreeScxmlMcp(unittest.TestCase):
         # Every one runs under --error-format json, so its refusals come
         # back as records, and passes its names through unchecked.
         doc, manifest = str(self.document), str(self.document)
+        answers = str(self.decisions)
         # A path argument is resolved before the run: the run starts in the
         # call's staging directory, where a relative name would mean
         # something else.
@@ -266,14 +273,14 @@ class PackFreeScxmlMcp(unittest.TestCase):
             # What the design was authored from reaches both commands.
             ("scxml_accept",
              dict(document=doc, manifest=manifest, variant="base", root=".", out="acc.json",
-                  sources=[doc], decisions=doc),
+                  sources=[doc], decisions=answers),
              ["accept", doc, "--manifest", manifest, "--variant", "base",
               "--root", here("."), "--out", here("acc.json"),
-              "--source", here(doc), "--decisions", here(doc)]),
+              "--source", here(doc), "--decisions", here(answers)]),
             ("scxml_acceptance_check",
-             dict(record=doc, variant="base", root=".", sources=[doc], decisions=doc),
+             dict(record=doc, variant="base", root=".", sources=[doc], decisions=answers),
              ["acceptance-check", doc, "--variant", "base", "--root", here("."),
-              "--source", here(doc), "--decisions", here(doc)]),
+              "--source", here(doc), "--decisions", here(answers)]),
         ]
         for name, arguments, expected in cases:
             with self.subTest(name=name):
