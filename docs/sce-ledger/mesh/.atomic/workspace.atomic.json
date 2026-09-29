@@ -1380,6 +1380,11 @@
           "file": "sce-build/src/mesh/partitions.rs",
           "symbol": "NESTED_PARALLEL",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "by_name",
+          "kind": "implements"
         }
       ]
     },
@@ -3926,6 +3931,16 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "sendToTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "build_resolved_targets",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "contribute_targetexpr_partials",
           "kind": "implements"
         }
       ]

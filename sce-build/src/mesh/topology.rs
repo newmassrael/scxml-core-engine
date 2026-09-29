@@ -23,7 +23,7 @@ use std::path::Path;
 /// prefix convention (`pattern::detect_pattern`). Used by codegen to generate
 /// pattern-aware send logic (wireTo → PatternKind) and RPC correlation tables.
 /// SCE_MESH.md §mesh-13 path B: no longer carries sce:* attribute provenance.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct EventPatternInfo {
     /// SCXML event name (e.g. "service.request.brake_status").
     pub event: String,
@@ -38,6 +38,25 @@ pub struct EventPatternInfo {
     /// are not used.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reply_event: Option<String>,
+}
+
+impl EventPatternInfo {
+    /// The classification an event's name states, which is the one a written
+    /// `<send event>` gets (SCE_MESH.md §mesh-14): its reserved prefix, and
+    /// FireForget for every other event — "everything else → FireForget", so
+    /// an application event is not dropped from the pattern table.
+    ///
+    /// One function for every contributor that classifies a sent event by its
+    /// name, so their entries for one event agree by construction.
+    pub fn by_name(event: &str) -> Self {
+        let pattern = super::pattern::detect_pattern(event)
+            .unwrap_or(super::pattern::CommunicationPattern::FireForget);
+        Self {
+            event: event.to_string(),
+            pattern_kind_value: pattern.wire_value(),
+            reply_event: pattern.infer_reply_event(event),
+        }
+    }
 }
 
 /// Per-event resolved SOME/IP numeric IDs (SCE_MESH.md §mesh-14).
@@ -532,23 +551,64 @@ impl PoolPlan {
     }
 }
 
-/// Build-time warning about dynamic targets that cannot be statically resolved.
+/// A `<send targetexpr>`, which names its target only at run time, and what
+/// the generated router can make of it at build time.
 #[derive(Debug, Clone)]
-pub struct TopologyWarning {
-    /// State in which the dynamic target was found.
+pub struct DynamicTargetSend {
+    /// State in which the send was found.
     pub state: String,
     /// The targetexpr attribute value.
     pub targetexpr: String,
+    /// What the build could and could not settle for this send.
+    pub reach: DynamicTargetReach,
 }
 
-impl std::fmt::Display for TopologyWarning {
+/// How far the build can prepare the router for a `<send targetexpr>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DynamicTargetReach {
+    /// A send that may name a Mesh peer, with its event written: the router
+    /// carries a route to every declared binding and knows the event's
+    /// pattern. Nothing is lost, so nothing is warned.
+    DeclaredBindings,
+    /// A send that may name a Mesh peer but names its event by `eventexpr`:
+    /// every declared binding still gets its route, but the event is not
+    /// known here, so its pattern is FireForget whatever it turns out to be.
+    PatternUnknown,
+    /// A send the router does not treat as a Mesh send at all (a `typeexpr`
+    /// names its processor at run time): no route is prepared for it.
+    NotRouted,
+}
+
+impl DynamicTargetSend {
+    /// Whether the build lost something the author should hear about.
+    pub fn is_warning(&self) -> bool {
+        self.reach != DynamicTargetReach::DeclaredBindings
+    }
+}
+
+impl std::fmt::Display for DynamicTargetSend {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "state '{}': <send targetexpr=\"{}\"> cannot be statically resolved. \
-             This target will not appear in generated transport routing code",
+        let prefix = format!(
+            "state '{}': <send targetexpr=\"{}\">",
             self.state, self.targetexpr
-        )
+        );
+        match self.reach {
+            DynamicTargetReach::DeclaredBindings => write!(
+                f,
+                "{prefix} may name any declared binding; the router carries a route to each"
+            ),
+            DynamicTargetReach::PatternUnknown => write!(
+                f,
+                "{prefix} may name any declared binding and each has a route, but its event is \
+                 an eventexpr, so its pattern is not known at build time and it is sent as \
+                 FireForget (SCE_MESH.md §mesh-9.5)"
+            ),
+            DynamicTargetReach::NotRouted => write!(
+                f,
+                "{prefix} cannot be statically resolved. \
+                 This target will not appear in generated transport routing code"
+            ),
+        }
     }
 }
 
@@ -1487,7 +1547,7 @@ fn build_server_transport_state(
 /// and reply pairing are derived from the event name by the analyzer.
 ///
 /// Only actions with a non-empty `target` attribute are captured; empty-target
-/// (e.g. `targetexpr`-only) sends produce `TopologyWarning` instead.
+/// (e.g. `targetexpr`-only) sends produce a [`DynamicTargetSend`] instead.
 #[derive(Debug, Clone)]
 pub struct SendActionDetail {
     /// The state containing the `<send>`.
@@ -1516,8 +1576,14 @@ pub struct SendActionSummary {
     /// reached only by mesh-rpc invokes is just as "external" as one
     /// reached only by `<send>`.
     pub targets: BTreeSet<TargetId>,
-    /// Dynamic target warnings (`targetexpr` cannot be statically resolved).
-    pub dynamic_warnings: Vec<TopologyWarning>,
+    /// Every `<send targetexpr>`, with what the build could settle for it.
+    pub dynamic_sends: Vec<DynamicTargetSend>,
+    /// The written events of the `<send targetexpr>`s that may name a Mesh
+    /// peer, deduplicated — `None` among them when one names its event by
+    /// `eventexpr`. [`contribute_targetexpr_partials`] spreads them over the
+    /// machine's declared bindings, as `srcexpr_sites` are spread, because
+    /// the value is one of those bindings or no peer at all.
+    pub targetexpr_events: Vec<Option<String>>,
     /// (target, event) pairs for event coverage validation.
     pub target_events: Vec<(TargetId, String)>,
     /// Per-action details for QoS and pattern validation.
@@ -1547,22 +1613,39 @@ pub struct SendActionSummary {
 /// Each downstream validator reads from the summary instead of re-traversing.
 pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
     let mut targets = BTreeSet::new();
-    let mut dynamic_warnings = Vec::new();
+    let mut dynamic_sends = Vec::new();
+    let mut targetexpr_events: Vec<Option<String>> = Vec::new();
     let mut target_events = Vec::new();
     let mut actions = Vec::new();
 
     for_each_send_action(model, |state_id, _site, action| {
-        // Dynamic target warning (targetexpr present)
         if !action.targetexpr.is_empty() {
-            dynamic_warnings.push(TopologyWarning {
+            // The send the host routers' dynamic Mesh branch asks about is
+            // the one this router must be ready for: one predicate, so the
+            // two cannot come to disagree about which sends may name a peer.
+            let reach = if !crate::host_processor_analyzer::may_name_a_mesh_peer(action) {
+                DynamicTargetReach::NotRouted
+            } else if action.event.is_empty() {
+                DynamicTargetReach::PatternUnknown
+            } else {
+                DynamicTargetReach::DeclaredBindings
+            };
+            if reach != DynamicTargetReach::NotRouted {
+                let event = (!action.event.is_empty()).then(|| action.event.clone());
+                if !targetexpr_events.contains(&event) {
+                    targetexpr_events.push(event);
+                }
+            }
+            dynamic_sends.push(DynamicTargetSend {
                 state: state_id.to_string(),
                 targetexpr: action.targetexpr.clone(),
+                reach,
             });
         }
 
-        // Empty-target sends (e.g. targetexpr-only) produce a warning above
-        // but contribute no SendActionDetail — the downstream validators
-        // skip them anyway.
+        // Empty-target sends (e.g. targetexpr-only) are recorded above but
+        // contribute no SendActionDetail — the downstream validators, event
+        // coverage among them, judge written targets only.
         let Some(tid) = TargetId::new(&action.target) else {
             return;
         };
@@ -1651,7 +1734,8 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
 
     SendActionSummary {
         targets,
-        dynamic_warnings,
+        dynamic_sends,
+        targetexpr_events,
         target_events,
         actions,
         invoke_sites_by_target,
@@ -1702,18 +1786,11 @@ pub fn analyze_event_pairs(
         // of the pattern table. Falling out would leave such events with
         // no per-event metadata for codegen to emit, so app-level events
         // (e.g. `brake.activate`) would silently route to no method_id.
-        let pattern = action
-            .pattern
-            .unwrap_or(super::pattern::CommunicationPattern::FireForget);
         let entry = pattern_map.entry(action.target.clone()).or_default();
         if entry.iter().any(|e| e.event == action.event) {
             continue; // Same event to same target — already captured.
         }
-        entry.push(EventPatternInfo {
-            event: action.event.clone(),
-            pattern_kind_value: pattern.wire_value(),
-            reply_event: pattern.infer_reply_event(&action.event),
-        });
+        entry.push(EventPatternInfo::by_name(&action.event));
     }
 
     // SCE_MESH.md §mesh-9.5: <invoke type="sce:mesh-rpc"> contributes its
@@ -2060,6 +2137,16 @@ pub fn build_resolved_targets(
         merge_partial_into(&mut partials, p);
     }
 
+    // SCE_MESH.md §mesh-9.5: a `<send targetexpr>` that may name a peer
+    // reaches every declared binding, for the reason an srcexpr site does,
+    // and merges into the partials above. A document whose only peer send
+    // is a `targetexpr` has no partial from them at all, and this is what
+    // gives it a router.
+    for p in contribute_targetexpr_partials(&contributions.send_summary.targetexpr_events, bindings)
+    {
+        merge_partial_into(&mut partials, p);
+    }
+
     let resolved = finalize_targets(partials, machine_name, external)?;
     validate_someip_event_fields(&resolved, machine_name)?;
     validate_pool_param_names(&resolved, machine_name)?;
@@ -2079,7 +2166,12 @@ pub fn build_resolved_targets(
 ///
 /// `events` / `subscription_events` dedupe on merge so identical
 /// entries from separate contributors (e.g. a subscription entered
-/// twice in deploy.yaml) do not compound. `event_patterns` /
+/// twice in deploy.yaml) do not compound. `event_patterns` dedupe by
+/// event: the router emits one per-event classification, so a written
+/// send and a `targetexpr` spread over the same binding must not emit two.
+/// Entries that disagree resolve to [`EventPatternInfo::by_name`], the
+/// classification the document's own event name states, whichever
+/// contributor carried it — never to whichever merged first.
 /// `invoke_sites` accumulate unconditionally — contributors are
 /// responsible for emitting no duplicates within their own output.
 ///
@@ -2118,7 +2210,24 @@ fn merge_partial_into(partials: &mut Vec<PartialTarget>, new: PartialTarget) {
             existing.events.push(ev);
         }
     }
-    existing.event_patterns.extend(new.event_patterns);
+    for info in new.event_patterns {
+        match existing
+            .event_patterns
+            .iter_mut()
+            .find(|e| e.event == info.event)
+        {
+            None => existing.event_patterns.push(info),
+            // Two contributors classified one event differently — possible
+            // only where an `srcexpr` site's forced request meets a written
+            // send of the same name. The name's own classification wins,
+            // whichever contributor carried it, so the router does not
+            // depend on the order the partials were merged in.
+            Some(held) if *held != info && info == EventPatternInfo::by_name(&info.event) => {
+                *held = info;
+            }
+            Some(_) => {}
+        }
+    }
     existing.invoke_sites.extend(new.invoke_sites);
     for se in new.subscription_events {
         if !existing.subscription_events.contains(&se) {
@@ -2310,6 +2419,64 @@ pub(crate) fn contribute_srcexpr_partials(
                 extra: binding.extra.clone(),
                 event_patterns,
                 invoke_sites,
+                ordering: binding.ordering,
+                responders: responder_set(&target, binding),
+                deadline_ms: binding.deadline_ms,
+                retry: binding.retry,
+                auth: binding.auth.clone(),
+                instance_from: binding.instance_from.clone(),
+                instances: binding.instances.clone(),
+                members: binding.members.clone(),
+                subscription_events: Vec::new(),
+            },
+        );
+    }
+    partials
+}
+
+/// Spread every `<send targetexpr>` that may name a Mesh peer over the
+/// machine's declared bindings, so the router carries a route to whichever
+/// one the expression names at run time, and knows the pattern of the event
+/// it sends there.
+///
+/// SCE_MESH.md §mesh-9.5: a target named at run time is a choice among the
+/// already-declared bindings, as for `srcexpr`, so the candidate set is
+/// exactly `bindings`; a value outside it names no peer, and the router's
+/// unknown-target answer is what the send then meets. Without this, a
+/// `targetexpr` reached no route unless a written `target` elsewhere in the
+/// document named the same peer, and its event, never written against that
+/// peer, went out as FireForget — a reply the requester could not retire.
+///
+/// An `eventexpr` send (`None` among `events`) still gives every binding its
+/// route; only its pattern stays unknown, which [`DynamicTargetReach`]
+/// reports. Event coverage is not asked of these sends: it judges a written
+/// `(target, event)` pair, and a `targetexpr` writes neither.
+pub(crate) fn contribute_targetexpr_partials(
+    events: &[Option<String>],
+    bindings: &std::collections::HashMap<TargetId, BindingConfig>,
+) -> Vec<PartialTarget> {
+    if events.is_empty() {
+        return Vec::new();
+    }
+    let written: Vec<&String> = events.iter().flatten().collect();
+    let mut partials: Vec<PartialTarget> = Vec::new();
+    // Sorted for the reason `contribute_srcexpr_partials` sorts.
+    for target in sorted_target_keys(bindings) {
+        let binding = &bindings[&target];
+        // The classification a written send of the same event gets.
+        let event_patterns: Vec<EventPatternInfo> = written
+            .iter()
+            .map(|event| EventPatternInfo::by_name(event))
+            .collect();
+        merge_partial_into(
+            &mut partials,
+            PartialTarget {
+                target: target.clone(),
+                events: written.iter().map(|e| (*e).clone()).collect(),
+                transport: binding.transport.clone(),
+                extra: binding.extra.clone(),
+                event_patterns,
+                invoke_sites: Vec::new(),
                 ordering: binding.ordering,
                 responders: responder_set(&target, binding),
                 deadline_ms: binding.deadline_ms,
@@ -4260,6 +4427,133 @@ topology:
         assert_eq!(findings[0].event, "brake.typo");
         assert_eq!(findings[0].target, "#motor");
         assert_eq!(findings[0].sender, "brake");
+    }
+
+    /// A sender with a written send the receiver does not cover, beside a
+    /// `<send targetexpr>` of an event the receiver does cover.
+    const BRAKE_BAD_WITH_TARGETEXPR_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" name="brake" initial="idle">
+    <state id="idle">
+        <transition event="brake.press" target="braking"/>
+    </state>
+    <state id="braking">
+        <onentry>
+            <send target="#motor" event="brake.typo"/>
+            <send targetexpr="'#motor'" event="brake.activate"/>
+        </onentry>
+    </state>
+</scxml>"##;
+
+    /// The spread gives every binding a route, and must not stand in for the
+    /// written `(target, event)` pairs event coverage judges: a typo in a
+    /// written send is still reported beside a `targetexpr` to the same peer.
+    #[test]
+    fn a_targetexpr_send_does_not_mask_a_written_coverage_failure() {
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml, bindings: { "#motor": { transport: local } } }
+      motor: { source: motor.scxml }
+"##,
+        )
+        .unwrap();
+        let brake = parse_model(BRAKE_BAD_WITH_TARGETEXPR_SCXML, "brake");
+        let motor = parse_model(MOTOR_SCXML, "motor");
+        let receivers = vec![("motor".to_string(), motor)];
+
+        let summary = summary_for(&brake);
+        assert_eq!(
+            summary.targetexpr_events,
+            vec![Some("brake.activate".to_string())],
+            "the targetexpr send is spread"
+        );
+        let findings = check_sender_event_coverage("brake", &summary, &receivers, &deploy);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].event, "brake.typo");
+        assert_eq!(findings[0].target, "#motor");
+    }
+
+    /// One `<send targetexpr>` of each shape the router distinguishes.
+    const TARGETEXPR_SHAPES_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" name="sender" initial="s">
+    <state id="s">
+        <onentry>
+            <send targetexpr="'#peer'" event="service.response.ping"/>
+            <send targetexpr="'#peer'" eventexpr="'service.response.pong'"/>
+            <send targetexpr="'#peer'" typeexpr="'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'" event="app.note"/>
+        </onentry>
+    </state>
+</scxml>"##;
+
+    /// The predicate is the host routers' `may_name_a_mesh_peer`, and each
+    /// answer is kept apart: a written event is spread with its pattern, an
+    /// `eventexpr` is spread with none, and a `typeexpr` is not spread.
+    #[test]
+    fn targetexpr_sends_are_classified_by_what_the_router_can_settle() {
+        let summary = summary_for(&parse_model(TARGETEXPR_SHAPES_SCXML, "sender"));
+        let reaches: Vec<&DynamicTargetReach> =
+            summary.dynamic_sends.iter().map(|s| &s.reach).collect();
+        assert_eq!(
+            reaches,
+            vec![
+                &DynamicTargetReach::DeclaredBindings,
+                &DynamicTargetReach::PatternUnknown,
+                &DynamicTargetReach::NotRouted,
+            ]
+        );
+        assert_eq!(
+            summary.targetexpr_events,
+            vec![Some("service.response.ping".to_string()), None]
+        );
+        let warned: Vec<bool> = summary
+            .dynamic_sends
+            .iter()
+            .map(DynamicTargetSend::is_warning)
+            .collect();
+        assert_eq!(warned, vec![false, true, true]);
+    }
+
+    /// Two contributors that disagree about one event on one binding resolve
+    /// to the classification the event's name states, in either merge order.
+    #[test]
+    fn a_disagreeing_event_pattern_merges_the_same_in_either_order() {
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml, bindings: { "#motor": { transport: local } } }
+      motor: { source: motor.scxml }
+"##,
+        )
+        .unwrap();
+        let bindings = find_machine_bindings(&deploy, "brake").expect("bindings");
+        let by_name = contribute_targetexpr_partials(&[Some("compute".to_string())], bindings)
+            .pop()
+            .expect("one partial per binding");
+        // An srcexpr site's forced request for the same event name.
+        let mut forced = by_name.clone();
+        let request = crate::mesh::pattern::CommunicationPattern::ServiceRequest;
+        forced.event_patterns = vec![EventPatternInfo {
+            event: "compute".to_string(),
+            pattern_kind_value: request.wire_value(),
+            reply_event: request.infer_reply_event("compute"),
+        }];
+        assert_ne!(
+            forced.event_patterns, by_name.event_patterns,
+            "the two disagree"
+        );
+
+        let merged = |first: &PartialTarget, second: &PartialTarget| {
+            let mut partials = vec![first.clone()];
+            merge_partial_into(&mut partials, second.clone());
+            partials.pop().expect("one target").event_patterns
+        };
+        let expected = vec![EventPatternInfo::by_name("compute")];
+        assert_eq!(merged(&by_name, &forced), expected);
+        assert_eq!(merged(&forced, &by_name), expected);
     }
 
     // ── validate_pattern_capability ─────────────────────────

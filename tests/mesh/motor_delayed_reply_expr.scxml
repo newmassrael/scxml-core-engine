@@ -5,18 +5,14 @@
      wait and then reach that peer with the invokeid of the request it
      answers (SCE_MESH.md §10.7).
 
-     The C++ generated router learns its routes and each event's pattern from
-     the sends a document writes in `target`; a `targetexpr` alone declares
-     neither, and the build says so. The immediate `quick` answer below writes
-     the same peer and the same response event, so the expression's value is
-     a route the router has and an event it carries as a reply. -->
+     Its only peer send is the `targetexpr`: the generated router carries a
+     route to every binding deploy.yaml declares for this machine, and
+     classifies the reply by its event (SCE_MESH.md §9.5), so nothing else
+     in the document has to name the peer for it to be reached. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0" datamodel="ecmascript" name="motor_delayed_reply_expr" initial="ready">
     <state id="ready">
         <transition event="service.request.compute_force" target="replying"/>
-        <transition event="service.request.quick">
-            <send target="#brake_delayed_reply_expr" event="service.response.compute_force"/>
-        </transition>
     </state>
     <state id="replying">
         <onentry>

@@ -635,7 +635,11 @@ pub fn mesh_peer(target: &str) -> Option<&str> {
 /// evaluated: the send templates' dynamic Mesh branch (SCE_MESH.md §mesh-19)
 /// asks the evaluated target, and the machine needs the host-send surface
 /// for the branch to call.
-fn may_name_a_mesh_peer(action: &Action) -> bool {
+///
+/// Also the C++ generated router's question (`mesh::topology`), which spreads
+/// such a send over the declared bindings: one predicate, so the host routers
+/// and the generated router agree on which sends may name a peer.
+pub(crate) fn may_name_a_mesh_peer(action: &Action) -> bool {
     action.action_type == "send"
         && !action.targetexpr.is_empty()
         && action.typeexpr.is_empty()

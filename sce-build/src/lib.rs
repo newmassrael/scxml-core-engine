@@ -6152,8 +6152,10 @@ pub fn build_forge_manifest(
 pub struct MeshResult {
     /// Generated transport routing files.
     pub output: generator::GeneratedOutput,
-    /// Dynamic target warnings (targetexpr cannot be statically resolved).
-    pub dynamic_target_warnings: Vec<mesh::topology::TopologyWarning>,
+    /// Every `<send targetexpr>`, with what the build could settle for it;
+    /// [`mesh::topology::DynamicTargetSend::is_warning`] says which lost
+    /// something.
+    pub dynamic_target_sends: Vec<mesh::topology::DynamicTargetSend>,
     /// Informational notices when SCE_MESH.md §9.5 deadline precedence
     /// silently overrides a deploy.yaml binding-level deadline with a
     /// per-invoke `<param name="_mesh_deadline_ms">` value.
@@ -6213,7 +6215,8 @@ pub struct MeshResult {
 ///
 /// Step 2. Collect <send> targets from the model (single pass).
 ///
-/// Step 2a. Emit targetexpr warnings (dynamic targets cannot be statically resolved).
+/// Step 2a. Record every `<send targetexpr>` and what the build settles for it
+///          (a route to every declared binding, or a warning for what is lost).
 ///
 /// Step 2b. Resolve targets against deploy.yaml bindings.
 ///
@@ -7394,8 +7397,8 @@ pub fn compile_mesh_transport(
     // Stage 2: single-pass send action collection
     let mut summary = mesh::topology::collect_send_summary(model);
 
-    // Stage 2a: dynamic target warnings (from summary)
-    let dynamic_target_warnings = summary.dynamic_warnings.clone();
+    // Stage 2a: the `<send targetexpr>`s, and what the build settles for each
+    let dynamic_target_sends = summary.dynamic_sends.clone();
 
     // Stage 2a.1: exempt server response self-sends from topology resolution
     // and event coverage validation. These are injected synthetic sends that
@@ -7513,7 +7516,7 @@ pub fn compile_mesh_transport(
         let _ = external_resolution; // no bindings → no resolved IDs to consume
         return Ok(MeshResult {
             output: generator::GeneratedOutput::default(),
-            dynamic_target_warnings,
+            dynamic_target_sends,
             deadline_override_notices,
             auto_subscriptions,
             subscription_lint_notices,
@@ -7679,7 +7682,7 @@ pub fn compile_mesh_transport(
     )?;
     Ok(MeshResult {
         output,
-        dynamic_target_warnings,
+        dynamic_target_sends,
         deadline_override_notices,
         auto_subscriptions,
         subscription_lint_notices,

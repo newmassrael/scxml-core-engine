@@ -95,16 +95,29 @@ pub fn deployment_for(
         deployment.machine.push(Fact::new("device", device));
     }
 
-    // A `targetexpr` is resolved at run time, so the deployment has
-    // nothing to bind and the renderer has no `to` clause to hang a
-    // fact on. Said at machine level instead of left as an absence: "no
-    // annotation" and "could not be annotated" look identical on the
-    // page, and only one of them is a reason to look closer.
-    for w in &result.dynamic_target_warnings {
-        deployment.machine.push(Fact::new(
-            "unresolved-target",
-            format!("{} in state {}", w.targetexpr, w.state),
-        ));
+    // A `targetexpr` is resolved at run time, so the renderer has no one
+    // `to` clause to hang a fact on. Said at machine level instead of left
+    // as an absence: "no annotation" and "could not be annotated" look
+    // identical on the page, and only one of them is a reason to look
+    // closer. Which fact depends on what the build settled: a send that may
+    // name a peer reaches every declared binding (SCE_MESH.md §mesh-9.5),
+    // one naming its event by `eventexpr` does so as FireForget, and one the
+    // router does not treat as a Mesh send is not routed at all.
+    for send in &result.dynamic_target_sends {
+        let where_ = format!("{} in state {}", send.targetexpr, send.state);
+        let fact = match send.reach {
+            super::topology::DynamicTargetReach::DeclaredBindings => {
+                Fact::new("runtime-target", format!("{where_}, any declared binding"))
+            }
+            super::topology::DynamicTargetReach::PatternUnknown => Fact::new(
+                "runtime-target",
+                format!("{where_}, any declared binding, event unknown: sent as FireForget"),
+            ),
+            super::topology::DynamicTargetReach::NotRouted => {
+                Fact::new("unresolved-target", where_)
+            }
+        };
+        deployment.machine.push(fact);
     }
 
     deployment.injected = injected_sends(model, &scratch);

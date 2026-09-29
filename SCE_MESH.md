@@ -1427,6 +1427,8 @@ The W3C foreign-processor fallback (see the **Graceful degradation** paragraph b
 
 **`srcexpr` does not imply runtime peer discovery.** It only allows the author to pick among already-declared bindings at runtime. For a runtime-varying *instance of a bound service*, use the binding-value-field placeholder mechanism (§14.4) together with a static `src`.
 
+**A `<send targetexpr>` picks among the same bindings.** A `targetexpr` is routed as the same value written in `target` is (W3C §6.2.4), so a send whose `targetexpr` may name a peer — no `typeexpr`, and a `type` that is absent or the SCXML Event I/O Processor, the predicate §19 applies — may name any binding deploy.yaml declares for the machine. A generated router therefore carries a route to every declared binding, and classifies the send's `event` by its name (§8.1) exactly as a written send of that event, so a reply named this way is an `RpcReply` its requester can retire. A value that names no declared binding reaches no route. A send whose event is an `eventexpr` still gives every binding its route, but its pattern is not known at build time and it is sent as `FireForget`; the build says so. Event coverage (§7.2) judges written `(target, event)` pairs only, and is unaffected by these sends. The host routers (§19) route such a send by the same rule at run time.
+
 **Deadline precedence** (per-invoke `<param>` vs deploy.yaml binding-level):
 
 | Source | Scope | Precedence |

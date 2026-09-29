@@ -5068,7 +5068,11 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     if let Some(deploy_file) = deploy_path {
         match sce_build::compile_mesh_transport(&mut model, Path::new(deploy_file), lang) {
             Ok(result) => {
-                for w in &result.dynamic_target_warnings {
+                for w in result
+                    .dynamic_target_sends
+                    .iter()
+                    .filter(|s| s.is_warning())
+                {
                     eprintln!("Warning: {w}");
                 }
                 for n in &result.deadline_override_notices {
