@@ -24,8 +24,8 @@
 # templates travel with the binary and the launcher names them, together
 # with the generator itself (SCE_CODEGEN).
 #
-# --codegen reuses a generator already built rather than building a release
-# one; the bundle is the same apart from the binary's optimisation.
+# Without --codegen the generator is found, or built, by
+# scripts/lib/sce_codegen.sh; --codegen names one explicitly.
 
 set -euo pipefail
 
@@ -48,8 +48,11 @@ done
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [[ -z "$codegen" ]]; then
-    (cd "$repo_root" && cargo build --release -p sce-build --features cli --bin sce-codegen)
-    codegen="$repo_root/target/release/sce-codegen"
+    # The one locator every shell consumer resolves the generator through:
+    # it builds when no profile holds a generator of these sources.
+    # shellcheck source=lib/sce_codegen.sh
+    source "$repo_root/scripts/lib/sce_codegen.sh"
+    codegen="$(sce_codegen_require "$repo_root")"
 fi
 [[ -x "$codegen" ]] || { printf 'package: %s is not an executable generator\n' "$codegen" >&2; exit 1; }
 
