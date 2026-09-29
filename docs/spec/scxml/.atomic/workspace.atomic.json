@@ -9057,6 +9057,21 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "rootStartRefusal",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "ScheduleHTTPSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "scheduleHttpSend",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "scheduleHttpSend",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -9464,6 +9479,21 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "scheduleRoutedEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "ScheduleHTTPSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "scheduleHttpSend",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "scheduleHttpSend",
           "kind": "implements"
         }
       ],
@@ -14504,6 +14534,41 @@
         {
           "file": "sce/include/common/SendHelper.h",
           "symbol": "Kind",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "ScheduleHTTPSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "performDeferredHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "ScheduledSendEntry",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "performDeferredHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "perform_deferred_host_send",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "performDeferredHostSend",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "scheduleHttpSend",
           "kind": "implements"
         }
       ],

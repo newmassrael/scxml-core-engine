@@ -626,7 +626,14 @@ engine.raise(typename Engine::EventWithMetadata(
 // W3C SCXML C.2: BasicHTTP send — dispatch via performHttpSend() callback. The
 // form is a rendering of the payload evaluated above, so a second reading of
 // the data model cannot disagree with the first.
+{% if has_delay %}
+// W3C SCXML 6.2.4: a delay postpones the POST, not the processor that makes it —
+// the request waits in the queue every delayed send does (so `<cancel>` reaches
+// it) and its deadline dispatches it through performHttpSend().
+engine.scheduleHttpSend({% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}, {{ event_name_cpp }}, {% if action.contentexpr and not (action.params or action.namelist or action.content) %}eventData{% else %}"{{ action.content | escape_cpp }}"{% endif %}, params, delayMs, sendId);
+{% else %}
 engine.performHttpSend({% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}, {{ event_name_cpp }}, {% if action.contentexpr and not (action.params or action.namelist or action.content) %}eventData{% else %}"{{ action.content | escape_cpp }}"{% endif %}, params, sendId);
+{% endif %}
 {% elif action.targetexpr and (action.event or dyn_event) %}
 {% if dyn_event %}
 if (sendEvent) {

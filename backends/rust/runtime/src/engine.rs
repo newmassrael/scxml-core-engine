@@ -2615,6 +2615,22 @@ impl<P: StatePolicy> Engine<P> {
     /// that has nobody left to come from.
     #[cfg(not(feature = "no_std"))]
     fn perform_deferred_host_send(&mut self, request: crate::host_processor::HostSendRequest) {
+        // §scxml-C-2 + §scxml-6.2.4: a delayed BasicHTTP send waits in this
+        // queue as a host-served one does, and its deadline performs the POST
+        // the immediate send would have made — through the same callback, so
+        // the reply it draws comes back as it does from an immediate one.
+        if request.processor_type
+            == crate::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE
+        {
+            self.perform_http_send(
+                request.target,
+                request.event_name,
+                request.content,
+                request.params,
+                request.send_id,
+            );
+            return;
+        }
         let processor_type = request.processor_type.clone();
         let send_id = request.send_id.clone();
         let served = self.perform_host_send(request);
@@ -2870,6 +2886,48 @@ impl<P: StatePolicy> Engine<P> {
                 }
             }
         }
+    }
+
+    /// §scxml-C-2 + §scxml-6.2.4: dispatch a BasicHTTP send once its delay has
+    /// elapsed.
+    ///
+    /// A delay is a property of the send and not of the processor it named, so a
+    /// delayed BasicHTTP send waits in the queue every delayed send does: one
+    /// deadline order, one `<cancel sendid>` path (§scxml-6.3), one answer from
+    /// [`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms). Its
+    /// entry is the host-served shape carrying the BasicHTTP type, and the
+    /// deadline performs the POST through
+    /// [`perform_http_send`](Self::perform_http_send).
+    ///
+    /// A non-positive delay is performed at once: `delay="0s"` is not a
+    /// deferral, and the document must not need a tick to see it.
+    ///
+    /// Gated to `!no_std` like [`perform_http_send`](Self::perform_http_send).
+    #[cfg(not(feature = "no_std"))]
+    pub fn schedule_http_send(
+        &mut self,
+        target: String,
+        event_name: String,
+        content: String,
+        params: std::collections::HashMap<String, Vec<String>>,
+        delay: Duration,
+        send_id: String,
+    ) {
+        if delay.is_zero() {
+            self.perform_http_send(target, event_name, content, params, send_id);
+            return;
+        }
+        let request = crate::host_processor::HostSendRequest {
+            processor_type: crate::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE
+                .to_string(),
+            event_name,
+            target,
+            content,
+            params,
+            send_id: send_id.clone(),
+            ..Default::default()
+        };
+        self.schedule_host_send(request, delay, &send_id);
     }
 
     /// §scxml-6.2.5: register `handler` as the Event I/O Processor for

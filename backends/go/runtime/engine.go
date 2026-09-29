@@ -1544,6 +1544,32 @@ func (e *Engine[S, E]) PerformHTTPSend(target, eventName, content string, params
 	}
 }
 
+// ScheduleHTTPSend dispatches a BasicHTTP send once its delay has elapsed
+// (§scxml-C-2, §scxml-6.2.4).
+//
+// A delay is a property of the send and not of the processor it named, so a
+// delayed BasicHTTP send waits in the queue every delayed send does: one
+// deadline order, one `<cancel sendid>` path (§scxml-6.3), one
+// TimeUntilNextScheduled answer. Its entry is the host-served shape carrying the
+// BasicHTTP type, and the deadline performs the POST through PerformHTTPSend.
+//
+// A non-positive delay is performed at once: `delay="0s"` is not a deferral, and
+// the document must not need a Tick to see it. Returns the send id used.
+func (e *Engine[S, E]) ScheduleHTTPSend(target, eventName, content string, params map[string][]string, delay time.Duration, sendID string) string {
+	if delay <= 0 {
+		e.PerformHTTPSend(target, eventName, content, params, sendID)
+		return sendID
+	}
+	return e.ScheduleHostSend(HostSendRequest{
+		ProcessorType: BasicHTTPEventProcessorType,
+		EventName:     eventName,
+		Target:        target,
+		Content:       content,
+		Params:        params,
+		SendID:        sendID,
+	}, delay, sendID)
+}
+
 // RunUntilCompletion runs the state machine to completion or timeout
 // (§scxml-6.2).
 //

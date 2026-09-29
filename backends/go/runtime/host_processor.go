@@ -274,6 +274,14 @@ func (e *Engine[S, E]) PerformHostSend(request HostSendRequest) ([]HostSendRespo
 // never happens, nothing says so, and the document goes on waiting for a reply
 // that has nobody left to come from.
 func (e *Engine[S, E]) performDeferredHostSend(request HostSendRequest) {
+	// §scxml-C-2 + §scxml-6.2.4: a delayed BasicHTTP send waits in this queue as
+	// a host-served one does, and its deadline performs the POST the immediate
+	// send would have made — through the same callback, so the reply it draws
+	// comes back as it does from an immediate one.
+	if request.ProcessorType == BasicHTTPEventProcessorType {
+		e.PerformHTTPSend(request.Target, request.EventName, request.Content, request.Params, request.SendID)
+		return
+	}
 	if _, served := e.PerformHostSend(request); served {
 		return
 	}

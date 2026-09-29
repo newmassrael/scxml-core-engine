@@ -3022,6 +3022,32 @@ public:
     }
 
     /**
+     * @brief Dispatch a BasicHTTP send once its delay has elapsed (§scxml-C-2,
+     *        §scxml-6.2.4)
+     *
+     * A delay is a property of the send and not of the processor it named, so
+     * a delayed BasicHTTP send waits in the queue every delayed send does: one
+     * deadline order, one `<cancel sendid>` path (§scxml-6.3), one answer from
+     * the next-deadline query. Its entry is the host-served shape carrying
+     * the BasicHTTP type, and the deadline performs the POST through
+     * performHttpSend() — see performDeferredHostSend().
+     *
+     * @return The sendId used, generated when @p sendId is empty
+     */
+    std::string scheduleHttpSend(const std::string &target, const std::string &eventName, const std::string &content,
+                                 const std::map<std::string, std::vector<std::string>> &params,
+                                 std::chrono::milliseconds delay, const std::string &sendId) {
+        ::SCE::HostSendRequest request;
+        request.processorType = ::SCE::Constants::BASIC_HTTP_EVENT_PROCESSOR_URI;
+        request.eventName = eventName;
+        request.target = target;
+        request.content = content;
+        request.params = params;
+        request.sendId = sendId;
+        return scheduleHostSend(request, delay, sendId);
+    }
+
+    /**
      * @brief §scxml-6.2.5: serve `<send type="processorType">` from the host.
      *
      * The build must also have been told about the type
@@ -3702,6 +3728,14 @@ private:
      * a reply that has nobody left to come from.
      */
     void performDeferredHostSend(const ::SCE::HostSendRequest &request) {
+        // §scxml-C-2 + §scxml-6.2.4: a delayed BasicHTTP send waits in this
+        // queue as a host-served one does, and its deadline performs the POST
+        // the immediate send would have made — through the same callback, so
+        // the reply it draws comes back as it does from an immediate one.
+        if (request.processorType == ::SCE::Constants::BASIC_HTTP_EVENT_PROCESSOR_URI) {
+            performHttpSend(request.target, request.eventName, request.content, request.params, request.sendId);
+            return;
+        }
         const auto served = performHostSend(request);
         if (served.has_value() || hasEventProcessor(request.processorType)) {
             return;

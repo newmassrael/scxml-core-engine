@@ -628,10 +628,19 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * §scxml-C-2: Schedule a delayed HTTP POST send action.
+     * §scxml-C-2 + §scxml-6.2.4: Schedule a delayed HTTP POST send action.
      *
-     * Stores the HTTP send request in the scheduled sends queue (sync mode)
-     * and dispatches via [performHttpSend] when the delay expires during [tick].
+     * A delay is a property of the send and not of the processor it named, so a
+     * delayed BasicHTTP send waits in the queue every delayed send does: one
+     * deadline order, one `<cancel sendid>` path (§scxml-6.3), one answer from
+     * the next-deadline query, and — in the asynchronous mode as in the
+     * synchronous — a deadline that fires. Its entry is the host-served shape
+     * carrying the BasicHTTP type, and the deadline performs the POST through
+     * [performHttpSend] (see [performDeferredHostSend]).
+     *
+     * A separate list for it, drained in its own loop, was the shape this
+     * replaces: its entries neither interleaved by deadline with the others nor
+     * got a macrostep between them, and the asynchronous mode never drained it.
      *
      * @param delayMs Delay in milliseconds before dispatching the HTTP POST
      */
@@ -643,20 +652,19 @@ abstract class StateMachineEngine<S : State, E : Event>(
         params: Map<String, List<String>>,
         sendId: String
     ) {
-        val request = HttpSendRequest(target, eventName, content, params, sendId)
-        val fireTime = engineElapsedMs() + delayMs
-        val seqNum = schedulerSequence++
-        scheduledHttpSends.add(ScheduledHttpSendEntry(fireTime, seqNum, sendId, request))
-        scheduledHttpSends.sortWith(compareBy({ it.fireTimeMs }, { it.sequenceNum }))
+        scheduleHostSend(
+            sendId,
+            delayMs,
+            HostSendRequest(
+                processorType = IoProcessors.BASIC_HTTP_PROCESSOR,
+                eventName = eventName,
+                target = target,
+                content = content,
+                params = params,
+                sendId = sendId
+            )
+        )
     }
-
-    private data class ScheduledHttpSendEntry(
-        val fireTimeMs: Long,
-        val sequenceNum: Long,
-        val sendId: String,
-        val request: HttpSendRequest
-    )
-    private val scheduledHttpSends = mutableListOf<ScheduledHttpSendEntry>()
 
     // --- Host-served Event I/O Processors (§scxml-6.2.5) ---
 
@@ -1273,6 +1281,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * a reply that has nobody left to come from.
      */
     private fun performDeferredHostSend(request: HostSendRequest) {
+        // §scxml-C-2 + §scxml-6.2.4: a delayed BasicHTTP send waits in this
+        // queue as a host-served one does, and its deadline performs the POST
+        // the immediate send would have made.
+        if (request.processorType == IoProcessors.BASIC_HTTP_PROCESSOR) {
+            performHttpSend(request.target, request.eventName, request.content, request.params, request.sendId)
+            return
+        }
         if (performHostSend(request) != null) return
         if (hasEventProcessor(request.processorType)) return
         val event = resolveEventByName("error.execution") ?: return
@@ -1397,10 +1412,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
          * delayed send whose delivery happens to be somebody else's. Keeping it
          * in THIS queue is what makes that true in practice: one deadline order
          * across every kind of delayed send, one `<cancel sendid>` path, one
-         * answer from the next-deadline query. The separate `scheduledHttpSends`
-         * list beside it is the shape this deliberately does not copy — it is
-         * drained in its own loop, so its entries neither interleave by deadline
-         * with these nor get a macrostep between them.
+         * answer from the next-deadline query. A delayed BasicHTTP send is such
+         * an entry too, carrying the BasicHTTP type (§scxml-C-2).
          */
         val hostSend: HostSendRequest? = null,
         /**
@@ -2292,7 +2305,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     return
                 }
             }
-            pollScheduledHttpSends()
             tickChildren()
             // §scxml-6.4's invokes are part of the main event loop and run
             // there, ahead of the external dequeue rather than after it.
@@ -2319,15 +2331,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     fun timeUntilNextScheduledMs(): Long? {
         if (!syncMode) return null
-        val own = (scheduledSends.firstOrNull()?.fireTimeMs)
-            .let { sends ->
-                val https = scheduledHttpSends.firstOrNull()?.fireTimeMs
-                when {
-                    sends == null -> https
-                    https == null -> sends
-                    else -> minOf(sends, https)
-                }
-            }
+        val own = scheduledSends.firstOrNull()?.fireTimeMs
             ?.let { maxOf(0L, it - engineElapsedMs()) }
 
         // §scxml-6.4: an invoked child's deadlines are this machine's answer
@@ -2671,7 +2675,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     fun cleanup() {
         scheduledSends.clear()
-        scheduledHttpSends.clear()
         externalEventQueue.clear()
         for ((_, entry) in activeInvokes) {
             entry.child.cleanup()
@@ -2852,18 +2855,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
             route = route
         ))
         scheduledSends.sortWith(compareBy<ScheduledSendEntry> { it.fireTimeMs }.thenBy { it.sequenceNum })
-    }
-
-    /** Fire ready delayed HTTP sends (the spec's BasicHTTP event processor). */
-    private fun pollScheduledHttpSends() {
-        val now = engineElapsedMs()
-        while (scheduledHttpSends.isNotEmpty() && scheduledHttpSends.first().fireTimeMs <= now) {
-            val entry = scheduledHttpSends.removeAt(0)
-            performHttpSend(
-                entry.request.target, entry.request.eventName,
-                entry.request.content, entry.request.params, entry.request.sendId
-            )
-        }
     }
 
     /**
@@ -3204,14 +3195,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * @param sendId Identifier of the send to cancel
      */
     protected fun cancelSend(sendId: String) {
-        // A delayed host-served send is in [scheduledSends] in both modes, so
-        // a `<cancel>` has to look there in both (§scxml-6.3). A host-run
-        // invocation's deadline also carries an empty id, and a
-        // `<cancel sendidexpr>` that evaluates to "" must not reach it.
+        // A delayed host-served send — a delayed BasicHTTP one included — is in
+        // [scheduledSends] in both modes, so a `<cancel>` has to look there in
+        // both (§scxml-6.3). A host-run invocation's deadline also carries an
+        // empty id, and a `<cancel sendidexpr>` that evaluates to "" must not
+        // reach it.
         scheduledSends.removeAll { it.hostInvokeDeadline == null && it.sendId == sendId }
-        if (syncMode) {
-            scheduledHttpSends.removeAll { it.sendId == sendId }
-        } else {
+        if (!syncMode) {
             delayedSendJobs.remove(sendId)?.cancel()
         }
     }

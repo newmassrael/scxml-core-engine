@@ -234,8 +234,14 @@
    the one its `targetexpr` evaluated to (test509: the processor's own access
    URI). The BasicHTTP processor addresses the value, so it never reaches the
    SCXML processor's target table. The form is a rendering of the payload
-   evaluated above. #}
+   evaluated above. A delay postpones the POST, not the processor that makes
+   it (W3C SCXML 6.2.4): the request waits in the queue every delayed send
+   does, so `<cancel>` reaches it, and its deadline dispatches it. #}
+{% if has_delay %}
+{{ indent }}engine.schedule_http_send({% if action.targetexpr %}_target_str{% else %}{{ action.target | py_string_literal }}{% endif %}, _evt_name, {% if action.contentexpr and not (action.params or has_namelist or action.content) %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %}, self._wire_params_from_payload(_data), {{ delay_py }}, _sid)
+{% else %}
 {{ indent }}engine.perform_http_send({% if action.targetexpr %}_target_str{% else %}{{ action.target | py_string_literal }}{% endif %}, _evt_name, {% if action.contentexpr and not (action.params or has_namelist or action.content) %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %}, self._wire_params_from_payload(_data), _sid)
+{% endif %}
 {% elif not action.targetexpr and action.target == '#_parent' %}
 {% if has_delay %}
 {# W3C SCXML 6.2 + 6.4: delayed to the parent. It waits in this child's own

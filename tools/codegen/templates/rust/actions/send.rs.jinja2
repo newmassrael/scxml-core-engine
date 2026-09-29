@@ -674,6 +674,20 @@
 {% else %}
         let http_params = std::collections::HashMap::<String, Vec<String>>::new();
 {% endif %}
+{% if delay_rs %}
+        // W3C SCXML 6.2.4: a delay postpones the POST, not the processor that
+        // makes it — the request waits in the queue every delayed send does (so
+        // `<cancel>` reaches it) and its deadline dispatches it through
+        // `perform_http_send`.
+        engine.schedule_http_send(
+            {{ http_target_rs }},
+            {% if dyn_event %}_send_event_name.clone(){% else %}"{{ action.event | default('', true) }}".to_string(){% endif %},
+            "{{ action.content | default('', true) | escape_rust }}".to_string(),
+            http_params,
+            {{ delay_rs }},
+            send_id.clone(),
+        );
+{% else %}
         engine.perform_http_send(
             {{ http_target_rs }},
             {% if dyn_event %}_send_event_name.clone(){% else %}"{{ action.event | default('', true) }}".to_string(){% endif %},
@@ -681,6 +695,7 @@
             http_params,
             send_id.clone(),
         );
+{% endif %}
 {% if action.targetexpr %}
         }
 {% endif %}

@@ -544,7 +544,14 @@
 			// No arguments to map: a nil form leaves the body to `<content>`.
 			var httpParams map[string][]string
 {% endif %}
+{% if delay_go %}
+			// W3C SCXML 6.2.4: a delay postpones the POST, not the processor that
+			// makes it — the request waits in the queue every delayed send does (so
+			// <cancel> reaches it) and its deadline dispatches it.
+			engine.ScheduleHTTPSend(httpTarget, {{ event_name_go }}, {% if has_params or has_namelist %}""{% else %}eventDataStr{% endif %}, httpParams, {{ delay_go }}, "{{ send_id | default('') | escape_go }}")
+{% else %}
 			engine.PerformHTTPSend(httpTarget, {{ event_name_go }}, {% if has_params or has_namelist %}""{% else %}eventDataStr{% endif %}, httpParams, "{{ send_id | default('') | escape_go }}")
+{% endif %}
 		}
 	}
 {% elif action.target == '#_internal' %}

@@ -1675,6 +1675,44 @@ class Engine(Generic[S, E]):
             self._now_ms + delay_ms, sendid, None, "", host_send=request
         )
 
+    def schedule_http_send(
+        self,
+        target: str,
+        event_name: str,
+        content: str,
+        params: Dict[str, List[str]],
+        delay_ms: int,
+        sendid: str = "",
+    ) -> None:
+        """W3C SCXML C.2 + 6.2.4 — dispatch a BasicHTTP send once its delay
+        has elapsed.
+
+        A delay is a property of the send and not of the processor it
+        named, so a delayed BasicHTTP send waits in the queue every delayed
+        send does: one deadline order, one `cancel_send` path (W3C SCXML
+        6.3), one `time_until_next_scheduled_ms` answer. Its entry is the
+        host-served shape carrying the BasicHTTP type, and the deadline
+        performs the POST through `perform_http_send`.
+
+        A non-positive delay is performed at once, like `schedule_send`: a
+        `delay="0s"` is not a deferral and the document must not need a
+        tick to see it."""
+        if delay_ms <= 0:
+            self.perform_http_send(target, event_name, content, params, sendid)
+            return
+        self.schedule_host_send(
+            HostSendRequest(
+                processor_type=BASIC_HTTP_EVENT_PROCESSOR_URI,
+                event_name=event_name,
+                target=target,
+                content=content,
+                params=params,
+                send_id=sendid,
+            ),
+            delay_ms,
+            sendid,
+        )
+
     def _perform_deferred_host_send(self, request: HostSendRequest) -> None:
         """W3C SCXML 6.2 + 6.2.4 — perform a host-served send whose delay
         has elapsed, and report it if nobody did.
@@ -1692,6 +1730,20 @@ class Engine(Generic[S, E]):
         Without this, a wiring mistake on a delayed send is perfect
         silence: the act never happens, nothing says so, and the document
         goes on waiting for a reply that has nobody left to come from."""
+        # W3C SCXML C.2 + 6.2.4 — a delayed BasicHTTP send waits in this
+        # queue as a host-served one does, and its deadline performs the
+        # POST the immediate send would have made, through the same
+        # callback, so the reply it draws comes back as it does from an
+        # immediate one.
+        if request.processor_type == BASIC_HTTP_EVENT_PROCESSOR_URI:
+            self.perform_http_send(
+                request.target,
+                request.event_name,
+                request.content,
+                request.params,
+                request.send_id,
+            )
+            return
         if self.perform_host_send(request) is not None:
             return
         if self.has_event_processor(request.processor_type):
