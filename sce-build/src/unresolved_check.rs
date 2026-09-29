@@ -38,6 +38,20 @@ use crate::requirements_report::{walk_nodes, ActionSite, NodeSubject};
 /// A named struct rather than a tuple because the third member is the
 /// one a reader would otherwise have to guess at: it is the node's
 /// spec anchors, not the marker's.
+/// How a marker on `<sce:kind-basis>` is named — the label a forge
+/// document's marker channel gives the element too ([`markers_in`]), so a
+/// consumer reads one spelling whichever pipeline the document took.
+const KIND_BASIS_LABEL: &str = "<kind-basis>";
+
+/// The markers a statechart's `<sce:kind-basis>` carries: the kind itself
+/// left open (docs/SCE_ACCEPTED_SUBSET.md §2.10.1).
+fn kind_basis_markers(model: &SCXMLModel) -> impl Iterator<Item = &UnresolvedMarker> {
+    model
+        .kind_basis
+        .iter()
+        .flat_map(|basis| basis.unresolved.iter())
+}
+
 pub struct Unresolved<'a> {
     /// Author-facing element label, e.g. `<state id="armed">`.
     pub element: String,
@@ -63,6 +77,16 @@ pub struct Unresolved<'a> {
 /// keeps the reports (which list both) and the refusal (which lists one)
 /// reading the same markers.
 pub fn first_unresolved(model: &SCXMLModel) -> Option<Unresolved<'_>> {
+    // The kind before any node: it sits on the root, and a document whose
+    // kind is open is open in every node below it.
+    let basis = kind_basis_markers(model).find(|m| m.kind == MarkerKind::Unresolved);
+    if let Some(marker) = basis {
+        return Some(Unresolved {
+            element: KIND_BASIS_LABEL.to_string(),
+            marker,
+            provenance: &[],
+        });
+    }
     walk_nodes(model).into_iter().find_map(|node| {
         let marker = node
             .subject
@@ -201,6 +225,19 @@ pub fn emit_unresolved_ndjson<W: Write + ?Sized>(
     model: &SCXMLModel,
     writer: &mut W,
 ) -> io::Result<()> {
+    for marker in kind_basis_markers(model) {
+        write_marker(
+            writer,
+            KIND_BASIS_LABEL,
+            "kind-basis",
+            None,
+            marker,
+            marker
+                .location
+                .as_ref()
+                .map(|at| model.authored_location(at)),
+        )?;
+    }
     for node in walk_nodes(model) {
         let action_type = match &node.subject {
             NodeSubject::Action { action, .. } => Some(action.action_type.as_str()),

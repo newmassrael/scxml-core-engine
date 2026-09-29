@@ -647,7 +647,32 @@ pub struct Declaration {
     pub element: &'static str,
     #[serde(serialize_with = "serialize_kind")]
     pub default: ForgeKind,
+    /// How the document states why it is its kind.
+    pub basis: BasisDeclaration,
 }
+
+/// `<sce:kind-basis>` as an author writes it
+/// (docs/SCE_ACCEPTED_SUBSET.md §2.10.1): named here so a client outside
+/// the tree has the grammar from the product that will check it.
+#[derive(Debug, Serialize)]
+pub struct BasisDeclaration {
+    /// The root child that holds it.
+    pub element: &'static str,
+    /// What it contains: one or more evidence, any number rejected.
+    pub evidence: &'static str,
+    pub rejected: &'static str,
+    /// A basis for a transform, as it sits directly under the root.
+    /// `sce-build/tests/every_kind_example_is_accepted.rs` puts it into
+    /// the transform example and requires `check` to accept the result.
+    pub example: &'static str,
+}
+
+/// The example a [`BasisDeclaration`] carries.
+pub const BASIS_EXAMPLE: &str = "<sce:kind-basis>\n  \
+    <sce:evidence provenance=\"SPEC-7@2#4.1\">the output is one formula over the current \
+    input</sce:evidence>\n  \
+    <sce:rejected kind=\"interpolation\">the text gives a formula, not values at \
+    breakpoints</sce:rejected>\n</sce:kind-basis>";
 
 /// The catalog as `sce-codegen kinds` writes it.
 #[derive(Debug, Serialize)]
@@ -675,6 +700,16 @@ impl KindCatalog {
                 namespace: SCE_NAMESPACE,
                 element: "scxml",
                 default: ForgeKind::Statechart,
+                basis: BasisDeclaration {
+                    element: crate::forge::kind_basis::ELEMENT,
+                    evidence: "one or more <sce:evidence>: what the specification states, as \
+                               text; `provenance` is the optional compact anchor \
+                               doc_id[@rev][#section[:position]]",
+                    rejected: "any number of <sce:rejected kind=\"...\">: a kind considered \
+                               and not chosen, and as text the behaviour that ruled it out; \
+                               never the document's own kind",
+                    example: BASIS_EXAMPLE,
+                },
             },
             kinds,
         }

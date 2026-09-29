@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A forge document that states why it is a transform. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="adc_to_volts">
+  <sce:kind-basis>
+    <sce:evidence provenance="SPEC-7@2#4.1">the voltage is one formula over
+      the current count</sce:evidence>
+    <sce:rejected kind="interpolation">the text gives a formula, not values
+      at breakpoints</sce:rejected>
+  </sce:kind-basis>
+  <datamodel>
+    <data id="count" sce:type="uint16" sce:direction="in"/>
+    <data id="volts" sce:type="float64" sce:direction="out"
+          expr="count * 3.3 / 4095.0"/>
+  </datamodel>
+</scxml>

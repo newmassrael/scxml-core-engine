@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A statechart that states why it is a statechart. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="statechart" version="1.0" name="door" initial="closed">
+  <sce:kind-basis>
+    <sce:evidence provenance="SPEC-7@2#3.2">the door stays open or closed
+      between requests</sce:evidence>
+    <sce:rejected kind="procedure">nothing finishes: the door is driven by
+      requests for as long as it runs</sce:rejected>
+  </sce:kind-basis>
+  <state id="closed">
+    <transition event="door.open" target="opened"/>
+  </state>
+  <state id="opened">
+    <transition event="door.close" target="closed"/>
+  </state>
+</scxml>

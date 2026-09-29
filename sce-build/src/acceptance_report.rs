@@ -242,6 +242,26 @@ pub fn render(
         manifest.doc_id, manifest.rev, model.name
     ));
     out.push_str(&format!("variant: {variant}\n"));
+    // Why the document is a statechart, when it says (docs/SCE_ACCEPTED_
+    // SUBSET.md §2.10.1). Printed only when present, so a report for a
+    // document without one is byte-identical to what it was.
+    if let Some(basis) = &model.kind_basis {
+        out.push_str("kind basis:\n");
+        for evidence in &basis.evidence {
+            out.push_str(&format!("  evidence  {}", evidence.text));
+            if let Some(compact) = evidence.provenance.as_ref().and_then(|p| p.to_compact()) {
+                out.push_str(&format!("   ({compact})"));
+            }
+            out.push('\n');
+        }
+        for rejected in &basis.rejected {
+            out.push_str(&format!(
+                "  rather than {}  {}\n",
+                rejected.kind.as_attr(),
+                rejected.because
+            ));
+        }
+    }
     if sidecar.is_some() {
         out.push_str(
             "⚠ carries verbatim text from the source document. A local artefact \

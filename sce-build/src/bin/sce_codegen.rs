@@ -8277,18 +8277,25 @@ fn cmd_pseudo(
     let positions = read_review_input(document, error_format);
     let label = sce_build::DocumentLabel::for_input_path(document);
 
-    let doc = match sce_build::forge::parser::parse_forge_with_imports(&positions.expanded, label) {
-        Ok(Some(p)) => p.document,
-        // The statechart reads the file the way `check` reads it: the
-        // same label, and positions mapped back through the preprocessor
-        // to the text the author wrote rather than the expanded text, so
-        // both commands report one defect with one record.
-        Ok(None) => match sce_build::parser::SCXMLParser::new().parse_file(document) {
-            Ok(model) => sce_build::forge::model::ForgeDocument::Statechart(Box::new(model)),
-            Err(e) => error_format.emit_forge_and_exit(&e),
-        },
-        Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
-    };
+    let (doc, kind_basis) =
+        match sce_build::forge::parser::parse_forge_with_imports(&positions.expanded, label) {
+            Ok(Some(p)) => (p.document, p.kind_basis),
+            // The statechart reads the file the way `check` reads it: the
+            // same label, and positions mapped back through the preprocessor
+            // to the text the author wrote rather than the expanded text, so
+            // both commands report one defect with one record.
+            Ok(None) => match sce_build::parser::SCXMLParser::new().parse_file(document) {
+                Ok(model) => {
+                    let basis = model.kind_basis.clone();
+                    (
+                        sce_build::forge::model::ForgeDocument::Statechart(Box::new(model)),
+                        basis,
+                    )
+                }
+                Err(e) => error_format.emit_forge_and_exit(&e),
+            },
+            Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+        };
 
     // A deployment is resolved against the model the document holds,
     // and the rendering is of that same model — the pipeline runs on a
@@ -8337,7 +8344,9 @@ fn cmd_pseudo(
         })
     });
 
-    let nodes = match sce_build::forge::pseudo::render_nodes(&doc, &deployment) {
+    let nodes = match sce_build::forge::pseudo::render_nodes(&doc, &deployment).and_then(|nodes| {
+        sce_build::forge::pseudo::with_kind_basis(nodes, doc.kind().as_attr(), kind_basis.as_ref())
+    }) {
         Ok(nodes) => nodes,
         // ⚠ Not a partial rendering. See `CliError::PseudoUnavailable`.
         Err(unsupported) => cli_exit(CliError::PseudoUnavailable {

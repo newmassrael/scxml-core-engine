@@ -52,7 +52,8 @@ class PackFreeScxmlMcp(unittest.TestCase):
                          (report["verdict"], report["manifest"]["kind"]))
         # No sce:kind: accepted, and the manifest says the statechart
         # reading came from the default rather than from the document.
-        self.assertEqual({"name": "statechart", "declared": False},
+        self.assertEqual({"name": "statechart", "declared": False,
+                          "basis_recorded": False},
                          report["manifest"]["document_kind"])
 
         shown = call("render_scxml_pseudocode", document=str(self.document))
@@ -77,9 +78,13 @@ class PackFreeScxmlMcp(unittest.TestCase):
             with self.subTest(kind=entry["name"]):
                 self.assertTrue(entry["choose_when"])
                 self.assertTrue(entry["distinct_from"])
+        declaration = dict(report["catalog"]["declaration"])
+        basis = declaration.pop("basis")
         self.assertEqual({"attribute": "kind", "namespace": "http://sce.dev/ext",
-                          "element": "scxml", "default": "statechart"},
-                         report["catalog"]["declaration"])
+                          "element": "scxml", "default": "statechart"}, declaration)
+        # How to say why, from the product that will check the saying.
+        self.assertEqual("kind-basis", basis["element"])
+        self.assertIn("<sce:kind-basis>", basis["example"])
 
         # One entry, with an example the author can follow.
         one = json.loads(call("scxml_kinds", kind="transform")["content"][0]["text"])
@@ -108,7 +113,8 @@ class PackFreeScxmlMcp(unittest.TestCase):
         self.assertFalse(checked.get("isError"), checked["content"][0]["text"])
         report = json.loads(checked["content"][0]["text"])
         self.assertEqual("accepted", report["verdict"])
-        self.assertEqual({"name": "transform", "declared": True},
+        self.assertEqual({"name": "transform", "declared": True,
+                          "basis_recorded": False},
                          report["manifest"]["document_kind"])
         shown = call("render_scxml_pseudocode", document=str(self.document))
         self.assertFalse(shown.get("isError"), shown["content"][0]["text"])

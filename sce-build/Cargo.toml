@@ -286,6 +286,14 @@ name = "the_manifest_names_the_kind_it_read"
 path = "tests/the_manifest_names_the_kind_it_read.rs"
 required-features = ["cli"]
 
+# `<sce:kind-basis>` on the real binary: accepted and published for both
+# pipelines, written under the page's head line, refused when it rules out
+# the document's own kind.
+[[test]]
+name = "a_document_says_why_it_is_its_kind"
+path = "tests/a_document_says_why_it_is_its_kind.rs"
+required-features = ["cli"]
+
 # Every example `sce-codegen kinds` embeds is accepted by `check --lint` as
 # its own kind and rendered by `pseudo`, on the real binary.
 [[test]]

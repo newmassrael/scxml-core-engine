@@ -1944,6 +1944,30 @@
       ],
       "type": "object"
     },
+    "Evidence": {
+      "description": "One statement of the specification the choice rests on.",
+      "properties": {
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SpecProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where the specification states it, in the `sce:provenance` compact form (docs/SCE_ACCEPTED_SUBSET.md §2.10). Absent when the author named no anchor."
+        },
+        "text": {
+          "description": "The author's account of what the specification states.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
     "ExternDeclaration": {
       "description": "One `<sce:extern>` declaration after parse-time validation has matched it against the §synth-5-I baseline registry. Carried through `ParsedForge` so codegen can emit per-language `extern \"C\" { fn ... }` blocks without re-walking the XML.",
       "properties": {
@@ -2368,6 +2392,17 @@
                 "statechart"
               ],
               "type": "string"
+            },
+            "kind_basis": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/KindBasis"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`<sce:kind-basis>` on the root — why the document is a statechart ([`crate::forge::kind_basis`]). `None` when it states none. Moved to [`crate::forge::model::ParsedForge::kind_basis`] on the AST export, where every kind carries it."
             },
             "machine_liveliness_opt_in": {
               "description": "SCE_MESH.md §16.4 / §16.7 liveness opt-in. `true` when the deploy declares a `liveliness:` block on the machine being codegen'd, regardless of whether this is a partition binary. Populated by [`crate::inject_partition_context_for`] from `deploy.yaml`.\n\nThe flag drives only the codegen-side observability gate [`crate::generator::reject_liveliness_without_handler`] (`feedback_silently_broken_hooks`): a machine declaring `liveliness:` without an `error.communication` handler in its SCXML is rejected at codegen because the row 8 `PEER_PARTITIONED` raise (on any machine with `liveliness:`) and the row 13 `REGION_PARTITIONED` raise (on a partitioned machine) both flow through `error.communication` and would be silently discarded. Transport emission is a different signal: per-partition row-13 token wiring is keyed on [`Self::partition_self_name`], and machine-level row-8 token wiring lives in the mesh transport codegen that reads `deploy.yaml`'s `liveliness:` directly.\n\n`false` when the machine declares no `liveliness:` section.",
@@ -4621,6 +4656,37 @@
       ],
       "type": "object"
     },
+    "KindBasis": {
+      "description": "Why the document is the kind it declares.",
+      "properties": {
+        "evidence": {
+          "description": "What the specification states that makes the document this kind. At least one.",
+          "items": {
+            "$ref": "#/definitions/Evidence"
+          },
+          "type": "array"
+        },
+        "rejected": {
+          "description": "The kinds the author considered and did not choose, each with the behaviour that ruled it out.",
+          "items": {
+            "$ref": "#/definitions/Rejected"
+          },
+          "type": "array"
+        },
+        "unresolved": {
+          "description": "The kind itself left open: the `sce:unresolved` / `sce:assumed` family on the `<sce:kind-basis>` element (docs/SCE_ACCEPTED_SUBSET.md §2.10), for a document drafted as one kind while the specification does not decide between it and the kinds its candidates name. It is the same marker everywhere else, so `--strict-unresolved` refuses the build and `sce-codegen unresolved` lists it.",
+          "items": {
+            "$ref": "#/definitions/UnresolvedMarker"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence",
+        "rejected"
+      ],
+      "type": "object"
+    },
     "LinkClass": {
       "description": "`<sce:link-class>` enumeration — RFC §synth-5-C \"Link-class enumeration\" table. Five strings shipped today; OS-specific classes (e.g. `unix_socket`, `qnx_msg`) land additively when wired.",
       "oneOf": [
@@ -4939,6 +5005,18 @@
             "$ref": "#/definitions/ForgeImport"
           },
           "type": "array"
+        },
+        "kind_basis": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/KindBasis"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "`<sce:kind-basis>` — why the document is the kind it declares ([`crate::forge::kind_basis`]). `null` when the document states none. A statechart's is carried here too on the AST export ([`crate::forge::ast_export::statechart_parsed_forge`]), so one field answers for every kind."
         }
       },
       "required": [
@@ -5409,6 +5487,23 @@
       "required": [
         "expr",
         "name"
+      ],
+      "type": "object"
+    },
+    "Rejected": {
+      "description": "A kind the author considered and did not choose.",
+      "properties": {
+        "because": {
+          "description": "The behaviour the specification states that rules the kind out.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/ForgeKind"
+        }
+      },
+      "required": [
+        "because",
+        "kind"
       ],
       "type": "object"
     },

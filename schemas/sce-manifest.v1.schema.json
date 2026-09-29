@@ -34,9 +34,13 @@
     "document_kind": {
       "description": "Which kind the run read its one document as, and whether the document said so. A root with no sce:kind is read as a statechart by default (SCE_FORGE.md 3.2), and a well-formed statechart produces no diagnostic, so an author choosing a kind cannot otherwise confirm which reading the product made. Present exactly when the run is one document; a document set holds several kinds and omits it.",
       "type": "object",
-      "required": ["name", "declared"],
+      "required": ["name", "declared", "basis_recorded"],
       "additionalProperties": false,
       "properties": {
+        "basis_recorded": {
+          "description": "Whether the root states why the document is this kind, in a <sce:kind-basis>. A manifest is written only for a document that parsed, so a basis counted here is one the parser accepted.",
+          "type": "boolean"
+        },
         "name": {
           "description": "The sce:kind spelling of the kind the run compiled. The enumeration is ForgeKind::ALL_ATTR_NAMES, which a test holds this list to.",
           "type": "string",

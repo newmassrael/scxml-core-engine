@@ -5222,6 +5222,13 @@ pub struct ParsedForge {
     /// empty, for the reason `externs` gives one field up.
     #[serde(default)]
     pub cycles: Vec<Cycle>,
+    /// `<sce:kind-basis>` — why the document is the kind it declares
+    /// ([`crate::forge::kind_basis`]). `null` when the document states
+    /// none. A statechart's is carried here too on the AST export
+    /// ([`crate::forge::ast_export::statechart_parsed_forge`]), so one
+    /// field answers for every kind.
+    #[serde(default)]
+    pub kind_basis: Option<crate::forge::kind_basis::KindBasis>,
 }
 
 /// One `<sce:extern>` declaration after parse-time validation has

@@ -3881,6 +3881,14 @@ pub enum ValidationError {
         value: String,
     },
 
+    /// A `<sce:kind-basis>` that does not say why the document is its
+    /// kind: misplaced, repeated, empty, or ruling out the very kind the
+    /// document declares. See [`crate::forge::kind_basis`].
+    #[error("<sce:kind-basis>: {fault}")]
+    MalformedKindBasis {
+        fault: crate::forge::kind_basis::Fault,
+    },
+
     /// The same `doc_id` is anchored twice on one node, via any
     /// combination of the attribute and element forms.
     ///

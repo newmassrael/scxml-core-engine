@@ -120,7 +120,7 @@ fn a_declared_forge_kind_is_published_as_declared() {
     for reading in both("scaled", TRANSFORM) {
         assert_eq!(
             reading,
-            serde_json::json!({"name": "transform", "declared": true})
+            serde_json::json!({"name": "transform", "declared": true, "basis_recorded": false})
         );
     }
 }
@@ -132,13 +132,13 @@ fn the_statechart_default_is_published_as_undeclared() {
     for reading in both("undeclared", UNDECLARED) {
         assert_eq!(
             reading,
-            serde_json::json!({"name": "statechart", "declared": false})
+            serde_json::json!({"name": "statechart", "declared": false, "basis_recorded": false})
         );
     }
     for reading in both("declared", DECLARED_STATECHART) {
         assert_eq!(
             reading,
-            serde_json::json!({"name": "statechart", "declared": true})
+            serde_json::json!({"name": "statechart", "declared": true, "basis_recorded": false})
         );
     }
 }
@@ -157,6 +157,6 @@ fn a_kind_outside_the_sce_namespace_is_not_a_declaration() {
 "#;
     assert_eq!(
         manifest("elsewhere", "check", body)["document_kind"],
-        serde_json::json!({"name": "statechart", "declared": false})
+        serde_json::json!({"name": "statechart", "declared": false, "basis_recorded": false})
     );
 }

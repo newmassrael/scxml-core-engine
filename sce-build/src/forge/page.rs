@@ -201,6 +201,13 @@ pub enum Word {
     Assumed,
     Reason,
     Candidates,
+    /// `<sce:kind-basis>` — why the document is its kind: the block, a
+    /// statement of the specification it rests on, and a kind the author
+    /// considered and ruled out. Words for the reason the traceability
+    /// family is: the owner reading the page is the one who judges them.
+    KindBasis,
+    Evidence,
+    RatherThan,
     /// The two a shape spends rather than the mapping: a block's open
     /// and close, for a shape that marks them instead of indenting.
     /// ⚠ They are WORDS and not shape-private literals for the same
@@ -334,6 +341,9 @@ impl Word {
         Word::Assumed,
         Word::Reason,
         Word::Candidates,
+        Word::KindBasis,
+        Word::Evidence,
+        Word::RatherThan,
         Word::Begin,
         Word::End,
     ];
@@ -486,6 +496,9 @@ fn en_word(w: Word) -> &'static str {
         Word::Assumed => "assumed",
         Word::Reason => "reason",
         Word::Candidates => "candidates",
+        Word::KindBasis => "kind-basis",
+        Word::Evidence => "evidence",
+        Word::RatherThan => "rather-than",
         Word::Begin => "begin",
         Word::End => "end",
     }
@@ -993,6 +1006,9 @@ fn ko_word(w: Word) -> &'static str {
         Word::Assumed => "가정",
         Word::Reason => "이유",
         Word::Candidates => "후보",
+        Word::KindBasis => "종류근거",
+        Word::Evidence => "근거",
+        Word::RatherThan => "배제",
         Word::Begin => "시작",
         Word::End => "종료",
     }

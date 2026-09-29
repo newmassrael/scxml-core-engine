@@ -784,6 +784,11 @@ pub enum DiagnosticCode {
     ValidationProvenanceMalformed,
     #[serde(rename = "validation/provenance-duplicate")]
     ValidationProvenanceDuplicate,
+    // ── `<sce:kind-basis>` — why a document is the kind it declares
+    //    (`forge::kind_basis`). One code for every structural fault: the
+    //    fault is the message, each naming the one thing to change.
+    #[serde(rename = "validation/kind-basis-malformed")]
+    ValidationKindBasisMalformed,
 
     // ── NL→IR Mapping Roadmap Item 5: sce:unresolved placeholder.
     //    Default builds carry the marker silently (the model + the
@@ -3268,6 +3273,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // NL→IR Mapping Roadmap Item 7: sce:provenance spec anchor
         ValidationProvenanceMalformed,
         ValidationProvenanceDuplicate,
+        ValidationKindBasisMalformed,
         // NL→IR Mapping Roadmap Item 5: sce:unresolved placeholder
         ValidationUnresolvedPlaceholder,
         // NL→IR Mapping Roadmap Item 2: cross-kind typed binding
@@ -4502,6 +4508,8 @@ impl DiagnosticCode {
             | ValidationUnresolvedPlaceholder
             | ValidationProvenanceMalformed
             | ValidationProvenanceDuplicate
+            // What a kind basis must state is SCE's own rule.
+            | ValidationKindBasisMalformed
             // Which `sce:` attributes an element takes is SCE's own
             // vocabulary; no external spec states it.
             | ValidationSceAttributeUnread
@@ -4653,6 +4661,7 @@ impl DiagnosticCode {
             ValidationDuplicateRequirementId => "validation/duplicate-requirement-id",
             ValidationProvenanceMalformed => "validation/provenance-malformed",
             ValidationProvenanceDuplicate => "validation/provenance-duplicate",
+            ValidationKindBasisMalformed => "validation/kind-basis-malformed",
             ValidationUnresolvedPlaceholder => "validation/unresolved-placeholder",
             ValidationCrossKindFieldNotFound => "validation/cross-kind-field-not-found",
             ValidationCrossKindTypeMismatch => "validation/cross-kind-type-mismatch",
@@ -6039,6 +6048,17 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // closed candidate set.
             fix: None,
             key_fragments: vec![element.clone(), doc_id.clone()],
+        },
+        ValidationError::MalformedKindBasis { fault } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationKindBasisMalformed,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            // The repair is the author's sentence about the specification,
+            // or the removal of a contradiction only they can resolve; no
+            // candidate set exists.
+            fix: None,
+            key_fragments: vec![fault.to_string()],
         },
         ValidationError::UnresolvedPlaceholder {
             element,
@@ -10615,6 +10635,16 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:cf87320d71763936","code":"validation/provenance-duplicate","stage":"validation","message":"<state id=\"armed\">: duplicate sce:provenance doc id 'OEM-DIAG-SPEC'","actual":"OEM-DIAG-SPEC"}"#,
+            ),
+            (
+                "forge/kind-basis-malformed",
+                ValidationError::MalformedKindBasis {
+                    fault: crate::forge::kind_basis::Fault::RejectsItsOwnKind {
+                        kind: crate::forge::model::ForgeKind::Lookup,
+                    },
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9c10826efb774444","code":"validation/kind-basis-malformed","stage":"validation","message":"<sce:kind-basis>: <sce:rejected kind=\"lookup\"> rules out the kind this document declares"}"#,
             ),
             (
                 "forge/unresolved-placeholder",
@@ -16121,6 +16151,9 @@ mod tests {
             // doc id. Same shape as the sce:req duplicate above:
             // deterministic repair, no candidate set.
             | ValidationProvenanceDuplicate
+            // `<sce:kind-basis>` — the repair is the author's statement
+            // about the specification; no candidate set.
+            | ValidationKindBasisMalformed
             // NL→IR Mapping Roadmap Item 5 — unresolved placeholder
             // under `--strict-unresolved`. Deterministic repair
             // (resolve the marker and replace the value); no closed
@@ -16468,6 +16501,7 @@ mod tests {
                 | ValidationDuplicateRequirementId
                 | ValidationProvenanceMalformed
                 | ValidationProvenanceDuplicate
+                | ValidationKindBasisMalformed
                 | ValidationUnresolvedPlaceholder
                 | ValidationCrossKindFieldNotFound
                 | ValidationCrossKindTypeMismatch
@@ -16792,9 +16826,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            403,
+            404,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 403 distinct variants to match the DiagnosticCode \
+             expected 404 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17358,7 +17392,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // this list as work owed on the resolver, or as codes
             // that cannot be routed back to a specification, is the
             // pair of claims its rename exists to stop.
-            XmlParse
+            ValidationKindBasisMalformed
+            | XmlParse
             | XmlSchemaValidation
             | XmlFileNotFound
             | XmlWrongRootElement

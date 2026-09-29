@@ -2067,6 +2067,65 @@ cannot merge unresolved IR.
 The three families compose freely on a single node — `sce:req`,
 `sce:provenance`, and `sce:unresolved` are orthogonal axes.
 
+#### §2.10.1 Why the document is its kind — `<sce:kind-basis>`
+
+The families above say where a node comes from. None of them says why the
+document is a transform rather than a lookup, and that is the first
+decision an author makes from a specification — one the product cannot
+make, because the evidence is prose. Until this element the reason lived
+only in the conversation that produced the document, so the owner
+reviewing the pseudocode saw a kind and never the clauses it was chosen
+from.
+
+```xml
+<scxml ... sce:kind="transform" name="adc_to_volts">
+  <sce:kind-basis>
+    <sce:evidence provenance="SPEC-7@2#4.1">the voltage is one formula over
+      the current count</sce:evidence>
+    <sce:rejected kind="interpolation">the text gives a formula, not values
+      at breakpoints</sce:rejected>
+  </sce:kind-basis>
+  ...
+</scxml>
+```
+
+- **Where**: directly under the `<scxml>` root, at most once, on every kind
+  alike — a statechart's root as much as a forge root. An inline kind
+  (`<data sce:kind>`) takes its statechart's.
+- **`<sce:evidence>`**, one or more: the author's account of what the
+  specification states, as text. `provenance`, optional, is the compact
+  anchor of `sce:provenance` (`doc_id[@rev][#section[:position]]`).
+- **`<sce:rejected kind="…">`**, any number: a kind considered and not
+  chosen, and as text the behaviour that ruled it out.
+- **The kind left open**: when the specification does not decide between
+  kinds and a draft is written anyway, the choice is marked as undecided
+  with the `sce:unresolved` family on the `<sce:kind-basis>` element
+  itself — `sce:unresolved="kind"`, `sce:unresolved-reason` saying what the
+  specification would have to state, and `sce:unresolved-candidates`
+  naming the OTHER kinds still open (never the declared one, never one it
+  also rejects). It is the marker it is everywhere else:
+  `--strict-unresolved` refuses the build, `sce-codegen unresolved` lists
+  it with `node_path` `<kind-basis>` in both pipelines, and the page
+  writes it inside the `kind-basis:` block.
+- **Metadata only**: no code generator reads it, so it changes no
+  generated construct (the input-hash headers still move with the
+  document's bytes, as they do for a comment). It reaches `sce-codegen pseudo`, as a `kind-basis:` block under the
+  document's head line, the acceptance report, the AST export
+  (`ParsedForge.kind_basis`), and the manifest, as
+  `document_kind.basis_recorded`.
+
+Every fault is `validation/kind-basis-malformed`, raised by the parser in
+every build: a second basis, one anywhere but on the root, an
+`<sce:evidence>` or `<sce:rejected>` outside a basis, a basis with no
+evidence, an element with no text, a child it does not take, a
+`<sce:rejected>` with no kind or a kind SCE does not have, the same kind
+rejected twice, and — the contradiction the element exists to catch — a
+`<sce:rejected>` naming the kind the document declares. An anchor that
+names no document is `validation/provenance-malformed`, as everywhere
+else. The schema (`sce-forge-ext.xsd`) is deliberately looser than the
+parser, so that one code carries every fault whether or not the build
+compiles the schema in.
+
 ### §2.11 Native host actions — `<sce:action>` (W3C SCXML G.7)
 
 A `<sce:action>` is a W3C SCXML §G.7 Custom Action Element that
@@ -3598,6 +3657,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/duplicate-requirement-id` | Validation |
 | `validation/provenance-malformed` | Validation |
 | `validation/provenance-duplicate` | Validation |
+| `validation/kind-basis-malformed` | Validation |
 | `validation/unresolved-placeholder` | Validation |
 | `validation/cross-kind-field-not-found` | Validation |
 | `validation/cross-kind-type-mismatch` | Validation |

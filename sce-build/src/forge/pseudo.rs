@@ -566,6 +566,74 @@ pub fn render_nodes(
     }
 }
 
+/// `nodes` with the document's `<sce:kind-basis>` written under its head
+/// line, the first thing the page says after naming the document:
+///
+/// ```text
+/// transform temperature_from_raw
+///   kind-basis:
+///     evidence the output is one formula over the current count
+///       provenance SPEC-7@2#4.1
+///     rather-than interpolation
+///       reason the text gives a formula, not values at breakpoints
+///   in raw: uint16
+/// ```
+///
+/// A separate step rather than a line inside each kind's renderer: the
+/// basis is about the document's kind, which every renderer writes as its
+/// head line and none of them otherwise knows how it was chosen. `kind` is
+/// what a refusal names.
+pub fn with_kind_basis(
+    mut nodes: Vec<Node>,
+    kind: &'static str,
+    basis: Option<&crate::forge::kind_basis::KindBasis>,
+) -> Result<Vec<Node>, Unsupported> {
+    let Some(basis) = basis else {
+        return Ok(nodes);
+    };
+    if nodes.is_empty() {
+        return Err(Unsupported::feature(
+            kind,
+            "a kind basis on a page with no head line",
+        ));
+    }
+    let mut out = Out::new();
+    out.depth = nodes[0].depth + 1;
+    out.line_of(vec![Part::Word(Word::KindBasis), Part::Glued(":".into())]);
+    out.nested(|out| {
+        for evidence in &basis.evidence {
+            out.trace_line(Word::Evidence, &evidence.text);
+            if let Some(anchor) = &evidence.provenance {
+                out.nested(|out| match anchor.to_compact() {
+                    Some(compact) => out.trace_line(Word::Provenance, &compact),
+                    None => out.refuse("a provenance anchor the compact form cannot spell"),
+                });
+            }
+        }
+        for rejected in &basis.rejected {
+            out.line_of(vec![
+                Part::Word(Word::RatherThan),
+                Part::Text(rejected.kind.as_attr().to_string()),
+            ]);
+            out.nested(|out| out.trace_line(Word::Reason, &rejected.because));
+        }
+        // The kind itself left open, in the words every other open marker
+        // is written in.
+        out.traceability(&Traced {
+            req: &[],
+            provenance: &[],
+            unresolved: &basis.unresolved,
+        });
+    });
+    if let Some(gap) = out.refused {
+        return Err(Unsupported::feature(kind, gap));
+    }
+    let tail = nodes.split_off(1);
+    nodes.extend(out.nodes);
+    nodes.extend(tail);
+    Ok(nodes)
+}
+
 // ── Output buffer ──────────────────────────────────────────────
 
 /// Accumulates lines at an indentation depth.

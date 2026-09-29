@@ -112,6 +112,8 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         self.assertIn("source clauses", replies[0]["result"]["instructions"])
         self.assertIn("scxml_kinds", replies[0]["result"]["instructions"])
         self.assertIn("document_kind", replies[0]["result"]["instructions"])
+        self.assertIn("sce:kind-basis", replies[0]["result"]["instructions"])
+        self.assertIn("basis_recorded", replies[0]["result"]["instructions"])
         names = {t["name"] for t in replies[1]["result"]["tools"]}
         self.assertEqual(
             {"brief", "questions", "review", "check", "coverage", "verify",

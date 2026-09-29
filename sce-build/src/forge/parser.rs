@@ -408,6 +408,9 @@ pub fn parse_forge_with_imports_and_plugin(
 
     let imports = parse_imports(&root, diag)?;
     let mut externs = parse_externs(&root, diag, plugin)?;
+    // Read for every kind here rather than by each kind's parser: the
+    // basis is about the document's kind, not about its content.
+    let kind_basis = crate::forge::kind_basis::read(&root, kind, diag)?;
     let document = parse_forge_from_node(&root, label, kind)?;
 
     // C5 auto-inject (spec §synth-5-E lines 1222-1227 + lines 1736-1740):
@@ -446,6 +449,7 @@ pub fn parse_forge_with_imports_and_plugin(
         imports,
         externs,
         cycles,
+        kind_basis,
     }))
 }
 
@@ -493,6 +497,10 @@ pub fn parse_inline_forge(
         imports,
         externs,
         cycles,
+        // An inline kind is part of its statechart, whose root carries the
+        // basis; a `<sce:kind-basis>` inside the `<data>` is refused as
+        // misplaced by the statechart's read.
+        kind_basis: None,
     })
 }
 

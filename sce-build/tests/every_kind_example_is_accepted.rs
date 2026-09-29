@@ -130,6 +130,55 @@ fn every_file_in_the_example_directory_is_a_kind_example() {
     assert_eq!(on_disk, claimed);
 }
 
+/// The catalog's example of a kind basis is one `check` accepts: put
+/// directly under the transform example's root, the document still checks
+/// and the manifest counts the basis.
+#[test]
+fn the_catalogs_basis_example_is_accepted() {
+    let catalog = catalog(&[]);
+    let basis = catalog["declaration"]["basis"]["example"]
+        .as_str()
+        .expect("the declaration carries a basis example");
+    let transform = catalog["kinds"]
+        .as_array()
+        .expect("kinds")
+        .iter()
+        .find(|k| k["name"] == "transform")
+        .expect("transform");
+    let text = transform["example"]["document"]["text"]
+        .as_str()
+        .expect("transform has an example");
+    let at = text
+        .find("<datamodel>")
+        .expect("the example has a datamodel");
+    let with_basis = format!("{}{basis}\n  {}", &text[..at], &text[at..]);
+
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("basis-example-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let path = dir.join("transform.scxml");
+    std::fs::write(&path, &with_basis).expect("write");
+    let out = run(&[
+        "--error-format",
+        "json",
+        "check",
+        "--lint",
+        path.to_str().expect("utf-8 path"),
+    ]);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(
+        out.status.success(),
+        "{with_basis}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let manifest: serde_json::Value = serde_json::from_slice(&out.stdout).expect("manifest");
+    assert_eq!(
+        manifest["document_kind"]["basis_recorded"], true,
+        "{manifest}"
+    );
+}
+
 /// `--kind` narrows the catalog to one entry, and refuses a name the
 /// parser does not accept rather than answering with nothing.
 #[test]

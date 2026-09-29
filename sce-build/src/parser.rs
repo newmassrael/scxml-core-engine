@@ -2279,6 +2279,13 @@ impl SCXMLParser {
         //     different schemas (or only one side declares one)
         //     surface as `mesh/event-schema-mismatch`.
         let forge_imports = crate::forge::parser::parse_imports(&root, diag_label)?;
+        // The same reader a forge root uses, so both pipelines hold a
+        // `<sce:kind-basis>` to one set of rules.
+        let kind_basis = crate::forge::kind_basis::read(
+            &root,
+            crate::forge::model::ForgeKind::Statechart,
+            diag_label,
+        )?;
 
         let mut model = SCXMLModel {
             name: name.to_string(),
@@ -2294,6 +2301,7 @@ impl SCXMLParser {
             event_queue_capacity,
             source_location: root_source_location,
             forge_imports,
+            kind_basis,
             ..Default::default()
         };
 

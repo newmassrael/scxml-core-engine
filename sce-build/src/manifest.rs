@@ -173,6 +173,11 @@ pub struct DocumentKind {
     /// `false` when the root carries no `sce:kind` and the document was
     /// read as a statechart by default.
     pub declared: bool,
+    /// Whether the root states why the document is this kind, in a
+    /// `<sce:kind-basis>` ([`crate::forge::kind_basis`]). A manifest is
+    /// written only for a document that parsed, so a basis counted here
+    /// is one the parser accepted.
+    pub basis_recorded: bool,
 }
 
 impl DocumentKind {
@@ -182,18 +187,24 @@ impl DocumentKind {
     /// by: such a document is refused before any manifest is written, so
     /// there is no reading to publish.
     pub fn of(content: &str) -> Option<Self> {
-        use crate::forge::model::ForgeKind;
-        match crate::forge::parser::detect_kind(content) {
-            Ok(Some(kind)) => Some(Self {
-                name: kind.as_attr(),
-                declared: true,
-            }),
-            Ok(None) => Some(Self {
-                name: ForgeKind::Statechart.as_attr(),
-                declared: false,
-            }),
-            Err(_) => None,
-        }
+        use crate::forge::model::{ForgeKind, SCE_NAMESPACE};
+        let doc = roxmltree::Document::parse(content).ok()?;
+        let root = doc.root_element();
+        let (name, declared) = match crate::forge::parser::detect_kind_from_node(&root) {
+            Ok(Some(kind)) => (kind.as_attr(), true),
+            Ok(None) => (ForgeKind::Statechart.as_attr(), false),
+            Err(_) => return None,
+        };
+        let basis_recorded = root.children().any(|n| {
+            n.is_element()
+                && n.tag_name().namespace() == Some(SCE_NAMESPACE)
+                && n.tag_name().name() == crate::forge::kind_basis::ELEMENT
+        });
+        Some(Self {
+            name,
+            declared,
+            basis_recorded,
+        })
     }
 }
 
@@ -573,28 +584,44 @@ mod tests {
                  xmlns:sce=\"http://sce.dev/ext\" version=\"1.0\"{attr}/>"
             )
         };
+        let reading = |name, declared| {
+            Some(DocumentKind {
+                name,
+                declared,
+                basis_recorded: false,
+            })
+        };
         assert_eq!(
             DocumentKind::of(&root(" sce:kind=\"lookup\"")),
-            Some(DocumentKind {
-                name: "lookup",
-                declared: true
-            })
+            reading("lookup", true)
         );
         assert_eq!(
             DocumentKind::of(&root(" sce:kind=\"statechart\"")),
-            Some(DocumentKind {
-                name: "statechart",
-                declared: true
-            })
+            reading("statechart", true)
         );
-        assert_eq!(
-            DocumentKind::of(&root("")),
-            Some(DocumentKind {
-                name: "statechart",
-                declared: false
-            })
-        );
+        assert_eq!(DocumentKind::of(&root("")), reading("statechart", false));
         assert_eq!(DocumentKind::of(&root(" sce:kind=\"lookupp\"")), None);
+    }
+
+    /// A basis on the root is counted; one of the same local name in
+    /// another namespace is not.
+    #[test]
+    fn document_kind_says_whether_the_kind_was_argued() {
+        let with = |child: &str| {
+            format!(
+                "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" \
+                 xmlns:sce=\"http://sce.dev/ext\" xmlns:x=\"urn:x\" \
+                 sce:kind=\"lookup\">{child}</scxml>"
+            )
+        };
+        let recorded =
+            |child: &str| DocumentKind::of(&with(child)).map(|reading| reading.basis_recorded);
+        assert_eq!(
+            recorded("<sce:kind-basis><sce:evidence>t</sce:evidence></sce:kind-basis>"),
+            Some(true)
+        );
+        assert_eq!(recorded("<x:kind-basis/>"), Some(false));
+        assert_eq!(recorded(""), Some(false));
     }
 
     /// The per-language verdict names backends by their wire spelling;

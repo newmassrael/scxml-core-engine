@@ -187,7 +187,11 @@ pub fn write_envelope_to_path(path: &std::path::Path, parsed: &ParsedForge) -> s
 /// past its own.
 pub fn statechart_parsed_forge(mut model: crate::model::SCXMLModel) -> ParsedForge {
     model.into_artifact_coordinates();
+    // One home per envelope: the forge kinds carry the basis on the
+    // envelope, so the statechart's moves there instead of appearing twice.
+    let kind_basis = model.kind_basis.take();
     ParsedForge {
+        kind_basis,
         document: crate::forge::model::ForgeDocument::Statechart(Box::new(model)),
         imports: Vec::new(),
         externs: Vec::new(),

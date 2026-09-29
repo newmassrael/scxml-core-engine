@@ -1934,6 +1934,56 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- Why the document is the kind it declares: on the <scxml> root of
+       every kind, at most once. `sce-build/src/forge/kind_basis.rs`.
+
+       ⚠ Looser here than the parser, deliberately, for the reason the
+       provenance element above gives: every fault of a basis — repeated,
+       misplaced, empty, a child it does not take, a kind no kind goes by,
+       the document's own kind ruled out — is ONE defect with ONE code,
+       `validation/kind-basis-malformed`, raised by the parser. A rule
+       stated here as well would move some of those to libxml2 as
+       `xml/schema-validation` and leave the rest with the parser, and it
+       would still be absent from a build without the `xsd` feature. So
+       the content is handed on laxly, `kind` is a string, and nothing is
+       `required`; what IS declared validates the two children's shape
+       wherever the schema is compiled in. -->
+  <xs:element name="kind-basis">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <!-- The kind itself left open is the `sce:unresolved` family on this
+           element, read by the same parser code as on every other
+           element; lax, so the family's own declarations judge it. -->
+      <xs:anyAttribute namespace="##targetNamespace" processContents="lax"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- What the specification states that makes the document its kind.
+       `provenance` is the compact anchor of `sce:provenance`. -->
+  <xs:element name="evidence">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute name="provenance" type="xs:string"/>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- A kind considered and not chosen, and the behaviour that ruled it
+       out. -->
+  <xs:element name="rejected">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute name="kind" type="xs:string"/>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
   <!-- Timer kind: read by `parse_timer` via `find_sce_child`. -->
   <xs:element name="cancel-on">
     <xs:complexType>

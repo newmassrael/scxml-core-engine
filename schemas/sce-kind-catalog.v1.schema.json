@@ -20,13 +20,25 @@
     "declaration": {
       "description": "How a document declares its kind: the `attribute` in `namespace` on the root `element`. A root with no such attribute is read as `default`; an attribute of the same local name in another namespace is not a declaration.",
       "type": "object",
-      "required": ["attribute", "namespace", "element", "default"],
+      "required": ["attribute", "namespace", "element", "default", "basis"],
       "additionalProperties": false,
       "properties": {
         "attribute": { "const": "kind" },
         "namespace": { "const": "http://sce.dev/ext" },
         "element": { "const": "scxml" },
-        "default": { "$ref": "#/definitions/kindName" }
+        "default": { "$ref": "#/definitions/kindName" },
+        "basis": {
+          "description": "How a document states why it is its kind: a <sce:kind-basis> directly under the root (docs/SCE_ACCEPTED_SUBSET.md 2.10.1), with what its two children hold and a complete example that check accepts in a transform.",
+          "type": "object",
+          "required": ["element", "evidence", "rejected", "example"],
+          "additionalProperties": false,
+          "properties": {
+            "element": { "const": "kind-basis" },
+            "evidence": { "type": "string", "minLength": 1 },
+            "rejected": { "type": "string", "minLength": 1 },
+            "example": { "type": "string", "minLength": 1 }
+          }
+        }
       }
     },
     "kinds": {

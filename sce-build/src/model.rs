@@ -2541,6 +2541,12 @@ pub struct SCXMLModel {
     /// re-parsing the SCXML.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forge_imports: Vec<crate::forge::model::ForgeImport>,
+    /// `<sce:kind-basis>` on the root — why the document is a statechart
+    /// ([`crate::forge::kind_basis`]). `None` when it states none. Moved
+    /// to [`crate::forge::model::ParsedForge::kind_basis`] on the AST
+    /// export, where every kind carries it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind_basis: Option<crate::forge::kind_basis::KindBasis>,
     /// EventSchema MCU native lowering —
     /// the statechart's `<sce:import kind="event-schema">` declarations
     /// resolved to their `EventSchemaModel`, keyed by SCXML event name

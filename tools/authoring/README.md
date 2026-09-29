@@ -91,6 +91,20 @@ document as, and `document_kind.declared` is `false` when no `sce:kind` was
 found and the statechart default applied, so a forgotten or misspelled
 declaration shows up without any diagnostic being needed.
 
+The choice is recorded in the document as well as explained in the
+conversation. A `<sce:kind-basis>` directly under the root holds an
+`<sce:evidence>` for each clause the choice rests on, with its provenance
+anchor, and an `<sce:rejected kind="…">` for each neighbouring kind ruled
+out (`docs/SCE_ACCEPTED_SUBSET.md` §2.10.1; the catalog's
+`declaration.basis` carries the grammar and an example). The pseudocode page
+shows it under the document's head line, so the owner reviews the reason
+along with the document. The manifest's `document_kind.basis_recorded` says
+whether one was written. A basis that rules out the document's own kind is
+refused. When the specification does not decide the kind and a draft is
+written anyway, the basis carries the `sce:unresolved` marker with the other
+candidate kinds, so `--strict-unresolved` refuses to build it until the
+owner decides.
+
 Neither is a prose-to-kind classifier. The catalog describes kinds and the
 manifest reports a reading; when the source states neither side of the
 behaviour that separates two candidate kinds, the choice is the owner's, and
