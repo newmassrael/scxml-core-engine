@@ -38,4 +38,28 @@ struct NoParent {
     void raiseExternal(const ForwardedEvent &) {}
 };
 
+/**
+ * @brief Why `StaticExecutionEngine::initializeAsRoot` refused a start.
+ *
+ * The default is to run such a machine — its `#_parent` sends then raise
+ * error.communication (W3C SCXML C.1). A host that would rather not start a
+ * machine that needs a parent, when it has none to give, asks for the refusal
+ * by starting it with `initializeAsRoot`.
+ */
+enum class RootStartRefusal {
+    /// §scxml-6.2.4: the document sends to `#_parent`, and a session its host
+    /// started has no parent to reach.
+    NeedsParent,
+};
+
+/// The refusal as a sentence, for a host to report — the same words on every
+/// engine.
+inline const char *reason(RootStartRefusal refusal) {
+    switch (refusal) {
+    case RootStartRefusal::NeedsParent:
+        return "the machine sends to #_parent and was started with no parent session";
+    }
+    return "";
+}
+
 }  // namespace SCE::Common

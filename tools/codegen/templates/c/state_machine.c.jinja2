@@ -2011,6 +2011,15 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_state_t {{ csym_prefix }}{{ model.na
     return {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ model.initial | upper | replace('-', '_') | replace('.', '_') }};
 }
 
+/* W3C SCXML 6.2.4: see the header — the manifest's `needs_parent`. */
+SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_root_start_refusal(void) {
+{% if model.needs_parent %}
+    return "the machine sends to #_parent and was started with no parent session";
+{% else %}
+    return NULL;
+{% endif %}
+}
+
 /* W3C SCXML 3.3: the document's own name for a state — see the header for why
    a host that persists a configuration needs one. */
 SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_state_name({{ csym_prefix }}{{ model.name }}_state_t s) {

@@ -300,6 +300,9 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
     // the synchronous mode. The same verdict the generate manifest publishes
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = {{ 'true' if model.needs_tick_driving else 'false' }}
+
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    override val needsParent: Boolean = {{ 'true' if model.needs_parent else 'false' }}
 {% if model.needs_script_engine %}
 
     // W3C SCXML B.1: Initialize script engine before entering initial state

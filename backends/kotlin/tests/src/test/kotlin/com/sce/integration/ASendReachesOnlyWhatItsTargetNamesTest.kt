@@ -23,6 +23,23 @@ import org.junit.jupiter.api.Test
 @DisplayName("ASendReachesOnlyWhatItsTargetNames — W3C SCXML C.1")
 class ASendReachesOnlyWhatItsTargetNamesTest {
 
+    /**
+     * W3C SCXML 6.2.4: this document sends to `#_parent`, so a host that runs
+     * machines as roots and asks for the refusal gets it — and nothing starts.
+     * The plain `initialize` below runs the same machine; the refusal is opt-in.
+     */
+    @Test
+    fun aRootStartOfAMachineThatNeedsAParentIsRefused() {
+        val sm = ASendReachesOnlyWhatItsTargetNamesStateMachine(W3CTestBase.createEngine())
+        assertEquals(com.sce.runtime.RootStartRefusal.NEEDS_PARENT, sm.rootStartRefusal())
+        assertEquals(com.sce.runtime.RootStartRefusal.NEEDS_PARENT, sm.initializeAsRoot())
+        assertTrue(sm.activeConfiguration.isEmpty(), "a refused root start must enter nothing")
+        assertEquals(
+            "the machine sends to #_parent and was started with no parent session",
+            com.sce.runtime.RootStartRefusal.NEEDS_PARENT.reason,
+        )
+    }
+
     @Test
     fun aSendReachesOnlyWhatItsTargetNames() {
         val sm = ASendReachesOnlyWhatItsTargetNamesStateMachine(W3CTestBase.createEngine())

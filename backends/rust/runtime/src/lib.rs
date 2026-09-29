@@ -463,6 +463,8 @@ pub mod scripting;
 
 pub use clock::SceClock;
 pub use engine::Engine;
+/// §scxml-6.2.4: why [`Engine::initialize_as_root`] refused a start.
+pub use engine::RootStartRefusal;
 /// §scxml-6.2: the target a generated send site names for a delayed send.
 #[cfg(not(feature = "no_std"))]
 pub use engine::ScheduledRoute;

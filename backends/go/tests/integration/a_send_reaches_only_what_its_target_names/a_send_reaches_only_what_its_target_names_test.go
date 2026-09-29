@@ -20,6 +20,28 @@ import (
 	scegotest "github.com/newmassrael/sce-go-tests/harness"
 )
 
+// W3C SCXML 6.2.4: this document sends to #_parent, so a host that runs
+// machines as roots and asks for the refusal gets it — and nothing starts.
+// The plain Initialize below runs the same machine; the refusal is opt-in.
+func TestARootStartOfAMachineThatNeedsAParentIsRefused(t *testing.T) {
+	policy := NewASendReachesOnlyWhatItsTargetNamesPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	policy.ScriptEngine = scegotest.NewLuaEngine()
+	engine := sce.NewEngine[ASendReachesOnlyWhatItsTargetNamesState, ASendReachesOnlyWhatItsTargetNamesEvent](&policy)
+	if refusal := engine.RootStartRefusal(); refusal != sce.RootStartNeedsParent {
+		t.Fatalf("RootStartRefusal = %v, want RootStartNeedsParent", refusal)
+	}
+	if err := engine.InitializeAsRoot(); err != sce.RootStartNeedsParent {
+		t.Fatalf("InitializeAsRoot = %v, want RootStartNeedsParent", err)
+	}
+	if engine.IsRunning() {
+		t.Errorf("a refused root start must start nothing")
+	}
+	if got := sce.RootStartNeedsParent.Error(); got != "the machine sends to #_parent and was started with no parent session" {
+		t.Errorf("reason = %q", got)
+	}
+}
+
 func TestASendReachesOnlyWhatItsTargetNames(t *testing.T) {
 	policy := NewASendReachesOnlyWhatItsTargetNamesPolicy()
 	policy.SessionID = sce.GenerateSessionID()

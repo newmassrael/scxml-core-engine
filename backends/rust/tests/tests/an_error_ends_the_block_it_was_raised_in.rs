@@ -16,6 +16,23 @@ use sce_rust_tests::integration::an_error_ends_the_block_it_was_raised_in::{
     AnErrorEndsTheBlockItWasRaisedInState as State,
 };
 
+/// The control for `a_root_start_of_a_machine_that_needs_a_parent_is_refused`:
+/// this document never sends to `#_parent`, so a root-start policy lets it
+/// start, and the checked start runs it as `initialize` would.
+#[test]
+fn a_root_start_of_a_machine_that_needs_no_parent_runs() {
+    use sce_rust_runtime::Engine;
+    assert_eq!(Engine::<Policy>::root_start_refusal(), None);
+    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
+        std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
+    let mut e = Engine::new(Policy::new(script_engine));
+    assert_eq!(e.initialize_as_root(), Ok(()));
+    assert!(
+        e.is_running(),
+        "a root start that is not refused must start the machine"
+    );
+}
+
 #[test]
 fn each_error_ends_only_its_own_block() {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =

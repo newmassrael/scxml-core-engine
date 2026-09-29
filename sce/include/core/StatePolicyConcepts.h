@@ -90,6 +90,17 @@ template <typename P>
 struct NeedsEventSchedulerTrait<P, std::void_t<decltype(P::NEEDS_EVENT_SCHEDULER)>>
     : std::bool_constant<P::NEEDS_EVENT_SCHEDULER> {};
 
+/// Policy declares that its document sends to its parent session — a literal
+/// `<send target="#_parent">` — the generate manifest's `needs_parent`.
+///
+/// Read by a host that refuses to start such a machine as a root
+/// (`StaticExecutionEngine::initializeAsRoot`). Detected rather than required,
+/// for the reason `NeedsEventSchedulerTrait` gives; absent means `false`.
+template <typename P, typename = void> struct NeedsParentTrait : std::false_type {};
+
+template <typename P>
+struct NeedsParentTrait<P, std::void_t<decltype(P::NEEDS_PARENT)>> : std::bool_constant<P::NEEDS_PARENT> {};
+
 /// Policy names the `<invoke>`s its document hands to a host invoker
 /// (§scxml-6.4.1), as `static constexpr` `HOST_INVOKE_IDS` — a range of
 /// strings. Their `done.invoke.<id>` is accepted only through the engine's
@@ -304,6 +315,10 @@ concept HasParentDelivery = HasParentDeliveryTrait<P>::value;
 template <typename P>
 concept NeedsEventScheduler = NeedsEventSchedulerTrait<P>::value;
 
+/// The policy's machine sends to its parent session
+template <typename P>
+concept NeedsParent = NeedsParentTrait<P>::value;
+
 /// Policy lists the invokes a host runs
 template <typename P>
 concept HasHostInvokeIds = HasHostInvokeIdsTrait<P>::value;
@@ -335,6 +350,8 @@ template <typename P> inline constexpr bool HasInvocationDelivery = HasInvocatio
 template <typename P> inline constexpr bool HasParentDelivery = HasParentDeliveryTrait<P>::value;
 
 template <typename P> inline constexpr bool NeedsEventScheduler = NeedsEventSchedulerTrait<P>::value;
+
+template <typename P> inline constexpr bool NeedsParent = NeedsParentTrait<P>::value;
 
 template <typename P> inline constexpr bool HasHostInvokeIds = HasHostInvokeIdsTrait<P>::value;
 

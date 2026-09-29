@@ -40,6 +40,7 @@ from .invoke import (
     create_done_invoke_event_name,
 )
 from .microstep import EnabledTransition, EntryTarget, HistoryTarget, StateTarget
+from .root_start import RootStartRefusal
 from .policy import StatePolicy
 from .scheduler import ScheduledEvent, Scheduler
 from .send import (
@@ -87,6 +88,7 @@ __all__ = [
     "PendingInvoke",
     "RESERVED_TYPE_PREFIX",
     "RequestFieldType",
+    "RootStartRefusal",
     "ScheduledEvent",
     "Scheduler",
     "ScriptError",

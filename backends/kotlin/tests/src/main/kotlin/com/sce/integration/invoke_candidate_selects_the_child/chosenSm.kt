@@ -41,6 +41,9 @@ class ChosenStateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = false
 
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    override val needsParent: Boolean = true
+
     // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
     //
     // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)

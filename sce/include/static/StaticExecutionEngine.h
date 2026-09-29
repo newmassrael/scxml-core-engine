@@ -20,6 +20,7 @@
 #include "common/EventTypeHelper.h"
 #include "common/ForwardedEvent.h"
 #include "common/IOProcessorHelper.h"
+#include "common/NoParent.h"
 #include "common/SCXMLConstants.h"
 #include "common/SceClock.h"
 #include "common/SendHelper.h"
@@ -2349,6 +2350,39 @@ protected:
 
 public:
     StaticExecutionEngine() : currentState_(StatePolicy::initialState()) {}
+
+    /**
+     * @brief Whether a host running this machine as a ROOT — started by the
+     *        host, not by an `<invoke>` — should refuse to start it, and why.
+     *
+     * §scxml-6.2.4: `#_parent` names the session that invoked this one, and a
+     * root has none. `initialize()` still runs such a machine — each such send
+     * then raises error.communication, which is the default. This answers for
+     * a host that would rather not start it at all, from the policy's
+     * `NEEDS_PARENT`, the manifest's `needs_parent`.
+     */
+    static std::optional<::SCE::Common::RootStartRefusal> rootStartRefusal() {
+        if constexpr (::SCE::Core::NeedsParent<StatePolicy>) {
+            return ::SCE::Common::RootStartRefusal::NeedsParent;
+        } else {
+            return std::nullopt;
+        }
+    }
+
+    /**
+     * @brief `initialize()`, for a host that refuses to start a machine needing
+     *        a parent as a root (`rootStartRefusal()`).
+     *
+     * A refusal starts nothing: no datamodel is declared and no state is
+     * entered, so the engine is as its constructor left it.
+     */
+    std::optional<::SCE::Common::RootStartRefusal> initializeAsRoot() {
+        if (auto refusal = rootStartRefusal()) {
+            return refusal;
+        }
+        initialize();
+        return std::nullopt;
+    }
 
     /**
      * @brief Initialize state machine (§scxml-3.2)

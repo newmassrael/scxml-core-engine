@@ -725,6 +725,8 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // `()` — so without this constant a host had no route to the knowledge that
     // its driving loop must call `tick()` rather than `step()`.
     const NEEDS_EVENT_SCHEDULER: bool = {{ 'true' if model.needs_tick_driving else 'false' }};
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    const NEEDS_PARENT: bool = {{ 'true' if model.needs_parent else 'false' }};
 {% if model.has_parallel_states or model.uses_in_predicate %}
     const HAS_ACTIVE_STATES: bool = true;
 {% endif %}

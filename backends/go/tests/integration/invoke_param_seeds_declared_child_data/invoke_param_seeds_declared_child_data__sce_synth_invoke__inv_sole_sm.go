@@ -581,6 +581,12 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) NeedsEven
 	return false
 }
 
+// NeedsParent reports whether the document sends to its parent session — the
+// generate manifest's needs_parent, read by Engine.RootStartRefusal.
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) NeedsParent() bool {
+	return true
+}
+
 // NeedsDataModelInit returns whether the SM needs datamodel init.
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) NeedsDataModelInit() bool {
 	return true

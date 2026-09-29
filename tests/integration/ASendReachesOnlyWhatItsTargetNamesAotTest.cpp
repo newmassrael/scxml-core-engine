@@ -34,6 +34,18 @@ std::string show(const std::optional<int64_t> &value) {
 
 }  // namespace
 
+// W3C SCXML 6.2.4: this document sends to `#_parent`, so a host that runs
+// machines as roots and asks for the refusal gets it — and nothing starts. The
+// plain `initialize` below runs the same machine; the refusal is opt-in.
+TEST(ASendReachesOnlyWhatItsTargetNamesAotTest, ARootStartOfAMachineThatNeedsAParentIsRefused) {
+    EXPECT_EQ(SM::rootStartRefusal(), ::SCE::Common::RootStartRefusal::NeedsParent);
+    SM sm;
+    EXPECT_EQ(sm.initializeAsRoot(), ::SCE::Common::RootStartRefusal::NeedsParent);
+    EXPECT_FALSE(sm.isRunning()) << "a refused root start must start nothing";
+    EXPECT_STREQ(::SCE::Common::reason(::SCE::Common::RootStartRefusal::NeedsParent),
+                 "the machine sends to #_parent and was started with no parent session");
+}
+
 TEST(ASendReachesOnlyWhatItsTargetNamesAotTest, ASendReachesOnlyWhatItsTargetNames) {
     SM sm;
     if constexpr (SM::PolicyType::NEEDS_SCRIPT_ENGINE) {

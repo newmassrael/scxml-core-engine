@@ -37,6 +37,11 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     // manifest reads the method, and both come from the same three terms.
     model.needs_tick_driving = model.needs_event_scheduler_driving();
 
+    // Whether the machine sends to its parent session — the manifest's
+    // `needs_parent`, from the one analyzer both read, so the constant a
+    // host's root-start policy asks and the manifest cannot disagree.
+    model.needs_parent = crate::parent_send_analyzer::needs_parent(model);
+
     // §scxml-6.4.1: an invoke's generated id is written to `idlocation` the
     // same way a sendid is; the `<send>` half is set in `analyze_action`.
     if model.states.values().any(|state| {

@@ -9018,6 +9018,41 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "deliver_by_name",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "RootStartNeedsParent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "RootStartRefusal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "RootStartRefusal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "root_start_refusal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "NEEDS_PARENT",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/NoParent.h",
+          "symbol": "RootStartRefusal",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "rootStartRefusal",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

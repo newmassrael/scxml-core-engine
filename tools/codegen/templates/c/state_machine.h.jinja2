@@ -1413,6 +1413,18 @@ const char *{{ csym_prefix }}{{ model.name }}_configuration_rejection_text(
 {{ csym_prefix }}{{ model.name }}_state_t {{ csym_prefix }}{{ model.name }}_initial_state(void);
 bool {{ csym_prefix }}{{ model.name }}_is_final_state({{ csym_prefix }}{{ model.name }}_state_t s);
 
+/* W3C SCXML 6.2.4: whether a host running this machine as a ROOT — started by
+   the host through an `_init*`, not by an `<invoke>` — should refuse to start
+   it: NULL when it need not, otherwise the reason as a sentence (the same
+   words on every engine). The machine is refused when its document sends to
+   `#_parent` (the generate manifest's `needs_parent`), since a root has no
+   parent to reach. Every `_init*` still runs such a machine — each such send
+   then raises error.communication, which is the default — so a host that
+   wants the refusal asks this before calling one. A query rather than a
+   checked twin of each `_init*`: there are many, and each zeroes the struct,
+   so a flag set beforehand could not survive into it. */
+const char *{{ csym_prefix }}{{ model.name }}_root_start_refusal(void);
+
 {% if model.on_sample_links %}
 /* SCE Protocol-Synthesis RFC §synth-5-E sample-callback codegen wire-up — per-link Sample
    delivery surface. Host's link RX path (zenoh-pico subscriber,

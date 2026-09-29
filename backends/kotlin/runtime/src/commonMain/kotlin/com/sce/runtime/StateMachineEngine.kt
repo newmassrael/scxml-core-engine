@@ -1653,6 +1653,47 @@ abstract class StateMachineEngine<S : State, E : Event>(
     open val needsEventScheduler: Boolean = false
 
     /**
+     * Whether the document sends to its parent session — a literal
+     * `<send target="#_parent">` (W3C SCXML 6.2.4) — the generate manifest's
+     * `needs_parent`, read by [rootStartRefusal]. `open` with a `false`
+     * default for the reason [needsEventScheduler] gives.
+     */
+    open val needsParent: Boolean = false
+
+    /**
+     * Whether a host running this machine as a ROOT — started by the host, not
+     * by an `<invoke>` — should refuse to start it, and why; `null` when it
+     * need not.
+     *
+     * W3C SCXML 6.2.4: `#_parent` names the session that invoked this one, and
+     * a root has none. [initialize] and [start] still run such a machine — each
+     * such send then raises `error.communication`, which is the default. This
+     * answers for a host that would rather not start it at all.
+     */
+    fun rootStartRefusal(): RootStartRefusal? =
+        if (needsParent) RootStartRefusal.NEEDS_PARENT else null
+
+    /**
+     * [initialize], for a host that refuses to start a machine needing a
+     * parent as a root ([rootStartRefusal]). A refusal starts nothing.
+     */
+    fun initializeAsRoot(): RootStartRefusal? {
+        rootStartRefusal()?.let { return it }
+        initialize()
+        return null
+    }
+
+    /**
+     * [start], for a host that refuses to start a machine needing a parent as
+     * a root ([rootStartRefusal]). A refusal starts nothing.
+     */
+    fun startAsRoot(scope: CoroutineScope): RootStartRefusal? {
+        rootStartRefusal()?.let { return it }
+        start(scope)
+        return null
+    }
+
+    /**
      * §scxml-5.10: bind [event] as the `_event` the guards about to be
      * evaluated read.
      *

@@ -3120,6 +3120,21 @@ pub struct SCXMLModel {
     /// two must not be conflated into one flag.
     #[serde(default)]
     pub needs_tick_driving: bool,
+    /// [`crate::parent_send_analyzer::needs_parent`] as a field: whether the
+    /// document sends to its parent session (a literal `target="#_parent"`),
+    /// so a template can emit it as the constant a host's root-start policy
+    /// reads and the manifest's `needs_parent` and that constant are one fact.
+    ///
+    /// Set by the analyzer beside `needs_tick_driving`. Not
+    /// [`Self::has_parent_communication`], which `--as-child` forces, and not
+    /// [`Self::may_address_parent`], which a `targetexpr` sets on a guess.
+    ///
+    /// ⚠ Serialised, like `needs_tick_driving`: the templates receive the
+    /// model through `minijinja::Value::from_serialize`, so a field skipped on
+    /// the wire does not reach them at all and reads as false — which is what
+    /// it did, in every generated machine, until the root-start tests ran.
+    #[serde(default)]
+    pub needs_parent: bool,
     /// §scxml-6.2.4 / §scxml-6.4.1: some `<send>` or `<invoke>` names an
     /// `idlocation`, so the machine writes a generated id through the
     /// `<assign>` path at run time. Gates the per-policy store helper the

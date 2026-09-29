@@ -301,6 +301,26 @@ pub enum ScheduledRoute {
     },
 }
 
+/// Why [`Engine::initialize_as_root`] refused to start a machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RootStartRefusal {
+    /// §scxml-6.2.4: the document sends to `#_parent`, and a session its
+    /// host started has no parent to reach.
+    NeedsParent,
+}
+
+impl RootStartRefusal {
+    /// The refusal as a sentence, for a host to report — the same words on
+    /// every engine.
+    pub fn reason(self) -> &'static str {
+        match self {
+            Self::NeedsParent => {
+                "the machine sends to #_parent and was started with no parent session"
+            }
+        }
+    }
+}
+
 /// What became of a `<send>` handed to [`Engine::send_to_target`].
 #[cfg(not(feature = "no_std"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1186,6 +1206,32 @@ impl<P: StatePolicy> Engine<P> {
     // ════════════════════════════════════════
     // Lifecycle (matches C++ public API)
     // ════════════════════════════════════════
+
+    /// Whether a host that runs this machine as a ROOT — started by the host,
+    /// not by an `<invoke>` — should refuse to start it, and why.
+    ///
+    /// §scxml-6.2.4: `#_parent` names the session that invoked this one, and
+    /// a root has none. The document is still valid and
+    /// [`initialize`](Self::initialize) still runs it — each such send then
+    /// raises `error.communication`, which is the default. This answers for a
+    /// host that would rather not start it at all; it reads
+    /// [`StatePolicy::NEEDS_PARENT`], the manifest's `needs_parent`.
+    pub fn root_start_refusal() -> Option<RootStartRefusal> {
+        P::NEEDS_PARENT.then_some(RootStartRefusal::NeedsParent)
+    }
+
+    /// [`initialize`](Self::initialize), for a host that refuses to start a
+    /// machine needing a parent as a root ([`Self::root_start_refusal`]).
+    ///
+    /// A refusal starts nothing: no datamodel is declared and no state is
+    /// entered, so the engine is as [`new`](Self::new) left it.
+    pub fn initialize_as_root(&mut self) -> Result<(), RootStartRefusal> {
+        if let Some(refusal) = Self::root_start_refusal() {
+            return Err(refusal);
+        }
+        self.initialize();
+        Ok(())
+    }
 
     /// Enter the initial configuration and run the macrostep loop until stable.
     ///

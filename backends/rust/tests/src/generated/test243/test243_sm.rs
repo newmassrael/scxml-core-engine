@@ -655,6 +655,8 @@ impl StatePolicy for Test243Policy {
     // `()` — so without this constant a host had no route to the knowledge that
     // its driving loop must call `tick()` rather than `step()`.
     const NEEDS_EVENT_SCHEDULER: bool = true;
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    const NEEDS_PARENT: bool = false;
     // §scxml-6.4: gates the engine's macrostep-end call into
     // `execute_pending_invokes`. §scxml-6.4.1 unsupported-type invokes need
     // it too — that call site is where their error.execution is raised.

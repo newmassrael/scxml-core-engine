@@ -328,6 +328,11 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
 
     # ── Structural metadata ────────────────────────────────────────
 
+    def needs_parent(self) -> bool:
+        """The generate manifest's `needs_parent`: what a root-start policy
+        reads (`Engine.root_start_refusal`)."""
+        return {{ 'True' if model.needs_parent else 'False' }}
+
     def needs_event_scheduler(self) -> bool:
         """Whether a host must move this machine's clock for it to finish.
 

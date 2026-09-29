@@ -34,6 +34,20 @@ std::string show(const std::optional<int64_t> &value) {
 
 }  // namespace
 
+// The control for the refused root start: this document never sends to
+// `#_parent`, so a root-start policy lets it start, and the checked start runs
+// it as `initialize` would.
+TEST(AnErrorEndsTheBlockItWasRaisedInAotTest, ARootStartOfAMachineThatNeedsNoParentRuns) {
+    EXPECT_EQ(SM::rootStartRefusal(), std::nullopt);
+    SM sm;
+    if constexpr (SM::PolicyType::NEEDS_SCRIPT_ENGINE) {
+        sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
+                                                                 [](::SCE::IScriptEngine *) {}));
+    }
+    EXPECT_EQ(sm.initializeAsRoot(), std::nullopt);
+    EXPECT_TRUE(sm.isRunning()) << "a root start that is not refused must start the machine";
+}
+
 TEST(AnErrorEndsTheBlockItWasRaisedInAotTest, EachErrorEndsOnlyItsOwnBlock) {
     SM sm;
     if constexpr (SM::PolicyType::NEEDS_SCRIPT_ENGINE) {

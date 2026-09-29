@@ -18,6 +18,27 @@ use sce_rust_tests::integration::a_send_reaches_only_what_its_target_names::{
     ASendReachesOnlyWhatItsTargetNamesState as State,
 };
 
+/// W3C SCXML 6.2.4: this document sends to `#_parent`, so a host that runs
+/// machines as roots and asks for the refusal gets it — and nothing starts.
+/// The plain `initialize` below runs the same machine; the refusal is opt-in.
+#[test]
+fn a_root_start_of_a_machine_that_needs_a_parent_is_refused() {
+    use sce_rust_runtime::{Engine, RootStartRefusal};
+    assert_eq!(
+        Engine::<Policy>::root_start_refusal(),
+        Some(RootStartRefusal::NeedsParent)
+    );
+    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
+        std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
+    let mut e = Engine::new(Policy::new(script_engine));
+    assert_eq!(e.initialize_as_root(), Err(RootStartRefusal::NeedsParent));
+    assert!(!e.is_running(), "a refused root start must start nothing");
+    assert_eq!(
+        RootStartRefusal::NeedsParent.reason(),
+        "the machine sends to #_parent and was started with no parent session"
+    );
+}
+
 #[test]
 fn a_send_reaches_only_what_its_target_names() {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =

@@ -258,6 +258,12 @@ class StatePolicy(ABC, Generic[S, E]):
         """Whether the policy uses scripts (informational)."""
         return False
 
+    def needs_parent(self) -> bool:
+        """W3C SCXML 6.2.4 — whether the document sends to its parent session
+        (a literal `<send target="#_parent">`), the generate manifest's
+        `needs_parent`. Read by `Engine.root_start_refusal`."""
+        return False
+
     def machine_name(self) -> str:
         """W3C SCXML 5.10 — `_name` system variable. Generated `*_sm.py`
         overrides to return the source document's `name` attribute (or

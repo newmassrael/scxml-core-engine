@@ -14,6 +14,7 @@
 // in `backends/c/tests/CMakeLists.txt`.
 
 #include <stdio.h>
+#include <string.h>
 
 #include "a_send_reaches_only_what_its_target_names_sm.h"
 
@@ -22,11 +23,22 @@ typedef a_send_reaches_only_what_its_target_names_t sm_t;
 typedef bool (*reader_t)(const sm_t *, int64_t *);
 
 int main(void) {
+    int ok = 1;
+
+    /* W3C SCXML 6.2.4: this document sends to `#_parent`, so a host that runs
+       machines as roots and asks for the refusal gets it. The plain `_init`
+       below runs the same machine; the refusal is opt-in. */
+    const char *refusal = a_send_reaches_only_what_its_target_names_root_start_refusal();
+    if (refusal == NULL ||
+        strcmp(refusal, "the machine sends to #_parent and was started with no parent session") != 0) {
+        fprintf(stderr, "FAIL: root_start_refusal = %s, want the needs-parent sentence\n", refusal ? refusal : "NULL");
+        ok = 0;
+    }
+
     sm_t sm;
     a_send_reaches_only_what_its_target_names_init(&sm);
     a_send_reaches_only_what_its_target_names_run(&sm);
 
-    int ok = 1;
     if (!a_send_reaches_only_what_its_target_names_ended_in(&sm,
                                                             A_SEND_REACHES_ONLY_WHAT_ITS_TARGET_NAMES_STATE_DONE)) {
         fprintf(stderr, "FAIL: the run must end in `done`\n");

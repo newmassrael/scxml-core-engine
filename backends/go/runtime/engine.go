@@ -233,6 +233,58 @@ func NewEngine[S comparable, E comparable](policy StatePolicy[S, E]) *Engine[S, 
 // Lifecycle (matches Rust/C++ public API)
 // ================================================================
 
+// ParentNeed is implemented by a generated policy: whether its document sends
+// to its parent session — a literal <send target="#_parent"> — the generate
+// manifest's needs_parent. A policy without it needs no parent.
+type ParentNeed interface {
+	NeedsParent() bool
+}
+
+// RootStartRefusal is why InitializeAsRoot refused to start a machine.
+type RootStartRefusal int
+
+const (
+	// RootStartNeedsParent: §scxml-6.2.4 — the document sends to #_parent,
+	// and a session its host started has no parent to reach.
+	RootStartNeedsParent RootStartRefusal = iota + 1
+)
+
+// Error is the refusal as a sentence, for a host to report — the same words
+// on every engine.
+func (r RootStartRefusal) Error() string {
+	switch r {
+	case RootStartNeedsParent:
+		return "the machine sends to #_parent and was started with no parent session"
+	}
+	return ""
+}
+
+// RootStartRefusal answers whether a host running this machine as a ROOT —
+// started by the host, not by an <invoke> — should refuse to start it, and
+// why; nil when it need not.
+//
+// §scxml-6.2.4: #_parent names the session that invoked this one, and a root
+// has none. Initialize still runs such a machine — each such send then raises
+// error.communication, which is the default. This answers for a host that
+// would rather not start it at all.
+func (e *Engine[S, E]) RootStartRefusal() error {
+	if need, ok := any(e.policy).(ParentNeed); ok && need.NeedsParent() {
+		return RootStartNeedsParent
+	}
+	return nil
+}
+
+// InitializeAsRoot is Initialize for a host that refuses to start a machine
+// needing a parent as a root (RootStartRefusal). A refusal starts nothing: no
+// datamodel is declared and no state is entered.
+func (e *Engine[S, E]) InitializeAsRoot() error {
+	if refusal := e.RootStartRefusal(); refusal != nil {
+		return refusal
+	}
+	e.Initialize()
+	return nil
+}
+
 // Initialize enters the initial configuration and runs the macrostep loop until
 // stable.
 //

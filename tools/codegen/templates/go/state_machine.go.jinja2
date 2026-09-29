@@ -626,6 +626,12 @@ func (p *{{ machine_name }}Policy) NeedsEventScheduler() bool {
 	return {{ 'true' if model.needs_tick_driving else 'false' }}
 }
 
+// NeedsParent reports whether the document sends to its parent session — the
+// generate manifest's needs_parent, read by Engine.RootStartRefusal.
+func (p *{{ machine_name }}Policy) NeedsParent() bool {
+	return {{ 'true' if model.needs_parent else 'false' }}
+}
+
 // NeedsDataModelInit returns whether the SM needs datamodel init.
 func (p *{{ machine_name }}Policy) NeedsDataModelInit() bool {
 	return {{ 'true' if model.needs_script_engine else 'false' }}

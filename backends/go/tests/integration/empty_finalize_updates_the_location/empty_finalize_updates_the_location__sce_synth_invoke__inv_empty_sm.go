@@ -555,6 +555,12 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy) NeedsEvent
 	return false
 }
 
+// NeedsParent reports whether the document sends to its parent session — the
+// generate manifest's needs_parent, read by Engine.RootStartRefusal.
+func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy) NeedsParent() bool {
+	return true
+}
+
 // NeedsDataModelInit returns whether the SM needs datamodel init.
 func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy) NeedsDataModelInit() bool {
 	return true

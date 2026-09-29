@@ -84,6 +84,7 @@ from .microstep import (
     select_transitions,
 )
 from .payload_reading import PayloadReading
+from .root_start import RootStartRefusal
 from .policy import StatePolicy
 from .scheduler import ScheduledRoute, Scheduler
 
@@ -336,6 +337,26 @@ class Engine(Generic[S, E]):
         self.done_data: Any = None
 
     # ── Lifecycle ──────────────────────────────────────────────────
+
+    def root_start_refusal(self) -> Optional[RootStartRefusal]:
+        """Whether a host running this machine as a ROOT — started by the
+        host, not by an `<invoke>` — should refuse to start it, and why;
+        None when it need not.
+
+        W3C SCXML 6.2.4: `#_parent` names the session that invoked this one,
+        and a root has none. `initialize` still runs such a machine — each
+        such send then raises error.communication, which is the default.
+        This answers for a host that would rather not start it at all."""
+        return RootStartRefusal.NEEDS_PARENT if self._policy.needs_parent() else None
+
+    def initialize_as_root(self) -> Optional[RootStartRefusal]:
+        """`initialize`, for a host that refuses to start a machine needing a
+        parent as a root (`root_start_refusal`). A refusal starts nothing."""
+        refusal = self.root_start_refusal()
+        if refusal is not None:
+            return refusal
+        self.initialize()
+        return None
 
     def initialize(self) -> None:
         """Enter the initial configuration and drive the macrostep loop until stable."""

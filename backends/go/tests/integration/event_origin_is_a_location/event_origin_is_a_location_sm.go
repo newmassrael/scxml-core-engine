@@ -780,6 +780,12 @@ func (p *EventOriginIsALocationPolicy) NeedsEventScheduler() bool {
 	return true
 }
 
+// NeedsParent reports whether the document sends to its parent session — the
+// generate manifest's needs_parent, read by Engine.RootStartRefusal.
+func (p *EventOriginIsALocationPolicy) NeedsParent() bool {
+	return false
+}
+
 // NeedsDataModelInit returns whether the SM needs datamodel init.
 func (p *EventOriginIsALocationPolicy) NeedsDataModelInit() bool {
 	return true

@@ -22,6 +22,22 @@ import org.junit.jupiter.api.Test
 @DisplayName("AnErrorEndsTheBlockItWasRaisedIn — W3C SCXML 4.9")
 class AnErrorEndsTheBlockItWasRaisedInTest {
 
+    /**
+     * The control for the refused root start: this document never sends to
+     * `#_parent`, so a root-start policy lets it start, and the checked start
+     * runs it as `initialize` would.
+     */
+    @Test
+    fun aRootStartOfAMachineThatNeedsNoParentRuns() {
+        val sm = AnErrorEndsTheBlockItWasRaisedInStateMachine(W3CTestBase.createEngine())
+        assertEquals(null, sm.rootStartRefusal())
+        assertEquals(null, sm.initializeAsRoot())
+        org.junit.jupiter.api.Assertions.assertTrue(
+            sm.activeConfiguration.isNotEmpty(),
+            "a root start that is not refused must enter the machine",
+        )
+    }
+
     @Test
     fun eachErrorEndsOnlyItsOwnBlock() {
         val sm = AnErrorEndsTheBlockItWasRaisedInStateMachine(W3CTestBase.createEngine())

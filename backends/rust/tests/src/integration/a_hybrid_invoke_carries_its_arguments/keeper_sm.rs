@@ -557,6 +557,8 @@ impl StatePolicy for KeeperPolicy {
     // `()` — so without this constant a host had no route to the knowledge that
     // its driving loop must call `tick()` rather than `step()`.
     const NEEDS_EVENT_SCHEDULER: bool = false;
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    const NEEDS_PARENT: bool = true;
 
     // ======================================================================
     // Static metadata methods (W3C SCXML document structure)

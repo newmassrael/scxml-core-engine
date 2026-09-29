@@ -587,6 +587,12 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) NeedsEventS
 	return false
 }
 
+// NeedsParent reports whether the document sends to its parent session — the
+// generate manifest's needs_parent, read by Engine.RootStartRefusal.
+func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) NeedsParent() bool {
+	return true
+}
+
 // NeedsDataModelInit returns whether the SM needs datamodel init.
 func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) NeedsDataModelInit() bool {
 	return true

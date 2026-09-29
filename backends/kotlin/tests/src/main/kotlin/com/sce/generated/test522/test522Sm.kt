@@ -43,6 +43,9 @@ class Test522StateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = true
 
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    override val needsParent: Boolean = false
+
     // W3C SCXML B.1: Initialize script engine before entering initial state
     override fun enterInitialConfiguration() {
         ensureScriptEngine()

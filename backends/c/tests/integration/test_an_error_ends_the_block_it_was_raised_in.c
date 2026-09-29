@@ -21,6 +21,13 @@ typedef an_error_ends_the_block_it_was_raised_in_t sm_t;
 typedef bool (*reader_t)(const sm_t *, int64_t *);
 
 int main(void) {
+    /* The control for the refused root start: this document never sends to
+       `#_parent`, so a root-start policy has nothing to refuse. */
+    if (an_error_ends_the_block_it_was_raised_in_root_start_refusal() != NULL) {
+        fprintf(stderr, "FAIL: a machine that needs no parent was refused a root start\n");
+        return 1;
+    }
+
     sm_t sm;
     an_error_ends_the_block_it_was_raised_in_init(&sm);
     an_error_ends_the_block_it_was_raised_in_run(&sm);

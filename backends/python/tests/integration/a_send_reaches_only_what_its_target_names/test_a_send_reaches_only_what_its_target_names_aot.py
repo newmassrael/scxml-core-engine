@@ -26,6 +26,21 @@ import a_send_reaches_only_what_its_target_names_sm as _sm  # noqa: E402 — pat
 _State = _sm.ASendReachesOnlyWhatItsTargetNamesState
 
 
+def test_a_root_start_of_a_machine_that_needs_a_parent_is_refused() -> None:
+    """W3C SCXML 6.2.4: this document sends to `#_parent`, so a host that runs
+    machines as roots and asks for the refusal gets it — and nothing starts.
+    The plain `initialize` below runs the same machine; the refusal is opt-in."""
+    from sce_runtime import RootStartRefusal
+
+    engine = _sm.create_engine()
+    assert engine.root_start_refusal() is RootStartRefusal.NEEDS_PARENT
+    assert engine.initialize_as_root() is RootStartRefusal.NEEDS_PARENT
+    assert not engine.is_running, "a refused root start must start nothing"
+    assert RootStartRefusal.NEEDS_PARENT.reason == (
+        "the machine sends to #_parent and was started with no parent session"
+    )
+
+
 def test_a_send_reaches_only_what_its_target_names() -> None:
     engine = _sm.create_engine()
     engine.initialize()

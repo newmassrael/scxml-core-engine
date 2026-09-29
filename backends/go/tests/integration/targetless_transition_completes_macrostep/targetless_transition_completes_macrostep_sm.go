@@ -710,6 +710,12 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) NeedsEventScheduler() boo
 	return false
 }
 
+// NeedsParent reports whether the document sends to its parent session — the
+// generate manifest's needs_parent, read by Engine.RootStartRefusal.
+func (p *TargetlessTransitionCompletesMacrostepPolicy) NeedsParent() bool {
+	return false
+}
+
 // NeedsDataModelInit returns whether the SM needs datamodel init.
 func (p *TargetlessTransitionCompletesMacrostepPolicy) NeedsDataModelInit() bool {
 	return true

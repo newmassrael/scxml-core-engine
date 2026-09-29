@@ -22,6 +22,16 @@ _State = _sm.AnErrorEndsTheBlockItWasRaisedInState
 _Event = _sm.AnErrorEndsTheBlockItWasRaisedInEvent
 
 
+def test_a_root_start_of_a_machine_that_needs_no_parent_runs() -> None:
+    """The control for the refused root start: this document never sends to
+    `#_parent`, so a root-start policy lets it start, and the checked start
+    runs it as `initialize` would."""
+    engine = _sm.create_engine()
+    assert engine.root_start_refusal() is None
+    assert engine.initialize_as_root() is None
+    assert engine.is_running, "a root start that is not refused must start the machine"
+
+
 def test_each_error_ends_only_its_own_block() -> None:
     engine = _sm.create_engine()
     engine.initialize()

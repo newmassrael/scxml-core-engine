@@ -2506,6 +2506,11 @@
             "needs_nonstatic_method": {
               "type": "boolean"
             },
+            "needs_parent": {
+              "default": false,
+              "description": "[`crate::parent_send_analyzer::needs_parent`] as a field: whether the document sends to its parent session (a literal `target=\"#_parent\"`), so a template can emit it as the constant a host's root-start policy reads and the manifest's `needs_parent` and that constant are one fact.\n\nSet by the analyzer beside `needs_tick_driving`. Not [`Self::has_parent_communication`], which `--as-child` forces, and not [`Self::may_address_parent`], which a `targetexpr` sets on a guess.\n\n⚠ Serialised, like `needs_tick_driving`: the templates receive the model through `minijinja::Value::from_serialize`, so a field skipped on the wire does not reach them at all and reads as false — which is what it did, in every generated machine, until the root-start tests ran.",
+              "type": "boolean"
+            },
             "needs_parent_template": {
               "description": "SCE_MESH.md §9.6 — codegen-shape seam. `true` when the machine must emit the non-templated child shape (no `ParentStateMachine` template param, no `parent_` pointer field, `#_parent` routed through `performMeshSend`). Derived by [`crate::analyzer::analyze`] as `has_parent_communication && !is_remote_invoke_target`. The two shapes converge once §9.6 adopts a mesh-callback shim for local invokes; until then this flag keeps W3C local-invoke tests (test233/338) on the existing template shape while the mesh worker emits the default-constructible shape required by `ChildSessionAdapter<Engine>` (see §9.6 child session lifecycle).",
               "type": "boolean"

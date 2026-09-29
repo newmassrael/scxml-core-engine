@@ -198,6 +198,14 @@ pub trait StatePolicy: Sized + 'static {
     /// because that function returns `()`.
     const NEEDS_EVENT_SCHEDULER: bool = false;
 
+    /// Whether the document sends to its parent session — a literal
+    /// `<send target="#_parent">` (§scxml-6.2.4). Started by a host rather
+    /// than invoked, such a machine runs, and each such send raises
+    /// `error.communication`; a host that wants that refused instead starts
+    /// it with [`initialize_as_root`](crate::Engine::initialize_as_root),
+    /// which reads this constant. The generate manifest's `needs_parent`.
+    const NEEDS_PARENT: bool = false;
+
     /// Whether the document has any static `<invoke>` children (§scxml-6.4).
     ///
     /// When `true`, [`execute_pending_invokes`](StatePolicy::execute_pending_invokes)

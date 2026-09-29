@@ -18,6 +18,25 @@ import (
 	scegotest "github.com/newmassrael/sce-go-tests/harness"
 )
 
+// The control for TestARootStartOfAMachineThatNeedsAParentIsRefused: this
+// document never sends to #_parent, so a root-start policy lets it start, and
+// the checked start runs it as Initialize would.
+func TestARootStartOfAMachineThatNeedsNoParentRuns(t *testing.T) {
+	policy := NewAnErrorEndsTheBlockItWasRaisedInPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	policy.ScriptEngine = scegotest.NewLuaEngine()
+	engine := sce.NewEngine[AnErrorEndsTheBlockItWasRaisedInState, AnErrorEndsTheBlockItWasRaisedInEvent](&policy)
+	if refusal := engine.RootStartRefusal(); refusal != nil {
+		t.Fatalf("RootStartRefusal = %v, want nil", refusal)
+	}
+	if err := engine.InitializeAsRoot(); err != nil {
+		t.Fatalf("InitializeAsRoot = %v, want nil", err)
+	}
+	if !engine.IsRunning() {
+		t.Errorf("a root start that is not refused must start the machine")
+	}
+}
+
 func TestEachErrorEndsOnlyItsOwnBlock(t *testing.T) {
 	policy := NewAnErrorEndsTheBlockItWasRaisedInPolicy()
 	policy.SessionID = sce.GenerateSessionID()

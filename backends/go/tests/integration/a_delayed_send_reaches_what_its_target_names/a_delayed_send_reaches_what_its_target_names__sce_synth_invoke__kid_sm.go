@@ -555,6 +555,12 @@ func (p *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidPolicy) NeedsEven
 	return true
 }
 
+// NeedsParent reports whether the document sends to its parent session — the
+// generate manifest's needs_parent, read by Engine.RootStartRefusal.
+func (p *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidPolicy) NeedsParent() bool {
+	return true
+}
+
 // NeedsDataModelInit returns whether the SM needs datamodel init.
 func (p *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidPolicy) NeedsDataModelInit() bool {
 	return true

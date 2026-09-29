@@ -841,6 +841,12 @@ func (p *InvokeCandidateSelectsTheChildPolicy) NeedsEventScheduler() bool {
 	return true
 }
 
+// NeedsParent reports whether the document sends to its parent session — the
+// generate manifest's needs_parent, read by Engine.RootStartRefusal.
+func (p *InvokeCandidateSelectsTheChildPolicy) NeedsParent() bool {
+	return false
+}
+
 // NeedsDataModelInit returns whether the SM needs datamodel init.
 func (p *InvokeCandidateSelectsTheChildPolicy) NeedsDataModelInit() bool {
 	return true
