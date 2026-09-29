@@ -96,6 +96,7 @@ pub enum Test422SceSynthInvokeInvoke0State {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Test422SceSynthInvokeInvoke0Event {
+    ErrorCommunication,
     ErrorExecution,
     InvokeS1,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
@@ -292,6 +293,7 @@ impl StatePolicy for Test422SceSynthInvokeInvoke0Policy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            Test422SceSynthInvokeInvoke0Event::ErrorCommunication => "error.communication",
             Test422SceSynthInvokeInvoke0Event::ErrorExecution => "error.execution",
             Test422SceSynthInvokeInvoke0Event::InvokeS1 => "invokeS1",
             Test422SceSynthInvokeInvoke0Event::Null => "",
@@ -300,6 +302,7 @@ impl StatePolicy for Test422SceSynthInvokeInvoke0Policy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "error.communication" => Some(Test422SceSynthInvokeInvoke0Event::ErrorCommunication),
             "error.execution" => Some(Test422SceSynthInvokeInvoke0Event::ErrorExecution),
             "invokeS1" => Some(Test422SceSynthInvokeInvoke0Event::InvokeS1),
             _ => None,
@@ -368,6 +371,14 @@ impl StatePolicy for Test422SceSynthInvokeInvoke0Policy {
                                 q.push(("invokeS1".to_string(), event_data.to_string()));
                             }
                         } else {
+                            // W3C SCXML C.1: this session was started by its host, not by an
+                            // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                            // nothing delivered, and the block ends (4.9).
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                Test422SceSynthInvokeInvoke0Event::ErrorCommunication,
+                                "<send target='#_parent'> has no parent session to reach",
+                            ));
+                            break 'action_block;
                         }
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch

@@ -23,6 +23,7 @@ sealed interface Test192SceSynthInvokeInvokedChildState : State {
 sealed interface Test192SceSynthInvokeInvokedChildEvent : Event {
     data object ChildToParent : Test192SceSynthInvokeInvokedChildEvent
     sealed interface Error : Test192SceSynthInvokeInvokedChildEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     data object EventReceived : Test192SceSynthInvokeInvokedChildEvent
@@ -104,6 +105,7 @@ class Test192SceSynthInvokeInvokedChildStateMachine(
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test192SceSynthInvokeInvokedChildEvent? = when (name) {
         "childToParent" -> Test192SceSynthInvokeInvokedChildEvent.ChildToParent
+        "error.communication" -> Test192SceSynthInvokeInvokedChildEvent.Error.Communication
         "error.execution" -> Test192SceSynthInvokeInvokedChildEvent.Error.Execution
         "eventReceived" -> Test192SceSynthInvokeInvokedChildEvent.EventReceived
         "parentToChild" -> Test192SceSynthInvokeInvokedChildEvent.ParentToChild
@@ -114,6 +116,7 @@ class Test192SceSynthInvokeInvokedChildStateMachine(
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test192SceSynthInvokeInvokedChildEvent): String? = when (event) {
         is Test192SceSynthInvokeInvokedChildEvent.ChildToParent -> "childToParent"
+        is Test192SceSynthInvokeInvokedChildEvent.Error.Communication -> "error.communication"
         is Test192SceSynthInvokeInvokedChildEvent.Error.Execution -> "error.execution"
         is Test192SceSynthInvokeInvokedChildEvent.EventReceived -> "eventReceived"
         is Test192SceSynthInvokeInvokedChildEvent.ParentToChild -> "parentToChild"
@@ -154,8 +157,15 @@ class Test192SceSynthInvokeInvokedChildStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("childToParent", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(Test192SceSynthInvokeInvokedChildEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                return@send true
+            }
+            toParent("childToParent", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -209,8 +219,15 @@ class Test192SceSynthInvokeInvokedChildStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("eventReceived", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(Test192SceSynthInvokeInvokedChildEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("eventReceived", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

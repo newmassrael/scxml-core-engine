@@ -97,6 +97,7 @@ pub enum KeeperState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeeperEvent {
     ChildUp,
+    ErrorCommunication,
     ErrorExecution,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
@@ -636,6 +637,7 @@ impl StatePolicy for KeeperPolicy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             KeeperEvent::ChildUp => "childUp",
+            KeeperEvent::ErrorCommunication => "error.communication",
             KeeperEvent::ErrorExecution => "error.execution",
             KeeperEvent::Null => "",
         }
@@ -644,6 +646,7 @@ impl StatePolicy for KeeperPolicy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "childUp" => Some(KeeperEvent::ChildUp),
+            "error.communication" => Some(KeeperEvent::ErrorCommunication),
             "error.execution" => Some(KeeperEvent::ErrorExecution),
             _ => None,
         }
@@ -946,6 +949,15 @@ impl StatePolicy for KeeperPolicy {
                                         q.push(("childUp".to_string(), event_data.to_string()));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine
+                                        .raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                        KeeperEvent::ErrorCommunication,
+                                        "<send target='#_parent'> has no parent session to reach",
+                                    ));
+                                    break 'action_block;
                                 }
 
                                 // W3C SCXML 4.9: a <param> that could not be read raised an error while

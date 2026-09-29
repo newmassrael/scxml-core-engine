@@ -21,6 +21,7 @@ sealed interface ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidState : S
 
 sealed interface ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent : Event {
     sealed interface Error : ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     data object Hello : ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent
@@ -91,6 +92,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent? = when (name) {
+        "error.communication" -> ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Communication
         "error.execution" -> ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution
         "hello" -> ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Hello
         "late" -> ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Late
@@ -101,6 +103,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent): String? = when (event) {
+        is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Communication -> "error.communication"
         is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution -> "error.execution"
         is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Hello -> "hello"
         is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Late -> "late"
@@ -361,8 +364,15 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("hello", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                return@send true
+            }
+            toParent("hello", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -390,7 +400,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
                 valueToJson("")
             }
             // W3C SCXML 6.4 (test187): Delayed send to parent — cancelled when child stops
-            scheduleParentSend("__send_2", 20L, "late", sendData)
+            scheduleParentSend("__send_2", 20L, "late", sendData, ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Communication)
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -440,8 +450,15 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
                 paramFailed = true
                 valueToJson("")
             }
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("pong", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("pong", sendData)
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

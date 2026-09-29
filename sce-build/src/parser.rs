@@ -5530,13 +5530,20 @@ impl SCXMLParser {
 /// W3C SCXML C.1 + 6.4: `#_scxml_<sessionid>` names a session, which is this
 /// one or none this processor can reach, and `#_<invokeid>` names an
 /// invocation, which may not exist or may not be running. The bare
-/// `#_scxml_` names this session's own queue (test 190) and `#_internal` /
-/// `#_parent` are the reserved spellings; none of those three can miss.
+/// `#_scxml_` names this session's own queue (test 190) and `#_internal`
+/// the same session's internal queue; neither of those two can miss.
+///
+/// ⚠ `#_parent` CAN miss, and treating it as reserved-and-therefore-reachable
+/// was the defect: a session started by a host rather than by an `<invoke>`
+/// has no parent, and C.1 then asks for `error.communication` like any other
+/// target that cannot be reached. With the event absent from the model the
+/// generated engines had nothing to raise, and dropped the send without a
+/// word.
 fn static_target_may_be_unreachable(target: &str) -> bool {
     let Some(name) = target.strip_prefix("#_") else {
         return false;
     };
-    !matches!(name, "internal" | "parent" | "scxml_")
+    !matches!(name, "internal" | "scxml_")
 }
 
 /// Recursively check if any if/elseif conditions within actions reference _event.*.

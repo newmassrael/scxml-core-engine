@@ -143,16 +143,19 @@ var transitionTargetsOfEventOriginIsALocationSceSynthInvokeInvPeer = [2][][]Even
 type EventOriginIsALocationSceSynthInvokeInvPeerEvent int
 
 const (
-	EventOriginIsALocationSceSynthInvokeInvPeerEventErrorExecution EventOriginIsALocationSceSynthInvokeInvPeerEvent = 0
-	EventOriginIsALocationSceSynthInvokeInvPeerEventFromChild EventOriginIsALocationSceSynthInvokeInvPeerEvent = 1
-	EventOriginIsALocationSceSynthInvokeInvPeerEventReply EventOriginIsALocationSceSynthInvokeInvPeerEvent = 2
-	EventOriginIsALocationSceSynthInvokeInvPeerEventReplyArrived EventOriginIsALocationSceSynthInvokeInvPeerEvent = 3
+	EventOriginIsALocationSceSynthInvokeInvPeerEventErrorCommunication EventOriginIsALocationSceSynthInvokeInvPeerEvent = 0
+	EventOriginIsALocationSceSynthInvokeInvPeerEventErrorExecution EventOriginIsALocationSceSynthInvokeInvPeerEvent = 1
+	EventOriginIsALocationSceSynthInvokeInvPeerEventFromChild EventOriginIsALocationSceSynthInvokeInvPeerEvent = 2
+	EventOriginIsALocationSceSynthInvokeInvPeerEventReply EventOriginIsALocationSceSynthInvokeInvPeerEvent = 3
+	EventOriginIsALocationSceSynthInvokeInvPeerEventReplyArrived EventOriginIsALocationSceSynthInvokeInvPeerEvent = 4
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	EventOriginIsALocationSceSynthInvokeInvPeerEventNull EventOriginIsALocationSceSynthInvokeInvPeerEvent = 4
+	EventOriginIsALocationSceSynthInvokeInvPeerEventNull EventOriginIsALocationSceSynthInvokeInvPeerEvent = 5
 )
 
 func (e EventOriginIsALocationSceSynthInvokeInvPeerEvent) String() string {
 	switch e {
+	case EventOriginIsALocationSceSynthInvokeInvPeerEventErrorCommunication:
+		return "error.communication"
 	case EventOriginIsALocationSceSynthInvokeInvPeerEventErrorExecution:
 		return "error.execution"
 	case EventOriginIsALocationSceSynthInvokeInvPeerEventFromChild:
@@ -507,6 +510,8 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) GetEventName(event E
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) GetEventFromName(name string) (EventOriginIsALocationSceSynthInvokeInvPeerEvent, bool) {
 	switch name {
+	case "error.communication":
+		return EventOriginIsALocationSceSynthInvokeInvPeerEventErrorCommunication, true
 	case "error.execution":
 		return EventOriginIsALocationSceSynthInvokeInvPeerEventErrorExecution, true
 	case "fromChild":
@@ -654,7 +659,15 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) ExecuteEntryActions(
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_1"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "fromChild", Data: eventDataStr})
 	}
 		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
@@ -754,7 +767,15 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) ExecuteTransitionCon
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "replyArrived", Data: eventDataStr})
 	}
 	}

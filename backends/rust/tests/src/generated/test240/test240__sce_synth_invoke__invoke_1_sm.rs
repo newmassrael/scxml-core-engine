@@ -96,6 +96,7 @@ pub enum Test240SceSynthInvokeInvoke1State {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Test240SceSynthInvokeInvoke1Event {
+    ErrorCommunication,
     ErrorExecution,
     Failure,
     Success,
@@ -558,6 +559,7 @@ impl StatePolicy for Test240SceSynthInvokeInvoke1Policy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            Test240SceSynthInvokeInvoke1Event::ErrorCommunication => "error.communication",
             Test240SceSynthInvokeInvoke1Event::ErrorExecution => "error.execution",
             Test240SceSynthInvokeInvoke1Event::Failure => "failure",
             Test240SceSynthInvokeInvoke1Event::Success => "success",
@@ -567,6 +569,7 @@ impl StatePolicy for Test240SceSynthInvokeInvoke1Policy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "error.communication" => Some(Test240SceSynthInvokeInvoke1Event::ErrorCommunication),
             "error.execution" => Some(Test240SceSynthInvokeInvoke1Event::ErrorExecution),
             "failure" => Some(Test240SceSynthInvokeInvoke1Event::Failure),
             "success" => Some(Test240SceSynthInvokeInvoke1Event::Success),
@@ -784,6 +787,15 @@ impl StatePolicy for Test240SceSynthInvokeInvoke1Policy {
                                         q.push(("success".to_string(), event_data.to_string()));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine
+                                        .raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                        Test240SceSynthInvokeInvoke1Event::ErrorCommunication,
+                                        "<send target='#_parent'> has no parent session to reach",
+                                    ));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -807,6 +819,15 @@ impl StatePolicy for Test240SceSynthInvokeInvoke1Policy {
                                         q.push(("failure".to_string(), event_data.to_string()));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine
+                                        .raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                        Test240SceSynthInvokeInvoke1Event::ErrorCommunication,
+                                        "<send target='#_parent'> has no parent session to reach",
+                                    ));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

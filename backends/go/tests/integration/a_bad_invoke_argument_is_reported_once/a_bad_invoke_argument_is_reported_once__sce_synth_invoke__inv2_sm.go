@@ -144,15 +144,18 @@ type ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event int
 
 const (
 	ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2EventChildUp ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event = 0
-	ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2EventErrorExecution ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event = 1
+	ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2EventErrorCommunication ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event = 1
+	ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2EventErrorExecution ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event = 2
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2EventNull ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event = 2
+	ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2EventNull ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event = 3
 )
 
 func (e ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event) String() string {
 	switch e {
 	case ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2EventChildUp:
 		return "childUp"
+	case ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2EventErrorCommunication:
+		return "error.communication"
 	case ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2EventErrorExecution:
 		return "error.execution"
 	case ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2EventNull:
@@ -305,6 +308,8 @@ func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Policy) GetEventFromN
 	switch name {
 	case "childUp":
 		return ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2EventChildUp, true
+	case "error.communication":
+		return ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2EventErrorCommunication, true
 	case "error.execution":
 		return ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2EventErrorExecution, true
 	}
@@ -484,7 +489,15 @@ func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Policy) ExecuteTransi
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2EventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "childUp", Data: eventDataStr})
 	}
 	}

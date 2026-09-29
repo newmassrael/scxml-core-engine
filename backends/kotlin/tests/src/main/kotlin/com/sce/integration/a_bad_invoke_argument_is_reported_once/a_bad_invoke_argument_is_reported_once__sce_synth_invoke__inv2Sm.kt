@@ -23,6 +23,7 @@ sealed interface ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2State : State
 sealed interface ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event : Event {
     data object ChildUp : ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event
     sealed interface Error : ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event {
+        data object Communication : Error
         data object Execution : Error
     }
 }
@@ -92,6 +93,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2StateMachine(
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event? = when (name) {
         "childUp" -> ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event.ChildUp
+        "error.communication" -> ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event.Error.Communication
         "error.execution" -> ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event.Error.Execution
         else -> null
     }
@@ -99,6 +101,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2StateMachine(
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event): String? = when (event) {
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event.ChildUp -> "childUp"
+        is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event.Error.Communication -> "error.communication"
         is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event.Error.Execution -> "error.execution"
     }
 
@@ -163,8 +166,15 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2StateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("childUp", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("childUp", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

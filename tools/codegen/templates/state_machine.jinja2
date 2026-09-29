@@ -18,6 +18,10 @@
 {% if model.needs_event_scheduler or model.needs_parent_template %}
 #include <chrono>
 {% endif %}
+{% if model.needs_parent_template %}
+// W3C SCXML C.1: the parent type of a session its host started.
+#include "common/NoParent.h"
+{% endif %}
 {% if model.invokes | scxml or model.invokes | hybrid or model.needs_script_engine %}
 #include <memory>
 {% endif %}
@@ -241,9 +245,12 @@
    `SCE::Generated::<machine>` shape used by every existing consumer. #}
 namespace SCE::Generated::{{ cpp_ns_prefix }}{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %} {
 
-{# Forward declaration #}
+{# Forward declaration. The parent parameter's default is given here, once, as
+   C++ requires: `::SCE::Common::NoParent` is the parent of a session its host
+   started (W3C SCXML C.1), so a host writes `{{ model.name }}<> sm;` and an
+   invoking parent names itself. It is always the last class parameter. #}
 {% if _has_sm_tpl %}
-template <{{ _sm_tpl_params | join(', ') }}>
+template <{% for p in _sm_tpl_params %}{{ p }}{% if p == 'typename ParentStateMachine' %} = ::SCE::Common::NoParent{% endif %}{{ ', ' if not loop.last }}{% endfor %}>
 {% endif %}
 class {{ model.name }};
 
@@ -766,7 +773,7 @@ public:
     explicit {{ model.name }}(
         {%- if has_native_actions %}{{ native_actions_interface }}& actions, {% endif -%}
         {%- for ctx in model.context_objects %}{% if ctx.cpp_type %}{{ ctx.cpp_type }}{% else %}{{ ctx.id | capitalize }}T{% endif %}& {{ ctx.id }}{{ ', ' if not loop.last or model.needs_parent_template }}{% endfor %}
-        {%- if model.needs_parent_template %}ParentStateMachine* parent, const std::string& invokeId = "", const std::string& childSessionId = ""{% endif -%}
+        {%- if model.needs_parent_template %}ParentStateMachine* parent = nullptr, const std::string& invokeId = "", const std::string& childSessionId = ""{% endif -%}
     ) {
         {% if has_native_actions %}
         this->policy_.actions_ = &actions;

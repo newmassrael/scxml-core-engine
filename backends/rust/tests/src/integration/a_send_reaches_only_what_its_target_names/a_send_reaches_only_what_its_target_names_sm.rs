@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ae446b53b64317c75fdba49276558fc5f0277a910a2be095ed0ddb59d9b43e5f
+// source-hash: 9b9a69c667502ae1733fda8dedceeee7a01aa136c4bb06b74941e5364f09e3a3
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine"]
-// SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine
+#![doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine"]
+// SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -293,6 +293,21 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
         )
     }
 
+    /// §scxml-5.3: what the `afterOrphan` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `afterOrphan` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn after_orphan(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "afterOrphan",
+        )
+    }
+
     /// §scxml-5.3: what the `bareArrived` datamodel variable is holding now.
     ///
     /// The live value, not the authored one: `<assign>` writes into the
@@ -447,6 +462,16 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
+        // W3C SCXML 5.2/5.3: Initialize 'afterOrphan' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "afterOrphan",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
         // W3C SCXML 5.2/5.3: Initialize 'bareArrived' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se,
@@ -571,6 +596,20 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
                 "<data id='afterStranger'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'afterOrphan' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "afterOrphan",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                "<data id='afterOrphan'> expr failed to evaluate",
             ));
         }
 
@@ -1110,8 +1149,8 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine"]
-    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine
+    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine"]
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1120,8 +1159,8 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
     ) {
         match state {
             ASendReachesOnlyWhatItsTargetNamesState::Run => {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:52 :: run :: _state_body
-                // W3C SCXML 3.8: onentry block 1/4
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:62 :: run :: _state_body
+                // W3C SCXML 3.8: onentry block 1/5
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
@@ -1163,7 +1202,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                 }
-                // W3C SCXML 3.8: onentry block 2/4
+                // W3C SCXML 3.8: onentry block 2/5
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
@@ -1210,7 +1249,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                 }
-                // W3C SCXML 3.8: onentry block 3/4
+                // W3C SCXML 3.8: onentry block 3/5
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
@@ -1274,11 +1313,65 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                 }
-                // W3C SCXML 3.8: onentry block 4/4
+                // W3C SCXML 3.8: onentry block 4/5
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_5");
+
+                        let event_data: &str = "";
+
+                        // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
+                        if let Some(ref parent_queue) = self.parent_external_queue {
+                            if let Ok(mut q) = parent_queue.lock() {
+                                q.push(("lost".to_string(), event_data.to_string()));
+                            }
+                        } else {
+                            // W3C SCXML C.1: this session was started by its host, not by an
+                            // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                            // nothing delivered, and the block ends (4.9).
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication,
+                                "<send target='#_parent'> has no parent session to reach",
+                            ));
+                            break 'action_block;
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+
+                    {
+                        // W3C SCXML 5.3: <assign location="afterOrphan">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "1";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "afterOrphan", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'afterOrphan': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                "<assign> to 'afterOrphan' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+                // W3C SCXML 3.8: onentry block 5/5
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_6");
 
                         let event_data: &str = "";
 
@@ -1333,8 +1426,8 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine"]
-    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine
+    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine"]
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1383,8 +1476,8 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine"]
-    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine
+    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine"]
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -1428,8 +1521,8 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine"]
-    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine
+    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine"]
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1525,8 +1618,8 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine"]
-    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine
+    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine"]
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1537,7 +1630,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
             ASendReachesOnlyWhatItsTargetNamesState::Run => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:89 :: run :: _transition_0
+                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:103 :: run :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1571,7 +1664,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:92 :: run :: _transition_1
+                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:106 :: run :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1605,7 +1698,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:95 :: run :: _transition_2
+                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:109 :: run :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1639,7 +1732,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:98 :: run :: _transition_3
+                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:112 :: run :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1673,7 +1766,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:101 :: run :: _transition_4
+                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:115 :: run :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1736,7 +1829,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                     5 => {
-                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:106 :: run :: _transition_5
+                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:120 :: run :: _transition_5
                         // W3C SCXML 3.13: Transition 5 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {

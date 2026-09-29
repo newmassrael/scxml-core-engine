@@ -21,6 +21,7 @@ sealed interface AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState : Sta
 
 sealed interface AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent : Event {
     sealed interface Error : AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     data object Tick : AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent
@@ -108,6 +109,7 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent? = when (name) {
+        "error.communication" -> AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Error.Communication
         "error.execution" -> AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Error.Execution
         "tick" -> AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Tick
         else -> null
@@ -115,6 +117,7 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent): String? = when (event) {
+        is AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Error.Communication -> "error.communication"
         is AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Error.Execution -> "error.execution"
         is AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Tick -> "tick"
     }
@@ -391,8 +394,15 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("tick", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("tick", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

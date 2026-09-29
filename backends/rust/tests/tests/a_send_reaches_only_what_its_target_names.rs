@@ -39,10 +39,11 @@ fn a_send_reaches_only_what_its_target_names() {
     let p = e.policy();
     let observed = [
         ("execErrors", p.exec_errors(), 1),
-        ("commErrors", p.comm_errors(), 2),
+        ("commErrors", p.comm_errors(), 3),
         ("afterRefused", p.after_refused(), 0),
         ("afterNobody", p.after_nobody(), 0),
         ("afterStranger", p.after_stranger(), 0),
+        ("afterOrphan", p.after_orphan(), 0),
         ("bareArrived", p.bare_arrived(), 1),
         ("pongOk", p.pong_ok(), 1),
     ];

@@ -150,17 +150,20 @@ var transitionTargetsOfAutoforwardInternalQueueSceSynthInvokeInvWatch = [3][][]A
 type AutoforwardInternalQueueSceSynthInvokeInvWatchEvent int
 
 const (
-	AutoforwardInternalQueueSceSynthInvokeInvWatchEventErrorExecution AutoforwardInternalQueueSceSynthInvokeInvWatchEvent = 0
-	AutoforwardInternalQueueSceSynthInvokeInvWatchEventProbe AutoforwardInternalQueueSceSynthInvokeInvWatchEvent = 1
-	AutoforwardInternalQueueSceSynthInvokeInvWatchEventReady AutoforwardInternalQueueSceSynthInvokeInvWatchEvent = 2
-	AutoforwardInternalQueueSceSynthInvokeInvWatchEventSawInternal AutoforwardInternalQueueSceSynthInvokeInvWatchEvent = 3
-	AutoforwardInternalQueueSceSynthInvokeInvWatchEventSawProbeOnly AutoforwardInternalQueueSceSynthInvokeInvWatchEvent = 4
+	AutoforwardInternalQueueSceSynthInvokeInvWatchEventErrorCommunication AutoforwardInternalQueueSceSynthInvokeInvWatchEvent = 0
+	AutoforwardInternalQueueSceSynthInvokeInvWatchEventErrorExecution AutoforwardInternalQueueSceSynthInvokeInvWatchEvent = 1
+	AutoforwardInternalQueueSceSynthInvokeInvWatchEventProbe AutoforwardInternalQueueSceSynthInvokeInvWatchEvent = 2
+	AutoforwardInternalQueueSceSynthInvokeInvWatchEventReady AutoforwardInternalQueueSceSynthInvokeInvWatchEvent = 3
+	AutoforwardInternalQueueSceSynthInvokeInvWatchEventSawInternal AutoforwardInternalQueueSceSynthInvokeInvWatchEvent = 4
+	AutoforwardInternalQueueSceSynthInvokeInvWatchEventSawProbeOnly AutoforwardInternalQueueSceSynthInvokeInvWatchEvent = 5
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	AutoforwardInternalQueueSceSynthInvokeInvWatchEventNull AutoforwardInternalQueueSceSynthInvokeInvWatchEvent = 5
+	AutoforwardInternalQueueSceSynthInvokeInvWatchEventNull AutoforwardInternalQueueSceSynthInvokeInvWatchEvent = 6
 )
 
 func (e AutoforwardInternalQueueSceSynthInvokeInvWatchEvent) String() string {
 	switch e {
+	case AutoforwardInternalQueueSceSynthInvokeInvWatchEventErrorCommunication:
+		return "error.communication"
 	case AutoforwardInternalQueueSceSynthInvokeInvWatchEventErrorExecution:
 		return "error.execution"
 	case AutoforwardInternalQueueSceSynthInvokeInvWatchEventProbe:
@@ -323,6 +326,8 @@ func (p *AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy) GetEventName(even
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy) GetEventFromName(name string) (AutoforwardInternalQueueSceSynthInvokeInvWatchEvent, bool) {
 	switch name {
+	case "error.communication":
+		return AutoforwardInternalQueueSceSynthInvokeInvWatchEventErrorCommunication, true
 	case "error.execution":
 		return AutoforwardInternalQueueSceSynthInvokeInvWatchEventErrorExecution, true
 	case "probe":
@@ -440,7 +445,15 @@ func (p *AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy) ExecuteEntryActio
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(AutoforwardInternalQueueSceSynthInvokeInvWatchEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_2"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "ready", Data: eventDataStr})
 	}
 	}
@@ -539,7 +552,15 @@ func (p *AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy) ExecuteTransition
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(AutoforwardInternalQueueSceSynthInvokeInvWatchEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "sawInternal", Data: eventDataStr})
 	}
 	}
@@ -556,7 +577,15 @@ func (p *AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy) ExecuteTransition
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(AutoforwardInternalQueueSceSynthInvokeInvWatchEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_1"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "sawProbeOnly", Data: eventDataStr})
 	}
 	}

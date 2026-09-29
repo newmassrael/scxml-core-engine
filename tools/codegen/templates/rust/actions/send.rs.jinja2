@@ -738,11 +738,13 @@
     // SCE Protocol-Synthesis RFC §synth-5-J-2: no_std codegen-rejects `<invoke>`, so a machine
     // is never instantiated as a child and has no parent engine queue (the
     // `parent_external_queue` field is elided). A #_parent send therefore always
-    // takes the parent-absent branch: error.communication.
-{% if 'error.communication' in model.events %}
+    // takes the parent-absent branch: error.communication, and the block ends
+    // (W3C SCXML C.1 + 4.9).
     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
         {{ machine_name }}Event::{{ 'error.communication' | to_event_variant }},
         "<send target='#_parent'> has no parent session to reach"));
+{% if in_block %}
+    break 'action_block;
 {% endif %}
 {% elif delay_rs %}
     // W3C SCXML 6.2 + 6.4: delayed to the parent. It waits in this child's own
@@ -756,10 +758,14 @@
             q.push(("{{ action.event }}".to_string(), event_data.to_string()));
         }
     } else {
-{% if 'error.communication' in model.events %}
+        // W3C SCXML C.1: this session was started by its host, not by an
+        // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+        // nothing delivered, and the block ends (4.9).
         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             {{ machine_name }}Event::{{ 'error.communication' | to_event_variant }},
             "<send target='#_parent'> has no parent session to reach"));
+{% if in_block %}
+        break 'action_block;
 {% endif %}
     }
 {% endif %}

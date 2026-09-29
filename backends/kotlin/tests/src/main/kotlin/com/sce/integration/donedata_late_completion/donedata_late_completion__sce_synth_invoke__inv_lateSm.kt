@@ -22,6 +22,7 @@ sealed interface DonedataLateCompletionSceSynthInvokeInvLateState : State {
 
 sealed interface DonedataLateCompletionSceSynthInvokeInvLateEvent : Event {
     sealed interface Error : DonedataLateCompletionSceSynthInvokeInvLateEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     data object Finish : DonedataLateCompletionSceSynthInvokeInvLateEvent
@@ -99,6 +100,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): DonedataLateCompletionSceSynthInvokeInvLateEvent? = when (name) {
+        "error.communication" -> DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Communication
         "error.execution" -> DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Execution
         "finish" -> DonedataLateCompletionSceSynthInvokeInvLateEvent.Finish
         "ready" -> DonedataLateCompletionSceSynthInvokeInvLateEvent.Ready
@@ -107,6 +109,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: DonedataLateCompletionSceSynthInvokeInvLateEvent): String? = when (event) {
+        is DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Communication -> "error.communication"
         is DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Execution -> "error.execution"
         is DonedataLateCompletionSceSynthInvokeInvLateEvent.Finish -> "finish"
         is DonedataLateCompletionSceSynthInvokeInvLateEvent.Ready -> "ready"
@@ -394,8 +397,15 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("ready", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("ready", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

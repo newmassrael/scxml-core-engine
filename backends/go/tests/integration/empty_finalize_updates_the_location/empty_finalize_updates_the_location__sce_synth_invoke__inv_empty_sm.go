@@ -143,14 +143,17 @@ var transitionTargetsOfEmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmpty = [
 type EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent int
 
 const (
-	EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEventErrorExecution EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent = 0
-	EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEventFromEmptyChild EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent = 1
+	EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEventErrorCommunication EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent = 0
+	EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEventErrorExecution EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent = 1
+	EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEventFromEmptyChild EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent = 2
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEventNull EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent = 2
+	EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEventNull EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent = 3
 )
 
 func (e EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent) String() string {
 	switch e {
+	case EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEventErrorCommunication:
+		return "error.communication"
 	case EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEventErrorExecution:
 		return "error.execution"
 	case EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEventFromEmptyChild:
@@ -503,6 +506,8 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy) GetEventNa
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy) GetEventFromName(name string) (EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent, bool) {
 	switch name {
+	case "error.communication":
+		return EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEventErrorCommunication, true
 	case "error.execution":
 		return EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEventErrorExecution, true
 	case "fromEmptyChild":
@@ -723,7 +728,15 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy) ExecuteTra
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "fromEmptyChild", Data: eventDataStr})
 	}
 		// W3C SCXML 4.9: the <param> error ends the block, from however deep a

@@ -97,6 +97,7 @@ pub enum AutoforwardEventFieldsSceSynthInvokeInvEchoState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AutoforwardEventFieldsSceSynthInvokeInvEchoEvent {
     ChildToParent,
+    ErrorCommunication,
     ErrorExecution,
     FieldsPreserved,
     FieldsStripped,
@@ -535,6 +536,9 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ChildToParent => "childToParent",
+            AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorCommunication => {
+                "error.communication"
+            }
             AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorExecution => "error.execution",
             AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::FieldsPreserved => "fieldsPreserved",
             AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::FieldsStripped => "fieldsStripped",
@@ -546,6 +550,9 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
         match name {
             "childToParent" => {
                 Some(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ChildToParent)
+            }
+            "error.communication" => {
+                Some(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorCommunication)
             }
             "error.execution" => {
                 Some(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorExecution)
@@ -689,6 +696,13 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
                                 q.push(("childToParent".to_string(), event_data.to_string()));
                             }
                         } else {
+                            // W3C SCXML C.1: this session was started by its host, not by an
+                            // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                            // nothing delivered, and the block ends (4.9).
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                            break 'action_block;
                         }
 
                         // W3C SCXML 4.9: a <param> that could not be read raised an error while
@@ -846,6 +860,13 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
                                         ));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -872,6 +893,13 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
                                         ));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

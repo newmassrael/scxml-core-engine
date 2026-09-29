@@ -99,6 +99,7 @@ pub enum AutoforwardDequeuePointSceSynthInvokeInvProbeState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AutoforwardDequeuePointSceSynthInvokeInvProbeEvent {
+    ErrorCommunication,
     ErrorExecution,
     First,
     Mark,
@@ -309,6 +310,9 @@ impl StatePolicy for AutoforwardDequeuePointSceSynthInvokeInvProbePolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            AutoforwardDequeuePointSceSynthInvokeInvProbeEvent::ErrorCommunication => {
+                "error.communication"
+            }
             AutoforwardDequeuePointSceSynthInvokeInvProbeEvent::ErrorExecution => "error.execution",
             AutoforwardDequeuePointSceSynthInvokeInvProbeEvent::First => "first",
             AutoforwardDequeuePointSceSynthInvokeInvProbeEvent::Mark => "mark",
@@ -322,6 +326,9 @@ impl StatePolicy for AutoforwardDequeuePointSceSynthInvokeInvProbePolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "error.communication" => {
+                Some(AutoforwardDequeuePointSceSynthInvokeInvProbeEvent::ErrorCommunication)
+            }
             "error.execution" => {
                 Some(AutoforwardDequeuePointSceSynthInvokeInvProbeEvent::ErrorExecution)
             }
@@ -407,6 +414,13 @@ impl StatePolicy for AutoforwardDequeuePointSceSynthInvokeInvProbePolicy {
                                 q.push(("ready".to_string(), event_data.to_string()));
                             }
                         } else {
+                            // W3C SCXML C.1: this session was started by its host, not by an
+                            // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                            // nothing delivered, and the block ends (4.9).
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            AutoforwardDequeuePointSceSynthInvokeInvProbeEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                            break 'action_block;
                         }
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -548,6 +562,13 @@ impl StatePolicy for AutoforwardDequeuePointSceSynthInvokeInvProbePolicy {
                                         ));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            AutoforwardDequeuePointSceSynthInvokeInvProbeEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -579,6 +600,13 @@ impl StatePolicy for AutoforwardDequeuePointSceSynthInvokeInvProbePolicy {
                                         ));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            AutoforwardDequeuePointSceSynthInvokeInvProbeEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

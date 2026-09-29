@@ -134,14 +134,17 @@ var transitionTargetsOfSessionIdsAreDistinctSceSynthInvokeInvB = [1][][]SessionI
 type SessionIdsAreDistinctSceSynthInvokeInvBEvent int
 
 const (
-	SessionIdsAreDistinctSceSynthInvokeInvBEventErrorExecution SessionIdsAreDistinctSceSynthInvokeInvBEvent = 0
-	SessionIdsAreDistinctSceSynthInvokeInvBEventFromChild SessionIdsAreDistinctSceSynthInvokeInvBEvent = 1
+	SessionIdsAreDistinctSceSynthInvokeInvBEventErrorCommunication SessionIdsAreDistinctSceSynthInvokeInvBEvent = 0
+	SessionIdsAreDistinctSceSynthInvokeInvBEventErrorExecution SessionIdsAreDistinctSceSynthInvokeInvBEvent = 1
+	SessionIdsAreDistinctSceSynthInvokeInvBEventFromChild SessionIdsAreDistinctSceSynthInvokeInvBEvent = 2
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	SessionIdsAreDistinctSceSynthInvokeInvBEventNull SessionIdsAreDistinctSceSynthInvokeInvBEvent = 2
+	SessionIdsAreDistinctSceSynthInvokeInvBEventNull SessionIdsAreDistinctSceSynthInvokeInvBEvent = 3
 )
 
 func (e SessionIdsAreDistinctSceSynthInvokeInvBEvent) String() string {
 	switch e {
+	case SessionIdsAreDistinctSceSynthInvokeInvBEventErrorCommunication:
+		return "error.communication"
 	case SessionIdsAreDistinctSceSynthInvokeInvBEventErrorExecution:
 		return "error.execution"
 	case SessionIdsAreDistinctSceSynthInvokeInvBEventFromChild:
@@ -488,6 +491,8 @@ func (p *SessionIdsAreDistinctSceSynthInvokeInvBPolicy) GetEventName(event Sessi
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *SessionIdsAreDistinctSceSynthInvokeInvBPolicy) GetEventFromName(name string) (SessionIdsAreDistinctSceSynthInvokeInvBEvent, bool) {
 	switch name {
+	case "error.communication":
+		return SessionIdsAreDistinctSceSynthInvokeInvBEventErrorCommunication, true
 	case "error.execution":
 		return SessionIdsAreDistinctSceSynthInvokeInvBEventErrorExecution, true
 	case "fromChild":
@@ -631,7 +636,15 @@ func (p *SessionIdsAreDistinctSceSynthInvokeInvBPolicy) ExecuteEntryActions(stat
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(SessionIdsAreDistinctSceSynthInvokeInvBEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "fromChild", Data: eventDataStr})
 	}
 		// W3C SCXML 4.9: the <param> error ends the block, from however deep a

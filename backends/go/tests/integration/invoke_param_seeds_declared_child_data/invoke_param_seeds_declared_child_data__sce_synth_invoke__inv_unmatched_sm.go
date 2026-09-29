@@ -145,16 +145,19 @@ var transitionTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatch
 type InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent int
 
 const (
-	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventErrorExecution InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent = 0
-	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventSeedLeaked InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent = 1
-	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventSeedMissing InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent = 2
-	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventSeedOk InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent = 3
+	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventErrorCommunication InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent = 0
+	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventErrorExecution InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent = 1
+	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventSeedLeaked InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent = 2
+	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventSeedMissing InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent = 3
+	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventSeedOk InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent = 4
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventNull InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent = 4
+	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventNull InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent = 5
 )
 
 func (e InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent) String() string {
 	switch e {
+	case InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventErrorCommunication:
+		return "error.communication"
 	case InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventErrorExecution:
 		return "error.execution"
 	case InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventSeedLeaked:
@@ -531,6 +534,8 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedPolicy) GetE
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedPolicy) GetEventFromName(name string) (InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent, bool) {
 	switch name {
+	case "error.communication":
+		return InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventErrorCommunication, true
 	case "error.execution":
 		return InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventErrorExecution, true
 	case "seed.leaked":
@@ -759,7 +764,15 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedPolicy) Exec
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "seed.leaked", Data: eventDataStr})
 	}
 	}
@@ -776,7 +789,15 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedPolicy) Exec
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_1"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "seed.ok", Data: eventDataStr})
 	}
 	}
@@ -793,7 +814,15 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedPolicy) Exec
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_2"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "seed.missing", Data: eventDataStr})
 	}
 	}

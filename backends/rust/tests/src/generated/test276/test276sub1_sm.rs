@@ -96,6 +96,7 @@ pub enum Test276sub1State {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Test276sub1Event {
+    ErrorCommunication,
     ErrorExecution,
     Event0,
     Event1,
@@ -552,6 +553,7 @@ impl StatePolicy for Test276sub1Policy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            Test276sub1Event::ErrorCommunication => "error.communication",
             Test276sub1Event::ErrorExecution => "error.execution",
             Test276sub1Event::Event0 => "event0",
             Test276sub1Event::Event1 => "event1",
@@ -561,6 +563,7 @@ impl StatePolicy for Test276sub1Policy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "error.communication" => Some(Test276sub1Event::ErrorCommunication),
             "error.execution" => Some(Test276sub1Event::ErrorExecution),
             "event0" => Some(Test276sub1Event::Event0),
             "event1" => Some(Test276sub1Event::Event1),
@@ -778,6 +781,15 @@ impl StatePolicy for Test276sub1Policy {
                                         q.push(("event1".to_string(), event_data.to_string()));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine
+                                        .raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                        Test276sub1Event::ErrorCommunication,
+                                        "<send target='#_parent'> has no parent session to reach",
+                                    ));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -801,6 +813,15 @@ impl StatePolicy for Test276sub1Policy {
                                         q.push(("event0".to_string(), event_data.to_string()));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine
+                                        .raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                        Test276sub1Event::ErrorCommunication,
+                                        "<send target='#_parent'> has no parent session to reach",
+                                    ));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

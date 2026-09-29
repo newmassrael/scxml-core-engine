@@ -245,10 +245,13 @@
 {{ indent }}engine.schedule_routed_send(None, {{ delay_py }}, _sid, _data, "parent", event_name=_evt_name)
 {% else %}
 {# W3C SCXML 6.2 (test233/234): the parent receives the same payload any other
-   `<send>` would carry. A session nothing invoked has no queue to take it,
-   and drops it as the literal `#_parent` arm of every channel does. #}
-{{ indent }}if self._parent_queue is not None:
-{{ indent }}    self._parent_queue.append((_evt_name, _data))
+   `<send>` would carry. W3C SCXML C.1: a session its host started, not an
+   `<invoke>`, has no parent — error.communication, nothing delivered, and the
+   error ends the block (4.9). #}
+{{ indent }}if self._parent_queue is None:
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(data="<send target='#_parent'> has no parent session to reach", send_id=_sid, event_type="platform"))
+{{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
+{{ indent }}self._parent_queue.append((_evt_name, _data))
 {% endif %}
 {% elif not action.targetexpr and action.target == '#_internal' %}
 {# W3C SCXML 6.2 (test189, test495): `<send target="#_internal">` enqueues onto

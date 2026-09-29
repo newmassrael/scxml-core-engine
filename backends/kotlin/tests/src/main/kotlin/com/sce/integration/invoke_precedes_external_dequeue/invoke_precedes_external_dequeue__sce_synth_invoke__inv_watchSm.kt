@@ -24,6 +24,7 @@ sealed interface InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState : Stat
 
 sealed interface InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent : Event {
     sealed interface Error : InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     data object Kick : InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent
@@ -121,6 +122,7 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent? = when (name) {
+        "error.communication" -> InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Error.Communication
         "error.execution" -> InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Error.Execution
         "kick" -> InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Kick
         "probe" -> InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Probe
@@ -132,6 +134,7 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent): String? = when (event) {
+        is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Error.Communication -> "error.communication"
         is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Error.Execution -> "error.execution"
         is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Kick -> "kick"
         is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Probe -> "probe"
@@ -191,8 +194,15 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("ready", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                return@send true
+            }
+            toParent("ready", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -235,8 +245,15 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("sawKick", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_2")
+                return@send true
+            }
+            toParent("sawKick", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -253,8 +270,15 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("sawNoKick", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("sawNoKick", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

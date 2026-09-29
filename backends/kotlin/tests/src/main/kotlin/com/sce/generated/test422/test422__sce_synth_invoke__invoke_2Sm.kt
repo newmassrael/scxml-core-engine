@@ -22,6 +22,7 @@ sealed interface Test422SceSynthInvokeInvoke2State : State {
 
 sealed interface Test422SceSynthInvokeInvoke2Event : Event {
     sealed interface Error : Test422SceSynthInvokeInvoke2Event {
+        data object Communication : Error
         data object Execution : Error
     }
     data object InvokeS12 : Test422SceSynthInvokeInvoke2Event
@@ -91,6 +92,7 @@ class Test422SceSynthInvokeInvoke2StateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test422SceSynthInvokeInvoke2Event? = when (name) {
+        "error.communication" -> Test422SceSynthInvokeInvoke2Event.Error.Communication
         "error.execution" -> Test422SceSynthInvokeInvoke2Event.Error.Execution
         "invokeS12" -> Test422SceSynthInvokeInvoke2Event.InvokeS12
         else -> null
@@ -98,6 +100,7 @@ class Test422SceSynthInvokeInvoke2StateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test422SceSynthInvokeInvoke2Event): String? = when (event) {
+        is Test422SceSynthInvokeInvoke2Event.Error.Communication -> "error.communication"
         is Test422SceSynthInvokeInvoke2Event.Error.Execution -> "error.execution"
         is Test422SceSynthInvokeInvoke2Event.InvokeS12 -> "invokeS12"
     }
@@ -135,8 +138,15 @@ class Test422SceSynthInvokeInvoke2StateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("invokeS12", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(Test422SceSynthInvokeInvoke2Event.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("invokeS12", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

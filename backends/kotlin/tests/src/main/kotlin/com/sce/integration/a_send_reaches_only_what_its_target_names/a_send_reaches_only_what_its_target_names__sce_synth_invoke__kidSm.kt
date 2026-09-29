@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ae446b53b64317c75fdba49276558fc5f0277a910a2be095ed0ddb59d9b43e5f
+// source-hash: 9b9a69c667502ae1733fda8dedceeee7a01aa136c4bb06b74941e5364f09e3a3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/a_send_reaches_only_what_its_target_names/a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml
@@ -21,6 +21,7 @@ sealed interface ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState : Stat
 
 sealed interface ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent : Event {
     sealed interface Error : ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     data object Hello : ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent
@@ -90,6 +91,7 @@ class ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent? = when (name) {
+        "error.communication" -> ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Communication
         "error.execution" -> ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution
         "hello" -> ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Hello
         "ping" -> ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Ping
@@ -99,6 +101,7 @@ class ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent): String? = when (event) {
+        is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Communication -> "error.communication"
         is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution -> "error.execution"
         is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Hello -> "hello"
         is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Ping -> "ping"
@@ -358,8 +361,15 @@ class ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("hello", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                return@send true
+            }
+            toParent("hello", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -409,8 +419,15 @@ class ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateMachine(
                 paramFailed = true
                 valueToJson("")
             }
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("pong", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("pong", sendData)
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

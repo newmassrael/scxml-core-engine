@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ae446b53b64317c75fdba49276558fc5f0277a910a2be095ed0ddb59d9b43e5f
+// source-hash: 9b9a69c667502ae1733fda8dedceeee7a01aa136c4bb06b74941e5364f09e3a3
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -95,6 +95,7 @@ pub enum ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent {
+    ErrorCommunication,
     ErrorExecution,
     Hello,
     Ping,
@@ -531,6 +532,9 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent::ErrorCommunication => {
+                "error.communication"
+            }
             ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent::ErrorExecution => {
                 "error.execution"
             }
@@ -543,6 +547,9 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "error.communication" => {
+                Some(ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent::ErrorCommunication)
+            }
             "error.execution" => {
                 Some(ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent::ErrorExecution)
             }
@@ -637,6 +644,13 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidPolicy {
                                 q.push(("hello".to_string(), event_data.to_string()));
                             }
                         } else {
+                            // W3C SCXML C.1: this session was started by its host, not by an
+                            // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                            // nothing delivered, and the block ends (4.9).
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                            break 'action_block;
                         }
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -794,6 +808,13 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidPolicy {
                                         q.push(("pong".to_string(), event_data.to_string()));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                                    break 'action_block;
                                 }
 
                                 // W3C SCXML 4.9: a <param> that could not be read raised an error while

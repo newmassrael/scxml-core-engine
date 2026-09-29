@@ -143,17 +143,20 @@ var transitionTargetsOfADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGone =
 type ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent int
 
 const (
-	ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventErrorExecution ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent = 0
-	ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventHello ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent = 1
-	ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventLost ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent = 2
-	ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventLostReached ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent = 3
-	ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventStop ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent = 4
+	ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventErrorCommunication ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent = 0
+	ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventErrorExecution ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent = 1
+	ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventHello ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent = 2
+	ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventLost ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent = 3
+	ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventLostReached ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent = 4
+	ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventStop ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent = 5
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventNull ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent = 5
+	ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventNull ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent = 6
 )
 
 func (e ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent) String() string {
 	switch e {
+	case ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventErrorCommunication:
+		return "error.communication"
 	case ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventErrorExecution:
 		return "error.execution"
 	case ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventHello:
@@ -312,6 +315,8 @@ func (p *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGonePolicy) GetEvent
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGonePolicy) GetEventFromName(name string) (ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent, bool) {
 	switch name {
+	case "error.communication":
+		return ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventErrorCommunication, true
 	case "error.execution":
 		return ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventErrorExecution, true
 	case "hello":
@@ -429,7 +434,15 @@ func (p *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGonePolicy) ExecuteE
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_1"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "hello", Data: eventDataStr})
 	}
 	}
@@ -527,7 +540,15 @@ func (p *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGonePolicy) ExecuteT
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "lostReached", Data: eventDataStr})
 	}
 	}

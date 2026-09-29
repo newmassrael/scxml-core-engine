@@ -808,7 +808,6 @@ uint32_t {{ csym_prefix }}{{ model.name }}_refused_host_invoke_completions(const
 /* ── SCE Accepted Subset 2.12: typed host-run invoke interface ── */
 {{ host_invoker_decls }}
 {%- endif %}
-{% if not model.has_parent_communication %}
 
 /* W3C SCXML 6.4.1: start the machine with what RUNS its host invokes — the
    door for an invocation of the initial configuration, which runs inside this
@@ -837,7 +836,6 @@ uint32_t {{ csym_prefix }}{{ model.name }}_refused_host_invoke_completions(const
                                   const sce_host_processor_registry_t *host_processors,
                                   const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
                                   const {{ native_actions_interface }} *actions{% endif %});
-{% endif %}
 {% endif %}
 {% endif %}
 {% endif %}
@@ -895,7 +893,8 @@ bool {{ csym_prefix }}{{ model.name }}_{{ var.reader.c11 }}(const {{ csym_prefix
 {% endfor %}
 {% endif %}
 
-{% if not model.has_parent_communication %}
+{# The host's doors are declared for every document; see `_init`'s
+   definition for why a machine with a `#_parent` send has them too. #}
 {% if has_native_actions %}
 /* W3C SCXML G.7: initialize SM to its initial state with the host that serves
    every `<sce:action>` this document declares.
@@ -942,7 +941,6 @@ void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t 
                                                             const char *basic_http_access_uri{% if has_native_actions %},
                                                             const {{ native_actions_interface }} *actions{% endif %});
 {% endif %}
-{% endif %}
 {% if model.may_address_parent %}
 /* W3C SCXML 6.4: Initialize an invoked-child SM with parent-routing
    wired BEFORE the configuration entry walk runs. The parent's
@@ -953,13 +951,10 @@ void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t 
    string is the spawn-time id (`<state>.<sm_ptr_hex>.<invoke_idx>` or
    the explicit `<invoke id>`) — the dispatcher carries it onto the
    parent's external event so `_event.invokeid` reads as that id at
-   the parent's transition time (test338). SMs that declare
-   `<send target="#_parent">` are exclusively invoked as children, so
-   the plain `_init` symbol is not emitted for them — the only call site
-   is the parent's invoke helper. One whose `<send targetexpr>` may name
-   `#_parent` keeps `_init` too: whether it is invoked is the deployment's
-   choice, and started on its own, that send is error.communication (C.1).
-   `clock` is the parent's time
+   the parent's transition time (test338). The parent's invoke helper is
+   its only call site; a host starting the same machine calls `_init`,
+   and its `#_parent` send — written or evaluated — then raises
+   error.communication (W3C SCXML C.1). `clock` is the parent's time
    (`sce_clock_following`): an invoked session's `<send delay>`s wait on the
    clock its parent's do (§scxml-6.4), installed before the entry walk arms
    any of them. */

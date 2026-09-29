@@ -97,6 +97,7 @@ pub enum Test230SceSynthInvokeInvoke0State {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Test230SceSynthInvokeInvoke0Event {
     ChildToParent,
+    ErrorCommunication,
     ErrorExecution,
     Timeout,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
@@ -529,6 +530,7 @@ impl StatePolicy for Test230SceSynthInvokeInvoke0Policy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             Test230SceSynthInvokeInvoke0Event::ChildToParent => "childToParent",
+            Test230SceSynthInvokeInvoke0Event::ErrorCommunication => "error.communication",
             Test230SceSynthInvokeInvoke0Event::ErrorExecution => "error.execution",
             Test230SceSynthInvokeInvoke0Event::Timeout => "timeout",
             Test230SceSynthInvokeInvoke0Event::Null => "",
@@ -538,6 +540,7 @@ impl StatePolicy for Test230SceSynthInvokeInvoke0Policy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "childToParent" => Some(Test230SceSynthInvokeInvoke0Event::ChildToParent),
+            "error.communication" => Some(Test230SceSynthInvokeInvoke0Event::ErrorCommunication),
             "error.execution" => Some(Test230SceSynthInvokeInvoke0Event::ErrorExecution),
             "timeout" => Some(Test230SceSynthInvokeInvoke0Event::Timeout),
             _ => None,
@@ -630,6 +633,14 @@ impl StatePolicy for Test230SceSynthInvokeInvoke0Policy {
                                 q.push(("childToParent".to_string(), event_data.to_string()));
                             }
                         } else {
+                            // W3C SCXML C.1: this session was started by its host, not by an
+                            // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                            // nothing delivered, and the block ends (4.9).
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                Test230SceSynthInvokeInvoke0Event::ErrorCommunication,
+                                "<send target='#_parent'> has no parent session to reach",
+                            ));
+                            break 'action_block;
                         }
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch

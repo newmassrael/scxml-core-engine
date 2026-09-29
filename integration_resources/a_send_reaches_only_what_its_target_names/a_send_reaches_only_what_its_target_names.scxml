@@ -29,8 +29,17 @@
               arrives here as 8. The C++ AOT delivered the child no data, and
               the C++ Interpreter carried `<content>` to neither end.
 
-    execErrors 1, commErrors 2, afterRefused 0, afterNobody 0,
-    afterStranger 0, bareArrived 1, pongOk 1, ending in `done`.
+    orphan    this session was started by its host, not by an `<invoke>`, so
+              `#_parent` names no session: error.communication, the block
+              ended. Read off the send sites 2026-09-29, before this row:
+              only Rust and the C++ Interpreter reported it, and Rust
+              carried on past it; the others dropped it, and neither C11 nor
+              the C++ AOT could be started by a host at all once the
+              document sent to `#_parent`.
+
+    execErrors 1, commErrors 3, afterRefused 0, afterNobody 0,
+    afterStranger 0, afterOrphan 0, bareArrived 1, pongOk 1, ending in
+    `done`.
 
   This fixture is the canonical source for all 7 channels — see
   docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test locations.
@@ -45,6 +54,7 @@
     <data id="afterRefused" expr="0"/>
     <data id="afterNobody" expr="0"/>
     <data id="afterStranger" expr="0"/>
+    <data id="afterOrphan" expr="0"/>
     <data id="bareArrived" expr="0"/>
     <data id="pongOk" expr="0"/>
   </datamodel>
@@ -63,6 +73,10 @@
     <onentry>
       <send event="lost" target="#_scxml_stranger"/>
       <assign location="afterStranger" expr="1"/>
+    </onentry>
+    <onentry>
+      <send event="lost" target="#_parent"/>
+      <assign location="afterOrphan" expr="1"/>
     </onentry>
     <onentry>
       <send event="bare" target="#_scxml_"/>

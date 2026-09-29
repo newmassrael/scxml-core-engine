@@ -98,6 +98,7 @@ pub enum AutoforwardDoneInvokeSceSynthInvokeInvWatchState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent {
     DoneInvokeInvShort,
+    ErrorCommunication,
     ErrorExecution,
     Probe,
     SawPlatform,
@@ -303,6 +304,9 @@ impl StatePolicy for AutoforwardDoneInvokeSceSynthInvokeInvWatchPolicy {
             AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent::DoneInvokeInvShort => {
                 "done.invoke.inv_short"
             }
+            AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent::ErrorCommunication => {
+                "error.communication"
+            }
             AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent::ErrorExecution => "error.execution",
             AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent::Probe => "probe",
             AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent::SawPlatform => "sawPlatform",
@@ -315,6 +319,9 @@ impl StatePolicy for AutoforwardDoneInvokeSceSynthInvokeInvWatchPolicy {
         match name {
             "done.invoke.inv_short" => {
                 Some(AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent::DoneInvokeInvShort)
+            }
+            "error.communication" => {
+                Some(AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent::ErrorCommunication)
             }
             "error.execution" => {
                 Some(AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent::ErrorExecution)
@@ -470,6 +477,13 @@ impl StatePolicy for AutoforwardDoneInvokeSceSynthInvokeInvWatchPolicy {
                                         q.push(("sawPlatform".to_string(), event_data.to_string()));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -496,6 +510,13 @@ impl StatePolicy for AutoforwardDoneInvokeSceSynthInvokeInvWatchPolicy {
                                         ));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

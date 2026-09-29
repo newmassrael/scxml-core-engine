@@ -498,15 +498,19 @@ engine.performMeshSend("#_parent", {{ event_name_cpp }}, eventData, sendId, "");
 engine.scheduleRoutedEvent(Event{}, delayMs, sendId, eventData, "",
                            ::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::Parent, {{ event_name_cpp }}, ""});
 {% else %}
-// W3C SCXML 6.2: Immediate send to parent state machine with invokeid (test338)
-// W3C SCXML 6.5: Send with child session ID in origin for finalize support (test233)
-::SCE::SendHelper::sendToParentWithOrigin(
-    engine.getPolicy().parent_,
-    ParentStateMachine::Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }},
-    engine.getPolicy().invokeId_,
-    engine.getPolicy().childSessionId_,
-    eventData
-);
+// W3C SCXML 6.2: immediate send to the parent. It takes the delayed send's
+// delivery, by event NAME — the one identity two machines share — and that
+// delivery stamps this invocation's id (test338) and this session as the
+// origin (test233). One path, so the two cannot drift in what they carry.
+if (!engine.getPolicy().deliverToParent(::SCE::Common::ForwardedEvent{
+        {{ event_name_cpp }}, eventData, "", sendId, "external", ::SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, ""})) {
+    // W3C SCXML C.1: this session was started by its host, not by an
+    // `<invoke>`, so `#_parent` reaches nobody — error.communication, nothing
+    // delivered, the block ended (4.9).
+    engine.raise(typename Engine::EventWithMetadata(
+        Event::Error_communication, "<send target='#_parent'> has no parent session to reach", "", sendId));
+    {{ block_end or 'return;' }}
+}
 {% endif %}
 {% endif %}
 {% elif not action.targetexpr and action.target.startswith('#_') and action.target != '#_internal' and not session_target %}

@@ -1436,8 +1436,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
             val unreachable: Any?,
         ) : ScheduledRoute
 
-        /** `#_parent`: the session that invoked this one. */
-        data class Parent(val eventName: String, val eventData: String) : ScheduledRoute
+        /**
+         * `#_parent`: the session that invoked this one. [unreachable] is
+         * raised when there is none (§scxml-C-1).
+         */
+        data class Parent(val eventName: String, val eventData: String, val unreachable: Any?) : ScheduledRoute
 
         /**
          * A child session named by its id — its published location (§scxml-C-1)
@@ -2689,7 +2692,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         @Suppress("UNCHECKED_CAST")
         when (route) {
             ScheduledRoute.InternalQueue -> raiseInternal(entry.event as E, entry.metadata)
-            is ScheduledRoute.Parent -> onSendToParent?.invoke(route.eventName, route.eventData)
+            is ScheduledRoute.Parent -> deliverToParent(route, entry.sendId)
             is ScheduledRoute.Invocation ->
                 if (!sendToChild(route.invokeId, route.eventName, route.eventData)) {
                     raisePlatformError(
@@ -2753,7 +2756,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
             SendHelper.SendTarget.Parent -> {
                 if (onSendToParent == null) return TargetSendOutcome.UNREACHABLE
-                ScheduledRoute.Parent(eventName, eventData)
+                ScheduledRoute.Parent(eventName, eventData, communicationError)
             }
             is SendHelper.SendTarget.Invocation -> {
                 if (!isInvocationRunning(resolved.invokeId)) return TargetSendOutcome.UNREACHABLE
@@ -2771,6 +2774,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val delivered = when (route) {
             ScheduledRoute.InternalQueue -> true
             is ScheduledRoute.Parent -> {
+                // Checked above: the parent was there when the route was chosen.
                 onSendToParent?.invoke(route.eventName, route.eventData)
                 true
             }
@@ -3172,27 +3176,43 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * §scxml-6.4 (test187): Schedule a delayed send to parent.
-     * Cancelled when child session stops (all delayedSendJobs are cancelled in stop()).
+     * §scxml-6.4 (test187): schedule a delayed send to the parent, cancelled
+     * when this session stops. Whether there is a parent is judged when the
+     * entry comes due; a session its host started has none, and [unreachable]
+     * — this machine's `error.communication` — is raised with the send id
+     * (§scxml-C-1), as for an invocation that is no longer running.
      */
-    protected fun scheduleParentSend(sendId: String, delayMs: Long, eventName: String) {
-        scheduleParentSend(sendId, delayMs, eventName, "")
-    }
-
-    /**
-     * §scxml-6.4: Schedule a delayed send to parent with event data.
-     */
-    protected fun scheduleParentSend(sendId: String, delayMs: Long, eventName: String, eventData: String) {
+    protected fun scheduleParentSend(
+        sendId: String,
+        delayMs: Long,
+        eventName: String,
+        eventData: String,
+        unreachable: E
+    ) {
         // In [scheduledSends] in both modes, as a host-served send is: the
         // coroutine loop performs due entries on its own thread
         // ([awaitNextExternalEvent]), so the parent is reached from the one
         // thread this machine's macrosteps run on.
+        val route = ScheduledRoute.Parent(eventName, eventData, unreachable)
         if (delayMs <= 0) {
             cancelSend(sendId)
-            onSendToParent?.invoke(eventName, eventData)
+            deliverToParent(route, sendId)
             return
         }
-        scheduleRouted(sendId, delayMs, null, EventMetadata.EMPTY, ScheduledRoute.Parent(eventName, eventData))
+        scheduleRouted(sendId, delayMs, null, EventMetadata.EMPTY, route)
+    }
+
+    /** Hand a due parent send over, or report that there is no parent to take it. */
+    private fun deliverToParent(route: ScheduledRoute.Parent, sendId: String) {
+        val toParent = onSendToParent
+        if (toParent == null) {
+            // Justification (UNCHECKED_CAST): [scheduleParentSend] accepts only
+            // E for the unreachable event.
+            @Suppress("UNCHECKED_CAST")
+            raisePlatformError(route.unreachable as E, "<send target='#_parent'> has no parent session to reach", sendId)
+            return
+        }
+        toParent(route.eventName, route.eventData)
     }
 
     /**

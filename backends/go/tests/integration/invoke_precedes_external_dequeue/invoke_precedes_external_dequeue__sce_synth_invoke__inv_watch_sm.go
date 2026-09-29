@@ -159,18 +159,21 @@ var transitionTargetsOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch = [4]
 type InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent int
 
 const (
-	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventErrorExecution InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 0
-	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventKick InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 1
-	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventProbe InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 2
-	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventReady InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 3
-	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventSawKick InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 4
-	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventSawNoKick InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 5
+	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventErrorCommunication InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 0
+	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventErrorExecution InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 1
+	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventKick InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 2
+	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventProbe InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 3
+	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventReady InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 4
+	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventSawKick InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 5
+	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventSawNoKick InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 6
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventNull InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 6
+	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventNull InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent = 7
 )
 
 func (e InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent) String() string {
 	switch e {
+	case InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventErrorCommunication:
+		return "error.communication"
 	case InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventErrorExecution:
 		return "error.execution"
 	case InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventKick:
@@ -337,6 +340,8 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) GetEventName
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) GetEventFromName(name string) (InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent, bool) {
 	switch name {
+	case "error.communication":
+		return InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventErrorCommunication, true
 	case "error.execution":
 		return InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventErrorExecution, true
 	case "kick":
@@ -456,7 +461,15 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteEntry
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_1"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "ready", Data: eventDataStr})
 	}
 	}
@@ -567,7 +580,15 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteTrans
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_2"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "sawKick", Data: eventDataStr})
 	}
 	}
@@ -587,7 +608,15 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteTrans
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "sawNoKick", Data: eventDataStr})
 	}
 	}

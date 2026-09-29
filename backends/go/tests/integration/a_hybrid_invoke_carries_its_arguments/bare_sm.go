@@ -143,14 +143,17 @@ var transitionTargetsOfBare = [2][][]BareTarget{
 type BareEvent int
 
 const (
-	BareEventErrorExecution BareEvent = 0
-	BareEventWrongChild BareEvent = 1
+	BareEventErrorCommunication BareEvent = 0
+	BareEventErrorExecution BareEvent = 1
+	BareEventWrongChild BareEvent = 2
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	BareEventNull BareEvent = 2
+	BareEventNull BareEvent = 3
 )
 
 func (e BareEvent) String() string {
 	switch e {
+	case BareEventErrorCommunication:
+		return "error.communication"
 	case BareEventErrorExecution:
 		return "error.execution"
 	case BareEventWrongChild:
@@ -523,6 +526,8 @@ func (p *BarePolicy) GetEventName(event BareEvent) string {
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *BarePolicy) GetEventFromName(name string) (BareEvent, bool) {
 	switch name {
+	case "error.communication":
+		return BareEventErrorCommunication, true
 	case "error.execution":
 		return BareEventErrorExecution, true
 	case "wrongChild":
@@ -725,7 +730,15 @@ func (p *BarePolicy) ExecuteTransitionContent(source BareState, transitionIndex 
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(BareEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "wrongChild", Data: eventDataStr})
 	}
 	}

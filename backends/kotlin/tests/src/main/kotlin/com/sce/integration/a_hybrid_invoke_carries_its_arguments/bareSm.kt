@@ -22,6 +22,7 @@ sealed interface BareState : State {
 
 sealed interface BareEvent : Event {
     sealed interface Error : BareEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     data object WrongChild : BareEvent
@@ -112,6 +113,7 @@ class BareStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): BareEvent? = when (name) {
+        "error.communication" -> BareEvent.Error.Communication
         "error.execution" -> BareEvent.Error.Execution
         "wrongChild" -> BareEvent.WrongChild
         else -> null
@@ -119,6 +121,7 @@ class BareStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: BareEvent): String? = when (event) {
+        is BareEvent.Error.Communication -> "error.communication"
         is BareEvent.Error.Execution -> "error.execution"
         is BareEvent.WrongChild -> "wrongChild"
     }
@@ -412,8 +415,15 @@ class BareStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("wrongChild", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(BareEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("wrongChild", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

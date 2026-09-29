@@ -97,6 +97,7 @@ pub enum Test187SceSynthInvokeInvoke0State {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Test187SceSynthInvokeInvoke0Event {
     ChildToParent,
+    ErrorCommunication,
     ErrorExecution,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
@@ -293,6 +294,7 @@ impl StatePolicy for Test187SceSynthInvokeInvoke0Policy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             Test187SceSynthInvokeInvoke0Event::ChildToParent => "childToParent",
+            Test187SceSynthInvokeInvoke0Event::ErrorCommunication => "error.communication",
             Test187SceSynthInvokeInvoke0Event::ErrorExecution => "error.execution",
             Test187SceSynthInvokeInvoke0Event::Null => "",
         }
@@ -301,6 +303,7 @@ impl StatePolicy for Test187SceSynthInvokeInvoke0Policy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "childToParent" => Some(Test187SceSynthInvokeInvoke0Event::ChildToParent),
+            "error.communication" => Some(Test187SceSynthInvokeInvoke0Event::ErrorCommunication),
             "error.execution" => Some(Test187SceSynthInvokeInvoke0Event::ErrorExecution),
             _ => None,
         }

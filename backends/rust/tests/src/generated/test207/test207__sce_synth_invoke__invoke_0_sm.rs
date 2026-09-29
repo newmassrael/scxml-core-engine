@@ -97,6 +97,7 @@ pub enum Test207SceSynthInvokeInvoke0State {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Test207SceSynthInvokeInvoke0Event {
     ChildToParent,
+    ErrorCommunication,
     ErrorExecution,
     Event1,
     Event2,
@@ -298,6 +299,7 @@ impl StatePolicy for Test207SceSynthInvokeInvoke0Policy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             Test207SceSynthInvokeInvoke0Event::ChildToParent => "childToParent",
+            Test207SceSynthInvokeInvoke0Event::ErrorCommunication => "error.communication",
             Test207SceSynthInvokeInvoke0Event::ErrorExecution => "error.execution",
             Test207SceSynthInvokeInvoke0Event::Event1 => "event1",
             Test207SceSynthInvokeInvoke0Event::Event2 => "event2",
@@ -310,6 +312,7 @@ impl StatePolicy for Test207SceSynthInvokeInvoke0Policy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "childToParent" => Some(Test207SceSynthInvokeInvoke0Event::ChildToParent),
+            "error.communication" => Some(Test207SceSynthInvokeInvoke0Event::ErrorCommunication),
             "error.execution" => Some(Test207SceSynthInvokeInvoke0Event::ErrorExecution),
             "event1" => Some(Test207SceSynthInvokeInvoke0Event::Event1),
             "event2" => Some(Test207SceSynthInvokeInvoke0Event::Event2),
@@ -425,6 +428,14 @@ impl StatePolicy for Test207SceSynthInvokeInvoke0Policy {
                                 q.push(("childToParent".to_string(), event_data.to_string()));
                             }
                         } else {
+                            // W3C SCXML C.1: this session was started by its host, not by an
+                            // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                            // nothing delivered, and the block ends (4.9).
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                Test207SceSynthInvokeInvoke0Event::ErrorCommunication,
+                                "<send target='#_parent'> has no parent session to reach",
+                            ));
+                            break 'action_block;
                         }
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -536,6 +547,15 @@ impl StatePolicy for Test207SceSynthInvokeInvoke0Policy {
                                         q.push(("pass".to_string(), event_data.to_string()));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine
+                                        .raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                        Test207SceSynthInvokeInvoke0Event::ErrorCommunication,
+                                        "<send target='#_parent'> has no parent session to reach",
+                                    ));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -559,6 +579,15 @@ impl StatePolicy for Test207SceSynthInvokeInvoke0Policy {
                                         q.push(("fail".to_string(), event_data.to_string()));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine
+                                        .raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                        Test207SceSynthInvokeInvoke0Event::ErrorCommunication,
+                                        "<send target='#_parent'> has no parent session to reach",
+                                    ));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

@@ -571,7 +571,17 @@
 	engine.ScheduleRoutedEvent(*new({{ machine_name }}Event), {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID,
 		sce.ScheduledRoute{Kind: sce.RouteParent, EventName: {{ event_name_go }}})
 {% elif action.event %}
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		engine.Raise(errEvt)
+{% if in_block %}
+		return  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "{{ action.event | escape_go }}", Data: eventDataStr})
 	}
 {% endif %}

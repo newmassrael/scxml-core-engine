@@ -22,6 +22,7 @@ sealed interface Test276sub1State : State {
 
 sealed interface Test276sub1Event : Event {
     sealed interface Error : Test276sub1Event {
+        data object Communication : Error
         data object Execution : Error
     }
     data object Event0 : Test276sub1Event
@@ -122,6 +123,7 @@ class Test276sub1StateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test276sub1Event? = when (name) {
+        "error.communication" -> Test276sub1Event.Error.Communication
         "error.execution" -> Test276sub1Event.Error.Execution
         "event0" -> Test276sub1Event.Event0
         "event1" -> Test276sub1Event.Event1
@@ -130,6 +132,7 @@ class Test276sub1StateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test276sub1Event): String? = when (event) {
+        is Test276sub1Event.Error.Communication -> "error.communication"
         is Test276sub1Event.Error.Execution -> "error.execution"
         is Test276sub1Event.Event0 -> "event0"
         is Test276sub1Event.Event1 -> "event1"
@@ -425,8 +428,15 @@ class Test276sub1StateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("event1", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(Test276sub1Event.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("event1", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -440,8 +450,15 @@ class Test276sub1StateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("event0", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(Test276sub1Event.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                return@send true
+            }
+            toParent("event0", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

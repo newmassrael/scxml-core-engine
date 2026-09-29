@@ -4495,11 +4495,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParentWithOrigin",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/EventMetadata.h",
           "symbol": "EventMetadata",
           "kind": "references"
@@ -5402,16 +5397,6 @@
         {
           "file": "sce/include/common/EventMetadataHelper.h",
           "symbol": "createDoneInvokeEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParentWithOrigin",
           "kind": "implements"
         },
         {
@@ -7753,16 +7738,6 @@
         {
           "file": "sce/include/common/SendHelper.h",
           "symbol": "isSupportedSendType",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParentWithOrigin",
           "kind": "implements"
         },
         {
@@ -11468,11 +11443,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParentWithOrigin",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/StatePolicyConcepts.h",
           "symbol": "SCE::Core",
           "kind": "references"
@@ -13300,11 +13270,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParentWithOrigin",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/events/EventTargetFactoryImpl.cpp",
           "symbol": "EventTargetFactoryImpl::createTarget",
           "kind": "implements"
@@ -13914,6 +13879,16 @@
         {
           "file": "sce-build/src/parser.rs",
           "symbol": "parse_send_action",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "Parent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "scheduleParentSend",
           "kind": "implements"
         }
       ],
@@ -20604,6 +20579,48 @@
       "target_kind": "section",
       "target_id": "scxml-6.4",
       "reason": "sendImmediately was folded into send, which delivers directly now that a delayed #_parent is scheduled by the sender's own queue"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "The generated C++ AOT delivers #_parent sends by event name through the policy's deliverToParent into StaticExecutionEngine::raiseExternal(ForwardedEvent), already bound here; the SendHelper parent helpers have no caller and are removed."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "The generated C++ AOT delivers #_parent sends by event name through the policy's deliverToParent into StaticExecutionEngine::raiseExternal(ForwardedEvent), already bound here; the SendHelper parent helpers have no caller and are removed."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "The generated C++ AOT delivers #_parent sends by event name through the policy's deliverToParent into StaticExecutionEngine::raiseExternal(ForwardedEvent), already bound here; the SendHelper parent helpers have no caller and are removed."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2",
+      "reason": "The generated C++ AOT delivers #_parent sends by event name through the policy's deliverToParent into StaticExecutionEngine::raiseExternal(ForwardedEvent), already bound here; the SendHelper parent helpers have no caller and are removed."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2",
+      "reason": "The generated C++ AOT delivers #_parent sends by event name through the policy's deliverToParent into StaticExecutionEngine::raiseExternal(ForwardedEvent), already bound here; the SendHelper parent helpers have no caller and are removed."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.5",
+      "reason": "The generated C++ AOT delivers #_parent sends by event name through the policy's deliverToParent into StaticExecutionEngine::raiseExternal(ForwardedEvent), already bound here; the SendHelper parent helpers have no caller and are removed."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "The generated C++ AOT delivers #_parent sends by event name through the policy's deliverToParent into StaticExecutionEngine::raiseExternal(ForwardedEvent), already bound here; the SendHelper parent helpers have no caller and are removed."
     }
   ],
   "frames": {},

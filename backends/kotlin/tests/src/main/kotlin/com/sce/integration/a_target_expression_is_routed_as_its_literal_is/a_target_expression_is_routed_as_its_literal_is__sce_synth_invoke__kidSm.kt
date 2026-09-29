@@ -430,8 +430,15 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("hello", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_4")
+                return@send true
+            }
+            toParent("hello", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

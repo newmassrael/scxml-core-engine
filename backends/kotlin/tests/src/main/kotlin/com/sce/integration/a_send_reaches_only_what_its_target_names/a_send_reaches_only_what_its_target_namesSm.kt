@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ae446b53b64317c75fdba49276558fc5f0277a910a2be095ed0ddb59d9b43e5f
+// source-hash: 9b9a69c667502ae1733fda8dedceeee7a01aa136c4bb06b74941e5364f09e3a3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/a_send_reaches_only_what_its_target_names/a_send_reaches_only_what_its_target_names.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine
+// SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
 
 package com.sce.integration.a_send_reaches_only_what_its_target_names
 
@@ -118,6 +118,18 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
      */
     fun afterStranger(): Long? =
         com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "afterStranger")
+
+    /**
+     * §scxml-5.3: what the `afterOrphan` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `afterOrphan` was assigned a value of another type, or the engine refused.
+     */
+    fun afterOrphan(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "afterOrphan")
 
     /**
      * §scxml-5.3: what the `bareArrived` datamodel variable is holding now.
@@ -360,6 +372,13 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
         } catch (e: Exception) {
             raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='afterStranger'> expr failed to evaluate")
         }
+        // W3C SCXML 5.3: Initialize variable 'afterOrphan' with expr
+        try {
+            val initResult_afterOrphan = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "afterOrphan", initResult_afterOrphan)
+        } catch (e: Exception) {
+            raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Execution, "<data id='afterOrphan'> expr failed to evaluate")
+        }
         // W3C SCXML 5.3: Initialize variable 'bareArrived' with expr
         try {
             val initResult_bareArrived = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -595,17 +614,17 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
     override fun onEntry(state: ASendReachesOnlyWhatItsTargetNamesState, isDefaultEntry: Boolean) {
         when (state) {
             is ASendReachesOnlyWhatItsTargetNamesState.Done -> {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:115 :: done :: _state_body
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:129 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is ASendReachesOnlyWhatItsTargetNamesState.Run -> {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:52 :: run :: _state_body
-                // W3C SCXML 3.8: Onentry block 1/4
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:62 :: run :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/5
                 run {
 
 
@@ -625,7 +644,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
                 return@run
             }
                 }
-                // W3C SCXML 3.8: Onentry block 2/4
+                // W3C SCXML 3.8: Onentry block 2/5
                 run {
 
 
@@ -645,7 +664,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
                 return@run
             }
                 }
-                // W3C SCXML 3.8: Onentry block 3/4
+                // W3C SCXML 3.8: Onentry block 3/5
                 run {
 
 
@@ -672,7 +691,34 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
                 return@run
             }
                 }
-                // W3C SCXML 3.8: Onentry block 4/4
+                // W3C SCXML 3.8: Onentry block 4/5
+                run {
+
+
+            if (run send@{
+            val sendData = ""
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_5")
+                return@send true
+            }
+            toParent("lost", sendData)
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return@run
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+
+
+            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterOrphan", "afterOrphan"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
+                return@run
+            }
+                }
+                // W3C SCXML 3.8: Onentry block 5/5
                 run {
 
 
@@ -682,7 +728,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
             // one this processor reaches by that name is its own — the bare
             // prefix names it too (test 190). Any other is not reachable:
             // error.communication, nothing delivered, the block ended (4.9).
-            send(ASendReachesOnlyWhatItsTargetNamesEvent.Bare, EventMetadata.external(sendId = "__send_5", origin = scriptSessionId ?: "", data = sendData))
+            send(ASendReachesOnlyWhatItsTargetNamesEvent.Bare, EventMetadata.external(sendId = "__send_6", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -706,14 +752,14 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
     override fun onExit(state: ASendReachesOnlyWhatItsTargetNamesState) {
         when (state) {
             is ASendReachesOnlyWhatItsTargetNamesState.Done -> {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:115 :: done :: _state_body
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:129 :: done :: _state_body
             }
             is ASendReachesOnlyWhatItsTargetNamesState.Run -> {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:52 :: run :: _state_body
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:62 :: run :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -724,12 +770,12 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:38 :: _machine
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
     override fun executeTransitionContent(source: ASendReachesOnlyWhatItsTargetNamesState, transitionIndex: Int) {
         when (source) {
         is ASendReachesOnlyWhatItsTargetNamesState.Run -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:89 :: run :: _transition_0
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:103 :: run :: _transition_0
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("execErrors", "execErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(execErrors, 1)", "execErrors + 1"))) {
@@ -737,7 +783,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
             }
             }
             1 -> {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:92 :: run :: _transition_1
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:106 :: run :: _transition_1
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("commErrors", "commErrors"), com.sce.runtime.ScriptSource.lua("_scxml_add(commErrors, 1)", "commErrors + 1"))) {
@@ -745,7 +791,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
             }
             }
             2 -> {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:95 :: run :: _transition_2
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:109 :: run :: _transition_2
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("bareArrived", "bareArrived"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
@@ -753,7 +799,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
             }
             }
             3 -> {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:98 :: run :: _transition_3
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:112 :: run :: _transition_3
 
 
             if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterNobody", "afterNobody"), com.sce.runtime.ScriptSource.lua("100", "100"))) {
@@ -761,7 +807,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
             }
             }
             4 -> {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:101 :: run :: _transition_4
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:115 :: run :: _transition_4
 
 
             if (run send@{
@@ -797,7 +843,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             5 -> {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:106 :: run :: _transition_5
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:120 :: run :: _transition_5
 
 
             var ifCondFailed1 = false

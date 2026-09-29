@@ -97,6 +97,7 @@ pub enum AutoforwardInternalQueueSceSynthInvokeInvWatchState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AutoforwardInternalQueueSceSynthInvokeInvWatchEvent {
+    ErrorCommunication,
     ErrorExecution,
     Probe,
     Ready,
@@ -300,6 +301,9 @@ impl StatePolicy for AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            AutoforwardInternalQueueSceSynthInvokeInvWatchEvent::ErrorCommunication => {
+                "error.communication"
+            }
             AutoforwardInternalQueueSceSynthInvokeInvWatchEvent::ErrorExecution => {
                 "error.execution"
             }
@@ -313,6 +317,9 @@ impl StatePolicy for AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "error.communication" => {
+                Some(AutoforwardInternalQueueSceSynthInvokeInvWatchEvent::ErrorCommunication)
+            }
             "error.execution" => {
                 Some(AutoforwardInternalQueueSceSynthInvokeInvWatchEvent::ErrorExecution)
             }
@@ -390,6 +397,13 @@ impl StatePolicy for AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy {
                                 q.push(("ready".to_string(), event_data.to_string()));
                             }
                         } else {
+                            // W3C SCXML C.1: this session was started by its host, not by an
+                            // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                            // nothing delivered, and the block ends (4.9).
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            AutoforwardInternalQueueSceSynthInvokeInvWatchEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                            break 'action_block;
                         }
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -496,6 +510,13 @@ impl StatePolicy for AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy {
                                         q.push(("sawInternal".to_string(), event_data.to_string()));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            AutoforwardInternalQueueSceSynthInvokeInvWatchEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -522,6 +543,13 @@ impl StatePolicy for AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy {
                                         ));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            AutoforwardInternalQueueSceSynthInvokeInvWatchEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

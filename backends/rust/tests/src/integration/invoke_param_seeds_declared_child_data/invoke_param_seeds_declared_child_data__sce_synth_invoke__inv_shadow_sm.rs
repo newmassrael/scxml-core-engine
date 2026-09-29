@@ -96,6 +96,7 @@ pub enum InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent {
+    ErrorCommunication,
     ErrorExecution,
     SeedMissing,
     SeedOk,
@@ -609,6 +610,9 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPol
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent::ErrorCommunication => {
+                "error.communication"
+            }
             InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent::ErrorExecution => {
                 "error.execution"
             }
@@ -625,6 +629,9 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPol
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "error.communication" => Some(
+                InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent::ErrorCommunication,
+            ),
             "error.execution" => {
                 Some(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent::ErrorExecution)
             }
@@ -864,6 +871,13 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPol
                                         q.push(("seed.ok".to_string(), event_data.to_string()));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -890,6 +904,13 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPol
                                         ));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -916,6 +937,13 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPol
                                         ));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

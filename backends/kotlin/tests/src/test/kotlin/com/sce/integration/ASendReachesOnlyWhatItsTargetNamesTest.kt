@@ -38,10 +38,11 @@ class ASendReachesOnlyWhatItsTargetNamesTest {
         assertEquals(ASendReachesOnlyWhatItsTargetNamesState.Done, sm.terminalState, "the run must end in `done`")
         val observed = mapOf(
             "execErrors" to (sm.execErrors() to 1L),
-            "commErrors" to (sm.commErrors() to 2L),
+            "commErrors" to (sm.commErrors() to 3L),
             "afterRefused" to (sm.afterRefused() to 0L),
             "afterNobody" to (sm.afterNobody() to 0L),
             "afterStranger" to (sm.afterStranger() to 0L),
+            "afterOrphan" to (sm.afterOrphan() to 0L),
             "bareArrived" to (sm.bareArrived() to 1L),
             "pongOk" to (sm.pongOk() to 1L),
         )

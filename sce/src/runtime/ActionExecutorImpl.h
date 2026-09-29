@@ -167,14 +167,12 @@ private:
      * id among the sessions this processor runs — the bare prefix names the
      * sender's own — and `#_<invokeid>` names an invocation of the sending
      * session, which reaches nothing once it has not started or has ended.
-     * An evaluated `#_parent` names the session that invoked this one, and
-     * reaches nothing in a session nothing invoked — as every generated
-     * engine judges a `targetexpr`. Every other target is some other layer's
-     * to judge, and reads as reachable here.
-     *
-     * @param evaluated Whether `target` is a `targetexpr`'s value
+     * `#_parent`, written or evaluated, names the session that invoked this
+     * one, and reaches nothing in a session nothing invoked — as every
+     * generated engine judges it. Every other target is some other layer's to
+     * judge, and reads as reachable here.
      */
-    bool isAddressedSessionReachable(const std::string &target, bool evaluated) const;
+    bool isAddressedSessionReachable(const std::string &target) const;
 
     /**
      * @brief Transform SCXML variable names to valid JavaScript identifiers

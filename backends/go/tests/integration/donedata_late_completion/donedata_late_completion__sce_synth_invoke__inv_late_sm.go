@@ -143,15 +143,18 @@ var transitionTargetsOfDonedataLateCompletionSceSynthInvokeInvLate = [2][][]Done
 type DonedataLateCompletionSceSynthInvokeInvLateEvent int
 
 const (
-	DonedataLateCompletionSceSynthInvokeInvLateEventErrorExecution DonedataLateCompletionSceSynthInvokeInvLateEvent = 0
-	DonedataLateCompletionSceSynthInvokeInvLateEventFinish DonedataLateCompletionSceSynthInvokeInvLateEvent = 1
-	DonedataLateCompletionSceSynthInvokeInvLateEventReady DonedataLateCompletionSceSynthInvokeInvLateEvent = 2
+	DonedataLateCompletionSceSynthInvokeInvLateEventErrorCommunication DonedataLateCompletionSceSynthInvokeInvLateEvent = 0
+	DonedataLateCompletionSceSynthInvokeInvLateEventErrorExecution DonedataLateCompletionSceSynthInvokeInvLateEvent = 1
+	DonedataLateCompletionSceSynthInvokeInvLateEventFinish DonedataLateCompletionSceSynthInvokeInvLateEvent = 2
+	DonedataLateCompletionSceSynthInvokeInvLateEventReady DonedataLateCompletionSceSynthInvokeInvLateEvent = 3
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	DonedataLateCompletionSceSynthInvokeInvLateEventNull DonedataLateCompletionSceSynthInvokeInvLateEvent = 3
+	DonedataLateCompletionSceSynthInvokeInvLateEventNull DonedataLateCompletionSceSynthInvokeInvLateEvent = 4
 )
 
 func (e DonedataLateCompletionSceSynthInvokeInvLateEvent) String() string {
 	switch e {
+	case DonedataLateCompletionSceSynthInvokeInvLateEventErrorCommunication:
+		return "error.communication"
 	case DonedataLateCompletionSceSynthInvokeInvLateEventErrorExecution:
 		return "error.execution"
 	case DonedataLateCompletionSceSynthInvokeInvLateEventFinish:
@@ -504,6 +507,8 @@ func (p *DonedataLateCompletionSceSynthInvokeInvLatePolicy) GetEventName(event D
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *DonedataLateCompletionSceSynthInvokeInvLatePolicy) GetEventFromName(name string) (DonedataLateCompletionSceSynthInvokeInvLateEvent, bool) {
 	switch name {
+	case "error.communication":
+		return DonedataLateCompletionSceSynthInvokeInvLateEventErrorCommunication, true
 	case "error.execution":
 		return DonedataLateCompletionSceSynthInvokeInvLateEventErrorExecution, true
 	case "finish":
@@ -659,7 +664,15 @@ func (p *DonedataLateCompletionSceSynthInvokeInvLatePolicy) ExecuteEntryActions(
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(DonedataLateCompletionSceSynthInvokeInvLateEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "ready", Data: eventDataStr})
 	}
 	}

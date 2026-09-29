@@ -23,6 +23,7 @@ sealed interface Test187SceSynthInvokeInvoke0State : State {
 sealed interface Test187SceSynthInvokeInvoke0Event : Event {
     data object ChildToParent : Test187SceSynthInvokeInvoke0Event
     sealed interface Error : Test187SceSynthInvokeInvoke0Event {
+        data object Communication : Error
         data object Execution : Error
     }
 }
@@ -92,6 +93,7 @@ class Test187SceSynthInvokeInvoke0StateMachine(
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test187SceSynthInvokeInvoke0Event? = when (name) {
         "childToParent" -> Test187SceSynthInvokeInvoke0Event.ChildToParent
+        "error.communication" -> Test187SceSynthInvokeInvoke0Event.Error.Communication
         "error.execution" -> Test187SceSynthInvokeInvoke0Event.Error.Execution
         else -> null
     }
@@ -99,6 +101,7 @@ class Test187SceSynthInvokeInvoke0StateMachine(
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test187SceSynthInvokeInvoke0Event): String? = when (event) {
         is Test187SceSynthInvokeInvoke0Event.ChildToParent -> "childToParent"
+        is Test187SceSynthInvokeInvoke0Event.Error.Communication -> "error.communication"
         is Test187SceSynthInvokeInvoke0Event.Error.Execution -> "error.execution"
     }
 
@@ -136,7 +139,7 @@ class Test187SceSynthInvokeInvoke0StateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.4 (test187): Delayed send to parent — cancelled when child stops
-            scheduleParentSend("__send_0", 500L, "childToParent", sendData)
+            scheduleParentSend("__send_0", 500L, "childToParent", sendData, Test187SceSynthInvokeInvoke0Event.Error.Communication)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

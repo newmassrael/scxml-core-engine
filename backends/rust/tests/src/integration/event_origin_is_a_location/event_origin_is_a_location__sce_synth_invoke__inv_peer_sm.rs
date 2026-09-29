@@ -96,6 +96,7 @@ pub enum EventOriginIsALocationSceSynthInvokeInvPeerState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EventOriginIsALocationSceSynthInvokeInvPeerEvent {
+    ErrorCommunication,
     ErrorExecution,
     FromChild,
     Reply,
@@ -534,6 +535,9 @@ impl StatePolicy for EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            EventOriginIsALocationSceSynthInvokeInvPeerEvent::ErrorCommunication => {
+                "error.communication"
+            }
             EventOriginIsALocationSceSynthInvokeInvPeerEvent::ErrorExecution => "error.execution",
             EventOriginIsALocationSceSynthInvokeInvPeerEvent::FromChild => "fromChild",
             EventOriginIsALocationSceSynthInvokeInvPeerEvent::Reply => "reply",
@@ -544,6 +548,9 @@ impl StatePolicy for EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "error.communication" => {
+                Some(EventOriginIsALocationSceSynthInvokeInvPeerEvent::ErrorCommunication)
+            }
             "error.execution" => {
                 Some(EventOriginIsALocationSceSynthInvokeInvPeerEvent::ErrorExecution)
             }
@@ -683,6 +690,13 @@ impl StatePolicy for EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
                                 q.push(("fromChild".to_string(), event_data.to_string()));
                             }
                         } else {
+                            // W3C SCXML C.1: this session was started by its host, not by an
+                            // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                            // nothing delivered, and the block ends (4.9).
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            EventOriginIsALocationSceSynthInvokeInvPeerEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                            break 'action_block;
                         }
 
                         // W3C SCXML 4.9: a <param> that could not be read raised an error while
@@ -829,6 +843,13 @@ impl StatePolicy for EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
                                         ));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            EventOriginIsALocationSceSynthInvokeInvPeerEvent::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

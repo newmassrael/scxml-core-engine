@@ -21,6 +21,7 @@ sealed interface SessionIdsAreDistinctSceSynthInvokeInvBState : State {
 
 sealed interface SessionIdsAreDistinctSceSynthInvokeInvBEvent : Event {
     sealed interface Error : SessionIdsAreDistinctSceSynthInvokeInvBEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     data object FromChild : SessionIdsAreDistinctSceSynthInvokeInvBEvent
@@ -79,6 +80,7 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): SessionIdsAreDistinctSceSynthInvokeInvBEvent? = when (name) {
+        "error.communication" -> SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Communication
         "error.execution" -> SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Execution
         "fromChild" -> SessionIdsAreDistinctSceSynthInvokeInvBEvent.FromChild
         else -> null
@@ -86,6 +88,7 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: SessionIdsAreDistinctSceSynthInvokeInvBEvent): String? = when (event) {
+        is SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Communication -> "error.communication"
         is SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Execution -> "error.execution"
         is SessionIdsAreDistinctSceSynthInvokeInvBEvent.FromChild -> "fromChild"
     }
@@ -352,8 +355,15 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
             }
 
             val sendData = buildJsonFromParams(sendPayload)
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("fromChild", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("fromChild", sendData)
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

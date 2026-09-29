@@ -22,6 +22,7 @@ sealed interface SendParamPayloadSceSynthInvokeInvEmitterState : State {
 
 sealed interface SendParamPayloadSceSynthInvokeInvEmitterEvent : Event {
     sealed interface Error : SendParamPayloadSceSynthInvokeInvEmitterEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     data object FromChild : SendParamPayloadSceSynthInvokeInvEmitterEvent
@@ -91,6 +92,7 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): SendParamPayloadSceSynthInvokeInvEmitterEvent? = when (name) {
+        "error.communication" -> SendParamPayloadSceSynthInvokeInvEmitterEvent.Error.Communication
         "error.execution" -> SendParamPayloadSceSynthInvokeInvEmitterEvent.Error.Execution
         "fromChild" -> SendParamPayloadSceSynthInvokeInvEmitterEvent.FromChild
         else -> null
@@ -98,6 +100,7 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: SendParamPayloadSceSynthInvokeInvEmitterEvent): String? = when (event) {
+        is SendParamPayloadSceSynthInvokeInvEmitterEvent.Error.Communication -> "error.communication"
         is SendParamPayloadSceSynthInvokeInvEmitterEvent.Error.Execution -> "error.execution"
         is SendParamPayloadSceSynthInvokeInvEmitterEvent.FromChild -> "fromChild"
     }
@@ -137,8 +140,15 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
             val sendPayload = mutableMapOf<String, Any?>()
             putParam(sendPayload, "value", "42")
             val sendData = buildJsonFromParams(sendPayload)
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("fromChild", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(SendParamPayloadSceSynthInvokeInvEmitterEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("fromChild", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

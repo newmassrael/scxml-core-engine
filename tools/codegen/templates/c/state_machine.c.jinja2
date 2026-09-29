@@ -1075,6 +1075,18 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                    invoke id on the event. */
                 if (sm->parent_dispatch != NULL) {
                     sm->parent_dispatch(sm->parent_sm, {{ event_name_c }}, sm->invoke_id, {% if has_payload %}_ed{% else %}NULL{% endif %});
+                } else if (sm->parent_sm == NULL) {
+                    /* W3C SCXML C.1: started by its host through `_init`,
+                       not by an `<invoke>`, so `#_parent` reaches nobody:
+                       error.communication, nothing delivered, the block
+                       ended (4.9). A parent that cancelled this session
+                       cleared only `parent_dispatch` (test252), and that
+                       send is dropped, not reported. */
+                    {{ P }}_raise_platform_error_with_send_id(
+                        sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
+                        "<send target='#_parent'> has no parent session to reach",
+                        "{{ send_id_c }}");
+                    return;
                 }
 {% elif route == 'child' and has_delay %}
                 /* W3C SCXML 6.2.4 + 6.4: delayed to an invoked child. Whether
@@ -1123,13 +1135,20 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     case SCE_SEND_TARGET_PARENT:
                         /* W3C SCXML C.1: a session nothing invoked has no
                            parent to reach, delayed or not — reported when the
-                           send is made, as a session target is. */
+                           send is made, as a session target is. The rule is
+                           the literal `#_parent` arm's: no parent at all
+                           (`parent_sm` NULL) is reported; a parent that
+                           cancelled this session cleared only the dispatch
+                           pointer (test252), and that send is dropped. */
                         if (sm->parent_dispatch == NULL) {
-                            {{ P }}_raise_platform_error_with_send_id(
-                                sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
-                                "<send> targetexpr names #_parent, and nothing invoked this session",
-                                "{{ send_id_c }}");
-                            return;
+                            if (sm->parent_sm == NULL) {
+                                {{ P }}_raise_platform_error_with_send_id(
+                                    sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
+                                    "<send> targetexpr names #_parent, and nothing invoked this session",
+                                    "{{ send_id_c }}");
+                                return;
+                            }
+                            break;
                         }
 {% if has_delay %}
                         scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }},
@@ -4313,11 +4332,17 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
            guard mirrors the cancellation drop semantics in the parent's
            invoke cancel arm (test252-shape): if the parent already
            cleared the dispatch pointer, the in-flight delayed send falls
-           away silently. */
+           away silently. A session its host started never had a parent
+           (`parent_sm` NULL), and hears error.communication (C.1). */
         if (ready.route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_PARENT) {
             if (sm->parent_dispatch != NULL) {
                 sm->parent_dispatch(sm->parent_sm, ready.route_event, sm->invoke_id,
 {%- if model.needs_script_engine %} ready.data[0] != '\0' ? ready.data : NULL{% else %} NULL{% endif %});
+            } else if (sm->parent_sm == NULL) {
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
+                    "a delayed <send target='#_parent'> has no parent session to reach",
+                    ready.send_id);
             }
             continue;
         }
@@ -4499,7 +4524,11 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
                    "sce://scxml/%s", sm->session_id);
 }
 
-{% if not model.has_parent_communication %}
+{# The host's doors, emitted for EVERY document. W3C SCXML C.1: a machine that
+   sends to `#_parent` may still be started by its host, and its send then
+   raises error.communication — withholding `_init` from it made "a machine
+   with a `#_parent` send is only ever a child" a property of the C11 build
+   alone, and refused at compile time what the other five engines run. #}
 {# W3C SCXML G.7: a machine whose document declares `<sce:action>`s cannot
    start without a host, so `_init` returns whether it accepted one. Every
    initialiser below carries the same verdict outward — `void` for every other
@@ -5450,7 +5479,6 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_basic_http({
                                                                       const {{ native_actions_interface }} *actions{% endif %}) {
     {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}, basic_http_access_uri{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{% endif %});
 }
-{% endif %}
 {% endif %}
 {% if model.may_address_parent %}
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix }}{{ model.name }}_t *sm,

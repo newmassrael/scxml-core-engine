@@ -39,10 +39,11 @@ func TestASendReachesOnlyWhatItsTargetNames(t *testing.T) {
 		want int64
 	}{
 		{"execErrors", policy.ExecErrors, 1},
-		{"commErrors", policy.CommErrors, 2},
+		{"commErrors", policy.CommErrors, 3},
 		{"afterRefused", policy.AfterRefused, 0},
 		{"afterNobody", policy.AfterNobody, 0},
 		{"afterStranger", policy.AfterStranger, 0},
+		{"afterOrphan", policy.AfterOrphan, 0},
 		{"bareArrived", policy.BareArrived, 1},
 		{"pongOk", policy.PongOk, 1},
 	}

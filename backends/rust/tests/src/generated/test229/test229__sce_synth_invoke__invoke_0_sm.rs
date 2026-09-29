@@ -97,6 +97,7 @@ pub enum Test229SceSynthInvokeInvoke0State {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Test229SceSynthInvokeInvoke0Event {
     ChildToParent,
+    ErrorCommunication,
     ErrorExecution,
     EventReceived,
     Timeout,
@@ -296,6 +297,7 @@ impl StatePolicy for Test229SceSynthInvokeInvoke0Policy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             Test229SceSynthInvokeInvoke0Event::ChildToParent => "childToParent",
+            Test229SceSynthInvokeInvoke0Event::ErrorCommunication => "error.communication",
             Test229SceSynthInvokeInvoke0Event::ErrorExecution => "error.execution",
             Test229SceSynthInvokeInvoke0Event::EventReceived => "eventReceived",
             Test229SceSynthInvokeInvoke0Event::Timeout => "timeout",
@@ -306,6 +308,7 @@ impl StatePolicy for Test229SceSynthInvokeInvoke0Policy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "childToParent" => Some(Test229SceSynthInvokeInvoke0Event::ChildToParent),
+            "error.communication" => Some(Test229SceSynthInvokeInvoke0Event::ErrorCommunication),
             "error.execution" => Some(Test229SceSynthInvokeInvoke0Event::ErrorExecution),
             "eventReceived" => Some(Test229SceSynthInvokeInvoke0Event::EventReceived),
             "timeout" => Some(Test229SceSynthInvokeInvoke0Event::Timeout),
@@ -375,6 +378,14 @@ impl StatePolicy for Test229SceSynthInvokeInvoke0Policy {
                                 q.push(("childToParent".to_string(), event_data.to_string()));
                             }
                         } else {
+                            // W3C SCXML C.1: this session was started by its host, not by an
+                            // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                            // nothing delivered, and the block ends (4.9).
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                Test229SceSynthInvokeInvoke0Event::ErrorCommunication,
+                                "<send target='#_parent'> has no parent session to reach",
+                            ));
+                            break 'action_block;
                         }
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -511,6 +522,15 @@ impl StatePolicy for Test229SceSynthInvokeInvoke0Policy {
                                         ));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine
+                                        .raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                        Test229SceSynthInvokeInvoke0Event::ErrorCommunication,
+                                        "<send target='#_parent'> has no parent session to reach",
+                                    ));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

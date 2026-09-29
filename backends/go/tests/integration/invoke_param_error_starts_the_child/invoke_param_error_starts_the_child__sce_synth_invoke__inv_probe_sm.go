@@ -144,15 +144,18 @@ type InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent int
 
 const (
 	InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventChildUp InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent = 0
-	InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorExecution InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent = 1
+	InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorCommunication InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent = 1
+	InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorExecution InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent = 2
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventNull InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent = 2
+	InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventNull InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent = 3
 )
 
 func (e InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent) String() string {
 	switch e {
 	case InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventChildUp:
 		return "childUp"
+	case InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorCommunication:
+		return "error.communication"
 	case InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorExecution:
 		return "error.execution"
 	case InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventNull:
@@ -507,6 +510,8 @@ func (p *InvokeParamErrorStartsTheChildSceSynthInvokeInvProbePolicy) GetEventFro
 	switch name {
 	case "childUp":
 		return InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventChildUp, true
+	case "error.communication":
+		return InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorCommunication, true
 	case "error.execution":
 		return InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorExecution, true
 	}
@@ -731,7 +736,15 @@ func (p *InvokeParamErrorStartsTheChildSceSynthInvokeInvProbePolicy) ExecuteTran
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "childUp", Data: eventDataStr})
 	}
 		// W3C SCXML 4.9: the <param> error ends the block, from however deep a

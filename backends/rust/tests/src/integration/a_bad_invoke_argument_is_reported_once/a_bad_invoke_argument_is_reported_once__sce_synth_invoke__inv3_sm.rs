@@ -97,6 +97,7 @@ pub enum ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event {
     ChildUp,
+    ErrorCommunication,
     ErrorExecution,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
@@ -569,6 +570,9 @@ impl StatePolicy for ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Policy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event::ChildUp => "childUp",
+            ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event::ErrorCommunication => {
+                "error.communication"
+            }
             ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event::ErrorExecution => {
                 "error.execution"
             }
@@ -579,6 +583,9 @@ impl StatePolicy for ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Policy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "childUp" => Some(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event::ChildUp),
+            "error.communication" => {
+                Some(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event::ErrorCommunication)
+            }
             "error.execution" => {
                 Some(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event::ErrorExecution)
             }
@@ -783,6 +790,13 @@ impl StatePolicy for ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Policy {
                                         q.push(("childUp".to_string(), event_data.to_string()));
                                     }
                                 } else {
+                                    // W3C SCXML C.1: this session was started by its host, not by an
+                                    // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                                    // nothing delivered, and the block ends (4.9).
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+            ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event::ErrorCommunication,
+            "<send target='#_parent'> has no parent session to reach"));
+                                    break 'action_block;
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

@@ -168,19 +168,22 @@ var transitionTargetsOfAutoforwardDequeuePointSceSynthInvokeInvProbe = [5][][]Au
 type AutoforwardDequeuePointSceSynthInvokeInvProbeEvent int
 
 const (
-	AutoforwardDequeuePointSceSynthInvokeInvProbeEventErrorExecution AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 0
-	AutoforwardDequeuePointSceSynthInvokeInvProbeEventFirst AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 1
-	AutoforwardDequeuePointSceSynthInvokeInvProbeEventMark AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 2
-	AutoforwardDequeuePointSceSynthInvokeInvProbeEventReady AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 3
-	AutoforwardDequeuePointSceSynthInvokeInvProbeEventSawMarkFirst AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 4
-	AutoforwardDequeuePointSceSynthInvokeInvProbeEventSawSecondEarly AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 5
-	AutoforwardDequeuePointSceSynthInvokeInvProbeEventSecond AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 6
+	AutoforwardDequeuePointSceSynthInvokeInvProbeEventErrorCommunication AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 0
+	AutoforwardDequeuePointSceSynthInvokeInvProbeEventErrorExecution AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 1
+	AutoforwardDequeuePointSceSynthInvokeInvProbeEventFirst AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 2
+	AutoforwardDequeuePointSceSynthInvokeInvProbeEventMark AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 3
+	AutoforwardDequeuePointSceSynthInvokeInvProbeEventReady AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 4
+	AutoforwardDequeuePointSceSynthInvokeInvProbeEventSawMarkFirst AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 5
+	AutoforwardDequeuePointSceSynthInvokeInvProbeEventSawSecondEarly AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 6
+	AutoforwardDequeuePointSceSynthInvokeInvProbeEventSecond AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 7
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	AutoforwardDequeuePointSceSynthInvokeInvProbeEventNull AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 7
+	AutoforwardDequeuePointSceSynthInvokeInvProbeEventNull AutoforwardDequeuePointSceSynthInvokeInvProbeEvent = 8
 )
 
 func (e AutoforwardDequeuePointSceSynthInvokeInvProbeEvent) String() string {
 	switch e {
+	case AutoforwardDequeuePointSceSynthInvokeInvProbeEventErrorCommunication:
+		return "error.communication"
 	case AutoforwardDequeuePointSceSynthInvokeInvProbeEventErrorExecution:
 		return "error.execution"
 	case AutoforwardDequeuePointSceSynthInvokeInvProbeEventFirst:
@@ -351,6 +354,8 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) GetEventName(event
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) GetEventFromName(name string) (AutoforwardDequeuePointSceSynthInvokeInvProbeEvent, bool) {
 	switch name {
+	case "error.communication":
+		return AutoforwardDequeuePointSceSynthInvokeInvProbeEventErrorCommunication, true
 	case "error.execution":
 		return AutoforwardDequeuePointSceSynthInvokeInvProbeEventErrorExecution, true
 	case "first":
@@ -472,7 +477,15 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteEntryAction
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(AutoforwardDequeuePointSceSynthInvokeInvProbeEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "ready", Data: eventDataStr})
 	}
 	}
@@ -595,7 +608,15 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteTransitionC
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(AutoforwardDequeuePointSceSynthInvokeInvProbeEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_1"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "sawSecondEarly", Data: eventDataStr})
 	}
 	}
@@ -615,7 +636,15 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteTransitionC
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(AutoforwardDequeuePointSceSynthInvokeInvProbeEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_2"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "sawMarkFirst", Data: eventDataStr})
 	}
 	}

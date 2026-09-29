@@ -22,6 +22,7 @@ sealed interface EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyState : St
 
 sealed interface EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent : Event {
     sealed interface Error : EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     data object FromEmptyChild : EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent
@@ -98,6 +99,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent? = when (name) {
+        "error.communication" -> EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent.Error.Communication
         "error.execution" -> EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent.Error.Execution
         "fromEmptyChild" -> EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent.FromEmptyChild
         else -> null
@@ -105,6 +107,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent): String? = when (event) {
+        is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent.Error.Communication -> "error.communication"
         is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent.Error.Execution -> "error.execution"
         is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent.FromEmptyChild -> "fromEmptyChild"
     }
@@ -408,8 +411,15 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyStateMachine(
             }
 
             val sendData = buildJsonFromParams(sendPayload)
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("fromEmptyChild", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("fromEmptyChild", sendData)
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

@@ -390,10 +390,17 @@
 {% elif not action.targetexpr and action.target == '#_parent' %}
 {% if has_delay %}
             // W3C SCXML 6.4 (test187): Delayed send to parent — cancelled when child stops
-            scheduleParentSend("{{ send_id_kt }}", {{ delay_kt }}, {% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %}, sendData)
+            scheduleParentSend("{{ send_id_kt }}", {{ delay_kt }}, {% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %}, sendData, {{ machine_name }}Event.Error.Communication)
 {% else %}
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke({% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %}, sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send target='#_parent'> has no parent session to reach", "{{ send_id_kt }}")
+                return@send true
+            }
+            toParent({% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %}, sendData)
 {% endif %}
 {% elif static_target.startswith('#_scxml_') %}
             // W3C SCXML C.1: `#_scxml_<sessionid>` names a session, and the only

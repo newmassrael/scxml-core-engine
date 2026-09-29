@@ -22,6 +22,7 @@ sealed interface OtherState : State {
 
 sealed interface OtherEvent : Event {
     sealed interface Error : OtherEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     sealed interface From : OtherEvent {
@@ -93,6 +94,7 @@ class OtherStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): OtherEvent? = when (name) {
+        "error.communication" -> OtherEvent.Error.Communication
         "error.execution" -> OtherEvent.Error.Execution
         "from.other" -> OtherEvent.From.Other
         else -> null
@@ -100,6 +102,7 @@ class OtherStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: OtherEvent): String? = when (event) {
+        is OtherEvent.Error.Communication -> "error.communication"
         is OtherEvent.Error.Execution -> "error.execution"
         is OtherEvent.From.Other -> "from.other"
     }
@@ -142,8 +145,15 @@ class OtherStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("from.other", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(OtherEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("from.other", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

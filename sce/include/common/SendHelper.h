@@ -557,106 +557,11 @@ public:
         return UniqueIdGenerator::generateSendId();
     }
 
-    /**
-     * @brief Send event to parent state machine (Single Source of Truth)
-     *
-     * §scxml-6.2: Handles <send target="#_parent"> semantics for child-to-parent
-     * event communication in invoked state machines.
-     *
-     * Single Source of Truth for #_parent event routing shared between:
-     * - Interpreter engine (ParentEventTarget)
-     * - AOT engine (StaticCodeGenerator generated code)
-     *
-     * This template function enables compile-time type-safe parent event routing
-     * in statically generated code while maintaining zero-overhead abstraction.
-     *
-     * @tparam ParentStateMachine Parent state machine type (CRTP)
-     * @tparam EventType Parent's Event enum type
-     * @param parent Pointer to parent state machine (nullptr-safe)
-     * @param event Event to send to parent
-     * @return true if event was sent successfully, false if parent is null
-     */
-    template <typename ParentStateMachine, typename EventType>
-    static bool sendToParent(ParentStateMachine *parent, EventType event) {
-        if (parent) {
-            // §scxml-6.2: Send to parent's external event queue
-            parent->raiseExternal(event);
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * @brief Send event to parent with invokeid metadata (§scxml-5.10.1)
-     *
-     * §scxml-5.10.1 (test338): When a child sends an event to its parent,
-     * the _event.invokeid field must be set to the invokeid of the invoke
-     * that created the child.
-     *
-     * @param parent Parent state machine pointer
-     * @param event Event to send
-     * @param invokeId Invokeid of the child (from parent's invoke element)
-     * @return true if event was sent successfully, false if parent is null
-     */
-    template <typename ParentStateMachine, typename EventType>
-    static bool sendToParent(ParentStateMachine *parent, EventType event, const std::string &invokeId) {
-        SCE_LOG_DEBUG("SendHelper::sendToParent called - parent={}, event={}, invokeId={}", (void *)parent,
-                      static_cast<int>(event), invokeId);
-        if (parent) {
-            // §scxml-5.10.1: Create event with invokeid metadata
-            typename ParentStateMachine::EventWithMetadata eventWithMetadata(event);
-            eventWithMetadata.invokeId = invokeId;
-
-            // §scxml-6.2: Send to parent's external event queue
-            SCE_LOG_DEBUG("SendHelper::sendToParent - calling parent->raiseExternal()");
-            parent->raiseExternal(eventWithMetadata);
-            SCE_LOG_DEBUG("SendHelper::sendToParent - parent->raiseExternal() completed");
-            return true;
-        }
-        SCE_LOG_DEBUG("SendHelper::sendToParent - parent is nullptr, not sending event");
-        return false;
-    }
-
-    /**
-     * @brief Send event to parent state machine with origin (§scxml-6.5 finalize)
-     *
-     * §scxml-6.5: Set origin to child session ID for finalize execution.
-     * Finalize runs BEFORE the event is processed, with access to _event.data.
-     *
-     * @tparam ParentStateMachine Parent state machine type
-     * @tparam EventType Parent's event enum type
-     * @param parent Pointer to parent state machine
-     * @param event Event to send
-     * @param invokeId Invokeid of the child (from parent's invoke element)
-     * @param childSessionId Child's session ID for finalize origin matching
-     * @return true if event was sent successfully, false if parent is null
-     */
-    template <typename ParentStateMachine, typename EventType>
-    static bool sendToParentWithOrigin(ParentStateMachine *parent, EventType event, const std::string &invokeId,
-                                       const std::string &childSessionId, const std::string &eventData = "") {
-        SCE_LOG_DEBUG(
-            "SendHelper::sendToParentWithOrigin called - parent={}, event={}, invokeId={}, childSessionId={}, "
-            "eventData='{}'",
-            (void *)parent, static_cast<int>(event), invokeId, childSessionId, eventData);
-        if (parent) {
-            // §scxml-5.10.1: Create event with invokeid metadata
-            // §scxml-6.5: Add origin (child session ID) for finalize support
-            // §scxml-5.10: Add event data from params/namelist (test 233)
-            typename ParentStateMachine::EventWithMetadata eventWithMetadata(event, eventData);
-            eventWithMetadata.invokeId = invokeId;
-            eventWithMetadata.origin = childSessionId;  // §scxml-6.5: For finalize matching
-            eventWithMetadata.originType =
-                SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;  // §scxml-C-1: SCXML Event I/O Processor (test 253)
-
-            // §scxml-6.2: Send to parent's external event queue
-            SCE_LOG_DEBUG("SendHelper::sendToParentWithOrigin - calling parent->raiseExternal()");
-            parent->raiseExternal(eventWithMetadata);
-            SCE_LOG_DEBUG("SendHelper::sendToParentWithOrigin - parent->raiseExternal() completed");
-            return true;
-        }
-        SCE_LOG_DEBUG("SendHelper::sendToParentWithOrigin - parent is nullptr, not sending event");
-        return false;
-    }
+    // The generated C++ AOT's `<send target="#_parent">` is not here: it is
+    // delivered by event NAME through the machine's own policy
+    // (`deliverToParent`, generated beside the parent pointer), the one path
+    // its immediate and delayed forms share, and it raises error.communication
+    // when a session its host started has no parent (W3C SCXML C.1).
 
 #ifdef SCE_ENABLE_HTTP
     /**

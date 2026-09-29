@@ -711,9 +711,13 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPol
                                 q.push(("hello".to_string(), event_data.to_string()));
                             }
                         } else {
+                            // W3C SCXML C.1: this session was started by its host, not by an
+                            // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                            // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent::ErrorCommunication,
             "<send target='#_parent'> has no parent session to reach"));
+                            break 'action_block;
                         }
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch

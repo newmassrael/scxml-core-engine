@@ -23,6 +23,7 @@ sealed interface InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState : Sta
 sealed interface InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent : Event {
     data object ChildUp : InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent
     sealed interface Error : InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent {
+        data object Communication : Error
         data object Execution : Error
     }
 }
@@ -99,6 +100,7 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent? = when (name) {
         "childUp" -> InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.ChildUp
+        "error.communication" -> InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Communication
         "error.execution" -> InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Execution
         else -> null
     }
@@ -106,6 +108,7 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent): String? = when (event) {
         is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.ChildUp -> "childUp"
+        is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Communication -> "error.communication"
         is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Execution -> "error.execution"
     }
 
@@ -420,8 +423,15 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
             }
 
             val sendData = buildJsonFromParams(sendPayload)
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("childUp", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("childUp", sendData)
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

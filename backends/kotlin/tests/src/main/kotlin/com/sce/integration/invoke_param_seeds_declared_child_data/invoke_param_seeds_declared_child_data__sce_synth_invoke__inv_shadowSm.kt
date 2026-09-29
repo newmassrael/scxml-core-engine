@@ -22,6 +22,7 @@ sealed interface InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState :
 
 sealed interface InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent : Event {
     sealed interface Error : InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent {
+        data object Communication : Error
         data object Execution : Error
     }
     sealed interface Seed : InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent {
@@ -146,6 +147,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent? = when (name) {
+        "error.communication" -> InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Error.Communication
         "error.execution" -> InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Error.Execution
         "seed.missing" -> InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Seed.Missing
         "seed.ok" -> InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Seed.Ok
@@ -155,6 +157,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent): String? = when (event) {
+        is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Error.Communication -> "error.communication"
         is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Error.Execution -> "error.execution"
         is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Seed.Missing -> "seed.missing"
         is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Seed.Ok -> "seed.ok"
@@ -459,8 +462,15 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("seed.ok", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                return@send true
+            }
+            toParent("seed.ok", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -474,8 +484,15 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("seed.shadowed", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                return@send true
+            }
+            toParent("seed.shadowed", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -489,8 +506,15 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(
 
             if (run send@{
             val sendData = ""
-            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
-            onSendToParent?.invoke("seed.missing", sendData)
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
+            // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
+            // no parent — error.communication, nothing delivered, the block ended.
+            val toParent = onSendToParent
+            if (toParent == null) {
+                raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_2")
+                return@send true
+            }
+            toParent("seed.missing", sendData)
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

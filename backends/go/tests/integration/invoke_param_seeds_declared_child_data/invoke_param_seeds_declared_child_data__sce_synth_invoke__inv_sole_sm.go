@@ -144,15 +144,18 @@ var transitionTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSole = 
 type InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent int
 
 const (
-	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventErrorExecution InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent = 0
-	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventSeedMissing InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent = 1
-	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventSeedOk InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent = 2
+	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventErrorCommunication InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent = 0
+	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventErrorExecution InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent = 1
+	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventSeedMissing InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent = 2
+	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventSeedOk InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent = 3
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventNull InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent = 3
+	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventNull InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent = 4
 )
 
 func (e InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent) String() string {
 	switch e {
+	case InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventErrorCommunication:
+		return "error.communication"
 	case InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventErrorExecution:
 		return "error.execution"
 	case InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventSeedMissing:
@@ -527,6 +530,8 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) GetEventN
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) GetEventFromName(name string) (InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent, bool) {
 	switch name {
+	case "error.communication":
+		return InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventErrorCommunication, true
 	case "error.execution":
 		return InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventErrorExecution, true
 	case "seed.missing":
@@ -742,7 +747,15 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) ExecuteTr
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_0"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "seed.ok", Data: eventDataStr})
 	}
 	}
@@ -759,7 +772,15 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) ExecuteTr
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
-	if p.ParentExternalQueue != nil {
+	if p.ParentExternalQueue == nil {
+		// W3C SCXML C.1: this session was started by its host, not by an
+		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
+		// nothing delivered, and the block ends (4.9).
+		errEvt := sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt.Metadata.SendID = "__send_1"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	} else {
 		p.ParentExternalQueue.Push(sce.ParentEvent{Name: "seed.missing", Data: eventDataStr})
 	}
 	}
