@@ -30,6 +30,38 @@ fn a_delayed_send_reaches_what_its_target_names() {
         "the machine never completed (parked in {:?})",
         e.get_current_state()
     );
+    assert_the_routes(&e);
+}
+
+/// A host that ticks late — every 150ms of its own time, past the 100ms the
+/// delayed `lost` waits — gets the same answers. That tick brings `lost` due
+/// before it ticks the children, so `gone` must already have taken the `stop`
+/// sent to it at once (W3C SCXML 6.4), and `lost` then finds `gone` ended and
+/// is reported (C.1). It also holds the children to their parent's host-owned
+/// time: before they followed it, the child's delayed `late` never came due.
+#[test]
+fn a_delayed_send_reaches_what_its_target_names_on_a_late_host() {
+    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
+        std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
+    let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
+    e.set_clock(sce_rust_runtime::SceClock::Manual(0));
+    e.initialize();
+    for _ in 0..20 {
+        if e.is_in_final_state() {
+            break;
+        }
+        e.advance_time_ms(150);
+    }
+
+    assert!(
+        e.is_in_final_state(),
+        "the machine never completed (parked in {:?})",
+        e.get_current_state()
+    );
+    assert_the_routes(&e);
+}
+
+fn assert_the_routes(e: &sce_rust_runtime::Engine<Policy>) {
     assert_eq!(
         e.terminal_state(),
         Some(State::Done),
