@@ -251,6 +251,14 @@ const ANALYZER_WRITTEN: &[&str] = &[
     // included. **The field said where to look and nobody was
     // looking there.**
     "needs_nonstatic_method",
+    // Template dispatch, from the one analyzer both `needs_parent`'s own
+    // doc comment and the manifest read
+    // (`crate::parent_send_analyzer::needs_parent`). A rendering must not
+    // show it: what an author wrote is the literal `<send
+    // target="#_parent">` sites, which a review surface shows as
+    // themselves; this boolean is a summary of that fact for the root-
+    // start policy template, not a second thing to approve.
+    "needs_parent",
     "needs_parent_template",
     "needs_send_helper",
     "needs_string_matching",
