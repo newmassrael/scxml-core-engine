@@ -15,6 +15,9 @@ import sys
 
 from .brief import write as write_brief
 from .check import check
+from .compare import DRIVES, STEPS
+from .compare import compare as run_compare
+from .compare import summary as compare_summary
 from .counterfactual import MAX_RUNS, explore
 from .counterfactual import lines as counterfactual_lines
 from .coverage import coverage as run_coverage
@@ -342,6 +345,21 @@ def cmd_scaffold(args) -> int:
     return 0
 
 
+def cmd_compare(args) -> int:
+    """Several drafts of one specification, compared at every level.
+
+    Exit 0 whenever the comparison ran: how far drafts part is data for the
+    owner, not a failure of any of them."""
+    report = run_compare([pathlib.Path(d) for d in args.document], args.codegen,
+                         drives=args.drives, steps=args.steps)
+    print(compare_summary(report))
+    if args.out:
+        pathlib.Path(args.out).write_text(
+            json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n",
+            encoding="utf-8")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="sce_author", description=__doc__)
     sub = ap.add_subparsers(dest="command", required=True)
@@ -389,6 +407,22 @@ def main(argv=None) -> int:
                         "default) or 'ko'; what the document wrote is never "
                         "translated")
     s.set_defaults(fn=cmd_pseudo)
+
+    # ⚠ No `--pack` either: the drafts are compared with one another and
+    # with nothing outside them.
+    m = sub.add_parser(
+        "compare", help="several drafts of one specification: where they agree and part")
+    m.add_argument("--document", required=True, action="append",
+                   help="a draft; give two or more")
+    m.add_argument("--codegen",
+                   help="the product's code generator (default: the one in this tree)")
+    m.add_argument("--drives", type=int, default=DRIVES,
+                   help=f"seeded random drives per draft (default {DRIVES}); "
+                        f"the behaviour verdict states it")
+    m.add_argument("--steps", type=int, default=STEPS,
+                   help=f"steps per drive (default {STEPS})")
+    m.add_argument("--out", help="write the whole report as JSON as well")
+    m.set_defaults(fn=cmd_compare)
 
     c = with_pack(sub.add_parser("check", help="judge a written document against the model"))
     c.add_argument("--binding", required=True, help="the binding file, which names its own document")

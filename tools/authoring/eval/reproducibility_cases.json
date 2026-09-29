@@ -1,0 +1,18 @@
+{
+  "about": "Specifications drafted several times each by reproducibility.py. Cases named under from_kind_choice are read from kind_choice_cases.json so their prose has one home; the ones here were written for this measurement and leave something open on purpose.",
+  "from_kind_choice": [
+    "door-with-auto-close",
+    "connection-keeper",
+    "keep-alive",
+    "version-query",
+    "fan-curve"
+  ],
+  "cases": [
+    {
+      "id": "vending-controller",
+      "kind": "statechart",
+      "leaves_open": "the price list and stock source, and whether inputs carry data",
+      "prose": "The vending controller starts idle with no credit. Inserting a coin adds its value to the credit; 100 and 500 coins are accepted and any other coin is returned at once. A product button selects a product. When the credit is at least the selected product's price, the product is dispensed and the change is returned; otherwise the price is shown. Pressing cancel returns the whole credit and the controller goes back to idle. If credit is held and nothing happens for 30 seconds, the credit is returned. While dispensing, buttons are ignored. When the dispense-done sensor reports, the controller is idle again. If the selected product is out of stock it is not dispensed and a sold-out message is shown."
+    }
+  ]
+}

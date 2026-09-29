@@ -121,7 +121,7 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         names = {t["name"] for t in replies[1]["result"]["tools"]}
         self.assertEqual(
             {"brief", "questions", "review", "check", "coverage", "verify",
-             "gaps", "pseudo", "scaffold", "scxml_kinds", "validate_scxml",
+             "gaps", "pseudo", "scaffold", "compare", "scxml_kinds", "validate_scxml",
              "validate_scxml_set",
              "render_scxml_pseudocode",
              "render_scxml_diagram", "scxml_unresolved", "scxml_requirements",

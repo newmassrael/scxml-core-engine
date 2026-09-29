@@ -58,6 +58,8 @@ from .brief import assemble
 # refused by the client that asked for it.
 BRIEF_LIMIT = 60_000
 from .check import check
+from .compare import compare as compare_drafts
+from .compare import summary as compare_summary
 from .counterfactual import MAX_RUNS, explore
 from .coverage import coverage as run_coverage
 from .errors import AuthoringError, describe_path
@@ -376,6 +378,41 @@ TOOLS = [
                     },
                 },
                 **_file_input("deploy", "the deploy.yaml the set is deployed by"),
+            },
+        },
+    },
+    {
+        "name": "compare",
+        "description": (
+            "Compare two or more drafts of one specification -- written in "
+            "separate conversations, or by separate agents -- at every level: "
+            "bytes, canonical XML, the logic the build compiles, the review "
+            "table, the pseudocode page, the open questions each draft marks, "
+            "and, for statecharts, what they do when driven alike. Returns "
+            "JSON: for each level the classes of drafts that agree; for "
+            "behaviour, the renaming of input events that makes two drafts "
+            "alike, or a witness drive after which they end in different "
+            "states, with the bound the drives were run to. Show the owner "
+            "each witness and each question only some drafts marked: those "
+            "are the places the specification left open or hard to read. "
+            "Agreement is not correctness -- drafts can agree and all be "
+            "wrong -- and `not judged` means the drives moved nothing."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "documents": {"type": "array", "items": {"type": "string"},
+                              "description": "Paths to the drafts (local servers only)."},
+                "documents_text": {
+                    "type": "array",
+                    "description": "The drafts themselves, each under its own name.",
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "text"],
+                        "properties": {"name": {"type": "string"},
+                                       "text": {"type": "string"}},
+                    },
+                },
             },
         },
     },
@@ -995,6 +1032,16 @@ def _validate_set_tool(args: dict, staging: _Staging) -> dict:
     return _answer(*validate_scxml_set(documents, deploy, cwd=staging.dir))
 
 
+def _compare_tool(args: dict, staging: _Staging) -> dict:
+    documents = staging.many(args, "documents", "the drafts to compare")
+    # Staged drafts come back named relative to the staging directory; the
+    # comparison runs the product on each, so it is handed where they are.
+    located = [path if path.is_absolute() else staging.dir / path for path in documents]
+    report = compare_drafts(located)
+    report["summary"] = compare_summary(report)
+    return _text(json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n")
+
+
 def _pseudocode_tool(args: dict, staging: _Staging) -> dict:
     document = staging.file(args, "document", "the SCXML document", "document.scxml")
     shape, lexicon = args.get("shape"), args.get("lexicon")
@@ -1114,6 +1161,7 @@ _PACK_FREE = {
     "scxml_kinds": _kinds_tool,
     "validate_scxml": _validate_tool,
     "validate_scxml_set": _validate_set_tool,
+    "compare": _compare_tool,
     "render_scxml_pseudocode": _pseudocode_tool,
     "render_scxml_diagram": _diagram_tool,
     "scxml_unresolved": _unresolved_tool,

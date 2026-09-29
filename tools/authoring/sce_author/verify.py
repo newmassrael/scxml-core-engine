@@ -831,6 +831,21 @@ def unresolved_markers(document: pathlib.Path,
                            answer="markers", read=_diagnostic_records, cwd=cwd)
 
 
+def review_rows(document: pathlib.Path, statechart: bool,
+                codegen: pathlib.Path | None = None, *,
+                cwd: pathlib.Path | None = None) -> tuple[str, str]:
+    """The product's review table of the document, one record per row:
+    `sce-codegen transition-table` for a statechart, `review-table` for any
+    other kind. The same object the acceptance report is built from, so two
+    documents with equal rows are equal in what the owner accepts.
+
+    Here rather than beside its caller for the reason `pseudo_page` gives:
+    this is the one module in the core that runs another program."""
+    command = "transition-table" if statechart else "review-table"
+    return _product_answer([command, str(document)], codegen,
+                           answer="rows", read=_diagnostic_records, cwd=cwd)
+
+
 def requirement_records(document: pathlib.Path,
                         manifest: pathlib.Path | None = None,
                         codegen: pathlib.Path | None = None, *,

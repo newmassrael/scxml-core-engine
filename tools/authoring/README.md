@@ -162,6 +162,54 @@ These are the numbers of one run each, not guarantees:
 | Open cases asked or marked open | 1 / 3 (2 decided silently) | 3 / 3 |
 | Determined cases wrongly marked open | — | 0 |
 
+#### When the same specification is drafted more than once
+
+The model that writes the draft runs in the owner's AI client, which SCE
+does not control: nothing in the product can make two drafts of one
+specification equal. What it can do is say where they part.
+**compare** (the MCP tool of that name, or `python3 -m sce_author compare
+--document a.scxml --document b.scxml …`) puts two or more drafts side by
+side at every level a reader has: the bytes, the canonical XML, the logic
+the build compiles (SCE annotations removed), the product's review table,
+the pseudocode page, the open questions each draft marks, the vocabulary,
+and — for statecharts — what the drafts do when driven alike. Each level
+comes back as the classes of drafts that agree.
+
+Behaviour is compared by driving each draft's Python lowering with the
+same seeded random drives, each draft in its own event names. Two drafts
+whose inputs are named differently are tried under every renaming of one
+alphabet onto the other, and the renaming that makes them alike is
+reported; two that part come with a witness — a drive after which they
+end in different states, reduced until no single step can be dropped —
+spelled in the drafts' own event names so the owner can read it against
+the prose. ⚠ Three things
+the verdict says rather than hides: a draft that cannot be built is named
+and left out of the classes; drives that moved nothing (one observation
+per draft, typically because every input carries data no drive sent) are
+`not judged`, never "alike"; and the drives are a bound, printed with the
+verdict, not a proof — `--drives` sets how many (300 by default) and
+`--steps` how long each is (25). Agreement is not correctness either —
+drafts can agree and all be wrong.
+
+`eval/reproducibility.py` drafts each case of `eval/reproducibility_cases.json`
+several times through the same client and request as `kind_choice.py`
+(Sonnet by default, the model the owner fixed for drafting), and reports
+each case's classes per level. Measured on 2026-09-29, five drafts per
+case, one run (1 means all five agree):
+
+| Case | Kind | Bytes | Logic | Table | Open questions | Page | Behaviour |
+|---|---|---|---|---|---|---|---|
+| door-with-auto-close | statechart | 5 | 3 | 3 | 4 | 5 | 1, one event renamed |
+| connection-keeper | statechart | 5 | 5 | 4 | 4 | 5 | 1, one event renamed |
+| keep-alive | timer | 5 | 1 | 1 | 2 | 5 | — |
+| version-query | procedure | 5 | 2 | 1 | 3 | 5 | — |
+| fan-curve | interpolation | 5 | 4 | 1 | 4 | 5 | — |
+| vending-controller | statechart | 5 | 5 | 5 | 5 | 5 | not judged |
+
+What the prose decided came out alike; what moved was names and which
+open questions each draft chose to mark. The vending case leaves its
+interface open, and each draft invented a different one.
+
 Connecting SCE supplies tools and usage instructions; it
 does not supply the prose or decide policies absent from it. A host may choose
 not to pass MCP server instructions to the AI, so confirm the tool calls in the
