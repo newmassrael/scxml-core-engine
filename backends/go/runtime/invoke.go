@@ -150,6 +150,10 @@ type ChildEngine interface {
 	IsInFinalState() bool
 	RaiseExternalByName(eventName, eventData string)
 
+	// Step runs the child's queues to stability (§scxml-6.2): what a
+	// session does with an event delivered to it. See DeliverToChild.
+	Step()
+
 	// RaiseExternalByNameWithMeta delivers an autoforwarded event whose
 	// _event fields are the parent's (§scxml-6.4 exact-copy contract).
 	// Name-addressed because the child's Event enum is an unrelated type.
@@ -162,6 +166,25 @@ type ChildEngine interface {
 	// top-level <final> onentry, for the parent's RaiseDoneInvoke to lift
 	// onto done.invoke.<id>._event.data (§scxml-5.5 + 6.3.1).
 	DonedataAtFinal() string
+}
+
+// DeliverToChild delivers a `<send>` addressed to an invoked session and lets
+// that session take it now (§scxml-6.2.4, §scxml-6.4), as the C++ and Kotlin
+// cores do.
+//
+// Enqueued alone, the event waits for the parent's next TickChildren — and a
+// tick promotes its due sends before it ticks children. So a delayed send
+// coming due in a late tick reached a child that had not yet taken an earlier
+// immediate one: a `stop` sent at once and a delayed `lost` found the child
+// still running, `lost` joined its queue behind `stop`, and vanished with the
+// child, neither delivered nor reported (C.1). Measured 2026-09-29 under load
+// in TestADelayedSendReachesWhatItsTargetNames.
+//
+// What the child sends to its parent while it runs here still waits on its
+// own queue for TickChildren to drain, so the parent sees it where it did.
+func DeliverToChild(child ChildEngine, eventName, eventData string) {
+	child.RaiseExternalByName(eventName, eventData)
+	child.Step()
 }
 
 // DrainAndRaiseChildEvents drains events from a child's ParentExternalQueue

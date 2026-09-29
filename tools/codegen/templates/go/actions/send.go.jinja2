@@ -620,7 +620,7 @@
 		engine.ScheduleRoutedEvent(*new({{ machine_name }}Event), {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID,
 			sce.ScheduledRoute{Kind: sce.RouteInvocation, EventName: {{ event_name_go }}, InvokeID: "{{ invoke_info.invoke_id | escape_go }}"})
 {% else %}
-		child.RaiseExternalByName({{ event_name_go }}, eventDataStr)
+		sce.DeliverToChild(child, {{ event_name_go }}, eventDataStr)
 {% endif %}
 {% else %}
 		_ = child

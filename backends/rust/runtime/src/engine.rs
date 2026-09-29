@@ -1053,6 +1053,12 @@ impl<P: StatePolicy> Engine<P> {
             return false;
         }
         self.turn_now = Some(self.clock_read());
+        // §scxml-6.4: a host-owned clock is a value, so the sessions this one
+        // invoked hold the reading of the moment they started; they are moved
+        // to this turn's before anything in it reaches them.
+        if let SceClock::Manual(_) = self.clock {
+            self.policy.follow_clock_in_children(self.clock);
+        }
         true
     }
 
@@ -2200,6 +2206,30 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
+    /// §scxml-6.2.4 + §scxml-6.4: deliver a `<send>` addressed to this
+    /// invoked session by name, and take it now — as the C++ and Kotlin cores
+    /// do.
+    ///
+    /// Enqueued alone, the event waits for the parent's next `tick_children`,
+    /// and a tick dispatches its due sends before it ticks children. So a
+    /// delayed send coming due in a late tick reached a child that had not yet
+    /// taken an earlier immediate one — a `stop` sent at once and a delayed
+    /// `lost` found the child still running, `lost` joined its queue behind
+    /// `stop` and vanished with the child, neither delivered nor reported
+    /// (§scxml-C-1). Measured 2026-09-29 on the Go core under load; this core
+    /// shared the shape.
+    ///
+    /// Not [`step`](Self::step): that is the host's door, and its note about a
+    /// host that never ticks would fire for a parent's delivery. What the child
+    /// sends its parent here still waits on its own queue for the parent's
+    /// `tick_children` to drain, so the parent sees it where it did.
+    pub fn deliver_by_name(&mut self, event_name: &str, event_data: &str) {
+        self.raise_external_by_name(event_name, event_data);
+        let opened = self.begin_turn();
+        self.run_main_event_loop();
+        self.end_turn(opened);
+    }
+
     /// §scxml-6.4: Raise an autoforwarded external event, name-addressed but
     /// carrying the source event's `_event` fields.
     ///
@@ -2654,6 +2684,28 @@ impl<P: StatePolicy> Engine<P> {
              deadlines from two clocks do not compare"
         );
         self.clock = clock;
+    }
+
+    /// §scxml-6.4: move an invoked session's host-owned clock to its parent's
+    /// reading. The parent calls it on every child as it opens a turn (see
+    /// [`StatePolicy::follow_clock_in_children`]), so whatever the turn
+    /// delivers or ticks in a child is measured from the parent's instant.
+    ///
+    /// A child is given its parent's [`SceClock`] when it is started, and for
+    /// [`SceClock::Hal`] and [`SceClock::Source`] that is the parent's time for
+    /// good — both read the same source. [`SceClock::Manual`] is a value: the
+    /// child got the reading of the moment it started, and the host advances
+    /// the engine it holds, never the ones that engine invoked. So a child's
+    /// `<send delay>` on a host-owned clock never came due. Measured
+    /// 2026-09-29: the delayed-send fixture's child reply stayed parked when
+    /// its parent was driven through [`advance_time_ms`](Self::advance_time_ms).
+    ///
+    /// Only ever forward: a parent's reading is never behind its child's, and
+    /// a clock is required to be non-decreasing.
+    pub fn follow_clock(&mut self, parent: SceClock) {
+        if let (SceClock::Manual(own), SceClock::Manual(theirs)) = (self.clock, parent) {
+            self.clock = SceClock::Manual(own.max(theirs));
+        }
     }
 
     /// Move this engine's clock forward by `ms` and run whatever that made due

@@ -1071,7 +1071,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% set slot = ('self.child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
             if let Some(ref mut child) = {{ slot }} {
                 if !child.is_in_final_state() {
-                    child.raise_external_by_name(event_name, event_data);
+                    child.deliver_by_name(event_name, event_data);
                     return true;
                 }
             }
@@ -1120,7 +1120,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
             .map_or(false, |cs| cs.session_id == child_session_id)
         {
             if let Some(ref mut child) = self.child_{{ invoke_info.field_suffix }} {
-                child.raise_external_by_name(event_name, event_data);
+                child.deliver_by_name(event_name, event_data);
                 return true;
             }
         }
@@ -1176,6 +1176,20 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // W3C SCXML 6.4: Tick child state machines
     fn tick_children(&mut self, engine: &mut Engine<Self>) {
         self.do_tick_children(engine);
+    }
+
+    // W3C SCXML 6.4: an invoked session reads its parent's time — on a
+    // host-owned clock that is a value, moved here as the parent opens a turn.
+    fn follow_clock_in_children(&mut self, clock: sce_rust_runtime::SceClock) {
+{% for invoke_info in model.invokes | scxml_family %}
+{% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': none}] %}
+{% for target in child_targets %}
+{% set slot = ('self.child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
+        if let Some(ref mut child) = {{ slot }} {
+            child.follow_clock(clock);
+        }
+{% endfor %}
+{% endfor %}
     }
 {% endif %}
 {% if model.invokes | scxml | selectattr('autoforward') | list %}

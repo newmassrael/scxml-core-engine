@@ -798,7 +798,7 @@
             });
 {% else %}
         if let Some(ref mut child) = {{ slot }} {
-            child.raise_external_by_name({% if dyn_event %}&_send_event_name{% else %}"{{ action.event }}"{% endif %}, &event_data);
+            child.deliver_by_name({% if dyn_event %}&_send_event_name{% else %}"{{ action.event }}"{% endif %}, &event_data);
         }
 {% endif %}
 {% endif %}

@@ -559,7 +559,7 @@ func (p *{{ machine_name }}Policy) DeliverToInvocation(invokeID, eventName, even
 {% for invoke_info in model.invokes | scxml_family %}
 	if invokeID == "{{ invoke_info.invoke_id }}" {
 		if child := p.child{{ invoke_info.invoke_id | to_pascal_case }}; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -613,7 +613,7 @@ func (p *{{ machine_name }}Policy) DeliverToChildSession(childSessionID, eventNa
 	}
 {% for invoke_info in model.invokes | scxml %}
 	if cs, ok := p.activeInvokes["{{ invoke_info.invoke_id }}"]; ok && cs.SessionID == childSessionID {
-		p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.child{{ invoke_info.invoke_id | to_pascal_case }}, eventName, eventData)
 		return true
 	}
 {% endfor %}
@@ -679,6 +679,7 @@ type childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }} struct {
 }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Tick() { w.engine.Tick() }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Step() { w.engine.Step() }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Stop() { w.engine.Stop() }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
@@ -702,6 +703,7 @@ type {{ wrapper }} struct {
 }
 func (w *{{ wrapper }}) Initialize() { w.engine.Initialize() }
 func (w *{{ wrapper }}) Tick() { w.engine.Tick() }
+func (w *{{ wrapper }}) Step() { w.engine.Step() }
 func (w *{{ wrapper }}) Stop() { w.engine.Stop() }
 func (w *{{ wrapper }}) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *{{ wrapper }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }

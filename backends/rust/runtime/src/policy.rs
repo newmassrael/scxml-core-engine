@@ -592,6 +592,14 @@ pub trait StatePolicy: Sized + 'static {
     /// [`Engine::tick`](crate::Engine::tick) to propagate scheduler ticks to children.
     fn tick_children(&mut self, _engine: &mut Engine<Self>) {}
 
+    /// §scxml-6.4: move every running child's host-owned clock to `clock`,
+    /// the parent's, as the parent opens a turn — see
+    /// [`Engine::follow_clock`](crate::Engine::follow_clock).
+    ///
+    /// A policy that invokes nothing has no child to move, which is what the
+    /// default says.
+    fn follow_clock_in_children(&mut self, _clock: crate::SceClock) {}
+
     /// §scxml-6.2 + §scxml-6.4: deliver a delayed `<send target="#_<invokeid>">`
     /// whose wait is over to that invocation, by name — a child need not
     /// declare every event its parent sends.

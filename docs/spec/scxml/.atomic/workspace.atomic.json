@@ -8488,6 +8488,11 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "scheduleRoutedEvent",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "ChildEngine",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -9002,6 +9007,16 @@
         {
           "file": "backends/rust/runtime/src/lib.rs",
           "symbol": "TargetSendOutcome",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "DeliverToChild",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "deliver_by_name",
           "kind": "implements"
         }
       ],
@@ -10780,6 +10795,31 @@
         {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "is_invocation_running",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "DeliverToChild",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "begin_turn",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "deliver_by_name",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "follow_clock",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "follow_clock_in_children",
           "kind": "implements"
         }
       ],
@@ -13889,6 +13929,11 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "scheduleParentSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "deliver_by_name",
           "kind": "implements"
         }
       ],
