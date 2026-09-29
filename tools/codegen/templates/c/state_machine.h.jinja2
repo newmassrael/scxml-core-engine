@@ -60,7 +60,7 @@
 #include "sce/sample.h"
 {% endif %}
 
-{% if model.host_processor_types or model.host_invoker_types %}
+{% if model.host_processor_types or model.host_invoker_types or model.needs_http_send %}
 /* §scxml-6.2.5 + §scxml-6.4.1: host-served Event I/O Processor types and
    host-run `<invoke>` types + the bounded registries this machine
    dispatches through
@@ -69,7 +69,11 @@
    dispatch is emitted into the generated `_sm.c`. cpp's
    `core/HostProcessor.h` plus `StaticExecutionEngine`'s map is the
    equivalent shape, translated to a fixed-capacity array because the
-   MCU profile has no allocator. */
+   MCU profile has no allocator.
+
+   A BasicHTTP `<send>` (§scxml-C-2) needs the request type alone: the send
+   site hands its request to the machine's own HTTP client in that shape, and
+   a delayed one waits in the delayed-send queue as a host-served one does. */
 #include "sce/host_processor.h"
 {% endif %}
 

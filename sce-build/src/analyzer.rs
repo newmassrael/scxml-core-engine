@@ -18,6 +18,13 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     compute_typed_inject_events(model);
     build_prefix_matching(model);
 
+    // A delayed BasicHTTP send waits in the queue a delayed host-served send
+    // does, so the storage for its request is owed whether or not the build
+    // declared a host processor — the declaration is what re-derives this for
+    // a host-served send once it moves the flags. The clauses are cited where
+    // the answer is derived, in `record_delayed_host_sends`.
+    crate::host_processor_analyzer::record_delayed_host_sends(model, false);
+
     // SCE_MESH.md §9.6 codegen-shape seam. Initial value from SCXML-only
     // state — `is_remote_invoke_target` is still false here because this
     // pipeline stage has not yet read deploy.yaml. The mesh-inject stage

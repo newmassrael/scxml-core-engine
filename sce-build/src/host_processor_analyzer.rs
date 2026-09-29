@@ -525,6 +525,20 @@ pub fn host_invocation_peak(model: &SCXMLModel) -> usize {
         .unwrap_or(0)
 }
 
+/// Whether `action` is a `<send>` over the BasicHTTP Event I/O Processor that
+/// names a target to post to (§scxml-C-2): the one built-in processor whose
+/// act a backend performs itself rather than hands to the host.
+///
+/// A send with neither `target` nor `targetexpr` is the error
+/// `error.communication` (test 577) and posts nothing; one whose `typeexpr`
+/// chooses the processor at run time is not decided here.
+fn is_basic_http_send(action: &Action) -> bool {
+    action.action_type == "send"
+        && action.typeexpr.is_empty()
+        && action.send_type == BASIC_HTTP_EVENT_PROCESSOR_TYPE
+        && (!action.target.is_empty() || !action.targetexpr.is_empty())
+}
+
 /// Whether `action` is a host-served `<send>` the engine must WAIT before
 /// performing (§scxml-6.2.4).
 ///
@@ -536,8 +550,15 @@ pub fn host_invocation_peak(model: &SCXMLModel) -> usize {
 /// With `dynamic_mesh`, a `<send targetexpr>` that may name a Mesh peer
 /// counts too: the send templates' dynamic Mesh branch hands it to the same
 /// host arm, which waits on the same queue.
+///
+/// So does a BasicHTTP send (§scxml-C-2): a delay is a property of the send
+/// and not of the processor it named (§scxml-6.2.4), and a backend whose
+/// queue entry is a fixed-size struct holds the request the deadline will
+/// POST in the same slot a host-served one uses.
 fn is_delayed_host_send(action: &Action, dynamic_mesh: bool) -> bool {
-    (action.send_type_host_served || (dynamic_mesh && may_name_a_mesh_peer(action)))
+    (action.send_type_host_served
+        || is_basic_http_send(action)
+        || (dynamic_mesh && may_name_a_mesh_peer(action)))
         && (!action.delayexpr.is_empty()
             || action.delay_ms > 0
             || (!action.delay.is_empty() && action.delay != "0s" && action.delay != "0ms"))
@@ -549,7 +570,7 @@ fn is_delayed_host_send(action: &Action, dynamic_mesh: bool) -> bool {
 /// Runs after [`claim_action`] rather than beside it, because until the
 /// declaration is applied every one of these sends is a refusal and a
 /// refusal has no delay to honour.
-fn record_delayed_host_sends(model: &mut SCXMLModel, dynamic_mesh: bool) {
+pub(crate) fn record_delayed_host_sends(model: &mut SCXMLModel, dynamic_mesh: bool) {
     let mut found = false;
     let mut max_params = 0usize;
     let mut visit = |action: &Action| {
@@ -1179,6 +1200,45 @@ mod tests {
         let lowered = lower_mesh_sends(&model, Language::C11);
         assert!(lowered.has_delayed_host_send);
         assert_eq!(lowered.delayed_host_send_max_params, 1);
+    }
+
+    /// §scxml-6.2.4 + §scxml-C-2: a delayed BasicHTTP send waits in the queue a
+    /// delayed host-served send does, whether or not the build declared a host
+    /// processor — the backend whose entry is a fixed-size struct sizes the
+    /// request's storage from this answer, and an undelayed or target-less
+    /// BasicHTTP send owes it nothing.
+    #[test]
+    fn a_delayed_basichttp_send_owes_the_delayed_send_storage_without_a_declaration() {
+        let analyzed = |send: &str| {
+            let mut model = parse(&format!(
+                r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="s">
+                     <state id="s"><onentry>{send}</onentry></state>
+                   </scxml>"##
+            ));
+            crate::analyzer::analyze(&mut model, "basichttp.scxml");
+            model
+        };
+        let delayed = analyzed(
+            r##"<send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+                      target="http://localhost/t" event="e" delay="10ms" namelist="a b">
+                  <param name="k" expr="1"/></send>"##,
+        );
+        assert!(delayed.has_delayed_host_send);
+        assert_eq!(delayed.delayed_host_send_max_params, 3);
+
+        let undelayed = analyzed(
+            r##"<send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+                      target="http://localhost/t" event="e"/>"##,
+        );
+        assert!(!undelayed.has_delayed_host_send);
+
+        let no_target = analyzed(
+            r##"<send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" event="e" delay="10ms"/>"##,
+        );
+        assert!(
+            !no_target.has_delayed_host_send,
+            "a BasicHTTP send that names no target posts nothing (test 577)"
+        );
     }
 
     /// §mesh-19 + §scxml-6.2.4: a delayed `targetexpr` may name a peer once
