@@ -98,15 +98,15 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 262
+engine-documents 263
 native-prefix-documents 2
-datamodel-variable-init 444
+datamodel-variable-init 445
 transition-guard 242
-assign-action 385
+assign-action 386
 child-invoke-needs-script-engine 55
 log-expr 46
 send-param-expr 49
-send-dynamic-attr 62
+send-dynamic-attr 63
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
@@ -334,11 +334,19 @@ never spelled correctly.
   raised `engine-documents` and `child-invoke-needs-script-engine` by one,
   `datamodel-variable-init` by twenty, `assign-action` by fifteen,
   `send-dynamic-attr` by twelve and `transition-guard` by two.
+  ⚠ **2026-09-29, caught up again:** `tests/mesh/motor_delayed_reply_expr.scxml`
+  (one engine document: a delayed reply whose peer is a `targetexpr`,
+  `641fb130a3`) raised `engine-documents` and `send-dynamic-attr` by one each,
+  and `integration_resources/a_send_reaches_only_what_its_target_names/`'s
+  `afterOrphan` counter (`c0b9808b26`: one `<data>` and the assign that marks
+  the orphan `#_parent` send passed) raised `datamodel-variable-init` and
+  `assign-action` by one each. Both landed without this table, so `main` read
+  red until this entry re-derived the whole block from the test's output.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
-- **51% of judged documents need an engine** (262 of 517). The remaining
-  49% already compile without one, which is what makes "the engine is a
+- **50% of judged documents need an engine** (263 of 522). The remaining
+  50% already compile without one, which is what makes "the engine is a
   fallback" a description of the tree rather than an aspiration.
   ⚠ This figure was previously stated as 32%, taken over the 736 walked
   documents rather than the 475 the causes were measured over. The
