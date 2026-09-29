@@ -36,6 +36,48 @@
 
 use thiserror::Error;
 
+/// [`ScxmlSemanticError::GeneratedNameCollision`]'s message.
+///
+/// Names the first backend's spelling and then every other backend that
+/// folds the pair, because the repair — renaming one of the two — is the
+/// same whichever backend the author builds, and an author told about C++
+/// alone would reasonably assume a Rust build is safe.
+fn generated_name_collision_message(
+    enumeration: crate::member_names::Enumeration,
+    name: &str,
+    clash: &crate::member_names::Clash,
+    spellings: &[(&'static str, String)],
+) -> String {
+    use crate::member_names::Clash;
+    let Some(((language, spelled), rest)) = spellings.split_first() else {
+        return format!(
+            "{} '{name}' collides in the generated code",
+            enumeration.singular()
+        );
+    };
+    let others = match rest {
+        [] => String::new(),
+        [(l, s)] => format!(" (so does {l} '{s}')"),
+        [init @ .., (l, s)] => {
+            let listed: Vec<String> = init.iter().map(|(l, s)| format!("{l} '{s}'")).collect();
+            format!(" (so do {} and {l} '{s}')", listed.join(", "))
+        }
+    };
+    match clash {
+        Clash::Name(other) => format!(
+            "'{other}' and '{name}' are two {} of this document, but the generated \
+             {language} code spells both '{spelled}'{others} — SCE generates every \
+             backend from one document, so rename one of them",
+            enumeration.plural()
+        ),
+        Clash::Generated => format!(
+            "{} '{name}' is spelled '{spelled}' in the generated {language} code, \
+             which already declares '{spelled}' for its own use{others} — rename it",
+            enumeration.singular()
+        ),
+    }
+}
+
 /// The trailing clause that names the other gaps under the same parent.
 ///
 /// Empty when there are none, so the single-gap message reads exactly as
@@ -316,6 +358,28 @@ pub enum ScxmlSemanticError {
     /// Mirrors C++ `SemanticNoStates`.
     #[error("No state nodes found in SCXML document")]
     NoStates,
+
+    /// Two names the document keeps apart — or one name and a member the
+    /// generated code declares for itself — become one member of the code
+    /// generated for it (`crate::member_names`).
+    ///
+    /// ⚠ Not a W3C SCXML violation: §3.14 asks that ids be unique, and XML
+    /// Names are case-sensitive, so `idle` and `Idle` are a conforming pair.
+    /// It is refused because SCE generates the document in every backend and
+    /// one of them would declare the member twice, which its compiler
+    /// rejects. There is no C++ Interpreter mirror: the Interpreter declares
+    /// nothing per name.
+    #[error("{}", generated_name_collision_message(*enumeration, name, clash, spellings))]
+    GeneratedNameCollision {
+        /// Which of the document's names collide.
+        enumeration: crate::member_names::Enumeration,
+        /// The name the report is placed on.
+        name: String,
+        /// Another of the document's names, or a member the code declares.
+        clash: crate::member_names::Clash,
+        /// `(backend, spelling)` for every backend that folds the pair.
+        spellings: Vec<(&'static str, String)>,
+    },
 
     /// The `datamodel` attribute names a data model SCE does not
     /// implement, or one no processor defines.
@@ -939,6 +1003,12 @@ mod tests {
                 machine: "notifier".into(),
                 event: Some("indicator.update".into()),
             },
+            ScxmlSemanticError::GeneratedNameCollision {
+                enumeration: crate::member_names::Enumeration::State,
+                name: "idle".into(),
+                clash: crate::member_names::Clash::Name("Idle".into()),
+                spellings: vec![("cpp", "Idle".into())],
+            },
             ScxmlSemanticError::NonExhaustiveEventHandling {
                 parent: "dispatch".into(),
                 event: "cmd.stop".into(),
@@ -1001,7 +1071,7 @@ mod tests {
 
     /// Number of arms in [`variant_name`]. Kept next to it so the two
     /// move together.
-    const VARIANT_COUNT: usize = 18;
+    const VARIANT_COUNT: usize = 19;
 
     /// Exhaustive discriminant projection — the compile-time half of
     /// `every_variant_routes_through_forge_error`'s coverage claim.
@@ -1023,6 +1093,7 @@ mod tests {
             ScxmlSemanticError::UnreachableState { .. } => "UnreachableState",
             ScxmlSemanticError::DeadTransition { .. } => "DeadTransition",
             ScxmlSemanticError::ParentSendWithoutParent { .. } => "ParentSendWithoutParent",
+            ScxmlSemanticError::GeneratedNameCollision { .. } => "GeneratedNameCollision",
             ScxmlSemanticError::NonExhaustiveEventHandling { .. } => "NonExhaustiveEventHandling",
             ScxmlSemanticError::ContradictoryUnhandledDeclaration { .. } => {
                 "ContradictoryUnhandledDeclaration"

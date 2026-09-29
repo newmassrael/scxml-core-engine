@@ -1984,6 +1984,10 @@
           "file": "sce/src/common/UniqueIdGenerator.cpp",
           "symbol": "UniqueIdGenerator::generateBaseId",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/member_names.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

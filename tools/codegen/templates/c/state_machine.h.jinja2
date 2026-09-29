@@ -127,7 +127,7 @@ extern "C" {
    width via SCE_STATIC_ASSERT at the bottom of this header.             #}
 enum {{ csym_prefix }}{{ model.name }}_state_e {
     {% for state_name in model.states | sort %}
-    {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_name | upper | replace('-', '_') | replace('.', '_') }},
+    {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_name | to_c11_upper_ident }},
     {% endfor %}
     {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT
 };
@@ -189,7 +189,7 @@ typedef enum {{ csym_prefix }}{{ model.name }}_configuration_rejection_e {{ csym
 enum {{ csym_prefix }}{{ model.name }}_history_e {
     {{ csym_prefix | upper }}{{ model.name | upper }}_HIST_NONE,
     {% for hid, _ in model.history_states | dictsort %}
-    {{ csym_prefix | upper }}{{ model.name | upper }}_HIST_{{ hid | upper | replace('-', '_') | replace('.', '_') }},
+    {{ csym_prefix | upper }}{{ model.name | upper }}_HIST_{{ hid | to_c11_upper_ident }},
     {% endfor %}
 };
 typedef enum {{ csym_prefix }}{{ model.name }}_history_e {{ csym_prefix }}{{ model.name }}_history_t;
@@ -203,7 +203,7 @@ typedef enum {{ csym_prefix }}{{ model.name }}_history_e {{ csym_prefix }}{{ mod
 enum {{ csym_prefix }}{{ model.name }}_event_e {
     {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE{{ "," if model.events }}
     {% for event_name in model.events | sort %}
-    {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}{{ "," if not loop.last }}
+    {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | to_c11_upper_ident }}{{ "," if not loop.last }}
     {% endfor %}
 };
 typedef enum {{ csym_prefix }}{{ model.name }}_event_e {{ csym_prefix }}{{ model.name }}_event_t;

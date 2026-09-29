@@ -3,5 +3,5 @@
 
 // W3C SCXML 3.8.1: <raise>
 AOT_DEBUG("AOT raise: About to raise event {{ action.event }}");
-engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}));
+engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | to_cpp_event_variant }}));
 AOT_DEBUG("AOT raise: Successfully raised event {{ action.event }}");

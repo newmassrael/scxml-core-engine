@@ -921,6 +921,12 @@ pub enum DiagnosticCode {
     //    invoked from outside the set looks the same from inside it. ───
     #[serde(rename = "scxml/parent-send-without-parent")]
     ScxmlParentSendWithoutParent,
+    // ── Two of a statechart's own names — or one and a member the code
+    //    declares for itself — become one member of its generated code in
+    //    some backend (`crate::member_names`). Not a W3C violation; refused
+    //    because the output would not build. ───────────────────────────
+    #[serde(rename = "scxml/generated-name-collision")]
+    ScxmlGeneratedNameCollision,
     // ── NL→IR Mapping Roadmap Item 3 — event-set
     //    exhaustiveness. Fires when a compound `<state>` has sibling
     //    children that disagree on whether a given event is handled,
@@ -3310,6 +3316,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ScxmlDeadTransition,
         // §scxml-6.2.4 — a set member nobody invokes sends to `#_parent`
         ScxmlParentSendWithoutParent,
+        // Two names that become one member of the generated code
+        ScxmlGeneratedNameCollision,
         // NL→IR Mapping Roadmap Item 3 — event-set exhaustiveness
         ScxmlNonExhaustiveEventHandling,
         ScxmlContradictoryUnhandledDeclaration,
@@ -3891,6 +3899,10 @@ impl DiagnosticCode {
 
             // ── §scxml-6.2.4 `#_parent` with no parent session ─────────
             ScxmlParentSendWithoutParent => Some("W3C SCXML §6.2.4"),
+
+            // ── How a statechart's names are spelled in generated code
+            //    is SCE's rule, not W3C's: §3.14 is satisfied. ─────────
+            ScxmlGeneratedNameCollision => Some("SCE Accepted Subset §2.14.1"),
 
             // ── SCXML data models ──────────────────────────────────
             // The attribute is defined in §3.2 and the data models it
@@ -4689,6 +4701,7 @@ impl DiagnosticCode {
             ScxmlUnreachableState => "scxml/unreachable-state",
             ScxmlDeadTransition => "scxml/dead-transition",
             ScxmlParentSendWithoutParent => "scxml/parent-send-without-parent",
+            ScxmlGeneratedNameCollision => "scxml/generated-name-collision",
             ScxmlNonExhaustiveEventHandling => "scxml/non-exhaustive-event-handling",
             ScxmlContradictoryUnhandledDeclaration => "scxml/contradictory-unhandled-declaration",
             ScxmlStaleUnhandledDeclaration => "scxml/stale-unhandled-declaration",
@@ -9811,6 +9824,35 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 target.clone(),
             ],
         },
+        ScxmlSemanticError::GeneratedNameCollision {
+            enumeration,
+            name,
+            clash,
+            spellings,
+        } => DiagnosticPayload {
+            // `actual` is the name the record is placed on; `expected` is
+            // left empty because what is expected is a name the author
+            // has not chosen yet.
+            code: DiagnosticCode::ScxmlGeneratedNameCollision,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(name.clone()),
+            fix: None,
+            // The pair, not the spellings: two documents with the same
+            // collision keep one id whichever backends fold it.
+            key_fragments: vec![
+                "scxml-generated-name-collision".to_string(),
+                enumeration.singular().to_string(),
+                name.clone(),
+                match clash {
+                    crate::member_names::Clash::Name(other) => other.clone(),
+                    crate::member_names::Clash::Generated => spellings
+                        .first()
+                        .map(|(_, s)| s.clone())
+                        .unwrap_or_default(),
+                },
+            ],
+        },
         ScxmlSemanticError::ParentSendWithoutParent { machine, event } => DiagnosticPayload {
             // `actual` names the machine: the repair is to the set (add
             // the document that invokes it) or to the machine (send to
@@ -10993,6 +11035,23 @@ mod tests {
                 }
                 .into(),
                 r##"{"v":1,"id":"fnv1a:86099a275d115ab1","code":"scxml/parent-send-without-parent","stage":"validation","spec":"W3C SCXML §6.2.4","message":"'notifier' sends 'indicator.update' to its parent session (#_parent), but no document in this set invokes it — started on its own it has no parent, and the send raises error.communication","actual":"notifier"}"##,
+            ),
+            (
+                // Two states XML keeps apart by case, which every backend
+                // spells as one member (`crate::member_names`).
+                "forge/scxml-generated-name-collision",
+                crate::scxml_semantic::ScxmlSemanticError::GeneratedNameCollision {
+                    enumeration: crate::member_names::Enumeration::State,
+                    name: "idle".into(),
+                    clash: crate::member_names::Clash::Name("Idle".into()),
+                    spellings: vec![
+                        ("rust", "Idle".into()),
+                        ("cpp", "Idle".into()),
+                        ("python", "IDLE".into()),
+                    ],
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:b4c4744cdcaf4d0b","code":"scxml/generated-name-collision","stage":"validation","spec":"SCE Accepted Subset §2.14.1","message":"'Idle' and 'idle' are two states of this document, but the generated rust code spells both 'Idle' (so do cpp 'Idle' and python 'IDLE') — SCE generates every backend from one document, so rename one of them","actual":"idle"}"##,
             ),
             (
                 // NL→IR Mapping Roadmap Item 3 — non-exhaustive
@@ -16190,6 +16249,9 @@ mod tests {
             // to the set, or send somewhere that exists — so no closed
             // candidate set either.
             | ScxmlParentSendWithoutParent
+            // The repair is a new name for one of the two, which only
+            // the author can choose.
+            | ScxmlGeneratedNameCollision
             // NL→IR Mapping Roadmap Item 3 — non-exhaustive
             // event handling. Repair has three axes (add the
             // transition, add a parent-level fallthrough, or declare
@@ -16527,6 +16589,7 @@ mod tests {
                 | ScxmlUnreachableState
                 | ScxmlDeadTransition
                 | ScxmlParentSendWithoutParent
+                | ScxmlGeneratedNameCollision
                 | ScxmlNonExhaustiveEventHandling
                 | ScxmlContradictoryUnhandledDeclaration
                 | ScxmlStaleUnhandledDeclaration
@@ -16826,9 +16889,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            404,
+            405,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 404 distinct variants to match the DiagnosticCode \
+             expected 405 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17766,7 +17829,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationEventSchemaOnBuiltinEvent
             | ValidationEventPayloadFieldUnknown
             | ValidationBytesComparisonNotEquality
-            | MeshEventSchemaMismatch => Registered(NoAnchor::NotYetMeasured),
+            | MeshEventSchemaMismatch
+            | ScxmlGeneratedNameCollision => Registered(NoAnchor::NotYetMeasured),
 
             // ── Registered(CoordinateNotThreaded, RaisedBeforeAnyResolvingStage) ──
             // Measured, and each here for its OWN reason.

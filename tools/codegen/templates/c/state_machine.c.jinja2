@@ -519,7 +519,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
     }
     {% for event_name in model.events | sort %}
     if (len == {{ event_name | length }}u && memcmp(name, "{{ event_name }}", {{ event_name | length }}u) == 0) {
-        return {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }};
+        return {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | to_c11_upper_ident }};
     }
     {% endfor %}
     return {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
@@ -1259,7 +1259,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     {{ P }}_event_t _send_delayed = {{ PU }}_EVENT_NONE;
                     {% for event_name in model.events | sort %}
                     if (_send_delayed == {{ PU }}_EVENT_NONE && strcmp(_send_evt_name, "{{ event_name | escape_c }}") == 0) {
-                        _send_delayed = {{ PU }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }};
+                        _send_delayed = {{ PU }}_EVENT_{{ event_name | to_c11_upper_ident }};
                     }
                     {% endfor %}
                     if (_send_delayed != {{ PU }}_EVENT_NONE) {
@@ -1269,7 +1269,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     }
 {% else %}
                     scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }}, {{ route_c }},
-                                          {{ PU }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }}, NULL, NULL,
+                                          {{ PU }}_EVENT_{{ action.event | to_c11_upper_ident }}, NULL, NULL,
                                           "{{ send_id_c }}"{{ scheduled_payload_arg(has_payload) }});
 {% endif %}
                 }
@@ -1286,12 +1286,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     bool _send_evt_matched = false;
                     {% for event_name in model.events | sort %}
                     if (!_send_evt_matched && strcmp(_send_evt_name, "{{ event_name | escape_c }}") == 0) {
-                        _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }};
+                        _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | to_c11_upper_ident }};
                         _send_evt_matched = true;
                     }
                     {% endfor %}
 {% else %}
-                    _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+                    _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | to_c11_upper_ident }};
 {% endif %}
 {% if meta_send_id %}
                     /* W3C SCXML 5.10.1 (test351, 183): the id the author
@@ -1348,7 +1348,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             /* W3C SCXML 3.8.1: <raise event="{{ action.event }}"> */
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
             memset(&evt, 0, sizeof(evt));
-            evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | to_c11_upper_ident }};
             {{ csym_prefix }}{{ model.name }}_raise(sm, &evt);
         }
 {% elif action.type == 'assign' %}
@@ -1991,7 +1991,7 @@ SCE_SM_FN static bool event_queue_pop({{ csym_prefix }}{{ model.name }}_event_qu
 SCE_SM_FN static SCE_C_UNUSED bool event_is_error({{ csym_prefix }}{{ model.name }}_event_t event) {
     return
 {% for event_name in error_events | sort %}
-        event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}{{ " ||" if not loop.last }}
+        event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | to_c11_upper_ident }}{{ " ||" if not loop.last }}
 {% endfor %}
     ;
 }
@@ -2008,7 +2008,7 @@ SCE_SM_FN static SCE_C_UNUSED bool event_is_error({{ csym_prefix }}{{ model.name
    c/microstep.jinja2), which a single leaf cannot express when that
    transition names several states. #}
 SCE_SM_FN {{ csym_prefix }}{{ model.name }}_state_t {{ csym_prefix }}{{ model.name }}_initial_state(void) {
-    return {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ model.initial | upper | replace('-', '_') | replace('.', '_') }};
+    return {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ model.initial | to_c11_upper_ident }};
 }
 
 /* W3C SCXML 6.2.4: see the header — the manifest's `needs_parent`. */
@@ -2025,7 +2025,7 @@ SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_root_start_refusal(void)
 SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_state_name({{ csym_prefix }}{{ model.name }}_state_t s) {
     switch (s) {
     {% for state_id in model.states | sort %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}:
         return "{{ state_id }}";
     {% endfor %}
     default:
@@ -2041,7 +2041,7 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_state_from_name(const char *nam
     }
     {% for state_id in model.states | sort %}
     if (strcmp(name, "{{ state_id }}") == 0) {
-        *out = {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }};
+        *out = {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }};
         return true;
     }
     {% endfor %}
@@ -2084,7 +2084,7 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_is_final_state({{ csym_prefix }
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
     {% if state.is_final %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}:
         return true;
     {% endif %}
     {% endfor %}
@@ -2102,8 +2102,8 @@ SCE_SM_FN static SCE_C_UNUSED {{ csym_prefix }}{{ model.name }}_state_t state_ge
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
     {% if state.parent %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
-        return {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state.parent | upper | replace('-', '_') | replace('.', '_') }};
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}:
+        return {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state.parent | to_c11_upper_ident }};
     {% endif %}
     {% endfor %}
     default:
@@ -2118,7 +2118,7 @@ SCE_SM_FN static SCE_C_UNUSED bool state_is_compound({{ csym_prefix }}{{ model.n
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
     {% if state.initial %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}:
         return true;
     {% endif %}
     {% endfor %}
@@ -2135,7 +2135,7 @@ SCE_SM_FN static SCE_C_UNUSED bool state_is_parallel({{ csym_prefix }}{{ model.n
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
     {% if state.is_parallel %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}:
         return true;
     {% endif %}
     {% endfor %}
@@ -2289,7 +2289,7 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_pr
    the same reason; this mask folds both into one compile-time constant. */
 #define {{ csym_prefix | upper }}{{ model.name | upper }}_FINAL_MASK ( \
     (uint32_t)0u{% for state_id, state in model.states | dictsort %}{% if state.is_final and not state.parent %} \
-    | ((uint32_t)1u << (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}){% endif %}{% endfor %})
+    | ((uint32_t)1u << (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}){% endif %}{% endfor %})
 
 /* §scxml-D-isInFinalState is defined with the rest of the Appendix D
    transcription (c/microstep.jinja2); a <final>'s entry asks it of the
@@ -2344,7 +2344,7 @@ SCE_SM_FN static void record_unseen_external_events({{ csym_prefix }}{{ model.na
 {% if state.source_location %}
 {{ sce_map.source_marker(state.source_location, "c", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
-SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ csym_prefix }}{{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
+SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | to_c11_lower_ident }}_block_{{ loop.index }}({{ csym_prefix }}{{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
     (void)sm;
     {% for action in block %}
 {%- if action.req or action.unresolved %}
@@ -2363,7 +2363,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | l
 {% if state.source_location %}
 {{ sce_map.source_marker(state.source_location, "c", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
-SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_exit_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ csym_prefix }}{{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
+SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_exit_{{ state_id | to_c11_lower_ident }}_block_{{ loop.index }}({{ csym_prefix }}{{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
     (void)sm;
     {% for action in block %}
 {%- if action.req or action.unresolved %}
@@ -2387,7 +2387,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
     {% set has_hybrid_invoke = (state.invokes | hybrid) | length > 0 %}
     {% set has_unsupported_invoke = (state.invokes | unsupported) | length > 0 %}
     {% if state.on_entry_blocks or has_late_init or is_compound_final or has_donedata or has_scxml_invoke or has_hybrid_invoke or has_unsupported_invoke %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}: {
         {% if has_late_init %}
         /* §scxml-D-enterStates, late binding: the state's <data> is bound on
            its FIRST entry only (`s.isFirstEntry`), before any onentry markup.
@@ -2403,7 +2403,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
            each block is an independent helper so a `return;` inside
            (e.g. invalid-target send raising error.execution + W3C 5.10
            stop-subsequent-content) terminates only that block. */
-        {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}(sm);
+        {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | to_c11_lower_ident }}_block_{{ loop.index }}(sm);
         {% endfor %}
         {% if state.invokes | unsupported %}
         {% for invoke_info in state.invokes | unsupported %}
@@ -2420,7 +2420,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                                  "{{ state_id }}", (const void *)sm,
                                  {{ loop.index0 + (state.invokes | scxml | length) }});
             sce_invoke_pending_push(&sm->pending_invokes,
-                                    (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }},
+                                    (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }},
                                     {{ loop.index0 + (state.invokes | scxml | length) }},
                                     _invoke_id_buf);
         }
@@ -2469,7 +2469,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
             } else
             {% endif %}
             sce_invoke_pending_push(&sm->pending_invokes,
-                                    (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }},
+                                    (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }},
                                     {{ loop.index0 }},
                                     _invoke_id_buf);
         }
@@ -2504,7 +2504,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
             } else
             {% endif %}
             sce_invoke_pending_push(&sm->pending_invokes,
-                                    (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }},
+                                    (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }},
                                     {{ (state.invokes | scxml | length) + loop.index0 }},
                                     _invoke_id_buf);
         }
@@ -2589,7 +2589,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
             memset(&_done_evt, 0, sizeof(_done_evt));
-            _done_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_STATE_{{ state.parent | upper | replace('-', '_') | replace('.', '_') }};
+            _done_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_STATE_{{ state.parent | to_c11_upper_ident }};
             {% if state.donedata and state.donedata.content and state.donedata.content.kind == "literal" %}
             /* W3C SCXML 5.5 + B.2 (mesh §9.6.2 wire-18): literal donedata
                payload as a JSON-quoted string on the C-struct carrier.
@@ -2628,10 +2628,10 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
            §scxml-D-isInFinalState, asked recursively, so a region that is
            itself a <parallel> counts only once all of ITS regions do. */
         {
-            if (is_in_final_state_of(sm, {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ parallel_id | upper | replace('-', '_') | replace('.', '_') }})) {
+            if (is_in_final_state_of(sm, {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ parallel_id | to_c11_upper_ident }})) {
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_p_evt;
                 memset(&_done_p_evt, 0, sizeof(_done_p_evt));
-                _done_p_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_STATE_{{ parallel_id | upper | replace('-', '_') | replace('.', '_') }};
+                _done_p_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_STATE_{{ parallel_id | to_c11_upper_ident }};
                 {{ csym_prefix }}{{ model.name }}_raise(sm, &_done_p_evt);
             }
         }
@@ -2665,7 +2665,7 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
        already left. #}
     {% set has_unsupported_invoke_exit = (state.invokes | unsupported) | length > 0 %}
     {% if state.on_exit_blocks or has_scxml_invoke_exit or has_hybrid_invoke_exit or has_unsupported_invoke_exit %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}: {
         {# §scxml-D-exitStates: onexit first, then cancelInvoke for every kind
            of invocation, then configuration.delete(s) (`exit_states` does
            that after this returns). #}
@@ -2673,7 +2673,7 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
         /* Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }} —
            each block is an independent helper so a `return;` inside
            terminates only that block. W3C SCXML 3.13. */
-        {{ csym_prefix }}{{ model.name }}_on_exit_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}(sm);
+        {{ csym_prefix }}{{ model.name }}_on_exit_{{ state_id | to_c11_lower_ident }}_block_{{ loop.index }}(sm);
         {% endfor %}
         {% for invoke_info in state.invokes | host_invoker %}
         /* W3C SCXML 6.4: the host's invocation ends with the state that
@@ -2693,7 +2693,7 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
            `cancelInvokesForState` + child shared_ptr reset are the
            equivalent — c11 mirrors with the bounded queue + active flag. */
         sce_invoke_pending_cancel_for_state(&sm->pending_invokes,
-                                            (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }});
+                                            (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }});
         {% for invoke_info in state.invokes | scxml %}
         if (sm->child_{{ invoke_info.field_suffix }}_active) {
             {% if invoke_info.child_has_send_to_parent %}
@@ -2771,7 +2771,7 @@ SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name 
     {% for state_id, state in model.states | dictsort %}
     {% set state_has_actions = state.transitions and (state.transitions | selectattr('actions') | list | length > 0) %}
     {% if state_has_actions %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}:
         switch (index) {
         {% for trans in state.transitions %}
         {% if trans.actions %}
@@ -2814,7 +2814,7 @@ SCE_SM_FN static void execute_initial_transition_content({{ csym_prefix }}{{ mod
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
     {% if state.initial_transition_actions %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}: {
         {% for action in state.initial_transition_actions %}
         {{ emit_action(action) }}
         {% endfor %}
@@ -2836,7 +2836,7 @@ SCE_SM_FN static void execute_history_default_content({{ csym_prefix }}{{ model.
     switch (h) {
     {% for hid, info in model.history_states | dictsort %}
     {% if info.default_actions %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_HIST_{{ hid | upper | replace('-', '_') | replace('.', '_') }}: {
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_HIST_{{ hid | to_c11_upper_ident }}: {
         {% for action in info.default_actions %}
         {{ emit_action(action) }}
         {% endfor %}
@@ -2888,7 +2888,7 @@ SCE_SM_FN static void execute_history_default_content({{ csym_prefix }}{{ model.
            send). Unreachable in well-formed SCXML, kept as a guard. #}
         if (0)
 {% elif trans.prefix_matching_events | length == 1 %}
-        if (event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ trans.prefix_matching_events[0] | upper | replace('.', '_') | replace('-', '_') }})
+        if (event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ trans.prefix_matching_events[0] | to_c11_upper_ident }})
 {% else %}
         {# W3C SCXML 5.9.3: descriptor expansion — covers (a) single-token
            prefix matching (`event="foo"` matches `foo` and `foo.zoo` but
@@ -2902,7 +2902,7 @@ SCE_SM_FN static void execute_history_default_content({{ csym_prefix }}{{ model.
            at codegen time (inline-only). The set is
            computed by analyzer.rs::build_prefix_matching using the same
            algorithm as EventMatchingHelper.h. #}
-        if ({% for ev in trans.prefix_matching_events %}event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev | upper | replace('.', '_') | replace('-', '_') }}{{ ' || ' if not loop.last }}{% endfor %})
+        if ({% for ev in trans.prefix_matching_events %}event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev | to_c11_upper_ident }}{{ ' || ' if not loop.last }}{% endfor %})
 {% endif %}
 {% endmacro %}
 
@@ -2944,7 +2944,7 @@ SCE_SM_FN static bool first_enabled_transition({{ csym_prefix }}{{ model.name }}
     switch (check_state) {
     {% for state_id, state in model.states | dictsort %}
     {% if state.transitions %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}:
         {% for trans in state.transitions %}
         {{ emit_transition_match_check(trans) }} {
         {% if trans.cond %}
@@ -3090,7 +3090,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_by_name({{ csym_
     memset(&evt, 0, sizeof(evt));
     {% for ev_name in model.events | sort %}
     if (strcmp(event_name, "{{ ev_name }}") == 0) {
-        evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | upper | replace('.', '_') | replace('-', '_') }};
+        evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | to_c11_upper_ident }};
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
         return;
     }
@@ -3117,7 +3117,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csy
     sce_copy_bounded_id(evt.invoke_id, fwd->invoke_id);
     {% for ev_name in model.events | sort %}
     if (strcmp(fwd->name, "{{ ev_name }}") == 0) {
-        evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | upper | replace('.', '_') | replace('-', '_') }};
+        evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | to_c11_upper_ident }};
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
         return;
     }
@@ -3456,7 +3456,7 @@ SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ 
     lua_setglobal(L, "_pending_event_raw");
     switch (evt->event) {
     {% for event_name in model.events | sort %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}:
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | to_c11_upper_ident }}:
         (void)luaL_dostring(L,
             "_event = {name = '{{ event_name | escape_c }}', "
               {% if event_name.startswith('error.') or event_name.startswith('done.') %}
@@ -3679,7 +3679,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_c
     switch (evt->event) {
         {% for ev_name in model.events | sort %}
         {% if ev_name and ev_name != 'Wildcard' %}
-        case {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | upper | replace('.', '_') | replace('-', '_') }}:
+        case {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | to_c11_upper_ident }}:
             sce_copy_bounded_id(fwd.name, "{{ ev_name }}");
             {% for state_id, state in model.states | dictsort %}
             {% for invoke_info in state.invokes | scxml %}
@@ -3850,7 +3850,7 @@ SCE_SM_FN static bool is_refused_host_invoke_completion(const {{ csym_prefix }}{
 {% for inv in model.invokes | host_invoker %}
 {% set done_name = 'done.invoke.' ~ inv.invoke_id %}
 {% if done_name in model.events %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ done_name | upper | replace('.', '_') | replace('-', '_') }}:
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ done_name | to_c11_upper_ident }}:
         return true;
 {% endif %}
 {% endfor %}
@@ -5702,7 +5702,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_deliver_link_{{ link | to_snake
 {% for state_id, state in model.states | dictsort %}
 {% for block in state.on_sample_blocks %}
 {% if block.link == link %}
-    if ({{ csym_prefix }}{{ model.name }}_in_state(sm, {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }})) {
+    if ({{ csym_prefix }}{{ model.name }}_in_state(sm, {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }})) {
 {% if block.callback and (block.callback | callback_lang) == "c" %}
         /* Callback dispatch — synchronous call into the host
            function declared in the header. Runs before the raise so
@@ -5715,7 +5715,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_deliver_link_{{ link | to_snake
         /* Event raise: unconditional, so a document stays meaningful
            on a backend that does not own the callback's axis. */
         {{ csym_prefix }}{{ model.name }}_event_with_meta_t _on_sample_evt = {0};
-        _on_sample_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ block.event | upper | replace('.', '_') | replace('-', '_') }};
+        _on_sample_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ block.event | to_c11_upper_ident }};
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_on_sample_evt);
     }
 {% endif %}

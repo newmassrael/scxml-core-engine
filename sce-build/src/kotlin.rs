@@ -16,11 +16,6 @@
 
 use crate::model::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::sync::LazyLock;
-
-/// §scxml-3.12.1: Delimiter pattern for Kotlin PascalCase conversion (underscore/hyphen).
-static RE_KT_DELIMITERS: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"[_\-]").unwrap());
 
 /// §scxml-3.12.1: Build hierarchical event tree from flat dot-separated event names.
 ///
@@ -127,6 +122,20 @@ pub fn collect_branch_events(tree: &serde_json::Value, prefix: &str) -> HashSet<
     branch_events
 }
 
+/// The class one event-tree node declares: its token, spelled by
+/// [`crate::filters::to_kotlin_event_segment`].
+pub fn event_tree_class_name(key: &str) -> String {
+    if key.is_empty() {
+        "Empty".to_string()
+    } else {
+        crate::filters::to_kotlin_event_segment(key)
+    }
+}
+
+/// The member a node declares inside its own interface when it is both an
+/// event and the prefix of others (`foo` beside `foo.zoo`, W3C SCXML 3.12.1).
+pub const EVENT_TREE_SELF_MEMBER: &str = "Self";
+
 /// Render event tree as Kotlin sealed interface hierarchy code.
 ///
 /// Recursive Rust function avoids Jinja2 macro recursion issues.
@@ -145,21 +154,7 @@ pub fn render_event_tree(tree: &serde_json::Value, parent_type: &str, indent: &s
     for key in sorted_keys {
         let node = &obj[key];
 
-        // PascalCase: split on underscore/hyphen within each segment
-        let class_name = if key.is_empty() {
-            "Empty".to_string()
-        } else {
-            RE_KT_DELIMITERS
-                .split(key)
-                .map(|p| {
-                    if p.is_empty() {
-                        String::new()
-                    } else {
-                        crate::filters::capitalize_first(p)
-                    }
-                })
-                .collect::<String>()
-        };
+        let class_name = event_tree_class_name(key);
 
         // Collect children (non-_leaf keys)
         let children: Vec<&String> = node
@@ -175,7 +170,9 @@ pub fn render_event_tree(tree: &serde_json::Value, parent_type: &str, indent: &s
             let is_leaf = node.get("_leaf").and_then(|v| v.as_bool()).unwrap_or(false);
             if is_leaf {
                 // Both a concrete event and a parent for prefix matching
-                lines.push(format!("{indent}    data object Self : {class_name}"));
+                lines.push(format!(
+                    "{indent}    data object {EVENT_TREE_SELF_MEMBER} : {class_name}"
+                ));
             }
             // Recurse into children
             let child_indent = format!("{indent}    ");
@@ -200,7 +197,7 @@ pub fn render_event_tree(tree: &serde_json::Value, parent_type: &str, indent: &s
 pub fn to_event_ref(event_name: &str, branch_events: &HashSet<String>) -> String {
     let class_name = crate::filters::to_event_class_name(event_name.to_string());
     if branch_events.contains(event_name) {
-        format!("{class_name}.Self")
+        format!("{class_name}.{EVENT_TREE_SELF_MEMBER}")
     } else {
         class_name
     }

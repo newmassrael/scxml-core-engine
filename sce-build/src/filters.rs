@@ -6,6 +6,7 @@
 
 use minijinja::Value;
 use regex::Regex;
+use std::borrow::Cow;
 use std::sync::{Arc, LazyLock};
 
 use crate::ecmascript::DocumentScope;
@@ -285,21 +286,15 @@ pub fn to_event_variant(name: String) -> String {
 }
 
 /// Convert SCXML state ID to Rust enum variant PascalCase.
-/// State variants only split on _ and -, NOT on . (unlike event variants).
+///
+/// Splits on `.` as well as `_` and `-`, exactly as an event variant does:
+/// all three are legal in an XML Name and none in a Rust, Go or Kotlin
+/// identifier. It used to split on `_` and `-` only, a leftover of byte
+/// parity with an earlier generator, and a state `a.b` became the variant
+/// `A.b` in Rust, Go and Kotlin, none of which compiled (measured
+/// 2026-09-29; `sce-build/tests/generated_names.rs`).
 pub fn to_state_variant(name: String) -> String {
-    if name.is_empty() {
-        return "Empty".to_string();
-    }
-    RE_WORD_DELIMITERS
-        .split(&name)
-        .map(|p| {
-            if p.is_empty() {
-                String::new()
-            } else {
-                capitalize_first(p)
-            }
-        })
-        .collect()
+    to_pascal_case(name)
 }
 
 /// Render a value as a Rust literal expression.
@@ -1428,6 +1423,7 @@ fn register_cpp_filters_inner(env: &mut minijinja::Environment, scope: &Arc<Docu
     register_invoke_filters(env);
     register_event_wire_filters(env);
     env.add_filter("capitalize", capitalize_state);
+    env.add_filter("to_cpp_event_variant", to_cpp_event_variant);
     env.add_filter("escape_cpp", escape_cpp);
     env.add_filter("escape_cpp_format", escape_cpp_format);
     env.add_filter("split", filter_split);
@@ -1437,7 +1433,14 @@ fn register_cpp_filters_inner(env: &mut minijinja::Environment, scope: &Arc<Docu
 }
 
 /// Capitalize state/event names for C++ enums.
-fn capitalize_state(name: String) -> String {
+///
+/// `.` and `-` are written `_` first: both are legal in an XML Name and in
+/// an event name (W3C SCXML 3.12.1), and neither in a C++ identifier. Event
+/// names always had this; state ids did not, and a state `door-open` was
+/// declared `Door-open`, which clang-format then printed as `Door - open`
+/// (measured 2026-09-29; `sce-build/tests/generated_names.rs`).
+pub fn capitalize_state(name: String) -> String {
+    let name = name.replace(['.', '-'], "_");
     if name.is_empty() {
         return "Empty".to_string();
     }
@@ -1446,6 +1449,14 @@ fn capitalize_state(name: String) -> String {
         "fail" => "Fail".to_string(),
         _ => capitalize_first(&name),
     }
+}
+
+/// An SCXML event name as a member of the C++ `Event` enum — spelled as a
+/// state is. A named filter rather than the chain each template used to
+/// spell, because [`crate::member_names`] has to ask exactly this question
+/// of every name before the document is accepted.
+pub fn to_cpp_event_variant(name: Cow<'_, str>) -> String {
+    capitalize_state(name.into_owned())
 }
 
 /// Escape C++ string literals (identical escaping rules to Rust).
@@ -1513,6 +1524,8 @@ pub fn register_c11_filters(env: &mut minijinja::Environment, scope: &Arc<Docume
     env.add_filter("escape_c", escape_c);
     register_ecmascript_filters(env, scope);
     env.add_filter("to_in_predicate_c11", to_in_predicate_c11);
+    env.add_filter("to_c11_upper_ident", to_c11_upper_ident);
+    env.add_filter("to_c11_lower_ident", to_c11_lower_ident);
     env.add_filter("normalize_ws", normalize_ws);
     env.add_filter("read_data_src", read_data_src);
     env.add_filter("split", filter_split);
@@ -1756,10 +1769,30 @@ fn to_in_predicate_c11(
             if history_ids.iter().any(|h| h == state_id) {
                 return "false".to_string();
             }
-            let upper_state = state_id.to_uppercase().replace(['-', '.'], "_");
+            let upper_state = to_c11_upper_ident(Cow::Borrowed(state_id));
             format!("{machine_name}_in_state(sm, {upper_machine}_STATE_{upper_state})")
         })
         .to_string()
+}
+
+/// An SCXML name as the part it contributes to a C11 upper-case symbol:
+/// `<PREFIX><MACHINE>_STATE_<ID>`, `…_EVENT_<NAME>`, `…_HIST_<ID>`.
+///
+/// Upper-cased, with `.` and `-` — legal in an XML Name and an event name,
+/// legal in no C identifier — written `_`. One function for every such
+/// symbol rather than the filter chain the C11 templates used to repeat,
+/// because [`crate::member_names`] has to ask exactly this question of every
+/// name before the document is accepted: two names that spell one symbol
+/// declare one enumerator twice.
+pub fn to_c11_upper_ident(name: Cow<'_, str>) -> String {
+    name.to_uppercase().replace(['-', '.'], "_")
+}
+
+/// The same part of a C11 lower-case symbol (a per-state function name).
+/// Kept beside [`to_c11_upper_ident`] because the two fold names together
+/// the same way only for ASCII: Unicode case mapping is not symmetric.
+pub fn to_c11_lower_ident(name: Cow<'_, str>) -> String {
+    name.to_lowercase().replace(['-', '.'], "_")
 }
 
 // ── Kotlin filters ───────────────────────────────────────────────
@@ -1871,25 +1904,33 @@ pub fn to_event_class_name(name: String) -> String {
         return "Empty".to_string();
     }
     name.split('.')
-        .map(|dot_part| {
-            RE_WORD_DELIMITERS
-                .split(dot_part)
-                .map(|p| {
-                    if p.is_empty() {
-                        String::new()
-                    } else {
-                        capitalize_first(p)
-                    }
-                })
-                .collect::<String>()
-        })
+        .map(to_kotlin_event_segment)
         .collect::<Vec<_>>()
         .join(".")
 }
 
+/// One dot-separated token of an event name (W3C SCXML 3.12.1) as the Kotlin
+/// class it becomes: `door.open` is `Door.Open`, one nested type per token.
+///
+/// The event tree ([`crate::kotlin::render_event_tree`]) declares these
+/// classes and [`to_event_class_name`] refers to them, so both spell a token
+/// here — two spellings would declare one class and name another.
+pub fn to_kotlin_event_segment(segment: &str) -> String {
+    RE_WORD_DELIMITERS
+        .split(segment)
+        .map(|p| {
+            if p.is_empty() {
+                String::new()
+            } else {
+                capitalize_first(p)
+            }
+        })
+        .collect::<String>()
+}
+
 /// Convert SCXML state ID to Kotlin PascalCase class name.
 /// Identical to to_state_variant — both split on underscore/hyphen only.
-fn to_state_class_name(name: String) -> String {
+pub fn to_state_class_name(name: String) -> String {
     to_state_variant(name)
 }
 

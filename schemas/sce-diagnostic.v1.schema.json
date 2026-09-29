@@ -119,6 +119,7 @@
         "scxml/unreachable-state",
         "scxml/dead-transition",
         "scxml/parent-send-without-parent",
+        "scxml/generated-name-collision",
         "scxml/non-exhaustive-event-handling",
         "scxml/contradictory-unhandled-declaration",
         "scxml/stale-unhandled-declaration",

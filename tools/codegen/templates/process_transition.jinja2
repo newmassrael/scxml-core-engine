@@ -47,7 +47,7 @@
 {% macro event_match(trans) -%}
 {%- if not trans.event -%}event == Event::NONE
 {%- elif trans.needs_string_matching -%}event != Event::NONE && ::SCE::Core::EventMatchingHelper::matchesEventDescriptor({{ model.name }}Policy::getEventName(event), "{{ trans.event }}")
-{%- elif trans.matching_enum_values | length > 0 -%}{% for ev in trans.matching_enum_values %}event == Event::{{ ev | replace('.', '_') | replace('-', '_') | capitalize }}{{ ' || ' if not loop.last }}{% endfor %}
+{%- elif trans.matching_enum_values | length > 0 -%}{% for ev in trans.matching_enum_values %}event == Event::{{ ev | to_cpp_event_variant }}{{ ' || ' if not loop.last }}{% endfor %}
 {%- else -%}false
 {%- endif -%}
 {%- endmacro %}

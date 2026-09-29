@@ -229,7 +229,7 @@ engine.raiseExternal({{ event_cpp }}, eventData, "", {{ target_cpp }});
 {% set dyn_event = action.eventexpr and not action.event %}
 {% set is_http = action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' %}
 {% set event_name_cpp = 'eventName' if dyn_event else '"' ~ action.event ~ '"' %}
-{% set event_enum_cpp = '*sendEvent' if dyn_event else 'Event::' ~ (action.event | replace('.', '_') | replace('-', '_') | capitalize) %}
+{% set event_enum_cpp = '*sendEvent' if dyn_event else 'Event::' ~ (action.event | to_cpp_event_variant) %}
 {# Declared for any `<param>`, a literal included: the failure branch names the
    flag. #}
 {% set param_ns = namespace(can_fail=(action.params | default([]) | length > 0) or (action.contentexpr and not action.content)) %}
@@ -334,7 +334,7 @@ if (eventName.empty()) {
 std::optional<Event> sendEvent;
 {% for event_name in model.events | sort %}
 {{ 'if' if loop.first else '} else if' }} (eventName == "{{ event_name }}") {
-    sendEvent = Event::{{ event_name | replace('.', '_') | replace('-', '_') | capitalize }};
+    sendEvent = Event::{{ event_name | to_cpp_event_variant }};
 {% if loop.last %}
 }
 {% endif %}

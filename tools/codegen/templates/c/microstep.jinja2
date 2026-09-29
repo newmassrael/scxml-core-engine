@@ -38,7 +38,7 @@
    children, as a bitmap. Zero for an atomic state. */
 static const uint32_t k_child_states[{{ _u }}_STATE_COUNT] = {
 {% for state_id, state in model.states | dictsort %}
-    [{{ _u }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}] = (uint32_t)0u{% for child in state.children %} | ((uint32_t)1u << (uint32_t){{ _u }}_STATE_{{ child | upper | replace('-', '_') | replace('.', '_') }}){% endfor %},
+    [{{ _u }}_STATE_{{ state_id | to_c11_upper_ident }}] = (uint32_t)0u{% for child in state.children %} | ((uint32_t)1u << (uint32_t){{ _u }}_STATE_{{ child | to_c11_upper_ident }}){% endfor %},
 {% endfor %}
 };
 
@@ -46,7 +46,7 @@ static const uint32_t k_child_states[{{ _u }}_STATE_COUNT] = {
    isDescendant asked of a whole set at once. */
 static const uint32_t k_descendant_states[{{ _u }}_STATE_COUNT] = {
 {% for state_id, state in model.states | dictsort %}
-    [{{ _u }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}] = (uint32_t)0u
+    [{{ _u }}_STATE_{{ state_id | to_c11_upper_ident }}] = (uint32_t)0u
 {%- for other_id, other in model.states | dictsort %}
 {%- set walk = namespace(cur=other.parent, hit=false) %}
 {%- for _ in range(model.states | length) %}
@@ -54,7 +54,7 @@ static const uint32_t k_descendant_states[{{ _u }}_STATE_COUNT] = {
 {%- if walk.cur == state_id %}{% set walk.hit = true %}{% else %}{% set walk.cur = model.states[walk.cur].parent %}{% endif %}
 {%- endif %}
 {%- endfor %}
-{%- if walk.hit %} | ((uint32_t)1u << (uint32_t){{ _u }}_STATE_{{ other_id | upper | replace('-', '_') | replace('.', '_') }}){% endif %}
+{%- if walk.hit %} | ((uint32_t)1u << (uint32_t){{ _u }}_STATE_{{ other_id | to_c11_upper_ident }}){% endif %}
 {%- endfor %},
 {% endfor %}
 };
@@ -67,14 +67,14 @@ static const uint32_t k_descendant_states[{{ _u }}_STATE_COUNT] = {
    parser's own ranks, so nothing assumes they are contiguous. */
 static const {{ _t }}_state_t k_document_order[{{ _u }}_STATE_COUNT] = {
 {% for state in model.states.values() | sort(attribute='document_order') %}
-    {{ _u }}_STATE_{{ state.id | upper | replace('-', '_') | replace('.', '_') }},
+    {{ _u }}_STATE_{{ state.id | to_c11_upper_ident }},
 {% endfor %}
 };
 
 /* Every <final> element, and every atomic state — a state with no child
    states, which a <final> always is. */
-#define {{ _u }}_FINAL_STATES ((uint32_t)0u{% for state_id, state in model.states | dictsort %}{% if state.is_final %} | ((uint32_t)1u << (uint32_t){{ _u }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}){% endif %}{% endfor %})
-#define {{ _u }}_ATOMIC_STATES ((uint32_t)0u{% for state_id, state in model.states | dictsort %}{% if not state.children %} | ((uint32_t)1u << (uint32_t){{ _u }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}){% endif %}{% endfor %})
+#define {{ _u }}_FINAL_STATES ((uint32_t)0u{% for state_id, state in model.states | dictsort %}{% if state.is_final %} | ((uint32_t)1u << (uint32_t){{ _u }}_STATE_{{ state_id | to_c11_upper_ident }}){% endif %}{% endfor %})
+#define {{ _u }}_ATOMIC_STATES ((uint32_t)0u{% for state_id, state in model.states | dictsort %}{% if not state.children %} | ((uint32_t)1u << (uint32_t){{ _u }}_STATE_{{ state_id | to_c11_upper_ident }}){% endif %}{% endfor %})
 
 /* The most transitions one microstep can take: selection contributes at most
    one per active atomic state, so the document's atomic state count bounds
@@ -131,7 +131,7 @@ SCE_SM_FN static SCE_C_UNUSED uint8_t transition_targets({{ _t }}_state_t source
 {% for state_id, state in model.states | dictsort %}
 {% set state_index = loop.index0 %}
 {% if state.transitions | selectattr('targets') | list %}
-    case {{ _u }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+    case {{ _u }}_STATE_{{ state_id | to_c11_upper_ident }}:
         switch (index) {
 {% for trans in state.transitions %}
 {% if trans.targets %}
@@ -163,7 +163,7 @@ SCE_SM_FN static SCE_C_UNUSED uint8_t initial_targets({{ _t }}_state_t s, const 
     switch (s) {
 {% for state_id, state in model.states | dictsort %}
 {% if state.initial_targets %}
-    case {{ _u }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+    case {{ _u }}_STATE_{{ state_id | to_c11_upper_ident }}:
         *out = k_initial_targets_{{ loop.index0 }};
         return (uint8_t){{ state.initial_targets | length }}u;
 {% endif %}
@@ -191,8 +191,8 @@ SCE_SM_FN static SCE_C_UNUSED {{ _t }}_history_t target_history(uint8_t token) {
 SCE_SM_FN static SCE_C_UNUSED {{ _t }}_state_t history_parent({{ _t }}_history_t h) {
     switch (h) {
 {% for hid, info in model.history_states | dictsort %}
-    case {{ _u }}_HIST_{{ hid | upper | replace('-', '_') | replace('.', '_') }}:
-        return {{ _u }}_STATE_{{ info.parent | upper | replace('-', '_') | replace('.', '_') }};
+    case {{ _u }}_HIST_{{ hid | to_c11_upper_ident }}:
+        return {{ _u }}_STATE_{{ info.parent | to_c11_upper_ident }};
 {% endfor %}
     default:
         return ({{ _t }}_state_t)0;
@@ -203,7 +203,7 @@ SCE_SM_FN static SCE_C_UNUSED uint8_t history_default_targets({{ _t }}_history_t
     *out = NULL;
     switch (h) {
 {% for hid, info in model.history_states | dictsort %}
-    case {{ _u }}_HIST_{{ hid | upper | replace('-', '_') | replace('.', '_') }}:
+    case {{ _u }}_HIST_{{ hid | to_c11_upper_ident }}:
         *out = k_history_default_targets_{{ loop.index0 }};
         return (uint8_t){{ info.default_targets | length }}u;
 {% endfor %}
@@ -218,7 +218,7 @@ SCE_SM_FN static SCE_C_UNUSED bool history_value(const {{ _t }}_t *sm, {{ _t }}_
     *out = 0u;
     switch (h) {
 {% for hid, info in model.history_states | dictsort %}
-    case {{ _u }}_HIST_{{ hid | upper | replace('-', '_') | replace('.', '_') }}:
+    case {{ _u }}_HIST_{{ hid | to_c11_upper_ident }}:
         *out = sm->policy.history_{{ hid }}_snapshot;
         return sm->policy.history_{{ hid }}_recorded;
 {% endfor %}
@@ -642,7 +642,7 @@ SCE_SM_FN static void exit_states({{ _t }}_t *sm, const {{ _t }}_transition_info
 {% if model.has_history_states %}
     const uint32_t configuration = sm->active;
 {% for hid, info in model.history_states | dictsort %}
-{% set parent_enum = _u ~ '_STATE_' ~ (info.parent | upper | replace('-', '_') | replace('.', '_')) %}
+{% set parent_enum = _u ~ '_STATE_' ~ (info.parent | to_c11_upper_ident) %}
     if ((states_to_exit & state_bit({{ parent_enum }})) != 0u) {
 {% if info.type == 'deep' %}
         /* §scxml-D-exitStates, <history id="{{ hid }}" type="deep">: the

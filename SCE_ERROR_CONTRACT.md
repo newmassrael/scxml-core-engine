@@ -857,6 +857,7 @@ references against a real document and drift silently.
 | `scxml/contradictory-unhandled-declaration` | `validation` | no |  |
 | `scxml/dead-transition` | `validation` | no |  |
 | `scxml/duplicate-session-role-declaration` | `validation` | no |  |
+| `scxml/generated-name-collision` | `validation` | no | SCE Accepted Subset §2.14.1 |
 | `scxml/non-exhaustive-event-handling` | `validation` | no |  |
 | `scxml/null-datamodel-forbids-construct` | `validation` | no | W3C SCXML §B.1 |
 | `scxml/on-sample-event-name-conflict` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |

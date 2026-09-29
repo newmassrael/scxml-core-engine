@@ -18,8 +18,8 @@
    macro does not see it.
 #}
 {% macro entry_target(token, history_states, prefix) -%}
-{%- if token in history_states -%}(uint8_t)((uint32_t){{ prefix }}_STATE_COUNT + (uint32_t){{ prefix }}_HIST_{{ token | upper | replace('-', '_') | replace('.', '_') }})
-{%- else -%}(uint8_t){{ prefix }}_STATE_{{ token | upper | replace('-', '_') | replace('.', '_') }}
+{%- if token in history_states -%}(uint8_t)((uint32_t){{ prefix }}_STATE_COUNT + (uint32_t){{ prefix }}_HIST_{{ token | to_c11_upper_ident }})
+{%- else -%}(uint8_t){{ prefix }}_STATE_{{ token | to_c11_upper_ident }}
 {%- endif -%}
 {%- endmacro %}
 

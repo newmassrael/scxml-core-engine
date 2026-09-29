@@ -228,7 +228,7 @@ static void {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name(void *op
     }
     {% for ev_name in model.events | sort %}
     if (strcmp(name, "{{ ev_name }}") == 0) {
-        evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | upper | replace('.', '_') | replace('-', '_') }};
+        evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | to_c11_upper_ident }};
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
         return;
     }
@@ -272,7 +272,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 
         {% for state_id, state in model.states | dictsort %}
         {% for invoke_info in state.invokes | unsupported %}
-        if (p->state == (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}
+        if (p->state == (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}
             && p->invoke_idx == {{ loop.index0 + (state.invokes | scxml | length) }}) {
 {% if invoke_info.host_served %}
             /* W3C SCXML 6.4.1: the host declared this `type`, so START the
@@ -459,7 +459,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
         }
         {% endfor %}
         {% for invoke_info in state.invokes | scxml %}
-        if (p->state == (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}
+        if (p->state == (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}
             && p->invoke_idx == {{ loop.index0 }}) {
 {{ invoke_namelist_guard(invoke_info, model, csym_prefix) }}
             /* W3C SCXML 6.4: spawn child {{ invoke_info.child_name }}
@@ -540,7 +540,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                    `invoke_methods.jinja2:160` makes the same choice via
                    the `Event::Done_invoke_<id>` vs `Event::Done_invoke`
                    ternary. */
-                _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
+                _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
                 sce_copy_bounded_id(_done_evt.invoke_id, p->invoke_id);
                 {% if invoke_info.child_needs_script_engine %}
                 /* W3C SCXML 5.5 + 6.3.1: lift the child's `<final><donedata>`
@@ -566,7 +566,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
         }
         {% endfor %}
         {% for invoke_info in state.invokes | hybrid %}
-        if (p->state == (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}
+        if (p->state == (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}
             && p->invoke_idx == {{ (state.invokes | scxml | length) + loop.index0 }}) {
             /* W3C SCXML 6.4 (test216/530): hybrid invoke — evaluate
                srcexpr/contentexpr at runtime (validation only) before
@@ -665,7 +665,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 if ({{ csym_prefix }}{{ candidate.stem }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }})) {
                     {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
                     memset(&_done_evt, 0, sizeof(_done_evt));
-                    _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
+                    _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
                     sce_copy_bounded_id(_done_evt.invoke_id, p->invoke_id);
                     {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_done_evt);
                 }
@@ -688,7 +688,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             if ({{ csym_prefix }}{{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
                 memset(&_done_evt, 0, sizeof(_done_evt));
-                _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
+                _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
                 sce_copy_bounded_id(_done_evt.invoke_id, p->invoke_id);
                 {% if invoke_info.child_needs_script_engine %}
                 /* W3C SCXML 5.5 + 6.3.1: hybrid sync-final donedata carry —
@@ -750,7 +750,7 @@ static void {{ csym_prefix }}{{ model.name }}_drive_active_children({{ csym_pref
         if ({{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
             memset(&_done_evt, 0, sizeof(_done_evt));
-            _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
+            _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
             sce_copy_bounded_id(_done_evt.invoke_id, sm->child_{{ invoke_info.field_suffix }}_invoke_id);
             {% if invoke_info.child_needs_script_engine %}
             /* W3C SCXML 5.5 + 6.3.1: hybrid async-final donedata carry. */
@@ -787,7 +787,7 @@ static void {{ csym_prefix }}{{ model.name }}_drive_active_children({{ csym_pref
                drains the verdict event first. */
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
             memset(&_done_evt, 0, sizeof(_done_evt));
-            _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
+            _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
             sce_copy_bounded_id(_done_evt.invoke_id, sm->child_{{ invoke_info.field_suffix }}_invoke_id);
             {% if invoke_info.child_needs_script_engine %}
             /* W3C SCXML 5.5 + 6.3.1: scxml async-final donedata carry —

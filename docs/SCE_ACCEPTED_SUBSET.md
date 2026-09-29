@@ -2565,6 +2565,44 @@ and one whose `<data id>` was `raw-value` passed `check` in all six
 languages and generated the C++ parameter `int32_t raw - value`. Over
 every tracked `.scxml` document the rule refuses none.
 
+#### §2.14.1 Names a statechart's generated code declares
+
+A statechart's state ids, `<history>` ids and event names are not held
+to the code identifier grammar — they stay §1's `xs:ID` and W3C SCXML
+3.12.1's event tokens — but every backend declares a member for each of
+them, in its own convention: C++ capitalises a state's first letter
+(`idle` is `Idle`), Rust, Go and Kotlin write PascalCase, Python writes
+`UPPER_SNAKE`, and C11 upper-cases under a machine prefix and names a
+function after each state's `<onentry>` and `<onexit>` blocks in lower
+case. Two names the document keeps apart can therefore become one
+member. XML Names are case-sensitive, so `idle` and `Idle` are two
+conforming states, and every backend spells both alike; `doorOpen` and
+`door_open` are spelled alike by Rust, Go, Python and Kotlin. A name can
+also become a member the generated code declares for itself: C11's
+`<PREFIX><MACHINE>_STATE_COUNT`, `_HIST_NONE` and `_EVENT_NONE`, C++'s
+`Event::NONE`, the eventless `Null` of Rust and Go, Python's `NULL`, and
+in Kotlin the `Self` object of an event that is also the prefix of
+others (`foo` beside `foo.zoo`).
+
+Such a document is refused before any code is written, for every
+backend at once, as `scxml/generated-name-collision` naming both names
+and each backend that folds them. It is not a W3C violation — §3.14 is
+satisfied — and it is not escaped per backend, for §2.14's reason: each
+name is spelled at many sites per backend, and a rename at some of them
+is a mismatch at the rest. The spelling asked is each template's own
+(`sce-build/src/member_names.rs` calls the filter the template calls),
+so what this rule refuses and what generation would have written cannot
+disagree.
+
+Measured 2026-09-29, before the rule existed: `idle` beside `Idle`
+passed `check --lint` and `generate` with exit status 0 in all six
+backends, and C++ generated `enum class State : uint8_t { Idle, Idle };`.
+The Python generated for `doorOpen` beside `door_open` did not import
+(`TypeError: 'DOOR_OPEN' already defined as 0`). Over every tracked
+`.scxml` document the rule refuses none, and moving the C and C++
+templates' spelling into the filters it calls left every byte those
+documents generate unchanged.
+
 ### §2.15 Static data model — `datamodel="sce-static"`
 
 §3.2 permits "other platform-defined values" of `datamodel`, and
@@ -3777,6 +3815,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/unreachable-state` | Validation |
 | `scxml/dead-transition` | Validation |
 | `scxml/parent-send-without-parent` | Validation |
+| `scxml/generated-name-collision` | Validation |
 | `scxml/non-exhaustive-event-handling` | Validation |
 | `scxml/contradictory-unhandled-declaration` | Validation |
 | `scxml/stale-unhandled-declaration` | Validation |

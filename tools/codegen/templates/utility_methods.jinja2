@@ -70,7 +70,7 @@
         switch (event) {
             case Event::NONE: return "";
 {% for event_name in model.events | sort %}
-            case Event::{{ event_name | replace('.', '_') | replace('-', '_') | capitalize }}: return "{{ event_name }}";
+            case Event::{{ event_name | to_cpp_event_variant }}: return "{{ event_name }}";
 {% endfor %}
             default: return "";
         }
@@ -81,7 +81,7 @@
     [[nodiscard]] static std::optional<Event> getEventFromName(const std::string& eventName) noexcept {
         if (eventName.empty()) return std::nullopt;
 {% for event_name in model.events | sort %}
-        if (eventName == "{{ event_name }}") return Event::{{ event_name | replace('.', '_') | replace('-', '_') | capitalize }};
+        if (eventName == "{{ event_name }}") return Event::{{ event_name | to_cpp_event_variant }};
 {% endfor %}
         return std::nullopt;
     }
@@ -91,7 +91,7 @@
     [[nodiscard]] static std::optional<Event> getEventFromName(const char* eventName) noexcept {
         if (!eventName || eventName[0] == '\0') return std::nullopt;
 {% for event_name in model.events | sort %}
-        if (std::strcmp(eventName, "{{ event_name }}") == 0) return Event::{{ event_name | replace('.', '_') | replace('-', '_') | capitalize }};
+        if (std::strcmp(eventName, "{{ event_name }}") == 0) return Event::{{ event_name | to_cpp_event_variant }};
 {% endfor %}
         return std::nullopt;
     }

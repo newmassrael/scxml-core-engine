@@ -156,6 +156,10 @@ pub mod literal_text;
 /// instance validation live together here; `SCE_ERROR_CONTRACT.md` §10
 /// carries the prose contract.
 pub mod manifest;
+/// The one place a statechart's state, history and event names become
+/// members of its generated code, and the refusal of a document in which two
+/// of them would become the same member.
+pub mod member_names;
 pub mod mesh;
 pub mod model;
 /// How far a misspelling is from what the author meant — the one edit

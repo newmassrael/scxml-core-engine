@@ -785,6 +785,11 @@ fn stamp_wildcard_descriptors(model: &mut SCXMLModel) {
     }
 }
 
+/// The event-set entry that stands for `event="*"` (W3C SCXML 3.12.1). It is
+/// not an event a document raises: each backend's templates either skip it or
+/// give it a member of its own.
+pub const WILDCARD_EVENT: &str = "Wildcard";
+
 /// Add system-level events (wildcards, invoke events).
 fn add_system_events(model: &mut SCXMLModel) {
     let has_wildcard = model
@@ -792,7 +797,7 @@ fn add_system_events(model: &mut SCXMLModel) {
         .values()
         .any(|state| state.transitions.iter().any(|t| t.matches_any_event));
     if has_wildcard {
-        model.events.insert("Wildcard".to_string());
+        model.events.insert(WILDCARD_EVENT.to_string());
     }
 
     // §scxml-6.4: cancelling an invocation raises nothing in the invoking
@@ -1195,6 +1200,12 @@ fn can_generate_static_impl(
     // generate and never enters that chain. See
     // `crate::scxml_references` for the placement argument.
     crate::scxml_references::validate(model, diag_label)?;
+    // Name collisions in the generated code — hosted here for the same
+    // reason: `sce-codegen check` must refuse what `generate` would write
+    // uncompilable, and this is the one gate both reach. After the
+    // references, so a target naming nothing is reported as the typo it is
+    // before any question about how names are spelled.
+    crate::member_names::validate(model, diag_label)?;
     Ok(())
 }
 
