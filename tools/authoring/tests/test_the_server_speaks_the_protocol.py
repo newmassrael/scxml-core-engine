@@ -105,6 +105,11 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         )
         self.assertEqual(mcp.PROTOCOL_VERSION, replies[0]["result"]["protocolVersion"])
         self.assertIn("tools", replies[0]["result"]["capabilities"])
+        self.assertIn("validate_scxml", replies[0]["result"]["instructions"])
+        self.assertIn("render_scxml_pseudocode", replies[0]["result"]["instructions"])
+        self.assertIn("sce:kind", replies[0]["result"]["instructions"])
+        self.assertIn("Forge", replies[0]["result"]["instructions"])
+        self.assertIn("source clauses", replies[0]["result"]["instructions"])
         names = {t["name"] for t in replies[1]["result"]["tools"]}
         self.assertEqual(
             {"brief", "questions", "review", "check", "coverage", "verify",

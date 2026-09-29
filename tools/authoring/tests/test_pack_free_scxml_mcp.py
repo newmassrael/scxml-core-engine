@@ -57,6 +57,34 @@ class PackFreeScxmlMcp(unittest.TestCase):
 
     @unittest.skipUnless(_default_codegen().exists(),
                          "the product's code generator is not built")
+    def test_forge_kind_routes_through_the_same_mcp_tools(self):
+        self.document.write_text(
+            '<scxml xmlns="http://www.w3.org/2005/07/scxml" '
+            'xmlns:sce="http://sce.dev/ext" sce:kind="transform" name="sum">\n'
+            '  <datamodel>\n'
+            '    <data id="a" sce:type="int32" sce:direction="in"/>\n'
+            '    <data id="b" sce:type="int32" sce:direction="in"/>\n'
+            '    <data id="total" sce:type="int32" sce:direction="out" '
+            'expr="a + b"/>\n'
+            '  </datamodel>\n'
+            '</scxml>\n', encoding="utf-8")
+        checked = call("validate_scxml", document=str(self.document))
+        self.assertFalse(checked.get("isError"), checked["content"][0]["text"])
+        self.assertEqual("accepted", json.loads(checked["content"][0]["text"])["verdict"])
+        shown = call("render_scxml_pseudocode", document=str(self.document))
+        self.assertFalse(shown.get("isError"), shown["content"][0]["text"])
+        self.assertIn("transform client", shown["content"][0]["text"])
+        self.assertIn("out total: int32 = a + b", shown["content"][0]["text"])
+
+        self.document.write_text(
+            self.document.read_text().replace(' sce:kind="transform"', ''),
+            encoding="utf-8")
+        implicit = call("validate_scxml", document=str(self.document))
+        self.assertTrue(implicit.get("isError"))
+        self.assertIn("No state nodes found", implicit["content"][0]["text"])
+
+    @unittest.skipUnless(_default_codegen().exists(),
+                         "the product's code generator is not built")
     def test_a_bad_state_reference_returns_the_generator_diagnostic(self):
         self.document.write_text(
             '<scxml xmlns="http://www.w3.org/2005/07/scxml" '

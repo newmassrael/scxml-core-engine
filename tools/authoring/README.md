@@ -41,8 +41,60 @@ for the other case and none of them write it down.
 
 ## What the core does
 
-The MCP server also exposes tools that accept an SCXML file directly, with no
-pack or binding:
+### One-time MCP setup for a specification owner
+
+From the repository root, build the code generator:
+
+```sh
+cargo build -p sce-build --features cli --bin sce-codegen
+```
+
+Register `scripts/sce_author_mcp.sh` as a local stdio MCP server in the AI
+client. Use the absolute path to that script in the client's `command` field;
+the script locates the repository and starts `sce_author.mcp` without a pack or
+binding. The exact registration UI or configuration key depends on the client.
+Once connected, the tool list should include `validate_scxml` and
+`render_scxml_pseudocode`.
+
+The launcher and MCP server run locally, but the AI client may send the prose,
+SCXML, tool results, and pseudocode to its model service. Local MCP does not
+guarantee local-only handling of a specification. Before using restricted
+material, check the AI client's data handling against the applicable agreement
+and use an approved model environment. The launcher contains no subject-matter
+documents or customer-specific configuration.
+
+The specification owner then provides a prose file or accessible link and
+asks the AI to create and check a pseudocode draft. The AI reads the prose,
+writes an SCXML-root document, calls SCE, and shows the diagnostics and
+pseudocode. Before writing, the AI must choose a document kind from the
+behavior. Event-driven behavior is a statechart; Forge kinds such as
+`transform`, `lookup`, `condition`, `procedure`, `timer`, and `codec` describe
+other shapes. A Forge document declares its choice with `sce:kind` in the SCE
+namespace. If that attribute is absent, SCE reads the file as a statechart;
+`check` validates that chosen route but cannot decide from prose whether it was
+the right choice. The AI should explain its choice and ask the owner about
+ambiguous behavior. The evidence is the prose's stated inputs, outputs,
+events, retained state, timing, and data format; the AI should cite the
+relevant clauses, not infer a kind from a filename or the statechart default.
+The MCP server currently offers no prose-to-kind classifier or complete
+selection policy, so the choice remains an AI draft for the owner to review.
+Connecting
+SCE supplies tools and usage instructions; it does not supply the prose or
+decide policies absent from it. A host may choose not to pass MCP server
+instructions to the AI, so confirm the tool calls in the client's transcript.
+
+With SCE MCP connected to an AI assistant, a specification owner can attach a
+prose specification and ask, "Choose the SCE document kind that fits this
+behavior, make a pseudocode draft, check it with SCE, and show anything the
+specification leaves undecided." The
+AI writes the SCXML draft and calls the tools; the owner does not provide an
+SCXML path or a tool name. The server announces this workflow to MCP clients
+in its initialization instructions. A client may choose whether to pass those
+instructions to the AI, so this is guidance, not a substitute for reviewing
+the pseudocode against the source.
+
+The MCP server exposes tools that accept an SCXML file directly, with no pack
+or binding:
 `validate_scxml` runs `sce-codegen check --lint --error-format=json` and returns
 every diagnostic record with the verdict and manifest, as JSON;
 `render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page;

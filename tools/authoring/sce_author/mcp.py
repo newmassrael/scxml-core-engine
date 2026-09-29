@@ -75,6 +75,32 @@ from .scaffold import write as write_scaffold
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "sce-author"
 SERVER_VERSION = "1"
+SERVER_INSTRUCTIONS = (
+    "When a specification owner asks for pseudocode from a prose specification, "
+    "let them use a short natural-language request. Read the source they supplied. "
+    "Before writing XML, choose and explain the document kind from the "
+    "source's stated inputs, outputs, events, retained state, timing, and "
+    "data format. Identify the source clauses supporting that choice. "
+    "an event-driven state machine is a statechart; a pure calculation may be "
+    "a Forge transform, a discrete mapping a lookup, a boolean rule a condition, "
+    "and other Forge kinds cover procedures, timers, codecs, and more. "
+    "Inspect SCE's available kinds when needed. Write a non-statechart kind as "
+    "an SCXML-root document with an explicit sce:kind in the SCE namespace "
+    "http://sce.dev/ext. "
+    "Do not silently omit sce:kind: SCE otherwise reads the document as a "
+    "statechart. Never treat that default as evidence from the source. "
+    "If the source does not determine the kind, explain the "
+    "alternatives and ask the owner about the behavior. Draft the document "
+    "yourself, and do not "
+    "invent missing policy values. "
+    "Call validate_scxml on the draft, fix reported issues, then call "
+    "render_scxml_pseudocode. Return the pseudocode and a short list of "
+    "decisions the source leaves open. Explain that these tools inspect SCXML; "
+    "they do not choose a kind from prose, convert prose, or prove agreement "
+    "with it. The owner reviews "
+    "the pseudocode against the source. Never call scxml_accept without the "
+    "owner's explicit acceptance. No pack or binding is needed for this flow."
+)
 
 _PACK_ARG = {
     "type": "string",
@@ -227,12 +253,13 @@ TOOLS = [
     {
         "name": "validate_scxml",
         "description": (
-            "Run sce-codegen check --lint on an existing SCXML document. "
+            "Run sce-codegen check --lint on an existing SCXML-root document, "
+            "including an explicit sce:kind Forge document. "
             "Needs only the document path, not a pack or binding. Returns "
             "JSON: verdict (accepted/refused), the manifest, and EVERY "
             "diagnostic record -- all lint findings in one run, not the "
-            "first. Checks the model's structure and design (unreachable "
-            "states, unhandled sibling events, dead guards); a pass does not "
+            "first. Applies the declared kind's checks (including statechart "
+            "design lints when appropriate); a pass does not "
             "say it matches the prose specification."
         ),
         "inputSchema": {
@@ -246,7 +273,8 @@ TOOLS = [
     {
         "name": "render_scxml_pseudocode",
         "description": (
-            "Render an existing SCXML document as complete pseudocode for "
+            "Render an existing statechart or sce:kind Forge document as "
+            "complete pseudocode for "
             "the specification owner to review. Needs only the document "
             "path, not a pack or binding. The owner must compare the page "
             "with the prose specification."
@@ -1041,6 +1069,7 @@ def handle(message) -> dict | None:
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {"tools": {}},
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+            "instructions": SERVER_INSTRUCTIONS,
         }
     elif method == "tools/list":
         result = {"tools": TOOLS}
