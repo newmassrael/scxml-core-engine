@@ -2326,8 +2326,8 @@ impl<P: StatePolicy> Engine<P> {
     /// same value written in `target` is —
     /// [`classify_target`](crate::helpers::send::classify_target) reads it,
     /// the table `SendHelper::classifyTarget` holds for C++ — sent at once or,
-    /// with a delay, from the scheduler through [`deliver_routed`](Self::deliver_routed)
-    /// when it comes due. An invocation or a session the value names that is
+    /// with a delay, from the scheduler through the engine's one routed
+    /// delivery (`deliver_routed`) when it comes due. An invocation or a session the value names that is
     /// not running now is reported now; one that ends while a delayed send
     /// waits is reported when it comes due.
     ///
