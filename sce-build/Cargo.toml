@@ -286,6 +286,13 @@ name = "the_manifest_names_the_kind_it_read"
 path = "tests/the_manifest_names_the_kind_it_read.rs"
 required-features = ["cli"]
 
+# Every example `sce-codegen kinds` embeds is accepted by `check --lint` as
+# its own kind and rendered by `pseudo`, on the real binary.
+[[test]]
+name = "every_kind_example_is_accepted"
+path = "tests/every_kind_example_is_accepted.rs"
+required-features = ["cli"]
+
 # `sce-codegen diagram` on the binary: files named by state, a refusal
 # that writes nothing, and the written set checkable for drift.
 [[test]]

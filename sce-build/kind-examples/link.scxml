@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- link: a byte-stream endpoint of the platform. A UDP endpoint whose
+     messages are framed by the codec document it names, dropping input it
+     cannot stage, in the buffer pool it names. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="udp_endpoint" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+  <sce:stage-pool ref="rx_pool"/>
+</scxml>

@@ -1,0 +1,131 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-kind-catalog.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE kind catalog (wire schema v1)",
+  "description": "What each sce:kind is for, as `sce-codegen kinds` writes it: one JSON line holding every kind (or the one `--kind` names), for an author choosing a document kind from a prose specification. The catalog carries the evidence a specification offers for each kind and the behaviour that separates it from its neighbours; it does not choose, and a specification that states neither side of that behaviour has not determined the kind. Authoritative producer is sce-build/src/forge/kind_catalog.rs. Consumers MUST ignore unknown fields. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
+  "type": "object",
+  "required": ["v", "generator", "declaration", "kinds"],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "description": "Schema version. Bumped only on a breaking shape change.",
+      "const": 1
+    },
+    "generator": {
+      "description": "Commit of the sce-codegen build that produced this record, or \"unknown\" when the build had no git checkout to read. The catalog is compiled into the binary, so this names which catalog was read (SCE_WIRE_CONTRACTS.md policy 2).",
+      "type": "string",
+      "pattern": "^([0-9a-f]{7,40}|unknown)$"
+    },
+    "declaration": {
+      "description": "How a document declares its kind: the `attribute` in `namespace` on the root `element`. A root with no such attribute is read as `default`; an attribute of the same local name in another namespace is not a declaration.",
+      "type": "object",
+      "required": ["attribute", "namespace", "element", "default"],
+      "additionalProperties": false,
+      "properties": {
+        "attribute": { "const": "kind" },
+        "namespace": { "const": "http://sce.dev/ext" },
+        "element": { "const": "scxml" },
+        "default": { "$ref": "#/definitions/kindName" }
+      }
+    },
+    "kinds": {
+      "description": "Every kind in the parser's declaration order, or only the one `--kind` named.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/kind" }
+    }
+  },
+  "definitions": {
+    "kindName": {
+      "description": "An sce:kind value the parser accepts. The enumeration is ForgeKind::ALL_ATTR_NAMES, in its order, which a test holds this list to.",
+      "type": "string",
+      "enum": ["statechart", "transform", "lookup", "condition", "codec", "procedure", "validator", "filter", "interpolation", "timer", "observer", "algorithm", "link", "buffer-pool", "worker", "bounded-collection", "enum", "event-schema"]
+    },
+    "kind": {
+      "type": "object",
+      "required": ["name", "role", "summary", "choose_when", "distinct_from", "notes", "inline_eligible", "backends", "example"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/definitions/kindName" },
+        "role": {
+          "description": "What a document of the kind describes: behavior (reacts over time), computation (answers from its inputs when called), data-format (the shape of bytes, a value set, or a payload), or platform-resource (the platform the behaviour runs on).",
+          "enum": ["behavior", "computation", "data-format", "platform-resource"]
+        },
+        "summary": { "type": "string", "minLength": 1 },
+        "choose_when": {
+          "description": "Evidence a specification offers for this kind.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "distinct_from": {
+          "description": "The kinds this one is confused with, each with the behaviour that separates them.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["kind", "because"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "$ref": "#/definitions/kindName" },
+              "because": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "notes": {
+          "description": "Constraints an author needs before writing the document: defaults the source has to decide, documents it refers to, what the kind cannot express.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "inline_eligible": {
+          "description": "Whether the kind may be declared on a <data> element inside a statechart (SCE_FORGE.md 3.2).",
+          "type": "boolean"
+        },
+        "backends": {
+          "description": "The backends that emit the kind, by the wire spelling the manifest's languages use.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["rust", "cpp", "kotlin", "go", "python", "c11"] }
+        },
+        "example": {
+          "description": "A checked-in document of the kind that `check --lint` accepts and `pseudo` renders, with its path in the SCE tree and its full text; or, when no single document of the kind passes check, why.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["document"],
+              "additionalProperties": false,
+              "properties": {
+                "document": {
+                  "type": "object",
+                  "required": ["path", "text"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": { "type": "string", "minLength": 1 },
+                    "text": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["absent"],
+              "additionalProperties": false,
+              "properties": {
+                "absent": {
+                  "type": "object",
+                  "required": ["because"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "because": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -46,6 +46,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-manifest.v1.schema.json",
     "schemas/sce-symbol-lookup.v1.schema.json",
     "schemas/sce-saved-state.v1.schema.json",
+    "schemas/sce-kind-catalog.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -207,6 +208,11 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "every_shared_saved_state_fixture_is_a_saved_state",
         "sce-build/tests/saved_state_schema.rs",
     ),
+    (
+        "schemas/sce-kind-catalog.v1.schema.json",
+        "the_catalog_validates_against_the_wire_schema",
+        "sce-build/src/forge/kind_catalog.rs",
+    ),
 ];
 
 /// Negative-case coverage: `(surface, test fn, file declaring it)`.
@@ -261,6 +267,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "schemas/sce-saved-state.v1.schema.json",
         "the_schema_refuses_what_no_backend_writes",
         "sce-build/tests/saved_state_schema.rs",
+    ),
+    (
+        "schemas/sce-kind-catalog.v1.schema.json",
+        "the_catalog_schema_rejects_a_kind_the_product_does_not_have",
+        "sce-build/src/forge/kind_catalog.rs",
     ),
 ];
 

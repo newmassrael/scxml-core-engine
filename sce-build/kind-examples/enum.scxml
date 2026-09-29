@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- enum: a closed set of named values, each with its own wire number. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="enum" name="result" sce:underlying-type="uint8" version="1.0">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="ok" value="0"/>
+      <sce:variant name="error" value="1"/>
+      <sce:variant name="timeout" value="2"/>
+    </data>
+  </datamodel>
+</scxml>

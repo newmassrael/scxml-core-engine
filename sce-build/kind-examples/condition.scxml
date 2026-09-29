@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- condition: a named true-or-false rule over the inputs. Starting is
+     allowed only with the door closed and the temperature in range. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="condition" name="may_start">
+  <datamodel>
+    <data id="doorClosed" sce:type="bool" sce:direction="in"/>
+    <data id="temperatureOk" sce:type="bool" sce:direction="in"/>
+    <data id="allowed" sce:type="bool" sce:direction="out"
+          expr="doorClosed === true &amp;&amp; temperatureOk === true"/>
+  </datamodel>
+</scxml>

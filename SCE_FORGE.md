@@ -2111,6 +2111,15 @@ Integration with SCE Mesh distributed runtime and tooling.
 
 ## 8. Kind Summary
 
+For an author choosing a kind, the table below is not the place to look:
+it covers the first eleven kinds and describes their implementation. The
+author-facing catalog of every kind — what each is for, the evidence a
+specification offers for it, what separates it from its neighbours, and an
+example document the product accepts — is `sce-codegen kinds`
+(`schemas/sce-kind-catalog.v1.schema.json`), produced from one exhaustive
+table in `sce-build/src/forge/kind_catalog.rs` and read by the authoring
+MCP's `scxml_kinds`.
+
 | Kind | State | Runtime Dep | Scope | Cross-lang conformance | Status |
 |------|-------|-------------|-------|------------------------|--------|
 | statechart | Persistent (N states) | `sce_runtime` (W3C engine) | Document | — (existing engine) | Existing |

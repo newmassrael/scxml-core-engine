@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- transform: each output is one expression over the inputs. A raw sensor
+     reading converted to degrees Celsius. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="temperature_from_raw">
+  <datamodel>
+    <data id="raw" sce:type="uint16" sce:direction="in"/>
+    <data id="celsius" sce:type="float64" sce:direction="out"
+          expr="raw * 0.1 - 40.0" sce:unit="celsius"/>
+  </datamodel>
+</scxml>

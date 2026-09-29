@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- observer: thresholds with a separate clearing level. A warning is raised
+     above 110 and cleared below 100; a shutdown is requested above 120. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="observer" name="temperature_watch" version="1.0">
+  <datamodel>
+    <data id="temperature" sce:type="float64" sce:direction="in"/>
+    <data id="warning" sce:monitor="threshold"
+          sce:enter="temperature &gt; 110.0"
+          sce:leave="temperature &lt; 100.0"
+          sce:on-enter="warningRaised" sce:on-leave="warningCleared"/>
+    <data id="critical" sce:monitor="threshold"
+          sce:enter="temperature &gt; 120.0"
+          sce:leave="temperature &lt; 105.0"
+          sce:on-enter="shutdownRequested"/>
+  </datamodel>
+</scxml>

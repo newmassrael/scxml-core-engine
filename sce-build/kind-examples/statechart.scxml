@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- statechart: a long-lived machine that waits in states and reacts to
+     events. A door that closes itself 30 seconds after it was opened, unless
+     it was closed first. The delayed <send> is the timeout; <cancel> takes it
+     back. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="statechart" version="1.0" name="door" initial="closed">
+  <state id="closed">
+    <transition event="door.open" target="opened"/>
+  </state>
+  <state id="opened">
+    <onentry>
+      <send id="autoClose" event="door.autoclose" delay="30s"/>
+    </onentry>
+    <transition event="door.close" target="closed">
+      <cancel sendid="autoClose"/>
+    </transition>
+    <transition event="door.autoclose" target="closed"/>
+  </state>
+</scxml>

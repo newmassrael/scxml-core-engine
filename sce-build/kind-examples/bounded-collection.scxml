@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bounded-collection: at most N entries, added and removed at run time,
+     with no allocation. Up to eight pending requests, each of the record type
+     the element-type names. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="bounded-collection" name="pending_requests" version="1.0">
+  <sce:element-type>pending_request</sce:element-type>
+  <sce:capacity const="8"/>
+</scxml>

@@ -2421,6 +2421,20 @@ enum Commands {
     /// yet thread, which is owed work. Collapsing either into `never`
     /// publishes the stronger sentence on evidence nobody has.
     ProvenanceRoster,
+    /// Print the kind catalog — what each `sce:kind` is for — as one JSON
+    /// line (`schemas/sce-kind-catalog.v1.schema.json`).
+    ///
+    /// For an author choosing a document's kind from a prose
+    /// specification, wherever that author is: each kind's evidence, the
+    /// behaviour that separates it from its neighbours, what the author
+    /// must decide before writing it, and a checked-in document of it
+    /// that `check` accepts. The catalog is compiled into this binary, so
+    /// it answers for the product that will judge the document.
+    Kinds {
+        /// Only this kind.
+        #[arg(long, value_name = "KIND", value_parser = registered_kinds())]
+        kind: Option<String>,
+    },
     /// Print the conformance fixture name list from a manifest. Build
     /// systems consume this so they don't need a native JSON parser
     /// (CMake, Gradle, plain Bash) to enumerate fixtures.
@@ -2906,6 +2920,7 @@ fn main() {
             header_dir,
         } => cmd_check_aot_briefs(&manifest, &header_dir),
         Commands::ProvenanceRoster => cmd_provenance_roster(),
+        Commands::Kinds { kind } => cmd_kinds(kind.as_deref()),
         Commands::Expand { scxml, include_dir } => cmd_expand(&scxml, &include_dir),
         Commands::Verify {
             out_dir,
@@ -2995,6 +3010,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::ListFixtures(_)
         | Commands::CheckAotBriefs { .. }
         | Commands::ProvenanceRoster
+        | Commands::Kinds { .. }
         | Commands::Expand { .. }
         | Commands::Verify { .. }
         | Commands::VerifyGenerator { .. }
@@ -8090,6 +8106,12 @@ fn registered_shapes() -> clap::builder::PossibleValuesParser {
     clap::builder::PossibleValuesParser::new(sce_build::forge::page::shape_names())
 }
 
+/// The kind names `kinds --kind` accepts: the parser's own list, for the
+/// same reason.
+fn registered_kinds() -> clap::builder::PossibleValuesParser {
+    clap::builder::PossibleValuesParser::new(sce_build::forge::model::ForgeKind::ALL_ATTR_NAMES)
+}
+
 /// The lexicon names `--lexicon` accepts, for the same reason.
 fn registered_lexicons() -> clap::builder::PossibleValuesParser {
     clap::builder::PossibleValuesParser::new(sce_build::forge::page::lexicon_names())
@@ -8883,6 +8905,15 @@ fn cmd_generate_conformance(
 /// holds no anchors, so every code's empty field there is already the
 /// true answer rather than a pending one — asking per code would
 /// publish 360 identical rows that decided nothing.
+fn cmd_kinds(kind: Option<&str>) {
+    use sce_build::forge::kind_catalog::KindCatalog;
+    use sce_build::forge::model::ForgeKind;
+    // clap has already refused a name outside `ALL_ATTR_NAMES`, which is
+    // the set `from_attr` accepts.
+    let only = kind.map(|name| ForgeKind::from_attr(name).expect("clap admits only kind names"));
+    outln!("{}", KindCatalog::new(only).to_line());
+}
+
 fn cmd_provenance_roster() {
     use sce_build::forge::diagnostic::{
         anchor_carriage, AnchorCarriage, NoAnchor, Pipeline, ALL_DIAGNOSTIC_CODES,

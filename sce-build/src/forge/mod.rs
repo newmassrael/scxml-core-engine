@@ -33,6 +33,7 @@ pub mod import_source;
 pub mod import_use;
 pub mod int_ranges;
 pub mod intrinsic_registry;
+pub mod kind_catalog;
 pub mod limits;
 pub mod manifest;
 pub mod model;

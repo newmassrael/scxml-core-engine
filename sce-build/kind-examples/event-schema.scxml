@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- event-schema: the fields a named event carries. Every machine that sends
+     or receives job.completed agrees that its data holds the elapsed time. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="event-schema" name="job_completed" sce:event-name="job.completed">
+  <datamodel>
+    <data id="elapsed_ms" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

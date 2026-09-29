@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- interpolation: values given at breakpoints and interpolated between them.
+     A torque limit per engine speed; outside the table the value is clamped,
+     which the document states rather than leaves to the default. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="interpolation" name="torque_limit" version="1.0">
+  <datamodel>
+    <data id="rpm" sce:type="uint16" sce:direction="in"/>
+    <data id="torqueLimit" sce:type="float64" sce:direction="out"
+          sce:interpolation="linear" sce:out-of-bounds="clamp"
+          sce:axis-rpm="800 1200 2000 3000 4000 6000">
+      120.0 145.0 200.0 230.0 210.0 180.0
+    </data>
+  </datamodel>
+</scxml>

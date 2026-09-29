@@ -40,6 +40,7 @@ governance doc (linked below).
 | Authoring grammar (Extended SCXML) | SCE | `schemas/sce-forge.xsd`, `schemas/sce-forge-ext.xsd` | `<xs:documentation>x-sce-schema-status: …</xs:documentation>` (first child of `<xs:schema>`) | `pre-release` | `docs/SCE_ACCEPTED_SUBSET.md` |
 | Stdout manifest (`generate`, `check`, `orchestrate`) | SCE | `schemas/sce-manifest.v1.schema.json` | `MANIFEST_SCHEMA_STATUS` (`sce-build/src/manifest.rs`) ↔ `x-sce-schema-status` | `pre-release` | `SCE_ERROR_CONTRACT.md` §10 |
 | Symbol lookup (`addr2sce`, `sce2sym`) | SCE | `schemas/sce-symbol-lookup.v1.schema.json` | `SYMBOL_LOOKUP_SCHEMA_STATUS` (`sce-build/src/forge/sourcemap.rs`) ↔ `x-sce-schema-status` | `pre-release` | This doc + `sce-build/src/forge/sourcemap.rs` (producer) |
+| Kind catalog (`sce-codegen kinds`) — what each `sce:kind` is for, the evidence a specification offers for it, what separates it from its neighbours, and an embedded example `check` accepts, for an author choosing a kind outside this tree | SCE | `schemas/sce-kind-catalog.v1.schema.json` | `KIND_CATALOG_SCHEMA_STATUS` (`sce-build/src/forge/kind_catalog.rs`) ↔ `x-sce-schema-status` | `pre-release` | This doc + `sce-build/src/forge/kind_catalog.rs` (producer, one exhaustive table over `ForgeKind`); read by the authoring MCP's `scxml_kinds` |
 | Saved state (a `sce-static` machine's `save()` / `restore()`) | SCE | `schemas/sce-saved-state.v1.schema.json` | `SCHEMA_STATUS` (`backends/rust/runtime/src/saved_state.rs`) and `SavedState.SCHEMA_STATUS` (`backends/kotlin/runtime/.../SavedState.kt`) ↔ `x-sce-schema-status`; each producer's own test reads the header | `pre-release` | `docs/SCE_ACCEPTED_SUBSET.md` §2.15 "Saving and restoring"; both backends are held to the shared instances in `sce-build/tests/fixtures/static_datamodel/saved/`, which `sce-build/tests/saved_state_schema.rs` validates against the schema |
 | Provenance roster (`sce-codegen provenance-roster`) — per `DiagnosticCode`, whether a diagnostic of that code carries a spec anchor, and the reason when it does not | SCE | none — a TSV stream, `<code>\t<verdict>\t<reason>`, with no checked-in schema file | `PROVENANCE_ROSTER_STATUS` (`sce-build/src/forge/diagnostic.rs`) ↔ this row, guarded by `the_registry_declares_the_rosters_status`; ⚠ it has no schema file, so the reverse walk over `schemas/` + `apis/` cannot reach it and the anchor is per-surface | `pre-release` | `SCE_ERROR_CONTRACT.md` §2.1.2, which directs a consumer to this command as the lookup that settles what an absent `spec_provenance` means; wire held to the producer by `sce-build/tests/cli_provenance_roster_wire.rs` (spawns the binary) |
 | W3C SCXML section mirror — the section set SCE's `§scxml-<id>` citations are checked against, each section carrying its normative excerpt, `coverage_expectation`, `decision_status` and its `implements` / `verifies` bindings | mnemosyne | `docs/spec/scxml/.atomic/workspace.atomic.json` | none — the store carries mnemosyne's own `schema_version`; declared to SCE by `[atomic].sidecar_path` in `docs/spec/scxml/mnemosyne.toml` | `registered` | mnemosyne (upstream tool); regenerated from the vendored snapshot by `tools/mnemosyne-adoption/scxml_toc_to_manifest.py`, read by `mnemosyne-cli` through `docs/spec/scxml/mnemosyne.toml` |
@@ -233,6 +234,10 @@ promises it does not make and enforcement that does not exist.
    - Saved state — `every_shared_saved_state_fixture_is_a_saved_state`
      (the shared fixtures, which the Rust and Kotlin static suites each
      save byte for byte and restore from)
+   - Kind catalog — `the_catalog_validates_against_the_wire_schema`
+     (the whole catalog as the producer builds it; every embedded
+     example is separately put through `check --lint` and `pseudo` by
+     `sce-build/tests/every_kind_example_is_accepted.rs`)
 
    The negative half is enforced separately, by
    `wire_surface_stability.rs::NEGATIVE_VALIDATION` and
@@ -251,6 +256,7 @@ promises it does not make and enforcement that does not exist.
    - Stdout manifest — `schema_rejects_a_missing_required_field`
    - Symbol lookup — `lookup_schema_rejects_a_record_without_the_generator_stamp`
    - Saved state — `the_schema_refuses_what_no_backend_writes`
+   - Kind catalog — `the_catalog_schema_rejects_a_kind_the_product_does_not_have`
 
    The authoring grammar is in neither table because it is not validated
    by a test: `forge::xsd_validator` validates input documents against

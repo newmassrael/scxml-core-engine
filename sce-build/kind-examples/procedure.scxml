@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- procedure: a sequence that always finishes with a result. Ping a device,
+     ask it for a challenge, answer it, and retry the challenge up to three
+     times before reporting failure. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" name="authenticate" initial="ping" version="1.0">
+  <datamodel>
+    <data id="deviceAddr" sce:type="uint32" sce:direction="in"/>
+    <data id="challenge" sce:type="bytes" sce:direction="internal" sce:max-size="64"/>
+    <data id="maxRetries" expr="3" sce:type="int32" sce:direction="internal"/>
+    <data id="retryCount" expr="0" sce:type="int32" sce:direction="internal"/>
+    <sce:helper name="answerChallenge" args="bytes" returns="bytes"
+                sce:returns-max-size="64"/>
+  </datamodel>
+
+  <state id="ping">
+    <onentry>
+      <send sce:service="Ping" sce:addr="deviceAddr"/>
+    </onentry>
+    <transition event="ok" target="requestChallenge"/>
+    <transition event="fail" target="failed"/>
+  </state>
+
+  <state id="requestChallenge">
+    <onentry>
+      <send sce:service="Challenge" sce:subfunc="0x01" sce:response-max-size="64"/>
+    </onentry>
+    <transition event="ok" target="answer">
+      <assign location="challenge" expr="_event.data"/>
+    </transition>
+    <transition event="fail" target="retry"/>
+  </state>
+
+  <state id="answer">
+    <onentry>
+      <send sce:service="Challenge" sce:subfunc="0x02"
+            sce:payload="answerChallenge(challenge)"/>
+    </onentry>
+    <transition event="ok" target="done"/>
+    <transition event="fail" target="retry"/>
+  </state>
+
+  <state id="retry">
+    <transition cond="retryCount &lt; maxRetries" target="requestChallenge">
+      <assign location="retryCount" expr="retryCount + 1"/>
+    </transition>
+    <transition cond="retryCount &gt;= maxRetries" target="failed"/>
+  </state>
+
+  <final id="done">
+    <donedata><param name="result" expr="'success'"/></donedata>
+  </final>
+  <final id="failed">
+    <donedata><param name="result" expr="'failure'"/></donedata>
+  </final>
+</scxml>

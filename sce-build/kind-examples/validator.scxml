@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- validator: checks that say which rule failed. A speed reading must lie
+     in its range, may change by at most 500 per sample, and must be zero
+     whenever the motor is stopped. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="validator" name="speed_reading" version="1.0">
+  <datamodel>
+    <data id="speed" sce:type="uint16" sce:direction="in"
+          sce:range-min="0" sce:range-max="8000"
+          sce:max-delta="500" sce:sample-interval="100ms"/>
+    <data id="motorState" sce:type="string" sce:direction="in"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="speed === 0 || motorState !== 'STOPPED'"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- codec: the byte layout of one frame. A message id, a length byte, and a
+     payload whose size the length byte gives. The byte order is stated on the
+     root rather than left to the default. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="length_prefixed_frame">
+  <datamodel>
+    <data id="msgId" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="len" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <data id="payload" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+          sce:length-field="len" sce:max-size="32"/>
+  </datamodel>
+</scxml>

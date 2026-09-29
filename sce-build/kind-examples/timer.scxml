@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- timer: one periodic event. A heartbeat is due every two seconds, the
+     count restarts whenever one is sent, and it stops when the connected
+     state is left. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="timer" name="heartbeat" version="1.0">
+  <sce:period>2s</sce:period>
+  <sce:fire-event>heartbeat.due</sce:fire-event>
+  <sce:reset-on event="heartbeat.sent"/>
+  <sce:cancel-on state-exit="connected"/>
+</scxml>

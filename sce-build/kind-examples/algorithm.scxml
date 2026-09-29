@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- algorithm: a synchronous function written as steps. The sum of the
+     bytes of a buffer modulo 256, a one-byte checksum, computed by walking
+     the buffer. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="byte_checksum" version="1.0">
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:return type="uint32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="sum" type="uint32" init="0"/>
+    <sce:var name="i" type="uint32" init="0"/>
+    <sce:while cond="i &lt; len(data)">
+      <sce:assign target="sum" expr="(sum + data[i]) % 256"/>
+      <sce:assign target="i" expr="i + 1"/>
+    </sce:while>
+    <sce:return expr="sum"/>
+  </sce:body>
+</scxml>
