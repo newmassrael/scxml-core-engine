@@ -128,6 +128,8 @@ fn named(lapses: &[Lapse]) -> Vec<String> {
             Lapse::Moved { path, .. } => format!("moved {path}"),
             Lapse::Added { path } => format!("added {path}"),
             Lapse::Unparseable { path, .. } => format!("unparseable {path}"),
+            Lapse::Source { role, path, .. } => format!("source {role} {path}"),
+            Lapse::NotAuthoredFrom { role, .. } => format!("not authored from {role}"),
         })
         .collect();
     names.sort();
