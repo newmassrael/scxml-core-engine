@@ -64,14 +64,14 @@ fn a_delayed_http_send_is_posted_when_due() {
         "it is POSTed when the delay has elapsed, and the cancelled one never is"
     );
     let later = posted.lock().unwrap()[1].clone();
-    assert_eq!(later.target, "http://sce.invalid/later");
+    assert_eq!(later.target, "http://127.0.0.1:18081/later");
     assert_eq!(later.send_id, "later");
 
     e.advance_time_ms(100);
     assert_eq!(events(&posted), ["now", "later", "dynamic"]);
     let dynamic = posted.lock().unwrap()[2].clone();
     assert_eq!(
-        dynamic.target, "http://sce.invalid/dynamic",
+        dynamic.target, "http://127.0.0.1:18081/dynamic",
         "a targetexpr is read when the send is made"
     );
     assert_eq!(dynamic.params.get("k"), Some(&vec!["v".to_string()]));

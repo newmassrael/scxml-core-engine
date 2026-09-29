@@ -15,37 +15,38 @@
               at 200ms with the target the expression yielded and the
               parameter the send carried.
 
-  The host stands in for the HTTP transport with a recording callback and
+  The host stands in for the HTTP transport — a recording callback on five
+  channels, a listener on the loopback address (port 18081, the one the
+  targets name) on the C11 channel, whose client makes the POST itself — and
   advances a manual clock, so what the document did is read off the requests
-  the transport was handed and when — the document itself only ends in `done`
+  the transport was handed and when. The document itself only ends in `done`
   once its own 300ms timer fires.
 
-  Measured 2026-09-29: the C++ AOT, Rust, Go and Python channels POSTed a
+  Measured 2026-09-30: the C++ AOT, Rust, Go and Python channels POSTed a
   delayed BasicHTTP send at once, ignoring the delay and reaching `<cancel>`
   never; the Kotlin channel kept it in a list of its own that the
-  asynchronous mode did not drain; the C11 channel raises error.execution for
-  it (its BasicHTTP client is a synchronous test-harness POST) and is not
-  driven here.
+  asynchronous mode did not drain; the C11 channel raised error.execution for
+  it.
 
-  This fixture is the canonical source for the C++ AOT, Rust, Go, Kotlin and
-  Python channels — see docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the
-  per-backend test locations.
+  This fixture is the canonical source for the C++ AOT, C11, Rust, Go,
+  Kotlin and Python channels — see docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for
+  the per-backend test locations.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0" datamodel="ecmascript" initial="run"
        name="a_delayed_http_send_is_posted_when_due">
   <datamodel>
-    <data id="dynamicUrl" expr="'http://sce.invalid/dynamic'"/>
+    <data id="dynamicUrl" expr="'http://127.0.0.1:18081/dynamic'"/>
   </datamodel>
 
   <state id="run">
     <onentry>
       <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
-            target="http://sce.invalid/now" event="now"/>
+            target="http://127.0.0.1:18081/now" event="now"/>
       <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
-            target="http://sce.invalid/later" event="later" delay="100ms" id="later"/>
+            target="http://127.0.0.1:18081/later" event="later" delay="100ms" id="later"/>
       <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
-            target="http://sce.invalid/dropped" event="dropped" delay="100ms" id="dropped"/>
+            target="http://127.0.0.1:18081/dropped" event="dropped" delay="100ms" id="dropped"/>
       <cancel sendid="dropped"/>
       <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
             targetexpr="dynamicUrl" event="dynamic" delay="200ms" id="dynamic">

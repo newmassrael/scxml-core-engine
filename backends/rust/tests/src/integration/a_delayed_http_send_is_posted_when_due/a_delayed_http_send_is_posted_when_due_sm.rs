@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: fb758f86ee45c7e14f6ea6d1f9e864dc56bb460d94a60ae3c1d3d08e801ec193
+// source-hash: be365956e2cd4f10de50194eb64631e18107006a343b77a292ce8dd3ead3eaa1
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:34 :: _machine"]
-// SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:34 :: _machine
+#![doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine"]
+// SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -266,7 +266,7 @@ impl ADelayedHttpSendIsPostedWhenDuePolicy {
             se,
             &sid,
             "dynamicUrl",
-            "\"http://sce.invalid/dynamic\"",
+            "\"http://127.0.0.1:18081/dynamic\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
@@ -305,7 +305,7 @@ impl ADelayedHttpSendIsPostedWhenDuePolicy {
             se,
             &sid,
             "dynamicUrl",
-            "\"http://sce.invalid/dynamic\"",
+            "\"http://127.0.0.1:18081/dynamic\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
@@ -660,8 +660,8 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:34 :: _machine"]
-    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:34 :: _machine
+    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine"]
+    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -670,7 +670,7 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
     ) {
         match state {
             ADelayedHttpSendIsPostedWhenDueState::Run => {
-                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:41 :: run :: _state_body
+                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:42 :: run :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -684,7 +684,7 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                             let http_params =
                                 std::collections::HashMap::<String, Vec<String>>::new();
                             engine.perform_http_send(
-                                "http://sce.invalid/now".to_string(),
+                                "http://127.0.0.1:18081/now".to_string(),
                                 "now".to_string(),
                                 "".to_string(),
                                 http_params,
@@ -710,7 +710,7 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                             // `<cancel>` reaches it) and its deadline dispatches it through
                             // `perform_http_send`.
                             engine.schedule_http_send(
-                                "http://sce.invalid/later".to_string(),
+                                "http://127.0.0.1:18081/later".to_string(),
                                 "later".to_string(),
                                 "".to_string(),
                                 http_params,
@@ -737,7 +737,7 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                             // `<cancel>` reaches it) and its deadline dispatches it through
                             // `perform_http_send`.
                             engine.schedule_http_send(
-                                "http://sce.invalid/dropped".to_string(),
+                                "http://127.0.0.1:18081/dropped".to_string(),
                                 "dropped".to_string(),
                                 "".to_string(),
                                 http_params,
@@ -899,8 +899,8 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:34 :: _machine"]
-    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:34 :: _machine
+    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine"]
+    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -915,8 +915,8 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:34 :: _machine"]
-    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:34 :: _machine
+    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine"]
+    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -960,8 +960,8 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:34 :: _machine"]
-    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:34 :: _machine
+    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine"]
+    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -991,8 +991,8 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:34 :: _machine"]
-    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:34 :: _machine
+    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine"]
+    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,

@@ -54,12 +54,12 @@ TEST(ADelayedHttpSendIsPostedWhenDueAotTest, ADelayedHttpSendIsPostedWhenDue) {
     sm.advanceTimeMs(1);
     ASSERT_EQ(events(posted), (std::vector<std::string>{"now", "later"}))
         << "it is POSTed when the delay has elapsed, and the cancelled one never is";
-    EXPECT_EQ(posted[1].target, "http://sce.invalid/later");
+    EXPECT_EQ(posted[1].target, "http://127.0.0.1:18081/later");
     EXPECT_EQ(posted[1].sendId, "later");
 
     sm.advanceTimeMs(100);
     ASSERT_EQ(events(posted), (std::vector<std::string>{"now", "later", "dynamic"}));
-    EXPECT_EQ(posted[2].target, "http://sce.invalid/dynamic") << "a targetexpr is read when the send is made";
+    EXPECT_EQ(posted[2].target, "http://127.0.0.1:18081/dynamic") << "a targetexpr is read when the send is made";
     ASSERT_EQ(posted[2].params.count("k"), 1u);
     EXPECT_EQ(posted[2].params.at("k"), (std::vector<std::string>{"v"}));
 

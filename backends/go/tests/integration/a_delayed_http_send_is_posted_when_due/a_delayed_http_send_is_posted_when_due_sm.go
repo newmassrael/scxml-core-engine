@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: fb758f86ee45c7e14f6ea6d1f9e864dc56bb460d94a60ae3c1d3d08e801ec193
+// source-hash: be365956e2cd4f10de50194eb64631e18107006a343b77a292ce8dd3ead3eaa1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:34 :: _machine
+// SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
 
 package a_delayed_http_send_is_posted_when_due
 
@@ -274,9 +274,9 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) InitializeDataModel(eng *sce.Eng
 	_ = engine.SetVariable(sessionID, "_name", "a_delayed_http_send_is_posted_when_due")
 
 	// W3C SCXML 5.2.2: Initialize global datamodel variables
-	// W3C SCXML 5.2/5.3: Initialize dynamicUrl from expr="'http://sce.invalid/dynamic'"
+	// W3C SCXML 5.2/5.3: Initialize dynamicUrl from expr="'http://127.0.0.1:18081/dynamic'"
 	{
-		result, err := engine.EvaluateExpression(sessionID, `"http://sce.invalid/dynamic"`)
+		result, err := engine.EvaluateExpression(sessionID, `"http://127.0.0.1:18081/dynamic"`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "dynamicUrl", result)
 		} else {
@@ -663,12 +663,12 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line a_delayed_http_send_is_posted_when_due.scxml:34
+//line a_delayed_http_send_is_posted_when_due.scxml:35
 func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelayedHttpSendIsPostedWhenDueState, engine *sce.Engine[ADelayedHttpSendIsPostedWhenDueState, ADelayedHttpSendIsPostedWhenDueEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case ADelayedHttpSendIsPostedWhenDueStateRun:
-		//line a_delayed_http_send_is_posted_when_due.scxml:41
+		//line a_delayed_http_send_is_posted_when_due.scxml:42
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -680,7 +680,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelay
 		_ = eventDataStr
 	// W3C SCXML C.2: BasicHTTP send
 	{
-		httpTarget := "http://sce.invalid/now"
+		httpTarget := "http://127.0.0.1:18081/now"
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
 			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
@@ -703,7 +703,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelay
 		_ = eventDataStr
 	// W3C SCXML C.2: BasicHTTP send
 	{
-		httpTarget := "http://sce.invalid/later"
+		httpTarget := "http://127.0.0.1:18081/later"
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
 			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
@@ -729,7 +729,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelay
 		_ = eventDataStr
 	// W3C SCXML C.2: BasicHTTP send
 	{
-		httpTarget := "http://sce.invalid/dropped"
+		httpTarget := "http://127.0.0.1:18081/dropped"
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
 			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
@@ -852,7 +852,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelay
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line a_delayed_http_send_is_posted_when_due.scxml:34
+//line a_delayed_http_send_is_posted_when_due.scxml:35
 func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[ADelayedHttpSendIsPostedWhenDueState, ADelayedHttpSendIsPostedWhenDueEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -860,7 +860,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteHistoryDefaultContent(his
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line a_delayed_http_send_is_posted_when_due.scxml:34
+//line a_delayed_http_send_is_posted_when_due.scxml:35
 func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteExitActions(state ADelayedHttpSendIsPostedWhenDueState, engine *sce.Engine[ADelayedHttpSendIsPostedWhenDueState, ADelayedHttpSendIsPostedWhenDueEvent], configurationBeforeExit []ADelayedHttpSendIsPostedWhenDueState) {
 	p.ensureScriptEngine()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
@@ -878,7 +878,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteExitActions(state ADelaye
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line a_delayed_http_send_is_posted_when_due.scxml:34
+//line a_delayed_http_send_is_posted_when_due.scxml:35
 func (p *ADelayedHttpSendIsPostedWhenDuePolicy) BindCurrentEvent(event ADelayedHttpSendIsPostedWhenDueEvent, engine *sce.Engine[ADelayedHttpSendIsPostedWhenDueState, ADelayedHttpSendIsPostedWhenDueEvent]) {
 	if event != ADelayedHttpSendIsPostedWhenDueEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
@@ -893,7 +893,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) BindCurrentEvent(event ADelayedH
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line a_delayed_http_send_is_posted_when_due.scxml:34
+//line a_delayed_http_send_is_posted_when_due.scxml:35
 func (p *ADelayedHttpSendIsPostedWhenDuePolicy) FirstEnabledTransition(state ADelayedHttpSendIsPostedWhenDueState, event ADelayedHttpSendIsPostedWhenDueEvent, engine *sce.Engine[ADelayedHttpSendIsPostedWhenDueState, ADelayedHttpSendIsPostedWhenDueEvent]) (sce.EnabledTransition[ADelayedHttpSendIsPostedWhenDueState, sce.HistoryID], bool) {
 	switch state {
 	case ADelayedHttpSendIsPostedWhenDueStateRun:
@@ -914,7 +914,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) FirstEnabledTransition(state ADe
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line a_delayed_http_send_is_posted_when_due.scxml:34
+//line a_delayed_http_send_is_posted_when_due.scxml:35
 func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteTransitionContent(source ADelayedHttpSendIsPostedWhenDueState, transitionIndex int, engine *sce.Engine[ADelayedHttpSendIsPostedWhenDueState, ADelayedHttpSendIsPostedWhenDueEvent]) {
 	// W3C SCXML 3.13: no transition in this document has content.
 }

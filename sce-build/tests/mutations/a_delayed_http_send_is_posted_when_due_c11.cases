@@ -1,0 +1,66 @@
+# Mutation cases for §scxml-6.2.4 / §scxml-C-2 on the C11 backend's delayed
+# BasicHTTP `<send>`: a delay is a property of the send, not of the processor
+# it names, so the POST happens when the delay has elapsed — not at once, not
+# never — and `<cancel>` reaches it while it waits. C11 hands every BasicHTTP
+# request, undelayed or due, to one `_perform_basic_http`; a delayed one waits
+# in the entry a delayed host-served `<send>` uses.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_delayed_http_send_is_posted_when_due_c11.cases`.
+#
+# Sibling of `a_delayed_http_send_is_posted_when_due.cases` (C++ AOT) and
+# `a_delayed_http_send_is_posted_when_due_rust.cases`. The oracle is the
+# runner's own listener on 127.0.0.1:18081, so a mutation is caught by what
+# arrives on the wire — the request line's path and the form body — not by a
+# structure the machine handed over.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_a_delayed_http_send_is_posted_when_due$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_a_delayed_http_send_is_posted_when_due.c
+
+# ── The wait: the send site POSTs at once ──────────────────────────
+
+mutation_case "C11 POSTs a delayed BasicHTTP send at once" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "{% if action.delayexpr or host_delay_ms > 0 %}\n                /* W3C SCXML 6.2.4: a `delay` is a property of the SEND, not",
+     "{% if false %}\n                /* W3C SCXML 6.2.4: a `delay` is a property of the SEND, not")
+PY
+
+# ── The deadline: the queued request is handed to no HTTP client ───
+
+# This fixture declares no host processor, so its drain is the unconditional
+# arm below. The arm for a machine with BOTH an HTTP send and a host processor
+# (it tells the two apart by processor type) is not one this fixture emits, so
+# no case here can reach it — a mutation of it leaves every binary identical.
+
+mutation_case "C11 drops a deferred BasicHTTP send at its deadline" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "{% elif model.needs_http_send %}\n            {{ csym_prefix }}{{ model.name }}_perform_basic_http(sm, &_ready_req);",
+     "{% elif model.needs_http_send %}\n            (void)_ready_req;")
+PY
+
+# ── The form: the event name no longer rides as the reserved parameter ──
+
+mutation_case "C11 leaves the event name out of a BasicHTTP form" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        if (request->event_name[0] != '\\0') {\n            (void)sce_test_http_form_append(_http_body, sizeof(_http_body), &_http_body_len, \"_scxmleventname\",",
+     "        if (false) {\n            (void)sce_test_http_form_append(_http_body, sizeof(_http_body), &_http_body_len, \"_scxmleventname\",")
+PY
+
+# ── The pairs: a `<param>` is lost while the request waits ─────────
+
+mutation_case "C11 sends a BasicHTTP request without its parameters" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        for (int _p = 0; _p < request->param_count; ++_p) {\n            (void)sce_test_http_form_append(",
+     "        for (int _p = 0; _p < 0; ++_p) {\n            (void)sce_test_http_form_append(")
+PY
+
+# ── The id: `<cancel>` can no longer name the queued request ───────
+
+mutation_case "C11 queues a delayed BasicHTTP send under an empty send id" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "                scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,\n                                    _host_req.send_id, &_host_req);",
+     "                scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,\n                                    \"\", &_host_req);")
+PY

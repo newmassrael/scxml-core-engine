@@ -47,13 +47,13 @@ class ADelayedHttpSendIsPostedWhenDueTest {
             listOf("now", "later"), events(),
             "it is POSTed when the delay has elapsed, and the cancelled one never is"
         )
-        assertEquals("http://sce.invalid/later", posted[1].target)
+        assertEquals("http://127.0.0.1:18081/later", posted[1].target)
         assertEquals("later", posted[1].sendId)
 
         sm.advanceTimeMs(100)
         sm.tick()
         assertEquals(listOf("now", "later", "dynamic"), events())
-        assertEquals("http://sce.invalid/dynamic", posted[2].target, "a targetexpr is read when the send is made")
+        assertEquals("http://127.0.0.1:18081/dynamic", posted[2].target, "a targetexpr is read when the send is made")
         assertEquals(listOf("v"), posted[2].params["k"])
 
         sm.advanceTimeMs(100)

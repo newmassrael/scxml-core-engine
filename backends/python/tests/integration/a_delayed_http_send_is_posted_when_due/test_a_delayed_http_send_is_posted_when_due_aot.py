@@ -44,12 +44,12 @@ def test_a_delayed_http_send_is_posted_when_due() -> None:
     assert events() == ["now", "later"], (
         "it is POSTed when the delay has elapsed, and the cancelled one never is"
     )
-    assert posted[1].target == "http://sce.invalid/later"
+    assert posted[1].target == "http://127.0.0.1:18081/later"
     assert posted[1].send_id == "later"
 
     engine.advance_time(100)
     assert events() == ["now", "later", "dynamic"]
-    assert posted[2].target == "http://sce.invalid/dynamic", "a targetexpr is read when the send is made"
+    assert posted[2].target == "http://127.0.0.1:18081/dynamic", "a targetexpr is read when the send is made"
     assert posted[2].params.get("k") == ["v"]
 
     engine.advance_time(100)

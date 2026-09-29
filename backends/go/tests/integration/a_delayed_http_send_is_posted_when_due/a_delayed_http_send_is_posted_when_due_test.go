@@ -55,7 +55,7 @@ func TestADelayedHttpSendIsPostedWhenDue(t *testing.T) {
 	if got, want := events(), []string{"now", "later"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("at 100ms: POSTed %v, want %v (due now; the cancelled one never is)", got, want)
 	}
-	if got := posted[1]; got.Target != "http://sce.invalid/later" || got.SendID != "later" {
+	if got := posted[1]; got.Target != "http://127.0.0.1:18081/later" || got.SendID != "later" {
 		t.Errorf("the delayed send carried target %q sendid %q", got.Target, got.SendID)
 	}
 
@@ -64,7 +64,7 @@ func TestADelayedHttpSendIsPostedWhenDue(t *testing.T) {
 		t.Fatalf("at 200ms: POSTed %v, want %v", got, want)
 	}
 	dynamic := posted[2]
-	if dynamic.Target != "http://sce.invalid/dynamic" {
+	if dynamic.Target != "http://127.0.0.1:18081/dynamic" {
 		t.Errorf("a targetexpr is read when the send is made: target = %q", dynamic.Target)
 	}
 	if got, want := dynamic.Params["k"], []string{"v"}; !reflect.DeepEqual(got, want) {

@@ -1918,6 +1918,37 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 6.2.4 + C.2: a delay is a property of the send, not of the
+    # processor it names — a delayed BasicHTTP send is POSTed when due, and
+    # <cancel> reaches it while it waits. The runner is its own listener on
+    # 127.0.0.1:18081 (the port the fixture's targets name), so what it checks
+    # is the request the machine wrote on the wire.
+    find_package(Threads REQUIRED)
+    sce_generate_static_integration_c_test(a_delayed_http_send_is_posted_when_due "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_a_delayed_http_send_is_posted_when_due
+        integration/test_a_delayed_http_send_is_posted_when_due.c
+        ${INTEGRATION_C_TEST_a_delayed_http_send_is_posted_when_due_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_a_delayed_http_send_is_posted_when_due PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54 Threads::Threads
+    )
+    target_include_directories(sce_c_integration_a_delayed_http_send_is_posted_when_due PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_delayed_http_send_is_posted_when_due PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_delayed_http_send_is_posted_when_due
+        COMMAND sce_c_integration_a_delayed_http_send_is_posted_when_due
+    )
+    set_tests_properties(c11_integration_a_delayed_http_send_is_posted_when_due PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach
     # the datamodel as a value. Every other fixture here leaves the carrier's
     # `data` field zeroed, so this edge — the one a downstream MCU consumer

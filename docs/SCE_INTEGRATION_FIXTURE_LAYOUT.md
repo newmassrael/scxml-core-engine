@@ -637,22 +637,26 @@ delayed), `execErrors` 2, the six `after*` 0, ending in `done`.
 a property of the send, not of the processor it names, so a delayed
 `<send type="BasicHTTPEventProcessor">` is POSTed when the delay has elapsed —
 not at once, not never — and `<cancel>` reaches it while it waits. The host
-stands in for the HTTP transport with a recording callback and advances a
-manual clock, so the assertions are the requests the transport was handed and
-when: `now` at once, `later` at 100ms and not at 99ms, `dropped` (cancelled in
-the block that sent it) never, and `dynamic` at 200ms with the target its
-`targetexpr` yielded and its `<param>`. Every channel keeps the request in the
-queue every delayed send waits in, as a host-served send does — its entry
-carries the BasicHTTP type, and the deadline performs the POST through the
-channel's `performHttpSend`. Before 2026-09-30 the C++ AOT, Rust, Go and
-Python channels POSTed a delayed send at once (and `<cancel>` never reached
-it), and Kotlin held it in a list of its own that the asynchronous mode did
-not drain. Driven on the C++ AOT, Rust, Go, Kotlin and Python channels. The
-C11 channel's BasicHTTP client is a synchronous test-harness POST with no
-production transport behind it, so a delayed BasicHTTP send there raises
-error.execution (`no_route` in the send arm) instead of being POSTed; the
-Interpreter delays every send in `EventDispatcherImpl` before it resolves the
-target, so it needs no change and has no driver here.
+stands in for the HTTP transport and advances a manual clock, so the
+assertions are the requests the transport was handed and when: `now` at once,
+`later` at 100ms and not at 99ms, `dropped` (cancelled in the block that sent
+it) never, and `dynamic` at 200ms with the target its `targetexpr` yielded and
+its `<param>`. Every channel keeps the request in the queue every delayed send
+waits in, as a host-served send does — its entry carries the BasicHTTP type,
+and the deadline performs the POST through the channel's own HTTP path
+(`performHttpSend`, and on C11 `_perform_basic_http`). Before 2026-09-30 the
+C++ AOT, Rust, Go and Python channels POSTed a delayed send at once (and
+`<cancel>` never reached it), Kotlin held it in a list of its own that the
+asynchronous mode did not drain, and C11 raised error.execution for it.
+The transport is a recording callback on the C++ AOT, Rust, Go, Kotlin and
+Python channels. C11's client makes the POST itself, so its runner is its own
+listener on 127.0.0.1:18081 (the port the fixture's targets name) and checks
+the request as it arrived on the wire: the path, and the body
+`_scxmleventname=<event>&<pairs>`. C11 now hands every BasicHTTP request —
+undelayed or due — to that one `_perform_basic_http`, which builds the body
+and makes the POST. The Interpreter delays every send in
+`EventDispatcherImpl` before it resolves the target, so it needs no change and
+has no driver here.
 
 `invoke_expression_failure_is_reported` covers W3C §6.4.3: an `<invoke>` that
 names its target through an expression must evaluate that expression when the
