@@ -43,18 +43,39 @@ for the other case and none of them write it down.
 
 ### One-time MCP setup for a specification owner
 
-From the repository root, build the code generator:
+The owner needs no checkout and no Rust toolchain. Someone with the tree
+builds a bundle once:
 
 ```sh
-cargo build -p sce-build --features cli --bin sce-codegen
+scripts/package_sce_author.sh dist/
 ```
 
-Register `scripts/sce_author_mcp.sh` as a local stdio MCP server in the AI
-client. Use the absolute path to that script in the client's `command` field;
-the script locates the repository and starts `sce_author.mcp` without a pack or
-binding. The exact registration UI or configuration key depends on the client.
-Once connected, the tool list should include `scxml_kinds`, `validate_scxml`
-and `render_scxml_pseudocode`.
+It writes `dist/sce-author/` and a `.tar.gz` of it, containing the code
+generator, the templates it renders, this MCP server, the license files, and
+the launcher `bin/sce-author-mcp`. On the owner's machine, unpack it and
+register `bin/sce-author-mcp` (by absolute path) as a local stdio MCP server
+in the AI client. It needs Python 3 with PyYAML and nothing else. The exact
+registration UI or configuration key depends on the client. Once connected,
+the tool list should include `scxml_kinds`, `validate_scxml` and
+`render_scxml_pseudocode`. `tests/test_the_bundle_runs_where_the_tree_is_not.py`
+starts a bundle's launcher outside the tree and holds it to the protocol.
+
+For a client that is not on the owner's machine — an assistant reached
+through an API, or a hosted one — the same bundle serves over HTTP:
+
+```sh
+bin/sce-author-mcp --http 0.0.0.0:8765 --token-file TOKEN_FILE
+```
+
+The client connects to `http://HOST:8765/mcp` and sends
+`Authorization: Bearer <token>`. Off loopback the server refuses to start
+without a token. A remote client hands every file over as text
+(`document_text`, `manifest_text`, `documents_text`), and a path from it is
+refused, since a path names the server's files rather than the caller's.
+
+From a checkout, `scripts/sce_author_mcp.sh` runs the same server out of
+the tree after `cargo build -p sce-build --features cli --bin sce-codegen`,
+and takes the same `--http` flags.
 
 The launcher and MCP server run locally, but the AI client may send the prose,
 SCXML, tool results, and pseudocode to its model service. Local MCP does not
@@ -117,8 +138,11 @@ the choice open between named candidates — and `eval/kind_choice.py` hands
 each one, in an empty directory, to a client that has only the SCE MCP
 server, with the request above. It scores what the product read, not what the
 client said: the written document goes through `validate_scxml`, and the
-manifest's `document_kind` is compared with the case. A case whose text leaves
-the kind open counts as right only when no document was written.
+manifest's `document_kind` is compared with the case. A case whose text
+leaves the kind open counts as right when no document was written, or when
+the draft marks its kind open on its `<sce:kind-basis>` (`left_open`).
+Writing it down is the same question, put where the owner and the strict
+build see it.
 
 ```sh
 python3 tools/authoring/eval/kind_choice.py --client claude-restricted --out /tmp/kind-eval
@@ -127,6 +151,16 @@ python3 tools/authoring/eval/kind_choice.py --client claude-restricted --out /tm
 The report names how isolated its client was: `claude-bare` reads no
 CLAUDE.md, memory or hooks and needs `ANTHROPIC_API_KEY`; `claude-restricted`
 runs with no repository in reach but still reads a user-level CLAUDE.md.
+
+Measured on 2026-09-29 with `claude-restricted` (the model current that day).
+These are the numbers of one run each, not guarantees:
+
+| | Before `<sce:kind-basis>` | With it |
+|---|---|---|
+| Determined cases, kind correct | 24 / 24 | 24 / 24 |
+| Drafts recording the basis | — | 27 / 27 |
+| Open cases asked or marked open | 1 / 3 (2 decided silently) | 3 / 3 |
+| Determined cases wrongly marked open | — | 0 |
 
 Connecting SCE supplies tools and usage instructions; it
 does not supply the prose or decide policies absent from it. A host may choose
@@ -145,7 +179,15 @@ the pseudocode against the source.
 
 The MCP server exposes tools that need no pack or binding:
 `scxml_kinds` runs `sce-codegen kinds` and returns the kind catalog, whole or
-for one kind; the rest accept an SCXML file directly.
+for one kind; the rest take their files either by path, on the machine the
+server runs on, or as text (`document_text` with `document_name`, and likewise
+for a manifest). A file given as text is read under the name it was given, in
+a directory that lasts for one call, so diagnostics name it and documents given
+together import one another by name. Without `out`, `render_scxml_diagram`
+returns each figure's SVG text. `validate_scxml_set` checks documents that
+refer to one another as one set, such as a statechart and the event schemas
+it imports, or a worker, its link and the link's codec. It passes each as
+`sce-codegen check --document`, so the product reads each document's kind.
 `validate_scxml` runs `sce-codegen check --lint --error-format=json` and returns
 every diagnostic record with the verdict and manifest, as JSON;
 `render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page;

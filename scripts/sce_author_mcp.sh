@@ -12,4 +12,4 @@ if [[ ! -x "$codegen" ]]; then
 fi
 
 export PYTHONPATH="$repo_root/tools/authoring${PYTHONPATH:+:$PYTHONPATH}"
-exec python3 -m sce_author.mcp
+exec python3 -m sce_author.mcp "$@"
