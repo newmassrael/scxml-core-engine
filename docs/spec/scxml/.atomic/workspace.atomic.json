@@ -9062,6 +9062,11 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "scheduleHttpSend",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/scxml_self_send.rs",
+          "symbol": "sends_to_itself",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -11309,6 +11314,11 @@
         },
         {
           "file": "sce-build/src/forge/page.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_self_send.rs",
+          "symbol": "is_discarded",
           "kind": "references"
         }
       ],

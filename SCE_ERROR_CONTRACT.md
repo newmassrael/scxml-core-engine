@@ -867,6 +867,7 @@ references against a real document and drift silently.
 | `scxml/on-sample-link-wrong-kind` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.E |
 | `scxml/parent-send-without-parent` | `validation` | no | W3C SCXML §6.2.4 |
 | `scxml/recording-intercepted` | `validation` | no | W3C SCXML §3.13 |
+| `scxml/self-send-discarded` | `validation` | no | W3C SCXML §6.2.4 |
 | `scxml/shadowed-transition` | `validation` | no |  |
 | `scxml/stale-unhandled-declaration` | `validation` | no |  |
 | `scxml/static-datamodel-rule` | `validation` | no | SCE Accepted Subset §2.15 |

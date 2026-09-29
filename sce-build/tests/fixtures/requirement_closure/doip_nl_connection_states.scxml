@@ -53,6 +53,15 @@
     way out — the socket is closing anyway. They are what an
     authoring pass adds on its own initiative, so they are what the
     transition table's `(none)` block exists to show.
+
+  - The three things the entity does to its surroundings — the alive
+    check request, routing a diagnostic message to its target, closing
+    the TCP socket — are sends to the host (`type="x-sce-host"`), the
+    platform that owns the socket. The authoring pass first wrote them
+    with no receiver at all, which sends each to this machine's own
+    queue, where nothing takes it: that is what
+    `scxml/self-send-discarded` refuses, and it was not a departure the
+    standard asked for.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -116,7 +125,7 @@
             delayexpr="T_TCP_General_Inactivity"/>
     </transition>
     <transition event="alive_check_due" sce:req="DoIP-134">
-      <send event="alive_check_request"/>
+      <send type="x-sce-host" event="alive_check_request"/>
     </transition>
     <transition event="close_requested" target="finalize"/>
 
@@ -145,7 +154,7 @@
          `shall_not` and coverage refuses to call it implemented. -->
     <state id="routing_active" sce:req="3.DoIP-130">
       <transition event="diagnostic_message" sce:req="3.DoIP-131">
-        <send event="route_to_target"/>
+        <send type="x-sce-host" event="route_to_target"/>
       </transition>
     </state>
   </state>
@@ -153,7 +162,7 @@
   <state id="finalize" sce:req="3.DoIP-132">
     <sce:provenance doc-id="ISO-13400-2" rev="2019" section="12.6.1.3" page="70"/>
     <onentry>
-      <send event="tcp_close" sce:req="3.DoIP-133"/>
+      <send type="x-sce-host" event="tcp_close" sce:req="3.DoIP-133"/>
     </onentry>
     <transition target="listen" sce:req="3.DoIP-133"/>
   </state>

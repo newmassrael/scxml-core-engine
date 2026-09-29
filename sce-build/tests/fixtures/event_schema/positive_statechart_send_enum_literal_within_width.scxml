@@ -27,5 +27,10 @@
       </send>
     </transition>
   </state>
-  <state id="done"/>
+  <!-- Takes the completion it sent itself, as `statechart_send_typed.scxml`
+       does, so the send is not one the machine throws away
+       (scxml/self-send-discarded). -->
+  <state id="done">
+    <transition event="job.completed"/>
+  </state>
 </scxml>

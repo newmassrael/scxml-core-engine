@@ -3317,6 +3317,46 @@ Repair guidance:
 
 ---
 
+### A message the machine sends itself and discards
+
+`scxml/self-send-discarded` fires on a `<send>` with a literal `event`
+that goes to the session itself and whose event no transition in the
+document takes. W3C SCXML §6.2.4 sends a `<send>` with neither `target`
+nor `targetexpr` to the session's own external queue, and `#_internal`
+to its internal queue — both through the SCXML Event I/O Processor,
+written or defaulted. An event no transition matches is taken off the
+queue and nothing happens.
+
+The document is legal, which is why this is a `--lint` finding. It was
+added on a measurement: drafted statecharts wrote an output whose
+receiver the specification did not name as `<send event="…"/>`, and the
+machine announced each output to itself and threw it away — five drafts
+of one specification, and a retried request draft whose request went to
+itself while it waited for the response. `check --lint` accepted all of
+them.
+
+Not flagged: a send with a `target`, `targetexpr`, `type` or `typeexpr`,
+which leaves the session through the processor it names; an `eventexpr`,
+whose event is known only at runtime; an event any transition takes, by
+a prefix or `*` included; and an event sent to the external queue of a
+session with an `<invoke autoforward="true">`, which W3C SCXML §6.4.1
+forwards to the child.
+
+A document that declares `sce:interface="closed"` (§2.16) refuses the same
+send on the same reading, as `scxml/undeclared-interface-event`.
+
+Repair guidance:
+
+1. When the event is an output, name its receiver: the `type` of an
+   Event I/O Processor the host serves (declared to the build with
+   `--host-processor`), or `target="#_parent"` when the specification
+   names the statechart that invokes this one — then check the two
+   together, since started on its own the machine has no parent.
+2. When the machine is meant to act on it, add the transition that takes
+   it.
+
+---
+
 ### Physical-quantity annotation (NL→IR Mapping Roadmap Item 4)
 
 `<sce:field>` and `<data>` elements may carry an
@@ -3861,6 +3901,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/always-false-guard` | Validation |
 | `scxml/shadowed-transition` | Validation |
 | `scxml/recording-intercepted` | Validation |
+| `scxml/self-send-discarded` | Validation |
 | `scxml/on-sample-invalid-parent` | Validation |
 | `scxml/on-sample-link-duplicate-in-state` | Validation |
 | `scxml/on-sample-event-name-conflict` | Validation |

@@ -136,7 +136,15 @@
         <param name="dynamic_probe2" expr="live"/>
       </send>
     </onentry>
-    <transition event="e_internal" target="done"/>
+    <transition event="e_internal" target="s1"/>
+  </state>
+  <!-- The external queue, after the internal events: the two immediate
+       sends arrive first and the delayed one 20ms later, which is where
+       the machine ends. Each is taken, so none is a message the machine
+       sends itself and throws away (scxml/self-send-discarded). -->
+  <state id="s1">
+    <transition event="e_plain e_mix"/>
+    <transition event="e_delay" target="done"/>
   </state>
   <final id="done"/>
 </scxml>

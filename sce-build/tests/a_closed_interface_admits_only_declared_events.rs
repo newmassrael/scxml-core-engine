@@ -7,10 +7,13 @@
 //! event-schemas it imports: what it takes from outside and what it sends
 //! outside are events a schema declares, and what it sends itself is taken
 //! by some transition. The controls fail the other way: the same document
-//! with the interface left open is accepted whatever it names (the
+//! with the interface left open takes an event no schema declares (the
 //! schemaless fallback stays the default), and the closed document that
 //! keeps to its schemas — descriptor prefixes, platform events, its own
-//! raises and delayed sends included — builds.
+//! raises and delayed sends included — builds. A self-send nothing takes
+//! is lost whether or not the interface is closed, so an open document is
+//! refused it too, by the lint that shares the reading
+//! (`scxml/self-send-discarded`).
 
 use std::fs;
 use std::path::Path;
@@ -183,14 +186,32 @@ fn an_output_sent_to_itself_that_nothing_takes_is_refused() {
 #[test]
 fn the_same_document_with_an_open_interface_is_accepted() {
     // The schemaless fallback is the default and stays it: an undeclared
-    // input and an output sent to itself are both accepted when open.
-    let body = KEEPS_TO_IT
-        .replace(r#"event="coin""#, r#"event="coin.insert""#)
-        .replace(
-            r##"<send event="product.dispense" target="#_parent"/>"##,
-            r#"<send event="display.price"/>"#,
-        );
+    // input is accepted when open.
+    let body = KEEPS_TO_IT.replace(r#"event="coin""#, r#"event="coin.insert""#);
     compile(&document(None, &body)).expect("an open interface admits undeclared events");
+}
+
+#[test]
+fn an_open_document_is_refused_the_output_it_sends_itself_by_the_lint() {
+    // The same lost output, open: not an interface crossing, since nothing
+    // was declared, but a message the machine sends itself and discards.
+    let body = KEEPS_TO_IT.replace(
+        r##"<send event="product.dispense" target="#_parent"/>"##,
+        r#"<send event="display.price"/>"#,
+    );
+    let err = compile(&document(None, &body)).expect_err("the lint refuses it");
+    match &err.error {
+        ForgeError::Scxml(semantic) => match semantic.as_ref() {
+            ScxmlSemanticError::SelfSendDiscarded { event, state } => {
+                assert_eq!(
+                    (event.as_str(), state.as_str()),
+                    ("display.price", "dispensing")
+                );
+            }
+            other => panic!("expected SelfSendDiscarded, got {other:?}"),
+        },
+        other => panic!("expected a semantic refusal, got {other:?}"),
+    }
 }
 
 #[test]

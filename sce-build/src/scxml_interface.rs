@@ -33,20 +33,10 @@
 
 use crate::event_descriptor::EventDescriptor;
 use crate::forge::error::{ForgeError, Located};
-use crate::host_processor_analyzer::{walk_model_actions, SCXML_EVENT_PROCESSOR_TYPE};
-use crate::model::{Action, SCXMLModel};
+use crate::host_processor_analyzer::walk_model_actions;
+use crate::model::SCXMLModel;
+use crate::scxml_self_send::{is_discarded, sends_to_itself};
 use crate::scxml_semantic::{InterfaceCrossing, ScxmlSemanticError};
-
-/// Whether a `<send>` goes to this session's own external queue: no target
-/// and no expression that could name one, through the SCXML Event I/O
-/// Processor written or defaulted (W3C SCXML 6.2.4). `#_internal` is the
-/// internal queue, and just as much the session itself.
-fn sends_to_itself(action: &Action) -> bool {
-    action.targetexpr.is_empty()
-        && action.typeexpr.is_empty()
-        && (action.target.is_empty() || action.target == "#_internal")
-        && (action.send_type.is_empty() || action.send_type == SCXML_EVENT_PROCESSOR_TYPE)
-}
 
 /// Refuse the first event that crosses a closed interface undeclared. A
 /// document that does not declare its interface closed passes untouched.
@@ -120,12 +110,9 @@ pub fn validate(model: &SCXMLModel, diag_label: &str) -> Result<(), Located<Forg
                 at,
             ));
         } else if sends_to_itself(action) {
-            let taken = model.states.values().any(|s| {
-                s.transitions
-                    .iter()
-                    .any(|t| crate::event_descriptor::attribute_matches(&t.event, &action.event))
-            });
-            if !taken {
+            // The lint's reading, so a closed document and an open one
+            // cannot disagree about which self-send is lost.
+            if is_discarded(model, action) {
                 refusal = Some((
                     InterfaceCrossing::SendsToItself,
                     action.event.clone(),

@@ -875,6 +875,27 @@ pub enum ScxmlSemanticError {
         /// The descendant whose transition intercepts it.
         inner: String,
     },
+
+    /// A `<send>` goes to the session itself and no transition takes its
+    /// event, so the machine queues it and throws it away.
+    ///
+    /// Legal SCXML with a defined meaning, which is why this is a lint;
+    /// measured as the way six drafted statecharts wrote an output whose
+    /// receiver the prose did not name. See [`crate::scxml_self_send`].
+    #[error(
+        "State '{state}' sends '{event}' to its own session and no transition \
+         takes it, so the machine discards it: a <send> with neither target \
+         nor type goes to the machine's own queue. To send it out, give it \
+         its receiver — the type of an Event I/O Processor the host serves, \
+         or target=\"#_parent\" when the specification names the statechart \
+         that invokes this one; to act on it, add a transition that takes it."
+    )]
+    SelfSendDiscarded {
+        /// The event sent.
+        event: String,
+        /// The state whose executable content sends it.
+        state: String,
+    },
 }
 
 #[cfg(test)]
@@ -1121,6 +1142,10 @@ mod tests {
                 locations: "speed".into(),
                 inner: "unlocked".into(),
             },
+            ScxmlSemanticError::SelfSendDiscarded {
+                event: "SendRequest".into(),
+                state: "waiting".into(),
+            },
         ];
         // The list above is not self-checking: a new variant reaches
         // `ForgeError` through the blanket `From` impl, so omitting it
@@ -1150,7 +1175,7 @@ mod tests {
 
     /// Number of arms in [`variant_name`]. Kept next to it so the two
     /// move together.
-    const VARIANT_COUNT: usize = 20;
+    const VARIANT_COUNT: usize = 21;
 
     /// Exhaustive discriminant projection — the compile-time half of
     /// `every_variant_routes_through_forge_error`'s coverage claim.
@@ -1182,6 +1207,7 @@ mod tests {
             ScxmlSemanticError::AlwaysFalseGuard { .. } => "AlwaysFalseGuard",
             ScxmlSemanticError::ShadowedTransition { .. } => "ShadowedTransition",
             ScxmlSemanticError::RecordingIntercepted { .. } => "RecordingIntercepted",
+            ScxmlSemanticError::SelfSendDiscarded { .. } => "SelfSendDiscarded",
         }
     }
 

@@ -978,6 +978,12 @@ pub enum DiagnosticCode {
     /// region.
     #[serde(rename = "scxml/recording-intercepted")]
     ScxmlRecordingIntercepted,
+    /// A `<send>` a statechart addresses to itself whose event no
+    /// transition takes, so it is queued and thrown away (W3C SCXML 6.2.4). A
+    /// `--lint` finding, NeutralOrDeterministic: the repair is the
+    /// author's — name the receiver, or add the transition that takes it.
+    #[serde(rename = "scxml/self-send-discarded")]
+    ScxmlSelfSendDiscarded,
     // ── SCE Protocol-Synthesis RFC §synth-5-E sample-callback SCXML on-sample family ──
     // Author-facing rules for `<sce:on-sample>` SCE extension: the
     // structural diagnostics (placement, uniqueness,
@@ -3333,6 +3339,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ScxmlAlwaysFalseGuard,
         ScxmlShadowedTransition,
         ScxmlRecordingIntercepted,
+        ScxmlSelfSendDiscarded,
         ScxmlOnSampleInvalidParent,
         ScxmlOnSampleLinkDuplicateInState,
         ScxmlOnSampleEventNameConflict,
@@ -4573,6 +4580,7 @@ impl DiagnosticCode {
             // spec states the algorithm, not this lint, so the anchor is
             // the rule being followed rather than a rule being broken.
             ScxmlRecordingIntercepted => Some("W3C SCXML §3.13"),
+            ScxmlSelfSendDiscarded => Some("W3C SCXML §6.2.4"),
             // The reassembly declared-consumption invariant carries the spec anchor
             // that lived in the diagnostic.rs:1170 placeholder comment.
             ReassemblyPerPeerQuotaBuildInvariantViolated => {
@@ -4718,6 +4726,7 @@ impl DiagnosticCode {
             ScxmlAlwaysFalseGuard => "scxml/always-false-guard",
             ScxmlShadowedTransition => "scxml/shadowed-transition",
             ScxmlRecordingIntercepted => "scxml/recording-intercepted",
+            ScxmlSelfSendDiscarded => "scxml/self-send-discarded",
             ScxmlOnSampleInvalidParent => "scxml/on-sample-invalid-parent",
             ScxmlOnSampleLinkDuplicateInState => "scxml/on-sample-link-duplicate-in-state",
             ScxmlOnSampleEventNameConflict => "scxml/on-sample-event-name-conflict",
@@ -9961,6 +9970,20 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 format!("by:{inner}"),
             ],
         },
+        ScxmlSemanticError::SelfSendDiscarded { event, state } => DiagnosticPayload {
+            // `actual` names the event lost; the state and the event key
+            // the record.
+            code: DiagnosticCode::ScxmlSelfSendDiscarded,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(event.clone()),
+            fix: None,
+            key_fragments: vec![
+                format!("scxml-state:{state}"),
+                "self-send-discarded".to_string(),
+                event.clone(),
+            ],
+        },
         ScxmlSemanticError::NonExhaustiveEventHandling {
             parent,
             event,
@@ -11183,6 +11206,16 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:065deaecdc3cc4e6","code":"scxml/recording-intercepted","stage":"validation","spec":"W3C SCXML §3.13","message":"State 'released' records speed on 'speed.update', but its descendant 'unlocked' has its own transition on that event, which is taken instead while 'unlocked' is active — the record is skipped. Assign it in the transition of 'unlocked' too, or keep the recording in a <parallel> region of its own.","actual":"speed"}"#,
+            ),
+            (
+                // The retried request draft: its request goes to itself.
+                "forge/scxml-self-send-discarded",
+                crate::scxml_semantic::ScxmlSemanticError::SelfSendDiscarded {
+                    event: "SendRequest".into(),
+                    state: "waiting".into(),
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:a4c93f488479a2f4","code":"scxml/self-send-discarded","stage":"validation","spec":"W3C SCXML §6.2.4","message":"State 'waiting' sends 'SendRequest' to its own session and no transition takes it, so the machine discards it: a <send> with neither target nor type goes to the machine's own queue. To send it out, give it its receiver — the type of an Event I/O Processor the host serves, or target=\"#_parent\" when the specification names the statechart that invokes this one; to act on it, add a transition that takes it.","actual":"SendRequest"}"##,
             ),
             (
                 // SCE Protocol-Synthesis RFC §synth-5-E sample-callback placement rule
@@ -16325,6 +16358,9 @@ mod tests {
             // Same: record it in the descendant too, or move it into a
             // region — the author's choice, no candidate set to offer.
             | ScxmlRecordingIntercepted
+            // Name the receiver or add the transition that takes it:
+            // which receiver is the specification's, not a candidate set.
+            | ScxmlSelfSendDiscarded
             // NL→IR Item C1 Path A: Enum kind invariants. The five
             // codes don't carry author-actionable closed candidate
             // lists (variant names/values are author-defined; the
@@ -16646,6 +16682,7 @@ mod tests {
                 | ScxmlAlwaysFalseGuard
                 | ScxmlShadowedTransition
                 | ScxmlRecordingIntercepted
+                | ScxmlSelfSendDiscarded
                 | ScxmlOnSampleInvalidParent
                 | ScxmlOnSampleLinkDuplicateInState
                 | ScxmlOnSampleEventNameConflict
@@ -16939,9 +16976,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            406,
+            407,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 406 distinct variants to match the DiagnosticCode \
+             expected 407 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17388,7 +17425,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ScxmlStaleUnhandledDeclaration
             | ScxmlAlwaysFalseGuard
             | ScxmlShadowedTransition
-            | ScxmlRecordingIntercepted => Carries,
+            | ScxmlRecordingIntercepted
+            | ScxmlSelfSendDiscarded => Carries,
 
             // Judged by the document-set compile, which locates it on the
             // `<send target="#_parent">` and resolves the enclosing anchor
@@ -19256,6 +19294,20 @@ mod anchor_contract_tests {
                        <state id="a">
                          <transition event="tick" target="a"/>
                        </state>
+                     </state>
+                   </scxml>"#,
+            ),
+            // `scxml/self-send-discarded` — the anchored state sends
+            // `announce` to itself and nothing takes it; the record points
+            // at that `<send>`, inside the anchor.
+            (
+                "scxml/self-send-discarded",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="live">
+                     <state id="live" sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <onentry><send event="announce"/></onentry>
+                       <transition event="stop" target="live"/>
                      </state>
                    </scxml>"#,
             ),

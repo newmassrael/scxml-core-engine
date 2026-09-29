@@ -1206,6 +1206,18 @@ impl Invoke {
             Invoke::Unsupported(info) => &mut info.base,
         }
     }
+
+    /// Whether the invoking session forwards every external event it takes
+    /// to this child (`autoforward="true"`). Only a child session can be
+    /// forwarded to: a Mesh request has none, and an unsupported type starts
+    /// nothing.
+    pub fn autoforward(&self) -> bool {
+        match self {
+            Invoke::Scxml(info) => info.common.autoforward,
+            Invoke::Hybrid(info) => info.common.autoforward,
+            Invoke::MeshRpc(_) | Invoke::Unsupported(_) => false,
+        }
+    }
 }
 
 /// Visit the positions an `<invoke>` carries, for

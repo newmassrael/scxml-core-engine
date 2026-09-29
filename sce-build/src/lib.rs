@@ -251,6 +251,9 @@ pub mod scxml_recording_interception;
 /// Invoked from [`analyzer::can_generate_static`], the one gate the
 /// library entry and the `sce-codegen` CLI both pass through.
 pub mod scxml_references;
+/// A `<send>` a statechart addresses to itself that nothing takes: a lint,
+/// and the reading of "discarded" the closed interface shares.
+pub mod scxml_self_send;
 pub mod scxml_semantic;
 /// A number as the author wrote it, beside the number it denotes —
 /// so the pseudocode review surface can show `0x1a` where the model
@@ -554,9 +557,10 @@ pub fn lint_statechart(model: &model::SCXMLModel, source: &str) -> Result<(), Co
 
 /// Every design-time lint finding, in the order [`lint_statechart`]
 /// documents: all of reachability's, then exhaustiveness's, then guard
-/// analysis's, then recording interception's, each in document order.
+/// analysis's, then recording interception's, then discarded self-sends',
+/// each in document order.
 ///
-/// All four run whatever the first finds. The ordering rationale above
+/// All five run whatever the first finds. The ordering rationale above
 /// is about which record an author reads FIRST, not about which walkers
 /// may run: an orphan region and an unrelated always-false guard are two
 /// repairs, and stopping at the first cost the author a build round per
@@ -565,15 +569,16 @@ pub fn lint_statechart(model: &model::SCXMLModel, source: &str) -> Result<(), Co
 pub fn lint_statechart_findings(model: &model::SCXMLModel, source: &str) -> Vec<CompileError> {
     // NL→IR Mapping Roadmap Item 8 — the second resolver boundary,
     // after `analyzer::can_generate_static`. Every lint rejection
-    // leaves through here, so one call gives all seven of their codes
-    // the anchors enclosing the node each names, and gives the eighth
-    // added next year the same without anyone remembering to
+    // leaves through here, so one call gives every one of their codes
+    // the anchors enclosing the node each names, and gives the next one
+    // added the same without anyone remembering to
     // (SCE_ERROR_CONTRACT.md §2.1.2).
     scxml_reachability::findings(model, source)
         .into_iter()
         .chain(scxml_exhaustiveness::findings(model, source))
         .chain(scxml_guard_analysis::findings(model, source))
         .chain(scxml_recording_interception::findings(model, source))
+        .chain(scxml_self_send::findings(model, source))
         .map(|err| model.with_enclosing_anchor(err))
         .collect()
 }

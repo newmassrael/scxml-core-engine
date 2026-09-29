@@ -90,7 +90,15 @@
         <param name="plain_odd&quot;name" expr="'plain'"/>
       </send>
     </onentry>
-    <transition event="e_internal" target="done"/>
+    <transition event="e_internal" target="s1"/>
+  </state>
+  <!-- The external queue, after the internal event: the immediate send
+       arrives first and the delayed one 20ms later, which is where the
+       machine ends. Each is taken, so neither is a message the machine
+       sends itself and throws away (scxml/self-send-discarded). -->
+  <state id="s1">
+    <transition event="e_plain"/>
+    <transition event="e_delay" target="done"/>
   </state>
   <final id="done"/>
 </scxml>
