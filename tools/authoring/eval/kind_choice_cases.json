@@ -1,0 +1,140 @@
+{
+  "about": "Prose specifications for measuring whether a client that reaches SCE only through its MCP server chooses the document kind the text determines. Every case was written for this corpus; none is taken from a real product specification. A case with `kind` is determined by its text. A case with `undetermined` names the candidate kinds its text leaves open, and the right outcome is to ask the owner rather than to write a document.",
+  "cases": [
+    {
+      "id": "door-with-auto-close",
+      "kind": "statechart",
+      "prose": "The door controller keeps the door in one of four conditions: closed, opening, open and closing. An open request while the door is closed starts opening it. When the fully-open sensor reports, the door is open. If the door has been open for 20 seconds without a new open request, it starts closing. An open request while closing reverses it to opening. When the fully-closed sensor reports, the door is closed."
+    },
+    {
+      "id": "connection-keeper",
+      "kind": "statechart",
+      "prose": "The connection keeper starts disconnected and immediately tries to connect. If the attempt succeeds it is connected; if it fails it waits 5 seconds and tries again, indefinitely. While connected, a link-lost notification returns it to waiting 5 seconds before the next attempt. A shutdown request in any condition stops it for good."
+    },
+    {
+      "id": "adc-to-volts",
+      "kind": "transform",
+      "prose": "The input is a 12-bit converter count from 0 to 4095. The output is the measured voltage in volts, computed as count multiplied by 3.3 and divided by 4095."
+    },
+    {
+      "id": "average-speed",
+      "kind": "transform",
+      "prose": "Given the distance travelled in metres and the elapsed time in seconds, both as unsigned 32-bit integers, report the average speed in metres per second as a 64-bit floating-point value. The elapsed time is never zero."
+    },
+    {
+      "id": "error-code-names",
+      "kind": "lookup",
+      "prose": "Each error code received from the device is reported as a severity name. Code 0 is OK, code 1 is WARN, codes 2 and 3 are FAIL. Any other code is reported as UNKNOWN."
+    },
+    {
+      "id": "button-commands",
+      "kind": "lookup",
+      "prose": "The remote sends a button index from 1 to 5. Index 1 means PLAY, 2 means PAUSE, 3 means STOP, 4 means NEXT and 5 means PREVIOUS. An index outside that range means NONE."
+    },
+    {
+      "id": "charging-permitted",
+      "kind": "condition",
+      "prose": "Charging is permitted only when the cover is closed, supply voltage is present, and no fault is active. The caller needs only to know whether it is permitted."
+    },
+    {
+      "id": "record-edit-permission",
+      "kind": "condition",
+      "prose": "A user may edit a record when the user is the record's owner or an administrator, and the record is not locked. The answer is yes or no."
+    },
+    {
+      "id": "status-frame",
+      "kind": "codec",
+      "prose": "The status frame is four bytes. Byte 0 is the message identifier. Bytes 1 and 2 hold the temperature as a signed 16-bit big-endian integer in tenths of a degree. Byte 3 holds status flags. The frame is both sent and received."
+    },
+    {
+      "id": "length-prefixed-request",
+      "kind": "codec",
+      "prose": "A request frame starts with a one-byte command, followed by a one-byte payload length N, followed by exactly N payload bytes. N is at most 64. There are no multi-byte numeric fields."
+    },
+    {
+      "id": "version-query",
+      "kind": "procedure",
+      "prose": "To read the device version: send a hello request to the device address. If the hello fails, the query fails. After a successful hello, send a version request; if it fails, retry it up to two more times. The query ends with the version bytes on success, or with a failure result."
+    },
+    {
+      "id": "pressure-plausibility",
+      "kind": "validator",
+      "prose": "A pressure reading is sampled every 100 ms. It is acceptable only between 0 and 600 kPa, and only if it differs from the previous accepted reading by at most 50 kPa. When a reading is rejected, the caller must be told which rule it broke."
+    },
+    {
+      "id": "level-smoothing",
+      "kind": "filter",
+      "prose": "The level sensor is noisy. Report the level as the average of the last 8 samples, updated on every new sample."
+    },
+    {
+      "id": "switch-debounce",
+      "kind": "filter",
+      "prose": "A mechanical switch bounces. Its reported state changes only after the raw input has read the same new value on 4 consecutive samples."
+    },
+    {
+      "id": "fan-curve",
+      "kind": "interpolation",
+      "prose": "Fan duty depends on temperature through this curve: 20 degrees gives 0 percent, 30 degrees gives 30 percent, 40 degrees gives 60 percent, 50 degrees gives 100 percent. Between listed temperatures the duty is linearly interpolated. Below 20 degrees the duty stays 0 percent and above 50 degrees it stays 100 percent."
+    },
+    {
+      "id": "keep-alive",
+      "kind": "timer",
+      "prose": "While the session is connected, a keep-alive event is due every 5 seconds. Whenever any message is sent, the 5-second interval starts again. When the connected state is left, no further keep-alive is due."
+    },
+    {
+      "id": "overload-alarm",
+      "kind": "observer",
+      "prose": "Announce an overload event when the current rises above 12 A, and announce overload-cleared only when it falls below 10 A again. Between 10 A and 12 A the announcement already made stands."
+    },
+    {
+      "id": "crc8",
+      "kind": "algorithm",
+      "prose": "Compute an 8-bit CRC over a buffer of up to 256 bytes, using polynomial 0x07 and initial value 0x00, processing each byte most significant bit first, with no final XOR."
+    },
+    {
+      "id": "byte-escaping",
+      "kind": "algorithm",
+      "prose": "Before transmission, every 0x7E byte in the buffer is replaced by the two bytes 0x7D 0x5E, and every 0x7D byte by 0x7D 0x5D; all other bytes are copied unchanged. The input is at most 256 bytes and the output at most 512."
+    },
+    {
+      "id": "result-codes",
+      "kind": "enum",
+      "prose": "Every reply carries a result code with these meanings: OK is 0, BUSY is 1, TIMEOUT is 2, REJECTED is 3. No other values are defined, and each is sent as one byte."
+    },
+    {
+      "id": "measurement-ready-payload",
+      "kind": "event-schema",
+      "prose": "The measurement.ready event carries the sensor identifier as an unsigned 16-bit integer and the measured value in milli-units as a signed 32-bit integer. Every machine that raises or handles the event relies on these two fields."
+    },
+    {
+      "id": "session-table",
+      "kind": "bounded-collection",
+      "prose": "Keep a table of at most 16 active sessions. An entry is added when a session opens and removed when it closes. Memory for the table must be fixed when the program is built; nothing may be allocated while it runs."
+    },
+    {
+      "id": "udp-endpoint",
+      "kind": "link",
+      "prose": "Frames arrive and leave over UDP. Each frame is delimited by the frame codec. When frames arrive faster than they can be staged in the receive buffer pool, the newest frames are dropped."
+    },
+    {
+      "id": "dma-receive-buffers",
+      "kind": "buffer-pool",
+      "prose": "Reserve 4 receive buffers of 512 bytes each for the DMA controller, placed in the memory section named sram2 and aligned to 32 bytes. The part has no data cache."
+    },
+    {
+      "id": "level-report",
+      "undetermined": ["condition", "observer", "lookup"],
+      "prose": "When the level is high, report high; when it is low, report low."
+    },
+    {
+      "id": "fan-settings",
+      "undetermined": ["lookup", "interpolation"],
+      "prose": "Report the fan setting for each temperature: 20 degrees gives 0, 30 degrees gives 30, 40 degrees gives 60."
+    },
+    {
+      "id": "scaled-setting",
+      "undetermined": ["transform", "lookup"],
+      "prose": "The output setting for input 1 is 10, for input 2 it is 20, and for input 3 it is 30."
+    }
+  ]
+}

@@ -108,7 +108,27 @@ owner decides.
 Neither is a prose-to-kind classifier. The catalog describes kinds and the
 manifest reports a reading; when the source states neither side of the
 behaviour that separates two candidate kinds, the choice is the owner's, and
-the AI should ask. Connecting SCE supplies tools and usage instructions; it
+the AI should ask.
+
+Whether that is enough for a client with none of this repository's context is
+measured, not assumed. `eval/kind_choice_cases.json` holds prose
+specifications written for the purpose — each determines one kind, or leaves
+the choice open between named candidates — and `eval/kind_choice.py` hands
+each one, in an empty directory, to a client that has only the SCE MCP
+server, with the request above. It scores what the product read, not what the
+client said: the written document goes through `validate_scxml`, and the
+manifest's `document_kind` is compared with the case. A case whose text leaves
+the kind open counts as right only when no document was written.
+
+```sh
+python3 tools/authoring/eval/kind_choice.py --client claude-restricted --out /tmp/kind-eval
+```
+
+The report names how isolated its client was: `claude-bare` reads no
+CLAUDE.md, memory or hooks and needs `ANTHROPIC_API_KEY`; `claude-restricted`
+runs with no repository in reach but still reads a user-level CLAUDE.md.
+
+Connecting SCE supplies tools and usage instructions; it
 does not supply the prose or decide policies absent from it. A host may choose
 not to pass MCP server instructions to the AI, so confirm the tool calls in the
 client's transcript.
