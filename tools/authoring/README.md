@@ -53,8 +53,8 @@ Register `scripts/sce_author_mcp.sh` as a local stdio MCP server in the AI
 client. Use the absolute path to that script in the client's `command` field;
 the script locates the repository and starts `sce_author.mcp` without a pack or
 binding. The exact registration UI or configuration key depends on the client.
-Once connected, the tool list should include `validate_scxml` and
-`render_scxml_pseudocode`.
+Once connected, the tool list should include `scxml_kinds`, `validate_scxml`
+and `render_scxml_pseudocode`.
 
 The launcher and MCP server run locally, but the AI client may send the prose,
 SCXML, tool results, and pseudocode to its model service. Local MCP does not
@@ -76,12 +76,28 @@ the right choice. The AI should explain its choice and ask the owner about
 ambiguous behavior. The evidence is the prose's stated inputs, outputs,
 events, retained state, timing, and data format; the AI should cite the
 relevant clauses, not infer a kind from a filename or the statechart default.
-The MCP server currently offers no prose-to-kind classifier or complete
-selection policy, so the choice remains an AI draft for the owner to review.
-Connecting
-SCE supplies tools and usage instructions; it does not supply the prose or
-decide policies absent from it. A host may choose not to pass MCP server
-instructions to the AI, so confirm the tool calls in the client's transcript.
+
+What the choice rests on comes from the product, not from this repository's
+documents or an assistant's memory of them. `scxml_kinds` returns the catalog
+compiled into `sce-codegen` (`sce-codegen kinds`,
+`schemas/sce-kind-catalog.v1.schema.json`): for every kind, the evidence a
+specification offers for it, the behaviour that separates it from the kinds it
+is confused with, the defaults the source has to decide, and a checked-in
+example document that `check --lint` accepts and `pseudo` renders. An author
+working outside this tree therefore reads the same catalog as the binary that
+will judge the document, and a test holds every example to that binary. After
+`validate_scxml`, the manifest's `document_kind` names the kind SCE read the
+document as, and `document_kind.declared` is `false` when no `sce:kind` was
+found and the statechart default applied, so a forgotten or misspelled
+declaration shows up without any diagnostic being needed.
+
+Neither is a prose-to-kind classifier. The catalog describes kinds and the
+manifest reports a reading; when the source states neither side of the
+behaviour that separates two candidate kinds, the choice is the owner's, and
+the AI should ask. Connecting SCE supplies tools and usage instructions; it
+does not supply the prose or decide policies absent from it. A host may choose
+not to pass MCP server instructions to the AI, so confirm the tool calls in the
+client's transcript.
 
 With SCE MCP connected to an AI assistant, a specification owner can attach a
 prose specification and ask, "Choose the SCE document kind that fits this
@@ -93,8 +109,9 @@ in its initialization instructions. A client may choose whether to pass those
 instructions to the AI, so this is guidance, not a substitute for reviewing
 the pseudocode against the source.
 
-The MCP server exposes tools that accept an SCXML file directly, with no pack
-or binding:
+The MCP server exposes tools that need no pack or binding:
+`scxml_kinds` runs `sce-codegen kinds` and returns the kind catalog, whole or
+for one kind; the rest accept an SCXML file directly.
 `validate_scxml` runs `sce-codegen check --lint --error-format=json` and returns
 every diagnostic record with the verdict and manifest, as JSON;
 `render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page;

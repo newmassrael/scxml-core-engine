@@ -17,6 +17,7 @@ So the shape a caller gets is:
     review     whether the PACK those two rest on is worth resting on
     check      whether what was written can reach the platform at all
     verify     whether it BEHAVES, by running it
+    scxml_kinds     what each document kind is for, before one is chosen
     validate_scxml  whether an SCXML document passes the product's structural check
     render_scxml_pseudocode show that SCXML document as pseudocode, without a binding
     render_scxml_diagram    draw it as print figures, one SVG per container
@@ -64,7 +65,8 @@ from .pack import load_pack
 from .pseudo import render as render_pseudo
 from .verify import validate_scxml as run_scxml_validation
 from .verify import (accept_design, acceptance_holds, acceptance_page,
-                     diagram_figures, requirement_records, unresolved_markers)
+                     diagram_figures, kind_catalog, requirement_records,
+                     unresolved_markers)
 from .verify import pseudo_page, verify as run_verify
 from .prose import load_prose
 from .questions import ask
@@ -78,26 +80,26 @@ SERVER_VERSION = "1"
 SERVER_INSTRUCTIONS = (
     "When a specification owner asks for pseudocode from a prose specification, "
     "let them use a short natural-language request. Read the source they supplied. "
-    "Before writing XML, choose and explain the document kind from the "
-    "source's stated inputs, outputs, events, retained state, timing, and "
-    "data format. Identify the source clauses supporting that choice. "
-    "an event-driven state machine is a statechart; a pure calculation may be "
-    "a Forge transform, a discrete mapping a lookup, a boolean rule a condition, "
-    "and other Forge kinds cover procedures, timers, codecs, and more. "
-    "Inspect SCE's available kinds when needed. Write a non-statechart kind as "
-    "an SCXML-root document with an explicit sce:kind in the SCE namespace "
-    "http://sce.dev/ext. "
+    "Before writing XML, call scxml_kinds and choose the document kind from "
+    "the source's stated inputs, outputs, events, retained state, timing, and "
+    "data format, matched against each kind's choose_when and distinct_from. "
+    "Name the kind, the source clauses supporting it, and the neighbouring "
+    "kind it was told apart from. If the source states neither side of the "
+    "behaviour that separates two candidates, it has not determined the "
+    "kind: explain the alternatives and ask the owner about that behaviour. "
+    "Write every document with an SCXML root; declare a non-statechart "
+    "(Forge) kind with sce:kind in the SCE namespace http://sce.dev/ext. "
     "Do not silently omit sce:kind: SCE otherwise reads the document as a "
     "statechart. Never treat that default as evidence from the source. "
-    "If the source does not determine the kind, explain the "
-    "alternatives and ask the owner about the behavior. Draft the document "
-    "yourself, and do not "
-    "invent missing policy values. "
-    "Call validate_scxml on the draft, fix reported issues, then call "
+    "Draft the document yourself, in the shape of the chosen kind's example, "
+    "and do not invent missing policy values; a kind's notes name the "
+    "defaults the source has to decide. "
+    "Call validate_scxml on the draft and fix reported issues; confirm that "
+    "the manifest's document_kind names the kind you chose. Then call "
     "render_scxml_pseudocode. Return the pseudocode and a short list of "
-    "decisions the source leaves open. Explain that these tools inspect SCXML; "
-    "they do not choose a kind from prose, convert prose, or prove agreement "
-    "with it. The owner reviews "
+    "decisions the source leaves open. Explain that these tools describe "
+    "kinds and inspect SCXML; they do not choose a kind from prose, convert "
+    "prose, or prove agreement with it. The owner reviews "
     "the pseudocode against the source. Never call scxml_accept without the "
     "owner's explicit acceptance. No pack or binding is needed for this flow."
 )
@@ -251,6 +253,32 @@ TOOLS = [
         },
     },
     {
+        "name": "scxml_kinds",
+        "description": (
+            "The product's catalog of document kinds (sce-codegen kinds), "
+            "for choosing a document's sce:kind BEFORE writing it. For each "
+            "kind: its role, what a document of it describes, the evidence "
+            "a specification offers for it (choose_when), the behaviour "
+            "that separates it from the kinds it is confused with "
+            "(distinct_from), what the author must decide first (notes), "
+            "the backends that emit it, whether it may be declared inline, "
+            "and a checked-in example document the product accepts. Needs "
+            "no pack, binding or document. It does not choose: when the "
+            "source states neither side of the behaviour a distinct_from "
+            "entry names, the source has not determined the kind, and the "
+            "owner is the one to ask."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "description": "Only this kind's entry, by its sce:kind name.",
+                },
+            },
+        },
+    },
+    {
         "name": "validate_scxml",
         "description": (
             "Run sce-codegen check --lint on an existing SCXML-root document, "
@@ -260,7 +288,10 @@ TOOLS = [
             "diagnostic record -- all lint findings in one run, not the "
             "first. Applies the declared kind's checks (including statechart "
             "design lints when appropriate); a pass does not "
-            "say it matches the prose specification."
+            "say it matches the prose specification. The manifest's "
+            "document_kind names the kind the product read the document as, "
+            "and document_kind.declared is false when no sce:kind was found "
+            "and the statechart default applied."
         ),
         "inputSchema": {
             "type": "object",
@@ -755,6 +786,10 @@ class ToolArgumentError(AuthoringError):
 def call_tool(name: str, args: dict) -> dict:
     """Run one tool. Every failure comes back as an answer, never a crash."""
     try:
+        if name == "scxml_kinds":
+            report, refusal = kind_catalog(_name_arg(args, "kind", "a kind name"))
+            return _failure(refusal) if refusal else _text(report)
+
         if name == "validate_scxml":
             report, refusal = run_scxml_validation(_scxml_document_arg(args))
             return _failure(refusal) if refusal else _text(report)

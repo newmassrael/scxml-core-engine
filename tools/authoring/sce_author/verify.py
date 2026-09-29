@@ -688,7 +688,27 @@ def validate_scxml(document: pathlib.Path,
     """
     return _product_answer(
         ["check", str(document), "--lint"], codegen,
-        answer="manifest", read=_manifest_line, verdicts=("accepted", "refused"))
+        answer="manifest", read=_json_line, verdicts=("accepted", "refused"))
+
+
+def kind_catalog(kind: str | None = None,
+                 codegen: pathlib.Path | None = None) -> tuple[str, str]:
+    """The product's kind catalog (`sce-codegen kinds`): for each `sce:kind`,
+    what a document of it describes, the evidence a specification offers for
+    it, what separates it from its neighbours, and a document of it the
+    product accepts. `kind` narrows it to one entry.
+
+    ⚠ The catalog is compiled into the generator, so it is asked for rather
+    than restated here: an author outside the SCE tree reads the catalog of
+    the very binary that will judge the document, and a kind added to the
+    product reaches this tool with no edit to it. The name is passed through
+    unchecked for `pseudo_page`'s reason -- the product refuses a kind it
+    does not have, with the list it does.
+    """
+    args = ["kinds"]
+    if kind is not None:
+        args += ["--kind", kind]
+    return _product_answer(args, codegen, answer="catalog", read=_json_line)
 
 
 def _product_answer(args: list[str], codegen: pathlib.Path | None, *,
@@ -836,9 +856,10 @@ def acceptance_holds(record: pathlib.Path, variant: str, root: pathlib.Path,
     return report, refusal
 
 
-def _manifest_line(stdout: str):
-    """The one JSON manifest line `check` writes on success, or the raw
-    text when it is not one -- never dropped."""
+def _json_line(stdout: str):
+    """The one JSON line a subcommand writes on success -- `check`'s
+    manifest, `kinds`' catalog -- or the raw text when it is not one, never
+    dropped."""
     line = stdout.strip()
     try:
         return json.loads(line)

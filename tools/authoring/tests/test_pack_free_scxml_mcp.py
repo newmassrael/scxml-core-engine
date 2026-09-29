@@ -50,10 +50,46 @@ class PackFreeScxmlMcp(unittest.TestCase):
         report = json.loads(checked["content"][0]["text"])
         self.assertEqual(("accepted", "check"),
                          (report["verdict"], report["manifest"]["kind"]))
+        # No sce:kind: accepted, and the manifest says the statechart
+        # reading came from the default rather than from the document.
+        self.assertEqual({"name": "statechart", "declared": False},
+                         report["manifest"]["document_kind"])
 
         shown = call("render_scxml_pseudocode", document=str(self.document))
         self.assertFalse(shown.get("isError"), shown["content"][0]["text"])
         self.assertIn("state Idle:", shown["content"][0]["text"])
+
+    @unittest.skipUnless(_default_codegen().exists(),
+                         "the product's code generator is not built")
+    def test_real_product_describes_every_kind_before_one_is_chosen(self):
+        # The catalog the generator carries, not a list kept here: every
+        # kind the product accepts, each with evidence and a neighbour.
+        listed = call("scxml_kinds")
+        self.assertFalse(listed.get("isError"), listed["content"][0]["text"])
+        report = json.loads(listed["content"][0]["text"])
+        self.assertEqual("done", report["verdict"])
+        kinds = report["catalog"]["kinds"]
+        names = [k["name"] for k in kinds]
+        self.assertIn("statechart", names)
+        self.assertIn("transform", names)
+        self.assertEqual(len(names), len(set(names)))
+        for entry in kinds:
+            with self.subTest(kind=entry["name"]):
+                self.assertTrue(entry["choose_when"])
+                self.assertTrue(entry["distinct_from"])
+        self.assertEqual({"attribute": "kind", "namespace": "http://sce.dev/ext",
+                          "element": "scxml", "default": "statechart"},
+                         report["catalog"]["declaration"])
+
+        # One entry, with an example the author can follow.
+        one = json.loads(call("scxml_kinds", kind="transform")["content"][0]["text"])
+        (entry,) = one["catalog"]["kinds"]
+        self.assertIn('sce:kind="transform"', entry["example"]["document"]["text"])
+
+        # A kind the product does not have is the product's refusal.
+        refused = call("scxml_kinds", kind="state-machine")
+        self.assertTrue(refused.get("isError"))
+        self.assertEqual("refused", json.loads(refused["content"][0]["text"])["verdict"])
 
     @unittest.skipUnless(_default_codegen().exists(),
                          "the product's code generator is not built")
@@ -70,7 +106,10 @@ class PackFreeScxmlMcp(unittest.TestCase):
             '</scxml>\n', encoding="utf-8")
         checked = call("validate_scxml", document=str(self.document))
         self.assertFalse(checked.get("isError"), checked["content"][0]["text"])
-        self.assertEqual("accepted", json.loads(checked["content"][0]["text"])["verdict"])
+        report = json.loads(checked["content"][0]["text"])
+        self.assertEqual("accepted", report["verdict"])
+        self.assertEqual({"name": "transform", "declared": True},
+                         report["manifest"]["document_kind"])
         shown = call("render_scxml_pseudocode", document=str(self.document))
         self.assertFalse(shown.get("isError"), shown["content"][0]["text"])
         self.assertIn("transform client", shown["content"][0]["text"])
@@ -193,6 +232,8 @@ class PackFreeScxmlMcp(unittest.TestCase):
                   manifest=manifest),
              ["diagram", doc, "-o", "figs", "--page", "a3-landscape",
               "--min-pt", "8.0", "--lexicon", "ko", "--manifest", manifest]),
+            ("scxml_kinds", dict(), ["kinds"]),
+            ("scxml_kinds", dict(kind="lookup"), ["kinds", "--kind", "lookup"]),
             ("scxml_unresolved", dict(document=doc), ["unresolved", doc]),
             ("scxml_requirements", dict(document=doc, manifest=manifest),
              ["requirements", doc, "--manifest", manifest]),
