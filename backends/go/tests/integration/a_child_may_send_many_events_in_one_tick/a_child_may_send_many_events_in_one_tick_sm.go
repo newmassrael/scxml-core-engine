@@ -528,7 +528,7 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) TickChildren(engine *sce.Engine
 func (p *AChildMaySendManyEventsInOneTickPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 	if invokeID == "chatty" {
 		if child := p.childChatty; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -575,7 +575,7 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) DeliverToChildSession(childSess
 		return false
 	}
 	if cs, ok := p.activeInvokes["chatty"]; ok && cs.SessionID == childSessionID {
-		p.childChatty.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childChatty, eventName, eventData)
 		return true
 	}
 	return false
@@ -590,6 +590,7 @@ type childEngineWrapperChatty struct {
 }
 func (w *childEngineWrapperChatty) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperChatty) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperChatty) Step() { w.engine.Step() }
 func (w *childEngineWrapperChatty) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperChatty) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperChatty) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }

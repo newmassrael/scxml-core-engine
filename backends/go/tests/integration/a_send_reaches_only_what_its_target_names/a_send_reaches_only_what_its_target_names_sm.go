@@ -725,7 +725,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) TickChildren(engine *sce.Engi
 func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 	if invokeID == "kid" {
 		if child := p.childKid; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -772,7 +772,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) DeliverToChildSession(childSe
 		return false
 	}
 	if cs, ok := p.activeInvokes["kid"]; ok && cs.SessionID == childSessionID {
-		p.childKid.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childKid, eventName, eventData)
 		return true
 	}
 	return false
@@ -787,6 +787,7 @@ type childEngineWrapperKid struct {
 }
 func (w *childEngineWrapperKid) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperKid) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperKid) Step() { w.engine.Step() }
 func (w *childEngineWrapperKid) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperKid) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperKid) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
@@ -1407,7 +1408,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteTransitionContent(sour
 	// A child whose session has reached its final state has ended, and is not
 	// there to address.
 	if child := p.childKid; child != nil && !child.IsInFinalState() {
-		child.RaiseExternalByName("ping", eventDataStr)
+		sce.DeliverToChild(child, "ping", eventDataStr)
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.

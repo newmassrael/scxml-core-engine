@@ -343,7 +343,7 @@ func (p *AutoforwardInternalQueuePolicy) ForwardToAutoforwardChildren(eventName 
 func (p *AutoforwardInternalQueuePolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 	if invokeID == "inv_watch" {
 		if child := p.childInvWatch; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -390,7 +390,7 @@ func (p *AutoforwardInternalQueuePolicy) DeliverToChildSession(childSessionID, e
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_watch"]; ok && cs.SessionID == childSessionID {
-		p.childInvWatch.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvWatch, eventName, eventData)
 		return true
 	}
 	return false
@@ -405,6 +405,7 @@ type childEngineWrapperInvWatch struct {
 }
 func (w *childEngineWrapperInvWatch) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvWatch) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvWatch) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvWatch) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvWatch) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvWatch) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }

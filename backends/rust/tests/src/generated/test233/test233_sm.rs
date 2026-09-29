@@ -1111,7 +1111,7 @@ impl StatePolicy for Test233Policy {
         if invoke_id == "_invoke_0" {
             if let Some(ref mut child) = self.child_invoke_0 {
                 if !child.is_in_final_state() {
-                    child.raise_external_by_name(event_name, event_data);
+                    child.deliver_by_name(event_name, event_data);
                     return true;
                 }
             }
@@ -1155,7 +1155,7 @@ impl StatePolicy for Test233Policy {
             .map_or(false, |cs| cs.session_id == child_session_id)
         {
             if let Some(ref mut child) = self.child_invoke_0 {
-                child.raise_external_by_name(event_name, event_data);
+                child.deliver_by_name(event_name, event_data);
                 return true;
             }
         }
@@ -1205,6 +1205,14 @@ impl StatePolicy for Test233Policy {
     // W3C SCXML 6.4: Tick child state machines
     fn tick_children(&mut self, engine: &mut Engine<Self>) {
         self.do_tick_children(engine);
+    }
+
+    // W3C SCXML 6.4: an invoked session reads its parent's time — on a
+    // host-owned clock that is a value, moved here as the parent opens a turn.
+    fn follow_clock_in_children(&mut self, clock: sce_rust_runtime::SceClock) {
+        if let Some(ref mut child) = self.child_invoke_0 {
+            child.follow_clock(clock);
+        }
     }
     // W3C SCXML 6.5: Execute finalize for child events
     fn execute_finalize_for_child_event(

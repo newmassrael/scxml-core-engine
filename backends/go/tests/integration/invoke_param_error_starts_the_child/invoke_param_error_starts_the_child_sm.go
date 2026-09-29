@@ -599,7 +599,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) TickChildren(engine *sce.Engine[I
 func (p *InvokeParamErrorStartsTheChildPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 	if invokeID == "inv_probe" {
 		if child := p.childInvProbe; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -646,7 +646,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) DeliverToChildSession(childSessio
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_probe"]; ok && cs.SessionID == childSessionID {
-		p.childInvProbe.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvProbe, eventName, eventData)
 		return true
 	}
 	return false
@@ -661,6 +661,7 @@ type childEngineWrapperInvProbe struct {
 }
 func (w *childEngineWrapperInvProbe) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvProbe) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvProbe) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvProbe) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvProbe) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvProbe) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }

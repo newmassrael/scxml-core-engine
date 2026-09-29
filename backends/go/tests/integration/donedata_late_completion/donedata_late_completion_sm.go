@@ -520,7 +520,7 @@ func (p *DonedataLateCompletionPolicy) TickChildren(engine *sce.Engine[DonedataL
 func (p *DonedataLateCompletionPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 	if invokeID == "inv_late" {
 		if child := p.childInvLate; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -567,7 +567,7 @@ func (p *DonedataLateCompletionPolicy) DeliverToChildSession(childSessionID, eve
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_late"]; ok && cs.SessionID == childSessionID {
-		p.childInvLate.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvLate, eventName, eventData)
 		return true
 	}
 	return false
@@ -582,6 +582,7 @@ type childEngineWrapperInvLate struct {
 }
 func (w *childEngineWrapperInvLate) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvLate) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvLate) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvLate) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvLate) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvLate) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
@@ -974,7 +975,7 @@ func (p *DonedataLateCompletionPolicy) ExecuteTransitionContent(source DonedataL
 	// A child whose session has reached its final state has ended, and is not
 	// there to address.
 	if child := p.childInvLate; child != nil && !child.IsInFinalState() {
-		child.RaiseExternalByName("finish", eventDataStr)
+		sce.DeliverToChild(child, "finish", eventDataStr)
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.

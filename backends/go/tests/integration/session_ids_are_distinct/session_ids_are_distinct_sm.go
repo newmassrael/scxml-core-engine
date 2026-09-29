@@ -650,14 +650,14 @@ func (p *SessionIdsAreDistinctPolicy) TickChildren(engine *sce.Engine[SessionIds
 func (p *SessionIdsAreDistinctPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 	if invokeID == "inv_a" {
 		if child := p.childInvA; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
 	}
 	if invokeID == "inv_b" {
 		if child := p.childInvB; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -712,11 +712,11 @@ func (p *SessionIdsAreDistinctPolicy) DeliverToChildSession(childSessionID, even
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_a"]; ok && cs.SessionID == childSessionID {
-		p.childInvA.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvA, eventName, eventData)
 		return true
 	}
 	if cs, ok := p.activeInvokes["inv_b"]; ok && cs.SessionID == childSessionID {
-		p.childInvB.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvB, eventName, eventData)
 		return true
 	}
 	return false
@@ -731,6 +731,7 @@ type childEngineWrapperInvA struct {
 }
 func (w *childEngineWrapperInvA) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvA) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvA) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvA) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvA) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvA) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
@@ -744,6 +745,7 @@ type childEngineWrapperInvB struct {
 }
 func (w *childEngineWrapperInvB) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvB) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvB) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvB) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvB) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvB) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }

@@ -346,7 +346,7 @@ func (p *InvokePrecedesExternalDequeuePolicy) ForwardToAutoforwardChildren(event
 func (p *InvokePrecedesExternalDequeuePolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 	if invokeID == "inv_watch" {
 		if child := p.childInvWatch; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -393,7 +393,7 @@ func (p *InvokePrecedesExternalDequeuePolicy) DeliverToChildSession(childSession
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_watch"]; ok && cs.SessionID == childSessionID {
-		p.childInvWatch.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvWatch, eventName, eventData)
 		return true
 	}
 	return false
@@ -408,6 +408,7 @@ type childEngineWrapperInvWatch struct {
 }
 func (w *childEngineWrapperInvWatch) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvWatch) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvWatch) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvWatch) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvWatch) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvWatch) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
@@ -799,7 +800,7 @@ func (p *InvokePrecedesExternalDequeuePolicy) ExecuteTransitionContent(source In
 	// A child whose session has reached its final state has ended, and is not
 	// there to address.
 	if child := p.childInvWatch; child != nil && !child.IsInFinalState() {
-		child.RaiseExternalByName("probe", eventDataStr)
+		sce.DeliverToChild(child, "probe", eventDataStr)
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.

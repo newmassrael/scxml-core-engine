@@ -937,21 +937,21 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) TickChildren(engine *sce.Engine
 func (p *ABadInvokeArgumentIsReportedOncePolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 	if invokeID == "inv1" {
 		if child := p.childInv1; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
 	}
 	if invokeID == "inv2" {
 		if child := p.childInv2; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
 	}
 	if invokeID == "inv3" {
 		if child := p.childInv3; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -1014,15 +1014,15 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) DeliverToChildSession(childSess
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv1"]; ok && cs.SessionID == childSessionID {
-		p.childInv1.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInv1, eventName, eventData)
 		return true
 	}
 	if cs, ok := p.activeInvokes["inv2"]; ok && cs.SessionID == childSessionID {
-		p.childInv2.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInv2, eventName, eventData)
 		return true
 	}
 	if cs, ok := p.activeInvokes["inv3"]; ok && cs.SessionID == childSessionID {
-		p.childInv3.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInv3, eventName, eventData)
 		return true
 	}
 	return false
@@ -1037,6 +1037,7 @@ type childEngineWrapperInv1 struct {
 }
 func (w *childEngineWrapperInv1) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInv1) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInv1) Step() { w.engine.Step() }
 func (w *childEngineWrapperInv1) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInv1) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInv1) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
@@ -1050,6 +1051,7 @@ type childEngineWrapperInv2 struct {
 }
 func (w *childEngineWrapperInv2) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInv2) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInv2) Step() { w.engine.Step() }
 func (w *childEngineWrapperInv2) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInv2) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInv2) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
@@ -1063,6 +1065,7 @@ type childEngineWrapperInv3 struct {
 }
 func (w *childEngineWrapperInv3) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInv3) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInv3) Step() { w.engine.Step() }
 func (w *childEngineWrapperInv3) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInv3) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInv3) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }

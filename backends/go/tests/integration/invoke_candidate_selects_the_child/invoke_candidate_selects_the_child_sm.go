@@ -626,7 +626,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) TickChildren(engine *sce.Engine[I
 func (p *InvokeCandidateSelectsTheChildPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 	if invokeID == "_invoke_0" {
 		if child := p.childInvoke0; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -655,6 +655,7 @@ type childEngineWrapperInvoke0Chosen struct {
 }
 func (w *childEngineWrapperInvoke0Chosen) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvoke0Chosen) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvoke0Chosen) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvoke0Chosen) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvoke0Chosen) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvoke0Chosen) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
@@ -668,6 +669,7 @@ type childEngineWrapperInvoke0Other struct {
 }
 func (w *childEngineWrapperInvoke0Other) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvoke0Other) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvoke0Other) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvoke0Other) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvoke0Other) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvoke0Other) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }

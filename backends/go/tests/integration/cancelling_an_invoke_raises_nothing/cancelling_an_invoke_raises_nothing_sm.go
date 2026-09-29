@@ -542,7 +542,7 @@ func (p *CancellingAnInvokeRaisesNothingPolicy) TickChildren(engine *sce.Engine[
 func (p *CancellingAnInvokeRaisesNothingPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 	if invokeID == "child" {
 		if child := p.childChild; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -589,7 +589,7 @@ func (p *CancellingAnInvokeRaisesNothingPolicy) DeliverToChildSession(childSessi
 		return false
 	}
 	if cs, ok := p.activeInvokes["child"]; ok && cs.SessionID == childSessionID {
-		p.childChild.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childChild, eventName, eventData)
 		return true
 	}
 	return false
@@ -604,6 +604,7 @@ type childEngineWrapperChild struct {
 }
 func (w *childEngineWrapperChild) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperChild) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperChild) Step() { w.engine.Step() }
 func (w *childEngineWrapperChild) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperChild) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperChild) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }

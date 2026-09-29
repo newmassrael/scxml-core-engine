@@ -859,21 +859,21 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) TickChildren(engine *sce.Engine[
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 	if invokeID == "inv_empty" {
 		if child := p.childInvEmpty; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
 	}
 	if invokeID == "inv_absent" {
 		if child := p.childInvAbsent; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
 	}
 	if invokeID == "inv_unmatched" {
 		if child := p.childInvUnmatched; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -936,15 +936,15 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) DeliverToChildSession(childSessi
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_empty"]; ok && cs.SessionID == childSessionID {
-		p.childInvEmpty.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvEmpty, eventName, eventData)
 		return true
 	}
 	if cs, ok := p.activeInvokes["inv_absent"]; ok && cs.SessionID == childSessionID {
-		p.childInvAbsent.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvAbsent, eventName, eventData)
 		return true
 	}
 	if cs, ok := p.activeInvokes["inv_unmatched"]; ok && cs.SessionID == childSessionID {
-		p.childInvUnmatched.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvUnmatched, eventName, eventData)
 		return true
 	}
 	return false
@@ -1002,6 +1002,7 @@ type childEngineWrapperInvEmpty struct {
 }
 func (w *childEngineWrapperInvEmpty) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvEmpty) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvEmpty) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvEmpty) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvEmpty) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvEmpty) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
@@ -1015,6 +1016,7 @@ type childEngineWrapperInvAbsent struct {
 }
 func (w *childEngineWrapperInvAbsent) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvAbsent) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvAbsent) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvAbsent) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvAbsent) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvAbsent) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
@@ -1028,6 +1030,7 @@ type childEngineWrapperInvUnmatched struct {
 }
 func (w *childEngineWrapperInvUnmatched) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvUnmatched) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvUnmatched) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvUnmatched) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvUnmatched) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvUnmatched) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }

@@ -723,7 +723,7 @@ func (p *SendParamPayloadPolicy) TickChildren(engine *sce.Engine[SendParamPayloa
 func (p *SendParamPayloadPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 	if invokeID == "inv_emitter" {
 		if child := p.childInvEmitter; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -770,7 +770,7 @@ func (p *SendParamPayloadPolicy) DeliverToChildSession(childSessionID, eventName
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_emitter"]; ok && cs.SessionID == childSessionID {
-		p.childInvEmitter.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvEmitter, eventName, eventData)
 		return true
 	}
 	return false
@@ -785,6 +785,7 @@ type childEngineWrapperInvEmitter struct {
 }
 func (w *childEngineWrapperInvEmitter) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvEmitter) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvEmitter) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvEmitter) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvEmitter) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvEmitter) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }

@@ -537,7 +537,7 @@ func (p *AutoforwardEventFieldsPolicy) ForwardToAutoforwardChildren(eventName st
 func (p *AutoforwardEventFieldsPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 	if invokeID == "inv_echo" {
 		if child := p.childInvEcho; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -584,7 +584,7 @@ func (p *AutoforwardEventFieldsPolicy) DeliverToChildSession(childSessionID, eve
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_echo"]; ok && cs.SessionID == childSessionID {
-		p.childInvEcho.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvEcho, eventName, eventData)
 		return true
 	}
 	return false
@@ -599,6 +599,7 @@ type childEngineWrapperInvEcho struct {
 }
 func (w *childEngineWrapperInvEcho) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvEcho) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvEcho) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvEcho) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvEcho) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvEcho) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }

@@ -1071,35 +1071,35 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) TickChildren(engine *sce.Engin
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 	if invokeID == "inv_shadow" {
 		if child := p.childInvShadow; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
 	}
 	if invokeID == "inv_sole" {
 		if child := p.childInvSole; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
 	}
 	if invokeID == "inv_unmatched" {
 		if child := p.childInvUnmatched; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
 	}
 	if invokeID == "inv_namelist" {
 		if child := p.childInvNamelist; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
 	}
 	if invokeID == "inv_infinite" {
 		if child := p.childInvInfinite; child != nil && !child.IsInFinalState() {
-			child.RaiseExternalByName(eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
 		return false
@@ -1178,23 +1178,23 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) DeliverToChildSession(childSes
 		return false
 	}
 	if cs, ok := p.activeInvokes["inv_shadow"]; ok && cs.SessionID == childSessionID {
-		p.childInvShadow.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvShadow, eventName, eventData)
 		return true
 	}
 	if cs, ok := p.activeInvokes["inv_sole"]; ok && cs.SessionID == childSessionID {
-		p.childInvSole.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvSole, eventName, eventData)
 		return true
 	}
 	if cs, ok := p.activeInvokes["inv_unmatched"]; ok && cs.SessionID == childSessionID {
-		p.childInvUnmatched.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvUnmatched, eventName, eventData)
 		return true
 	}
 	if cs, ok := p.activeInvokes["inv_namelist"]; ok && cs.SessionID == childSessionID {
-		p.childInvNamelist.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvNamelist, eventName, eventData)
 		return true
 	}
 	if cs, ok := p.activeInvokes["inv_infinite"]; ok && cs.SessionID == childSessionID {
-		p.childInvInfinite.RaiseExternalByName(eventName, eventData)
+		sce.DeliverToChild(p.childInvInfinite, eventName, eventData)
 		return true
 	}
 	return false
@@ -1209,6 +1209,7 @@ type childEngineWrapperInvShadow struct {
 }
 func (w *childEngineWrapperInvShadow) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvShadow) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvShadow) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvShadow) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvShadow) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvShadow) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
@@ -1222,6 +1223,7 @@ type childEngineWrapperInvSole struct {
 }
 func (w *childEngineWrapperInvSole) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvSole) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvSole) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvSole) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvSole) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvSole) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
@@ -1235,6 +1237,7 @@ type childEngineWrapperInvUnmatched struct {
 }
 func (w *childEngineWrapperInvUnmatched) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvUnmatched) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvUnmatched) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvUnmatched) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvUnmatched) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvUnmatched) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
@@ -1248,6 +1251,7 @@ type childEngineWrapperInvNamelist struct {
 }
 func (w *childEngineWrapperInvNamelist) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvNamelist) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvNamelist) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvNamelist) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvNamelist) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvNamelist) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
@@ -1261,6 +1265,7 @@ type childEngineWrapperInvInfinite struct {
 }
 func (w *childEngineWrapperInvInfinite) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvInfinite) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvInfinite) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvInfinite) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvInfinite) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvInfinite) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
