@@ -88,6 +88,12 @@ SERVER_VERSION = "1"
 SERVER_INSTRUCTIONS = (
     "When a specification owner asks for pseudocode from a prose specification, "
     "let them use a short natural-language request. Read the source they supplied. "
+    "If the owner keeps an acceptance record for it, call scxml_accepted_for "
+    "with that record, the specification and their decision record before "
+    "writing anything: when it answers accepted-design, show that design's "
+    "page verbatim and write no new draft unless the owner asks for one, "
+    "because a new draft of the same specification is never the same "
+    "document. "
     "Before writing XML, call scxml_kinds and choose the document kind from "
     "the source's stated inputs, outputs, events, retained state, timing, and "
     "data format, matched against each kind's choose_when and distinct_from. "
@@ -124,8 +130,9 @@ SERVER_INSTRUCTIONS = (
     "tools describe kinds and inspect SCXML; they do not choose a kind "
     "from prose, convert prose, or prove agreement with it. The owner "
     "reviews the pseudocode against the source. Never call scxml_accept "
-    "without the owner's explicit acceptance. No pack or binding is "
-    "needed for this flow."
+    "without the owner's explicit acceptance, and when you do, give it the "
+    "specification and the decision record the design was written from as "
+    "its sources. No pack or binding is needed for this flow."
 )
 
 _PACK_ARG = {
@@ -168,6 +175,24 @@ def _file_input(key: str, what: str) -> dict:
 
 _DOCUMENT_INPUT = _file_input("document", "the SCXML document")
 _MANIFEST_INPUT = _file_input("manifest", "the requirement manifest")
+# What a design was authored from: the specification files, and the owner's
+# decision record when there is one. The acceptance record pins them, so a
+# revised specification lapses an acceptance and the same one asked about
+# again is answered with the accepted design.
+_AUTHORED_FROM_INPUT = {
+    "sources": {"type": "array", "items": {"type": "string"},
+                "description": "Paths to the specification files (local servers only)."},
+    "sources_text": {
+        "type": "array",
+        "description": "The specification files themselves, each under its own name.",
+        "items": {
+            "type": "object",
+            "required": ["name", "text"],
+            "properties": {"name": {"type": "string"}, "text": {"type": "string"}},
+        },
+    },
+    **_file_input("decisions", "the owner's decision record"),
+}
 
 TOOLS = [
     {
@@ -528,7 +553,11 @@ TOOLS = [
             "accepted one. Returns JSON: verdict, record, diagnostics. With "
             "the files given as text the record comes back as `record_text`, "
             "its paths being the names the files were given; keep it, and "
-            "give it with the same files to scxml_acceptance_check."
+            "give it with the same files to scxml_acceptance_check. Give the "
+            "specification the design was written from (`sources`) and the "
+            "owner's decision record if there is one: the record pins them "
+            "too, so scxml_accepted_for can hand this design back when the "
+            "same specification is asked for again."
         ),
         "inputSchema": {
             "type": "object",
@@ -536,6 +565,7 @@ TOOLS = [
             "properties": {
                 **_DOCUMENT_INPUT,
                 **_MANIFEST_INPUT,
+                **_AUTHORED_FROM_INPUT,
                 "variant": {"type": "string", "description": "The variant accepted."},
                 "root": {"type": "string", "description": (
                     "Directory every pinned path is recorded relative to "
@@ -552,13 +582,55 @@ TOOLS = [
             "Ask whether an acceptance record still holds against the tree. "
             "Returns JSON: verdict `holds`, or `lapsed` with the product's "
             "record of what moved (cli/acceptance-lapsed) -- a lapsed "
-            "acceptance is an answer, not an error."
+            "acceptance is an answer, not an error. With `sources` or a "
+            "decision record, holding also means the design was authored "
+            "from exactly those files, compared by content."
         ),
         "inputSchema": {
             "type": "object",
             "required": ["variant"],
             "properties": {
                 **_file_input("record", "the acceptance record"),
+                **_AUTHORED_FROM_INPUT,
+                "variant": {"type": "string", "description": "The variant being asked about."},
+                "root": {"type": "string", "description": (
+                    "Directory the record's paths are read against (local "
+                    "servers, with a record path).")},
+                "files_text": {
+                    "type": "array",
+                    "description": (
+                        "With `record_text`: every file the record names, "
+                        "under the name it names it by."),
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "text"],
+                        "properties": {"name": {"type": "string"},
+                                       "text": {"type": "string"}},
+                    },
+                },
+            },
+        },
+    },
+    {
+        "name": "scxml_accepted_for",
+        "description": (
+            "Before writing a draft, ask whether the owner already accepted a "
+            "design for this specification. Give the acceptance record the "
+            "owner keeps, the specification (`sources`) and their decision "
+            "record if they have one. When the record still holds and was "
+            "authored from exactly these files (compared by content), the "
+            "answer is `accepted-design`, with the document, its text and its "
+            "pseudocode page: show that page verbatim and write no new draft "
+            "unless the owner asks for one -- a new draft of the same "
+            "specification is never the same document. Otherwise the answer "
+            "is `lapsed`, saying what differs, and a draft is written."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["variant"],
+            "properties": {
+                **_file_input("record", "the acceptance record"),
+                **_AUTHORED_FROM_INPUT,
                 "variant": {"type": "string", "description": "The variant being asked about."},
                 "root": {"type": "string", "description": (
                     "Directory the record's paths are read against (local "
@@ -998,6 +1070,26 @@ class _Staging:
                 raise ToolArgumentError(describe_path(path))
         return [path.resolve() for path in found]
 
+    def write_aside(self, name, text, key: str) -> pathlib.Path:
+        """Stage `text` apart from the files a record names, in `asked/`.
+
+        For the files a question is ABOUT, which may carry the very name of
+        a file the record pins -- the owner's current specification beside
+        the one the design was accepted from -- and must not be read as it.
+        """
+        if not isinstance(text, str):
+            raise ToolArgumentError(f"'{key}_text' has to be the file's text, as a string")
+        if (not isinstance(name, str) or not _FILE_NAME.fullmatch(name)
+                or set(name) == {"."}):
+            raise ToolArgumentError(
+                f"'{key}_name' has to be a plain file name such as spec.md, not {name!r}")
+        aside = self.dir / "asked"
+        aside.mkdir(exist_ok=True)
+        if (aside / name).exists():
+            raise ToolArgumentError(f"two files asked about are named {name!r}")
+        (aside / name).write_text(text, encoding="utf-8")
+        return pathlib.Path("asked") / name
+
     def refuse_path(self, key: str) -> None:
         if self.remote:
             raise ToolArgumentError(
@@ -1100,6 +1192,36 @@ def _acceptance_report_tool(args: dict, staging: _Staging) -> dict:
         sidecar, cwd=staging.dir))
 
 
+def _authored_from(args: dict, staging: _Staging, *, aside: bool = False):
+    """The specification files (`sources` / `sources_text`) and the decision
+    record (`decisions` / `decisions_text`) a design was authored from, or a
+    question is about. Both optional; `aside` stages text apart from the
+    files a record names (see `_Staging.write_aside`)."""
+    sources: list[pathlib.Path] = []
+    if args.get("sources") is not None or args.get("sources_text") is not None:
+        if aside and args.get("sources_text") is not None:
+            texts = args["sources_text"]
+            if not isinstance(texts, list) or not texts:
+                raise ToolArgumentError("'sources_text' has to be a non-empty list of files")
+            for entry in texts:
+                if not isinstance(entry, dict):
+                    raise ToolArgumentError("each 'sources_text' entry has a name and a text")
+                sources.append(staging.write_aside(entry.get("name"), entry.get("text"), "sources"))
+        else:
+            sources = staging.many(args, "sources", "the specification files")
+    decisions = None
+    if aside and args.get("decisions_text") is not None:
+        if args.get("decisions") is not None:
+            raise ToolArgumentError("give 'decisions' or 'decisions_text', not both")
+        name = args.get("decisions_name")
+        decisions = staging.write_aside("decisions.json" if name is None else name,
+                                        args["decisions_text"], "decisions")
+    else:
+        decisions = staging.file(args, "decisions", "the owner's decision record",
+                                 "decisions.json", required=False)
+    return sources, decisions
+
+
 def _accept_tool(args: dict, staging: _Staging) -> dict:
     variant = _name_arg(args, "variant", "the variant's name", required=True)
     root = staging.local_path(args, "root", "the directory the record's paths are relative to")
@@ -1108,10 +1230,11 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
         # The owner's own tree: the record names their files where they are.
         if root is None or out is None:
             raise ToolArgumentError("'root' and 'out' go together")
+        sources, decisions = _authored_from(args, staging)
         return _answer(*accept_design(
             _file_arg(args, "document", "the accepted SCXML document").resolve(),
             _file_arg(args, "manifest", "the requirement manifest").resolve(),
-            variant, root, out))
+            variant, root, out, sources=sources, decisions=decisions))
     # Handed over as text: the record pins them by the names they were
     # given, relative to the staging directory, and comes back itself --
     # there is no tree of the caller's to leave it in.
@@ -1122,9 +1245,11 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
     document = staging.file(args, "document", "the accepted SCXML document", "document.scxml")
     manifest = staging.file(args, "manifest", "the requirement manifest",
                             "requirements.manifest.json")
+    sources, decisions = _authored_from(args, staging)
     record = pathlib.Path("acceptance.json")
     report, refusal = accept_design(document, manifest, variant, pathlib.Path("."),
-                                    record, cwd=staging.dir)
+                                    record, sources=sources, decisions=decisions,
+                                    cwd=staging.dir)
     if refusal:
         return _failure(refusal)
     answer = json.loads(report)
@@ -1133,14 +1258,17 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
 
 
-def _acceptance_check_tool(args: dict, staging: _Staging) -> dict:
-    variant = _name_arg(args, "variant", "the variant's name", required=True)
+def _staged_record(args: dict, staging: _Staging):
+    """The record and the root its paths are read against: the caller's own
+    tree for a record path, or the staging directory for a record handed
+    over as text with every file it names (`files_text`). Returns
+    `(record, root, cwd)` for `acceptance_holds`."""
     if args.get("record_text") is None:
         record = staging.file(args, "record", "the acceptance record", "acceptance.json")
         root = staging.local_path(args, "root", "the directory the record's paths are read against")
         if root is None:
             raise ToolArgumentError("'root' is required with a record path")
-        return _answer(*acceptance_holds(record, variant, root))
+        return record, root, None
     # The record and every file it names, as text, under the names it
     # names them by.
     record = staging.file(args, "record", "the acceptance record", "acceptance.json")
@@ -1153,7 +1281,59 @@ def _acceptance_check_tool(args: dict, staging: _Staging) -> dict:
         if not isinstance(entry, dict):
             raise ToolArgumentError("each 'files_text' entry has a name and a text")
         staging.write(entry.get("name"), entry.get("text"), "files")
-    return _answer(*acceptance_holds(record, variant, pathlib.Path("."), cwd=staging.dir))
+    return record, pathlib.Path("."), staging.dir
+
+
+def _acceptance_check_tool(args: dict, staging: _Staging) -> dict:
+    variant = _name_arg(args, "variant", "the variant's name", required=True)
+    record, root, cwd = _staged_record(args, staging)
+    sources, decisions = _authored_from(args, staging, aside=True)
+    return _answer(*acceptance_holds(record, variant, root, sources=sources,
+                                     decisions=decisions, cwd=cwd))
+
+
+def _accepted_for_tool(args: dict, staging: _Staging) -> dict:
+    """The accepted design for this specification, when there is one.
+
+    ⚠ Asked BEFORE a draft is written. The model that writes drafts is the
+    caller's and nothing makes two of them equal -- measured 2026-09-29, no
+    two of thirty drafts of six specifications were byte-identical -- so the
+    only way a second request for the same inputs gets the same design is to
+    be given the one the owner already accepted. `holds` here means the
+    record still holds AND the design was authored from exactly these files,
+    compared by content; anything else is `lapsed`, with what differs.
+    """
+    variant = _name_arg(args, "variant", "the variant's name", required=True)
+    record, root, cwd = _staged_record(args, staging)
+    sources, decisions = _authored_from(args, staging, aside=True)
+    if not sources:
+        raise ToolArgumentError(
+            "'sources' or 'sources_text' is required: the specification whose "
+            "accepted design is asked for")
+    report, refusal = acceptance_holds(record, variant, root, sources=sources,
+                                       decisions=decisions, cwd=cwd)
+    if refusal:
+        return _failure(refusal)
+    answer = json.loads(report)
+    if answer["verdict"] != "holds":
+        answer["next"] = ("no accepted design answers for these files: write a draft, "
+                          "and show the owner what differs")
+        return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
+    base = root if cwd is None else cwd / root
+    record_path = record if cwd is None else cwd / record
+    document = json.loads(record_path.read_text(encoding="utf-8"))["document"]
+    page, refused = pseudo_page(base / document, None, None, cwd=cwd)
+    answer.update(
+        verdict="accepted-design",
+        document=document,
+        document_text=(base / document).read_text(encoding="utf-8"),
+        page=page if not refused else None,
+        next=("show the owner this design's page verbatim; write no new draft "
+              "unless the owner asks for one"),
+    )
+    if refused:
+        answer["page_refusal"] = json.loads(refused)
+    return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
 
 
 # The tools that need no pack: each takes its files by path or as text.
@@ -1169,6 +1349,7 @@ _PACK_FREE = {
     "scxml_acceptance_report": _acceptance_report_tool,
     "scxml_accept": _accept_tool,
     "scxml_acceptance_check": _acceptance_check_tool,
+    "scxml_accepted_for": _accepted_for_tool,
 }
 
 

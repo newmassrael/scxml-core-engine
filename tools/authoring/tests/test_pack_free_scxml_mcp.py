@@ -263,6 +263,17 @@ class PackFreeScxmlMcp(unittest.TestCase):
               "--root", here("."), "--out", here("acc.json")]),
             ("scxml_acceptance_check", dict(record=doc, variant="base", root="."),
              ["acceptance-check", doc, "--variant", "base", "--root", here(".")]),
+            # What the design was authored from reaches both commands.
+            ("scxml_accept",
+             dict(document=doc, manifest=manifest, variant="base", root=".", out="acc.json",
+                  sources=[doc], decisions=doc),
+             ["accept", doc, "--manifest", manifest, "--variant", "base",
+              "--root", here("."), "--out", here("acc.json"),
+              "--source", here(doc), "--decisions", here(doc)]),
+            ("scxml_acceptance_check",
+             dict(record=doc, variant="base", root=".", sources=[doc], decisions=doc),
+             ["acceptance-check", doc, "--variant", "base", "--root", here("."),
+              "--source", here(doc), "--decisions", here(doc)]),
         ]
         for name, arguments, expected in cases:
             with self.subTest(name=name):

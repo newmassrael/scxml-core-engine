@@ -259,6 +259,23 @@ asks whether it still holds. Each JSON answer carries `verdict`, the command's
 output, and every `diagnostics` record. `scxml_accept` states a person's
 decision: call it only on the owner's word, after they have read the report.
 
+An acceptance can also pin what the design was **authored from**: the
+specification files (`sources`) and the owner's decision record
+(`decisions`), each by sha256 (`sce-codegen accept --source … --decisions
+…`). A revised specification then lapses the acceptance as an edited
+document does, saying which of the two moved. And `scxml_accepted_for`,
+asked with the same record, a specification and a decision record before
+anything is written, answers `accepted-design` — the document, its text and
+its page — when the record still holds and the design was authored from
+exactly those files, compared by content (`acceptance-check --source …`), so
+the owner's copy of the prose under another name still matches. This is the
+only way a second request for the same specification gets the same
+document: the model that drafts runs in the owner's client, and two of its
+drafts are never the same file (see "When the same specification is drafted
+more than once" above). A role left out of the question is part of the
+answer — the same prose without the decision record the design followed is
+a different set of inputs.
+
 The requirement and acceptance tools answer for a document of any kind. A
 statechart's report shows, for each requirement, the transitions it depends
 on. A forge document's report shows the review-table lines that claim it,

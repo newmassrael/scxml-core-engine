@@ -125,7 +125,8 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
              "validate_scxml_set",
              "render_scxml_pseudocode",
              "render_scxml_diagram", "scxml_unresolved", "scxml_requirements",
-             "scxml_acceptance_report", "scxml_accept", "scxml_acceptance_check"},
+             "scxml_acceptance_report", "scxml_accept", "scxml_acceptance_check",
+             "scxml_accepted_for"},
             names)
 
     def test_the_two_surfaces_offer_the_same_commands(self):
@@ -162,7 +163,7 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
                     "render_scxml_pseudocode",
                     "render_scxml_diagram",
                     "scxml_unresolved", "scxml_requirements", "scxml_acceptance_report",
-                    "scxml_accept", "scxml_acceptance_check"}
+                    "scxml_accept", "scxml_acceptance_check", "scxml_accepted_for"}
         self.assertEqual(commands, {t["name"] for t in mcp.TOOLS} - mcp_only)
 
     def test_a_notification_is_answered_with_silence(self):

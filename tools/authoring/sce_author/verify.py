@@ -876,15 +876,33 @@ def acceptance_page(document: pathlib.Path, manifest: pathlib.Path, variant: str
     return (json.loads(report)["page"], "") if report else ("", refusal)
 
 
+def _authored_from(sources, decisions) -> list[str]:
+    """`--source` for each specification file and `--decisions` for the
+    decision record, as `accept` and `acceptance-check` take them."""
+    args = []
+    for source in sources:
+        args += ["--source", str(source)]
+    if decisions is not None:
+        args += ["--decisions", str(decisions)]
+    return args
+
+
 def accept_design(document: pathlib.Path, manifest: pathlib.Path, variant: str,
                   root: pathlib.Path, out: pathlib.Path,
                   codegen: pathlib.Path | None = None, *,
+                  sources=(), decisions: pathlib.Path | None = None,
                   cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Pin what a person accepted (`sce-codegen accept`): the record at
     `out` names every file the acceptance rests on, by hash, relative to
-    `root`, so `acceptance_holds` can tell when one of them moves."""
+    `root`, so `acceptance_holds` can tell when one of them moves.
+
+    `sources` and `decisions` are what the design was authored from: the
+    specification files and the owner's decision record. Pinned too, so a
+    revised specification lapses the acceptance, and `acceptance_holds`
+    asked about the same files can answer that this design is theirs."""
     args = ["accept", str(document), "--manifest", str(manifest),
-            "--variant", variant, "--root", str(root), "--out", str(out)]
+            "--variant", variant, "--root", str(root), "--out", str(out),
+            *_authored_from(sources, decisions)]
     # The command prints nothing; what it did is the record at `out`.
     return _product_answer(args, codegen, answer="record",
                            read=lambda _stdout: str(out), cwd=cwd)
@@ -892,12 +910,16 @@ def accept_design(document: pathlib.Path, manifest: pathlib.Path, variant: str,
 
 def acceptance_holds(record: pathlib.Path, variant: str, root: pathlib.Path,
                      codegen: pathlib.Path | None = None, *,
+                     sources=(), decisions: pathlib.Path | None = None,
                      cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Whether an acceptance record still holds (`sce-codegen
     acceptance-check`): `holds`, or `lapsed` with the product's record of
-    what moved. A lapsed acceptance is an answer, returned as the report."""
+    what moved. A lapsed acceptance is an answer, returned as the report.
+
+    With `sources` or `decisions`, holding also means the design was
+    authored from exactly those files, compared by content."""
     args = ["acceptance-check", str(record), "--variant", variant,
-            "--root", str(root)]
+            "--root", str(root), *_authored_from(sources, decisions)]
     report, refusal = _product_answer(args, codegen, answer="record",
                                       read=lambda _stdout: str(record),
                                       verdicts=("holds", "refused"),

@@ -225,3 +225,87 @@ fn a_lapse_is_reported_as_a_record_that_names_what_moved() {
         vec!["cli/closure-input-unusable".to_string()]
     );
 }
+
+/// `--source` reaches the record, and `acceptance-check --source` answers
+/// whether a specification is the one the design was authored from — by
+/// content, so the owner's copy under another name holds and a revised one
+/// lapses.
+#[test]
+fn the_specification_a_design_was_authored_from_is_pinned_and_asked_about() {
+    let root = design_root();
+    let prose = root.path().join("spec/prose.md");
+    fs::write(&prose, "Waiting ends on a tick.\n").expect("write prose");
+    let taken = run(
+        &[
+            "accept",
+            &root.path().join(HOST).display().to_string(),
+            "--manifest",
+            &root.path().join(MANIFEST).display().to_string(),
+            "--variant",
+            "base",
+            "--root",
+            &root.path().display().to_string(),
+            "--out",
+            &root.path().join(RECORD).display().to_string(),
+            "--source",
+            &prose.display().to_string(),
+        ],
+        root.path(),
+    );
+    assert!(taken.status.success(), "{taken:?}");
+    let record = fs::read_to_string(root.path().join(RECORD)).expect("record written");
+    assert!(record.contains("\"spec/prose.md\""), "{record}");
+
+    let copy = root.path().join("the owner's copy.md");
+    fs::copy(&prose, &copy).expect("copy");
+    let asked = |source: &Path| {
+        run(
+            &[
+                "acceptance-check",
+                &root.path().join(RECORD).display().to_string(),
+                "--variant",
+                "base",
+                "--root",
+                &root.path().display().to_string(),
+                "--source",
+                &source.display().to_string(),
+            ],
+            root.path(),
+        )
+    };
+    let held = asked(&copy);
+    assert!(held.status.success(), "{held:?}");
+
+    fs::write(&copy, "Waiting ends on a tock.\n").expect("revise the copy");
+    let lapsed = asked(&copy);
+    assert_eq!(lapsed.status.code(), Some(20), "{lapsed:?}");
+    assert_eq!(codes(&lapsed), vec!["cli/acceptance-lapsed".to_string()]);
+    assert!(String::from_utf8_lossy(&lapsed.stderr).contains("authored from"));
+}
+
+/// The record has no schema file, so the registry's row and
+/// `ACCEPTANCE_RECORD_STATUS` are the two places its stability lives —
+/// `SCE_WIRE_CONTRACTS.md` requires one commit to move both.
+#[test]
+fn the_registry_declares_the_records_status() {
+    use sce_build::acceptance_record::ACCEPTANCE_RECORD_STATUS;
+    let registry = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("sce-build has a parent dir")
+            .join("SCE_WIRE_CONTRACTS.md"),
+    )
+    .expect("SCE_WIRE_CONTRACTS.md is readable");
+    let row = registry
+        .lines()
+        .find(|line| line.starts_with("| Acceptance record (`sce-codegen accept`)"))
+        .expect(
+            "SCE_WIRE_CONTRACTS.md has no row for the acceptance record, which \
+             `acceptance-check` and the authoring MCP read back as authority",
+        );
+    assert!(
+        row.contains(&format!("`{ACCEPTANCE_RECORD_STATUS}`")),
+        "the registry's row does not name the status the producer declares \
+         ({ACCEPTANCE_RECORD_STATUS}).\nrow: {row}",
+    );
+}

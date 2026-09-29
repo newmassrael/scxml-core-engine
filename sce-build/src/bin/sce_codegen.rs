@@ -2264,6 +2264,16 @@ enum Commands {
         /// Where to write the record.
         #[arg(long)]
         out: String,
+        /// A specification file the design was authored from. Repeatable.
+        ///
+        /// Pinned by sha256 beside the design, so a revised specification
+        /// lapses the acceptance and `acceptance-check --source` can say
+        /// whether a specification is the one this design answers.
+        #[arg(long = "source", value_name = "PATH")]
+        source: Vec<String>,
+        /// The owner's decision record the design follows, if it has one.
+        #[arg(long, value_name = "PATH")]
+        decisions: Option<String>,
     },
     /// Judge the claims that point OUT of a document — Requirement-closure
     /// RFC §5.2e/§5.2f.
@@ -2299,6 +2309,15 @@ enum Commands {
         /// Root the record's paths are read against.
         #[arg(long)]
         root: String,
+        /// A specification file the question is about. Repeatable. With
+        /// any `--source` or `--decisions`, the record also has to have
+        /// been authored from exactly these files, by content — the
+        /// question asked before drafting the same specification again.
+        #[arg(long = "source", value_name = "PATH")]
+        source: Vec<String>,
+        /// The decision record the question is about.
+        #[arg(long, value_name = "PATH")]
+        decisions: Option<String>,
     },
     Requirements {
         /// SCXML file path
@@ -2916,12 +2935,29 @@ fn main() {
             variant,
             root,
             out,
-        } => cmd_accept(&scxml, &manifest, &variant, &root, &out, error_format),
+            source,
+            decisions,
+        } => cmd_accept(
+            &scxml,
+            &manifest,
+            &variant,
+            &root,
+            &out,
+            &authored_from(&source, decisions.as_deref()),
+            error_format,
+        ),
         Commands::AcceptanceCheck {
             record,
             variant,
             root,
-        } => cmd_acceptance_check(&record, &variant, &root),
+            source,
+            decisions,
+        } => cmd_acceptance_check(
+            &record,
+            &variant,
+            &root,
+            &authored_from(&source, decisions.as_deref()),
+        ),
         Commands::RequirementClosure { manifest } => cmd_requirement_closure(&manifest),
         Commands::Unresolved { scxml } => cmd_unresolved(&scxml, error_format),
         Commands::Coverage { scxml } => cmd_coverage(&scxml, error_format),
@@ -8444,12 +8480,27 @@ fn cmd_acceptance_report(
 }
 
 /// Pin what a person accepted — Requirement-closure RFC §8.3.
+/// `--source` and `--decisions`, as the roles the acceptance record pins
+/// them under.
+fn authored_from(
+    sources: &[String],
+    decisions: Option<&str>,
+) -> Vec<(sce_build::acceptance_record::SourceRole, PathBuf)> {
+    use sce_build::acceptance_record::SourceRole;
+    sources
+        .iter()
+        .map(|s| (SourceRole::Specification, PathBuf::from(s)))
+        .chain(decisions.map(|d| (SourceRole::Decisions, PathBuf::from(d))))
+        .collect()
+}
+
 fn cmd_accept(
     scxml: &str,
     manifest: &str,
     variant: &str,
     root: &str,
     out: &str,
+    sources: &[(sce_build::acceptance_record::SourceRole, PathBuf)],
     error_format: ErrorFormat,
 ) {
     // Each input is refused through its own door first, so a document that
@@ -8460,11 +8511,16 @@ fn cmd_accept(
     refuse_an_unparseable_design(scxml, error_format);
     let _ = load_requirement_manifest(manifest);
 
-    let record = sce_build::acceptance_record::AcceptanceRecord::take(
+    let sources: Vec<_> = sources
+        .iter()
+        .map(|(role, path)| (*role, path.as_path()))
+        .collect();
+    let record = sce_build::acceptance_record::AcceptanceRecord::take_authored(
         Path::new(root),
         Path::new(scxml),
         Path::new(manifest),
         variant,
+        &sources,
     )
     .unwrap_or_else(|e| {
         cli_exit(CliError::ClosureInputUnusable {
@@ -8541,7 +8597,12 @@ fn refuse_an_unparseable_design(document: &str, error_format: ErrorFormat) {
 
 /// Re-check an acceptance record against the tree — Requirement-closure
 /// RFC §8.3.
-fn cmd_acceptance_check(record: &str, variant: &str, root: &str) {
+fn cmd_acceptance_check(
+    record: &str,
+    variant: &str,
+    root: &str,
+    asked: &[(sce_build::acceptance_record::SourceRole, PathBuf)],
+) {
     let unusable = |kind: &'static str, detail: String| -> ! {
         cli_exit(CliError::ClosureInputUnusable {
             path: record.to_string(),
@@ -8554,8 +8615,12 @@ fn cmd_acceptance_check(record: &str, variant: &str, root: &str) {
         fs::read_to_string(record).unwrap_or_else(|e| unusable("read", format!("{record}: {e}")));
     let loaded = sce_build::acceptance_record::AcceptanceRecord::from_json(&text)
         .unwrap_or_else(|e| unusable(e.kind(), e.to_string()));
+    let asked: Vec<_> = asked
+        .iter()
+        .map(|(role, path)| (*role, path.as_path()))
+        .collect();
     let lapses = loaded
-        .recheck(Path::new(root), variant)
+        .recheck_for(Path::new(root), variant, &asked)
         .unwrap_or_else(|e| unusable(e.kind(), e.to_string()));
 
     // Silence when it still holds, for the reason `verify-generator` gives:

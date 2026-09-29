@@ -47,6 +47,25 @@
 //! input outside that root is refused rather than recorded as a path that
 //! silently stops meaning anything elsewhere.
 //!
+//! # What the design was authored from
+//!
+//! ```text
+//!   authored_from   the specification files and    an author asked again for
+//!                   the owner's decision record,   the same specification is
+//!                   each by sha256                 handed this design instead
+//!                                                  of a new draft
+//! ```
+//!
+//! Optional, and absent from a record taken without it, which then keeps
+//! the bytes it always had. The model that wrote the draft runs in the
+//! owner's client, where nothing makes two drafts equal, so the only way a
+//! second request with the same inputs gets the same design is to be given
+//! the one already accepted — and "the same inputs" is a question about
+//! these files. A record pins them so that a revised specification lapses
+//! the acceptance as surely as an edited document does, and so that
+//! [`AcceptanceRecord::recheck_for`] can say whether a specification it is
+//! asked about is the one this design was authored from.
+//!
 //! # Deliberately not `Deserialize`
 //!
 //! [`AcceptanceRecord`] is obtained from [`AcceptanceRecord::take`] or
@@ -70,6 +89,42 @@ pub const RECORD_KIND: &str = "sce-acceptance-record";
 
 /// The format version. Moves only when a pinned field changes meaning.
 pub const RECORD_VERSION: u32 = 1;
+
+/// The record's stability, as `SCE_WIRE_CONTRACTS.md` states it. The record
+/// has no schema file, so the registry's row and this constant are the two
+/// places the status lives, and `cli_acceptance_record_wire` holds them
+/// together.
+pub const ACCEPTANCE_RECORD_STATUS: &str = "pre-release";
+
+/// What an [`authored_from`](AcceptanceRecord::authored_from) file is to the
+/// design.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SourceRole {
+    /// The prose the design was written from; there may be several files.
+    Specification,
+    /// The owner's answers to what the specification left open; one at most.
+    Decisions,
+}
+
+impl fmt::Display for SourceRole {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            SourceRole::Specification => "specification",
+            SourceRole::Decisions => "decision record",
+        })
+    }
+}
+
+/// One file the design was authored from.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourcePin {
+    pub role: SourceRole,
+    /// Relative to the record's root.
+    pub path: String,
+    pub sha256: String,
+}
 
 /// The manifest an acceptance was measured against.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +159,10 @@ pub struct AcceptanceRecord {
     /// Every file the parse read, the entry document included, sorted by
     /// path.
     pub inputs: Vec<InputPin>,
+    /// The specification and the decision record the design was authored
+    /// from, sorted by role and path. Empty when the record was taken
+    /// without them — see the module docs.
+    pub authored_from: Vec<SourcePin>,
 }
 
 /// The record exactly as JSON spells it. Private — see the module docs.
@@ -116,6 +175,8 @@ struct RecordWire {
     document: String,
     manifest: ManifestPin,
     inputs: Vec<InputPin>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    authored_from: Vec<SourcePin>,
 }
 
 /// One way what was accepted is no longer what is there.
@@ -146,6 +207,24 @@ pub enum Lapse {
     /// The entry document no longer parses, so which files make up the
     /// design cannot be said.
     Unparseable { path: String, detail: String },
+    /// A file the design was authored from is gone (`current_sha256` is
+    /// `None`) or its bytes moved: the specification or the owner's answers
+    /// changed, and the design has not been looked at since.
+    Source {
+        role: SourceRole,
+        path: String,
+        recorded_sha256: String,
+        current_sha256: Option<String>,
+    },
+    /// The files a caller asked about are not the ones the design was
+    /// authored from — compared by content, so the same specification under
+    /// another name still matches. `pinned` is empty when the record does
+    /// not say what it was authored from.
+    NotAuthoredFrom {
+        role: SourceRole,
+        pinned: Vec<String>,
+        asked: Vec<String>,
+    },
 }
 
 impl fmt::Display for Lapse {
@@ -181,6 +260,45 @@ impl fmt::Display for Lapse {
             Lapse::Unparseable { path, detail } => {
                 write!(f, "{path}: no longer parses ({detail})")
             }
+            Lapse::Source {
+                role,
+                path,
+                current_sha256,
+                ..
+            } => match current_sha256 {
+                None => write!(
+                    f,
+                    "{path}: the {role} this design was authored from is no longer there"
+                ),
+                Some(_) => write!(
+                    f,
+                    "{path}: the {role} this design was authored from changed since it was accepted"
+                ),
+            },
+            Lapse::NotAuthoredFrom {
+                role,
+                pinned,
+                asked,
+            } => {
+                let asked = if asked.is_empty() {
+                    "none was given".to_string()
+                } else {
+                    format!("the one asked about ({}) differs", asked.join(", "))
+                };
+                if pinned.is_empty() {
+                    write!(
+                        f,
+                        "the record does not say which {role} the design was authored \
+                         from, so it cannot answer for this one: {asked}"
+                    )
+                } else {
+                    write!(
+                        f,
+                        "the design was authored from the {role} {}; {asked}",
+                        pinned.join(", ")
+                    )
+                }
+            }
         }
     }
 }
@@ -213,6 +331,12 @@ pub enum RecordError {
     Format {
         detail: String,
     },
+    /// The files named as what the design was authored from cannot be
+    /// pinned as given: a file named twice, or more than one decision
+    /// record.
+    Source {
+        detail: String,
+    },
 }
 
 impl fmt::Display for RecordError {
@@ -236,6 +360,7 @@ impl fmt::Display for RecordError {
             RecordError::Format { detail } => {
                 write!(f, "not an acceptance record: {detail}")
             }
+            RecordError::Source { detail } => write!(f, "{detail}"),
         }
     }
 }
@@ -255,6 +380,7 @@ impl RecordError {
             RecordError::OutsideRoot { .. } => "outside-root",
             RecordError::Variant { .. } => "variant",
             RecordError::Format { .. } => "format",
+            RecordError::Source { .. } => "source",
         }
     }
 }
@@ -270,6 +396,18 @@ impl AcceptanceRecord {
         manifest: &Path,
         variant: &str,
     ) -> Result<Self, RecordError> {
+        Self::take_authored(root, document, manifest, variant, &[])
+    }
+
+    /// [`Self::take`], also pinning the files the design was authored from
+    /// — see the module docs. At most one of them may be a decision record.
+    pub fn take_authored(
+        root: &Path,
+        document: &Path,
+        manifest: &Path,
+        variant: &str,
+        sources: &[(SourceRole, &Path)],
+    ) -> Result<Self, RecordError> {
         check_variant(variant)?;
         let root = canonical(root)?;
         let loaded = RequirementManifest::load(manifest).map_err(RecordError::Manifest)?;
@@ -282,12 +420,70 @@ impl AcceptanceRecord {
         let document_path = canonical(document)?;
         let inputs = read_design(&root, &document_path)
             .map_err(|failure| failure.into_take_error(document))?;
+        let mut authored_from = Vec::with_capacity(sources.len());
+        for (role, path) in sources {
+            authored_from.push(SourcePin {
+                role: *role,
+                path: relative(&root, &canonical(path)?)?,
+                sha256: file_sha256(path)?,
+            });
+        }
+        authored_from.sort();
+        check_sources(&authored_from)?;
         Ok(AcceptanceRecord {
             variant: variant.to_string(),
             document: relative(&root, &document_path)?,
             manifest: manifest_pin,
             inputs,
+            authored_from,
         })
+    }
+
+    /// [`Self::recheck`], and also whether the files a caller asks about are
+    /// the ones the design was authored from.
+    ///
+    /// Compared by content, role by role: the specification files asked
+    /// about must be exactly the pinned ones' bytes, as a set, and so must the
+    /// decision record — including none when none was pinned. This is the
+    /// question "is this accepted design the answer for these inputs", which
+    /// a caller asks before writing a new draft of the same specification.
+    pub fn recheck_for(
+        &self,
+        root: &Path,
+        variant: &str,
+        asked: &[(SourceRole, &Path)],
+    ) -> Result<Vec<Lapse>, RecordError> {
+        let mut lapses = self.recheck(root, variant)?;
+        for role in [SourceRole::Specification, SourceRole::Decisions] {
+            let pinned: Vec<&SourcePin> = self
+                .authored_from
+                .iter()
+                .filter(|p| p.role == role)
+                .collect();
+            let mut asked_paths = Vec::new();
+            let mut asked_digests = std::collections::BTreeSet::new();
+            for (asked_role, path) in asked {
+                if *asked_role == role {
+                    asked_paths.push(path.display().to_string());
+                    asked_digests.insert(file_sha256(path)?);
+                }
+            }
+            let pinned_digests: std::collections::BTreeSet<String> =
+                pinned.iter().map(|p| p.sha256.clone()).collect();
+            // A caller that names nothing is asking about the design alone,
+            // which `recheck` has answered. One that names anything is asking
+            // about a set of inputs, and a role it left out is part of the
+            // answer: a decision record pinned and not given, or a
+            // specification not given, is a different set.
+            if !asked.is_empty() && asked_digests != pinned_digests {
+                lapses.push(Lapse::NotAuthoredFrom {
+                    role,
+                    pinned: pinned.iter().map(|p| p.path.clone()).collect(),
+                    asked: asked_paths,
+                });
+            }
+        }
+        Ok(lapses)
     }
 
     /// Everything that moved since the record was taken, asked about
@@ -323,6 +519,20 @@ impl AcceptanceRecord {
                         current_sha256,
                     });
                 }
+            }
+        }
+
+        for pin in &self.authored_from {
+            let current_sha256 = std::fs::read(root.join(&pin.path))
+                .ok()
+                .map(|bytes| hex_encode(&sha256_bytes(&bytes)));
+            if current_sha256.as_deref() != Some(pin.sha256.as_str()) {
+                lapses.push(Lapse::Source {
+                    role: pin.role,
+                    path: pin.path.clone(),
+                    recorded_sha256: pin.sha256.clone(),
+                    current_sha256,
+                });
             }
         }
 
@@ -391,6 +601,7 @@ impl AcceptanceRecord {
             document: self.document.clone(),
             manifest: self.manifest.clone(),
             inputs: self.inputs.clone(),
+            authored_from: self.authored_from.clone(),
         };
         let mut text = serde_json::to_string_pretty(&wire)
             .expect("a record of strings and one integer always serialises");
@@ -417,14 +628,21 @@ impl AcceptanceRecord {
         for path in std::iter::once(&wire.document)
             .chain(std::iter::once(&wire.manifest.path))
             .chain(wire.inputs.iter().map(|pin| &pin.path))
+            .chain(wire.authored_from.iter().map(|pin| &pin.path))
         {
             check_relative(path)?;
         }
-        for digest in
-            std::iter::once(&wire.manifest.sha256).chain(wire.inputs.iter().map(|pin| &pin.sha256))
+        for digest in std::iter::once(&wire.manifest.sha256)
+            .chain(wire.inputs.iter().map(|pin| &pin.sha256))
+            .chain(wire.authored_from.iter().map(|pin| &pin.sha256))
         {
             check_sha256(digest)?;
         }
+        let mut authored_from = wire.authored_from;
+        authored_from.sort();
+        check_sources(&authored_from).map_err(|e| RecordError::Format {
+            detail: e.to_string(),
+        })?;
         // The entry document is the one input no composition can drop, so a
         // record whose inputs omit it pins a design it never read.
         if !wire.inputs.iter().any(|pin| pin.path == wire.document) {
@@ -446,8 +664,39 @@ impl AcceptanceRecord {
             document: wire.document,
             manifest: wire.manifest,
             inputs,
+            authored_from,
         })
     }
+}
+
+/// The rules an `authored_from` list keeps, sorted: no path twice, and one
+/// decision record at most — the owner's answers are one record, and two
+/// would leave open which of them a design followed.
+fn check_sources(sorted: &[SourcePin]) -> Result<(), RecordError> {
+    let mut paths = std::collections::BTreeSet::new();
+    for pin in sorted {
+        if !paths.insert(pin.path.as_str()) {
+            return Err(RecordError::Source {
+                detail: format!(
+                    "{} is named twice as a file the design was authored from",
+                    pin.path
+                ),
+            });
+        }
+    }
+    let decisions = sorted
+        .iter()
+        .filter(|p| p.role == SourceRole::Decisions)
+        .count();
+    if decisions > 1 {
+        return Err(RecordError::Source {
+            detail: format!(
+                "{decisions} decision records given; a design follows one record of the \
+                 owner's answers"
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Why the design's files could not be read.
