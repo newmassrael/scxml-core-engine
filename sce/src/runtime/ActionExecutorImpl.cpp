@@ -419,7 +419,7 @@ void ActionExecutorImpl::setEventDispatcher(std::shared_ptr<IEventDispatcher> ev
     SCE_LOG_DEBUG("ActionExecutorImpl: Event dispatcher set for session: {}", sessionId_);
 }
 
-bool ActionExecutorImpl::isAddressedSessionReachable(const std::string &target) const {
+bool ActionExecutorImpl::isAddressedSessionReachable(const std::string &target, bool evaluated) const {
     // ARCHITECTURE.md Zero Duplication: the spellings are SendHelper's; this
     // asks only whether what they name is running now.
     if (SendHelper::isSessionTarget(target)) {
@@ -429,6 +429,9 @@ bool ActionExecutorImpl::isAddressedSessionReachable(const std::string &target) 
     }
     if (SendHelper::isChildInvokeTarget(target)) {
         return !SessionRegistry::instance().getInvokeSessionId(sessionId_, SendHelper::extractInvokeId(target)).empty();
+    }
+    if (evaluated && target == "#_parent") {
+        return !SessionRegistry::instance().getParentSessionId(sessionId_).empty();
     }
     return true;
 }
@@ -1038,7 +1041,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // engine decides it — error.communication, nothing delivered, and the
         // error ends the block (W3C SCXML 4.9). Left to the dispatcher, the
         // same error arrived after the rest of the block had already run.
-        if (!isAddressedSessionReachable(target)) {
+        if (!isAddressedSessionReachable(target, !action.getTargetExpr().empty())) {
             SCE_LOG_ERROR("ActionExecutorImpl: <send> target '{}' names a session this processor cannot reach", target);
             if (eventRaiser_) {
                 eventRaiser_->raiseEvent("error.communication",

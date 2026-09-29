@@ -229,10 +229,13 @@
    the host serves owns delivery, so falling through would also enqueue the
    event locally and the document would see the act twice. #}
 {{ host_send_request(action, indent, action.send_type, has_payload, has_delay, delay_py, machine_name, model) }}
-{% elif not action.targetexpr and (action.target.startswith('http://') or action.target.startswith('https://')) %}
-{# W3C SCXML C.2 — BasicHTTP send to a statically-known absolute URL. The form
-   is a rendering of the payload evaluated above. #}
-{{ indent }}engine.perform_http_send({{ action.target | py_string_literal }}, _evt_name, {% if action.contentexpr and not (action.params or has_namelist or action.content) %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %}, self._wire_params_from_payload(_data), _sid)
+{% elif (is_http and action.targetexpr) or (not action.targetexpr and (action.target.startswith('http://') or action.target.startswith('https://'))) %}
+{# W3C SCXML C.2 — a BasicHTTP send, to a statically-known absolute URL or to
+   the one its `targetexpr` evaluated to (test509: the processor's own access
+   URI). The BasicHTTP processor addresses the value, so it never reaches the
+   SCXML processor's target table. The form is a rendering of the payload
+   evaluated above. #}
+{{ indent }}engine.perform_http_send({% if action.targetexpr %}_target_str{% else %}{{ action.target | py_string_literal }}{% endif %}, _evt_name, {% if action.contentexpr and not (action.params or has_namelist or action.content) %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %}, self._wire_params_from_payload(_data), _sid)
 {% elif not action.targetexpr and action.target == '#_parent' %}
 {% if has_delay %}
 {# W3C SCXML 6.2 + 6.4: delayed to the parent. It waits in this child's own
