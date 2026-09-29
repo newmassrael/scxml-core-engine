@@ -200,6 +200,20 @@ accepting; `scxml_accept` records that acceptance and `scxml_acceptance_check`
 asks whether it still holds. Each JSON answer carries `verdict`, the command's
 output, and every `diagnostics` record. `scxml_accept` states a person's
 decision: call it only on the owner's word, after they have read the report.
+
+The requirement and acceptance tools answer for a document of any kind. A
+statechart's report shows, for each requirement, the transitions it depends
+on. A forge document's report shows the review-table lines that claim it,
+and it is classified by the same implementation. A kind that carries
+`sce:req` on none of its nodes yet (every kind but lookup today) says so at the
+top of its report, so its `missing` rows are read as a property of the kind:
+the owner judges those requirements against the pseudocode page, which covers
+every kind. An acceptance record pins the document and every file it reads,
+including what it imports. A figure is drawn only for a statechart; for any
+other kind `render_scxml_diagram` refuses and names the pseudocode page and
+the acceptance report as the places to review it. The review artefact follows
+the kind's shape.
+
 None of these checks whether the SCXML agrees with the prose specification;
 the specification owner compares the page and the figures with the prose. The
 pack-based `check` and `pseudo` tools below serve the separate

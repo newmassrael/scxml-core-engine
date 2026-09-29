@@ -478,12 +478,8 @@ impl From<RecordError> for DesignFailure {
 
 /// Every file a parse of `document` reads, pinned relative to `root`.
 fn read_design(root: &Path, document: &Path) -> Result<Vec<InputPin>, DesignFailure> {
-    let mut parser = SCXMLParser::new();
-    parser
-        .parse_file(&document.display().to_string())
-        .map_err(|located| DesignFailure::Parse(located.error.to_string()))?;
     let mut pins: BTreeMap<String, String> = BTreeMap::new();
-    for path in std::iter::once(document.to_path_buf()).chain(parser.preprocessor_deps().to_vec()) {
+    for path in std::iter::once(document.to_path_buf()).chain(design_inputs(document)?) {
         let path = canonical(&path)?;
         pins.insert(relative(root, &path)?, file_sha256(&path)?);
     }
@@ -491,6 +487,69 @@ fn read_design(root: &Path, document: &Path) -> Result<Vec<InputPin>, DesignFail
         .into_iter()
         .map(|(path, sha256)| InputPin { path, sha256 })
         .collect())
+}
+
+/// The files other than `document` that its parse reads, for either
+/// pipeline — what an acceptance rests on besides the document itself.
+///
+/// - A statechart: the fragments its preprocessors spliced in, and the
+///   forge documents its `<sce:import>` declarations name (the event
+///   schemas and enums its guards and sends are typed by). ⚠ The second
+///   half was missing until the forge route below was written: the parser
+///   reads those siblings through a path that does not add to
+///   `preprocessor_deps`, so a statechart's record did not notice its
+///   schema moving.
+/// - A forge document: the fragments its expansion read, and the
+///   transitive `<sce:import>` closure — the set a forge compile reports
+///   as its dependencies.
+fn design_inputs(document: &Path) -> Result<Vec<PathBuf>, DesignFailure> {
+    let text = std::fs::read_to_string(document).map_err(|source| {
+        DesignFailure::Record(RecordError::Read {
+            path: document.display().to_string(),
+            source,
+        })
+    })?;
+    let unparseable = |error: String| DesignFailure::Parse(error);
+    let base_dir = document.parent().unwrap_or_else(|| Path::new("."));
+    match crate::classify_document(&text) {
+        crate::Pipeline::Scxml => {
+            let mut parser = SCXMLParser::new();
+            let model = parser
+                .parse_file(&document.display().to_string())
+                .map_err(|located| unparseable(located.error.to_string()))?;
+            let mut inputs = parser.preprocessor_deps().to_vec();
+            inputs.extend(
+                model
+                    .forge_imports
+                    .iter()
+                    .map(|import| Path::new(&import.src))
+                    .filter(|src| !crate::forge::stdlib::names_standard(src))
+                    .map(|src| base_dir.join(src)),
+            );
+            Ok(inputs)
+        }
+        crate::Pipeline::Forge => {
+            let label_text = document.display().to_string();
+            let label = crate::DocumentLabel::for_input_path(&label_text);
+            let loaded = crate::load_forge_source(document, &[])
+                .map_err(|located| unparseable(located.error.to_string()))?;
+            let parsed = crate::forge::parser::parse_forge_with_imports(loaded.text(), label)
+                .map_err(|located| unparseable(located.error.to_string()))?
+                .ok_or_else(|| unparseable("the document is not a forge kind".to_string()))?;
+            let imports =
+                crate::forge::cross_kind_check::check(&parsed, base_dir, label.diagnostic_label)
+                    .map_err(|located| unparseable(located.error.to_string()))?;
+            // A `sce:std/...` document is read from the library compiled
+            // into the generator; it has no file to pin, and moves only
+            // with the generator itself.
+            Ok(loaded
+                .deps
+                .into_iter()
+                .chain(imports)
+                .filter(|path| !crate::forge::stdlib::names_standard(path))
+                .collect())
+        }
+    }
 }
 
 fn canonical(path: &Path) -> Result<PathBuf, RecordError> {

@@ -78,6 +78,39 @@ pub fn emit_requirements_ndjson<W: Write + ?Sized>(
     Ok(())
 }
 
+/// The same records for a forge document: one per node that claims a
+/// requirement, among the nodes
+/// [`crate::forge::requirement_nodes::requirement_nodes`] reads `sce:req`
+/// on — so `sce-codegen requirements` answers for a document of any kind,
+/// in one record shape. A kind that reads `sce:req` on no node writes
+/// nothing, which is what its document claims.
+pub fn emit_forge_requirements_ndjson<W: Write + ?Sized>(
+    doc: &crate::forge::model::ForgeDocument,
+    writer: &mut W,
+) -> io::Result<()> {
+    use crate::forge::requirement_nodes::{requirement_nodes, ReviewScope};
+    if let crate::forge::model::ForgeDocument::Statechart(model) = doc {
+        return emit_requirements_ndjson(model, writer);
+    }
+    let ReviewScope::Annotatable(nodes) = requirement_nodes(doc) else {
+        return Ok(());
+    };
+    for node in nodes.iter().filter(|node| !node.requirements.is_empty()) {
+        write_record(
+            writer,
+            &RequirementRecord {
+                node_path: node.node_path.clone(),
+                node_type: node.node_type,
+                action_type: None,
+                requirement_ids: node.requirements.iter().map(String::as_str).collect(),
+                spec_provenance: &[],
+                location: None,
+            },
+        )?;
+    }
+    Ok(())
+}
+
 /// One annotated IR node, as the walk found it.
 ///
 /// [`RequirementRecord`] is the *wire* projection and carries only what

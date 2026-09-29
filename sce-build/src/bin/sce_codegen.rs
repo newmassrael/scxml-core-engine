@@ -2651,6 +2651,11 @@ struct OrchestrateArgs {
     /// Input forge file path (repeat for multiple files).
     #[arg(long = "forge")]
     forge: Vec<String>,
+    /// A document of either pipeline, filed as `--scxml` or `--forge` by
+    /// the rule every route reads a document by (repeat for multiple
+    /// files). The same flag `check` takes on its document-set route.
+    #[arg(long = "document", value_name = "PATH")]
+    document: Vec<String>,
     /// Canonical source directory for drift hashing. Defaults to the first
     /// input's parent, which must then contain every input in the batch.
     /// Use a shared root for inputs in different directories, or the
@@ -3048,8 +3053,9 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     // `too_many_arguments` the moment this subcommand gained the two
     // options `check` had all along.
     let OrchestrateArgs {
-        scxml,
-        forge,
+        mut scxml,
+        mut forge,
+        document,
         input_root,
         include_dir,
         language: language_arg,
@@ -3064,6 +3070,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         no_format,
     } = args;
     let include_dirs: Vec<PathBuf> = include_dir.iter().map(PathBuf::from).collect();
+    file_documents(document, &mut scxml, &mut forge, error_format);
     let scxml_paths: &[String] = &scxml;
     let forge_paths: &[String] = &forge;
     let language: &str = &language_arg;
@@ -3635,29 +3642,11 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
 
     // The positional is shorthand for the first statechart, so a set may
     // be written either way round; order is input order in both cases.
-    let mut scxml_paths: Vec<PathBuf> = scxml
-        .into_iter()
-        .chain(scxml_set)
-        .map(PathBuf::from)
-        .collect();
-    let mut forge_paths: Vec<PathBuf> = forge.into_iter().map(PathBuf::from).collect();
-    // `--document`: filed by the rule every route reads a document by, in
-    // the order given after the ones whose pipeline was stated.
-    for path in document {
-        let content = fs::read_to_string(&path).unwrap_or_else(|e| {
-            error_format.emit_and_exit(
-                &CliError::ReadInput {
-                    path: path.clone(),
-                    source: e,
-                },
-                "",
-            )
-        });
-        match sce_build::classify_document(&content) {
-            sce_build::Pipeline::Scxml => scxml_paths.push(PathBuf::from(path)),
-            sce_build::Pipeline::Forge => forge_paths.push(PathBuf::from(path)),
-        }
-    }
+    let mut scxml_list: Vec<String> = scxml.into_iter().chain(scxml_set).collect();
+    let mut forge_list = forge;
+    file_documents(document, &mut scxml_list, &mut forge_list, error_format);
+    let scxml_paths: Vec<PathBuf> = scxml_list.into_iter().map(PathBuf::from).collect();
+    let forge_paths: Vec<PathBuf> = forge_list.into_iter().map(PathBuf::from).collect();
     let scxml_refs: Vec<&Path> = scxml_paths.iter().map(|p| p.as_path()).collect();
     let forge_refs: Vec<&Path> = forge_paths.iter().map(|p| p.as_path()).collect();
 
@@ -8188,9 +8177,23 @@ fn cmd_diagram(
             detail: format!("--min-pt must be a positive number of points, got {min_pt}"),
         });
     }
-    let model = sce_build::parser::SCXMLParser::new()
-        .parse_file(document)
-        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    // A figure is of a statechart: states, and the transitions between
+    // them. Every other kind is refused by name, with where it IS reviewed,
+    // rather than by the SCXML parser as the wrong pipeline — the review
+    // artefact follows the kind's shape (Requirement-closure RFC §7), and
+    // for a table, a formula or a byte layout that shape is the pseudocode
+    // page, which is total for every kind.
+    let model = match read_design(document, error_format) {
+        Design::Statechart(model) => *model,
+        Design::Forge(parsed) => cli_exit(CliError::DiagramUnavailable {
+            feature: format!(
+                "a figure draws a statechart, and this is a {} document; review it \
+                 on its pseudocode page (sce-codegen pseudo), and its requirements \
+                 in sce-codegen acceptance-report",
+                parsed.document.kind().as_attr()
+            ),
+        }),
+    };
     // Clap has refused names neither registry carries; a miss here is the
     // parser and a registry disagreeing, and says which.
     let lexicon = sce_build::forge::page::lexicon_named(lexicon).unwrap_or_else(|| {
@@ -8420,10 +8423,7 @@ fn cmd_acceptance_report(
     sidecar: Option<&str>,
     error_format: ErrorFormat,
 ) {
-    let mut parser = sce_build::parser::SCXMLParser::new();
-    let model = parser
-        .parse_file(scxml)
-        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    let design = read_design(scxml, error_format);
 
     let manifest = load_requirement_manifest(manifest);
 
@@ -8432,10 +8432,15 @@ fn cmd_acceptance_report(
     // than the one asked while looking exactly like the answer.
     let sidecar = sidecar.map(|path| load_requirement_sidecar(path, &manifest));
 
-    print!(
-        "{}",
-        sce_build::acceptance_report::render(&model, &manifest, sidecar.as_ref(), variant)
-    );
+    let page = match &design {
+        Design::Statechart(model) => {
+            sce_build::acceptance_report::render(model, &manifest, sidecar.as_ref(), variant)
+        }
+        Design::Forge(parsed) => {
+            sce_build::acceptance_report::render_forge(parsed, &manifest, sidecar.as_ref(), variant)
+        }
+    };
+    print!("{page}");
 }
 
 /// Pin what a person accepted — Requirement-closure RFC §8.3.
@@ -8452,10 +8457,7 @@ fn cmd_accept(
     // load reports the loader's refusal. Taking the record would refuse both
     // as one opaque failure to pin a design, which tells the caller which
     // command failed and nothing about why.
-    let mut parser = sce_build::parser::SCXMLParser::new();
-    if let Err(e) = parser.parse_file(scxml) {
-        error_format.emit_and_exit(&e, "SCXML parse error: ");
-    }
+    refuse_an_unparseable_design(scxml, error_format);
     let _ = load_requirement_manifest(manifest);
 
     let record = sce_build::acceptance_record::AcceptanceRecord::take(
@@ -8478,6 +8480,63 @@ fn cmd_accept(
             source,
         })
     });
+}
+
+/// `--document`: each path filed as `--scxml` or `--forge` by the rule
+/// every route reads a document by (`classify_document`), after the ones
+/// whose pipeline was stated. One function for `check` and `orchestrate`,
+/// so the two routes cannot file one document two ways.
+fn file_documents(
+    documents: Vec<String>,
+    scxml: &mut Vec<String>,
+    forge: &mut Vec<String>,
+    error_format: ErrorFormat,
+) {
+    for path in documents {
+        let content = fs::read_to_string(&path).unwrap_or_else(|e| {
+            error_format.emit_and_exit(
+                &CliError::ReadInput {
+                    path: path.clone(),
+                    source: e,
+                },
+                "",
+            )
+        });
+        match sce_build::classify_document(&content) {
+            sce_build::Pipeline::Scxml => scxml.push(path),
+            sce_build::Pipeline::Forge => forge.push(path),
+        }
+    }
+}
+
+/// A design of either kind, as the requirement and acceptance commands
+/// read it.
+enum Design {
+    Statechart(Box<sce_build::model::SCXMLModel>),
+    Forge(Box<sce_build::forge::model::ParsedForge>),
+}
+
+/// Read `document` through the door of its own pipeline, so a document
+/// that does not parse reports its own code: a statechart through the
+/// SCXML parser, a forge document through the forge parse — the dispatch
+/// `pseudo` makes. The requirement and acceptance commands answer for
+/// designs of every kind (Requirement-closure RFC §7).
+fn read_design(document: &str, error_format: ErrorFormat) -> Design {
+    let positions = read_review_input(document, error_format);
+    let label = sce_build::DocumentLabel::for_input_path(document);
+    match sce_build::forge::parser::parse_forge_with_imports(&positions.expanded, label) {
+        Ok(Some(parsed)) => Design::Forge(Box::new(parsed)),
+        Ok(None) => match sce_build::parser::SCXMLParser::new().parse_file(document) {
+            Ok(model) => Design::Statechart(Box::new(model)),
+            Err(e) => error_format.emit_and_exit(&e, "SCXML parse error: "),
+        },
+        Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+    }
+}
+
+/// Refuse a document that does not parse — see [`read_design`].
+fn refuse_an_unparseable_design(document: &str, error_format: ErrorFormat) {
+    let _ = read_design(document, error_format);
 }
 
 /// Re-check an acceptance record against the tree — Requirement-closure
@@ -8600,12 +8659,16 @@ fn load_requirement_sidecar(
 }
 
 fn cmd_requirements(scxml: &str, manifest: Option<&str>, error_format: ErrorFormat) {
-    let mut parser = sce_build::parser::SCXMLParser::new();
-    let model = parser
-        .parse_file(scxml)
-        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    let design = read_design(scxml, error_format);
     let Some(manifest_path) = manifest else {
-        out_stream(|w| sce_build::requirements_report::emit_requirements_ndjson(&model, w));
+        match &design {
+            Design::Statechart(model) => {
+                out_stream(|w| sce_build::requirements_report::emit_requirements_ndjson(model, w))
+            }
+            Design::Forge(parsed) => out_stream(|w| {
+                sce_build::requirements_report::emit_forge_requirements_ndjson(&parsed.document, w)
+            }),
+        }
         return;
     };
 
@@ -8614,7 +8677,12 @@ fn cmd_requirements(scxml: &str, manifest: Option<&str>, error_format: ErrorForm
     // different question than the one asked, print a clean-looking
     // result, and never mention that the denominator was dropped.
     let loaded = load_requirement_manifest(manifest_path);
-    let classification = sce_build::requirement_manifest::classify(&model, &loaded);
+    let classification = match &design {
+        Design::Statechart(model) => sce_build::requirement_manifest::classify(model, &loaded),
+        Design::Forge(parsed) => {
+            sce_build::requirement_manifest::classify_document(&parsed.document, &loaded).0
+        }
+    };
     out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));
 }
 

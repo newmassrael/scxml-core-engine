@@ -245,23 +245,7 @@ pub fn render(
     // Why the document is a statechart, when it says (docs/SCE_ACCEPTED_
     // SUBSET.md §2.10.1). Printed only when present, so a report for a
     // document without one is byte-identical to what it was.
-    if let Some(basis) = &model.kind_basis {
-        out.push_str("kind basis:\n");
-        for evidence in &basis.evidence {
-            out.push_str(&format!("  evidence  {}", evidence.text));
-            if let Some(compact) = evidence.provenance.as_ref().and_then(|p| p.to_compact()) {
-                out.push_str(&format!("   ({compact})"));
-            }
-            out.push('\n');
-        }
-        for rejected in &basis.rejected {
-            out.push_str(&format!(
-                "  rather than {}  {}\n",
-                rejected.kind.as_attr(),
-                rejected.because
-            ));
-        }
-    }
+    push_kind_basis(&mut out, model.kind_basis.as_ref());
     if sidecar.is_some() {
         out.push_str(
             "⚠ carries verbatim text from the source document. A local artefact \
@@ -326,6 +310,169 @@ pub fn render(
         ));
     }
     let unclaimed = table.iter().filter(|row| row.is_unclaimed()).count();
+    if unclaimed > 0 {
+        out.push_str(&format!(
+            "  {:<14} {unclaimed} element(s) the source never asked for\n",
+            "unclaimed"
+        ));
+    }
+    if flagged == 0 && unclaimed == 0 {
+        out.push_str("  (nothing)\n");
+    }
+
+    out.push_str("\nC. SOURCE COVERAGE\n");
+    for (section, count) in &classification.section_counts {
+        let marker = if *count == 0 { "   <- open this" } else { "" };
+        out.push_str(&format!("  {section:<12} {count}{marker}\n"));
+    }
+
+    out
+}
+
+/// Why the document is its kind, when it says (docs/SCE_ACCEPTED_SUBSET.md
+/// §2.10.1). Written only when present, so a report for a document without
+/// one is byte-identical to what it was.
+fn push_kind_basis(out: &mut String, basis: Option<&crate::forge::kind_basis::KindBasis>) {
+    let Some(basis) = basis else {
+        return;
+    };
+    out.push_str("kind basis:\n");
+    for evidence in &basis.evidence {
+        out.push_str(&format!("  evidence  {}", evidence.text));
+        if let Some(compact) = evidence.provenance.as_ref().and_then(|p| p.to_compact()) {
+            out.push_str(&format!("   ({compact})"));
+        }
+        out.push('\n');
+    }
+    for rejected in &basis.rejected {
+        out.push_str(&format!(
+            "  rather than {}  {}\n",
+            rejected.kind.as_attr(),
+            rejected.because
+        ));
+    }
+    for marker in &basis.unresolved {
+        out.push_str(&format!("  ⚠ kind left open ({})", marker.id));
+        if let Some(reason) = &marker.reason {
+            out.push_str(&format!("  {reason}"));
+        }
+        if !marker.candidates.is_empty() {
+            out.push_str(&format!("  candidates: {}", marker.candidates.join(" ")));
+        }
+        out.push('\n');
+    }
+}
+
+/// The acceptance report for a document of a kind other than statechart —
+/// the page the owner reads before accepting a transform, a lookup, a
+/// procedure.
+///
+/// The same three blocks as [`render`], answered by the same classifier
+/// ([`crate::requirement_manifest::classify_document`]): Requirement-closure
+/// RFC §7.1, one coverage implementation. What differs is the evidence a
+/// requirement's block shows. A forge node has no transition row and no
+/// dependency closure; its evidence is the node's own line in the kind's
+/// review table — `entries[key=3]  3 -> DRIVE` — which is everything that
+/// node decides.
+///
+/// ⚠ Most kinds do not carry `sce:req` on any node yet
+/// ([`crate::forge::requirement_nodes::ReviewScope::NoAnnotationSite`]).
+/// Their every implemented requirement reads `missing`, which is true of
+/// the document, and the page says at its top that this is a property of
+/// the kind rather than of the author's work — the owner then judges each
+/// requirement against the pseudocode page, which is total for every kind.
+pub fn render_forge(
+    parsed: &crate::forge::model::ParsedForge,
+    manifest: &RequirementManifest,
+    sidecar: Option<&RequirementSidecar>,
+    variant: &str,
+) -> String {
+    use crate::forge::requirement_nodes::ReviewScope;
+
+    let doc = &parsed.document;
+    let (classification, scope) = crate::requirement_manifest::classify_document(doc, manifest);
+    let rows: Vec<&crate::forge::requirement_nodes::ForgeReqNode> = match &scope {
+        ReviewScope::Annotatable(nodes) => nodes.iter().collect(),
+        ReviewScope::NoAnnotationSite { .. } => Vec::new(),
+    };
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "ACCEPTANCE REPORT  {}@{}  <->  {}\n",
+        manifest.doc_id,
+        manifest.rev,
+        doc.name()
+    ));
+    out.push_str(&format!("variant: {variant}\n"));
+    out.push_str(&format!("kind: {}\n", doc.kind().as_attr()));
+    push_kind_basis(&mut out, parsed.kind_basis.as_ref());
+    if sidecar.is_some() {
+        out.push_str(
+            "⚠ carries verbatim text from the source document. A local artefact \
+             for one sitting: do not commit it.\n",
+        );
+    }
+    if let ReviewScope::NoAnnotationSite { kind } = &scope {
+        out.push_str(&format!(
+            "⚠ SCE reads sce:req on no node of a {kind} document yet, so every \
+             implemented requirement below reads missing: judge each one against \
+             the pseudocode page (sce-codegen pseudo), which shows the whole \
+             document.\n"
+        ));
+    }
+    if let Some(note) = &classification.revision_note {
+        out.push_str(&format!("⚠ {note}\n"));
+    }
+
+    out.push_str("\nA. REQUIREMENTS\n");
+    for entry in &manifest.requirements {
+        out.push_str(&format!("\n  {}", entry.id));
+        if let Some(section) = &entry.section {
+            out.push_str(&format!("   section {section}"));
+        }
+        out.push('\n');
+        match sidecar.and_then(|side| side.sentence(&entry.id)) {
+            Some(sentence) => out.push_str(&format!("    says: {sentence}\n")),
+            None if sidecar.is_some() => out.push_str(
+                "    says: (no sentence for this id in the sidecar — check the \
+                 source before accepting)\n",
+            ),
+            None => out.push_str("    says: (no sidecar supplied)\n"),
+        }
+        let citing: Vec<_> = rows
+            .iter()
+            .filter(|row| row.requirements.iter().any(|id| id == &entry.id))
+            .collect();
+        if citing.is_empty() {
+            out.push_str("    evidence: (this document annotates nothing for it)\n");
+            continue;
+        }
+        out.push_str("    evidence:\n");
+        for row in citing {
+            out.push_str(&format!(
+                "      {:<18} {:<24} {}\n",
+                row.node_type, row.node_path, row.detail
+            ));
+        }
+    }
+
+    out.push_str("\nB. NEEDING ATTENTION\n");
+    let mut flagged = 0usize;
+    for outcome in &classification.outcomes {
+        if outcome.outcome == Outcome::Implemented {
+            continue;
+        }
+        flagged += 1;
+        out.push_str(&format!(
+            "  {:<14} {}\n",
+            outcome.outcome.as_str(),
+            outcome.id
+        ));
+    }
+    let unclaimed = rows
+        .iter()
+        .filter(|row| row.requirements.is_empty())
+        .count();
     if unclaimed > 0 {
         out.push_str(&format!(
             "  {:<14} {unclaimed} element(s) the source never asked for\n",

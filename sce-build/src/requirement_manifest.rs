@@ -1431,14 +1431,78 @@ pub fn classify(model: &SCXMLModel, manifest: &RequirementManifest) -> Classific
     // Walked once, read three times below — the citations, the
     // dangling ids, and the revision check all answer from this.
     let nodes = crate::requirements_report::annotated_nodes(model);
+    let citations: Vec<Citation<'_>> = nodes
+        .iter()
+        .map(|node| Citation {
+            node_path: &node.record.node_path,
+            requirement_ids: node.record.requirement_ids.clone(),
+            spec_provenance: node.record.spec_provenance,
+            unresolved: node.unresolved,
+        })
+        .collect();
+    classify_citations(&citations, manifest)
+}
 
+/// Compare a document of any kind against `manifest`: a statechart by
+/// [`classify`], a forge document by the nodes
+/// [`crate::forge::requirement_nodes::requirement_nodes`] reads `sce:req`
+/// on — the same nodes its review table prints.
+///
+/// ⚠ A kind whose nodes carry no `sce:req` yet classifies every
+/// implemented requirement `missing`, which is true of the document and
+/// is not a fault of the author's. The scope comes back beside the
+/// classification so a page can say which of the two it is looking at.
+pub fn classify_document(
+    doc: &crate::forge::model::ForgeDocument,
+    manifest: &RequirementManifest,
+) -> (Classification, crate::forge::requirement_nodes::ReviewScope) {
+    use crate::forge::requirement_nodes::{requirement_nodes, ReviewScope};
+    let scope = requirement_nodes(doc);
+    let classification = match (doc, &scope) {
+        (crate::forge::model::ForgeDocument::Statechart(model), _) => classify(model, manifest),
+        (_, ReviewScope::Annotatable(nodes)) => {
+            let citations: Vec<Citation<'_>> = nodes
+                .iter()
+                .filter(|node| !node.requirements.is_empty())
+                .map(|node| Citation {
+                    node_path: &node.node_path,
+                    requirement_ids: node.requirements.iter().map(String::as_str).collect(),
+                    // No forge node carries an anchor or a marker yet;
+                    // `requirement_nodes` is where either would arrive.
+                    spec_provenance: &[],
+                    unresolved: false,
+                })
+                .collect();
+            classify_citations(&citations, manifest)
+        }
+        (_, ReviewScope::NoAnnotationSite { .. }) => classify_citations(&[], manifest),
+    };
+    (classification, scope)
+}
+
+/// One node's claim on requirements, whatever kind of document it sits in:
+/// all [`classify_citations`] reads of a node.
+pub struct Citation<'a> {
+    pub node_path: &'a str,
+    pub requirement_ids: Vec<&'a str>,
+    pub spec_provenance: &'a [crate::provenance::SpecProvenance],
+    pub unresolved: bool,
+}
+
+/// The classification itself, over citations rather than a model, so one
+/// implementation answers for every kind (Requirement-closure RFC §7.1:
+/// "six renderers, one coverage implementation").
+pub fn classify_citations(
+    nodes: &[Citation<'_>],
+    manifest: &RequirementManifest,
+) -> Classification {
     // id -> node_paths citing it, and whether every citing node is
     // marked unresolved.
     let mut cited: BTreeMap<&str, (Vec<String>, bool)> = BTreeMap::new();
-    for node in &nodes {
-        for id in &node.record.requirement_ids {
+    for node in nodes {
+        for &id in &node.requirement_ids {
             let entry = cited.entry(id).or_insert_with(|| (Vec::new(), true));
-            entry.0.push(node.record.node_path.clone());
+            entry.0.push(node.node_path.to_string());
             // ⚠ ALL, not ANY. A requirement cited once on an
             // unresolved node and once on a settled one has been
             // answered somewhere, and reporting it as an open question
@@ -1564,7 +1628,7 @@ pub fn classify(model: &SCXMLModel, manifest: &RequirementManifest) -> Classific
     // worst place in the file to have one.
     let revision_note = nodes
         .iter()
-        .flat_map(|node| node.record.spec_provenance.iter())
+        .flat_map(|node| node.spec_provenance.iter())
         .find(|anchor| {
             anchor.doc_id == manifest.doc_id && anchor.rev.as_deref() != Some(&manifest.rev)
         })

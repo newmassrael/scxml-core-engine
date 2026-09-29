@@ -286,6 +286,13 @@ name = "the_manifest_names_the_kind_it_read"
 path = "tests/the_manifest_names_the_kind_it_read.rs"
 required-features = ["cli"]
 
+# The owner's acceptance flow — requirements, report, record, check — for a
+# design of any kind, and a figure refused by name for a non-statechart.
+[[test]]
+name = "a_design_of_any_kind_is_accepted"
+path = "tests/a_design_of_any_kind_is_accepted.rs"
+required-features = ["cli"]
+
 # `<sce:kind-basis>` on the real binary: accepted and published for both
 # pipelines, written under the page's head line, refused when it rules out
 # the document's own kind.
