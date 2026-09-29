@@ -287,7 +287,11 @@ fn the_identity_rule_holds_for_every_kind_the_corpus_declares() {
         // inline-eligible document is emitted inside its host statechart, so
         // its artifact carries the stem as a prefix rather than whole.
         let follows_name = artifacts.contains(&declared);
-        let follows_stem = artifacts.iter().any(|a| a.starts_with(&stem));
+        // The artifact's file name is the stem written as an identifier, so
+        // a hyphen in the stem reaches it as an underscore: measured on the
+        // kind examples, `bounded-collection.scxml` → `bounded_collection.rs`.
+        let stem_as_written = stem.replace('-', "_");
+        let follows_stem = artifacts.iter().any(|a| a.starts_with(&stem_as_written));
         let ok = if kind == "algorithm" {
             follows_name
         } else {
