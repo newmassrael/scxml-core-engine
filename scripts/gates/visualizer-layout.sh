@@ -45,10 +45,10 @@ command -v node >/dev/null 2>&1 \
     || sce_gate_cannot_run "the vendored layout engine is missing; nothing can be laid out"
 
 [[ -f web/visualizer/visualizer.js ]] \
-    || sce_gate_cannot_run "the engine WASM glue is missing, so no document can be turned into a structure"
+    || sce_gate_cannot_run "the engine WASM glue is missing, so the Rust structure has nothing to be compared against"
 
 [[ -f web/visualizer/wasm/sce_build.js ]] \
-    || sce_gate_cannot_run "the codegen WASM (visualizer-wasm builds it) is missing, so the GUI's structure cannot be built from the Rust model"
+    || sce_gate_cannot_run "the codegen WASM (visualizer-wasm builds it) is missing, so no document can be turned into the structure the page draws"
 
 # The fixtures, and the reason each one is here, live beside the measurement
 # in a file of their own.
@@ -93,6 +93,13 @@ node web/visualizer/measure/census.js "${FIXTURES[@]}" \
 # sizing, so it is taken from the list rather than chosen here.
 node web/visualizer/measure/interaction.js "${FIXTURES[0]}" \
     || sce_gate_fail "the drawing did not survive a drag or a collapse; its output above names which"
+
+# The marks half: an author's `sce:unresolved` / `sce:assumed` and a
+# transition's `sce:req` must reach the element drawn for them. A mark
+# that is dropped does not fail to draw — the element is drawn plain, which
+# reads as "nothing open here" — so it is asserted rather than looked at.
+node web/visualizer/measure/marks.js \
+    || sce_gate_fail "a mark the document carries did not reach the element drawn for it; its output above names which"
 
 # The stress half: the same gestures, but MANY of them, in a seeded random
 # order, over every fixture.

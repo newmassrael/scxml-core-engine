@@ -1129,10 +1129,10 @@ GATES: dict[str, dict] = {
     "visualizer-layout": {
         "workflows": ["deploy-visualizer.yml"],
         "runner_workflow": True,
-        "ci_only": "needs the engine WASM that visualizer-wasm builds in the "
-                   "same workflow; a push builds no WASM, so the measurement "
-                   "would have nothing to turn a document into a structure "
-                   "with.",
+        "ci_only": "needs the codegen and engine WASMs that visualizer-wasm "
+                   "builds in the same workflow; a push builds no WASM, so the "
+                   "measurement would have nothing to turn a document into a "
+                   "structure with, nor to compare that structure against.",
         # ⚠ `web/visualizer/**` and no wider, which took two attempts to get
         # right. The gate first swept every tracked `.scxml`; declaring that
         # honestly meant `**/*.scxml`, and `ci-only-coverage` then refused the

@@ -2157,3 +2157,43 @@ body {
     stroke-width: 3px;
     stroke-dasharray: 6 2;
 }
+
+/* The author's own marks — author-marks.js.
+ *
+ * An UNRESOLVED marker is an open question and an ASSUMED marker a choice
+ * awaiting a reviewer's yes, so both outrank the requirement family above.
+ * Each rule is listed twice — bare, and under `.sce-annotations-on` — so it
+ * matches the requirement rules' specificity and wins by coming later,
+ * rather than by a selector trick a later edit could undo unknowingly.
+ * Unresolved comes last: on an element carrying both, the open question is
+ * what the reviewer must see.
+ *
+ * Each kind has its own dash pattern as well as its own colour, for the
+ * same reader the requirement family names: the printed page and the
+ * reviewer with a colour vision deficiency. Dotted is "open", dash-dot is
+ * "assumed" — neither is the 4 3 dash the unclaimed mark uses. */
+.node.state.sce-assumed rect,
+.node.state.sce-assumed circle,
+.node.state.sce-assumed ellipse,
+path.transition.sce-assumed,
+.sce-annotations-on .node.state.sce-assumed rect,
+.sce-annotations-on .node.state.sce-assumed circle,
+.sce-annotations-on .node.state.sce-assumed ellipse,
+.sce-annotations-on path.transition.sce-assumed {
+    stroke: #0969da;
+    stroke-width: 3px;
+    stroke-dasharray: 8 3 2 3;
+}
+
+.node.state.sce-unresolved rect,
+.node.state.sce-unresolved circle,
+.node.state.sce-unresolved ellipse,
+path.transition.sce-unresolved,
+.sce-annotations-on .node.state.sce-unresolved rect,
+.sce-annotations-on .node.state.sce-unresolved circle,
+.sce-annotations-on .node.state.sce-unresolved ellipse,
+.sce-annotations-on path.transition.sce-unresolved {
+    stroke: #cf222e;
+    stroke-width: 3px;
+    stroke-dasharray: 2 3;
+}

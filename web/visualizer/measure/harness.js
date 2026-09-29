@@ -9,10 +9,16 @@
 // collapse and the other could not, which is the kind of thing two copies
 // of a harness quietly acquire.
 //
-// Everything here is the SHIPPED code: the structure comes from the C++
-// engine compiled to WASM, the graph and geometry from the real
+// Everything here is the SHIPPED code: the structure comes from
+// `gui_structure()` in the sce-build WASM — the Rust model, which is what
+// `main.js` hands the page — and the graph and geometry from the real
 // `SCXMLVisualizer`. Only d3 and the DOM are stubbed, because
 // `visualizer-core.js` is the one file in this path that touches them.
+//
+// ⚠ The structure used to come from the C++ engine, and when the page moved
+// to the Rust one this harness had to move with it: a layout gate that
+// measures a structure the page no longer draws certifies a drawing nobody
+// sees.
 //
 // ⚠⚠ What this CANNOT measure, stated so nobody builds on it by mistake:
 // anything that reads the real DOM. `focusOnTransition` looks a label up
@@ -56,6 +62,7 @@ const d3Chain = new Proxy(function () {}, {
 
 const SOURCES = [
     'utils.js', 'edge-direction-utils.js', 'routing-state.js', 'label-metrics.js',
+    'author-marks.js',
     'visualizer/action-formatter.js', 'visualizer/invoke-formatter.js',
     'visualizer/path-calculator.js', 'visualizer/node-builder.js',
     'visualizer/link-builder.js', 'visualizer/layout-manager.js',
@@ -110,19 +117,22 @@ function makeSandbox(elkInstance) {
     return sandbox;
 }
 
-/** The WASM engine and the vendored elkjs the page itself loads. */
+/** The sce-build WASM and the vendored elkjs the page itself loads. */
 async function loadEngine() {
-    const createVisualizer = require(path.join(ROOT, 'visualizer.js'));
-    const Module = await createVisualizer();
+    const rust = await import(path.join(ROOT, 'wasm', 'sce_build.js'));
+    rust.initSync({ module: fs.readFileSync(path.join(ROOT, 'wasm', 'sce_build_bg.wasm')) });
     const ELK = require(path.join(ROOT, 'vendor/elkjs/elk.bundled.js'));
-    return { Module, elk: new ELK() };
+    return { rust, elk: new ELK() };
 }
 
-/** The structure `main.js` would hand the visualizer, for one document. */
-function structureOf(Module, repoRelativePath) {
-    const runner = new Module.InteractiveTestRunner();
-    runner.loadSCXML(fs.readFileSync(path.join(REPO, repoRelativePath), 'utf8'), false);
-    return runner.getSCXMLStructure();
+/**
+ * The structure `main.js` would hand the visualizer, for one document.
+ *
+ * Throws what the model refused, as the page's own load does.
+ */
+function structureOf(rust, repoRelativePath) {
+    const text = fs.readFileSync(path.join(REPO, repoRelativePath), 'utf8');
+    return JSON.parse(rust.gui_structure(text, path.basename(repoRelativePath, '.scxml')));
 }
 
 /**

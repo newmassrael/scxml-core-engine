@@ -274,7 +274,7 @@ if (supporting.length === 0) {
 
 // The consumer stamps from what it was given, in BOTH directions.
 const states = [{ id: 'idle' }, { id: 'done' }];
-const transitions = [{ source: 'idle' }];
+const transitions = [{ source: 'idle', sourceIndex: 0 }];
 overlay.applyTo(states, transitions);
 if (transitions[0].annotationClass !== 'sce-claimed') {
     fail('a transition the overlay says claims REQ-A was not marked claimed');
@@ -322,7 +322,7 @@ const sandbox = {
     },
 };
 vm.createContext(sandbox);
-for (const file of ['visualizer/node-builder.js', 'visualizer/link-builder.js']) {
+for (const file of ['author-marks.js', 'visualizer/node-builder.js', 'visualizer/link-builder.js']) {
     vm.runInContext(fs.readFileSync(path.join(root, 'web/visualizer', file), 'utf8'), sandbox, {
         filename: file,
     });
@@ -334,7 +334,7 @@ const states = [
     { id: 'done', type: 'atomic', children: [] },
 ];
 const transitions = [
-    { id: 't0', source: 'idle', target: 'done', event: 'tick' },
+    { id: 't0', source: 'idle', sourceIndex: 0, target: 'done', event: 'tick' },
 ];
 
 const visualizer = {

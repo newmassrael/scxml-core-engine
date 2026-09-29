@@ -157,10 +157,11 @@ jobs:
         scripts/gate visualizer-wasm
 
     - name: Verify diagram layout
-      # After the WASM build, because the measurement drives the engine
-      # through `visualizer.js` to turn a document into a structure — the
-      # same call the page makes. Before the deploy, because a drawing whose
-      # edges reach nothing should not be published.
+      # After the WASM build, because the measurement turns a document into
+      # a structure through `gui_structure()` in the codegen WASM — the same
+      # call the page makes — and compares it with the engine's through
+      # `visualizer.js`. Before the deploy, because a drawing whose edges
+      # reach nothing should not be published.
       run: scripts/gate visualizer-layout
 
     - name: Prepare Deployment Directory

@@ -174,13 +174,17 @@ class AnnotationOverlay {
         }
 
         // Transitions are keyed by (source state, position in that state),
-        // which is what the producer published beside the path.
-        const seen = new Map();
+        // which is what the producer published beside the path, and the
+        // structure carries as `sourceIndex`.
+        //
+        // ⚠ Not counted here: the structure holds one object per TARGET,
+        // so a count over the list shifts every transition after a
+        // two-target one — the defect `measure/marks.js` exists for.
         for (const transition of transitions || []) {
-            const source = transition.source ?? transition.from;
-            const index = seen.get(source) ?? 0;
-            seen.set(source, index + 1);
-            Object.assign(transition, this.annotationForTransition(source, index));
+            Object.assign(
+                transition,
+                this.annotationForTransition(transition.source, transition.sourceIndex)
+            );
         }
         return { states, transitions };
     }

@@ -13,12 +13,8 @@
 //     the box stops following the states inside it
 //   - every edge still reaching the states it joins
 
-const fs = require('fs');
 const vm = require('vm');
-const path = require('path');
 
-const ROOT = path.resolve(__dirname, '..');
-const REPO = path.resolve(__dirname, '../../..');
 const DOC = process.argv[2]
     || 'integration_resources/ancestor_entry_is_not_default_entry/ancestor_entry_is_not_default_entry.scxml';
 
@@ -30,18 +26,11 @@ const check = (ok, why) => { if (!ok) { console.error('FAIL: ' + why); failures+
 // and the other answered with itself, which throws as soon as the collapse
 // path puts it in a log message. One copy could measure a collapse and the
 // other could not.
-const { makeSandbox, LABEL_TO_LINE_LIMIT } = require('./harness');
+const { makeSandbox, loadEngine, structureOf, LABEL_TO_LINE_LIMIT } = require('./harness');
 
 (async () => {
-    const createVisualizer = require(path.join(ROOT, 'visualizer.js'));
-    const Module = await createVisualizer();
-    // The vendored copy — the one the page loads.
-    const ELK = require(path.join(ROOT, 'vendor/elkjs/elk.bundled.js'));
-    const elk = new ELK();
-
-    const runner = new Module.InteractiveTestRunner();
-    runner.loadSCXML(fs.readFileSync(path.join(REPO, DOC), 'utf8'), false);
-    const structure = runner.getSCXMLStructure();
+    const { rust, elk } = await loadEngine();
+    const structure = structureOf(rust, DOC);
 
     const sandbox = makeSandbox(elk);
 

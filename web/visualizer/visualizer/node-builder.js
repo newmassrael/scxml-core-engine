@@ -75,6 +75,8 @@ class NodeBuilder {
                 // Row G2: what this element claims, and whether anything
                 // does. First, so a later field cannot quietly shadow it.
                 ...this.annotationFor(state.id),
+                // The author's `sce:unresolved` / `sce:assumed` markers.
+                ...authorMarksOf(state),
                 id: state.id,
                 type: state.type,
                 label: state.id,
