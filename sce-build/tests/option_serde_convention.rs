@@ -85,6 +85,13 @@ const WIRE_FORMAT_EXEMPT: &[&str] = &[
     // Rust data, never fed into a minijinja template, so omitting an absent
     // `event` (an `eventexpr` site) or `location` is the wire convention.
     "parent_send_analyzer.rs",
+    // `UnresolvedRecord` — the `sce-codegen unresolved` NDJSON record and
+    // the stdout manifest's `unresolved` list, one type for both
+    // (SCE_ERROR_CONTRACT.md §10): serialised straight to JSON and never
+    // fed into a minijinja template, so omitting an absent `reason` or
+    // `location` is the wire convention. The markers templates read come
+    // from the model, not from this record.
+    "unresolved_check.rs",
 ];
 
 fn is_wire_format_exempt(rs_file: &Path, repo_root: &Path) -> bool {

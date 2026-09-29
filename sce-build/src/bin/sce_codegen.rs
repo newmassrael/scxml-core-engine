@@ -935,6 +935,9 @@ struct GenerateReport {
     /// kind, or a document set, whose answer is not a union — see
     /// `Manifest::needs_parent`).
     parent_sends: Option<Vec<sce_build::parent_send_analyzer::ParentSend>>,
+    /// Every marker of the ONE document this run read, statechart or forge
+    /// kind; empty on a document-set run — see `Manifest::unresolved`.
+    unresolved: Vec<sce_build::unresolved_check::UnresolvedRecord>,
     host_processor_causes: Vec<sce_build::host_processor_analyzer::HostProcessorCauseRecord>,
     /// The `--host-processor` declarations this run was given, echoed so
     /// a consumer can check the build's half of the contract against the
@@ -1041,6 +1044,7 @@ fn build_manifest<'a>(
         }),
         needs_parent: report.parent_sends.as_ref().map(|sends| !sends.is_empty()),
         parent_sends: report.parent_sends.as_deref().unwrap_or(&[]),
+        unresolved: &report.unresolved,
         host_processor_causes: &report.host_processor_causes,
         host_processor_types: &report.host_processor_types,
         host_invoker_types: &report.host_invoker_types,
@@ -3883,6 +3887,11 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                     error_format.emit_forge_and_exit(&e);
                 }
             }
+            report.unresolved =
+                match sce_build::unresolved_check::unresolved_records_forge(&positions) {
+                    Ok(records) => records,
+                    Err(e) => error_format.emit_forge_and_exit(&e),
+                };
 
             for lang in &langs {
                 let forge_opts = sce_build::ForgeCompileOptions {
@@ -3923,6 +3932,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                     error_format.emit_and_exit(&e, "");
                 }
             }
+            report.unresolved = sce_build::unresolved_check::unresolved_records(&model);
 
             analyzer::analyze(&mut model, scxml_path);
 
@@ -4352,6 +4362,11 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                     error_format.emit_forge_and_exit(&e);
                 }
             }
+            report.unresolved =
+                match sce_build::unresolved_check::unresolved_records_forge(&positions) {
+                    Ok(records) => records,
+                    Err(e) => error_format.emit_forge_and_exit(&e),
+                };
 
             if let Some(ast_path) = emit_ast_path {
                 let path = std::path::Path::new(ast_path);
@@ -4485,6 +4500,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             error_format.emit_and_exit(&e, "");
         }
     }
+    report.unresolved = sce_build::unresolved_check::unresolved_records(&model);
 
     // `has_parent_communication` carries two distinct meanings across
     // backends:

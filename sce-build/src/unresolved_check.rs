@@ -193,26 +193,94 @@ pub fn check_strict_unresolved(model: &SCXMLModel) -> Result<(), Located<ForgeEr
     }
 }
 
+/// One marker as a consumer reads it: the record `sce-codegen unresolved`
+/// prints a line of, and the stdout manifest's `unresolved` list holds.
+///
+/// One type for both, built by [`unresolved_records`] /
+/// [`unresolved_records_forge`], so the command and the manifest cannot
+/// disagree about which markers a document carries or how one is spelled.
 #[derive(Debug, Clone, Serialize)]
-struct UnresolvedRecord<'a> {
-    node_path: String,
-    node_type: &'static str,
+pub struct UnresolvedRecord {
+    pub node_path: String,
+    pub node_type: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    action_type: Option<&'a str>,
+    pub action_type: Option<String>,
     /// `unresolved` or `assumed`. A consumer that renders a work queue
     /// needs it: the first is a question to send the spec's author, the
     /// second is a decision already taken that the author should confirm.
     /// Without it both arrive as one undifferentiated list.
-    kind: MarkerKind,
-    id: &'a str,
+    pub kind: MarkerKind,
+    pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    reason: Option<&'a str>,
+    pub reason: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    candidates: Vec<&'a str>,
+    pub candidates: Vec<String>,
     /// Where the author wrote the marker — moved out of the expanded text
     /// the reader recorded it against.
     #[serde(skip_serializing_if = "Option::is_none")]
-    location: Option<SourceLocation>,
+    pub location: Option<SourceLocation>,
+}
+
+impl UnresolvedRecord {
+    /// The record for `marker`, placed at `location` — the marker's own
+    /// position already moved to where its author wrote it, which only the
+    /// caller holding the expansion's map can do.
+    fn of(
+        node_path: &str,
+        node_type: &'static str,
+        action_type: Option<&str>,
+        marker: &UnresolvedMarker,
+        location: Option<SourceLocation>,
+    ) -> Self {
+        UnresolvedRecord {
+            node_path: node_path.to_string(),
+            node_type,
+            action_type: action_type.map(str::to_string),
+            kind: marker.kind,
+            id: marker.id.clone(),
+            reason: marker.reason.clone(),
+            candidates: marker.candidates.clone(),
+            location,
+        }
+    }
+}
+
+/// Every `<sce:unresolved>` / `<sce:assumed>` marker a statechart carries,
+/// in document order — the kind basis first, then every node
+/// [`walk_nodes`] visits. Empty when the model is clean.
+pub fn unresolved_records(model: &SCXMLModel) -> Vec<UnresolvedRecord> {
+    let mut out = Vec::new();
+    for marker in kind_basis_markers(model) {
+        out.push(UnresolvedRecord::of(
+            KIND_BASIS_LABEL,
+            "kind-basis",
+            None,
+            marker,
+            marker
+                .location
+                .as_ref()
+                .map(|at| model.authored_location(at)),
+        ));
+    }
+    for node in walk_nodes(model) {
+        let action_type = match &node.subject {
+            NodeSubject::Action { action, .. } => Some(action.action_type.as_str()),
+            _ => None,
+        };
+        for marker in node.subject.unresolved() {
+            out.push(UnresolvedRecord::of(
+                &node.record.node_path,
+                node.record.node_type,
+                action_type,
+                marker,
+                marker
+                    .location
+                    .as_ref()
+                    .map(|at| model.authored_location(at)),
+            ));
+        }
+    }
+    out
 }
 
 /// Emit one NDJSON record per `<sce:unresolved>` marker. Stable
@@ -225,65 +293,19 @@ pub fn emit_unresolved_ndjson<W: Write + ?Sized>(
     model: &SCXMLModel,
     writer: &mut W,
 ) -> io::Result<()> {
-    for marker in kind_basis_markers(model) {
-        write_marker(
-            writer,
-            KIND_BASIS_LABEL,
-            "kind-basis",
-            None,
-            marker,
-            marker
-                .location
-                .as_ref()
-                .map(|at| model.authored_location(at)),
-        )?;
-    }
-    for node in walk_nodes(model) {
-        let action_type = match &node.subject {
-            NodeSubject::Action { action, .. } => Some(action.action_type.as_str()),
-            _ => None,
-        };
-        for marker in node.subject.unresolved() {
-            write_marker(
-                writer,
-                &node.record.node_path,
-                node.record.node_type,
-                action_type,
-                marker,
-                marker
-                    .location
-                    .as_ref()
-                    .map(|at| model.authored_location(at)),
-            )?;
-        }
-    }
-    Ok(())
+    write_records(writer, &unresolved_records(model))
 }
 
-/// One record for `marker`, placed at `location` — the marker's own
-/// position already moved to where its author wrote it, which only the
-/// caller holding the expansion's map can do.
-fn write_marker<W: Write + ?Sized>(
+fn write_records<W: Write + ?Sized>(
     writer: &mut W,
-    node_path: &str,
-    node_type: &'static str,
-    action_type: Option<&str>,
-    marker: &UnresolvedMarker,
-    location: Option<SourceLocation>,
+    records: &[UnresolvedRecord],
 ) -> io::Result<()> {
-    let record = UnresolvedRecord {
-        node_path: node_path.to_string(),
-        node_type,
-        action_type,
-        kind: marker.kind,
-        id: marker.id.as_str(),
-        reason: marker.reason.as_deref(),
-        candidates: marker.candidates.iter().map(|s| s.as_str()).collect(),
-        location,
-    };
-    let line = serde_json::to_string(&record)
-        .expect("UnresolvedRecord serialises; all fields owned or borrowed primitives");
-    writeln!(writer, "{line}")
+    for record in records {
+        let line = serde_json::to_string(record)
+            .expect("UnresolvedRecord serialises; all fields owned primitives");
+        writeln!(writer, "{line}")?;
+    }
+    Ok(())
 }
 
 // ── The same two surfaces, for a forge-kind document ────────────────
@@ -426,21 +448,35 @@ pub fn check_strict_unresolved_forge(
     }
 }
 
+/// Every marker in a forge document, as [`unresolved_records`] gives a
+/// statechart's — the same record shape, so a consumer does not branch on
+/// the kind it was handed.
+pub fn unresolved_records_forge(
+    positions: &AuthoredPositions,
+) -> Result<Vec<UnresolvedRecord>, Located<ForgeError>> {
+    Ok(forge_markers(positions)?
+        .into_iter()
+        .map(|(element, marker)| {
+            // `node_type` is "forge" for every kind rather than the kind's
+            // own name: a consumer routes on `code` and reads `node_path`,
+            // and a per-kind spelling here would be a second place the
+            // seventeen kinds have to stay listed.
+            let location = marker.location.clone();
+            UnresolvedRecord::of(&element, "forge", None, &marker, location)
+        })
+        .collect())
+}
+
 /// `sce-codegen unresolved` for a forge document — one NDJSON record per
-/// marker, the same record shape the statechart path emits so a consumer
-/// does not branch on the kind it was handed.
+/// marker ([`unresolved_records_forge`]).
 pub fn emit_unresolved_ndjson_forge<W: Write + ?Sized>(
     positions: &AuthoredPositions,
     writer: &mut W,
 ) -> Result<(), Located<ForgeError>> {
-    for (element, marker) in forge_markers(positions)? {
-        // `node_type` is "forge" for every kind rather than the kind's own
-        // name: a consumer routes on `code` and reads `node_path`, and a
-        // per-kind spelling here would be a second place the seventeen
-        // kinds have to stay listed.
-        let location = marker.location.clone();
-        let _ = write_marker(writer, &element, "forge", None, &marker, location);
-    }
+    let records = unresolved_records_forge(positions)?;
+    // A write failure is the sink's, as it was before this was split: the
+    // stream is stdout and the caller reports nothing further on it.
+    let _ = write_records(writer, &records);
     Ok(())
 }
 

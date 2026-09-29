@@ -94,6 +94,12 @@
       "minItems": 1,
       "items": { "$ref": "#/definitions/parentSend" }
     },
+    "unresolved": {
+      "description": "Every sce:unresolved / sce:assumed marker the one document this run read carries — the records `sce-codegen unresolved` prints, in the same order. A marker blocks only --strict-unresolved, so the run succeeds either way; this is how its result says that a question is still open (kind unresolved) or a value was chosen without the specification (kind assumed). Omitted (not []) when there are none, and on a document-set run.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/unresolvedMarker" }
+    },
     "host_processor_causes": {
       "description": "Why needs_host_processor is true — one record per site naming a type this build has no path for. Present exactly when the flag is true; omitted (not []) otherwise. Non-fatal: generation succeeded, and the emitted code refuses these sites at runtime exactly as the specification requires.",
       "type": "array",
@@ -220,6 +226,36 @@
           "description": "The state whose executable content carries the send.",
           "type": "string",
           "minLength": 1
+        },
+        "location": { "$ref": "#/definitions/location" }
+      }
+    },
+    "unresolvedMarker": {
+      "type": "object",
+      "required": ["node_path", "node_type", "kind", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "node_path": {
+          "description": "The node carrying the marker: an IR path for a statechart (states.armed.transitions[0]), the element's label for a forge kind (<data id=\"gain\">), or <kind-basis>.",
+          "type": "string",
+          "minLength": 1
+        },
+        "node_type": { "type": "string", "minLength": 1 },
+        "action_type": {
+          "description": "The executable content element, when the node is one.",
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "description": "unresolved: a question the specification does not answer. assumed: a value chosen without it.",
+          "enum": ["unresolved", "assumed"]
+        },
+        "id": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string" },
+        "candidates": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
         },
         "location": { "$ref": "#/definitions/location" }
       }

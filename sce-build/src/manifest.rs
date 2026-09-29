@@ -400,6 +400,19 @@ pub struct Manifest<'a> {
     /// when there are none, matching [`Self::host_processor_causes`].
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub parent_sends: &'a [crate::parent_send_analyzer::ParentSend],
+    /// Every `sce:unresolved` / `sce:assumed` marker the ONE document this
+    /// run read carries — the records `sce-codegen unresolved` prints, in
+    /// the same order. Omitted (not `[]`) when there are none, and on a
+    /// document-set run, whose members each have their own.
+    ///
+    /// Published because the run succeeds either way: a marker blocks only
+    /// `--strict-unresolved`, which is right for a draft still being
+    /// written, and meant that a document with an open question came back
+    /// exactly like one with none. Measured 2026-09-30, a draft that left a
+    /// retry count `sce:unresolved` was reported `accepted` by `check
+    /// --lint` with nothing in its manifest to say a question was open.
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    pub unresolved: &'a [crate::unresolved_check::UnresolvedRecord],
     /// Which sites made [`Self::needs_host_processor`] true. Omitted
     /// (not `[]`) when there are none, matching
     /// [`Self::script_engine_causes`].
@@ -729,6 +742,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            unresolved: &[],
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -760,6 +774,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            unresolved: &[],
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -797,6 +812,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            unresolved: &[],
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -855,6 +871,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            unresolved: &[],
             host_processor_causes: &causes,
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -898,6 +915,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            unresolved: &[],
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -949,6 +967,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            unresolved: &[],
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -984,6 +1003,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            unresolved: &[],
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -1026,6 +1046,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            unresolved: &[],
             host_processor_causes: &[],
             host_processor_types: &declared,
             // The invoke half declared beside it, because the two travel
@@ -1070,6 +1091,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            unresolved: &[],
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
