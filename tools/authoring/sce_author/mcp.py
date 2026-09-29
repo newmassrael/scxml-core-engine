@@ -115,12 +115,15 @@ SERVER_INSTRUCTIONS = (
     "Call validate_scxml on the draft and fix reported issues; confirm that "
     "the manifest's document_kind names the kind you chose and that its "
     "basis_recorded is true. Then call "
-    "render_scxml_pseudocode. Return the pseudocode and a short list of "
-    "decisions the source leaves open. Explain that these tools describe "
-    "kinds and inspect SCXML; they do not choose a kind from prose, convert "
-    "prose, or prove agreement with it. The owner reviews "
-    "the pseudocode against the source. Never call scxml_accept without the "
-    "owner's explicit acceptance. No pack or binding is needed for this flow."
+    "render_scxml_pseudocode. Show its returned text verbatim in a fenced "
+    "block: do not translate, summarize, rename labels, or add a source "
+    "fact as if it were a rendered line. List decisions the source leaves "
+    "open in prose outside that block, not inside it. Explain that these "
+    "tools describe kinds and inspect SCXML; they do not choose a kind "
+    "from prose, convert prose, or prove agreement with it. The owner "
+    "reviews the pseudocode against the source. Never call scxml_accept "
+    "without the owner's explicit acceptance. No pack or binding is "
+    "needed for this flow."
 )
 
 _PACK_ARG = {
@@ -382,8 +385,10 @@ TOOLS = [
             "Render an existing statechart or sce:kind Forge document as "
             "complete pseudocode for "
             "the specification owner to review. Needs only the document -- a "
-            "path, or its text -- not a pack or binding. The owner must "
-            "compare the page "
+            "path, or its text -- not a pack or binding. Show the returned "
+            "text verbatim to the owner, in a fenced block: do not "
+            "translate, summarize, or rename a line inside it. The owner "
+            "must compare the page "
             "with the prose specification."
         ),
         "inputSchema": {

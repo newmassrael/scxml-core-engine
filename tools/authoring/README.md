@@ -177,6 +177,16 @@ in its initialization instructions. A client may choose whether to pass those
 instructions to the AI, so this is guidance, not a substitute for reviewing
 the pseudocode against the source.
 
+An assistant that paraphrases `render_scxml_pseudocode`'s page instead of
+showing it can hand the owner a summary that reads clean where the actual
+page would not, or a line the source never stated inside what looks like
+rendered output. The server's instructions ask the assistant to show that
+text verbatim, in a fenced block, and to keep any note about what the
+source leaves open outside it. A client that drops MCP server instructions
+drops this guidance too, so confirm it the same way as the tool calls
+themselves: read what the assistant actually showed against what the tool
+actually returned.
+
 The MCP server exposes tools that need no pack or binding:
 `scxml_kinds` runs `sce-codegen kinds` and returns the kind catalog, whole or
 for one kind; the rest take their files either by path, on the machine the

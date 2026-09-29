@@ -296,6 +296,11 @@ class PackFreeScxmlMcp(unittest.TestCase):
         tool = next(t for t in mcp.TOOLS if t["name"] == "scxml_accept")
         self.assertIn("owner", tool["description"])
 
+    def test_the_pseudocode_tool_says_to_show_its_text_verbatim(self):
+        tool = next(t for t in mcp.TOOLS if t["name"] == "render_scxml_pseudocode")
+        self.assertIn("verbatim", tool["description"])
+        self.assertIn("do not", tool["description"])
+
     @unittest.skipUnless(_default_codegen().exists(),
                          "the product's code generator is not built")
     def test_real_product_draws_the_figures(self):
