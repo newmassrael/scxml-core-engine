@@ -36,8 +36,8 @@ PY
 
 mutation_case "the C++ AOT delivers a delayed #_internal to the external queue" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     "            raise(EventWithMetadata(event, eventData, origin, sendId));\n            return;",
-     "            raiseExternal(EventWithMetadata(event, eventData, origin, sendId));\n            return;")
+     "            raise(EventWithMetadata(event, eventData, origin, sendId));\n            return true;",
+     "            raiseExternal(EventWithMetadata(event, eventData, origin, sendId));\n            return true;")
 PY
 
 # ── C++ AOT: an ended child still reads as running ─────────────────
@@ -60,8 +60,8 @@ PY
 
 mutation_case "C11 delivers a due send to a child at its final state" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "        if (sm->{{ slot }}_active && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {",
-     "        if (sm->{{ slot }}_active) {")
+     "        if (sm->{{ slot }}_active && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {\n            {{ csym_prefix }}{{ target.stem }}_raise_external_forwarded(",
+     "        if (sm->{{ slot }}_active) {\n            {{ csym_prefix }}{{ target.stem }}_raise_external_forwarded(")
 PY
 
 # ── C11: a delayed `#_parent` loses its payload ────────────────────

@@ -43,8 +43,8 @@ PY
 
 mutation_case "the C++ AOT engine delivers a scheduled event without its origin" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     "raiseExternal(EventWithMetadata(event, eventData, origin, sendId, \"external\",",
-     "raiseExternal(EventWithMetadata(event, eventData, \"\", sendId, \"external\",")
+     "const std::string &origin) {\n        raiseExternal(EventWithMetadata(event, eventData, origin, sendId, \"external\",",
+     "const std::string &origin) {\n        raiseExternal(EventWithMetadata(event, eventData, \"\", sendId, \"external\",")
 PY
 
 # ── C11: a blank target reaches this session ───────────────────────

@@ -42,8 +42,8 @@ PY
 
 mutation_case "the interpreter runs the rest of the block after an unreachable target" <<'PY'
 edit("sce/src/runtime/ActionExecutorImpl.cpp",
-     "        if (!isAddressedSessionReachable(target)) {",
-     "        if (false) {")
+     "        if (!isAddressedSessionReachable(target",
+     "        if (false && !isAddressedSessionReachable(target")
 PY
 
 # ── C++ AOT: the child gets the event but not its payload ──────────
@@ -75,8 +75,8 @@ PY
 
 mutation_case "C11 sends an invoked child no payload" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "                    sce_copy_bounded_data(_send_fwd.data, _ed);\n",
-     "")
+     "{% if has_payload %}\n                    sce_copy_bounded_data(_send_fwd.data, _ed);\n",
+     "{% if has_payload %}\n")
 PY
 
 # ── C11: a target naming no invocation does not end the block ──────
