@@ -42,6 +42,14 @@ TRANSFORM = (
     '    <data id="b" sce:type="int32" sce:direction="out" expr="a + 1"/>\n'
     '  </datamodel>\n'
     '</scxml>\n')
+OPEN_TRANSFORM = TRANSFORM.replace(
+    '  <datamodel>\n',
+    '  <sce:kind-basis sce:unresolved="kind" '
+    'sce:unresolved-reason="the text never says what an unlisted input gives" '
+    'sce:unresolved-candidates="lookup">\n'
+    '    <sce:evidence>each listed input has one setting</sce:evidence>\n'
+    '  </sce:kind-basis>\n'
+    '  <datamodel>\n', 1)
 UNDECLARED_STATECHART = (
     '<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" '
     'initial="idle">\n  <state id="idle"/>\n</scxml>\n')
@@ -99,6 +107,10 @@ class TheScore(unittest.TestCase):
             ({"id": "s", "kind": "statechart"}, UNDECLARED_STATECHART, "correct_by_default"),
             ({"id": "r", "kind": "transform"}, "<scxml/>", "refused"),
             ({"id": "u", "undetermined": ["transform", "lookup"]}, TRANSFORM, "decided"),
+            # The kind marked open in the document is the question asked.
+            ({"id": "o", "undetermined": ["transform", "lookup"]}, OPEN_TRANSFORM,
+             "left_open"),
+            ({"id": "h", "kind": "transform"}, OPEN_TRANSFORM, "left_open"),
         ]
         for case, text, outcome in cases:
             with self.subTest(case=case["id"]):

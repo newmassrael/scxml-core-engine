@@ -12,8 +12,9 @@ Each case is a prose specification. The client gets it in an empty directory
 with the SCE MCP server and nothing else, and the request an owner would type.
 Scoring does not read what the client SAID: it puts the document it wrote
 through `validate_scxml` and compares the manifest's `document_kind` with the
-case. A case whose text leaves the kind open is right only when no document
-was written — the client asked instead of choosing.
+case. A case whose text leaves the kind open is right when no document was
+written — the client asked — or when the draft marks its kind open on its
+`<sce:kind-basis>`, which is the same question put where the owner reads it.
 
     python3 tools/authoring/eval/kind_choice.py --client claude-restricted \\
         --out /tmp/kind-eval [--only id,id] [--model NAME]
@@ -38,7 +39,8 @@ AUTHORING = HERE.parent
 REPO = AUTHORING.parent.parent
 sys.path.insert(0, str(AUTHORING))
 
-from sce_author.verify import kind_catalog, validate_scxml  # noqa: E402
+from sce_author.verify import (kind_catalog, unresolved_markers,  # noqa: E402
+                               validate_scxml)
 
 CASES = HERE / "kind_choice_cases.json"
 LAUNCHER = REPO / "scripts" / "sce_author_mcp.sh"
@@ -114,10 +116,17 @@ def score(case: dict, draft: pathlib.Path, codegen: pathlib.Path | None = None) 
     report, refusal = validate_scxml(draft, codegen)
     answer = json.loads(report or refusal)
     reading = (answer.get("manifest") or {}).get("document_kind") or {}
+    open_kind = _kind_left_open(draft, codegen)
     result.update(chosen=reading.get("name"), declared=reading.get("declared"),
-                  verdict=answer["verdict"])
+                  basis_recorded=reading.get("basis_recorded"),
+                  kind_left_open=open_kind, verdict=answer["verdict"])
     if "undetermined" in case:
-        result["outcome"] = "decided"
+        # A provisional draft whose basis marks the kind open is the
+        # question asked in the document, where the owner and the strict
+        # build both see it; one that does not is a choice made silently.
+        result["outcome"] = "left_open" if open_kind else "decided"
+    elif open_kind:
+        result["outcome"] = "left_open"
     elif answer["verdict"] != "accepted":
         result["outcome"] = "refused"
     elif reading.get("name") != case["kind"]:
@@ -127,6 +136,16 @@ def score(case: dict, draft: pathlib.Path, codegen: pathlib.Path | None = None) 
     else:
         result["outcome"] = "correct"
     return result
+
+
+def _kind_left_open(draft: pathlib.Path, codegen: pathlib.Path | None) -> bool:
+    """Whether the document marks its kind as undecided: an open marker on
+    its `<sce:kind-basis>`, as `sce-codegen unresolved` lists it."""
+    report, refusal = unresolved_markers(draft, codegen)
+    if refusal:
+        return False
+    return any(m.get("node_path") == "<kind-basis>" and m.get("kind") == "unresolved"
+               for m in json.loads(report).get("markers") or [])
 
 
 def summarise(results: list[dict]) -> dict:
@@ -139,10 +158,13 @@ def summarise(results: list[dict]) -> dict:
                        "correct_by_default": count(determined, "correct_by_default"),
                        "wrong_kind": count(determined, "wrong_kind"),
                        "refused": count(determined, "refused"),
+                       "left_open": count(determined, "left_open"),
                        "no_document": count(determined, "no_document")},
         "undetermined": {"total": len(undetermined),
                          "asked": count(undetermined, "asked"),
+                         "left_open": count(undetermined, "left_open"),
                          "decided": count(undetermined, "decided")},
+        "basis_recorded": sum(1 for r in results if r.get("basis_recorded")),
     }
 
 
