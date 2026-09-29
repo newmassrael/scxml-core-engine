@@ -687,9 +687,66 @@ def validate_scxml(document: pathlib.Path,
     (SCE_ERROR_CONTRACT.md §1: records, exit 0, manifest) — reading only a
     refusal's stderr would drop those.
     """
-    return _product_answer(
+    report, refusal = _product_answer(
         ["check", str(document), "--lint"], codegen,
         answer="manifest", read=_json_line, verdicts=("accepted", "refused"), cwd=cwd)
+    return (_with_open_matters(report), "") if report else (report, refusal)
+
+
+def open_matters(manifest: dict) -> list[str]:
+    """What an accepted run still leaves to a person, read from the product's
+    own manifest and from nothing else.
+
+    `accepted` says the product found nothing to refuse. It does not say the
+    document is finished: measured 2026-09-30, a draft that left its retry
+    count `sce:unresolved`, and one that sent its request to `#_parent` with
+    no parent to receive it, were both `accepted`, and an owner reading only
+    the verdict saw a finished design. Each line here is a fact the manifest
+    carries, in words that say what to do about it; a manifest carrying none
+    yields none, and a caller adds no sentence of its own.
+    """
+    matters = []
+    open_questions = [m for m in manifest.get("unresolved") or []
+                      if m.get("kind") == "unresolved"]
+    if open_questions:
+        matters.append(
+            f"{len(open_questions)} question(s) the specification leaves open "
+            f"({', '.join(m['id'] for m in open_questions)}): ask the owner and "
+            f"record each answer; the strict check (--strict-unresolved) refuses "
+            f"this document until then")
+    assumed = [m for m in manifest.get("unresolved") or [] if m.get("kind") == "assumed"]
+    if assumed:
+        matters.append(
+            f"{len(assumed)} value(s) chosen without the specification "
+            f"({', '.join(m['id'] for m in assumed)}): the owner confirms or "
+            f"corrects each")
+    if manifest.get("needs_parent"):
+        events = sorted({s["event"] for s in manifest.get("parent_sends") or []
+                         if s.get("event")})
+        matters.append(
+            "sends to its parent session"
+            + (f" ({', '.join(events)})" if events else "")
+            + ", so it can only run as a child: check it together with the "
+              "statechart that invokes it (validate_scxml_set), or send to a "
+              "host-served processor if the specification names no parent")
+    if manifest.get("needs_host_processor"):
+        matters.append(
+            "sends to an Event I/O Processor type this build has no path for: "
+            "the host has to serve it, or the send raises error.execution at run time")
+    return matters
+
+
+def _with_open_matters(report: str) -> str:
+    """`report` with `open` (what an accepted run leaves to a person) and,
+    when there is something, `next`. Untouched when the run left nothing."""
+    answer = json.loads(report)
+    matters = open_matters(answer.get("manifest") or {})
+    if matters:
+        answer["open"] = matters
+        answer["next"] = ("accepted is the product's verdict, not the owner's: "
+                          "settle each item in `open` before showing this design "
+                          "as finished")
+    return json.dumps(answer, indent=2, ensure_ascii=False) + "\n"
 
 
 def validate_scxml_set(documents: list[pathlib.Path],

@@ -307,6 +307,26 @@ asks whether it still holds. Each JSON answer carries `verdict`, the command's
 output, and every `diagnostics` record. `scxml_accept` states a person's
 decision: call it only on the owner's word, after they have read the report.
 
+`accepted` from `validate_scxml` is the product's verdict, and a document can
+be accepted without being finished: measured on 2026-09-30, a draft that left
+a retry count `sce:unresolved` and one that sent its request to `#_parent`,
+with nothing that invokes it, were both accepted. So the answer also carries
+`open` — one line for each thing the run leaves to a person, read from the
+manifest's `unresolved`, `needs_parent` and `needs_host_processor` and from
+nothing else — and `next`, which says to settle them before the design is
+shown as finished. A run that leaves nothing has neither field. The same
+manifest field is what `check` and `generate` publish for any client, and
+`--strict-unresolved` remains the way to refuse a document with an open
+question outright.
+
+A statechart's output needs a receiver. A `<send>` with no `target` and no
+`type` goes to the machine's own queue, and one no transition takes is thrown
+away (`check --lint`: `scxml/self-send-discarded`). What the machine tells its
+surroundings goes to a processor the host serves (`<send type="…">`), and
+`target="#_parent"` is right only when the specification names the statechart
+that invokes this one. Which receiver a specification means is the owner's to
+say; the server's instructions ask the assistant to ask, not to choose.
+
 An acceptance can also pin what the design was **authored from**: the
 specification files (`sources`) and the owner's decision record
 (`decisions`), each by sha256 (`sce-codegen accept --source … --decisions
