@@ -256,6 +256,12 @@
        Typing it here would refuse a malformed or zero value with a schema
        error first, and the rules' refusals would never be reached. -->
   <xs:attribute name="capacity" type="xs:string"/>
+  <!-- `sce:interface="closed"` on a statechart's `<scxml>`: every event
+       crossing it is one an imported event-schema declares (SCE Accepted
+       Subset §2.16). `xs:string` for `sce:capacity`'s reason: the parser
+       refuses any other value with its own diagnostic, which a schema type
+       would pre-empt. -->
+  <xs:attribute name="interface" type="xs:string"/>
   <xs:attribute name="direction" type="sce:directionType"/>
 
   <!-- NL→IR Item C1 Path A — `sce:underlying-type` on a

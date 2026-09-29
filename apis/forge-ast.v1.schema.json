@@ -2377,6 +2377,10 @@
               },
               "type": "array"
             },
+            "interface_closed": {
+              "description": "`<scxml sce:interface=\"closed\">`: every event this statechart takes from outside or sends outside is one an imported event-schema declares (SCE Accepted Subset §2.16, `crate::scxml_interface`). Absent, the interface is open — the W3C default, and the dynamic `_event.data` baseline for events no schema names.",
+              "type": "boolean"
+            },
             "invokes": {
               "items": {
                 "$ref": "#/definitions/Invoke"

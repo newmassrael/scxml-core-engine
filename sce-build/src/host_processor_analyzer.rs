@@ -561,20 +561,7 @@ fn record_delayed_host_sends(model: &mut SCXMLModel, dynamic_mesh: bool) {
             max_params = max_params.max(pairs);
         }
     };
-    for state in model.states.values() {
-        for trans in &state.transitions {
-            walk_actions(&trans.actions, &mut visit);
-        }
-        for block in state
-            .on_entry_blocks
-            .iter()
-            .chain(state.on_exit_blocks.iter())
-        {
-            walk_actions(block, &mut visit);
-        }
-        walk_actions(&state.initial_transition_actions, &mut visit);
-        walk_actions(&state.initial_history_default_actions, &mut visit);
-    }
+    walk_model_actions(model, &mut |_state, action| visit(action));
     model.has_delayed_host_send = found;
     model.delayed_host_send_max_params = max_params;
 }
@@ -592,6 +579,28 @@ fn walk_actions(actions: &[Action], visit: &mut impl FnMut(&Action)) {
         for block in action.nested_blocks() {
             walk_actions(block.actions, visit);
         }
+    }
+}
+
+/// Apply `visit` to every action every state of `model` runs — its
+/// transitions', its `<onentry>` / `<onexit>` blocks', its initial
+/// transition's and its history default's — with the id of the state it is
+/// written in, nesting included ([`walk_actions`]).
+pub(crate) fn walk_model_actions(model: &SCXMLModel, visit: &mut impl FnMut(&str, &Action)) {
+    for state in model.states.values() {
+        let mut here = |action: &Action| visit(&state.id, action);
+        for trans in &state.transitions {
+            walk_actions(&trans.actions, &mut here);
+        }
+        for block in state
+            .on_entry_blocks
+            .iter()
+            .chain(state.on_exit_blocks.iter())
+        {
+            walk_actions(block, &mut here);
+        }
+        walk_actions(&state.initial_transition_actions, &mut here);
+        walk_actions(&state.initial_history_default_actions, &mut here);
     }
 }
 

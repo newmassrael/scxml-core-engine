@@ -898,7 +898,7 @@ fn compute_externally_drivable_events(model: &mut SCXMLModel) {
 /// sentinels. Mirrors the families [`add_system_events`] injects plus
 /// the `<transition>` wildcard tokens, so the reserved-event taxonomy
 /// has exactly one owner.
-fn is_reserved_ingress_event(event: &str) -> bool {
+pub(crate) fn is_reserved_ingress_event(event: &str) -> bool {
     event.is_empty()
         // A descriptor pattern (`*`, `.*`, `foo.*`, `foo.`) names no event a
         // switchboard could target — §scxml-3.12.1 via `event_descriptor`.

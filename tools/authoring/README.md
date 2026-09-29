@@ -276,6 +276,17 @@ more than once" above). A role left out of the question is part of the
 answer — the same prose without the decision record the design followed is
 a different set of inputs.
 
+A new draft cannot be the same file, but it can be held to the same
+boundary. A statechart whose root says `sce:interface="closed"` takes from
+outside and sends outside only the events its imported event-schemas
+declare, and every event it sends itself has to be taken by one of its
+transitions (`docs/SCE_ACCEPTED_SUBSET.md` §2.16); anything else is refused
+as `scxml/undeclared-interface-event`. Without the declaration an import
+does not close anything — an event no schema declares is still accepted.
+The server's instructions ask the assistant to write the event-schemas
+first and close the interface: that is the choice the vending case above
+left open, and each of its drafts made it differently.
+
 The requirement and acceptance tools answer for a document of any kind. A
 statechart's report shows, for each requirement, the transitions it depends
 on. A forge document's report shows the review-table lines that claim it,

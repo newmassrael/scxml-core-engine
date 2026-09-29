@@ -235,6 +235,9 @@ pub mod scxml_guard_analysis;
 /// reader picks up is already covered. Invoked from
 /// [`parser::SCXMLParser::parse_file`] and its in-memory siblings.
 pub mod scxml_identifier;
+/// A statechart's closed interface (`sce:interface="closed"`): every event
+/// crossing it is one an imported event-schema declares.
+pub mod scxml_interface;
 /// Statechart graph reachability
 /// validator. BFS from the document `initial` configuration computes
 /// the design-time reach set and rejects orphan states / dead

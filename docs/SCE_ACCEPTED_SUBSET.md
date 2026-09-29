@@ -2874,6 +2874,44 @@ because no payload is in scope to type it. The host method's parameter types
 are the arguments' types, and every call site of one name must agree on them
 as it must under any data model.
 
+### §2.16 A closed interface — `sce:interface="closed"`
+
+An event-schema types the payload of the one event it names; an event no
+imported schema names keeps the dynamic `_event.data` baseline with no
+diagnostic (EventSchema kind, "Schemaless fallback"). That stays the
+default, and it means nothing holds a statechart to the interface its owner
+accepted. A statechart root may instead declare
+`<scxml sce:interface="closed">`, and is then held to the event-schemas it
+imports (`<sce:import kind="event-schema">`) in both directions:
+
+| What crosses | Admitted when |
+|---|---|
+| an event a transition takes | a descriptor that matches an event some imported schema declares (W3C SCXML 3.12.1 matching, so `coin` admits `coin.inserted`), an event the statechart gives itself (a `<raise>`, or a `<send>` to its own session), or a platform event (`error.*`, `done.state.*`, `done.invoke.*`); `*` declares nothing and is admitted |
+| a `<send>` out of the session | its `event` is exactly an event an imported schema declares |
+| a `<send>` with `eventexpr` | never: a computed name cannot be checked, so name the event |
+| a `<send>` to the session itself (no `target`/`targetexpr`/`typeexpr`, or `#_internal`, through the SCXML Event I/O Processor) | some transition takes its event — otherwise it is a message the machine sends itself and discards, which is what an output with no destination looks like |
+
+The first event that breaks the rule is refused as
+`scxml/undeclared-interface-event`, naming the state and the event, and
+listing in its message every event the imported schemas declare. The only other value
+of the attribute is its absence; anything else is refused as
+`validation/attribute-rule-violated`. A forge root does not take it.
+
+It is judged where a statechart's imports are read, the parser's import
+seam, so every entry point that parses a document from a file judges it.
+The in-memory path, which reads no sibling documents and so resolves no
+schema, does not judge it — as it does not judge the typed payload paths
+that seam validates.
+
+Measured 2026-09-29, before the rule existed: five drafts of one
+specification whose prose left the interface open invented five
+interfaces — where a price came from, what an input event was called and
+what it carried — and all five wrote their outputs as `<send>`s to the
+session itself. The declaration is how an interface the owner accepted
+first, as its own event-schema documents, holds every later draft of the
+behaviour to one boundary. No tracked document declares it, so the rule
+moves no existing verdict.
+
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 
 When a forge expression reads an imported kind's member via
@@ -3816,6 +3854,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/dead-transition` | Validation |
 | `scxml/parent-send-without-parent` | Validation |
 | `scxml/generated-name-collision` | Validation |
+| `scxml/undeclared-interface-event` | Validation |
 | `scxml/non-exhaustive-event-handling` | Validation |
 | `scxml/contradictory-unhandled-declaration` | Validation |
 | `scxml/stale-unhandled-declaration` | Validation |

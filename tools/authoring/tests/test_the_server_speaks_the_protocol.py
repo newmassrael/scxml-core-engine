@@ -118,7 +118,8 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         self.assertIn("validate_scxml_set", replies[0]["result"]["instructions"])
         self.assertIn("verbatim in a fenced block", replies[0]["result"]["instructions"])
         self.assertIn("do not translate, summarize, rename labels", replies[0]["result"]["instructions"])
-        names = {t["name"] for t in replies[1]["result"]["tools"]}
+        self.assertIn('sce:interface="closed"', replies[0]["result"]["instructions"])
+        names ={t["name"] for t in replies[1]["result"]["tools"]}
         self.assertEqual(
             {"brief", "questions", "review", "check", "coverage", "verify",
              "gaps", "pseudo", "scaffold", "compare", "scxml_kinds", "validate_scxml",

@@ -927,6 +927,11 @@ pub enum DiagnosticCode {
     //    because the output would not build. ───────────────────────────
     #[serde(rename = "scxml/generated-name-collision")]
     ScxmlGeneratedNameCollision,
+    // ── A statechart declaring `sce:interface="closed"` takes or sends an
+    //    event no imported event-schema declares (`crate::scxml_interface`).
+    //    Not a W3C violation: the declaration is SCE's. ────────────────
+    #[serde(rename = "scxml/undeclared-interface-event")]
+    ScxmlUndeclaredInterfaceEvent,
     // ── NL→IR Mapping Roadmap Item 3 — event-set
     //    exhaustiveness. Fires when a compound `<state>` has sibling
     //    children that disagree on whether a given event is handled,
@@ -3318,6 +3323,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ScxmlParentSendWithoutParent,
         // Two names that become one member of the generated code
         ScxmlGeneratedNameCollision,
+        // An event crossing a closed interface undeclared
+        ScxmlUndeclaredInterfaceEvent,
         // NL→IR Mapping Roadmap Item 3 — event-set exhaustiveness
         ScxmlNonExhaustiveEventHandling,
         ScxmlContradictoryUnhandledDeclaration,
@@ -3903,6 +3910,8 @@ impl DiagnosticCode {
             // ── How a statechart's names are spelled in generated code
             //    is SCE's rule, not W3C's: §3.14 is satisfied. ─────────
             ScxmlGeneratedNameCollision => Some("SCE Accepted Subset §2.14.1"),
+            // ── A closed interface is SCE's declaration, not W3C's. ──
+            ScxmlUndeclaredInterfaceEvent => Some("SCE Accepted Subset §2.16"),
 
             // ── SCXML data models ──────────────────────────────────
             // The attribute is defined in §3.2 and the data models it
@@ -4702,6 +4711,7 @@ impl DiagnosticCode {
             ScxmlDeadTransition => "scxml/dead-transition",
             ScxmlParentSendWithoutParent => "scxml/parent-send-without-parent",
             ScxmlGeneratedNameCollision => "scxml/generated-name-collision",
+            ScxmlUndeclaredInterfaceEvent => "scxml/undeclared-interface-event",
             ScxmlNonExhaustiveEventHandling => "scxml/non-exhaustive-event-handling",
             ScxmlContradictoryUnhandledDeclaration => "scxml/contradictory-unhandled-declaration",
             ScxmlStaleUnhandledDeclaration => "scxml/stale-unhandled-declaration",
@@ -9853,6 +9863,28 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 },
             ],
         },
+        ScxmlSemanticError::UndeclaredInterfaceEvent {
+            crossing,
+            event,
+            state,
+            declared: _,
+        } => DiagnosticPayload {
+            // `actual` is the event as written. The declared set is in the
+            // message and NOT in `expected`: it is one of two repairs —
+            // the other is declaring this event in a schema — so it is not
+            // a closed candidate set, and `expected` would read as one.
+            code: DiagnosticCode::ScxmlUndeclaredInterfaceEvent,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(event.clone()),
+            fix: None,
+            key_fragments: vec![
+                "scxml-undeclared-interface-event".to_string(),
+                format!("{crossing:?}"),
+                format!("scxml-state:{state}"),
+                event.clone(),
+            ],
+        },
         ScxmlSemanticError::ParentSendWithoutParent { machine, event } => DiagnosticPayload {
             // `actual` names the machine: the repair is to the set (add
             // the document that invokes it) or to the machine (send to
@@ -11035,6 +11067,19 @@ mod tests {
                 }
                 .into(),
                 r##"{"v":1,"id":"fnv1a:86099a275d115ab1","code":"scxml/parent-send-without-parent","stage":"validation","spec":"W3C SCXML §6.2.4","message":"'notifier' sends 'indicator.update' to its parent session (#_parent), but no document in this set invokes it — started on its own it has no parent, and the send raises error.communication","actual":"notifier"}"##,
+            ),
+            (
+                // A closed interface, and an event taken that no imported
+                // schema declares (`crate::scxml_interface`).
+                "forge/scxml-undeclared-interface-event",
+                crate::scxml_semantic::ScxmlSemanticError::UndeclaredInterfaceEvent {
+                    crossing: crate::scxml_semantic::InterfaceCrossing::Receives,
+                    event: "coin.insert".into(),
+                    state: "idle".into(),
+                    declared: vec!["coin.inserted".into(), "product.selected".into()],
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:7cd0669e44f97ce9","code":"scxml/undeclared-interface-event","stage":"validation","spec":"SCE Accepted Subset §2.16","message":"state 'idle' takes 'coin.insert', which crosses the closed interface undeclared: the imported schemas declare coin.inserted, product.selected — declare it in an imported event-schema, or take one of those","actual":"coin.insert"}"##,
             ),
             (
                 // Two states XML keeps apart by case, which every backend
@@ -16252,6 +16297,10 @@ mod tests {
             // The repair is a new name for one of the two, which only
             // the author can choose.
             | ScxmlGeneratedNameCollision
+            // Two repairs of different kinds — declare the event in a
+            // schema, or use one declared — and the record names the
+            // declared set in its message, so no closed candidate set.
+            | ScxmlUndeclaredInterfaceEvent
             // NL→IR Mapping Roadmap Item 3 — non-exhaustive
             // event handling. Repair has three axes (add the
             // transition, add a parent-level fallthrough, or declare
@@ -16590,6 +16639,7 @@ mod tests {
                 | ScxmlDeadTransition
                 | ScxmlParentSendWithoutParent
                 | ScxmlGeneratedNameCollision
+                | ScxmlUndeclaredInterfaceEvent
                 | ScxmlNonExhaustiveEventHandling
                 | ScxmlContradictoryUnhandledDeclaration
                 | ScxmlStaleUnhandledDeclaration
@@ -16889,9 +16939,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            405,
+            406,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 405 distinct variants to match the DiagnosticCode \
+             expected 406 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17830,7 +17880,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationEventPayloadFieldUnknown
             | ValidationBytesComparisonNotEquality
             | MeshEventSchemaMismatch
-            | ScxmlGeneratedNameCollision => Registered(NoAnchor::NotYetMeasured),
+            | ScxmlGeneratedNameCollision
+            | ScxmlUndeclaredInterfaceEvent => Registered(NoAnchor::NotYetMeasured),
 
             // ── Registered(CoordinateNotThreaded, RaisedBeforeAnyResolvingStage) ──
             // Measured, and each here for its OWN reason.

@@ -2234,6 +2234,30 @@ impl SCXMLParser {
             },
         };
 
+        // SCE Accepted Subset §2.16: `<scxml sce:interface="closed">`
+        // declares that every event crossing the statechart's boundary is
+        // one an imported event-schema names. One value, because the
+        // other is the attribute's absence: the W3C default is open, and a
+        // spelling of it would be a second way to say nothing.
+        let interface_closed = match crate::sce_attr::read(&root, "interface") {
+            None => false,
+            Some("closed") => true,
+            Some(raw) => {
+                return Err(crate::forge::error::Located::new(
+                    crate::forge::error::ValidationError::AttributeRuleViolated {
+                        element: "scxml".to_string(),
+                        attr: "sce:interface".to_string(),
+                        value: raw.to_string(),
+                        rule: "\"closed\", or absent for an open interface".to_string(),
+                    }
+                    .into(),
+                    diag_label,
+                    None,
+                    None,
+                ));
+            }
+        };
+
         // SCE Protocol-Synthesis RFC §synth-5-O: anchor the model at the
         // `<scxml>` root element's post-preprocessor position. Codegen
         // templates lower this to the top-level SCE-MAP marker above
@@ -2299,6 +2323,7 @@ impl SCXMLParser {
             datamodel: resolve_declared_datamodel(root.attribute("datamodel"))
                 .map_err(|e| crate::forge::error::Located::new(e.into(), diag_label, None, None))?,
             event_queue_capacity,
+            interface_closed,
             source_location: root_source_location,
             forge_imports,
             kind_basis,
@@ -2476,6 +2501,11 @@ impl SCXMLParser {
             // before any typed-path validator reads the event map below.
             crate::forge::typed_invoke::validate(&model, &model.imported_records, diag_label)?;
             crate::forge::typed_invoke::bind_results(&mut model);
+            // A closed interface is judged against the schemas just
+            // resolved, here where they are read and for the same reason
+            // the typed-path validators are: every entry point that parses
+            // a document from a file reaches this seam.
+            crate::scxml_interface::validate(&model, diag_label)?;
             model.imported_algorithms =
                 crate::forge::static_imports::resolve(&model, dir, diag_label)?;
             let imported_enums =

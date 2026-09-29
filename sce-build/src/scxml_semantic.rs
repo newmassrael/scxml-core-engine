@@ -36,6 +36,59 @@
 
 use thiserror::Error;
 
+/// Which way an event crosses a closed interface
+/// ([`ScxmlSemanticError::UndeclaredInterfaceEvent`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InterfaceCrossing {
+    /// A transition takes it, and neither the statechart nor the platform
+    /// raises it.
+    Receives,
+    /// A `<send>` sends it out of the session.
+    Sends,
+    /// A `<send>` computes its name (`eventexpr`), which no schema can be
+    /// checked against.
+    SendsComputed,
+    /// A `<send>` addresses it to the session itself and no transition takes
+    /// it: a message the machine sends itself and discards.
+    SendsToItself,
+}
+
+/// [`ScxmlSemanticError::UndeclaredInterfaceEvent`]'s message.
+fn undeclared_interface_event_message(
+    crossing: InterfaceCrossing,
+    event: &str,
+    state: &str,
+    declared: &[String],
+) -> String {
+    let schemas = if declared.is_empty() {
+        "the document imports no event-schema, so nothing may cross it".to_string()
+    } else {
+        format!("the imported schemas declare {}", declared.join(", "))
+    };
+    match crossing {
+        InterfaceCrossing::Receives => format!(
+            "state '{state}' takes '{event}', which crosses the closed interface \
+             undeclared: {schemas} — declare it in an imported event-schema, or \
+             take one of those"
+        ),
+        InterfaceCrossing::Sends => format!(
+            "state '{state}' sends '{event}' out of the session, and the closed \
+             interface does not declare it: {schemas} — declare it in an \
+             imported event-schema, or send one of those"
+        ),
+        InterfaceCrossing::SendsComputed => format!(
+            "state '{state}' sends an event named by eventexpr=\"{event}\", which \
+             a closed interface cannot check: name the event literally"
+        ),
+        InterfaceCrossing::SendsToItself => format!(
+            "state '{state}' sends '{event}' to its own session and no transition \
+             takes it, so the machine sends it to itself and discards it — if it \
+             is an output, declare it in an imported event-schema and send it \
+             where the interface says"
+        ),
+    }
+}
+
 /// [`ScxmlSemanticError::GeneratedNameCollision`]'s message.
 ///
 /// Names the first backend's spelling and then every other backend that
@@ -358,6 +411,26 @@ pub enum ScxmlSemanticError {
     /// Mirrors C++ `SemanticNoStates`.
     #[error("No state nodes found in SCXML document")]
     NoStates,
+
+    /// A statechart that declares `sce:interface="closed"` takes or sends an
+    /// event no imported event-schema declares (`crate::scxml_interface`).
+    ///
+    /// ⚠ Not a W3C SCXML violation — an open interface is the W3C default —
+    /// and no C++ Interpreter mirror: the declaration is SCE's, and the
+    /// Interpreter runs a document whatever its schemas say.
+    #[error("{}", undeclared_interface_event_message(*crossing, event, state, declared))]
+    UndeclaredInterfaceEvent {
+        /// Which way the event crosses the boundary.
+        crossing: InterfaceCrossing,
+        /// The event as written — a transition's descriptor, a `<send
+        /// event>`, or for a computed name the `eventexpr`.
+        event: String,
+        /// The state it is written in.
+        state: String,
+        /// Every event the imported schemas declare, so the repair — use
+        /// one, or declare this one — has its candidates in the record.
+        declared: Vec<String>,
+    },
 
     /// Two names the document keeps apart — or one name and a member the
     /// generated code declares for itself — become one member of the code
@@ -1009,6 +1082,12 @@ mod tests {
                 clash: crate::member_names::Clash::Name("Idle".into()),
                 spellings: vec![("cpp", "Idle".into())],
             },
+            ScxmlSemanticError::UndeclaredInterfaceEvent {
+                crossing: InterfaceCrossing::Sends,
+                event: "product.dispense".into(),
+                state: "dispensing".into(),
+                declared: vec![],
+            },
             ScxmlSemanticError::NonExhaustiveEventHandling {
                 parent: "dispatch".into(),
                 event: "cmd.stop".into(),
@@ -1071,7 +1150,7 @@ mod tests {
 
     /// Number of arms in [`variant_name`]. Kept next to it so the two
     /// move together.
-    const VARIANT_COUNT: usize = 19;
+    const VARIANT_COUNT: usize = 20;
 
     /// Exhaustive discriminant projection — the compile-time half of
     /// `every_variant_routes_through_forge_error`'s coverage claim.
@@ -1094,6 +1173,7 @@ mod tests {
             ScxmlSemanticError::DeadTransition { .. } => "DeadTransition",
             ScxmlSemanticError::ParentSendWithoutParent { .. } => "ParentSendWithoutParent",
             ScxmlSemanticError::GeneratedNameCollision { .. } => "GeneratedNameCollision",
+            ScxmlSemanticError::UndeclaredInterfaceEvent { .. } => "UndeclaredInterfaceEvent",
             ScxmlSemanticError::NonExhaustiveEventHandling { .. } => "NonExhaustiveEventHandling",
             ScxmlSemanticError::ContradictoryUnhandledDeclaration { .. } => {
                 "ContradictoryUnhandledDeclaration"

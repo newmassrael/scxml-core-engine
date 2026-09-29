@@ -2625,6 +2625,14 @@ pub struct SCXMLModel {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub event_queue_capacity: Option<u32>,
 
+    /// `<scxml sce:interface="closed">`: every event this statechart takes
+    /// from outside or sends outside is one an imported event-schema
+    /// declares (SCE Accepted Subset §2.16, `crate::scxml_interface`).
+    /// Absent, the interface is open — the W3C default, and the dynamic
+    /// `_event.data` baseline for events no schema names.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub interface_closed: bool,
+
     pub states: BTreeMap<String, State>,
     pub events: BTreeSet<String>,
     /// Derived external-ingress event set: the event descriptors that

@@ -871,6 +871,7 @@ references against a real document and drift silently.
 | `scxml/stale-unhandled-declaration` | `validation` | no |  |
 | `scxml/static-datamodel-rule` | `validation` | no | SCE Accepted Subset §2.15 |
 | `scxml/top-level-script-unloaded` | `validation` | no | W3C SCXML §5.8 |
+| `scxml/undeclared-interface-event` | `validation` | no | SCE Accepted Subset §2.16 |
 | `scxml/unknown-session-role-kind` | `validation` | `replace_one_of` |  |
 | `scxml/unreachable-state` | `validation` | no |  |
 | `scxml/unsupported-datamodel` | `validation` | `replace_one_of` | W3C SCXML §3.2 |
