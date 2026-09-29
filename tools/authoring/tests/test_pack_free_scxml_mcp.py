@@ -34,13 +34,20 @@ class PackFreeScxmlMcp(unittest.TestCase):
             '  <state id="Idle"/>\n'
             '</scxml>\n', encoding="utf-8")
 
-    def test_tools_require_only_the_document(self):
+    def test_tools_take_the_document_by_path_or_as_text(self):
         for name in ("validate_scxml", "render_scxml_pseudocode"):
             with self.subTest(name=name):
                 tool = next(t for t in mcp.TOOLS if t["name"] == name)
-                self.assertEqual(["document"], tool["inputSchema"]["required"])
-                self.assertNotIn("pack", tool["inputSchema"]["properties"])
-                self.assertNotIn("binding", tool["inputSchema"]["properties"])
+                properties = tool["inputSchema"]["properties"]
+                self.assertIn("document", properties)
+                self.assertIn("document_text", properties)
+                self.assertNotIn("required", tool["inputSchema"])
+                self.assertNotIn("pack", properties)
+                self.assertNotIn("binding", properties)
+        # Neither form is an argument error, not a crash.
+        answer = call("validate_scxml")
+        self.assertTrue(answer.get("isError"))
+        self.assertIn("'document' or 'document_text'", answer["content"][0]["text"])
 
     @unittest.skipUnless(_default_codegen().exists(),
                          "the product's code generator is not built")
@@ -232,11 +239,15 @@ class PackFreeScxmlMcp(unittest.TestCase):
         # Every one runs under --error-format json, so its refusals come
         # back as records, and passes its names through unchecked.
         doc, manifest = str(self.document), str(self.document)
+        # A path argument is resolved before the run: the run starts in the
+        # call's staging directory, where a relative name would mean
+        # something else.
+        here = lambda name: str(pathlib.Path(name).resolve())  # noqa: E731
         cases = [
             ("render_scxml_diagram",
              dict(document=doc, out="figs", page="a3-landscape", min_pt=8, lexicon="ko",
                   manifest=manifest),
-             ["diagram", doc, "-o", "figs", "--page", "a3-landscape",
+             ["diagram", doc, "-o", here("figs"), "--page", "a3-landscape",
               "--min-pt", "8.0", "--lexicon", "ko", "--manifest", manifest]),
             ("scxml_kinds", dict(), ["kinds"]),
             ("scxml_kinds", dict(kind="lookup"), ["kinds", "--kind", "lookup"]),
@@ -249,9 +260,9 @@ class PackFreeScxmlMcp(unittest.TestCase):
             ("scxml_accept",
              dict(document=doc, manifest=manifest, variant="base", root=".", out="acc.json"),
              ["accept", doc, "--manifest", manifest, "--variant", "base",
-              "--root", ".", "--out", "acc.json"]),
+              "--root", here("."), "--out", here("acc.json")]),
             ("scxml_acceptance_check", dict(record=doc, variant="base", root="."),
-             ["acceptance-check", doc, "--variant", "base", "--root", "."]),
+             ["acceptance-check", doc, "--variant", "base", "--root", here(".")]),
         ]
         for name, arguments, expected in cases:
             with self.subTest(name=name):

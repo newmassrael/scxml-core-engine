@@ -43,7 +43,9 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import sys
+import tempfile
 import traceback
 
 from . import brief as brief_sections
@@ -66,7 +68,7 @@ from .pseudo import render as render_pseudo
 from .verify import validate_scxml as run_scxml_validation
 from .verify import (accept_design, acceptance_holds, acceptance_page,
                      diagram_figures, kind_catalog, requirement_records,
-                     unresolved_markers)
+                     unresolved_markers, validate_scxml_set)
 from .verify import pseudo_page, verify as run_verify
 from .prose import load_prose
 from .questions import ask
@@ -75,6 +77,10 @@ from .scaffold import KINDS as SCAFFOLD_KINDS
 from .scaffold import write as write_scaffold
 
 PROTOCOL_VERSION = "2024-11-05"
+# Every revision this server answers in. The tools and their results have
+# one shape in all of them; the later two differ in the HTTP transport,
+# which `mcp_http` serves.
+SUPPORTED_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18")
 SERVER_NAME = "sce-author"
 SERVER_VERSION = "1"
 SERVER_INSTRUCTIONS = (
@@ -103,6 +109,9 @@ SERVER_INSTRUCTIONS = (
     "Draft the document yourself, in the shape of the chosen kind's example, "
     "and do not invent missing policy values; a kind's notes name the "
     "defaults the source has to decide. "
+    "Hand a document to the tools by path when this server runs beside the "
+    "files, and otherwise as document_text with a document_name; documents "
+    "that import one another are checked together with validate_scxml_set. "
     "Call validate_scxml on the draft and fix reported issues; confirm that "
     "the manifest's document_kind names the kind you chose and that its "
     "basis_recorded is true. Then call "
@@ -127,6 +136,33 @@ _PROSE_ARG = {
         " reading them apart reports the second file's use as unknown."
     ),
 }
+
+
+def _file_input(key: str, what: str) -> dict:
+    """The properties that hand over one file: a path on this server's
+    machine, or the file itself as text.
+
+    ⚠ Both, because a client is not always where the server is. A path is
+    the local form -- the owner's own tree, read in place. Text is the only
+    form that crosses machines, and a server reached over HTTP refuses a path
+    outright: it names this machine's files, which the caller neither sees
+    nor should reach."""
+    return {
+        key: {"type": "string", "description": (
+            f"Path to {what} on the machine this server runs on (local "
+            f"servers only).")},
+        f"{key}_text": {"type": "string", "description": (
+            f"{what[0].upper()}{what[1:]} itself, as text, in place of "
+            f"`{key}`.")},
+        f"{key}_name": {"type": "string", "description": (
+            f"The file name `{key}_text` is read under. For a document its "
+            f"stem is the document's name, and other documents import it by "
+            f"it.")},
+    }
+
+
+_DOCUMENT_INPUT = _file_input("document", "the SCXML document")
+_MANIFEST_INPUT = _file_input("manifest", "the requirement manifest")
 
 TOOLS = [
     {
@@ -293,7 +329,8 @@ TOOLS = [
         "description": (
             "Run sce-codegen check --lint on an existing SCXML-root document, "
             "including an explicit sce:kind Forge document. "
-            "Needs only the document path, not a pack or binding. Returns "
+            "Needs only the document -- a path, or its text -- not a pack "
+            "or binding. Returns "
             "JSON: verdict (accepted/refused), the manifest, and EVERY "
             "diagnostic record -- all lint findings in one run, not the "
             "first. Applies the declared kind's checks (including statechart "
@@ -305,9 +342,37 @@ TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["document"],
+            "properties": dict(_DOCUMENT_INPUT),
+        },
+    },
+    {
+        "name": "validate_scxml_set",
+        "description": (
+            "Check documents that refer to one another as one set -- a "
+            "statechart and the event schemas or enums it imports, a worker "
+            "and the link it reads, a link and its framer codec -- with "
+            "sce-codegen check. Each document's kind is read by the product, "
+            "and an import is resolved by file name among the set's "
+            "documents. Returns JSON: verdict, the set's manifest, and "
+            "every diagnostic record. Give either `documents` (paths) or "
+            "`documents_text` (each document's name and text)."
+        ),
+        "inputSchema": {
+            "type": "object",
             "properties": {
-                "document": {"type": "string", "description": "Path to the SCXML document."},
+                "documents": {"type": "array", "items": {"type": "string"},
+                              "description": "Paths to the documents (local servers only)."},
+                "documents_text": {
+                    "type": "array",
+                    "description": "The documents themselves, each named as the others import it.",
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "text"],
+                        "properties": {"name": {"type": "string"},
+                                       "text": {"type": "string"}},
+                    },
+                },
+                **_file_input("deploy", "the deploy.yaml the set is deployed by"),
             },
         },
     },
@@ -316,15 +381,15 @@ TOOLS = [
         "description": (
             "Render an existing statechart or sce:kind Forge document as "
             "complete pseudocode for "
-            "the specification owner to review. Needs only the document "
-            "path, not a pack or binding. The owner must compare the page "
+            "the specification owner to review. Needs only the document -- a "
+            "path, or its text -- not a pack or binding. The owner must "
+            "compare the page "
             "with the prose specification."
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["document"],
             "properties": {
-                "document": {"type": "string", "description": "Path to the SCXML document."},
+                **_DOCUMENT_INPUT,
                 "shape": {"type": "string", "description": "Pseudocode layout name, passed to the generator."},
                 "lexicon": {"type": "string", "description": "Pseudocode vocabulary name, passed to the generator."},
             },
@@ -338,24 +403,26 @@ TOOLS = [
             "compound or parallel state), written into `out`. Every "
             "transition is described once, numbered on its arrow with its "
             "row in the table under the figure, in the pseudocode page's "
-            "own words. Returns JSON: verdict, figures (the files written), "
-            "diagnostics. A figure larger than the page at `min_pt` is "
+            "own words. Returns JSON: verdict, figures, diagnostics -- the "
+            "files written into `out`, or, without `out`, each figure's "
+            "name and SVG text. A figure larger than the page at `min_pt` is "
             "refused with both sizes (cli/diagram-does-not-fit), never "
             "shrunk: use a larger page or split the container."
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["document", "out"],
             "properties": {
-                "document": {"type": "string", "description": "Path to the SCXML document."},
-                "out": {"type": "string", "description": "Directory the SVG files are written into."},
+                **_DOCUMENT_INPUT,
+                "out": {"type": "string", "description": (
+                    "Directory the SVG files are written into (local servers "
+                    "only). Without it the figures come back as text.")},
                 "page": {"type": "string", "description": "Page name, passed to the generator (default a4-portrait)."},
                 "min_pt": {"type": "number", "description": "Smallest type size in points (default 7)."},
                 "lexicon": {"type": "string", "description": "Vocabulary name, passed to the generator."},
-                "manifest": {"type": "string", "description": (
-                    "Path to the requirement manifest. Adds the requirement "
-                    "checklist pages: every requirement, its outcome, and where "
-                    "the figures show it -- 'not shown' marks a gap.")},
+                # With a manifest the figures gain the requirement checklist
+                # pages: every requirement, its outcome, and where the
+                # figures show it -- 'not shown' marks a gap.
+                **_MANIFEST_INPUT,
             },
         },
     },
@@ -370,10 +437,7 @@ TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["document"],
-            "properties": {
-                "document": {"type": "string", "description": "Path to the SCXML document."},
-            },
+            "properties": dict(_DOCUMENT_INPUT),
         },
     },
     {
@@ -387,11 +451,7 @@ TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["document"],
-            "properties": {
-                "document": {"type": "string", "description": "Path to the SCXML document."},
-                "manifest": {"type": "string", "description": "Path to the requirement manifest."},
-            },
+            "properties": {**_DOCUMENT_INPUT, **_MANIFEST_INPUT},
         },
     },
     {
@@ -404,12 +464,13 @@ TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["document", "manifest", "variant"],
+            "required": ["variant"],
             "properties": {
-                "document": {"type": "string", "description": "Path to the SCXML document."},
-                "manifest": {"type": "string", "description": "Path to the requirement manifest."},
+                **_DOCUMENT_INPUT,
+                **_MANIFEST_INPUT,
                 "variant": {"type": "string", "description": "The variant the page is for."},
-                "sidecar": {"type": "string", "description": "Verbatim sentences by requirement id (local only)."},
+                # Verbatim sentences by requirement id.
+                **_file_input("sidecar", "the sentences sidecar"),
             },
         },
     },
@@ -422,17 +483,24 @@ TOOLS = [
             "the owner has read the acceptance report and said to accept "
             "-- the record states a person's decision, and a caller that "
             "writes one on its own turns an unreviewed design into an "
-            "accepted one. Returns JSON: verdict, record, diagnostics."
+            "accepted one. Returns JSON: verdict, record, diagnostics. With "
+            "the files given as text the record comes back as `record_text`, "
+            "its paths being the names the files were given; keep it, and "
+            "give it with the same files to scxml_acceptance_check."
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["document", "manifest", "variant", "root", "out"],
+            "required": ["variant"],
             "properties": {
-                "document": {"type": "string", "description": "Path to the accepted SCXML document."},
-                "manifest": {"type": "string", "description": "Path to the requirement manifest."},
+                **_DOCUMENT_INPUT,
+                **_MANIFEST_INPUT,
                 "variant": {"type": "string", "description": "The variant accepted."},
-                "root": {"type": "string", "description": "Directory every pinned path is recorded relative to."},
-                "out": {"type": "string", "description": "Where the acceptance record is written."},
+                "root": {"type": "string", "description": (
+                    "Directory every pinned path is recorded relative to "
+                    "(local servers, with paths).")},
+                "out": {"type": "string", "description": (
+                    "Where the acceptance record is written (local servers, "
+                    "with paths).")},
             },
         },
     },
@@ -446,11 +514,25 @@ TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["record", "variant", "root"],
+            "required": ["variant"],
             "properties": {
-                "record": {"type": "string", "description": "Path to the acceptance record."},
+                **_file_input("record", "the acceptance record"),
                 "variant": {"type": "string", "description": "The variant being asked about."},
-                "root": {"type": "string", "description": "Directory the record's paths are read against."},
+                "root": {"type": "string", "description": (
+                    "Directory the record's paths are read against (local "
+                    "servers, with a record path).")},
+                "files_text": {
+                    "type": "array",
+                    "description": (
+                        "With `record_text`: every file the record names, "
+                        "under the name it names it by."),
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "text"],
+                        "properties": {"name": {"type": "string"},
+                                       "text": {"type": "string"}},
+                    },
+                },
             },
         },
     },
@@ -755,10 +837,6 @@ def _prose_arg(args: dict) -> list[pathlib.Path]:
     return [pathlib.Path(p) for p in value]
 
 
-def _scxml_document_arg(args: dict) -> pathlib.Path:
-    return _file_arg(args, "document", "the path to an SCXML file")
-
-
 def _file_arg(args: dict, key: str, what: str,
               required: bool = True) -> pathlib.Path | None:
     """An argument naming a file that must already exist."""
@@ -793,72 +871,273 @@ class ToolArgumentError(AuthoringError):
     """The client's arguments, described so the client can fix them."""
 
 
-def call_tool(name: str, args: dict) -> dict:
-    """Run one tool. Every failure comes back as an answer, never a crash."""
+# A file name a caller may give a file handed over as text: one plain name,
+# no directory, so it lands in the staging directory and nowhere else.
+_FILE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
+
+
+class _Staging:
+    """Where files handed over as text are written for the product to read.
+
+    One directory per call, removed when the call returns, and the product
+    runs in it -- so it names a staged document by the name its author gave
+    it (`door.scxml`), an `<sce:import src>` between staged documents
+    resolves the way it does beside each other on disk, and nothing a call
+    writes outlives it.
+
+    A file handed over by path is read where it is. On a remote server that
+    form is refused: the path names this machine's files, not the caller's.
+    """
+
+    def __init__(self, remote: bool):
+        self.remote = remote
+        self._tmp = tempfile.TemporaryDirectory(prefix="sce-author-")
+        self.dir = pathlib.Path(self._tmp.name)
+        self._names: set[str] = set()
+
+    def close(self) -> None:
+        self._tmp.cleanup()
+
+    def write(self, name, text, key: str) -> pathlib.Path:
+        """Stage `text` as `name`; the path the product is given for it."""
+        if not isinstance(text, str):
+            raise ToolArgumentError(f"'{key}_text' has to be the file's text, as a string")
+        if (not isinstance(name, str) or not _FILE_NAME.fullmatch(name)
+                or set(name) == {"."}):
+            raise ToolArgumentError(
+                f"'{key}_name' has to be a plain file name such as door.scxml, "
+                f"not {name!r}")
+        if name in self._names:
+            raise ToolArgumentError(f"two files are named {name!r}")
+        self._names.add(name)
+        (self.dir / name).write_text(text, encoding="utf-8")
+        # Relative: the run starts in this directory.
+        return pathlib.Path(name)
+
+    def file(self, args: dict, key: str, what: str, default_name: str,
+             required: bool = True) -> pathlib.Path | None:
+        """`key` (a path) or `key_text` (the file), never both."""
+        text, path = args.get(f"{key}_text"), args.get(key)
+        if text is not None and path is not None:
+            raise ToolArgumentError(f"give '{key}' or '{key}_text', not both")
+        if text is not None:
+            # Defaulted only when absent: an empty name is a caller's
+            # mistake, and naming the file for them would hide it.
+            name = args.get(f"{key}_name")
+            return self.write(default_name if name is None else name, text, key)
+        if path is None:
+            if required:
+                raise ToolArgumentError(f"'{key}' or '{key}_text' is required: {what}")
+            return None
+        self.refuse_path(key)
+        return _file_arg(args, key, what).resolve()
+
+    def many(self, args: dict, key: str, what: str) -> list[pathlib.Path]:
+        """`key` (paths) or `key_text` (named files), never both."""
+        texts, paths = args.get(f"{key}_text"), args.get(key)
+        if (texts is None) == (paths is None):
+            raise ToolArgumentError(f"give exactly one of '{key}' and '{key}_text': {what}")
+        if texts is not None:
+            if not isinstance(texts, list) or not texts:
+                raise ToolArgumentError(f"'{key}_text' has to be a non-empty list of files")
+            staged = []
+            for entry in texts:
+                if not isinstance(entry, dict):
+                    raise ToolArgumentError(f"each '{key}_text' entry has a name and a text")
+                staged.append(self.write(entry.get("name"), entry.get("text"), key))
+            return staged
+        self.refuse_path(key)
+        if (not isinstance(paths, list) or not paths
+                or not all(isinstance(p, str) and p for p in paths)):
+            raise ToolArgumentError(f"'{key}' has to be a non-empty list of paths")
+        found = [pathlib.Path(p) for p in paths]
+        for path in found:
+            if not path.is_file():
+                raise ToolArgumentError(describe_path(path))
+        return [path.resolve() for path in found]
+
+    def refuse_path(self, key: str) -> None:
+        if self.remote:
+            raise ToolArgumentError(
+                f"'{key}' names a file on the machine this server runs on, "
+                f"which a remote caller cannot reach; send it as '{key}_text'")
+
+    def local_path(self, args: dict, key: str, what: str) -> pathlib.Path | None:
+        """A path argument naming where something is WRITTEN or read
+        against -- local servers only."""
+        if args.get(key) is None:
+            return None
+        self.refuse_path(key)
+        return _path_arg(args, key, what).resolve()
+
+
+def _answer(report: str, refusal: str) -> dict:
+    return _failure(refusal) if refusal else _text(report)
+
+
+def _kinds_tool(args: dict, staging: _Staging) -> dict:
+    return _answer(*kind_catalog(_name_arg(args, "kind", "a kind name")))
+
+
+def _validate_tool(args: dict, staging: _Staging) -> dict:
+    document = staging.file(args, "document", "the SCXML document", "document.scxml")
+    return _answer(*run_scxml_validation(document, cwd=staging.dir))
+
+
+def _validate_set_tool(args: dict, staging: _Staging) -> dict:
+    documents = staging.many(args, "documents", "the documents of the set")
+    deploy = staging.file(args, "deploy", "the deploy.yaml", "deploy.yaml", required=False)
+    return _answer(*validate_scxml_set(documents, deploy, cwd=staging.dir))
+
+
+def _pseudocode_tool(args: dict, staging: _Staging) -> dict:
+    document = staging.file(args, "document", "the SCXML document", "document.scxml")
+    shape, lexicon = args.get("shape"), args.get("lexicon")
+    for key, value in (("shape", shape), ("lexicon", lexicon)):
+        if value is not None and not isinstance(value, str):
+            raise ToolArgumentError(f"'{key}' has to be a name, as a string")
+    page, refusal = pseudo_page(document, None, None, shape, lexicon, cwd=staging.dir)
+    return _answer(page, refusal)
+
+
+def _diagram_tool(args: dict, staging: _Staging) -> dict:
+    min_pt = args.get("min_pt")
+    if min_pt is not None and (isinstance(min_pt, bool)
+                               or not isinstance(min_pt, (int, float))):
+        raise ToolArgumentError("'min_pt' has to be a number of points")
+    document = staging.file(args, "document", "the SCXML document", "document.scxml")
+    manifest = staging.file(args, "manifest", "the requirement manifest",
+                            "requirements.manifest.json", required=False)
+    out = staging.local_path(args, "out", "the directory the figures are written into")
+    inline = out is None
+    report, refusal = diagram_figures(
+        document, out if out is not None else pathlib.Path("figures"),
+        _name_arg(args, "page", "a page name"), min_pt,
+        _name_arg(args, "lexicon", "a lexicon name"), manifest, cwd=staging.dir)
+    if refusal or not inline:
+        return _answer(report, refusal)
+    # No directory to leave them in, so the figures come back themselves.
+    answer = json.loads(report)
+    answer["figures"] = [
+        {"name": pathlib.Path(written).name,
+         "svg": (staging.dir / written).read_text(encoding="utf-8")}
+        for written in answer["figures"]]
+    return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
+
+
+def _unresolved_tool(args: dict, staging: _Staging) -> dict:
+    document = staging.file(args, "document", "the SCXML document", "document.scxml")
+    return _answer(*unresolved_markers(document, cwd=staging.dir))
+
+
+def _requirements_tool(args: dict, staging: _Staging) -> dict:
+    document = staging.file(args, "document", "the SCXML document", "document.scxml")
+    manifest = staging.file(args, "manifest", "the requirement manifest",
+                            "requirements.manifest.json", required=False)
+    return _answer(*requirement_records(document, manifest, cwd=staging.dir))
+
+
+def _acceptance_report_tool(args: dict, staging: _Staging) -> dict:
+    document = staging.file(args, "document", "the SCXML document", "document.scxml")
+    manifest = staging.file(args, "manifest", "the requirement manifest",
+                            "requirements.manifest.json")
+    sidecar = staging.file(args, "sidecar", "the sentences sidecar",
+                           "sentences.sidecar.json", required=False)
+    return _answer(*acceptance_page(
+        document, manifest, _name_arg(args, "variant", "the variant's name", required=True),
+        sidecar, cwd=staging.dir))
+
+
+def _accept_tool(args: dict, staging: _Staging) -> dict:
+    variant = _name_arg(args, "variant", "the variant's name", required=True)
+    root = staging.local_path(args, "root", "the directory the record's paths are relative to")
+    out = staging.local_path(args, "out", "where the acceptance record is written")
+    if root is not None or out is not None:
+        # The owner's own tree: the record names their files where they are.
+        if root is None or out is None:
+            raise ToolArgumentError("'root' and 'out' go together")
+        return _answer(*accept_design(
+            _file_arg(args, "document", "the accepted SCXML document").resolve(),
+            _file_arg(args, "manifest", "the requirement manifest").resolve(),
+            variant, root, out))
+    # Handed over as text: the record pins them by the names they were
+    # given, relative to the staging directory, and comes back itself --
+    # there is no tree of the caller's to leave it in.
+    if args.get("document") is not None or args.get("manifest") is not None:
+        raise ToolArgumentError(
+            "without 'root' and 'out', give the document and the manifest as "
+            "text, so the record can name them")
+    document = staging.file(args, "document", "the accepted SCXML document", "document.scxml")
+    manifest = staging.file(args, "manifest", "the requirement manifest",
+                            "requirements.manifest.json")
+    record = pathlib.Path("acceptance.json")
+    report, refusal = accept_design(document, manifest, variant, pathlib.Path("."),
+                                    record, cwd=staging.dir)
+    if refusal:
+        return _failure(refusal)
+    answer = json.loads(report)
+    answer["record"] = str(record)
+    answer["record_text"] = (staging.dir / record).read_text(encoding="utf-8")
+    return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
+
+
+def _acceptance_check_tool(args: dict, staging: _Staging) -> dict:
+    variant = _name_arg(args, "variant", "the variant's name", required=True)
+    if args.get("record_text") is None:
+        record = staging.file(args, "record", "the acceptance record", "acceptance.json")
+        root = staging.local_path(args, "root", "the directory the record's paths are read against")
+        if root is None:
+            raise ToolArgumentError("'root' is required with a record path")
+        return _answer(*acceptance_holds(record, variant, root))
+    # The record and every file it names, as text, under the names it
+    # names them by.
+    record = staging.file(args, "record", "the acceptance record", "acceptance.json")
+    files = args.get("files_text")
+    if not isinstance(files, list) or not files:
+        raise ToolArgumentError(
+            "'files_text' is required with 'record_text': every file the "
+            "record names, under the name it names it by")
+    for entry in files:
+        if not isinstance(entry, dict):
+            raise ToolArgumentError("each 'files_text' entry has a name and a text")
+        staging.write(entry.get("name"), entry.get("text"), "files")
+    return _answer(*acceptance_holds(record, variant, pathlib.Path("."), cwd=staging.dir))
+
+
+# The tools that need no pack: each takes its files by path or as text.
+_PACK_FREE = {
+    "scxml_kinds": _kinds_tool,
+    "validate_scxml": _validate_tool,
+    "validate_scxml_set": _validate_set_tool,
+    "render_scxml_pseudocode": _pseudocode_tool,
+    "render_scxml_diagram": _diagram_tool,
+    "scxml_unresolved": _unresolved_tool,
+    "scxml_requirements": _requirements_tool,
+    "scxml_acceptance_report": _acceptance_report_tool,
+    "scxml_accept": _accept_tool,
+    "scxml_acceptance_check": _acceptance_check_tool,
+}
+
+
+def call_tool(name: str, args: dict, *, remote: bool = False) -> dict:
+    """Run one tool. Every failure comes back as an answer, never a crash.
+
+    `remote` is true when the caller reached this server over HTTP: it may
+    not name this machine's files, and hands every document over as text.
+    """
     try:
-        if name == "scxml_kinds":
-            report, refusal = kind_catalog(_name_arg(args, "kind", "a kind name"))
-            return _failure(refusal) if refusal else _text(report)
-
-        if name == "validate_scxml":
-            report, refusal = run_scxml_validation(_scxml_document_arg(args))
-            return _failure(refusal) if refusal else _text(report)
-
-        if name == "render_scxml_pseudocode":
-            document = _scxml_document_arg(args)
-            shape, lexicon = args.get("shape"), args.get("lexicon")
-            for key, value in (("shape", shape), ("lexicon", lexicon)):
-                if value is not None and not isinstance(value, str):
-                    raise ToolArgumentError(f"'{key}' has to be a name, as a string")
-            page, refusal = pseudo_page(document, None, None, shape, lexicon)
-            return _failure(refusal) if refusal else _text(page)
-
-        if name == "render_scxml_diagram":
-            min_pt = args.get("min_pt")
-            if min_pt is not None and (isinstance(min_pt, bool)
-                                       or not isinstance(min_pt, (int, float))):
-                raise ToolArgumentError("'min_pt' has to be a number of points")
-            report, refusal = diagram_figures(
-                _scxml_document_arg(args),
-                _path_arg(args, "out", "the directory the figures are written into"),
-                _name_arg(args, "page", "a page name"), min_pt,
-                _name_arg(args, "lexicon", "a lexicon name"),
-                _file_arg(args, "manifest", "the requirement manifest", required=False))
-            return _failure(refusal) if refusal else _text(report)
-
-        if name == "scxml_unresolved":
-            report, refusal = unresolved_markers(_scxml_document_arg(args))
-            return _failure(refusal) if refusal else _text(report)
-
-        if name == "scxml_requirements":
-            report, refusal = requirement_records(
-                _scxml_document_arg(args),
-                _file_arg(args, "manifest", "the requirement manifest", required=False))
-            return _failure(refusal) if refusal else _text(report)
-
-        if name == "scxml_acceptance_report":
-            page, refusal = acceptance_page(
-                _scxml_document_arg(args),
-                _file_arg(args, "manifest", "the requirement manifest"),
-                _name_arg(args, "variant", "the variant's name", required=True),
-                _file_arg(args, "sidecar", "the sentences sidecar", required=False))
-            return _failure(refusal) if refusal else _text(page)
-
-        if name == "scxml_accept":
-            report, refusal = accept_design(
-                _scxml_document_arg(args),
-                _file_arg(args, "manifest", "the requirement manifest"),
-                _name_arg(args, "variant", "the variant's name", required=True),
-                _path_arg(args, "root", "the directory the record's paths are relative to"),
-                _path_arg(args, "out", "where the acceptance record is written"))
-            return _failure(refusal) if refusal else _text(report)
-
-        if name == "scxml_acceptance_check":
-            report, refusal = acceptance_holds(
-                _file_arg(args, "record", "the acceptance record"),
-                _name_arg(args, "variant", "the variant's name", required=True),
-                _path_arg(args, "root", "the directory the record's paths are relative to"))
-            return _failure(refusal) if refusal else _text(report)
+        if name in _PACK_FREE:
+            staging = _Staging(remote)
+            try:
+                return _PACK_FREE[name](args, staging)
+            finally:
+                staging.close()
+        if remote:
+            # The pack tools read a pack and prose from this machine's
+            # disk; there is no text form of a pack to hand over.
+            raise ToolArgumentError(
+                f"'{name}' reads a pack from the machine this server runs on, "
+                f"so it is not offered to a remote caller")
 
         if name == "brief":
             pack = load_pack(_pack_arg(args))
@@ -1094,8 +1373,11 @@ def _invalid(ident, message: str, code: int = -32600) -> dict:
     return {"jsonrpc": "2.0", "id": ident, "error": {"code": code, "message": message}}
 
 
-def handle(message) -> dict | None:
+def handle(message, *, remote: bool = False) -> dict | None:
     """One request to one response. None means the message wanted no reply.
+
+    `remote` is true for a message that arrived over HTTP -- see
+    [`call_tool`].
 
     ⚠ `message` is whatever the client sent, which is not necessarily an
     object. A bare array reached `message.get` and raised, and because the
@@ -1110,8 +1392,14 @@ def handle(message) -> dict | None:
         return _invalid(ident, "'method' has to be a string")
 
     if method == "initialize":
+        # The version the client asked for when this server speaks it, so a
+        # client on a later revision is not told to fall back for nothing;
+        # otherwise the one this server was written against.
+        params = message.get("params")
+        requested = params.get("protocolVersion") if isinstance(params, dict) else None
         result = {
-            "protocolVersion": PROTOCOL_VERSION,
+            "protocolVersion": (requested if requested in SUPPORTED_PROTOCOL_VERSIONS
+                                else PROTOCOL_VERSION),
             "capabilities": {"tools": {}},
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
             "instructions": SERVER_INSTRUCTIONS,
@@ -1125,7 +1413,7 @@ def handle(message) -> dict | None:
         arguments = params.get("arguments") or {}
         if not isinstance(arguments, dict):
             return _invalid(ident, "'arguments' has to be an object", -32602)
-        result = call_tool(params.get("name") or "", arguments)
+        result = call_tool(params.get("name") or "", arguments, remote=remote)
     elif method == "ping":
         result = {}
     elif ident is None:
@@ -1180,5 +1468,30 @@ def serve(stdin=None, stdout=None) -> int:
     return 0
 
 
+def main(argv: list[str] | None = None) -> int:
+    """stdio by default; `--http HOST:PORT` serves the same tools over HTTP
+    to a caller on another machine (see `mcp_http`)."""
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="python3 -m sce_author.mcp")
+    parser.add_argument("--http", metavar="HOST:PORT",
+                        help="serve over HTTP instead of stdio")
+    parser.add_argument("--token-file", type=pathlib.Path,
+                        help="a file holding the bearer token HTTP callers must send")
+    args = parser.parse_args(argv)
+    if args.http is None:
+        if args.token_file is not None:
+            parser.error("--token-file goes with --http")
+        return serve()
+    from .mcp_http import serve_http
+
+    host, _, port = args.http.rpartition(":")
+    if not host or not port.isdigit():
+        parser.error("--http takes HOST:PORT, e.g. 127.0.0.1:8765")
+    token = (args.token_file.read_text(encoding="utf-8").strip()
+             if args.token_file is not None else None)
+    return serve_http(host, int(port), token)
+
+
 if __name__ == "__main__":
-    raise SystemExit(serve())
+    raise SystemExit(main())

@@ -662,7 +662,8 @@ def withheld_outputs(declared) -> dict:
 
 
 def validate_scxml(document: pathlib.Path,
-                   codegen: pathlib.Path | None = None) -> tuple[str, str]:
+                   codegen: pathlib.Path | None = None, *,
+                   cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Run the product's SCXML check without a pack or binding.
 
     Returns `(report, refusal)`, exactly one of them non-empty, each the
@@ -688,7 +689,29 @@ def validate_scxml(document: pathlib.Path,
     """
     return _product_answer(
         ["check", str(document), "--lint"], codegen,
-        answer="manifest", read=_json_line, verdicts=("accepted", "refused"))
+        answer="manifest", read=_json_line, verdicts=("accepted", "refused"), cwd=cwd)
+
+
+def validate_scxml_set(documents: list[pathlib.Path],
+                       deploy: pathlib.Path | None = None,
+                       codegen: pathlib.Path | None = None, *,
+                       cwd: pathlib.Path | None = None) -> tuple[str, str]:
+    """Check documents that refer to one another, as one set
+    (`sce-codegen check --document ...`): a statechart and the event
+    schemas it imports, a worker and the link it reads.
+
+    The same JSON object as `validate_scxml`. ⚠ Each document goes in as
+    `--document`, so the PRODUCT decides which pipeline reads it; filing
+    them here would be a copy of that rule. The manifest describes the set,
+    so it carries no single `document_kind`.
+    """
+    args = ["check"]
+    for document in documents:
+        args += ["--document", str(document)]
+    if deploy is not None:
+        args += ["--deploy", str(deploy)]
+    return _product_answer(args, codegen, answer="manifest", read=_json_line,
+                           verdicts=("accepted", "refused"), cwd=cwd)
 
 
 def kind_catalog(kind: str | None = None,
@@ -713,7 +736,8 @@ def kind_catalog(kind: str | None = None,
 
 def _product_answer(args: list[str], codegen: pathlib.Path | None, *,
                     answer: str, read, verdicts: tuple[str, str] = ("done", "refused"),
-                    lapsed: str | None = None) -> tuple[str, str]:
+                    lapsed: str | None = None,
+                    cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """One run of the generator under `--error-format=json`, as the JSON
     object every pack-free tool answers with. Returns `(report, refusal)`,
     exactly one non-empty.
@@ -728,14 +752,18 @@ def _product_answer(args: list[str], codegen: pathlib.Path | None, *,
     `lapsed`, when given, names the verdict for a refusal whose every record
     is `cli/acceptance-lapsed` — an answer about the record, not a failure
     of the run.
+
+    `cwd` is where the run starts: the directory documents handed over as
+    text were staged in, so the product names them by the names their
+    author gave (`door.scxml`) rather than by a temporary path.
     """
-    codegen = pathlib.Path(codegen) if codegen else _default_codegen()
+    codegen = pathlib.Path(codegen).resolve() if codegen else _default_codegen()
     if not codegen.exists():
         raise VerifyError(
             f"{codegen}: the code generator is not there, so no document can "
             f"be read. Build sce-codegen before using this tool.")
     run = subprocess.run([str(codegen), "--error-format", "json", *args],
-                         capture_output=True, text=True)
+                         capture_output=True, text=True, cwd=cwd)
     refused = run.returncode != 0
     diagnostics = _diagnostic_records(run.stderr)
     verdict = verdicts[1] if refused else verdicts[0]
@@ -767,7 +795,8 @@ def diagram_figures(document: pathlib.Path, out: pathlib.Path,
                     page: str | None = None, min_pt: float | None = None,
                     lexicon: str | None = None,
                     manifest: pathlib.Path | None = None,
-                    codegen: pathlib.Path | None = None) -> tuple[str, str]:
+                    codegen: pathlib.Path | None = None, *,
+                    cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Draw the document as print figures (`sce-codegen diagram`): one SVG
     per container, written into `out`, and -- given the specification's
     `manifest` -- the requirement checklist pages after them. The answer
@@ -788,33 +817,38 @@ def diagram_figures(document: pathlib.Path, out: pathlib.Path,
         args += ["--lexicon", lexicon]
     if manifest is not None:
         args += ["--manifest", str(manifest)]
-    return _product_answer(args, codegen, answer="figures", read=_written_paths)
+    return _product_answer(args, codegen, answer="figures", read=_written_paths,
+                           cwd=cwd)
 
 
 def unresolved_markers(document: pathlib.Path,
-                       codegen: pathlib.Path | None = None) -> tuple[str, str]:
+                       codegen: pathlib.Path | None = None, *,
+                       cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Every `sce:unresolved` marker the document carries
     (`sce-codegen unresolved`) — what the author has said is not decided
     yet. An empty list is an answer: nothing is marked."""
     return _product_answer(["unresolved", str(document)], codegen,
-                           answer="markers", read=_diagnostic_records)
+                           answer="markers", read=_diagnostic_records, cwd=cwd)
 
 
 def requirement_records(document: pathlib.Path,
                         manifest: pathlib.Path | None = None,
-                        codegen: pathlib.Path | None = None) -> tuple[str, str]:
+                        codegen: pathlib.Path | None = None, *,
+                        cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """The document's requirements (`sce-codegen requirements`): what it
     claims, or — given the specification's manifest — each requirement's
     outcome, `missing` included, which only the manifest can show."""
     args = ["requirements", str(document)]
     if manifest is not None:
         args += ["--manifest", str(manifest)]
-    return _product_answer(args, codegen, answer="records", read=_diagnostic_records)
+    return _product_answer(args, codegen, answer="records", read=_diagnostic_records,
+                           cwd=cwd)
 
 
 def acceptance_page(document: pathlib.Path, manifest: pathlib.Path, variant: str,
                     sidecar: pathlib.Path | None = None,
-                    codegen: pathlib.Path | None = None) -> tuple[str, str]:
+                    codegen: pathlib.Path | None = None, *,
+                    cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """The acceptance report a person reads before accepting
     (`sce-codegen acceptance-report`). The page comes back byte for byte,
     for `pseudo_page`'s reason; a refusal as the JSON object."""
@@ -823,13 +857,14 @@ def acceptance_page(document: pathlib.Path, manifest: pathlib.Path, variant: str
     if sidecar is not None:
         args += ["--sidecar", str(sidecar)]
     report, refusal = _product_answer(args, codegen, answer="page",
-                                      read=lambda stdout: stdout)
+                                      read=lambda stdout: stdout, cwd=cwd)
     return (json.loads(report)["page"], "") if report else ("", refusal)
 
 
 def accept_design(document: pathlib.Path, manifest: pathlib.Path, variant: str,
                   root: pathlib.Path, out: pathlib.Path,
-                  codegen: pathlib.Path | None = None) -> tuple[str, str]:
+                  codegen: pathlib.Path | None = None, *,
+                  cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Pin what a person accepted (`sce-codegen accept`): the record at
     `out` names every file the acceptance rests on, by hash, relative to
     `root`, so `acceptance_holds` can tell when one of them moves."""
@@ -837,11 +872,12 @@ def accept_design(document: pathlib.Path, manifest: pathlib.Path, variant: str,
             "--variant", variant, "--root", str(root), "--out", str(out)]
     # The command prints nothing; what it did is the record at `out`.
     return _product_answer(args, codegen, answer="record",
-                           read=lambda _stdout: str(out))
+                           read=lambda _stdout: str(out), cwd=cwd)
 
 
 def acceptance_holds(record: pathlib.Path, variant: str, root: pathlib.Path,
-                     codegen: pathlib.Path | None = None) -> tuple[str, str]:
+                     codegen: pathlib.Path | None = None, *,
+                     cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Whether an acceptance record still holds (`sce-codegen
     acceptance-check`): `holds`, or `lapsed` with the product's record of
     what moved. A lapsed acceptance is an answer, returned as the report."""
@@ -850,7 +886,7 @@ def acceptance_holds(record: pathlib.Path, variant: str, root: pathlib.Path,
     report, refusal = _product_answer(args, codegen, answer="record",
                                       read=lambda _stdout: str(record),
                                       verdicts=("holds", "refused"),
-                                      lapsed="lapsed")
+                                      lapsed="lapsed", cwd=cwd)
     if refusal and json.loads(refusal)["verdict"] == "lapsed":
         return refusal, ""
     return report, refusal
@@ -887,7 +923,8 @@ def _diagnostic_records(stderr: str) -> list:
 
 def pseudo_page(document: pathlib.Path, codegen: pathlib.Path | None,
                 deploy: pathlib.Path | None, shape: str | None = None,
-                lexicon: str | None = None) -> tuple[str, str]:
+                lexicon: str | None = None, *,
+                cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """One run of the generator's review surface. Returns `(page, refusal)`.
 
     ⚠ It lives HERE, in the module that already spawns, rather than beside
@@ -913,7 +950,7 @@ def pseudo_page(document: pathlib.Path, codegen: pathlib.Path | None,
     defaults are `indent` and `en`, and passing them explicitly would make
     this tool the second place that decides what the default page is.
     """
-    codegen = pathlib.Path(codegen) if codegen else _default_codegen()
+    codegen = pathlib.Path(codegen).resolve() if codegen else _default_codegen()
     if not codegen.exists():
         raise VerifyError(
             f"{codegen}: the code generator is not there, so no document can "
@@ -925,7 +962,7 @@ def pseudo_page(document: pathlib.Path, codegen: pathlib.Path | None,
         argv += ["--shape", shape]
     if lexicon is not None:
         argv += ["--lexicon", lexicon]
-    run = subprocess.run(argv, capture_output=True, text=True)
+    run = subprocess.run(argv, capture_output=True, text=True, cwd=cwd)
     if run.returncode != 0:
         return "", (run.stderr.strip() or run.stdout.strip()
                     or f"the code generator refused with status "
@@ -3086,7 +3123,20 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
 
 
 def _default_codegen() -> pathlib.Path:
-    """Where the product's generator sits in this tree, by default."""
+    """Where the product's generator is, by default: `SCE_CODEGEN` when the
+    environment names one, else this tree's own build.
+
+    ⚠ The environment first because an installed bundle has no tree: its
+    launcher names the generator it ships beside this package
+    (`scripts/package_sce_author.sh`). Resolved to an absolute path, since a
+    run for a document handed over as text starts in the directory it was
+    staged in, and a relative name would be read from there.
+    """
+    import os
+
+    named = os.environ.get("SCE_CODEGEN")
+    if named:
+        return pathlib.Path(named).resolve()
     root = pathlib.Path(__file__).resolve().parents[3]
     return root / "target" / "debug" / "sce-codegen"
 

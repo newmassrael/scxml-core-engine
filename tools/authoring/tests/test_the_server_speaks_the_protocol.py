@@ -114,10 +114,13 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         self.assertIn("document_kind", replies[0]["result"]["instructions"])
         self.assertIn("sce:kind-basis", replies[0]["result"]["instructions"])
         self.assertIn("basis_recorded", replies[0]["result"]["instructions"])
+        self.assertIn("document_text", replies[0]["result"]["instructions"])
+        self.assertIn("validate_scxml_set", replies[0]["result"]["instructions"])
         names = {t["name"] for t in replies[1]["result"]["tools"]}
         self.assertEqual(
             {"brief", "questions", "review", "check", "coverage", "verify",
              "gaps", "pseudo", "scaffold", "scxml_kinds", "validate_scxml",
+             "validate_scxml_set",
              "render_scxml_pseudocode",
              "render_scxml_diagram", "scxml_unresolved", "scxml_requirements",
              "scxml_acceptance_report", "scxml_accept", "scxml_acceptance_check"},
@@ -153,7 +156,8 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         self.assertTrue(commands, "no subcommands found -- the scan is broken")
         # These MCP-only adapters call the existing sce-codegen CLI; adding
         # duplicate sce_author CLI commands would give the same action two names.
-        mcp_only = {"scxml_kinds", "validate_scxml", "render_scxml_pseudocode",
+        mcp_only = {"scxml_kinds", "validate_scxml", "validate_scxml_set",
+                    "render_scxml_pseudocode",
                     "render_scxml_diagram",
                     "scxml_unresolved", "scxml_requirements", "scxml_acceptance_report",
                     "scxml_accept", "scxml_acceptance_check"}
