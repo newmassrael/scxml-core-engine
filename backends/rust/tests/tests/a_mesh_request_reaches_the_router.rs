@@ -121,10 +121,13 @@ mod through_the_host_core {
     use sce_rust_mesh::inbound::Delivery;
     use sce_rust_mesh::router::{PeerConfig, Router};
 
+    /// What a transport was handed: each peer it named and the bytes.
+    type Sent = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
+
     /// A transport that keeps what it was handed.
     #[derive(Default)]
     struct Recorder {
-        sent: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
+        sent: Sent,
     }
 
     impl Transport for Recorder {
@@ -161,12 +164,7 @@ mod through_the_host_core {
 
     /// The requester's endpoint, bound to `motor` when `bound`, and what its
     /// transport sends.
-    fn endpoint(
-        bound: bool,
-    ) -> (
-        SharedEndpoint<Recorder, Fixed>,
-        Arc<Mutex<Vec<(String, Vec<u8>)>>>,
-    ) {
+    fn endpoint(bound: bool) -> (SharedEndpoint<Recorder, Fixed>, Sent) {
         let mut router = Router::new("brake", 8, 50).unwrap();
         if bound {
             router.add_peer(
