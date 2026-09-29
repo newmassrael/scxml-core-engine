@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 6.2.4 + C.2: a delay is a property of the send, not of the
+  processor it names. A `<send type="BasicHTTPEventProcessor" delay=...>` is
+  POSTed when the delay has elapsed — not at once, and not never — and
+  `<cancel>` reaches it while it waits, as it reaches any delayed send.
+
+  Four sends are armed in one `<onentry>`:
+
+    now       no delay: POSTed at once;
+    later     delay 100ms, id "later": POSTed at 100ms;
+    dropped   delay 100ms, id "dropped", then cancelled in the same block:
+              never POSTed;
+    dynamic   delay 200ms, target from a `targetexpr`, one `<param>`: POSTed
+              at 200ms with the target the expression yielded and the
+              parameter the send carried.
+
+  The host stands in for the HTTP transport with a recording callback and
+  advances a manual clock, so what the document did is read off the requests
+  the transport was handed and when — the document itself only ends in `done`
+  once its own 300ms timer fires.
+
+  Measured 2026-09-29: the C++ AOT, Rust, Go and Python channels POSTed a
+  delayed BasicHTTP send at once, ignoring the delay and reaching `<cancel>`
+  never; the Kotlin channel kept it in a list of its own that the
+  asynchronous mode did not drain; the C11 channel raises error.execution for
+  it (its BasicHTTP client is a synchronous test-harness POST) and is not
+  driven here.
+
+  This fixture is the canonical source for the C++ AOT, Rust, Go, Kotlin and
+  Python channels — see docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the
+  per-backend test locations.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="run"
+       name="a_delayed_http_send_is_posted_when_due">
+  <datamodel>
+    <data id="dynamicUrl" expr="'http://sce.invalid/dynamic'"/>
+  </datamodel>
+
+  <state id="run">
+    <onentry>
+      <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+            target="http://sce.invalid/now" event="now"/>
+      <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+            target="http://sce.invalid/later" event="later" delay="100ms" id="later"/>
+      <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+            target="http://sce.invalid/dropped" event="dropped" delay="100ms" id="dropped"/>
+      <cancel sendid="dropped"/>
+      <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+            targetexpr="dynamicUrl" event="dynamic" delay="200ms" id="dynamic">
+        <param name="k" expr="'v'"/>
+      </send>
+      <send event="settle" delay="300ms"/>
+    </onentry>
+    <transition event="settle" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>

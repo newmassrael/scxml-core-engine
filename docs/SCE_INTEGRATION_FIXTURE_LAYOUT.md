@@ -630,7 +630,29 @@ Python's immediate child aside), Go put an immediate dynamic `#_internal` on
 the external queue, no channel raised error.execution for `bogus`, and C11
 refused every delayed dynamic target. Expected: `internalNow`,
 `internalLater`, `kidNow`, `kidLater`, `sessNow` and `sessLater` 1,
-`commErrors` and `execErrors` 2, the four `after*` 0, ending in `done`.
+`commErrors` 4 (the stranger and the session nothing invoked, each at once and
+delayed), `execErrors` 2, the six `after*` 0, ending in `done`.
+
+`a_delayed_http_send_is_posted_when_due` covers W3C §6.2.4 and C.2: a delay is
+a property of the send, not of the processor it names, so a delayed
+`<send type="BasicHTTPEventProcessor">` is POSTed when the delay has elapsed —
+not at once, not never — and `<cancel>` reaches it while it waits. The host
+stands in for the HTTP transport with a recording callback and advances a
+manual clock, so the assertions are the requests the transport was handed and
+when: `now` at once, `later` at 100ms and not at 99ms, `dropped` (cancelled in
+the block that sent it) never, and `dynamic` at 200ms with the target its
+`targetexpr` yielded and its `<param>`. Every channel keeps the request in the
+queue every delayed send waits in, as a host-served send does — its entry
+carries the BasicHTTP type, and the deadline performs the POST through the
+channel's `performHttpSend`. Before 2026-09-30 the C++ AOT, Rust, Go and
+Python channels POSTed a delayed send at once (and `<cancel>` never reached
+it), and Kotlin held it in a list of its own that the asynchronous mode did
+not drain. Driven on the C++ AOT, Rust, Go, Kotlin and Python channels. The
+C11 channel's BasicHTTP client is a synchronous test-harness POST with no
+production transport behind it, so a delayed BasicHTTP send there raises
+error.execution (`no_route` in the send arm) instead of being POSTed; the
+Interpreter delays every send in `EventDispatcherImpl` before it resolves the
+target, so it needs no change and has no driver here.
 
 `invoke_expression_failure_is_reported` covers W3C §6.4.3: an `<invoke>` that
 names its target through an expression must evaluate that expression when the

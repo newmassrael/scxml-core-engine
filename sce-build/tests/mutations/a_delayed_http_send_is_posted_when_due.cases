@@ -1,0 +1,53 @@
+# Mutation cases for §scxml-6.2.4 / §scxml-C-2 on a delayed BasicHTTP `<send>`:
+# a delay is a property of the send, not of the processor it names, so the
+# POST happens when the delay has elapsed — not at once, not never — and
+# `<cancel>` reaches it while it waits.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_delayed_http_send_is_posted_when_due.cases`.
+#
+# The cases below hold the C++ AOT channel, the one this harness reaches
+# through ctest; `a_delayed_http_send_is_posted_when_due_rust.cases` holds the
+# Rust runtime. The Go, Kotlin and Python halves are held by the same fixture
+# in their suites, but the harness has no runner for `go test`, gradle or
+# pytest, so no mutation round asks whether those tests could fail — this
+# file measures part of the surface, and reading it as the whole one would be
+# the mistake the gates it mirrors exist to prevent.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/include/static/StaticExecutionEngine.h tools/codegen/templates/actions/send.jinja2
+mutation_oracles tests/integration/ADelayedHttpSendIsPostedWhenDueAotTest.cpp
+
+# ── The deadline: the queued request is not performed ──────────────
+
+mutation_case "the C++ AOT never performs a deferred BasicHTTP send at its deadline" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     "        if (request.processorType == ::SCE::Constants::BASIC_HTTP_EVENT_PROCESSOR_URI) {",
+     "        if (false && request.processorType == ::SCE::Constants::BASIC_HTTP_EVENT_PROCESSOR_URI) {")
+PY
+
+# ── The wait: the send site POSTs at once ──────────────────────────
+
+mutation_case "the C++ AOT POSTs a delayed BasicHTTP send at once" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "{% if has_delay %}\n// W3C SCXML 6.2.4: a delay postpones the POST",
+     "{% if false %}\n// W3C SCXML 6.2.4: a delay postpones the POST")
+PY
+
+# ── The id: `<cancel>` can no longer name the queued request ───────
+
+mutation_case "the C++ AOT queues a delayed BasicHTTP send under an id the document never wrote" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     "        return scheduleHostSend(request, delay, sendId);",
+     "        return scheduleHostSend(request, delay, \"\");")
+PY
+
+# ── The payload: the request loses its parameters while it waits ───
+
+mutation_case "the C++ AOT queues a delayed BasicHTTP send without its parameters" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     "        request.params = params;",
+     "        request.params = {};")
+PY

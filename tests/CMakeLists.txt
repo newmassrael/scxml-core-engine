@@ -1172,6 +1172,7 @@ add_executable(integration_tests
     integration/ASendReachesOnlyWhatItsTargetNamesAotTest.cpp
     integration/ADelayedSendReachesWhatItsTargetNamesTest.cpp
     integration/ADelayedSendReachesWhatItsTargetNamesAotTest.cpp
+    integration/ADelayedHttpSendIsPostedWhenDueAotTest.cpp
     integration/ATargetExpressionIsRoutedAsItsLiteralIsTest.cpp
     integration/ATargetExpressionIsRoutedAsItsLiteralIsAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
@@ -1739,6 +1740,11 @@ sce_generate_static_integration_test(a_send_reaches_only_what_its_target_names $
 # W3C SCXML 6.2 + 6.4 + C.1: a delay postpones a <send>, it does not change
 # where the send goes; a target gone when the delay elapses is reported.
 sce_generate_static_integration_test(a_delayed_send_reaches_what_its_target_names ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 6.2.4 + C.2: a delay is a property of the send, not of the
+# processor it names — a delayed BasicHTTP send is POSTed when due, and
+# <cancel> reaches it while it waits.
+sce_generate_static_integration_test(a_delayed_http_send_is_posted_when_due ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.2.4 + C.1: a targetexpr is routed as the same value written in
 # target is, at once or after a delay.

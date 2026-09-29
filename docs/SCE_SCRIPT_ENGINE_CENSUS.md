@@ -98,15 +98,15 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 263
+engine-documents 264
 native-prefix-documents 2
-datamodel-variable-init 445
+datamodel-variable-init 446
 transition-guard 242
 assign-action 386
 child-invoke-needs-script-engine 55
 log-expr 46
 send-param-expr 49
-send-dynamic-attr 63
+send-dynamic-attr 64
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
@@ -342,10 +342,14 @@ never spelled correctly.
   the orphan `#_parent` send passed) raised `datamodel-variable-init` and
   `assign-action` by one each. Both landed without this table, so `main` read
   red until this entry re-derived the whole block from the test's output.
+  Then `integration_resources/a_delayed_http_send_is_posted_when_due/` (one
+  engine document: one data item and a delayed BasicHTTP `targetexpr` send;
+  the `<param>` is a literal, so it counts nothing) raised `engine-documents`,
+  `datamodel-variable-init` and `send-dynamic-attr` by one each.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
-- **50% of judged documents need an engine** (263 of 522). The remaining
+- **50% of judged documents need an engine** (264 of 524). The remaining
   50% already compile without one, which is what makes "the engine is a
   fallback" a description of the tree rather than an aspiration.
   ⚠ This figure was previously stated as 32%, taken over the 736 walked

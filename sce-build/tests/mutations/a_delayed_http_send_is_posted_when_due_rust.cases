@@ -1,0 +1,41 @@
+# Mutation cases for §scxml-6.2.4 / §scxml-C-2 on the Rust runtime's delayed
+# BasicHTTP `<send>`: a delay is a property of the send, not of the processor
+# it names, so the POST happens when the delay has elapsed and `<cancel>`
+# reaches it while it waits.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_delayed_http_send_is_posted_when_due_rust.cases`.
+#
+# Sibling of `a_delayed_http_send_is_posted_when_due.cases`, which holds the
+# C++ AOT channel through ctest. The fixture's Go, Kotlin and Python drivers
+# are outside what this harness can run.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test a_delayed_http_send_is_posted_when_due
+mutation_targets backends/rust/runtime/src/engine.rs
+mutation_oracles backends/rust/tests/tests/a_delayed_http_send_is_posted_when_due.rs
+
+# ── The wait: a delayed send is performed as an undelayed one ──────
+
+mutation_case "Rust POSTs a delayed BasicHTTP send at once" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "        if delay.is_zero() {",
+     "        if true {")
+PY
+
+# ── The deadline: the queued request is handed to no transport ─────
+
+mutation_case "Rust never performs a deferred BasicHTTP send at its deadline" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "            == crate::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE",
+     "            != crate::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE")
+PY
+
+# ── The id: the request loses the id the document gave it ─────────
+
+mutation_case "Rust queues a delayed BasicHTTP send with an empty send id" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "            send_id: send_id.clone(),\n            ..Default::default()",
+     "            send_id: String::new(),\n            ..Default::default()")
+PY
