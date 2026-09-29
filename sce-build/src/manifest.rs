@@ -153,6 +153,50 @@ pub struct RejectedInfo {
     pub name: String,
 }
 
+/// The kind a run read its one document as, and whether the document
+/// said so.
+///
+/// A document with no `sce:kind` is a statechart (SCE_FORGE.md §3.2), and
+/// that default is silent: a transform whose author forgot the attribute
+/// is read as a statechart, refused or accepted by that kind's rules, and
+/// nothing in the verdict names the reading. An author choosing a kind
+/// from prose — a person or a model — cannot confirm the product read
+/// what was meant from the diagnostics alone, because a statechart that
+/// happens to be well-formed produces none. So the reading is published:
+/// `name` is the kind the run compiled, `declared` is `false` exactly when
+/// it came from the default rather than from the document.
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DocumentKind {
+    /// The `sce:kind` spelling of the kind the run compiled —
+    /// [`crate::forge::model::ForgeKind::as_attr`].
+    pub name: &'static str,
+    /// `false` when the root carries no `sce:kind` and the document was
+    /// read as a statechart by default.
+    pub declared: bool,
+}
+
+impl DocumentKind {
+    /// The reading [`crate::classify_document`] routes on, for `content`.
+    ///
+    /// `None` when the root cannot be read or names a kind no variant goes
+    /// by: such a document is refused before any manifest is written, so
+    /// there is no reading to publish.
+    pub fn of(content: &str) -> Option<Self> {
+        use crate::forge::model::ForgeKind;
+        match crate::forge::parser::detect_kind(content) {
+            Ok(Some(kind)) => Some(Self {
+                name: kind.as_attr(),
+                declared: true,
+            }),
+            Ok(None) => Some(Self {
+                name: ForgeKind::Statechart.as_attr(),
+                declared: false,
+            }),
+            Err(_) => None,
+        }
+    }
+}
+
 /// The external formatter that shaped a run's emitted artefacts, as the run
 /// resolved it.
 ///
@@ -244,6 +288,11 @@ pub struct Manifest<'a> {
     /// without a second invocation and without a hand-maintained
     /// version sidecar.
     pub generator: &'static str,
+    /// Which kind the run read its document as — see [`DocumentKind`].
+    /// Present exactly when the run is one document; a document set holds
+    /// several kinds and reports none rather than one of them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_kind: Option<DocumentKind>,
     pub artifacts: Vec<ArtifactEntry>,
     pub needs_script_engine: bool,
     /// Omitted (not `[]`) on a pure-static machine.
@@ -493,6 +542,61 @@ mod tests {
         );
     }
 
+    /// A kind reaches the published reading in the same commit it reaches
+    /// the parser, in the spelling the parser accepts.
+    #[test]
+    fn json_schema_document_kind_enum_matches_rust_source_of_truth() {
+        use crate::forge::model::ForgeKind;
+        let schema = schema();
+        let declared: Vec<&str> = schema["properties"]["document_kind"]["properties"]["name"]
+            ["enum"]
+            .as_array()
+            .expect("document_kind.name.enum is an array")
+            .iter()
+            .map(|v| v.as_str().expect("document_kind enum member is a string"))
+            .collect();
+        assert_eq!(
+            declared,
+            ForgeKind::ALL_ATTR_NAMES,
+            "schemas/sce-manifest.v1.schema.json document_kind.name.enum drifted from \
+             ForgeKind::ALL_ATTR_NAMES",
+        );
+    }
+
+    /// The three readings a root can produce: declared forge kind, declared
+    /// statechart, and the silent default this field exists to name.
+    #[test]
+    fn document_kind_names_the_default_as_undeclared() {
+        let root = |attr: &str| {
+            format!(
+                "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" \
+                 xmlns:sce=\"http://sce.dev/ext\" version=\"1.0\"{attr}/>"
+            )
+        };
+        assert_eq!(
+            DocumentKind::of(&root(" sce:kind=\"lookup\"")),
+            Some(DocumentKind {
+                name: "lookup",
+                declared: true
+            })
+        );
+        assert_eq!(
+            DocumentKind::of(&root(" sce:kind=\"statechart\"")),
+            Some(DocumentKind {
+                name: "statechart",
+                declared: true
+            })
+        );
+        assert_eq!(
+            DocumentKind::of(&root("")),
+            Some(DocumentKind {
+                name: "statechart",
+                declared: false
+            })
+        );
+        assert_eq!(DocumentKind::of(&root(" sce:kind=\"lookupp\"")), None);
+    }
+
     /// The per-language verdict names backends by their wire spelling;
     /// a seventh backend must reach the schema in the same commit.
     #[test]
@@ -586,6 +690,7 @@ mod tests {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
             generator: "deadbeefcafe",
+            document_kind: None,
             artifacts: vec![ArtifactEntry {
                 path: "out/foo_sm.rs".to_string(),
             }],
@@ -616,6 +721,7 @@ mod tests {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
             generator: "deadbeefcafe",
+            document_kind: None,
             artifacts: vec![ArtifactEntry {
                 path: "out/foo_sm.h".to_string(),
             }],
@@ -654,6 +760,7 @@ mod tests {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Check.as_str(),
             generator: "deadbeefcafe",
+            document_kind: None,
             artifacts: Vec::new(),
             needs_script_engine: false,
             script_engine_causes: &[],
@@ -709,6 +816,7 @@ mod tests {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
             generator: "deadbeefcafe",
+            document_kind: None,
             artifacts: vec![ArtifactEntry {
                 path: "out/probe_sm.rs".to_string(),
             }],
@@ -753,6 +861,7 @@ mod tests {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
             generator: "deadbeefcafe",
+            document_kind: None,
             artifacts: Vec::new(),
             needs_script_engine: true,
             script_engine_causes: &[],
@@ -803,6 +912,7 @@ mod tests {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
             generator: "deadbeefcafe",
+            document_kind: None,
             artifacts: Vec::new(),
             needs_script_engine: false,
             script_engine_causes: &[],
@@ -837,6 +947,7 @@ mod tests {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
             generator: "deadbeefcafe",
+            document_kind: None,
             artifacts: Vec::new(),
             needs_script_engine: false,
             script_engine_causes: &[],
@@ -874,6 +985,7 @@ mod tests {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
             generator: "deadbeefcafe",
+            document_kind: None,
             artifacts: Vec::new(),
             needs_script_engine: false,
             script_engine_causes: &[],
@@ -921,6 +1033,7 @@ mod tests {
             v: MANIFEST_SCHEMA_VERSION,
             kind: ManifestKind::Generate.as_str(),
             generator: "deadbeefcafe",
+            document_kind: None,
             artifacts: Vec::new(),
             needs_script_engine: false,
             script_engine_causes: &[],

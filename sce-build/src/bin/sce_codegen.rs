@@ -909,6 +909,9 @@ macro_rules! outln {
 /// (batch mode, daemon) get per-invocation isolation for free.
 #[derive(Default)]
 struct GenerateReport {
+    /// The kind the run read its one document as — see
+    /// `Manifest::document_kind`. `None` on a document-set run.
+    document_kind: Option<sce_build::manifest::DocumentKind>,
     artifacts: Vec<PathBuf>,
     needs_script_engine: Option<bool>,
     script_engine_causes: Vec<sce_build::script_engine_analyzer::ScriptEngineCauseRecord>,
@@ -1002,6 +1005,7 @@ fn build_manifest<'a>(
         v: sce_build::manifest::MANIFEST_SCHEMA_VERSION,
         kind: kind.as_str(),
         generator: sce_build::GENERATOR_COMMIT,
+        document_kind: report.document_kind,
         artifacts: report
             .artifacts
             .iter()
@@ -3734,7 +3738,10 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         )
     });
 
-    let mut report = GenerateReport::default();
+    let mut report = GenerateReport {
+        document_kind: sce_build::manifest::DocumentKind::of(&scxml_content),
+        ..GenerateReport::default()
+    };
     let mut verdicts: Vec<LanguageVerdict> = Vec::new();
 
     match sce_build::classify_document(&scxml_content) {
@@ -4161,6 +4168,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             "",
         )
     });
+    report.document_kind = sce_build::manifest::DocumentKind::of(&scxml_content);
 
     // Spec §synth-6.2.6 drift context — input root defaults to the SCXML
     // file's parent so the hash covers every `*.scxml` in that
