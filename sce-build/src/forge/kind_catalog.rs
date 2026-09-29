@@ -496,14 +496,11 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                 apart!(K::Link, "the endpoint a worker reads from is a link"),
             ],
             notes: &[
-                "reads a link it imports with <sce:import kind=\"link\">, so it is checked \
-                 together with that link, as a document set",
+                "reads a link it imports with <sce:import kind=\"link\">; the import is \
+                 followed wherever it points, so a check of the worker alone still \
+                 reads the link, its framer and its buffer pool",
             ],
-            example: Example::Absent(
-                "a worker is refused on its own until the link it reads is imported, so \
-                 no single worker document passes check; it is checked with its link, \
-                 as a document set",
-            ),
+            example: Example::Document(include_str!("../../kind-examples/worker.scxml")),
         },
         K::BoundedCollection => KindGuide {
             role: KindRole::PlatformResource,

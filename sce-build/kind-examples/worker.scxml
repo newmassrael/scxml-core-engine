@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- worker: a concurrent execution context reading a link's received
+     frames through a fixed-size inbox. Imports the link kind it reads
+     from; that import resolves against link.scxml beside it (which
+     imports codec.scxml and buffer-pool.scxml the same way), so a plain
+     check follows the whole chain from this one file. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="worker" name="udp_receiver" version="1.0">
+  <sce:import as="udp_endpoint" src="link.scxml" kind="link"/>
+  <sce:link-rx ref="udp_endpoint"/>
+  <sce:inbox depth="16" ordering="acq_rel"/>
+</scxml>

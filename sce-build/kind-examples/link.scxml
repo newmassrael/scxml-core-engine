@@ -5,6 +5,8 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="link" name="udp_endpoint" version="1.0">
+  <sce:import as="frame_codec" src="codec.scxml" kind="codec"/>
+  <sce:import as="rx_pool" src="buffer-pool.scxml" kind="buffer-pool"/>
   <sce:link-class>udp</sce:link-class>
   <sce:framer ref="frame_codec"/>
   <sce:backpressure>drop</sce:backpressure>
