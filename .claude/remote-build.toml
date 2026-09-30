@@ -129,6 +129,29 @@ writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", 
 # `--explain-declaration` printed `decl needs` with nothing after it.
 needs = ["cargo", "cmake", "ninja", "g++", "node", "git", "mnemosyne-cli", "go", "java", "python3", "wasm-pack", "kotlinc", "clang-format-19"]
 
+# System packages a host must carry that no executable in `needs` can name: a development header
+# is not a command. bx asks `dpkg-query` for each and reports every missing one in a single
+# answer, by name, with the install command — instead of a compile error about something else.
+#
+# `libssl-dev`: cpp-httplib compiles TLS in only when CMake finds OpenSSL, and CMake does not
+# complain when it does not. Without the headers the tree CONFIGURES cleanly and dies later:
+# `CppHttplibClient.cpp` calls `enable_server_certificate_verification` unconditionally, and
+# cpp-httplib defines that member only under CPPHTTPLIB_OPENSSL_SUPPORT. MEASURED 2026-09-30 on
+# a build machine that had never built this repository: the compile line carried
+# `-DCPPHTTPLIB_BROTLI_SUPPORT -DCPPHTTPLIB_ZLIB_SUPPORT` and no `-DCPPHTTPLIB_OPENSSL_SUPPORT`,
+# and the error was `class httplib::Client has no member named enable_server_certificate_verification`
+# — a sentence about httplib, not about a package.
+#
+# `openjdk-17-jdk-headless`: the Kotlin modules ask Gradle for a Java 17 toolchain and no
+# toolchain download repository is configured, so a host whose only JDK is another version fails
+# in `compileJvmMainJava` with `Cannot find a Java installation ... languageVersion=17`. `java`
+# in `needs` cannot say WHICH. (`gradle` is still not here: `./gradlew` brings its own.)
+#
+# Declared only after all three registered machines were checked to satisfy both names: a name a
+# host cannot satisfy would refuse that host for every job, which is the failure `kotlinc`'s
+# comment above describes.
+packages = ["libssl-dev", "openjdk-17-jdk-headless"]
+
 # The C++ tree is the constraint: a debug build of this repository has
 # measured 4.2 GB of debug info in its executables alone.
 min_ram_gb  = 16
