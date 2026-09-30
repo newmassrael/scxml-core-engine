@@ -66,6 +66,17 @@ run them: the harness reads this file by path and Gradle did not know it, so a
 change to the cases alone left `jvmTest` UP-TO-DATE. The build now declares it.
 A wrong expectation in a generated case of each new fixture fails Kotlin, C++
 and Go.
+
+Fourth run, 2026-09-30: the retry and sync-time documents — `retry_next_backoff`
+(an integer meets a real as a real, so a wait past 2^53 is rounded to the nearest
+double before it is multiplied and compared), `retry_jittered`, `retry_exhausted`
+and `sync_retry_at` — 1350 cases. The backends agreed with the model on all of
+them, but Rust and C11 failed the `0.9999999999999999` multiplier cases: their
+harnesses parse this file with serde_json, whose default float parser can land a
+unit in the last place off the nearest double and read that multiplier as 1.0.
+Python, Go, Kotlin and C++ parse it correctly. The defect was in the harness,
+not in a backend; both `Cargo.toml` files now enable `float_roundtrip`. JSON has
+no NaN or infinity, so those multipliers stay with the hand cases.
 """
 
 from __future__ import annotations
@@ -73,6 +84,7 @@ from __future__ import annotations
 import calendar
 import datetime
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -671,6 +683,63 @@ def murmur3_32(data: list, seed: int):
     return ("ok", h ^ (h >> 16))
 
 
+def retry_next_backoff(prev_ms: int, multiplier: float, max_ms: int):
+    """sce:std/mesh/retry_next_backoff. An integer meets a real as a real
+    (SCE_FORGE.md 3.4: "an integer as a real"), so both integers are converted
+    to float64 — to the nearest, ties to even — before the product and the
+    comparison; Python's own `float < int` would compare exactly instead."""
+    if not (multiplier >= 1.0 and prev_ms > 0 and max_ms >= prev_ms):
+        return ("fails", "precondition")
+    grown = float(prev_ms) * multiplier
+    if grown < float(max_ms):
+        return ("ok", math.floor(grown))
+    return ("ok", max_ms)
+
+
+def retry_jittered(base_ms: int, jitter_pct: int, draw: int):
+    """sce:std/mesh/retry_jittered — each step is checked at int64, so a band
+    whose `2 * delta + 1` or whose top leaves int64 fails `overflow`."""
+    if not (base_ms > 0 and 0 <= jitter_pct <= 100 and draw >= 0):
+        return ("fails", "precondition")
+    delta = base_ms // 100 * jitter_pct + base_ms % 100 * jitter_pct // 100
+    width = 2 * delta + 1
+    if not fits(width, I64_MIN, I64_MAX):
+        return ("fails", "overflow")
+    waited = base_ms - delta + draw % width
+    if not fits(waited, I64_MIN, I64_MAX):
+        return ("fails", "overflow")
+    return ("ok", 1 if waited < 1 else waited)
+
+
+def retry_exhausted(attempts: int, max_retries: int, retryable: bool):
+    """sce:std/mesh/retry_exhausted."""
+    if max_retries == 0:
+        return ("fails", "precondition")
+    return ("ok", (not retryable) or attempts > max_retries)
+
+
+def sync_retry_at(previous: int, kind: int, status: int, now: int, retry_after: int):
+    """sce:std/sync/sync_retry_at — the later of `previous` and the time this
+    failure asks for; a 503 asks for its Retry-After, a 502 for fifteen minutes."""
+    if not 1 <= kind <= 9:
+        return ("fails", "precondition")
+    if kind == 4:
+        if not 300 <= status <= 599:
+            return ("fails", "precondition")
+    elif status != 0:
+        return ("fails", "precondition")
+    if not (previous >= 0 and now >= 0 and retry_after >= 0):
+        return ("fails", "precondition")
+    asked = 0
+    if kind == 4 and status == 503 and retry_after > 0:
+        asked = now + retry_after
+    if kind == 4 and status == 502:
+        asked = now + 900
+    if not fits(asked, I64_MIN, I64_MAX):
+        return ("fails", "overflow")
+    return ("ok", max(asked, previous))
+
+
 def epoch_ms(year, month, day, hour=0, minute=0, second=0, milli=0) -> int:
     instant = datetime.datetime(year, month, day, hour, minute, second)
     return (instant - datetime.datetime(1970, 1, 1)) // datetime.timedelta(milliseconds=1) + milli
@@ -883,6 +952,114 @@ def murmur_args(rng: SplitMix64):
     return [data, seed]
 
 
+MULTIPLIER_EDGES = [
+    1.0, 1.0000000000000002, 1.5, 2.0, 3.0, 10.0, 1e3, 1e15, 1e18, 1e19, 1e300,
+    1.7976931348623157e308,
+]
+
+
+def multiplier_value(rng: SplitMix64) -> float:
+    """A multiplier of at least 1.0 — a real a deploy file holds — or, now and
+    then, one below it, which is a precondition. JSON has no NaN or infinity, so
+    those are left to the hand cases."""
+    kind = rng.below(10)
+    if kind < 3:
+        return rng.pick(MULTIPLIER_EDGES)
+    if kind < 7:
+        return 1.0 + rng.below(400) / 100
+    if kind < 9:
+        return rng.pick([0.5, 0.9999999999999999, 0.0, -1.0, 0.1])
+    return 1.0 + rng.below(10**6) / 10**6
+
+
+def backoff_args(rng: SplitMix64):
+    """Wait, multiplier and cap; often a product close to the cap, where the
+    product is compared as a real, and past 2^53, where an integer stops being
+    exact as one."""
+    kind = rng.below(10)
+    if kind < 4:
+        prev = rng.between(1, 10_000)
+        cap = rng.between(prev, prev * 50)
+    elif kind < 6:
+        prev = rng.between(1, 2**20)
+        cap = prev + rng.between(0, 2**21)
+    elif kind < 8:
+        prev = rng.pick([2**53 - 1, 2**53, 2**53 + 1, 2**53 + 2, 2**62, I64_MAX - 1, I64_MAX])
+        cap = rng.pick([prev, prev, I64_MAX, I64_MAX - 1, 2**53 + 1, 2**62 + 1])
+        cap = max(cap, prev)
+    elif kind < 9:
+        prev = rng.pick([0, -1, 1, 2, I64_MIN])
+        cap = rng.pick([0, 1, 10, -5, I64_MAX])
+    else:
+        prev = rng.between(1, I64_MAX)
+        cap = rng.between(1, I64_MAX)
+    multiplier = multiplier_value(rng)
+    if kind < 6 and rng.below(3) == 0 and prev > 0:
+        # A multiplier that puts the product within one unit of the cap.
+        multiplier = max(1.0, cap / prev * (1 + rng.pick([-(2**-52), 0.0, 2**-52])))
+    return [prev, multiplier, cap]
+
+
+def jitter_args(rng: SplitMix64):
+    kind = rng.below(10)
+    if kind < 5:
+        base = rng.between(1, 100_000)
+        pct = rng.pick([0, 1, 10, 25, 50, 99, 100, rng.between(0, 100)])
+        draw = rng.between(0, 4 * base)
+    elif kind < 7:
+        base = rng.pick([1, 2, 99, 100, 101, 199, 200, 1000])
+        pct = rng.between(0, 100)
+        draw = rng.pick([0, 1, 2 * base, 2 * base + 1, I64_MAX, I64_MAX - 1, rng.between(0, I64_MAX)])
+    elif kind < 9:
+        # The band's width and top near int64's end.
+        base = rng.pick([I64_MAX, I64_MAX - 1, I64_MAX // 2, I64_MAX // 2 + 1, 2**62, 2**62 + 1])
+        pct = rng.pick([0, 1, 50, 99, 100])
+        draw = rng.pick([0, 1, I64_MAX, rng.between(0, I64_MAX)])
+    else:
+        base = rng.pick([0, -1, 1, I64_MIN, rng.between(-100, 100)])
+        pct = rng.pick([-1, 0, 101, 100, I64_MIN, I64_MAX])
+        draw = rng.pick([-1, 0, 1, I64_MIN, 5])
+    return [base, pct, draw]
+
+
+def exhausted_args(rng: SplitMix64):
+    edges = [0, 1, 2, 3, 4, 255, 65535, U32_MAX - 1, U32_MAX]
+    attempts = rng.pick(edges) if rng.below(2) else rng.between(0, 12)
+    limit = rng.pick(edges) if rng.below(2) else rng.between(0, 8)
+    if rng.below(3) == 0:
+        attempts = min(max(limit + rng.pick([-1, 0, 1]), 0), U32_MAX)
+    return [attempts, limit, rng.below(2) == 0]
+
+
+FAILURE_STATUSES = [300, 301, 400, 401, 403, 404, 408, 409, 429, 500, 501, 502, 503, 504, 599]
+
+
+def sync_retry_args(rng: SplitMix64):
+    """A failure of each kind — kind 4 is an HTTP status, every other has none —
+    mostly a 502 or 503, at a clock near a real one or at int64's end."""
+    kind = rng.pick([1, 2, 3, 4, 4, 4, 4, 4, 4, 5, 6, 7, 8, 9]) if rng.below(10) else rng.between(0, 12)
+    if kind == 4:
+        status = rng.pick([502, 503, 503, 502]) if rng.below(3) else rng.pick(FAILURE_STATUSES)
+    else:
+        status = 0
+    if rng.below(12) == 0:
+        status = rng.pick([0, 299, 600, -1, 503]) if kind == 4 else rng.pick([1, 503, -1])
+    clock = rng.below(10)
+    if clock < 6:
+        now = 1_790_503_200 + rng.between(-100_000, 100_000)
+        previous = rng.pick([0, 0, 1, now - 1, now, now + rng.between(-5000, 5000), now + 900, now + 3600])
+        retry_after = rng.pick([0, 1, 60, 3600, 86_400, rng.between(0, 100_000)])
+    elif clock < 9:
+        now = rng.pick([0, 1, I64_MAX - 900, I64_MAX - 899, I64_MAX - 1, I64_MAX])
+        previous = rng.pick([0, 1, I64_MAX - 1, I64_MAX])
+        retry_after = rng.pick([0, 1, 899, 900, 901, I64_MAX - 1, I64_MAX])
+    else:
+        now = rng.pick([-1, 0, 5, I64_MIN])
+        previous = rng.pick([-1, 0, 5, I64_MIN])
+        retry_after = rng.pick([-1, 0, 5, I64_MIN])
+    return [previous, kind, status, now, retry_after]
+
+
 #: fixture -> (model, argument generator, how many cases, seed).
 #: A seed is per fixture and never reused, so adding a case to one fixture does
 #: not move another's.
@@ -909,6 +1086,10 @@ FIXTURES = {
     "hlc_text": (lambda args: hlc_text(*args), text_args, 300, 0xE110_000F),
     "gcra_admit": (lambda args: gcra_admit(*args), gcra_args, 400, 0xE110_0010),
     "murmur3_32": (lambda args: murmur3_32(*args), murmur_args, 300, 0xE110_0011),
+    "retry_next_backoff": (lambda args: retry_next_backoff(*args), backoff_args, 400, 0xE110_0012),
+    "retry_jittered": (lambda args: retry_jittered(*args), jitter_args, 400, 0xE110_0013),
+    "retry_exhausted": (lambda args: retry_exhausted(*args), exhausted_args, 150, 0xE110_0014),
+    "sync_retry_at": (lambda args: sync_retry_at(*args), sync_retry_args, 400, 0xE110_0015),
 }
 
 
