@@ -16,6 +16,7 @@
 #ifndef SCE_SEND_TARGET_H
 #define SCE_SEND_TARGET_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -36,6 +37,20 @@ typedef enum {
 } sce_send_target_kind_t;
 
 /**
+ * @brief Whether a target value names nothing (W3C SCXML C.1)
+ *
+ * An empty value, or the datamodel's no-value: ECMAScript's `undefined` and
+ * `nil`, the spelling a Lua-lowered `undefined` reads back as. Such a target
+ * reaches no one, so a send to it raises error.communication and delivers
+ * nothing. The one place this is decided: the table below reads it, and so does
+ * the BasicHTTP arm, which the table cannot serve because it holds an http(s)
+ * URL to be no target of this processor.
+ */
+static inline bool sce_send_target_names_nothing(const char *target) {
+    return target == NULL || target[0] == '\0' || strcmp(target, "undefined") == 0 || strcmp(target, "nil") == 0;
+}
+
+/**
  * @brief Classify a target value (W3C SCXML 6.2.4, C.1)
  *
  * A URI of another scheme — an http(s) URL included, which only a BasicHTTP
@@ -53,7 +68,7 @@ static inline sce_send_target_kind_t sce_classify_send_target(const char *target
     static const char location_prefix[] = "sce://scxml/";
     const char *id;
     *id_out = NULL;
-    if (target == NULL || target[0] == '\0' || strcmp(target, "undefined") == 0) {
+    if (sce_send_target_names_nothing(target)) {
         return SCE_SEND_TARGET_UNREACHABLE;
     }
     if (target[0] == '!') {

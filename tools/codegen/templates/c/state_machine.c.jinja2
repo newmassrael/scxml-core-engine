@@ -1067,6 +1067,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     "{{ send_id_c }}");
                 return;
             }
+{% if route == 'http' %}
+            /* A BasicHTTP send is the one route the table `sce_classify_send_target`
+               does not serve: it holds an http(s) URL to be no target of this
+               processor. Every other route is classified by that table below, so
+               a value it refuses (`!`, or one that names nothing) is refused there
+               once, by the same rule, and is not spelled a second time here. */
             if (_send_target_buf[0] == '!') {
                 /* W3C SCXML 6.2 (test 159, 194): a target this processor
                    cannot address is refused as a static one is. */
@@ -1076,22 +1082,16 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     "{{ send_id_c }}");
                 return;
             }
-            if (_send_target_buf[0] == '\0' ||
-                strcmp(_send_target_buf, "undefined") == 0 ||
-                strcmp(_send_target_buf, "nil") == 0) {
+            if (sce_send_target_names_nothing(_send_target_buf)) {
                 /* W3C SCXML C.1 (test496/test521): a target that names
                    nothing is not reachable — error.communication, nothing
-                   delivered, the block ended. The ECMAScript `undefined` and
-                   its Lua transpile `nil` are both that. A self-sent event
-                   names its origin, so `targetexpr="_event.origin"` (test336)
-                   never reads "". */
+                   delivered, the block ended. */
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
                     "<send> targetexpr evaluated to nothing, so there is no target to reach",
                     "{{ send_id_c }}");
                 return;
             }
-{% if route == 'http' %}
             if (strncmp(_send_target_buf, "http://", 7) != 0 &&
                 strncmp(_send_target_buf, "https://", 8) != 0) {
                 /* W3C SCXML C.2: BasicHTTP resolved a target that is not an
