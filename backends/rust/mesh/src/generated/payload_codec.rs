@@ -18,6 +18,7 @@ pub enum PayloadCodec {
     Raw = 4,
 }
 
+#[allow(dead_code)]
 impl PayloadCodec {
     /// The carrier value this variant declares.
     pub const fn to_underlying(self) -> u8 {

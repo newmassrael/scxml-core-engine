@@ -21,6 +21,7 @@ pub enum RpcStatus {
     Unavailable = 14,
 }
 
+#[allow(dead_code)]
 impl RpcStatus {
     /// The carrier value this variant declares.
     pub const fn to_underlying(self) -> u8 {

@@ -30,6 +30,7 @@ pub enum PatternKind {
     ParallelRegionDone = 21,
 }
 
+#[allow(dead_code)]
 impl PatternKind {
     /// The carrier value this variant declares.
     pub const fn to_underlying(self) -> u16 {

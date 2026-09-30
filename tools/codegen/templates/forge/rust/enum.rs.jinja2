@@ -19,7 +19,13 @@
 {{ forge_enum_derives_attr }}
 pub struct {{ enum_name }}(pub {{ underlying_type }});
 
-#[allow(non_upper_case_globals)]
+{# `dead_code` on the whole impl, not on `declared_name` alone: these are the
+   type's accessors, offered whether or not a consumer reads them, and a
+   consumer that compiles this file as a private module under `-D warnings`
+   (the forge conformance crate does, once per generated enum) is refused for
+   each one it leaves unread. `declared_name` was the accessor that met it
+   first; the next one added would meet it again. #}
+#[allow(non_upper_case_globals, dead_code)]
 impl {{ enum_name }} {
 {% for v in variants %}
     pub const {{ v.name }}: Self = Self({{ v.value }});
@@ -59,6 +65,8 @@ pub enum {{ enum_name }} {
 {% endfor %}
 }
 
+{# See the open form above: the accessors are the type's API, unread or not. #}
+#[allow(dead_code)]
 impl {{ enum_name }} {
     /// The carrier value this variant declares.
     pub const fn to_underlying(self) -> {{ underlying_type }} {
