@@ -1119,6 +1119,52 @@ mod tests {
         );
     }
 
+    /// A limit is held AT its edge, not only far past it: a name exactly as
+    /// long as the limit is fine and one character more is refused; a range's
+    /// ends are inclusive; a prefix the name has is not a prefix it lacks.
+    /// Every other limit test here uses a name well outside the limit, which
+    /// a limit that was one too generous would still refuse.
+    #[test]
+    fn a_limit_is_held_at_its_edge() {
+        let state = |json: &str, id: &str| {
+            let model = statechart(&format!(
+                r#"<state id="{id}"><transition event="a.b" target="{id}"/></state>"#
+            ));
+            spelled(&judge(&rule(json), &model))
+        };
+        // `idle` is 4 characters and `idles` is 5.
+        assert!(state(r#"{"state":{"max_length":4}}"#, "idle").is_empty());
+        assert_eq!(
+            state(r#"{"state":{"max_length":4}}"#, "idles"),
+            ["limit state idles length"]
+        );
+        // A prefix the name has, and one it lacks, by a single character.
+        assert!(state(r#"{"state":{"required_prefix":"s_"}}"#, "s_idle").is_empty());
+        assert_eq!(
+            state(r#"{"state":{"required_prefix":"s_"}}"#, "s-idle"),
+            ["limit state s-idle prefix"]
+        );
+        // A forbidden word is a whole word of the name: `idle` is not made of
+        // `id`, and `door_id` is.
+        assert!(state(r#"{"state":{"forbidden_words":["id"]}}"#, "idle").is_empty());
+        assert_eq!(
+            state(r#"{"state":{"forbidden_words":["id"]}}"#, "door_id"),
+            ["limit state door_id forbidden-word"]
+        );
+        // The ends of a token range are inclusive.
+        let event = |json: &str, name: &str| {
+            let model = statechart(&format!(
+                r#"<state id="idle"><transition event="{name}" target="idle"/></state>"#
+            ));
+            spelled(&judge(&rule(json), &model))
+        };
+        let two_or_three = r#"{"event":{"tokens":{"min":2,"max":3}}}"#;
+        assert!(event(two_or_three, "a.b").is_empty());
+        assert!(event(two_or_three, "a.b.c").is_empty());
+        assert_eq!(event(two_or_three, "a"), ["event a tokens-min"]);
+        assert_eq!(event(two_or_three, "a.b.c.d"), ["event a.b.c.d tokens-max"]);
+    }
+
     #[test]
     fn the_structure_of_an_event_name_is_held() {
         let model = statechart(DOOR);

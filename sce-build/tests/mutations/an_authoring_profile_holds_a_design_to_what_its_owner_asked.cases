@@ -1,0 +1,108 @@
+# Mutation cases for "an authoring profile holds a design to what its owner asked".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_authoring_profile_holds_a_design_to_what_its_owner_asked.cases`.
+#
+# A profile is judged in `authoring_profile` (the settings, and `names` for the
+# spelling of the names a document defines), routed through
+# `unresolved_check::cite_house_rules` for house rules, and applied to a run by
+# `sce_codegen::judge_under_profile`. Each case takes one part of that away,
+# or turns it round: a style that refuses nothing, a limit that is never held,
+# a rule that reads the wrong way, a document the profile no longer reaches, a
+# marker that stops being a house rule.
+#
+# The tests are the library's own (`--lib`, which holds the unit tests of the
+# reader and of the names rules) and the integration test that spawns the
+# binary. Both are named because a mutation that only one of them can see is
+# still a mutation the suite notices; the round says RED when either is.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test an_authoring_profile_holds_a_design_to_what_its_owner_asked
+mutation_targets sce-build/src/authoring_profile.rs sce-build/src/authoring_profile/names.rs sce-build/src/unresolved_check.rs sce-build/src/bin/sce_codegen.rs
+
+# A name is never found out of style: every spelling is accepted.
+mutation_case "a name is never out of its style" <<'PY'
+edit("sce-build/src/authoring_profile/names.rs",
+     r'''        if let Some(part) = parts.iter().find(|part| !style.accepts(part)) {''',
+     r'''        if let Some(part) = parts.iter().find(|part| style.accepts(part) && false) {''')
+PY
+
+# The style judged is the opposite of the one asked for: what the owner's
+# spelling accepts is refused, and what it refuses is let through.
+mutation_case "a style is judged the wrong way round" <<'PY'
+edit("sce-build/src/authoring_profile/names.rs",
+     r'''        if let Some(part) = parts.iter().find(|part| !style.accepts(part)) {''',
+     r'''        if let Some(part) = parts.iter().find(|part| style.accepts(part)) {''')
+PY
+
+# A length limit that lets one more character through.
+mutation_case "a length limit is one too generous" <<'PY'
+edit("sce-build/src/authoring_profile/names.rs",
+     r'''        if actual > max {''',
+     r'''        if actual > max + 1 {''')
+PY
+
+# A required prefix that is never held.
+mutation_case "a required prefix is never held" <<'PY'
+edit("sce-build/src/authoring_profile/names.rs",
+     r'''        if !name.starts_with(prefix.as_str()) {''',
+     r'''        if name.starts_with(prefix.as_str()) && false {''')
+PY
+
+# A forbidden word is looked for as a whole name and not among the words a
+# name is made of: `DoorOpen` is no longer made of `door`.
+mutation_case "a forbidden word is looked for only in the whole name" <<'PY'
+edit("sce-build/src/authoring_profile/names.rs",
+     r'''            .filter(|word| made_of.contains(&word.to_ascii_lowercase()))''',
+     r'''            .filter(|word| made_of.len() == 1 && made_of.contains(&word.to_ascii_lowercase()))''')
+PY
+
+# An event that is a token prefix of another is no longer noticed: the pair
+# is never a pair.
+mutation_case "no event is a token prefix of another" <<'PY'
+edit("sce-build/src/authoring_profile/names.rs",
+     r'''            let is_prefix = shorter != longer && EventDescriptor::Prefix(shorter).matches(longer);''',
+     r'''            let is_prefix = shorter != longer && EventDescriptor::Prefix(shorter).matches(longer) && false;''')
+PY
+
+# An evidence with no anchor passes: the profile asks for anchors and never
+# finds a missing one.
+mutation_case "an unanchored evidence passes" <<'PY'
+edit("sce-build/src/authoring_profile.rs",
+     r'''            .filter(|evidence| evidence.provenance.is_none())''',
+     r'''            .filter(|evidence| evidence.provenance.is_none() && false)''')
+PY
+
+# The interface rule judges nothing: a statechart that leaves its interface
+# open is accepted under a profile that closes it.
+mutation_case "an open interface passes under a profile that closes it" <<'PY'
+edit("sce-build/src/authoring_profile.rs",
+     r'''        if self.interface == Some(InterfaceRule::Closed) && !model.interface_closed {''',
+     r'''        if self.interface == Some(InterfaceRule::Closed) && model.interface_closed {''')
+PY
+
+# An event-schema document stops being reached by the names setting, so the
+# events an interface is made of are outside the profile again.
+mutation_case "an event-schema is no longer reached by the names setting" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     r'''                if profile.judges_forge(parsed.document.kind()) {''',
+     r'''                if profile.judges_forge(parsed.document.kind()) && false {''')
+PY
+
+# A marker that names a house rule is not one: the owner's standing answer is
+# reported as a value chosen without an answer again.
+mutation_case "a citation of a house rule is not recognised" <<'PY'
+edit("sce-build/src/unresolved_check.rs",
+     r'''            record.kind == MarkerKind::Assumed && house_rule_ids.contains(&record.id.as_str());''',
+     r'''            record.kind == MarkerKind::Assumed && house_rule_ids.contains(&"") ;''')
+PY
+
+# A question that names a rule's id is taken for the owner's standing answer:
+# an `sce:unresolved` is read as if the owner had answered it.
+mutation_case "a question naming a rule id counts as the rule" <<'PY'
+edit("sce-build/src/unresolved_check.rs",
+     r'''            record.kind == MarkerKind::Assumed && house_rule_ids.contains(&record.id.as_str());''',
+     r'''            house_rule_ids.contains(&record.id.as_str());''')
+PY

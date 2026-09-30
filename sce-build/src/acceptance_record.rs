@@ -489,7 +489,13 @@ impl AcceptanceRecord {
             sha256: file_sha256(manifest)?,
         };
         let document_path = canonical(document)?;
-        let (inputs, open_at_acceptance) = read_design(&root, &document_path)
+        // A design accepted under a profile says what it left open the way a
+        // run under that profile does: an `sce:assumed` that cites one of its
+        // house rules is the owner's standing answer, not a value chosen
+        // without one.
+        let house_rules = house_rule_ids_of(sources)?;
+        let house_rule_ids: Vec<&str> = house_rules.iter().map(String::as_str).collect();
+        let (inputs, open_at_acceptance) = read_design(&root, &document_path, &house_rule_ids)
             .map_err(|failure| failure.into_take_error(document))?;
         let mut authored_from = Vec::with_capacity(sources.len());
         for (role, path) in sources {
@@ -618,7 +624,7 @@ impl AcceptanceRecord {
         }
         // What was open is a fact about the moment of acceptance and not a
         // thing to re-judge: a design that changed is a lapse by its bytes.
-        let current = match read_design(&root, &canonical(&document_path)?) {
+        let current = match read_design(&root, &canonical(&document_path)?, &[]) {
             Ok((inputs, _open)) => inputs,
             Err(DesignFailure::Parse(detail)) => {
                 lapses.push(Lapse::Unparseable {
@@ -810,14 +816,38 @@ impl From<RecordError> for DesignFailure {
     }
 }
 
+/// The ids of the house rules of the authoring profile among `sources`, or
+/// none when the record is taken under no profile. The profile is read through
+/// its own reader; one that cannot be read is refused here in its words, though
+/// the command line has already refused it before it got this far.
+fn house_rule_ids_of(sources: &[(SourceRole, &Path)]) -> Result<Vec<String>, RecordError> {
+    let Some((_, path)) = sources
+        .iter()
+        .find(|(role, _)| *role == SourceRole::Profile)
+    else {
+        return Ok(Vec::new());
+    };
+    let profile = crate::authoring_profile::AuthoringProfile::load(path).map_err(|unusable| {
+        RecordError::Source {
+            detail: format!("{}: {unusable}", path.display()),
+        }
+    })?;
+    Ok(profile
+        .house_rule_ids()
+        .into_iter()
+        .map(str::to_string)
+        .collect())
+}
+
 /// Every file a parse of `document` reads, pinned relative to `root`, and
 /// what the design leaves to a person ([`crate::open_matters`]).
 fn read_design(
     root: &Path,
     document: &Path,
+    house_rule_ids: &[&str],
 ) -> Result<(Vec<InputPin>, Vec<crate::open_matters::OpenMatter>), DesignFailure> {
     let mut pins: BTreeMap<String, String> = BTreeMap::new();
-    let (files, open) = design_inputs(document)?;
+    let (files, open) = design_inputs(document, house_rule_ids)?;
     for path in std::iter::once(document.to_path_buf()).chain(files) {
         let path = canonical(&path)?;
         pins.insert(relative(root, &path)?, file_sha256(&path)?);
@@ -844,6 +874,7 @@ fn read_design(
 ///   as its dependencies.
 fn design_inputs(
     document: &Path,
+    house_rule_ids: &[&str],
 ) -> Result<(Vec<PathBuf>, Vec<crate::open_matters::OpenMatter>), DesignFailure> {
     let text = std::fs::read_to_string(document).map_err(|source| {
         DesignFailure::Record(RecordError::Read {
@@ -871,7 +902,10 @@ fn design_inputs(
             // The same reading the acceptance report makes, so what a
             // person was shown as open and what the record keeps as open
             // are one list.
-            Ok((inputs, crate::open_matters::of_statechart(&model)))
+            Ok((
+                inputs,
+                crate::open_matters::of_statechart_under(&model, house_rule_ids),
+            ))
         }
         crate::Pipeline::Forge => {
             let label_text = document.display().to_string();
@@ -886,8 +920,9 @@ fn design_inputs(
                     .map_err(|located| unparseable(located.error.to_string()))?;
             // A forge kind sends to no parent and no processor, so what it
             // leaves open is its markers.
-            let markers = crate::unresolved_check::unresolved_records_forge(&loaded.positions)
+            let mut markers = crate::unresolved_check::unresolved_records_forge(&loaded.positions)
                 .map_err(|located| unparseable(located.error.to_string()))?;
+            crate::unresolved_check::cite_house_rules(&mut markers, house_rule_ids);
             let open = crate::open_matters::of(&markers, &[], &[], &[]);
             // A `sce:std/...` document is read from the library compiled
             // into the generator; it has no file to pin, and moves only

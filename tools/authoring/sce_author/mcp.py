@@ -141,6 +141,14 @@ SERVER_INSTRUCTIONS = (
     "profile yourself or choose one for the owner, and never edit the "
     "profile to make a draft pass; when the owner keeps none, say the design "
     "was checked under none, which the manifest shows by having no profile. "
+    "When the profile lists house_rules, they are the owner's standing "
+    "answers to gaps that recur: where a gap in the specification is one a "
+    "rule answers, apply the rule instead of asking the owner, and cite it "
+    "with sce:assumed=\"<rule id>\" on the element it applies to, so that the "
+    "answer says every place a rule was applied. Never apply a rule without "
+    "citing it, never cite one that does not answer the gap, and never write "
+    "a rule yourself. Pass the profile to decisions too, so a citation of a "
+    "rule is not refused as an uncited guess. "
     "Put the <?xml ...?> declaration "
     "first in every file, with nothing before it -- not a comment. What you "
     "check is the text you save and show: check the file as saved. "
@@ -523,13 +531,18 @@ TOOLS = [
             "with the marker, the decision and a message), next. Ask the "
             "owner each new question and record the answer before drafting "
             "again; whether a new question is one already recorded is the "
-            "owner's reading."
+            "owner's reading. When the owner keeps an authoring profile with "
+            "house rules, pass it (`profile` or `profile_text`): a guess that "
+            "cites one of them, sce:assumed=\"<rule id>\", is the owner's "
+            "standing answer and is not refused as an uncited guess; it is "
+            "reported as the rule it applies."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 **_DOCUMENT_INPUT,
                 **_file_input("decisions", "the owner's decision record"),
+                **_PROFILE_INPUT,
                 "files_text": {
                     "type": "array",
                     "description": (
@@ -1263,7 +1276,8 @@ def _decisions_tool(args: dict, staging: _Staging) -> dict:
             if not isinstance(entry, dict):
                 raise ToolArgumentError("each 'files_text' entry has a name and a text")
             staging.write(entry.get("name"), entry.get("text"), "files")
-    return _answer(*hold_decisions(document, record, cwd=staging.dir))
+    profile = _profile_file(args, staging)
+    return _answer(*hold_decisions(document, record, profile=profile, cwd=staging.dir))
 
 
 def _pseudocode_tool(args: dict, staging: _Staging) -> dict:

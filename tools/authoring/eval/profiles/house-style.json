@@ -1,0 +1,17 @@
+{
+  "record": "sce-authoring-profile",
+  "v": 1,
+  "name": "eval-house-style",
+  "interface": "closed",
+  "evidence": "anchored",
+  "names": {
+    "document": { "style": "snake" },
+    "state": { "style": "snake" },
+    "event": {
+      "style": "snake",
+      "tokens": { "min": 2, "max": 2 },
+      "prefix_free": true
+    },
+    "data": { "style": "snake" }
+  }
+}

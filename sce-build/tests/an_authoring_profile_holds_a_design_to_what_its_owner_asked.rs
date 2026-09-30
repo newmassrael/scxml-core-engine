@@ -1013,3 +1013,205 @@ fn a_document_no_setting_reaches_is_not_counted_as_judged() {
     ));
     assert_eq!(states["profile"]["judged"], 0, "{states}");
 }
+
+// ── house rules ───────────────────────────────────────────────────────
+
+const HOUSE_RULES: &str = r#"{"record":"sce-authoring-profile","v":1,"name":"owner-review",
+    "house_rules":[{"id":"H1","rule":"An event a state does not mention is ignored."}]}"#;
+
+/// The closed machine with one `sce:assumed` on its first state, citing `rule`.
+fn citing(rule: &str) -> String {
+    statechart(true).replace(
+        "<state id=\"idle\">",
+        &format!(
+            "<state id=\"idle\" sce:assumed=\"{rule}\" \
+             sce:assumed-reason=\"the specification names no event for this state\">"
+        ),
+    )
+}
+
+/// A house rule is the owner's standing answer, so a citation of one is said
+/// apart from a value chosen without an answer — by the manifest's `open`, by
+/// the marker's own record, and by the acceptance record — and a run given no
+/// profile cannot tell a rule's id from any other.
+#[test]
+fn a_citation_of_a_house_rule_is_said_to_be_the_owners_standing_answer() {
+    let dir = design("profile-house-rules");
+    fs::write(dir.join("citing.scxml"), citing("H1")).expect("write");
+    fs::write(dir.join("stranger.scxml"), citing("H9")).expect("write");
+    fs::write(dir.join("rules.json"), HOUSE_RULES).expect("write");
+
+    let kinds = |manifest: &serde_json::Value| -> Vec<String> {
+        manifest["open"]
+            .as_array()
+            .map(|open| {
+                open.iter()
+                    .map(|m| m["kind"].as_str().unwrap().to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let under = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "citing.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "rules.json",
+        ],
+    ));
+    assert_eq!(kinds(&under), ["house-rule"], "{under}");
+    assert_eq!(under["unresolved"][0]["house_rule"], true, "{under}");
+    assert!(
+        under["open"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("1 place(s) apply the profile's house rule(s) (H1)"),
+        "{under}"
+    );
+
+    // Controls: no profile, and an id the profile does not hold, are both a
+    // value chosen without an answer.
+    let bare = manifest(&run(&dir, &["check", "citing.scxml", "-l", "rust"]));
+    assert_eq!(kinds(&bare), ["assumed"], "{bare}");
+    assert!(bare["unresolved"][0].get("house_rule").is_none(), "{bare}");
+    let stranger = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "stranger.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "rules.json",
+        ],
+    ));
+    assert_eq!(kinds(&stranger), ["assumed"], "{stranger}");
+
+    // `generate` and the marker list say the same.
+    let generated = manifest(&run(
+        &dir,
+        &[
+            "generate",
+            "citing.scxml",
+            "-l",
+            "rust",
+            "-o",
+            "out",
+            "--profile",
+            "rules.json",
+        ],
+    ));
+    assert_eq!(kinds(&generated), ["house-rule"], "{generated}");
+    let listed = Command::new(CODEGEN)
+        .args(["unresolved", "citing.scxml", "--profile", "rules.json"])
+        .current_dir(&dir)
+        .output()
+        .expect("spawn sce-codegen");
+    let line: serde_json::Value =
+        serde_json::from_slice(&listed.stdout).expect("one NDJSON record");
+    assert_eq!(line["id"], "H1");
+    assert_eq!(line["house_rule"], true, "{line}");
+    let unmarked = Command::new(CODEGEN)
+        .args(["unresolved", "citing.scxml"])
+        .current_dir(&dir)
+        .output()
+        .expect("spawn sce-codegen");
+    let line: serde_json::Value =
+        serde_json::from_slice(&unmarked.stdout).expect("one NDJSON record");
+    assert!(line.get("house_rule").is_none(), "{line}");
+}
+
+/// What the owner accepted the design WITH is written the way a run under the
+/// profile writes it: the record keeps the rule as a rule.
+#[test]
+fn an_acceptance_records_a_house_rule_as_the_rule_it_is() {
+    let dir = design("profile-house-rules-accept");
+    fs::create_dir_all(dir.join("spec")).expect("mkdir");
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/requirement_closure/iso13400_2_nl_socket_handling.manifest.json"),
+        dir.join("spec/manifest.json"),
+    )
+    .expect("copy the committed manifest");
+    fs::write(dir.join("citing.scxml"), citing("H1")).expect("write");
+    fs::write(dir.join("rules.json"), HOUSE_RULES).expect("write");
+    let accept = |out: &str, extra: &[&str]| {
+        let mut args = vec![
+            "accept",
+            "citing.scxml",
+            "--manifest",
+            "spec/manifest.json",
+            "--variant",
+            "base",
+            "--root",
+            ".",
+            "--out",
+            out,
+        ];
+        args.extend_from_slice(extra);
+        run(&dir, &args)
+    };
+    let kinds_of = |record: &str| -> Vec<String> {
+        let record: serde_json::Value =
+            serde_json::from_slice(&fs::read(dir.join(record)).expect("read")).expect("JSON");
+        record["open_at_acceptance"]
+            .as_array()
+            .map(|open| {
+                open.iter()
+                    .map(|m| m["kind"].as_str().unwrap().to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let held = accept("held.json", &["--profile", "rules.json"]);
+    assert!(
+        held.status.success(),
+        "{}",
+        String::from_utf8_lossy(&held.stderr)
+    );
+    assert_eq!(kinds_of("held.json"), ["house-rule"]);
+    let bare = accept("bare.json", &[]);
+    assert!(
+        bare.status.success(),
+        "{}",
+        String::from_utf8_lossy(&bare.stderr)
+    );
+    assert_eq!(kinds_of("bare.json"), ["assumed"]);
+}
+
+/// An id is one rule: a profile that lists it twice is refused whole, since a
+/// draft citing it could not say which it applied.
+#[test]
+fn a_house_rule_listed_twice_makes_the_profile_unusable() {
+    let dir = design("profile-house-rules-twice");
+    fs::write(
+        dir.join("twice.json"),
+        r#"{"record":"sce-authoring-profile","v":1,"house_rules":[
+            {"id":"H1","rule":"a"},{"id":"H1","rule":"b"}]}"#,
+    )
+    .expect("write");
+    let out = run(
+        &dir,
+        &[
+            "check",
+            "closed.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "twice.json",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(20));
+    assert_eq!(codes(&out), ["cli/profile-unusable"]);
+    assert!(
+        records(&out)[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("listed twice"),
+        "{:?}",
+        records(&out)
+    );
+}

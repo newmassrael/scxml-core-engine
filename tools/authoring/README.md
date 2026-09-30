@@ -424,7 +424,20 @@ instructions for whoever writes the draft, handed over as written and checked
 by nothing: the manifest says how many there were (`profile.guidance`), so
 `accepted` under a profile that has guidance is not read as though it had been
 held to. Which term in the specification a name stands for is a reading of the
-prose, and no setting here judges that.
+prose, and no setting here judges that: measured 2026-09-30, five drafts of one
+door specification under a profile of spellings all kept to it, and their
+words still parted (`door.open_request`, `request.open`, `hold.elapsed`), so a
+naming rule makes drafts agree on how a name is written and not on which name.
+
+`house_rules` are the owner's standing answers to gaps that recur (`{"id":
+"H1", "rule": "An event a state does not mention is ignored."}`). A draft that
+meets such a gap applies the rule instead of asking, and cites it with
+`sce:assumed="H1"` on the element it applies to. The product lists every
+citation apart from the values chosen without an answer (`open`, kind
+`house-rule`; `house_rule` on the marker's record), and the `decisions` tool,
+given the profile, does not refuse the citation as an uncited guess. What
+nothing can see is a rule applied without its citation, which is the limit the
+decision record has too.
 
 An acceptance pins the profile beside the specification and the decision
 record, so a design accepted under one profile is not the answer for another

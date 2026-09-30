@@ -14,7 +14,14 @@ report gives, per case, how many classes the drafts fall into at each level
 verdict with its bound, renamings and witnesses.
 
     python3 tools/authoring/eval/reproducibility.py --out /tmp/repro \\
-        [--reps 5] [--only id,id] [--model claude-sonnet-5-5] [--effort high]
+        [--reps 5] [--only id,id] [--model claude-sonnet-5-5] [--effort high] \\
+        [--profile owner-profile.json]
+
+`--profile` runs the same cases under an owner's authoring profile: the file is
+copied beside each specification, the request says where it is, and every draft
+is judged under it. The report then says how many drafts the profile refused
+and by which codes. Run a case with and without it, over the same `--reps`, and
+the two tables are the measurement: whether a profile moves the classes.
 
 ⚠ The model defaults to Sonnet because that is the model the owner fixed for
 drafting (2026-09-29). The figures are about the product together with that
@@ -29,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures as cf
+import hashlib
 import json
 import pathlib
 import sys
@@ -63,8 +71,11 @@ def load_cases(path: pathlib.Path = CASES) -> list[dict]:
 
 
 def table(results: list[dict]) -> str:
-    """One row per case: the number of classes at each level."""
-    head = ["case", "kind", *LEVELS, "behaviour"]
+    """One row per case: the number of classes at each level, and, under a
+    profile, how many of its drafts the profile held (`held`, of the drafts
+    written) beside the behaviour column."""
+    under_profile = any("held" in r for r in results)
+    head = ["case", "kind", *LEVELS, "behaviour", *(["held"] if under_profile else [])]
     rows = [head]
     for r in results:
         levels = r["comparison"]["levels"] if r.get("comparison") else {}
@@ -74,7 +85,7 @@ def table(results: list[dict]) -> str:
             verdict = str(len(behaviour["classes"]))
         rows.append([r["id"], str(len(r["kinds"])),
                      *[str(len(levels[level])) if level in levels else "-" for level in LEVELS],
-                     verdict])
+                     verdict, *([f"{r['held']}/{r['drafts']}"] if under_profile else [])])
     widths = [max(len(row[i]) for row in rows) for i in range(len(head))]
     return "\n".join("  ".join(cell.ljust(w) for cell, w in zip(row, widths)) for row in rows)
 
@@ -91,12 +102,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--effort", default="high",
                         help="the client's effort level, fixed so repetitions differ by sampling only")
     parser.add_argument("--timeout", type=int, default=900)
+    parser.add_argument("--profile", type=pathlib.Path,
+                        help="the owner's authoring profile every case is drafted under")
     args = parser.parse_args(argv)
 
     if args.client not in kind_choice.CLIENTS:
         parser.error(f"--client must be one of {sorted(kind_choice.CLIENTS)}")
     if args.reps < 2:
         parser.error("--reps must be 2 or more: one draft is not a comparison")
+    if args.profile is not None and not args.profile.is_file():
+        parser.error(f"--profile {args.profile}: no such file")
     if args.out.exists() and any(args.out.iterdir()):
         parser.error(f"{args.out} is not empty; a report mixed with an old run says nothing")
     args.out.mkdir(parents=True, exist_ok=True)
@@ -116,7 +131,8 @@ def main(argv: list[str] | None = None) -> int:
             indent=2) + "\n", encoding="utf-8")
         rows = []
         for case in cases:
-            row = kind_choice.run_case(case, argv_template, out, args.timeout, args.model)
+            row = kind_choice.run_case(case, argv_template, out, args.timeout, args.model,
+                                       profile=args.profile)
             row["rep"] = rep
             rows.append(row)
             print(json.dumps(row), flush=True)
@@ -137,6 +153,13 @@ def main(argv: list[str] | None = None) -> int:
                  "kinds": sorted({str(r.get("chosen")) for r in mine}),
                  "outcomes": sorted(r["outcome"] for r in mine),
                  "drafts": len(present)}
+        if args.profile is not None:
+            # The codes of the profile's own findings, draft by draft, and how
+            # many drafts the profile had nothing to say about. A draft that
+            # was not written is not held: it is not counted among `drafts`.
+            entry["profile_findings"] = {f"rep{r['rep']}": r.get("profile_findings", [])
+                                         for r in mine if f"rep{r['rep']}" in present}
+            entry["held"] = sum(1 for found in entry["profile_findings"].values() if not found)
         if len(present) >= 2:
             entry["comparison"] = compare(list(present.values()), labels=list(present))
         else:
@@ -147,6 +170,10 @@ def main(argv: list[str] | None = None) -> int:
     report = {"client": args.client, "isolation": client["isolation"],
               "model": args.model, "effort": args.effort, "reps": args.reps,
               "request": kind_choice.REQUEST, "results": results}
+    if args.profile is not None:
+        report["profile"] = {"file": args.profile.name,
+                             "sha256": hashlib.sha256(args.profile.read_bytes()).hexdigest(),
+                             "request": kind_choice.PROFILE_REQUEST.strip()}
     (args.out / "report.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
     print(table(results))

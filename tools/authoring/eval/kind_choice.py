@@ -105,21 +105,32 @@ def load_cases(path: pathlib.Path, kinds: set[str]) -> list[dict]:
     return cases
 
 
-def score(case: dict, draft: pathlib.Path, codegen: pathlib.Path | None = None) -> dict:
-    """What the product read in the client's document, against the case."""
+def score(case: dict, draft: pathlib.Path, codegen: pathlib.Path | None = None,
+          profile: pathlib.Path | None = None) -> dict:
+    """What the product read in the client's document, against the case.
+
+    `profile` is the owner's authoring profile the draft was written under,
+    when the run had one. The draft is judged under it, and the codes of the
+    profile's own findings come back as `profile_findings`, so a draft the
+    profile refuses is told from one the product refused for another reason.
+    """
     result = {"id": case["id"], "expected": case.get("kind"),
               "candidates": case.get("undetermined")}
     if not draft.is_file():
         result.update(chosen=None, declared=None, verdict="absent")
         result["outcome"] = "asked" if "undetermined" in case else "no_document"
         return result
-    report, refusal = validate_scxml(draft, codegen)
+    report, refusal = validate_scxml(draft, codegen, profile=profile)
     answer = json.loads(report or refusal)
     reading = (answer.get("manifest") or {}).get("document_kind") or {}
     open_kind = _kind_left_open(draft, codegen)
     result.update(chosen=reading.get("name"), declared=reading.get("declared"),
                   basis_recorded=reading.get("basis_recorded"),
                   kind_left_open=open_kind, verdict=answer["verdict"])
+    if profile is not None:
+        result["profile_findings"] = sorted(
+            record["code"] for record in answer.get("diagnostics") or []
+            if str(record.get("code", "")).startswith("profile/"))
     if "undetermined" in case:
         # A provisional draft whose basis marks the kind open is the
         # question asked in the document, where the owner and the strict
@@ -173,14 +184,31 @@ def _argv(template: list[str], prompt: str, mcp_config: pathlib.Path) -> list[st
             for part in template]
 
 
+PROFILE_REQUEST = (
+    " The owner's authoring profile is in profile.json in this directory: hold "
+    "the draft to it.")
+
+
 def run_case(case: dict, client: list[str], out: pathlib.Path, timeout: int,
-             model: str | None, codegen: pathlib.Path | None = None) -> dict:
-    """One case in its own empty directory, then its score."""
+             model: str | None, codegen: pathlib.Path | None = None,
+             profile: pathlib.Path | None = None) -> dict:
+    """One case in its own empty directory, then its score.
+
+    `profile` is the owner's authoring profile. It is copied beside the
+    specification under a fixed name, and the request says where it is and
+    nothing more: what it asks, and how a tool takes it, are for the client to
+    learn from the file and from the server's own instructions, which is what
+    is under test.
+    """
     work = out / case["id"]
     work.mkdir(parents=True, exist_ok=False)
     (work / "spec.md").write_text(case["prose"] + "\n", encoding="utf-8")
+    prompt = REQUEST
+    if profile is not None:
+        (work / "profile.json").write_bytes(pathlib.Path(profile).read_bytes())
+        prompt += PROFILE_REQUEST
     mcp_config = out / "mcp.json"
-    argv = _argv(client, REQUEST, mcp_config)
+    argv = _argv(client, prompt, mcp_config)
     if model:
         argv[1:1] = ["--model", model]
     started = time.monotonic()
@@ -191,7 +219,8 @@ def run_case(case: dict, client: list[str], out: pathlib.Path, timeout: int,
     except subprocess.TimeoutExpired as expired:
         transcript, status = f"timed out after {timeout}s\n{expired.stdout or ''}", None
     (work / "transcript.txt").write_text(transcript, encoding="utf-8")
-    result = score(case, work / "draft.scxml", codegen)
+    result = score(case, work / "draft.scxml", codegen,
+                   None if profile is None else work / "profile.json")
     result.update(client_status=status, seconds=round(time.monotonic() - started))
     return result
 

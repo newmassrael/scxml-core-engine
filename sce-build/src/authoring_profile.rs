@@ -102,6 +102,7 @@ pub const SETTINGS: &[(&str, SettingClass)] = &[
     ("interface", SettingClass::Enforced),
     ("names", SettingClass::Enforced),
     ("evidence", SettingClass::Enforced),
+    ("house_rules", SettingClass::Reported),
     ("guidance", SettingClass::Guidance),
 ];
 
@@ -122,6 +123,25 @@ pub enum EvidenceRule {
     Anchored,
 }
 
+/// A standing answer of the owner to a gap that recurs across specifications:
+/// what a draft does where the specification is silent, decided once.
+///
+/// A draft that applies one cites it by its id (`sce:assumed="H1"`) on the
+/// element it applies to, and every citation is listed in the run's `open`
+/// ([`crate::open_matters::OpenKind::HouseRule`]), so a rule is never applied
+/// silently. What the product cannot do is see a rule applied WITHOUT its
+/// citation: a rule is prose, and nothing here reads a document's behaviour
+/// against prose. The authoring core's `decisions` check is what licenses a
+/// citation, the way it licenses a decision's.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HouseRule {
+    /// What a draft writes in `sce:assumed` to cite the rule: one token.
+    pub id: String,
+    /// The rule, in the owner's words.
+    pub rule: String,
+}
+
 /// What follows the `record` and `v` header. `deny_unknown_fields` is the
 /// refusal of a setting this build does not know.
 ///
@@ -135,6 +155,7 @@ struct Settings {
     interface: Option<InterfaceRule>,
     names: Option<NamesRule>,
     evidence: Option<EvidenceRule>,
+    house_rules: Option<Vec<HouseRule>>,
     guidance: Option<Vec<String>>,
 }
 
@@ -288,6 +309,38 @@ fn interface_not_closed_message(profile: Option<&str>, imports: &[String]) -> St
     )
 }
 
+/// Why a list of house rules is not one the schema accepts: the rules `serde`
+/// cannot state. The schema says the same with `minItems`, `pattern` and
+/// `minLength`; what it cannot say is that an id names ONE rule.
+fn house_rules_refusal(rules: &[HouseRule]) -> Option<String> {
+    if rules.is_empty() {
+        return Some("`house_rules` lists a rule or none".to_string());
+    }
+    for rule in rules {
+        if rule.id.is_empty() || rule.id.chars().any(char::is_whitespace) {
+            return Some(format!(
+                "`house_rules` holds the id {:?}, and an id is one token: a draft writes it in \
+                 sce:assumed, where a marker id holds no space",
+                rule.id
+            ));
+        }
+        if rule.rule.is_empty() {
+            return Some(format!("the house rule {} says nothing", rule.id));
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    rules
+        .iter()
+        .find(|rule| !seen.insert(rule.id.as_str()))
+        .map(|rule| {
+            format!(
+                "the house rule {} is listed twice; a draft citing it could not say which it \
+                 applied",
+                rule.id
+            )
+        })
+}
+
 /// A profile, read and validated.
 #[derive(Debug, Clone)]
 pub struct AuthoringProfile {
@@ -295,6 +348,7 @@ pub struct AuthoringProfile {
     interface: Option<InterfaceRule>,
     names: Option<NamesRule>,
     evidence: Option<EvidenceRule>,
+    house_rules: Vec<HouseRule>,
     guidance: Vec<String>,
     sha256: String,
 }
@@ -368,11 +422,22 @@ impl AuthoringProfile {
                 ));
             }
         }
+        if let Some(fault) = settings
+            .house_rules
+            .as_deref()
+            .and_then(house_rules_refusal)
+        {
+            return Err(unusable(
+                ProfileFault::InvalidShape,
+                format!("not an authoring profile: {fault}"),
+            ));
+        }
         Ok(Self {
             name: settings.name,
             interface: settings.interface,
             names: settings.names,
             evidence: settings.evidence,
+            house_rules: settings.house_rules.unwrap_or_default(),
             guidance: settings.guidance.unwrap_or_default(),
             sha256: hex_encode(&sha256_bytes(text.as_bytes())),
         })
@@ -408,6 +473,22 @@ impl AuthoringProfile {
     /// the order the owner wrote them. Nothing checks any of them.
     pub fn guidance(&self) -> &[String] {
         &self.guidance
+    }
+
+    /// The house rules, in the order the owner wrote them.
+    pub fn house_rules(&self) -> &[HouseRule] {
+        &self.house_rules
+    }
+
+    /// The ids of the house rules: what an `sce:assumed` writes to cite one.
+    pub fn house_rule_ids(&self) -> Vec<&str> {
+        self.house_rules.iter().map(|r| r.id.as_str()).collect()
+    }
+
+    /// Mark, in a run's marker records, the ones that cite one of this
+    /// profile's house rules ([`crate::unresolved_check::cite_house_rules`]).
+    pub fn cite_house_rules(&self, records: &mut [crate::unresolved_check::UnresolvedRecord]) {
+        crate::unresolved_check::cite_house_rules(records, &self.house_rule_ids());
     }
 
     /// Every way a statechart departs from the profile's ENFORCED settings,
@@ -791,6 +872,10 @@ mod tests {
             "event":{"style":"snake","tokens":{"min":2,"max":3},"first_tokens":["door","lock"],"prefix_free":true},
             "data":{"style":"camel"}
         },
+        "house_rules":[
+            {"id":"H1","rule":"An event a state does not mention is ignored."},
+            {"id":"H2","rule":"The initial state is the first condition the specification lists."}
+        ],
         "guidance":["Ask before writing.","Write comments in the owner's language."]
     }"#;
 
@@ -822,6 +907,66 @@ mod tests {
         assert!(only_guidance
             .judge_statechart(&statechart(""), "gate.scxml")
             .is_empty());
+        // House rules are read in the owner's order, by id, and ask nothing of
+        // a statechart either: they are cited, and the citation is listed.
+        assert_eq!(profile.house_rule_ids(), ["H1", "H2"]);
+        assert_eq!(
+            profile.house_rules()[1].rule,
+            "The initial state is the first condition the specification lists."
+        );
+        let only_rules = AuthoringProfile::from_text(
+            r#"{"record":"sce-authoring-profile","v":1,"house_rules":[{"id":"H1","rule":"x"}]}"#,
+        )
+        .expect("reads");
+        assert!(!only_rules.judges_statecharts());
+    }
+
+    /// The setting marks the records of a run that cite one of its rules, and
+    /// only `sce:assumed` ones: a question is not a standing answer.
+    #[test]
+    fn a_profile_marks_the_records_that_cite_its_house_rules() {
+        let profile = AuthoringProfile::from_text(EVERYTHING).expect("reads");
+        let model = crate::parser::SCXMLParser::new()
+            .parse_string(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                          xmlns:sce="http://sce.dev/ext" version="1.0"
+                          name="gate" initial="idle" datamodel="ecmascript">
+                     <state id="idle" sce:assumed="H1" sce:assumed-reason="the spec lists no other events"/>
+                     <state id="other" sce:assumed="retry-count" sce:assumed-reason="x"/>
+                     <state id="asked" sce:unresolved="H2" sce:unresolved-reason="not answered"/>
+                   </scxml>"#,
+                "gate",
+            )
+            .expect("parses");
+        let mut records = crate::unresolved_check::unresolved_records(&model);
+        profile.cite_house_rules(&mut records);
+        let cited: Vec<(&str, bool)> = records
+            .iter()
+            .map(|r| (r.id.as_str(), r.house_rule))
+            .collect();
+        assert_eq!(
+            cited,
+            [("H1", true), ("retry-count", false), ("H2", false)],
+            "an assumed value that names a rule cites it; one that does not, and a question \
+             that names a rule's id, do not"
+        );
+    }
+
+    #[test]
+    fn a_house_rule_is_one_rule_by_one_id() {
+        for (rules, said) in [
+            (
+                r#"[{"id":"H1","rule":"a"},{"id":"H1","rule":"b"}]"#,
+                "listed twice",
+            ),
+            (r#"[{"id":"H 1","rule":"a"}]"#, "one token"),
+        ] {
+            let text =
+                format!(r#"{{"record":"sce-authoring-profile","v":1,"house_rules":{rules}}}"#);
+            let refused = AuthoringProfile::from_text(&text).expect_err(&text);
+            assert_eq!(refused.kind, ProfileFault::InvalidShape);
+            assert!(refused.detail.contains(said), "{refused}");
+        }
     }
 
     /// Settings the schema refuses, one thing changed in each, and the reader
@@ -835,7 +980,15 @@ mod tests {
             violations(&control).is_empty(),
             "the control has to be valid"
         );
-        let changes: [(&str, serde_json::Value); 17] = [
+        let changes: [(&str, serde_json::Value); 22] = [
+            ("house_rules", serde_json::json!([])),
+            (
+                "house_rules",
+                serde_json::json!([{"id": "H 1", "rule": "x"}]),
+            ),
+            ("house_rules", serde_json::json!([{"id": "", "rule": "x"}])),
+            ("house_rules", serde_json::json!([{"id": "H1", "rule": ""}])),
+            ("house_rules", serde_json::json!([{"id": "H1"}])),
             ("names", serde_json::json!({})),
             ("names", serde_json::json!({"state": {}})),
             ("names", serde_json::json!({"state": {"style": "title"}})),

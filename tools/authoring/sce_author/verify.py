@@ -889,11 +889,17 @@ def diagram_figures(document: pathlib.Path, out: pathlib.Path,
 
 def unresolved_markers(document: pathlib.Path,
                        codegen: pathlib.Path | None = None, *,
+                       profile: pathlib.Path | None = None,
                        cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Every `sce:unresolved` marker the document carries
     (`sce-codegen unresolved`) — what the author has said is not decided
-    yet. An empty list is an answer: nothing is marked."""
-    return _product_answer(["unresolved", str(document)], codegen,
+    yet. An empty list is an answer: nothing is marked.
+
+    With the owner's authoring `profile`, the record of an `sce:assumed` that
+    cites one of its house rules says so (`house_rule`). ⚠ The product marks
+    it, and this module reads the mark: what a house rule IS belongs to the
+    profile, and nothing here reads the file to find out."""
+    return _product_answer(["unresolved", str(document), *_profile_args(profile)], codegen,
                            answer="markers", read=_diagnostic_records, cwd=cwd)
 
 

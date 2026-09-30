@@ -3038,14 +3038,15 @@ the owner keeps beside the specification:
 | `interface` | enforced | `"closed"`: every statechart declares `sce:interface="closed"` (§2.16). Absent: the interface is not constrained. |
 | `names` | enforced | How the names a document defines are spelled, by class of name. See below. |
 | `evidence` | enforced | `"anchored"`: every `<sce:evidence>` of the `<sce:kind-basis>` carries a `provenance` anchor. An unanchored one is refused as `profile/evidence-unanchored`, quoting the evidence. |
+| `house_rules` | reported | The owner's standing answers to gaps that recur, each `{id, rule}`. A draft that applies one cites it, `sce:assumed="<id>"`; every citation is listed. See below. |
 | `guidance` | guidance | Instructions to whoever writes the document, handed over as written. Nothing checks them. |
 
 Every setting belongs to one class and the schema fixes it, not the file:
 **enforced** (a draft that breaks it is refused), **reported** (a departure is
 listed and the owner decides) or **guidance** (handed to the author, checked by
-nothing, and said so). No setting is reported yet; the class exists so that a
-setting that can only be listed, such as a term dictionary, has a place that
-does not pretend to refuse. A profile that names a setting this build does not
+nothing, and said so). The one reported setting is `house_rules`; a term
+dictionary would be another, since which term a name stands for is a reading of
+the prose that can be listed and not refused. A profile that names a setting this build does not
 know, a value a setting does not take, another `record`, or a version it does
 not read is refused **whole** as `cli/profile-unusable`; applying the part that
 was understood would say a document was held to a profile it was not. The
@@ -3104,12 +3105,49 @@ also takes `door.open`. With the rule on, no literal event name of the
 document, and no name its event-schemas declare, is a token prefix of another;
 the finding is made once per pair, on the shorter name.
 
-The five codes are `profile/name-style`, `profile/name-limit` (a forbidden word,
+The four codes are `profile/name-style`, `profile/name-limit` (a forbidden word,
 a length, a prefix), `profile/event-structure` (the token count or the first
 token) and `profile/event-prefix-of-another`, each keyed on the class, the name
 and the rule and never on the profile's label, and none carrying a `fix`: the
 repair renames a definition and everything that refers to it, an edit at more
 than one place that no single `fix` locates.
+
+A spelling is the part of a naming preference a machine can hold every draft
+to, and it is only that part. Which word a draft uses for a concept — `open
+request`, `request.open`, `hold elapsed`, `auto close` for one clause — is a
+reading of the prose, and no setting here decides it. Measured 2026-09-30, five
+drafts of one door specification under a profile of spellings all kept to it,
+and the number of classes the drafts fall into did not fall (the words parted
+where the spellings had): a naming rule makes drafts agree on how a name is
+written, not on which name.
+
+#### The `house_rules` setting
+
+A house rule is the owner's answer to a gap that recurs across specifications,
+decided once: *an event a state does not mention is ignored*; *the initial
+state is the first condition the specification lists*. A draft that meets such
+a gap does not ask, and does not guess; it applies the rule and cites it by its
+id on the element it applies to — `sce:assumed="H1"`. The product reads the
+citation and nothing else about the rule, which is prose.
+
+A citation is the owner's standing answer and not a value chosen without one,
+so it is said apart: the manifest's `open` carries a `house-rule` entry (the
+places, and how many times each rule was applied), the marker's record in
+`unresolved` and in `sce-codegen unresolved --profile` carries `house_rule:
+true`, and an acceptance record keeps the entry as `house-rule` rather than as
+an assumed value. Only an `sce:assumed` counts: an `sce:unresolved` that names
+a rule's id is still a question. A run given no profile cannot tell a rule's id
+from any other and reports every `sce:assumed` as before. An id names one rule
+(a profile that lists it twice is refused whole, since a draft citing it could
+not say which it applied), and a decision of the same id in the owner's
+decision record wins over a rule for its clause.
+
+What this cannot see is a rule applied without its citation: a draft that
+ignores an unmentioned event and says nothing has applied the rule silently, and
+no check reads a document's behaviour against prose. It is the same limit the
+decision record has, and the authoring core's `decisions` check is what licenses
+a citation — it refuses an `sce:assumed` that cites neither a decision nor one of
+the profile's rules.
 
 A forge document is judged only where a setting reaches its kind. `evidence`
 reaches every kind that states a kind basis. `names` reaches an event-schema

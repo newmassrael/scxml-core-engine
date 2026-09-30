@@ -219,6 +219,27 @@ pub struct UnresolvedRecord {
     /// the reader recorded it against.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<SourceLocation>,
+    /// The marker is an `sce:assumed` whose id is a house rule of the
+    /// authoring profile the run was given: the owner's standing answer to a
+    /// recurring gap, applied here and cited by its id. Absent otherwise — and
+    /// always absent from a run given no profile, which cannot tell one from an
+    /// assumed value chosen without any answer.
+    ///
+    /// Set by [`cite_house_rules`] and by nothing else: what a house rule IS
+    /// is the profile's, and the marker only names it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub house_rule: bool,
+}
+
+/// Mark the records that cite a house rule of the profile the run was given:
+/// an `sce:assumed` whose id is one of `house_rule_ids`. An `sce:unresolved`
+/// citing one is not marked — a question asked of the owner cannot be their
+/// standing answer.
+pub fn cite_house_rules(records: &mut [UnresolvedRecord], house_rule_ids: &[&str]) {
+    for record in records {
+        record.house_rule =
+            record.kind == MarkerKind::Assumed && house_rule_ids.contains(&record.id.as_str());
+    }
 }
 
 impl UnresolvedRecord {
@@ -241,6 +262,7 @@ impl UnresolvedRecord {
             reason: marker.reason.clone(),
             candidates: marker.candidates.clone(),
             location,
+            house_rule: false,
         }
     }
 }
@@ -293,7 +315,21 @@ pub fn emit_unresolved_ndjson<W: Write + ?Sized>(
     model: &SCXMLModel,
     writer: &mut W,
 ) -> io::Result<()> {
-    write_records(writer, &unresolved_records(model))
+    emit_unresolved_ndjson_under(model, &[], writer)
+}
+
+/// [`emit_unresolved_ndjson`] for a design held to an authoring profile: the
+/// record of an `sce:assumed` that cites one of `house_rule_ids` says so
+/// (`house_rule`), which is how the authoring core tells the owner's standing
+/// answer from a value chosen without one.
+pub fn emit_unresolved_ndjson_under<W: Write + ?Sized>(
+    model: &SCXMLModel,
+    house_rule_ids: &[&str],
+    writer: &mut W,
+) -> io::Result<()> {
+    let mut records = unresolved_records(model);
+    cite_house_rules(&mut records, house_rule_ids);
+    write_records(writer, &records)
 }
 
 fn write_records<W: Write + ?Sized>(
@@ -473,7 +509,18 @@ pub fn emit_unresolved_ndjson_forge<W: Write + ?Sized>(
     positions: &AuthoredPositions,
     writer: &mut W,
 ) -> Result<(), Located<ForgeError>> {
-    let records = unresolved_records_forge(positions)?;
+    emit_unresolved_ndjson_forge_under(positions, &[], writer)
+}
+
+/// [`emit_unresolved_ndjson_forge`] for a design held to an authoring
+/// profile, marking the records that cite one of its house rules.
+pub fn emit_unresolved_ndjson_forge_under<W: Write + ?Sized>(
+    positions: &AuthoredPositions,
+    house_rule_ids: &[&str],
+    writer: &mut W,
+) -> Result<(), Located<ForgeError>> {
+    let mut records = unresolved_records_forge(positions)?;
+    cite_house_rules(&mut records, house_rule_ids);
     // A write failure is the sink's, as it was before this was split: the
     // stream is stdout and the caller reports nothing further on it.
     let _ = write_records(writer, &records);

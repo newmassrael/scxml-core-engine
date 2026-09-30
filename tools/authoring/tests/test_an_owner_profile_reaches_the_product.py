@@ -171,6 +171,89 @@ class AnOwnerProfileReachesTheProduct(unittest.TestCase):
         self.assertNotIn("guidance", plain["manifest"]["profile"])
 
 
+RULES = json.dumps({
+    "record": "sce-authoring-profile", "v": 1, "name": "owner-review",
+    "house_rules": [
+        {"id": "H1", "rule": "An event a state does not mention is ignored."},
+        {"id": "H2", "rule": "The initial state is the first condition the specification lists."}]})
+DECISION_RECORD = json.dumps({
+    "record": "sce-decision-record", "v": 1, "specification": {"doc_id": "loop"},
+    "decisions": [{"id": "D1", "question": "How long is the delay?"}]})
+
+
+def citing(rule_id: str) -> str:
+    """The closed machine with one `sce:assumed` on its first state."""
+    return statechart(True).replace(
+        '<state id="a">',
+        f'<state id="a" sce:assumed="{rule_id}" '
+        f'sce:assumed-reason="the specification names no event for this state">')
+
+
+@unittest.skipUnless(_default_codegen().exists(),
+                     "the markers are the product's; build sce-codegen first")
+class AHouseRuleIsTheOwnersStandingAnswerAndIsSaidToBeOne(unittest.TestCase):
+    def validate(self, document: str, **extra) -> dict:
+        return body(call_tool("validate_scxml", {
+            "document_text": document, "document_name": "loop.scxml", **extra}))
+
+    def hold(self, document: str, **extra) -> dict:
+        return body(call_tool("decisions", {
+            "document_text": document, "document_name": "loop.scxml",
+            "decisions_text": DECISION_RECORD, **extra}))
+
+    def test_a_citation_of_a_house_rule_is_listed_apart_from_a_guess(self):
+        # Without the profile the same marker is a value chosen without an
+        # answer: the product cannot tell a rule's id from any other.
+        plain = self.validate(citing("H1"))
+        self.assertEqual(["assumed"], [m["kind"] for m in plain["manifest"]["open"]])
+        self.assertNotIn("house_rule", plain["manifest"]["unresolved"][0])
+
+        under = self.validate(citing("H1"), profile_text=RULES)
+        kinds = [m["kind"] for m in under["manifest"]["open"]]
+        self.assertEqual(["house-rule"], kinds, under["manifest"]["open"])
+        self.assertIn("1 place(s) apply the profile's house rule(s) (H1)",
+                      under["manifest"]["open"][0]["message"])
+        self.assertTrue(under["manifest"]["unresolved"][0]["house_rule"])
+        # An id that is not one of the profile's rules stays a guess.
+        other = self.validate(citing("H9"), profile_text=RULES)
+        self.assertEqual(["assumed"], [m["kind"] for m in other["manifest"]["open"]])
+
+    def test_the_decision_check_licenses_a_citation_of_a_house_rule_and_no_other(self):
+        refused = call_tool("decisions", {
+            "document_text": citing("H1"), "document_name": "loop.scxml",
+            "decisions_text": DECISION_RECORD})
+        self.assertEqual("refused", body(refused)["verdict"])
+        self.assertEqual(["uncited-guess"],
+                         [f["finding"] for f in body(refused)["findings"]])
+
+        held = self.hold(citing("H1"), profile_text=RULES)
+        self.assertEqual("holds", held["verdict"], held)
+        self.assertEqual(["house-rule"], [f["finding"] for f in held["findings"]])
+        self.assertIn("standing answer", held["findings"][0]["message"])
+
+        # A rule the profile does not have is refused whatever the profile
+        # holds: the control that the licence is the rule's and not the profile's.
+        wrong = call_tool("decisions", {
+            "document_text": citing("H9"), "document_name": "loop.scxml",
+            "decisions_text": DECISION_RECORD, "profile_text": RULES})
+        self.assertEqual("refused", body(wrong)["verdict"])
+        self.assertEqual(["uncited-guess"],
+                         [f["finding"] for f in body(wrong)["findings"]])
+
+    def test_a_decision_of_the_same_id_wins_over_a_house_rule(self):
+        # RFC 5.8: a decision overrides a house rule for its clause. The record
+        # answers H1, so the citation is read as that answer and the check
+        # does not call it a rule.
+        record = json.dumps({
+            "record": "sce-decision-record", "v": 1, "specification": {"doc_id": "loop"},
+            "decisions": [{"id": "H1", "question": "Which events does a state ignore?",
+                           "answer": "none"}]})
+        answer = body(call_tool("decisions", {
+            "document_text": citing("H1"), "document_name": "loop.scxml",
+            "decisions_text": record, "profile_text": RULES}))
+        self.assertEqual(["applied"], [f["finding"] for f in answer["findings"]], answer)
+
+
 @unittest.skipUnless(_default_codegen().exists(),
                      "the record is the product's; build sce-codegen first")
 class AnAcceptanceAnswersOnlyForTheProfileItWasTakenUnder(unittest.TestCase):

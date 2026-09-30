@@ -53,6 +53,11 @@ pub enum OpenKind {
     Question,
     /// A value chosen without the specification (`sce:assumed`).
     Assumed,
+    /// A gap settled by a house rule of the authoring profile: the owner's
+    /// standing answer, applied where the specification is silent and cited by
+    /// its id. It is listed so a rule is never applied silently; it is not a
+    /// value chosen without an answer, and it is not counted as one.
+    HouseRule,
     /// The statechart imports event-schemas and does not declare its
     /// interface closed, so an event no schema declares still crosses it
     /// unchecked: the schemas describe the boundary and nothing holds the
@@ -117,10 +122,12 @@ pub fn of(
 ) -> Vec<OpenMatter> {
     let mut out = Vec::new();
 
+    // A marker that cites a house rule is the owner's standing answer and not
+    // a value chosen without one, so it is said separately below.
     let ids = |kind: MarkerKind| -> Vec<&str> {
         unresolved
             .iter()
-            .filter(|m| m.kind == kind)
+            .filter(|m| m.kind == kind && !m.house_rule)
             .map(|m| m.id.as_str())
             .collect()
     };
@@ -146,6 +153,34 @@ pub fn of(
                  corrects each",
                 assumed.len(),
                 assumed.join(", ")
+            ),
+        });
+    }
+    let mut applied: Vec<(&str, usize)> = Vec::new();
+    for marker in unresolved.iter().filter(|m| m.house_rule) {
+        match applied.iter_mut().find(|(id, _)| *id == marker.id) {
+            Some((_, times)) => *times += 1,
+            None => applied.push((marker.id.as_str(), 1)),
+        }
+    }
+    if !applied.is_empty() {
+        let places: usize = applied.iter().map(|(_, times)| times).sum();
+        let named: Vec<String> = applied
+            .iter()
+            .map(|(id, times)| {
+                if *times == 1 {
+                    (*id).to_string()
+                } else {
+                    format!("{id} x{times}")
+                }
+            })
+            .collect();
+        out.push(OpenMatter {
+            kind: OpenKind::HouseRule,
+            message: format!(
+                "{places} place(s) apply the profile's house rule(s) ({}): the owner's \
+                 standing answer, not the specification's — the owner confirms each still fits",
+                named.join(", ")
             ),
         });
     }
@@ -212,6 +247,19 @@ pub fn of(
 /// The same records the manifest publishes, by the same functions, so a
 /// report and a manifest over one document cannot disagree.
 pub fn of_statechart(model: &crate::model::SCXMLModel) -> Vec<OpenMatter> {
+    of_statechart_under(model, &[])
+}
+
+/// [`of_statechart`] for a design held to an authoring profile: an
+/// `sce:assumed` that cites one of `house_rule_ids` is the owner's standing
+/// answer and is said as that ([`OpenKind::HouseRule`]), not as a value
+/// chosen without one.
+pub fn of_statechart_under(
+    model: &crate::model::SCXMLModel,
+    house_rule_ids: &[&str],
+) -> Vec<OpenMatter> {
+    let mut unresolved = crate::unresolved_check::unresolved_records(model);
+    crate::unresolved_check::cite_house_rules(&mut unresolved, house_rule_ids);
     let host: Vec<HostProcessorCauseRecord> = crate::host_processor_analyzer::analyze(model)
         .iter()
         .map(|cause| {
@@ -224,7 +272,7 @@ pub fn of_statechart(model: &crate::model::SCXMLModel) -> Vec<OpenMatter> {
         })
         .collect();
     of(
-        &crate::unresolved_check::unresolved_records(model),
+        &unresolved,
         &crate::parent_send_analyzer::records(model),
         &host,
         &interface_left_open(model),
@@ -250,6 +298,7 @@ mod tests {
                 line: Some(1),
                 col: Some(1),
             }),
+            house_rule: false,
         }
     }
 
@@ -372,5 +421,51 @@ mod tests {
         );
         assert!(interface_left_open(&parse("sce:interface=\"closed\"", import)).is_empty());
         assert!(interface_left_open(&parse("", "")).is_empty());
+    }
+
+    /// A house rule is the owner's standing answer, so it is said apart from a
+    /// value chosen without one, and counted once per place it is applied. An
+    /// `sce:unresolved` that names a house rule's id is still a question.
+    #[test]
+    fn a_house_rule_is_said_apart_from_a_value_chosen_without_an_answer() {
+        let mut records = vec![
+            marker(MarkerKind::Assumed, "H1"),
+            marker(MarkerKind::Assumed, "H1"),
+            marker(MarkerKind::Assumed, "retry-count"),
+            marker(MarkerKind::Assumed, "H2"),
+            marker(MarkerKind::Unresolved, "H1"),
+        ];
+        // The control: with no profile every assumed value reads as one chosen
+        // without an answer, whatever its id.
+        let without = of(&records, &[], &[], &[]);
+        let kinds: Vec<OpenKind> = without.iter().map(|m| m.kind).collect();
+        assert_eq!(kinds, [OpenKind::Question, OpenKind::Assumed]);
+        assert!(without[1].message.starts_with("4 value(s)"), "{without:?}");
+
+        crate::unresolved_check::cite_house_rules(&mut records, &["H1", "H2"]);
+        let matters = of(&records, &[], &[], &[]);
+        let kinds: Vec<OpenKind> = matters.iter().map(|m| m.kind).collect();
+        assert_eq!(
+            kinds,
+            [OpenKind::Question, OpenKind::Assumed, OpenKind::HouseRule]
+        );
+        assert!(
+            matters[0].message.starts_with("1 question(s)"),
+            "{matters:?}"
+        );
+        assert!(
+            matters[1].message.starts_with("1 value(s)")
+                && matters[1].message.contains("retry-count"),
+            "{matters:?}"
+        );
+        assert!(
+            matters[2].message.starts_with("3 place(s)")
+                && matters[2].message.contains("(H1 x2, H2)"),
+            "{matters:?}"
+        );
+        assert!(
+            !records[4].house_rule,
+            "a question is not a standing answer"
+        );
     }
 }

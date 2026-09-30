@@ -990,6 +990,21 @@ struct GenerateReport {
     formatter: Option<sce_build::manifest::FormatterInfo>,
 }
 
+impl GenerateReport {
+    /// Mark, among the markers this run collected, the ones that cite a house
+    /// rule of the profile it was given, so `open` says them as the owner's
+    /// standing answer and not as a value chosen without one. A run given no
+    /// profile marks nothing: it cannot tell a rule's id from any other.
+    fn cite_house_rules(
+        &mut self,
+        profile: Option<&sce_build::authoring_profile::AuthoringProfile>,
+    ) {
+        if let Some(profile) = profile {
+            profile.cite_house_rules(&mut self.unresolved);
+        }
+    }
+}
+
 struct RejectedDocument {
     spec: &'static str,
     name: String,
@@ -2463,6 +2478,12 @@ enum Commands {
     Unresolved {
         /// SCXML file path
         scxml: String,
+        /// The owner's authoring profile. The record of an `sce:assumed`
+        /// that cites one of its house rules says so (`house_rule`), which is
+        /// how the authoring core tells the owner's standing answer from a
+        /// value chosen without one. Nothing else in the output moves.
+        #[arg(long, value_name = "PATH")]
+        profile: Option<String>,
     },
     /// Emit value-space coverage NDJSON for a single forge document.
     ///
@@ -3132,7 +3153,9 @@ fn main() {
             &authored_from(&source, decisions.as_deref(), profile.as_deref()),
         ),
         Commands::RequirementClosure { manifest } => cmd_requirement_closure(&manifest),
-        Commands::Unresolved { scxml } => cmd_unresolved(&scxml, error_format),
+        Commands::Unresolved { scxml, profile } => {
+            cmd_unresolved(&scxml, profile.as_deref(), error_format)
+        }
         Commands::Coverage { scxml } => cmd_coverage(&scxml, error_format),
         Commands::GenerateConformance {
             language,
@@ -3440,6 +3463,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         ..GenerateReport::default()
     };
     accumulate_host_requirements(&mut report, &scxml_path_bufs, &forge_path_bufs);
+    report.cite_house_rules(profile.as_ref());
 
     for (basename, generated) in &outputs {
         for (file_name, code) in &maybe_format_files(generated.files.clone(), &cpp_formatter) {
@@ -4186,6 +4210,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         ..GenerateReport::default()
     };
     accumulate_host_requirements(&mut report, &scxml_paths, &forge_paths);
+    report.cite_house_rules(profile.as_ref());
 
     let options = sce_build::ForgeCompileOptions {
         go_module_prefix,
@@ -4373,6 +4398,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                     Ok(records) => records,
                     Err(e) => error_format.emit_forge_and_exit(&e),
                 };
+            report.cite_house_rules(profile.as_ref());
             // Only the settings that reach this kind judge it; when none does
             // the manifest says the profile was given and judged nothing.
             report.profile = profile.as_ref().map(|profile| {
@@ -4419,6 +4445,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 }
             }
             report.unresolved = sce_build::unresolved_check::unresolved_records(&model);
+            report.cite_house_rules(profile.as_ref());
             report.open_interface = sce_build::open_matters::interface_left_open(&model);
             // The owner's expectation, judged on the model as parsed and
             // where the set route judges it, so the two cannot disagree.
@@ -4867,6 +4894,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                     Ok(records) => records,
                     Err(e) => error_format.emit_forge_and_exit(&e),
                 };
+            report.cite_house_rules(profile.as_ref());
             // Only the settings that reach this kind judge it; when none does
             // the manifest says the profile was given and judged nothing.
             report.profile = profile.as_ref().map(|profile| {
@@ -5006,6 +5034,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         }
     }
     report.unresolved = sce_build::unresolved_check::unresolved_records(&model);
+    report.cite_house_rules(profile.as_ref());
     report.open_interface = sce_build::open_matters::interface_left_open(&model);
     // The owner's expectation, judged where `check` judges it — on the model
     // as parsed, before any codegen — so a design the profile refuses
@@ -9362,7 +9391,14 @@ fn cmd_coverage(scxml: &str, error_format: ErrorFormat) {
     out_stream(|w| sce_build::forge::coverage::emit_ndjson(&rows, w));
 }
 
-fn cmd_unresolved(scxml: &str, error_format: ErrorFormat) {
+fn cmd_unresolved(scxml: &str, profile: Option<&str>, error_format: ErrorFormat) {
+    // The profile first, as every route that takes one reads it: an unusable
+    // profile is the first thing said.
+    let profile = load_profile(profile);
+    let house_rule_ids: Vec<&str> = profile
+        .as_ref()
+        .map(|profile| profile.house_rule_ids())
+        .unwrap_or_default();
     // ⚠ A forge document is READ HERE TOO, and did not used to be.
     // Measured 2026-09-18: this command answered a `sce:kind="transform"`
     // file with "transform kind cannot be processed by the SCXML
@@ -9388,7 +9424,11 @@ fn cmd_unresolved(scxml: &str, error_format: ErrorFormat) {
             // list names.
             let positions = read_review_input(scxml, error_format);
             out_stream(|w| {
-                match sce_build::unresolved_check::emit_unresolved_ndjson_forge(&positions, w) {
+                match sce_build::unresolved_check::emit_unresolved_ndjson_forge_under(
+                    &positions,
+                    &house_rule_ids,
+                    w,
+                ) {
                     Ok(()) => Ok(()),
                     Err(e) => error_format.emit_forge_and_exit(&e),
                 }
@@ -9404,7 +9444,9 @@ fn cmd_unresolved(scxml: &str, error_format: ErrorFormat) {
     let model = parser
         .parse_file(scxml)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
-    out_stream(|w| sce_build::unresolved_check::emit_unresolved_ndjson(&model, w));
+    out_stream(|w| {
+        sce_build::unresolved_check::emit_unresolved_ndjson_under(&model, &house_rule_ids, w)
+    });
 }
 
 // ── Subcommand: generate-integration ───────────────────────────

@@ -32,6 +32,10 @@ What it only REPORTS is what a person has to read:
                      same thing is the owner's reading, not this check's
     still-open       an `sce:unresolved` citing a question still unanswered
     applied          an `sce:assumed` citing an answer, where it holds
+    house-rule       an `sce:assumed` citing a house rule of the authoring
+                     profile the draft is held to -- the owner's standing
+                     answer to a gap that recurs, marked by the product, so
+                     not an uncited guess; a decision of the same id wins
     answer-not-read  the answer is a value and the draft keeps it where no
                      value can be read, so a person reads it against the answer
     uncited-answer   an answered decision no marker cites -- the draft either
@@ -59,7 +63,7 @@ RECORD_SCHEMA = "decisions.v1.schema.json"
 
 REFUSING = ("uncited-guess", "guess-on-an-open-question", "answered-left-open",
             "not-a-candidate", "holds-another-value")
-REPORTED = ("new-question", "still-open", "applied", "answer-not-read",
+REPORTED = ("new-question", "still-open", "applied", "house-rule", "answer-not-read",
             "uncited-answer")
 
 
@@ -238,7 +242,18 @@ def judge(markers: list[dict], anchors: dict, record: DecisionRecord, declared) 
         if decision is not None:
             cited.add(ident)
         if kind == "assumed":
-            if decision is None:
+            if decision is None and marker.get("house_rule"):
+                # The owner's standing answer, marked by the product because
+                # the id is a house rule of the profile the draft is held to.
+                # A decision of the same id would win (RFC 5.8: a decision
+                # overrides a house rule for its clause), which is why this is
+                # asked only when the record holds none.
+                findings.append(Finding(
+                    "house-rule",
+                    f"sce:assumed=\"{ident}\" at {where} applies the profile's "
+                    f"house rule {ident}: the owner's standing answer, not the "
+                    f"specification's -- read it against the rule", **base))
+            elif decision is None:
                 findings.append(Finding(
                     "uncited-guess",
                     f"sce:assumed=\"{ident}\" at {where} cites no decision in "
@@ -296,17 +311,23 @@ def judge(markers: list[dict], anchors: dict, record: DecisionRecord, declared) 
 
 def hold(document: pathlib.Path, record_path: pathlib.Path,
          codegen: pathlib.Path | None = None, *,
+         profile: pathlib.Path | None = None,
          cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """(report, "") when the draft keeps to the record, ("", report) when it
     does not or the product could not read it -- the shape every
-    product-backed answer in this core has."""
+    product-backed answer in this core has.
+
+    `profile` is the owner's authoring profile the draft is held to. A guess
+    that cites one of its house rules is the owner's standing answer and is
+    licensed like a decision's citation, and reported as the rule it applies
+    (`house-rule`); every other uncited guess is refused as before."""
 
     def here(path: pathlib.Path) -> pathlib.Path:
         path = pathlib.Path(path)
         return path if cwd is None or path.is_absolute() else pathlib.Path(cwd) / path
 
     record = load_record(here(record_path))
-    markers_text, refused = unresolved_markers(document, codegen, cwd=cwd)
+    markers_text, refused = unresolved_markers(document, codegen, profile=here(profile) if profile else None, cwd=cwd)
     if refused:
         return "", refused
     markers = json.loads(markers_text)["markers"] or []

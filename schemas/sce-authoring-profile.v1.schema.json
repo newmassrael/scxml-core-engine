@@ -116,6 +116,28 @@
       "description": "ENFORCED. `anchored`: every `<sce:evidence>` of a document's `<sce:kind-basis>`, in a statechart or in a forge document of any kind, names where the specification states what it cites, in the `sce:provenance` form. An unanchored one is refused as `profile/evidence-unanchored`. Absent: an evidence may stand without an anchor.",
       "enum": ["anchored"]
     },
+    "house_rules": {
+      "description": "REPORTED. The owner's standing answers to gaps that recur across specifications — what a draft does where the specification is silent, decided once: `an event a state does not mention is ignored`, `the initial state is the first condition the specification lists`. A draft that applies one does not ask, and cites it by its id: `sce:assumed=\"<id>\"` on the element it applies to. Every citation is listed in the run's `open` (a `house-rule` entry) and marked `house_rule` in the `unresolved` records, so a rule is never applied silently, and it is not counted among the values chosen without an answer. The authoring core's `decisions` check licenses the citation the way it licenses a decision's. What nothing here can see is a rule applied WITHOUT its citation: a rule is prose, and no check reads a document's behaviour against prose. An id names one rule.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "rule"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "What a draft writes in `sce:assumed` to cite the rule: one token, since a marker id holds no space.",
+            "type": "string",
+            "pattern": "^\\S+$"
+          },
+          "rule": {
+            "description": "The rule, in the owner's words.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
     "guidance": {
       "description": "GUIDANCE. Standing instructions to whoever writes the document — how to ask, what language the comments are in, what to do where the specification is silent. Handed over as written and checked by NOTHING: the product cannot see the conversation, and a run under a profile that has guidance says how many entries it handed over and that none was checked.",
       "type": "array",
