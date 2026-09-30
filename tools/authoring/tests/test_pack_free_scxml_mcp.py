@@ -161,11 +161,15 @@ class PackFreeScxmlMcp(unittest.TestCase):
         self.assertIn("MissingState", result["content"][0]["text"])
 
     def test_pseudo_options_reach_the_generator_without_a_binding(self):
-        seen = {}
+        calls = []
 
         def fake_run(argv, **kwargs):
-            seen["argv"] = argv
-            return subprocess.CompletedProcess(argv, 0, stdout="page\n", stderr="")
+            calls.append(argv)
+            # The tool runs the generator twice now: the page, then the check
+            # of the same document that the note beside the page reports.
+            if argv[1] == "pseudo":
+                return subprocess.CompletedProcess(argv, 0, stdout="page\n", stderr="")
+            return subprocess.CompletedProcess(argv, 0, stdout='{"kind":"check"}\n', stderr="")
 
         with mock.patch.object(verify.subprocess, "run", fake_run), \
              mock.patch.object(verify, "_default_codegen",
@@ -174,10 +178,10 @@ class PackFreeScxmlMcp(unittest.TestCase):
                           shape="endmark", lexicon="ko")
         self.assertFalse(result.get("isError"))
         self.assertEqual("page\n", result["content"][0]["text"])
-        self.assertEqual("pseudo", seen["argv"][1])
-        self.assertEqual(str(self.document), seen["argv"][2])
-        self.assertEqual(["--shape", "endmark", "--lexicon", "ko"],
-                         seen["argv"][3:])
+        pseudo = [argv for argv in calls if argv[1] == "pseudo"]
+        self.assertEqual(1, len(pseudo), calls)
+        self.assertEqual(str(self.document), pseudo[0][2])
+        self.assertEqual(["--shape", "endmark", "--lexicon", "ko"], pseudo[0][3:])
 
     def test_validation_reaches_the_generator_without_a_pack(self):
         seen = {}

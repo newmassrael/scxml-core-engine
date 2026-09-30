@@ -300,7 +300,16 @@ on every statechart of a set, reporting the first finding; `sce-codegen check
 --lint --document …` reports every one.
 `validate_scxml` runs `sce-codegen check --lint --error-format=json` and returns
 every diagnostic record with the verdict and manifest, as JSON;
-`render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page;
+`render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page
+as its FIRST block and, as a second block, a note on what the page was rendered
+from: the sha256 of the document, the product's check of that same document
+alone (accepted, or refused with its first code), what it leaves open, and that
+no owner acceptance is recorded. The check runs inside the same call on the
+same bytes, and a document that changes while it runs gets no page. The digest
+is a note about the page and never in it, because `compare` asks whether two
+drafts render to the same page; the owner's `profile` is accepted so the check
+is held to it. It answers for one document: a statechart that imports schemas is
+checked with them by `validate_scxml_set`, and that answer is the one to quote;
 `render_scxml_diagram` runs `sce-codegen diagram` and writes one print figure
 (SVG) per container, refusing a figure too large for the page rather than
 shrinking it; `scxml_unresolved` and `scxml_requirements` report the document's

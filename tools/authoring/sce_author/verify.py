@@ -28,6 +28,7 @@ clean run for a document it never executed.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import importlib.util
 import itertools
 import json
@@ -1094,6 +1095,68 @@ def pseudo_page(document: pathlib.Path, codegen: pathlib.Path | None,
     # reaches the page as the author spelled it, and a caller that trims the
     # page is the first thing to break it.
     return run.stdout, ""
+
+
+def page_provenance(document: pathlib.Path, codegen: pathlib.Path | None = None, *,
+                    profile: pathlib.Path | None = None,
+                    cwd: pathlib.Path | None = None) -> tuple[str, str]:
+    """What a pseudocode page was rendered from, and what the product says of
+    that same document. Returns `(lines, refusal)`, exactly one non-empty.
+
+    ⚠ Why it exists. The page and the check were two calls over a path, so a
+    document edited between them put a page on the owner's screen that no check
+    had seen, and nothing in the answer said which bytes it came from. Here the
+    check runs on the document the page was just rendered from, inside the one
+    call, and the answer names those bytes by digest. The owner, or whoever
+    reviews the answer, compares it with `sha256sum` of the saved file.
+
+    ⚠ It is a line ABOUT the page and never part of it. The `compare` tool's
+    `page` level asks whether two drafts render to the same page, and a digest
+    inside the page would make every pair differ. The caller sends it as its own
+    block after the page.
+
+    ⚠ The check is of this ONE document, and the line says "alone": a statechart
+    that imports event-schemas is judged with them by `validate_scxml_set`, and
+    a check that cannot find the imports would call a sound set refused. The line
+    sends the reader there rather than answering for it.
+
+    ⚠ "Owner acceptance: none recorded" is always said. Nothing on this path
+    knows whether a person accepted the design (`scxml_accept` writes that), so
+    it says what it knows: an `accepted` here is the product's word, and a page
+    that reads as finished is not thereby approved.
+    """
+    # ⚠ Where the generator finds the document, not where this process is: a
+    # document handed as text is named relative to the directory it was staged
+    # in, and `cwd` is that directory (`subprocess.run(..., cwd=cwd)`).
+    path = document if cwd is None or document.is_absolute() else pathlib.Path(cwd) / document
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    report, refusal = validate_scxml(document, codegen, profile=profile, cwd=cwd)
+    after = hashlib.sha256(path.read_bytes()).hexdigest()
+    if before != after:
+        return "", (f"{document.name} changed while it was being checked "
+                    f"(sha256 {before[:12]}… then {after[:12]}…), so no page "
+                    f"can be said to come from a document that was checked")
+    lines = [f"Rendered from the document with sha256 {before}."]
+    # ⚠ `_product_answer` returns a REFUSED verdict as the second value, as JSON
+    # of the same shape, and an ACCEPTED one as the first. Reading only the
+    # first would call a document the product refused "not run".
+    answer = json.loads(report or refusal)
+    if answer["verdict"] == "refused":
+        findings = answer.get("diagnostics") or []
+        first = (findings[0].get("code") or findings[0].get("unparsed", "unknown")
+                 if findings else "unknown")
+        lines.append(f"Product check of that document alone: REFUSED, "
+                     f"{len(findings)} finding(s), the first {str(first).splitlines()[0]}. "
+                     f"This page shows a document the product does not accept.")
+    else:
+        lines.append("Product check of that document alone: accepted.")
+        lines.extend(f"Left open: {matter}" for matter in answer.get("open", []))
+        if not answer.get("open"):
+            lines.append("Left open: nothing is marked open, which is not "
+                         "the same as nothing being open.")
+    lines.append("Owner acceptance: none recorded. The product's check is not "
+                 "the owner's acceptance.")
+    return "\n".join(lines) + "\n", ""
 
 
 def load(into: pathlib.Path, document: pathlib.Path):

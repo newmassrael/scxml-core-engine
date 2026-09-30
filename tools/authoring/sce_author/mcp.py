@@ -73,7 +73,7 @@ from .verify import validate_scxml as run_scxml_validation
 from .verify import (accept_design, acceptance_holds, acceptance_page,
                      diagram_figures, kind_catalog, requirement_records,
                      unresolved_markers, validate_scxml_set)
-from .verify import pseudo_page, verify as run_verify
+from .verify import page_provenance, pseudo_page, verify as run_verify
 from .prose import load_prose
 from .questions import ask
 from .review import review as run_review
@@ -168,9 +168,14 @@ SERVER_INSTRUCTIONS = (
     "with no target it goes to the queue a caller delivers to, so a caller "
     "can send the same name, and a closed interface refuses a transition "
     "that takes it (declare the event, or send it to #_internal). Then call "
-    "render_scxml_pseudocode. Show its returned text verbatim in a fenced "
-    "block: do not translate, summarize, rename labels, or add a source "
-    "fact as if it were a rendered line. List decisions the source leaves "
+    "render_scxml_pseudocode. Show the first block of its answer -- the "
+    "page -- verbatim in a fenced block: do not translate, summarize, rename "
+    "labels, or add a source fact as if it were a rendered line. Under the "
+    "fence, outside it, print the second block unchanged: it names the "
+    "sha256 of the document the page came from, what the product's check "
+    "says of that same document, and that no owner acceptance is recorded. "
+    "Edit the document after that and the note is stale: render again. "
+    "List decisions the source leaves "
     "open in prose outside that block, not inside it. "
     "When the owner keeps a decision record, a draft cites it: "
     "sce:assumed=\"<id>\" where it applies an answer, sce:unresolved=\"<id>\" "
@@ -572,12 +577,21 @@ TOOLS = [
             "text verbatim to the owner, in a fenced block: do not "
             "translate, summarize, or rename a line inside it. The owner "
             "must compare the page "
-            "with the prose specification."
+            "with the prose specification. The answer has TWO blocks: the "
+            "page, and after it a short provenance note -- the sha256 of the "
+            "document the page was rendered from, what the product's check "
+            "says of that same document alone, what it leaves open, and that "
+            "no owner acceptance is recorded. Print the note unchanged under "
+            "the fenced page, outside it; it is not part of the page. Give "
+            "the owner's `profile` when they keep one, so the check is "
+            "held to it. A document that imports schemas is checked with its "
+            "set by validate_scxml_set, and that answer is the one to quote."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 **_DOCUMENT_INPUT,
+                **_PROFILE_INPUT,
                 "shape": {"type": "string", "description": "Pseudocode layout name, passed to the generator."},
                 "lexicon": {"type": "string", "description": "Pseudocode vocabulary name, passed to the generator."},
             },
@@ -1291,7 +1305,18 @@ def _pseudocode_tool(args: dict, staging: _Staging) -> dict:
         if value is not None and not isinstance(value, str):
             raise ToolArgumentError(f"'{key}' has to be a name, as a string")
     page, refusal = pseudo_page(document, None, None, shape, lexicon, cwd=staging.dir)
-    return _answer(page, refusal)
+    if refusal:
+        return _failure(refusal)
+    # The page is the FIRST block, byte for byte, as before. What it was
+    # rendered from, and what the product says of that same document, is a
+    # second block: a digest inside the page would make every pair of drafts
+    # differ at the `compare` tool's `page` level.
+    provenance, changed = page_provenance(document, profile=_profile_file(args, staging),
+                                          cwd=staging.dir)
+    if changed:
+        return _failure(changed)
+    return {"content": [{"type": "text", "text": page},
+                        {"type": "text", "text": provenance}]}
 
 
 def _diagram_tool(args: dict, staging: _Staging) -> dict:
