@@ -22,6 +22,7 @@ So the shape a caller gets is:
     render_scxml_pseudocode show that SCXML document as pseudocode, without a binding
     render_scxml_diagram    draw it as print figures, one SVG per container
     scxml_unresolved        what it marks as not decided yet
+    scxml_requirement_set   the requirements a specification states, from the words quoted
     scxml_requirements      what it claims, or each requirement's outcome
     scxml_acceptance_report the page the owner reads before accepting
     scxml_accept            record the OWNER's acceptance, on their word only
@@ -70,6 +71,7 @@ from .gaps import ORDER as GAP_ORDER
 from .gaps import report as gap_report
 from .pack import load_pack
 from .pseudo import render as render_pseudo
+from . import requirement_set
 from .verify import validate_scxml as run_scxml_validation
 from .verify import (accept_design, acceptance_holds, acceptance_page,
                      diagram_figures, kind_catalog, requirement_records,
@@ -653,6 +655,53 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": dict(_DOCUMENT_INPUT),
+        },
+    },
+    {
+        "name": "scxml_requirement_set",
+        "description": (
+            "Turn the requirements a specification states into the closed set "
+            "the requirement tools compare a design against. Give the "
+            "specification (`specification` or `specification_text`) and "
+            "`requirements`: one object per requirement, with `quote` (the "
+            "words of the specification that state it, copied exactly, as "
+            "short as the requirement allows) and `statement` (the "
+            "requirement in your words), and `modality: \"shall_not\"` for one "
+            "met by something NOT happening (\"buttons are ignored\"). A quote "
+            "that is not in the specification word for word, or that appears "
+            "more than once in it, is refused, and nothing is offered until "
+            "every quote is: a partial list is a wrong denominator. The ids "
+            "(R1, R2, ...) are assigned here from where each quote sits in the "
+            "specification, not from the order you listed them. Returns "
+            "`manifest_text` and `sidecar_text` -- pass them as "
+            "`manifest_text` and `sidecar_text` to scxml_requirements and "
+            "scxml_acceptance_report -- and `unclaimed_sentences`, the "
+            "sentences of the specification that no requirement quotes: tell "
+            "the owner each. The list is `synthesized`: this specification "
+            "names no requirements of its own, so nothing in it audits which "
+            "sentences were counted, and the answer says so. Put each id on "
+            "the state or transition that carries it, `sce:req=\"R3\"`."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["requirements"],
+            "properties": {
+                **_file_input("specification", "the specification"),
+                "requirements": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["quote", "statement"],
+                        "properties": {
+                            "quote": {"type": "string"},
+                            "statement": {"type": "string"},
+                            "modality": {"type": "string", "enum": ["shall", "shall_not"]},
+                        },
+                    },
+                },
+                "doc_id": {"type": "string", "description":
+                           "A short name for the specification; default `spec`."},
+            },
         },
     },
     {
@@ -1427,6 +1476,26 @@ def _unresolved_tool(args: dict, staging: _Staging) -> dict:
     return _answer(*unresolved_markers(document, cwd=staging.dir))
 
 
+def _requirement_set_tool(args: dict, staging: _Staging) -> dict:
+    specification = staging.file(args, "specification", "the specification",
+                                 "specification.md")
+    doc_id = args.get("doc_id", "spec")
+    if not isinstance(doc_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", doc_id):
+        raise ToolArgumentError("'doc_id' has to be a short name of letters, digits, "
+                                "'.', '_' or '-'")
+    located = specification if specification.is_absolute() else staging.dir / specification
+    try:
+        text = located.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise ToolArgumentError(f"the specification cannot be read as text: {error}") from error
+    try:
+        built = requirement_set.build(text, args.get("requirements"), doc_id=doc_id)
+    except requirement_set.RequirementSetError as error:
+        raise ToolArgumentError(str(error)) from error
+    reply = requirement_set.answer(built)
+    return _text(json.dumps(reply, indent=2, ensure_ascii=False) + "\n")
+
+
 def _requirements_tool(args: dict, staging: _Staging) -> dict:
     document = staging.file(args, "document", "the SCXML document", "document.scxml")
     manifest = staging.file(args, "manifest", "the requirement manifest",
@@ -1638,6 +1707,7 @@ _PACK_FREE = {
     "render_scxml_pseudocode": _pseudocode_tool,
     "render_scxml_diagram": _diagram_tool,
     "scxml_unresolved": _unresolved_tool,
+    "scxml_requirement_set": _requirement_set_tool,
     "scxml_requirements": _requirements_tool,
     "scxml_acceptance_report": _acceptance_report_tool,
     "scxml_accept": _accept_tool,

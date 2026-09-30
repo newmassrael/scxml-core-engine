@@ -324,7 +324,22 @@ checked with them by `validate_scxml_set`, and that answer is the one to quote;
 (SVG) per container, refusing a figure too large for the page rather than
 shrinking it; `scxml_unresolved` and `scxml_requirements` report the document's
 `sce:unresolved` markers and its requirements (their outcomes, given the
-manifest); `scxml_acceptance_report` renders the page the owner reads before
+manifest). `scxml_requirement_set` makes that manifest, and the sentences
+sidecar beside it, from the words of the specification a client quotes as stating
+each requirement: it refuses a quote that is not in the specification word for
+word or that points at more than one place, gives the ids from where the quotes
+sit in reading order, and lists the sentences no requirement quotes. It is the
+deterministic half of reading a specification; the list is still the client's
+reading (`ids: synthesized`, and the answer says so). Measured 2026-10-01, Sonnet,
+three specifications, five independent extractions each: every quote was in the
+source (35 of 35), and the lists agreed in content -- identical for one
+specification, five of six requirements on all five runs for another (one
+clause quoted whole or in two), eleven of twelve for the third -- where the
+drafts of that third specification fell into five classes at every level. With
+the ids on the elements (`sce:req`), `scxml_acceptance_report` puts each
+sentence beside what the design does for it, and lists the requirements no
+element carries and the elements no requirement asked for;
+`scxml_acceptance_report` renders the page the owner reads before
 accepting; `scxml_accept` records that acceptance and `scxml_acceptance_check`
 asks whether it still holds. Each JSON answer carries `verdict`, the command's
 output, and every `diagnostics` record. `scxml_accept` states a person's

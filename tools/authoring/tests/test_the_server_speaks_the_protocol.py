@@ -127,7 +127,8 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
              "validate_scxml",
              "validate_scxml_set",
              "render_scxml_pseudocode",
-             "render_scxml_diagram", "scxml_unresolved", "scxml_requirements",
+             "render_scxml_diagram", "scxml_unresolved", "scxml_requirement_set",
+             "scxml_requirements",
              "scxml_acceptance_report", "scxml_accept", "scxml_acceptance_check",
              "scxml_accepted_for"},
             names)
@@ -160,12 +161,17 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
                     and isinstance(node.args[0], ast.Constant)):
                 commands.add(node.args[0].value)
         self.assertTrue(commands, "no subcommands found -- the scan is broken")
-        # These MCP-only adapters call the existing sce-codegen CLI; adding
-        # duplicate sce_author CLI commands would give the same action two names.
+        # These MCP-only tools are adapters over the existing sce-codegen CLI;
+        # adding duplicate sce_author CLI commands would give the same action
+        # two names. The one exception is `scxml_requirement_set`, which is a
+        # pure step of this core (quotes to manifest and sidecar) with no CLI
+        # face: the CLI here is pack-driven, and the step takes no pack, so
+        # there is no second name to collide with and none is added.
         mcp_only = {"scxml_kinds", "validate_scxml", "validate_scxml_set",
                     "render_scxml_pseudocode",
                     "render_scxml_diagram",
-                    "scxml_unresolved", "scxml_requirements", "scxml_acceptance_report",
+                    "scxml_unresolved", "scxml_requirement_set", "scxml_requirements",
+                    "scxml_acceptance_report",
                     "scxml_accept", "scxml_acceptance_check", "scxml_accepted_for"}
         self.assertEqual(commands, {t["name"] for t in mcp.TOOLS} - mcp_only)
 
