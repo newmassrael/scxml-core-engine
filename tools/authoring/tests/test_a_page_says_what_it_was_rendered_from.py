@@ -154,8 +154,96 @@ class APageSaysWhatItWasRenderedFrom(unittest.TestCase):
         tool = next(t for t in mcp.TOOLS if t["name"] == "render_scxml_pseudocode")
         self.assertIn("TWO blocks", tool["description"])
         self.assertIn("profile", tool["inputSchema"]["properties"])
-        self.assertIn("second block", mcp.SERVER_INSTRUCTIONS)
         self.assertIn("sha256", mcp.SERVER_INSTRUCTIONS)
+        # The instructions send the client to the check for the page, since a
+        # second call was skipped fourteen times of fifteen (measured).
+        self.assertIn("answer of validate_scxml", mcp.SERVER_INSTRUCTIONS)
+
+
+@unittest.skipUnless(_default_codegen().exists(),
+                     "the product's code generator is not built")
+class ACheckCarriesThePageOfWhatItChecked(unittest.TestCase):
+    """The page rides on the check, so a client that never makes a second call
+    still has it. Measured 2026-09-30, fifteen drafts by a real client: one
+    showed a page, fourteen skipped the tool that renders it."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.dir = pathlib.Path(temporary.name)
+
+    def write(self, text: str, name: str = "client.scxml") -> pathlib.Path:
+        path = self.dir / name
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_an_accepted_document_comes_with_the_page_of_the_bytes_checked(self):
+        document = self.write(ACCEPTED)
+        result = call("validate_scxml", document=str(document))
+        self.assertFalse(result.get("isError"), result["content"][0]["text"])
+        self.assertEqual(2, len(result["content"]))
+        answer = json.loads(result["content"][0]["text"])
+        self.assertEqual("accepted", answer["verdict"])
+        self.assertEqual([{"document": "client.scxml", "sha256": sha256(ACCEPTED),
+                           "page": "block 2"}], answer["pages"])
+        # The block is the page itself, untouched and raw, not a JSON string.
+        self.assertEqual(verify.pseudo_page(document, None, None)[0],
+                         result["content"][1]["text"])
+        self.assertNotIn("sha256", result["content"][1]["text"])
+        self.assertIn("no owner acceptance is recorded", answer["show"])
+
+    def test_a_refused_document_has_no_page_to_show(self):
+        result = call("validate_scxml", document=str(self.write(REFUSED)))
+        self.assertEqual(1, len(result["content"]))
+        answer = json.loads(result["content"][0]["text"])
+        self.assertEqual("refused", answer["verdict"])
+        self.assertNotIn("pages", answer)
+
+    def test_a_document_handed_as_text_is_named_by_the_bytes_checked(self):
+        result = call("validate_scxml", document_text=ACCEPTED, document_name="door.scxml")
+        answer = json.loads(result["content"][0]["text"])
+        self.assertEqual(sha256(ACCEPTED), answer["pages"][0]["sha256"])
+        self.assertEqual("door.scxml", answer["pages"][0]["document"])
+
+    def test_a_set_comes_with_one_page_per_document_in_the_order_given(self):
+        other = ACCEPTED.replace("Idle", "Waiting").replace("Busy", "Working")
+        result = call("validate_scxml_set", documents_text=[
+            {"name": "first.scxml", "text": ACCEPTED},
+            {"name": "second.scxml", "text": other}])
+        self.assertFalse(result.get("isError"), result["content"][0]["text"])
+        self.assertEqual(3, len(result["content"]))
+        answer = json.loads(result["content"][0]["text"])
+        self.assertEqual([("first.scxml", sha256(ACCEPTED), "block 2"),
+                          ("second.scxml", sha256(other), "block 3")],
+                         [(p["document"], p["sha256"], p["page"]) for p in answer["pages"]])
+        self.assertIn("state Idle:", result["content"][1]["text"])
+        self.assertIn("state Waiting:", result["content"][2]["text"])
+
+    def test_a_document_that_changes_while_it_is_checked_gets_no_page(self):
+        document = self.write(ACCEPTED)
+        real = mcp.run_scxml_validation
+
+        def edited_during_the_check(*args, **kwargs):
+            answer = real(*args, **kwargs)
+            document.write_text(ACCEPTED + "<!-- edited -->\n", encoding="utf-8")
+            return answer
+
+        with mock.patch.object(mcp, "run_scxml_validation", edited_during_the_check):
+            result = call("validate_scxml", document=str(document))
+        self.assertEqual(1, len(result["content"]))
+        entry = json.loads(result["content"][0]["text"])["pages"][0]
+        self.assertIsNone(entry["page"])
+        self.assertIn("changed while it was being checked", entry["page_refusal"])
+
+    def test_a_page_the_product_will_not_render_is_said_and_the_verdict_stands(self):
+        document = self.write(ACCEPTED)
+        with mock.patch.object(mcp, "pseudo_page", lambda *a, **k: ("", "cannot render\nwhy")):
+            result = call("validate_scxml", document=str(document))
+        self.assertEqual(1, len(result["content"]))
+        answer = json.loads(result["content"][0]["text"])
+        self.assertEqual("accepted", answer["verdict"])
+        self.assertIsNone(answer["pages"][0]["page"])
+        self.assertEqual("cannot render", answer["pages"][0]["page_refusal"])
 
 
 if __name__ == "__main__":

@@ -41,6 +41,7 @@ dies takes with it the one account of why.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import re
@@ -167,14 +168,17 @@ SERVER_INSTRUCTIONS = (
     "retry -- is its own only when the <send> names target=\"#_internal\": "
     "with no target it goes to the queue a caller delivers to, so a caller "
     "can send the same name, and a closed interface refuses a transition "
-    "that takes it (declare the event, or send it to #_internal). Then call "
-    "render_scxml_pseudocode. Show the first block of its answer -- the "
-    "page -- verbatim in a fenced block: do not translate, summarize, rename "
-    "labels, or add a source fact as if it were a rendered line. Under the "
-    "fence, outside it, print the second block unchanged: it names the "
-    "sha256 of the document the page came from, what the product's check "
-    "says of that same document, and that no owner acceptance is recorded. "
-    "Edit the document after that and the note is stale: render again. "
+    "that takes it (declare the event, or send it to #_internal). When the "
+    "product accepts the document, the answer of validate_scxml (and of "
+    "validate_scxml_set, one page per document) carries its pseudocode page "
+    "in the block after the JSON, with the sha256 of the bytes it was "
+    "rendered from: show each page verbatim in a fenced block -- do not "
+    "translate, summarize, rename labels, or add a source fact as if it were "
+    "a rendered line -- and print that sha256 under the fence, outside it. "
+    "Edit the document after that and the page is stale: validate again. "
+    "render_scxml_pseudocode renders a page without a verdict, for a "
+    "document whose page is wanted in another shape or lexicon; its answer "
+    "is the page and then a note that names the same things. "
     "List decisions the source leaves "
     "open in prose outside that block, not inside it. "
     "When the owner keeps a decision record, a draft cites it: "
@@ -444,7 +448,12 @@ TOOLS = [
             "that is valid and is not what the profile asks for is refused "
             "as a profile/* record, and an accepted manifest names the "
             "profile by digest. Without one the check holds the design to "
-            "nothing the owner asked for, and the manifest has no `profile`."
+            "nothing the owner asked for, and the manifest has no `profile`. "
+            "When the product ACCEPTS the document, the answer carries its "
+            "pseudocode page as the block after the JSON -- the page of the "
+            "very bytes that were checked -- and `pages` names its sha256: "
+            "show that page verbatim in a fenced block and print the sha256 "
+            "under it (`show` says the rest). A refused document has no page."
         ),
         "inputSchema": {
             "type": "object",
@@ -467,7 +476,11 @@ TOOLS = [
             "owner keeps an authoring profile, pass it: every document of "
             "the set the profile asks something of is judged and every "
             "departure is listed, and manifest.profile.judged says how many "
-            "that was -- zero when it asks nothing of any document of the set."
+            "that was -- zero when it asks nothing of any document of the set. "
+            "When the set is ACCEPTED, each document's pseudocode page follows "
+            "the JSON as its own block, in the order the documents were given, "
+            "and `pages` names each one's sha256: show each verbatim in a "
+            "fenced block and print its sha256 under it (`show` says the rest)."
         ),
         "inputSchema": {
             "type": "object",
@@ -1256,17 +1269,82 @@ def _profile_file(args: dict, staging: _Staging) -> pathlib.Path | None:
                         required=False)
 
 
+def _digest_of(document: pathlib.Path, staging: _Staging) -> str:
+    """The sha256 of the bytes the product reads: a document handed as text is
+    named relative to the directory it was staged in, and the product runs
+    there, so that is where its bytes are."""
+    path = document if document.is_absolute() else staging.dir / document
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _with_pages(answer: dict, documents: list[pathlib.Path], staging: _Staging,
+                digests: list[str]) -> dict:
+    """The check's answer and, when the product ACCEPTED, the page of each
+    document, one block apiece after the JSON.
+
+    ⚠ Why the page rides on the check. Measured 2026-09-30, fifteen drafts by
+    a real client asked for "a pseudocode draft, checked with SCE": the answer
+    showed a page in ONE of them. The tool that renders it was a second call
+    the instructions asked for and the client skipped fourteen times, saying it
+    needed a pack it does not. A page that only exists if a second call is
+    remembered is not shown to the owner; one that comes with the verdict is
+    in front of the client every time the design is checked, and it is the page
+    OF the bytes that were checked, by construction.
+
+    ⚠ Raw text blocks, not a string inside the JSON: the client is told to show
+    a page verbatim, and copying seventy lines out of an escaped JSON string is
+    the step that paraphrases. The JSON says which block is whose.
+
+    ⚠ `digests` were taken BEFORE the check; each is taken again after the
+    page, and a document that changed in between gets no page: nothing may be
+    said to come from a document that was checked when it is not the one that
+    was.
+    """
+    pages, blocks = [], []
+    for document, before in zip(documents, digests):
+        entry = {"document": document.name, "sha256": before}
+        page, refusal = pseudo_page(document, None, None, cwd=staging.dir)
+        if _digest_of(document, staging) != before:
+            entry["page"] = None
+            entry["page_refusal"] = (f"{document.name} changed while it was being "
+                                     f"checked, so no page is offered for it")
+        elif refusal:
+            entry["page"] = None
+            entry["page_refusal"] = refusal.splitlines()[0] if refusal else "not rendered"
+        else:
+            entry["page"] = f"block {len(blocks) + 2}"
+            blocks.append(page)
+        pages.append(entry)
+    answer["pages"] = pages
+    answer["show"] = ("Show each page verbatim in its own fenced block, and under "
+                      "it print that document's sha256. Then tell the owner each "
+                      "line of `open`, and that no owner acceptance is recorded: "
+                      "`accepted` is the product's verdict on the document, not "
+                      "the owner's.")
+    return {"content": [{"type": "text",
+                         "text": json.dumps(answer, indent=2, ensure_ascii=False) + "\n"},
+                        *({"type": "text", "text": block} for block in blocks)]}
+
+
 def _validate_tool(args: dict, staging: _Staging) -> dict:
     document = staging.file(args, "document", "the SCXML document", "document.scxml")
     profile = _profile_file(args, staging)
-    return _answer(*run_scxml_validation(document, profile=profile, cwd=staging.dir))
+    before = _digest_of(document, staging)
+    report, refusal = run_scxml_validation(document, profile=profile, cwd=staging.dir)
+    if refusal or not report:
+        return _answer(report, refusal)
+    return _with_pages(json.loads(report), [document], staging, [before])
 
 
 def _validate_set_tool(args: dict, staging: _Staging) -> dict:
     documents = staging.many(args, "documents", "the documents of the set")
     deploy = staging.file(args, "deploy", "the deploy.yaml", "deploy.yaml", required=False)
     profile = _profile_file(args, staging)
-    return _answer(*validate_scxml_set(documents, deploy, profile=profile, cwd=staging.dir))
+    digests = [_digest_of(document, staging) for document in documents]
+    report, refusal = validate_scxml_set(documents, deploy, profile=profile, cwd=staging.dir)
+    if refusal or not report:
+        return _answer(report, refusal)
+    return _with_pages(json.loads(report), documents, staging, digests)
 
 
 def _compare_tool(args: dict, staging: _Staging) -> dict:

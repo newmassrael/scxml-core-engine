@@ -299,7 +299,17 @@ set leaves open is what the set leaves open. The design-time lints already run
 on every statechart of a set, reporting the first finding; `sce-codegen check
 --lint --document …` reports every one.
 `validate_scxml` runs `sce-codegen check --lint --error-format=json` and returns
-every diagnostic record with the verdict and manifest, as JSON;
+every diagnostic record with the verdict and manifest, as JSON. When the product
+ACCEPTS, the pseudocode page of the same document follows the JSON as its own
+raw block, and `pages` names its sha256 and which block is whose;
+`validate_scxml_set` does the same with one page per document, in the order
+given. Why on the check and not a second call: measured 2026-09-30, fifteen
+drafts by a real client asked for "a pseudocode draft, checked with SCE" showed
+a page in one, and skipped the rendering tool fourteen times of fifteen (saying
+it needed a pack, which it does not). A page that comes with the verdict is
+there every time the design is checked and is the page of the bytes checked; the
+digest is taken before the check and again after the page, and a document that
+changed in between gets no page. A refused document has none.
 `render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page
 as its FIRST block and, as a second block, a note on what the page was rendered
 from: the sha256 of the document, the product's check of that same document

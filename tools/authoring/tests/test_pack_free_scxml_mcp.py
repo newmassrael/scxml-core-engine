@@ -184,10 +184,10 @@ class PackFreeScxmlMcp(unittest.TestCase):
         self.assertEqual(["--shape", "endmark", "--lexicon", "ko"], pseudo[0][3:])
 
     def test_validation_reaches_the_generator_without_a_pack(self):
-        seen = {}
+        calls = []
 
         def fake_run(argv, **kwargs):
-            seen["argv"] = argv
+            calls.append(argv)
             return subprocess.CompletedProcess(argv, 0, stdout='{"kind":"check"}\n', stderr="")
 
         with mock.patch.object(verify.subprocess, "run", fake_run), \
@@ -195,9 +195,11 @@ class PackFreeScxmlMcp(unittest.TestCase):
                                lambda: pathlib.Path(sys.executable)):
             result = call("validate_scxml", document=str(self.document))
         self.assertFalse(result.get("isError"))
-        self.assertEqual([str(pathlib.Path(sys.executable)), "--error-format", "json",
-                          "check", str(self.document), "--lint"],
-                         seen["argv"])
+        # An accepted check is followed by the page of the same document, so
+        # the generator runs twice; the check is the one this test is about.
+        checks = [argv for argv in calls if "check" in argv]
+        self.assertEqual([[str(pathlib.Path(sys.executable)), "--error-format", "json",
+                           "check", str(self.document), "--lint"]], checks)
         report = json.loads(result["content"][0]["text"])
         self.assertEqual(("accepted", {"kind": "check"}, []),
                          (report["verdict"], report["manifest"], report["diagnostics"]))
