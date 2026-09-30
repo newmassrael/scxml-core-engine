@@ -237,6 +237,14 @@ def _file_input(key: str, what: str) -> dict:
     }
 
 
+# The vocabulary of the pseudocode page an accepted check carries. Only its
+# name is taken: which names exist is the product's to say, and one it does not
+# know comes back as the product's own refusal, listing the real set.
+_LEXICON_INPUT = {
+    "lexicon": {"type": "string", "description":
+                "Vocabulary of the pseudocode page, passed to the generator "
+                "(default `en`; `ko` renders the grammar's words in Korean)."},
+}
 _DOCUMENT_INPUT = _file_input("document", "the SCXML document")
 _MANIFEST_INPUT = _file_input("manifest", "the requirement manifest")
 # The owner's authoring profile: what a design is held to, stated in a file
@@ -455,11 +463,16 @@ TOOLS = [
             "pseudocode page as the block after the JSON -- the page of the "
             "very bytes that were checked -- and `pages` names its sha256: "
             "show that page verbatim in a fenced block and print the sha256 "
-            "under it (`show` says the rest). A refused document has no page."
+            "under it (`show` says the rest). A refused document has no page. "
+            "The page is written in the product's own words, English unless "
+            "you name a `lexicon`: when the owner reads another language the "
+            "product has a lexicon for (`ko`), pass it, and the words the "
+            "grammar spends are that language's while the names and values "
+            "the document wrote are never translated."
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {**_DOCUMENT_INPUT, **_PROFILE_INPUT},
+            "properties": {**_DOCUMENT_INPUT, **_PROFILE_INPUT, **_LEXICON_INPUT},
         },
     },
     {
@@ -501,6 +514,7 @@ TOOLS = [
                 },
                 **_file_input("deploy", "the deploy.yaml the set is deployed by"),
                 **_PROFILE_INPUT,
+                **_LEXICON_INPUT,
             },
         },
     },
@@ -1327,7 +1341,7 @@ def _digest_of(document: pathlib.Path, staging: _Staging) -> str:
 
 
 def _with_pages(answer: dict, documents: list[pathlib.Path], staging: _Staging,
-                digests: list[str]) -> dict:
+                digests: list[str], lexicon: str | None = None) -> dict:
     """The check's answer and, when the product ACCEPTED, the page of each
     document, one block apiece after the JSON.
 
@@ -1352,7 +1366,7 @@ def _with_pages(answer: dict, documents: list[pathlib.Path], staging: _Staging,
     pages, blocks = [], []
     for document, before in zip(documents, digests):
         entry = {"document": document.name, "sha256": before}
-        page, refusal = pseudo_page(document, None, None, cwd=staging.dir)
+        page, refusal = pseudo_page(document, None, None, None, lexicon, cwd=staging.dir)
         if _digest_of(document, staging) != before:
             entry["page"] = None
             entry["page_refusal"] = (f"{document.name} changed while it was being "
@@ -1379,21 +1393,23 @@ def _validate_tool(args: dict, staging: _Staging) -> dict:
     document = staging.file(args, "document", "the SCXML document", "document.scxml")
     profile = _profile_file(args, staging)
     before = _digest_of(document, staging)
+    lexicon = _name_arg(args, "lexicon", "a lexicon name")
     report, refusal = run_scxml_validation(document, profile=profile, cwd=staging.dir)
     if refusal or not report:
         return _answer(report, refusal)
-    return _with_pages(json.loads(report), [document], staging, [before])
+    return _with_pages(json.loads(report), [document], staging, [before], lexicon)
 
 
 def _validate_set_tool(args: dict, staging: _Staging) -> dict:
     documents = staging.many(args, "documents", "the documents of the set")
     deploy = staging.file(args, "deploy", "the deploy.yaml", "deploy.yaml", required=False)
     profile = _profile_file(args, staging)
+    lexicon = _name_arg(args, "lexicon", "a lexicon name")
     digests = [_digest_of(document, staging) for document in documents]
     report, refusal = validate_scxml_set(documents, deploy, profile=profile, cwd=staging.dir)
     if refusal or not report:
         return _answer(report, refusal)
-    return _with_pages(json.loads(report), documents, staging, digests)
+    return _with_pages(json.loads(report), documents, staging, digests, lexicon)
 
 
 def _compare_tool(args: dict, staging: _Staging) -> dict:

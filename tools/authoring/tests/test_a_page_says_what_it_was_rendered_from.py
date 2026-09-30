@@ -246,5 +246,64 @@ class ACheckCarriesThePageOfWhatItChecked(unittest.TestCase):
         self.assertEqual("cannot render", answer["pages"][0]["page_refusal"])
 
 
+@unittest.skipUnless(_default_codegen().exists(),
+                     "the product's code generator is not built")
+class TheOwnerReadsThePageInTheirOwnLanguage(unittest.TestCase):
+    """Measured 2026-10-01 in a review of a real client's answer: the page came
+    out in English for an owner who reads Korean, though the product has a Korean
+    lexicon. The words the grammar spends change; what the document wrote does
+    not."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.dir = pathlib.Path(temporary.name)
+
+    def page(self, tool: str, **arguments) -> str:
+        result = call(tool, **arguments)
+        self.assertFalse(result.get("isError"), result["content"][0]["text"])
+        self.assertEqual(2, len(result["content"]), result["content"])
+        return result["content"][1]["text"]
+
+    def test_a_lexicon_reaches_the_page_and_changes_the_grammar_not_the_names(self):
+        english = self.page("validate_scxml", document_text=ACCEPTED, document_name="a.scxml")
+        korean = self.page("validate_scxml", document_text=ACCEPTED, document_name="a.scxml",
+                           lexicon="ko")
+        self.assertNotEqual(english, korean)
+        self.assertIn("lexicon=ko", korean)
+        # What the document wrote is never translated: its state names are on
+        # both pages as the author spelled them.
+        for name in ("Idle", "Busy"):
+            self.assertIn(name, english)
+            self.assertIn(name, korean)
+
+    def test_a_set_takes_the_lexicon_too(self):
+        page = self.page("validate_scxml_set",
+                         documents_text=[{"name": "a.scxml", "text": ACCEPTED}],
+                         lexicon="ko")
+        self.assertIn("lexicon=ko", page)
+
+    def test_a_lexicon_the_product_does_not_know_costs_the_page_and_not_the_verdict(self):
+        result = call("validate_scxml", document_text=ACCEPTED, document_name="a.scxml",
+                      lexicon="zz")
+        self.assertEqual(1, len(result["content"]))
+        answer = json.loads(result["content"][0]["text"])
+        self.assertEqual("accepted", answer["verdict"])
+        self.assertIsNone(answer["pages"][0]["page"])
+        # The product's own refusal, which names the real set: nothing here
+        # keeps a list of lexicons that would go stale the day one is added.
+        self.assertIn("invalid value 'zz'", answer["pages"][0]["page_refusal"])
+
+    def test_the_lexicon_is_offered_on_both_tools(self):
+        for name in ("validate_scxml", "validate_scxml_set"):
+            with self.subTest(tool=name):
+                tool = next(t for t in mcp.TOOLS if t["name"] == name)
+                self.assertIn("lexicon", tool["inputSchema"]["properties"])
+
+    def test_a_lexicon_that_is_no_name_is_an_argument_error(self):
+        self.assertTrue(call("validate_scxml", document_text=ACCEPTED,
+                             document_name="a.scxml", lexicon=7).get("isError"))
+
+
 if __name__ == "__main__":
     unittest.main()
