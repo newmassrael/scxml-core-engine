@@ -1191,18 +1191,18 @@ fn every_gate_that_derives_a_jdk_floor_names_a_workflow_that_pins_one() {
         }
     }
 
-    // Two gates drive Gradle today. A floor rather than an equality: a third
+    // Three gates drive Gradle today. A floor rather than an equality: a fourth
     // may be added and must not have to edit this number. What it refuses is
     // the scan matching NOTHING, which would make every assertion below
     // vacuous — the failure mode this repository calls a gate that reports on
     // a population it never built.
     assert!(
-        pinned.len() >= 2,
+        pinned.len() >= 3,
         "the scan over scripts/gates/*.sh found {} caller(s) of \
-         `sce_gate_require_jdk`, and there are at least two (w3c-kotlin and \
-         ecma262-lowered-kotlin). A scan that matches nothing asserts nothing \
-         and passes, so this refuses the empty reading rather than reporting \
-         on it.",
+         `sce_gate_require_jdk`, and there are at least three (w3c-kotlin, \
+         ecma262-lowered-kotlin and forge-kotlin). A scan that matches nothing \
+         asserts nothing and passes, so this refuses the empty reading rather \
+         than reporting on it.",
         pinned.len()
     );
 
