@@ -16,8 +16,8 @@
 //
 // The clock is the machine's own wall clock, so only bounds that cannot be
 // broken by a slow machine are asserted: a request is never made BEFORE its
-// delay, and the sends written without a delay are already made when start()
-// returns.
+// delay, and the sends written without a delay are made in the caller's own
+// turn, on its thread, before start() returns.
 //
 // Fixture:
 // integration_resources/a_delayed_http_send_is_posted_when_due/a_delayed_http_send_is_posted_when_due.scxml
@@ -57,6 +57,9 @@ struct PostedRequest {
     std::string sendId;
     std::map<std::string, std::vector<std::string>> params;
     std::chrono::steady_clock::time_point at;
+    /// The thread that handed it to the transport: a send made at once runs on
+    /// the caller's, a queued one on the scheduler's.
+    std::thread::id madeOn;
 };
 
 /// The transport: keeps what it was handed, in the order it was handed it.
@@ -64,8 +67,8 @@ class RecordingTransport {
 public:
     void record(const EventDescriptor &event) {
         std::lock_guard<std::mutex> lock(mutex_);
-        posted_.push_back(
-            {event.target, event.eventName, event.sendId, event.params, std::chrono::steady_clock::now()});
+        posted_.push_back({event.target, event.eventName, event.sendId, event.params, std::chrono::steady_clock::now(),
+                           std::this_thread::get_id()});
     }
 
     std::vector<PostedRequest> posted() const {
@@ -207,6 +210,14 @@ TEST_F(ADelayedHttpSendIsPostedWhenDueTest, ADelayedHttpSendIsPostedWhenDue) {
     EXPECT_EQ(atOnce[0].eventName, "now");
     EXPECT_EQ(atOnce[1].eventName, "zero");
     EXPECT_EQ(atOnce[2].eventName, "zeroexpr");
+    // Made in the caller's own turn, and not handed to the scheduler: one
+    // queued with no wait is made on the scheduler's thread within
+    // microseconds, so the list read above cannot tell it from a send made
+    // at once — the thread that made it can.
+    for (std::size_t i = 0; i < 3; ++i) {
+        EXPECT_EQ(atOnce[i].madeOn, std::this_thread::get_id())
+            << "`" << atOnce[i].eventName << "` was queued for the scheduler, not made at once";
+    }
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (std::chrono::steady_clock::now() < deadline && sm_->isRunning()) {

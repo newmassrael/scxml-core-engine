@@ -1,0 +1,71 @@
+# Mutation cases for §scxml-6.2.4 / §scxml-C-2 on a delayed BasicHTTP `<send>`
+# in the INTERPRETER: a delay is a property of the send, not of the processor it
+# names, so the request is handed to the transport when the delay has elapsed —
+# not at once, not never — and `<cancel>` reaches it while it waits.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_delayed_http_send_is_posted_when_due_interpreter.cases`.
+#
+# Sibling of `a_delayed_http_send_is_posted_when_due.cases` (C++ AOT),
+# `a_delayed_http_send_is_posted_when_due_c11.cases` and
+# `a_delayed_http_send_is_posted_when_due_rust.cases`. The Interpreter is the
+# reference implementation and the one channel with no build step, and until
+# 2026-09-30 this fixture had no driver for it at all: the six generated
+# channels were held to a behaviour the reference had never been asked to show.
+# The driver injects a recording `IEventTargetFactory` for http(s) targets, so
+# the oracle is the request a real `EventDispatcherImpl` and scheduler hand the
+# transport, and when — not a structure the document built.
+#
+# The runtime files below are shared by every send in the suite, so a mutation
+# of them reddens more than this driver; a case counts as caught HERE only when
+# `ADelayedHttpSendIsPostedWhenDueTest` is among the red tests it names.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/src/events/EventDispatcherImpl.cpp sce/src/runtime/ActionExecutorImpl.cpp
+mutation_oracles tests/integration/ADelayedHttpSendIsPostedWhenDueTest.cpp
+
+# ── The wait: the dispatcher hands a delayed send over at once ─────
+
+mutation_case "the interpreter hands a delayed BasicHTTP send to the transport at once" <<'PY'
+edit("sce/src/events/EventDispatcherImpl.cpp",
+     "        if (event.delay.count() > 0 || isPlatform) {",
+     "        if (isPlatform) {")
+PY
+
+# ── The zero wait: a send with no wait is left for a later turn ────
+
+# `now`, `zero` and `zeroexpr` are written three ways and computed one: no
+# wait. The driver's first expectation — all three made before `start()`
+# returns — is what queueing them disturbs.
+mutation_case "the interpreter queues a BasicHTTP send with no wait instead of making it at once" <<'PY'
+edit("sce/src/events/EventDispatcherImpl.cpp",
+     "        if (event.delay.count() > 0 || isPlatform) {",
+     "        if (event.delay.count() >= 0 || isPlatform) {")
+PY
+
+# ── The cancel: a queued request cannot be named ───────────────────
+
+# `dropped` is cancelled while it waits, and the transport must never see it.
+mutation_case "the interpreter's cancel does not find a queued BasicHTTP send" <<'PY'
+edit("sce/src/events/EventDispatcherImpl.cpp",
+     "    return scheduler_->cancelEvent(sendId, sessionId);",
+     "    return scheduler_->cancelEvent(sendId, sessionId + \"-other\");")
+PY
+
+# ── The id: the request is queued under an id the document never wrote ──
+
+mutation_case "the interpreter queues a delayed BasicHTTP send under an empty send id" <<'PY'
+edit("sce/src/runtime/ActionExecutorImpl.cpp",
+     "            event.sendId = sendId;",
+     "            event.sendId = \"\";")
+PY
+
+# ── The payload: the request loses its parameters on the way ───────
+
+mutation_case "the interpreter hands a BasicHTTP send to the transport without its parameters" <<'PY'
+edit("sce/src/runtime/ActionExecutorImpl.cpp",
+     "            event.params = evaluatedParams;",
+     "            event.params = {};")
+PY
