@@ -107,12 +107,49 @@ pub struct StaticRecordField {
     pub saved_type: String,
 }
 
+/// An imported algorithm as a target reaches it: the name a call is written
+/// with, and the line that makes the name visible where the machine is.
+#[derive(Debug, Clone)]
+pub struct Callee {
+    /// The callee, qualified as the generated unit that holds it requires.
+    pub call: String,
+    /// The import line a forge kind importing the same algorithm writes, so
+    /// the machine reaches the function where the algorithm's own generation
+    /// put it.
+    pub import: String,
+}
+
+/// [`Callee`] for a generated-code backend: the identity and symbol every
+/// other forge kind derives for the same document, so a statechart and an
+/// algorithm that imports it agree on where it lives.
+fn generated_callee(lang: Language, document_name: &str) -> Callee {
+    let identity = crate::forge::generator::forge_import_identity(
+        document_name,
+        &lang,
+        false,
+        &crate::ForgeCompileOptions::default(),
+    );
+    let symbol = crate::forge::generator::forge_algorithm_symbol(document_name, lang);
+    Callee {
+        call: crate::build_qualified_call(&symbol, &identity.namespace, &lang),
+        import: identity.include_stmt,
+    }
+}
+
 /// How one backend spells what a `sce-static` document says. The walk
 /// ([`lower`]) asks; the answer is the only thing that differs by backend.
 pub trait StaticTarget {
-    /// The backend, for the spellings shared with other kinds (a callee's
-    /// import, a record field's identifier).
-    fn lang(&self) -> Language;
+    /// What this target is called where a refusal names it (`Kotlin`, `Rust`).
+    ///
+    /// Not a [`Language`]: a target need not be a generated-code backend. The
+    /// Interpreter's ecmascript lowering is one, and `Language` means a backend
+    /// every forge kind and every conformance run must cover.
+    fn name(&self) -> &'static str;
+    /// How a call of the imported algorithm `document_name` is spelled, and
+    /// the line that imports it — or `None` for a target that does not reach
+    /// algorithms yet, which refuses a document that calls one rather than
+    /// leaving the name undefined.
+    fn callee(&self, document_name: &str) -> Option<Callee>;
     /// The expression lowerer's target.
     fn expr_target(&self) -> ExprTarget;
     /// The declared name of variable `id`'s field.
@@ -177,8 +214,11 @@ pub trait StaticTarget {
 pub struct KotlinTarget;
 
 impl StaticTarget for KotlinTarget {
-    fn lang(&self) -> Language {
-        Language::Kotlin
+    fn name(&self) -> &'static str {
+        "Kotlin"
+    }
+    fn callee(&self, document_name: &str) -> Option<Callee> {
+        Some(generated_callee(Language::Kotlin, document_name))
     }
     fn expr_target(&self) -> ExprTarget {
         ExprTarget::Kotlin
@@ -340,8 +380,11 @@ impl StaticTarget for KotlinTarget {
 pub struct RustTarget;
 
 impl StaticTarget for RustTarget {
-    fn lang(&self) -> Language {
-        Language::Rust
+    fn name(&self) -> &'static str {
+        "Rust"
+    }
+    fn callee(&self, document_name: &str) -> Option<Callee> {
+        Some(generated_callee(Language::Rust, document_name))
     }
     fn expr_target(&self) -> ExprTarget {
         ExprTarget::Rust
@@ -482,23 +525,16 @@ impl StaticTarget for RustTarget {
 /// a guard, an assignment and a host action's argument cannot disagree about
 /// a name.
 fn names(scope: &StaticScope, target: &dyn StaticTarget) -> Vec<(String, String)> {
-    let lang = target.lang();
     scope
         .variables
         .iter()
         .map(|v| (v.id.clone(), target.field_ref(&target.field_name(&v.id))))
-        .chain(scope.callees.iter().map(|c| {
-            let identity = crate::forge::generator::forge_import_identity(
-                &c.document_name,
-                &lang,
-                false,
-                &crate::ForgeCompileOptions::default(),
-            );
-            let symbol = crate::forge::generator::forge_algorithm_symbol(&c.document_name, lang);
-            (
-                c.alias.clone(),
-                crate::build_qualified_call(&symbol, &identity.namespace, &lang),
-            )
+        // A callee the target cannot reach is left out: `lower` has already
+        // refused a document that calls one.
+        .chain(scope.callees.iter().filter_map(|c| {
+            target
+                .callee(&c.document_name)
+                .map(|callee| (c.alias.clone(), callee.call))
         }))
         .collect()
 }
@@ -539,23 +575,27 @@ pub fn lower(
     let Some(scope) = StaticScope::of(model) else {
         return Ok(StaticLowering::default());
     };
-    let lang = target.lang();
+    let lang = target.name();
     let variables = &scope.variables;
     let schemas = model.imported_event_schemas.clone();
     let records = model.imported_records.clone();
+    // A call the target cannot spell would be an undefined name where the
+    // machine runs; it is refused here, where the document is read.
+    if let Some(unreached) = scope
+        .callees
+        .iter()
+        .find(|c| target.callee(&c.document_name).is_none())
+    {
+        return Err(GenerateError::unsupported(format!(
+            "`{}(…)`: an imported algorithm has no {lang} lowering yet",
+            unreached.alias
+        )));
+    }
     let names = names(&scope, target);
     let imports: Vec<String> = scope
         .callees
         .iter()
-        .map(|c| {
-            crate::forge::generator::forge_import_identity(
-                &c.document_name,
-                &lang,
-                false,
-                &crate::ForgeCompileOptions::default(),
-            )
-            .include_stmt
-        })
+        .filter_map(|c| target.callee(&c.document_name).map(|callee| callee.import))
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
@@ -588,7 +628,7 @@ pub fn lower(
 
     let refused = |what: &str, text: &str, refusal: Refusal| {
         GenerateError::unsupported(format!(
-            "{what} `{text}` has no {lang:?} lowering: {}",
+            "{what} `{text}` has no {lang} lowering: {}",
             refusal.error
         ))
     };
@@ -631,7 +671,7 @@ pub fn lower(
                     .find(|f| matches!(f.sce_type, SceType::Enum(_)))
                 {
                     return Err(GenerateError::unsupported(format!(
-                        "record:{alias} has the enum-typed field `{}`, which has no {lang:?} \
+                        "record:{alias} has the enum-typed field `{}`, which has no {lang} \
                          lowering in a statechart yet",
                         field.id
                     )));
@@ -719,7 +759,7 @@ pub fn lower(
             };
             if matches!(ty, SceType::Enum(_)) {
                 return Err(GenerateError::unsupported(format!(
-                    "<data id=\"{}\" sce:type=\"{}\">: an enum-typed variable has no {lang:?} \
+                    "<data id=\"{}\" sce:type=\"{}\">: an enum-typed variable has no {lang} \
                      lowering in a statechart yet",
                     var.id,
                     ty.as_attr()
@@ -1112,10 +1152,10 @@ fn lower_action(
     rewrites: &Rewrites<'_>,
 ) -> Result<bool, GenerateError> {
     let target = rewrites.target;
-    let lang = target.lang();
+    let lang = target.name();
     let lower = |text: &str, slot: InferredType| {
         transpile_into_receiving(text, target.expr_target(), ctx, renames, slot).map_err(|r| {
-            GenerateError::unsupported(format!("`{text}` has no {lang:?} lowering: {}", r.error))
+            GenerateError::unsupported(format!("`{text}` has no {lang} lowering: {}", r.error))
         })
     };
     let failed = |construct: String| execution_failure(rewrites, &construct);
@@ -1242,9 +1282,9 @@ fn lower_nested(
         )
         .map_err(|r| {
             GenerateError::unsupported(format!(
-                "`{}` has no {:?} lowering: {}",
+                "`{}` has no {} lowering: {}",
                 branch.cond,
-                target.lang(),
+                target.name(),
                 r.error
             ))
         })?;
