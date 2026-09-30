@@ -4,6 +4,8 @@
 {# SCE Accepted Subset §2.15: fill a sce-static list. The statement — the
    bound check and the error arm included — is lowered ahead of the template
    by `forge::static_lowering`, which holds the list's element and capacity,
-   and stored on `action.native_code`. #}
+   and stored on `action.native_code`. A full list is an error, so it ends its
+   block as any element that raised does (W3C SCXML 4.9). #}
+{% import 'actions/_native_statement.rs.jinja2' as native %}
 // SCE Accepted Subset §2.15: <sce:append target="{{ action.location }}">
-{{ action.native_code }}
+{{ native.emit(action, in_action_block is defined and in_action_block) }}

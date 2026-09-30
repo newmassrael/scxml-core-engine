@@ -18,6 +18,8 @@
 
 package com.sce.integration
 
+import com.sce.integration.static_block_ends.StaticBlockEndsStateMachine
+import com.sce.integration.static_block_ends_list.StaticBlockEndsListStateMachine
 import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
@@ -162,6 +164,40 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_overflow"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticBlockEndsAtTheErrorThatEndsIt() {
+        val sm = StaticBlockEndsStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_block_ends"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticBlockEndsListEndsAtAFullList() {
+        val sm = StaticBlockEndsListStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_block_ends_list"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

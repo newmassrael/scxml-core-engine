@@ -3,10 +3,11 @@
 
 {# W3C SCXML 4.7: <log> - Logging action. A statement lowered to Rust at
    generate time (`native_code`, a sce-static document's) is emitted as it
-   is. #}
+   is, and ends its block when it can fail (W3C SCXML 4.9). #}
+{% import 'actions/_native_statement.rs.jinja2' as native %}
 {% if action.native_code %}
 // W3C SCXML 4.7: <log>
-{{ action.native_code }}
+{{ native.emit(action, in_action_block is defined and in_action_block) }}
 {% elif action.expr and not model.needs_script_engine %}
 // W3C SCXML 4.7: <log>
 ::sce_rust_runtime::sce_log_info!("{% if action.label %}{}: {% endif %}{}"{% if action.label %}, "{{ action.label }}"{% endif %}, {{ action.expr | to_rust_string_expr }});

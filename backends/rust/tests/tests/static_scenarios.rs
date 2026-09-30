@@ -17,6 +17,12 @@
 
 use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{Engine, StatePolicy};
+use sce_rust_tests::integration::static_datamodel::static_block_ends_list_sm::{
+    StaticBlockEndsListPersist, StaticBlockEndsListPolicy,
+};
+use sce_rust_tests::integration::static_datamodel::static_block_ends_sm::{
+    StaticBlockEndsPersist, StaticBlockEndsPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
     StaticCounterPersist, StaticCounterPolicy,
 };
@@ -143,6 +149,28 @@ fn static_overflow_keeps_its_value_and_says_so() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_overflow.json"
+        ),
+    );
+}
+
+#[test]
+fn static_block_ends_at_the_error_that_ends_it() {
+    replay(
+        Engine::new(StaticBlockEndsPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_block_ends.json"
+        ),
+    );
+}
+
+#[test]
+fn static_block_ends_list_ends_at_a_full_list() {
+    replay(
+        Engine::new(StaticBlockEndsListPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_block_ends_list.json"
         ),
     );
 }

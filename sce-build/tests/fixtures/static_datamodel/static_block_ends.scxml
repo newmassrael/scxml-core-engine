@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): an error ends the
+  block it was raised in. W3C SCXML 4.9: "If the processing of an element
+  causes an error to be raised, the processor MUST NOT process the remaining
+  elements of the block." That holds for an integer operation that overflows
+  as it does for any element — the failing statement is skipped, error.execution
+  says so, and nothing after it in the block runs.
+
+  `a` is a uint8 at 250, so `a + 10` does not fit. Each transition below ends
+  in an assignment that a failure must keep from running:
+
+    fail.assign  the overflowing <assign> is followed by `afterAssign`;
+    fail.cond    an <if> whose `cond` overflows is false and raises, so its
+                 <else> runs — and the <if> is the element that raised, so
+                 the block ends after it and `afterIf` does not run;
+    fail.branch  an <assign> that overflows inside an <if> branch ends the
+                 branch and the block that contains the <if>: neither
+                 `inBranch` nor `afterBranch` runs;
+    ok           nothing fails, so both assignments run.
+
+  `errors` counts the error.execution events the document answers.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="waiting" datamodel="sce-static" name="static_block_ends">
+  <datamodel>
+    <data id="a" sce:type="uint8" expr="250" sce:direction="out"/>
+    <data id="b" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="afterAssign" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="thenRan" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="elseRan" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="afterIf" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="inBranch" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="afterBranch" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="afterOk" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint8" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="waiting">
+    <transition event="fail.assign" type="internal">
+      <assign location="a" expr="a + 10"/>
+      <assign location="afterAssign" expr="1"/>
+    </transition>
+    <transition event="fail.cond" type="internal">
+      <if cond="a + 10 &gt; 0">
+        <assign location="thenRan" expr="1"/>
+      <else/>
+        <assign location="elseRan" expr="1"/>
+      </if>
+      <assign location="afterIf" expr="1"/>
+    </transition>
+    <transition event="fail.branch" type="internal">
+      <if cond="a &gt; 0">
+        <assign location="a" expr="a + 10"/>
+        <assign location="inBranch" expr="1"/>
+      </if>
+      <assign location="afterBranch" expr="1"/>
+    </transition>
+    <transition event="ok" type="internal">
+      <assign location="b" expr="b + 1"/>
+      <assign location="afterOk" expr="1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

@@ -3796,6 +3796,7 @@ impl SCXMLParser {
                         cond_kt: ei.cond_kt,
                         // Filled per backend at generate time, never parsed.
                         native_cond: String::new(),
+                        native_cond_fails: false,
                         cond_cpp_transformed: ei.cond_cpp_transformed,
                         is_pure_in_predicate: ei.is_pure_in_predicate,
                         is_cpp_condition: ei.is_cpp_condition,

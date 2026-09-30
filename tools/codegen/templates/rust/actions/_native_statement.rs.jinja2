@@ -1,0 +1,27 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML 4.9: "If the processing of an element causes an error to be
+   raised, the processor MUST NOT process the remaining elements of the
+   block." A statement of a sce-static document that `forge::static_lowering`
+   lowered to Rust ahead of the template (`native_code`) is emitted as it is —
+   unless it can fail (`native_fails`), when it arrives as an expression that
+   is `true` when it failed, `error.execution` already raised. Which block the
+   error ends, and what leaves it, is known from where the statement is
+   rendered, so it is decided here: `break 'action_block` inside a block that
+   has that label, and nowhere to go outside one.
+
+   The caller passes `in_action_block` because an imported macro does not see
+   the includer's context. #}
+{% macro emit(action, in_action_block) -%}
+{% if action.native_fails and in_action_block %}
+let sce_failed = {{ action.native_code }};
+if sce_failed {
+    break 'action_block;  // W3C SCXML 4.9: the error ends the block
+}
+{% elif action.native_fails %}
+let _ = {{ action.native_code }};
+{% else %}
+{{ action.native_code }}
+{% endif %}
+{%- endmacro %}

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 22b6e8ae08ad8be96edf103385b76aa166971f41a8129c686e990ffa47a55ce8
+// source-hash: 21a662d27007dd95ae857cda1ce2fb7e0fcfe414050da26f9854337c37d1b7b8
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -870,8 +870,15 @@ impl StatePolicy for SyncClientPolicy {
             }
             SyncClientState::Deleting => {
                 if event == SyncClientEvent::SyncResponse {
-                    if matches!(&self.pending_payload, SyncClientPayload::SyncResponse(ev) if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> { Ok(sync_delete_outcome::sync_delete_outcome(ev.kind, ev.status)? == 0) })() { Ok(sce_value) => sce_value, Err(_) => { engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 0'>: an integer operation overflowed or failed")); false } })
-                    {
+                    if matches!(&self.pending_payload, SyncClientPayload::SyncResponse(ev) if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                        Ok(sync_delete_outcome::sync_delete_outcome(ev.kind, ev.status)? == 0)
+                    })() {
+                        Ok(sce_value) => sce_value,
+                        Err(_) => {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 0'>: an integer operation overflowed or failed"));
+                            false
+                        }
+                    }) {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
@@ -882,8 +889,15 @@ impl StatePolicy for SyncClientPolicy {
                     }
                 }
                 if event == SyncClientEvent::SyncResponse {
-                    if matches!(&self.pending_payload, SyncClientPayload::SyncResponse(ev) if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> { Ok(sync_delete_outcome::sync_delete_outcome(ev.kind, ev.status)? == 1) })() { Ok(sce_value) => sce_value, Err(_) => { engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 1'>: an integer operation overflowed or failed")); false } })
-                    {
+                    if matches!(&self.pending_payload, SyncClientPayload::SyncResponse(ev) if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                        Ok(sync_delete_outcome::sync_delete_outcome(ev.kind, ev.status)? == 1)
+                    })() {
+                        Ok(sce_value) => sce_value,
+                        Err(_) => {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 1'>: an integer operation overflowed or failed"));
+                            false
+                        }
+                    }) {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
@@ -1005,8 +1019,15 @@ impl StatePolicy for SyncClientPolicy {
                     }
                 }
                 if event == SyncClientEvent::SyncResponse {
-                    if matches!(&self.pending_payload, SyncClientPayload::SyncResponse(ev) if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> { Ok(sync_upload_outcome::sync_upload_outcome(ev.create, ev.status, ev.davError)? == 0) })() { Ok(sce_value) => sce_value, Err(_) => { engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 0'>: an integer operation overflowed or failed")); false } })
-                    {
+                    if matches!(&self.pending_payload, SyncClientPayload::SyncResponse(ev) if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                        Ok(sync_upload_outcome::sync_upload_outcome(ev.create, ev.status, ev.davError)? == 0)
+                    })() {
+                        Ok(sce_value) => sce_value,
+                        Err(_) => {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 0'>: an integer operation overflowed or failed"));
+                            false
+                        }
+                    }) {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
@@ -1017,8 +1038,15 @@ impl StatePolicy for SyncClientPolicy {
                     }
                 }
                 if event == SyncClientEvent::SyncResponse {
-                    if matches!(&self.pending_payload, SyncClientPayload::SyncResponse(ev) if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> { Ok(sync_upload_outcome::sync_upload_outcome(ev.create, ev.status, ev.davError)? == 1) })() { Ok(sce_value) => sce_value, Err(_) => { engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 1'>: an integer operation overflowed or failed")); false } })
-                    {
+                    if matches!(&self.pending_payload, SyncClientPayload::SyncResponse(ev) if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                        Ok(sync_upload_outcome::sync_upload_outcome(ev.create, ev.status, ev.davError)? == 1)
+                    })() {
+                        Ok(sce_value) => sce_value,
+                        Err(_) => {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 1'>: an integer operation overflowed or failed"));
+                            false
+                        }
+                    }) {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
@@ -1079,14 +1107,18 @@ impl StatePolicy for SyncClientPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="refusals">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.refusals =
-                                    sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.refusals = sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                         }
                     }
@@ -1101,14 +1133,18 @@ impl StatePolicy for SyncClientPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="deleted">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.deleted =
-                                    sce_forge_runtime::algorithm::add::<u32>(self.deleted, 1)?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='deleted'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.deleted = sce_forge_runtime::algorithm::add::<u32>(self.deleted, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='deleted'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                         }
                     }
@@ -1134,29 +1170,33 @@ impl StatePolicy for SyncClientPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="outcome">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.outcome = sync_failure::sync_failure(ev.kind, ev.status)?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.outcome = sync_failure::sync_failure(ev.kind, ev.status)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
 
                             // W3C SCXML 5.3: <assign location="retryAt">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.retry_at = sync_retry_at::sync_retry_at(
-                                    self.retry_at,
-                                    ev.kind,
-                                    ev.status,
-                                    ev.now,
-                                    ev.retryAfter,
-                                )?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.retry_at = sync_retry_at::sync_retry_at(self.retry_at, ev.kind, ev.status, ev.now, ev.retryAfter)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                         }
                     }
@@ -1204,14 +1244,18 @@ impl StatePolicy for SyncClientPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="pages">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.pages =
-                                    sce_forge_runtime::algorithm::add::<u32>(self.pages, 1)?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='pages'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.pages = sce_forge_runtime::algorithm::add::<u32>(self.pages, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='pages'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                         }
                     }
@@ -1221,14 +1265,18 @@ impl StatePolicy for SyncClientPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="pages">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.pages =
-                                    sce_forge_runtime::algorithm::add::<u32>(self.pages, 1)?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='pages'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.pages = sce_forge_runtime::algorithm::add::<u32>(self.pages, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='pages'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
 
                             // W3C SCXML 5.3: <assign location="fullListing">
@@ -1254,29 +1302,33 @@ impl StatePolicy for SyncClientPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="outcome">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.outcome = sync_failure::sync_failure(ev.kind, ev.status)?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.outcome = sync_failure::sync_failure(ev.kind, ev.status)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
 
                             // W3C SCXML 5.3: <assign location="retryAt">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.retry_at = sync_retry_at::sync_retry_at(
-                                    self.retry_at,
-                                    ev.kind,
-                                    ev.status,
-                                    ev.now,
-                                    ev.retryAfter,
-                                )?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.retry_at = sync_retry_at::sync_retry_at(self.retry_at, ev.kind, ev.status, ev.now, ev.retryAfter)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                         }
                     }
@@ -1295,29 +1347,33 @@ impl StatePolicy for SyncClientPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="outcome">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.outcome = sync_failure::sync_failure(ev.kind, ev.status)?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.outcome = sync_failure::sync_failure(ev.kind, ev.status)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
 
                             // W3C SCXML 5.3: <assign location="retryAt">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.retry_at = sync_retry_at::sync_retry_at(
-                                    self.retry_at,
-                                    ev.kind,
-                                    ev.status,
-                                    ev.now,
-                                    ev.retryAfter,
-                                )?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.retry_at = sync_retry_at::sync_retry_at(self.retry_at, ev.kind, ev.status, ev.now, ev.retryAfter)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                         }
                     }
@@ -1327,14 +1383,18 @@ impl StatePolicy for SyncClientPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="uploaded">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.uploaded =
-                                    sce_forge_runtime::algorithm::add::<u32>(self.uploaded, 1)?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='uploaded'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.uploaded = sce_forge_runtime::algorithm::add::<u32>(self.uploaded, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='uploaded'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                         }
                     }
@@ -1344,14 +1404,18 @@ impl StatePolicy for SyncClientPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="discarded">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.discarded =
-                                    sce_forge_runtime::algorithm::add::<u32>(self.discarded, 1)?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='discarded'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.discarded = sce_forge_runtime::algorithm::add::<u32>(self.discarded, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='discarded'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
 
                             // W3C SCXML 5.3: <assign location="fullListing">
@@ -1371,29 +1435,33 @@ impl StatePolicy for SyncClientPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="outcome">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.outcome = sync_failure::sync_failure(4, ev.status)?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.outcome = sync_failure::sync_failure(4, ev.status)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
 
                             // W3C SCXML 5.3: <assign location="retryAt">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.retry_at = sync_retry_at::sync_retry_at(
-                                    self.retry_at,
-                                    4,
-                                    ev.status,
-                                    ev.now,
-                                    ev.retryAfter,
-                                )?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.retry_at = sync_retry_at::sync_retry_at(self.retry_at, 4, ev.status, ev.now, ev.retryAfter)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                         }
                     }

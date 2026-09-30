@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 22b6e8ae08ad8be96edf103385b76aa166971f41a8129c686e990ffa47a55ce8
+// source-hash: 21a662d27007dd95ae857cda1ce2fb7e0fcfe414050da26f9854337c37d1b7b8
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_list.scxml
@@ -365,7 +365,9 @@ class StaticListStateMachine(
                     return
                 }
 
-            if (picked.size < 3) { picked = picked + (pendingDayPickedPayload!!.dayOfMonth) } else { raisePlatformError(StaticListEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 3") }
+            if (if (picked.size < 3) { picked = picked + (pendingDayPickedPayload!!.dayOfMonth); false } else { raisePlatformError(StaticListEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 3"); true }) {
+                return
+            }
 
             count = (picked).size.toUInt()
             }
@@ -377,7 +379,9 @@ class StaticListStateMachine(
             3 -> {
                 // SCE-MAP: static_list.scxml:30 :: collecting :: _transition_3
 
-            try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed") }
+            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
             }
             else -> {}
         }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 22b6e8ae08ad8be96edf103385b76aa166971f41a8129c686e990ffa47a55ce8
+// source-hash: 21a662d27007dd95ae857cda1ce2fb7e0fcfe414050da26f9854337c37d1b7b8
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -605,14 +605,18 @@ impl StatePolicy for StaticOverflowPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="level">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.level =
-                                    sce_forge_runtime::algorithm::add::<u8>(self.level, 3)?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOverflowEvent::ErrorExecution, "<assign location='level'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.level = sce_forge_runtime::algorithm::add::<u8>(self.level, 3)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOverflowEvent::ErrorExecution, "<assign location='level'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                         }
                     }
@@ -622,14 +626,18 @@ impl StatePolicy for StaticOverflowPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="refusals">
-                            if (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-                                self.refusals =
-                                    sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
-                                Ok(())
-                            })()
-                            .is_err()
-                            {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOverflowEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.refusals = sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOverflowEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                         }
                     }

@@ -1,0 +1,13 @@
+{
+  "machine": "static_block_ends_list",
+  "about": "A full list ends the block it is appended to (W3C SCXML 4.9): the third append finds the list at its capacity of two, appends nothing and raises error.execution, and the assignment after it in the same block does not run. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "waiting", "variables": { "picked": [], "afterAppend": 0, "errors": 0 } } },
+
+    { "note": "room for it: the append happens and the block runs on",
+      "event": "pick", "expect": { "variables": { "picked": [7], "afterAppend": 1, "errors": 0 } } },
+    { "event": "pick", "expect": { "variables": { "picked": [7, 7], "afterAppend": 2, "errors": 0 } } },
+    { "note": "the list is full: nothing is appended, the error ends the block, and `afterAppend` is not reached",
+      "event": "pick", "expect": { "variables": { "picked": [7, 7], "afterAppend": 2, "errors": 1 } } }
+  ]
+}

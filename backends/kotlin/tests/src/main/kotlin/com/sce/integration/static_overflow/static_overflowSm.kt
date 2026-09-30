@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 22b6e8ae08ad8be96edf103385b76aa166971f41a8129c686e990ffa47a55ce8
+// source-hash: 21a662d27007dd95ae857cda1ce2fb7e0fcfe414050da26f9854337c37d1b7b8
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_overflow.scxml
@@ -279,12 +279,16 @@ class StaticOverflowStateMachine(
             0 -> {
                 // SCE-MAP: static_overflow.scxml:22 :: waiting :: _transition_0
 
-            try { level = com.sce.forge.runtime.SceChecked.add(level, 3.toUByte()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, "<assign location='level'>: an integer operation overflowed or failed") }
+            if (try { level = com.sce.forge.runtime.SceChecked.add(level, 3.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, "<assign location='level'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
             }
             2 -> {
                 // SCE-MAP: static_overflow.scxml:26 :: waiting :: _transition_2
 
-            try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed") }
+            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
             }
             else -> {}
         }

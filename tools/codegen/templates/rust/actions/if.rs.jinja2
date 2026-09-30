@@ -4,12 +4,16 @@
 {# W3C SCXML 5.9.2: <if>/<elseif>/<else> - Conditional execution.
    A condition lowered to Rust at generate time (`native_cond`, a sce-static
    document's) comes first, as a transition's `native_guard` does. #}
-{# W3C SCXML 5.9.1 + 4.9: only the script-engine arm can fail. A cond that
-   cannot be evaluated is false, so the selection goes on to the next
-   partition; `if_cond_failed` remembers it, and once the chain has run the
-   <if> ends its block as any element that raised does. Outside an action
-   block there is no block to end, and the plain guard is used. #}
-{% set if_can_fail = model.needs_script_engine and in_action_block is defined and in_action_block and ((not action.native_cond and not action.is_pure_in_predicate) or (action.elseif_branches | rejectattr("native_cond") | rejectattr("is_pure_in_predicate") | list | length > 0)) %}
+{# W3C SCXML 5.9.1 + 4.9: the script-engine arm and a native cond that can fail
+   (`native_cond_fails`) can fail. A cond that cannot be evaluated is false, so
+   the selection goes on to the next partition; `if_cond_failed` remembers it
+   — a native cond sets it itself — and once the chain has run the <if> ends
+   its block as any element that raised does. Outside an action block there
+   is no block to end: the script-engine arm uses the plain guard, and a
+   native cond, which has already set the flag, has nothing to end. #}
+{% set if_script_can_fail = model.needs_script_engine and in_action_block is defined and in_action_block and ((not action.native_cond and not action.is_pure_in_predicate) or (action.elseif_branches | rejectattr("native_cond") | rejectattr("is_pure_in_predicate") | list | length > 0)) %}
+{% set if_native_can_fail = action.native_cond_fails or (action.elseif_branches | selectattr("native_cond_fails") | list | length > 0) %}
+{% set if_can_fail = if_script_can_fail or if_native_can_fail %}
 {% if if_can_fail %}
 {
 let mut if_cond_failed = false;
@@ -22,7 +26,7 @@ if {{ action.native_cond }} {
 if {{ action.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }} {
 {% elif model.needs_script_engine %}
 // W3C SCXML 5.9: Script engine guard ({{ action.cond }})
-if {% if if_can_fail %}self.evaluate_if_cond("{{ action.cond | to_lua_guard | escape_rust }}", engine, &mut if_cond_failed){% else %}self.safe_evaluate_guard("{{ action.cond | to_lua_guard | escape_rust }}", engine){% endif %} {
+if {% if if_script_can_fail %}self.evaluate_if_cond("{{ action.cond | to_lua_guard | escape_rust }}", engine, &mut if_cond_failed){% else %}self.safe_evaluate_guard("{{ action.cond | to_lua_guard | escape_rust }}", engine){% endif %} {
 {% else %}
 // W3C SCXML 4.2: cond="{{ action.cond }}" decided at build time
 if {{ 'true' if action.cond_constant else 'false' }} {
@@ -33,7 +37,7 @@ if {{ 'true' if action.cond_constant else 'false' }} {
     {% endwith %}
 {% endfor %}
 {% for elseif in action.elseif_branches %}
-} else if {% if elseif.native_cond %}{{ elseif.native_cond }}{% elif elseif.is_pure_in_predicate %}{{ elseif.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }}{% elif model.needs_script_engine %}{% if if_can_fail %}self.evaluate_if_cond("{{ elseif.cond | to_lua_guard | escape_rust }}", engine, &mut if_cond_failed){% else %}self.safe_evaluate_guard("{{ elseif.cond | to_lua_guard | escape_rust }}", engine){% endif %}{% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %} {
+} else if {% if elseif.native_cond %}{{ elseif.native_cond }}{% elif elseif.is_pure_in_predicate %}{{ elseif.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }}{% elif model.needs_script_engine %}{% if if_script_can_fail %}self.evaluate_if_cond("{{ elseif.cond | to_lua_guard | escape_rust }}", engine, &mut if_cond_failed){% else %}self.safe_evaluate_guard("{{ elseif.cond | to_lua_guard | escape_rust }}", engine){% endif %}{% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %} {
 {% for elseif_action in elseif.actions %}
     {% with action=elseif_action %}
     {% include 'actions/' ~ elseif_action.type ~ '.rs.jinja2' %}
@@ -50,8 +54,12 @@ if {{ 'true' if action.cond_constant else 'false' }} {
 {% endif %}
 }
 {% if if_can_fail %}
+{% if in_action_block is defined and in_action_block %}
 if if_cond_failed {
     break 'action_block;
 }
+{% else %}
+let _ = if_cond_failed;
+{% endif %}
 }
 {% endif %}

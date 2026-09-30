@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a full list ends
+  the block it is appended to. W3C SCXML 4.9: "If the processing of an element
+  causes an error to be raised, the processor MUST NOT process the remaining
+  elements of the block." An <sce:append> past its list's sce:capacity appends
+  nothing and raises error.execution, so the <assign> after it in the same block
+  does not run.
+
+  `picked` holds two. The first two `pick`s append and then count themselves in
+  `afterAppend`; the third finds the list full, so `afterAppend` stays at two
+  and `errors` says why.
+
+  The list has no ecmascript lowering yet, so the Interpreter does not replay
+  this machine's scenario: it is refused by name, and is replayed the day the
+  lowering covers a list.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="waiting" datamodel="sce-static" name="static_block_ends_list">
+  <datamodel>
+    <data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="2" sce:direction="out"/>
+    <data id="afterAppend" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint8" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="waiting">
+    <transition event="pick" type="internal">
+      <sce:append target="picked" expr="7"/>
+      <assign location="afterAppend" expr="afterAppend + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

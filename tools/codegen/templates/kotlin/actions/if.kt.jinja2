@@ -19,7 +19,11 @@
    this build, so a nested <if> cannot reuse its parent's. #}
 {% import 'block_exit.kt.jinja2' as block_exit %}
 {% set if_script_arm = model.needs_script_engine and outer_if_action.cond and not outer_if_action.native_cond and not (outer_if_action.is_kt_condition and outer_if_action.cond_kt) and not (outer_if_action.is_pure_in_predicate and outer_if_action.cond_kt) %}
-{% set if_can_fail = model.needs_script_engine and (if_script_arm or (outer_if_action.elseif_branches | rejectattr("native_cond") | rejectattr("is_kt_condition") | rejectattr("is_pure_in_predicate") | list | length > 0)) %}
+{% set if_script_can_fail = model.needs_script_engine and (if_script_arm or (outer_if_action.elseif_branches | rejectattr("native_cond") | rejectattr("is_kt_condition") | rejectattr("is_pure_in_predicate") | list | length > 0)) %}
+{# A native cond that can fail (`native_cond_fails`, a sce-static document's)
+   sets the flag itself, as the script-engine arm's `evaluateIfCond` does. #}
+{% set if_native_can_fail = outer_if_action.native_cond_fails or (outer_if_action.elseif_branches | selectattr("native_cond_fails") | list | length > 0) %}
+{% set if_can_fail = if_script_can_fail or if_native_can_fail %}
 {% set if_failed_var = 'ifCondFailed' ~ outer_if_action.if_ordinal %}
 {% if if_can_fail %}
             var {{ if_failed_var }} = false

@@ -95,10 +95,10 @@
     { "event": "sync.response", "data": { "kind": 7, "status": 0, "create": false, "davError": false, "now": 1000, "retryAfter": 0 },
       "expect": { "state": "idle", "variables": { "outcome": 4, "refusals": 0 } } },
 
-    { "note": "a report outside the rules' domain: both guards and both assignments that read it fail into error.execution (W3C SCXML 5.9.1: a condition that cannot be evaluated is false), and the run ends where the unconditioned transition goes",
+    { "note": "a report outside the rules' domain: both guards fail into error.execution (W3C SCXML 5.9.1: a condition that cannot be evaluated is false), the run ends where the unconditioned transition goes, and that transition's first assignment fails too — which ends its block (W3C SCXML 4.9), so the second is never processed and raises nothing",
       "event": "sync.start", "data": { "byToken": false },
       "expect": { "state": "deleting", "variables": { "outcome": 0 } } },
     { "event": "sync.response", "data": { "kind": 4, "status": 100, "create": false, "davError": false, "now": 1000, "retryAfter": 0 },
-      "expect": { "state": "idle", "variables": { "refusals": 4, "outcome": 0, "retryAt": 4600 } } }
+      "expect": { "state": "idle", "variables": { "refusals": 3, "outcome": 0, "retryAt": 4600 } } }
   ]
 }

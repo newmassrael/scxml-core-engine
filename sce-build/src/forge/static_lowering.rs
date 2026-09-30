@@ -229,20 +229,50 @@ pub trait StaticTarget {
     /// Log `value`, prefixed with `label` when there is one (§scxml-4.7).
     fn log(&self, label: &str, value: &str) -> String;
     /// Append `value` to the list at `target` while it holds fewer than
-    /// `capacity` elements; otherwise run `overflow`, if any.
-    fn append(&self, target: &str, capacity: u32, value: &str, overflow: Option<&str>) -> String;
+    /// `capacity` elements, as an expression that is `true` when the append
+    /// failed. It fails when the list is full — `overflow`, if any, runs, and
+    /// nothing is appended — and, when `value_can_fail`, when computing
+    /// `value` fails, where `failed` runs (both raise `error.execution`).
+    /// Either way the statement has raised an error, and the block it stands
+    /// in ends (W3C SCXML 4.9), which is the dispatcher's to do.
+    fn append(
+        &self,
+        target: &str,
+        capacity: u32,
+        value: &str,
+        value_can_fail: bool,
+        overflow: &str,
+        failed: &str,
+    ) -> String;
     /// Empty the list at `target`.
     fn clear(&self, target: &str) -> String;
     /// Raise `error.execution` with `message` (§scxml-3.12.2).
     fn raise_execution_error(&self, machine: &str, message: &str) -> String;
-    /// `statement`, whose expressions can fail (SCE_FORGE.md §3.4.1), run
-    /// where its failure is received: a failure stops it before it writes
-    /// anything, and `failed` runs instead (E12 D5).
+    /// `statement`, whose expressions can fail (SCE_FORGE.md §3.4.1), as an
+    /// expression that is `true` when it failed: it is run where its failure
+    /// is received, a failure stops it before it writes anything, and
+    /// `failed` runs instead (E12 D5). An error ends the block the element
+    /// stands in (W3C SCXML 4.9); which block that is, and what leaves it,
+    /// the dispatcher knows from where it renders the action, so it acts on
+    /// the `true`.
     fn receiving_statement(&self, statement: &str, failed: &str) -> String;
+    /// `statement`, a call whose arguments can fail, run where its failure is
+    /// received: a failure stops it before it happens, and `failed` runs
+    /// instead. A statement, not an expression: the call sits inside the text
+    /// a host action renders, which does not yet end its block on a failure.
+    fn receiving_call(&self, statement: &str, failed: &str) -> String;
     /// A condition that can fail: its value, or `false` once `failed` has run
-    /// (§scxml-5.9.1: a condition that cannot be evaluated is false, and
-    /// `error.execution` says why).
-    fn receiving_condition(&self, value: &str, failed: &str) -> String;
+    /// and then `flag` (§scxml-5.9.1: a condition that cannot be evaluated is
+    /// false, and `error.execution` says why). `flag` is
+    /// [`Self::condition_failed_flag`] for the condition of an `<if>` or an
+    /// `<elseif>`, and empty for a transition's guard, which stands in no
+    /// block.
+    fn receiving_condition(&self, value: &str, failed: &str, flag: &str) -> String;
+    /// The statement that records, on the `<if>` numbered `if_ordinal`, that
+    /// one of its conditions failed. The `<if>` runs its chain on — a
+    /// condition that cannot be evaluated is false — and then ends its block
+    /// (W3C SCXML 4.9), as any element that raised does.
+    fn condition_failed_flag(&self, if_ordinal: u32) -> String;
     /// What `_event.data` is read through inside a guard or statement of an
     /// `event` carrying a typed payload.
     fn payload_accessor(&self, event: &str) -> String;
@@ -254,6 +284,18 @@ pub trait StaticTarget {
 /// Kotlin: a variable is a property of the machine class, a record an
 /// immutable data class replaced field by field, a list an immutable `List`.
 pub struct KotlinTarget;
+
+impl KotlinTarget {
+    /// The arm of a failing expression: `after` run, when there is anything
+    /// to run, and then `true` — the failure the expression answers.
+    fn then_true(after: &str) -> String {
+        if after.is_empty() {
+            "true".to_string()
+        } else {
+            format!("{after}; true")
+        }
+    }
+}
 
 impl StaticTarget for KotlinTarget {
     fn name(&self) -> &'static str {
@@ -376,10 +418,29 @@ impl StaticTarget for KotlinTarget {
         format!("println({label}{value})")
     }
     // The list is immutable, so an append builds the next list — a snapshot
-    // holding the old one keeps what it saw.
-    fn append(&self, target: &str, capacity: u32, value: &str, overflow: Option<&str>) -> String {
-        let otherwise = overflow.map_or(String::new(), |o| format!(" else {{ {o} }}"));
-        format!("if ({target}.size < {capacity}) {{ {target} = {target} + ({value}) }}{otherwise}")
+    // holding the old one keeps what it saw. The expression is `true` when it
+    // failed: the list is full, or the value could not be computed.
+    fn append(
+        &self,
+        target: &str,
+        capacity: u32,
+        value: &str,
+        value_can_fail: bool,
+        overflow: &str,
+        failed: &str,
+    ) -> String {
+        let body = format!(
+            "if ({target}.size < {capacity}) {{ {target} = {target} + ({value}); false }} else {{ {} }}",
+            Self::then_true(overflow)
+        );
+        if value_can_fail {
+            format!(
+                "try {{ {body} }} catch (_: com.sce.forge.runtime.AlgorithmFailure) {{ {} }}",
+                Self::then_true(failed)
+            )
+        } else {
+            body
+        }
     }
     fn clear(&self, target: &str) -> String {
         format!("{target} = emptyList()")
@@ -392,21 +453,38 @@ impl StaticTarget for KotlinTarget {
     }
     // The runtime's checked helpers throw `AlgorithmFailure` before the
     // statement writes anything; it is caught where the statement stands, as
-    // an algorithm's boundary catches it.
+    // an algorithm's boundary catches it. A `try` is an expression, so it
+    // answers whether it failed, and stands outside any lambda the block
+    // exit that follows it would otherwise have to leave.
     fn receiving_statement(&self, statement: &str, failed: &str) -> String {
+        format!(
+            "try {{ {statement}; false }} catch (_: com.sce.forge.runtime.AlgorithmFailure) {{ {} }}",
+            Self::then_true(failed)
+        )
+    }
+    fn receiving_call(&self, statement: &str, failed: &str) -> String {
         format!(
             "try {{ {statement} }} catch (_: com.sce.forge.runtime.AlgorithmFailure) {{ {failed} }}"
         )
     }
-    fn receiving_condition(&self, value: &str, failed: &str) -> String {
-        let failed = if failed.is_empty() {
+    fn receiving_condition(&self, value: &str, failed: &str, flag: &str) -> String {
+        let after: Vec<&str> = [failed, flag]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect();
+        let after = if after.is_empty() {
             String::new()
         } else {
-            format!("{failed}; ")
+            format!("{}; ", after.join("; "))
         };
         format!(
-            "(try {{ {value} }} catch (_: com.sce.forge.runtime.AlgorithmFailure) {{ {failed}false }})"
+            "(try {{ {value} }} catch (_: com.sce.forge.runtime.AlgorithmFailure) {{ {after}false }})"
         )
+    }
+    // The flag is a local of the `<if>`, named by its ordinal: a nested `<if>`
+    // cannot reuse its parent's, because Kotlin warns on a shadowed name.
+    fn condition_failed_flag(&self, if_ordinal: u32) -> String {
+        format!("ifCondFailed{if_ordinal} = true")
     }
     fn payload_accessor(&self, event: &str) -> String {
         format!("{}!!", kotlin_payload_field(event))
@@ -420,6 +498,23 @@ impl StaticTarget for KotlinTarget {
 /// plain `Copy` struct updated in place, a list a `Vec` bounded by its
 /// declared capacity.
 pub struct RustTarget;
+
+impl RustTarget {
+    /// `lines` as the text of one expression spread over several lines, each as
+    /// it was given — indentation included, for the statements rustfmt leaves
+    /// as they are (one carrying the long message of a raised error). A line
+    /// with nothing on it is dropped: an error raised only when the document
+    /// declares `error.execution` leaves one, and rustfmt refuses trailing
+    /// whitespace it did not reflow.
+    fn lines(lines: &[String]) -> String {
+        lines
+            .iter()
+            .filter(|line| !line.trim().is_empty())
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
 
 impl StaticTarget for RustTarget {
     fn name(&self) -> &'static str {
@@ -514,9 +609,50 @@ impl StaticTarget for RustTarget {
             )
         }
     }
-    fn append(&self, target: &str, capacity: u32, value: &str, overflow: Option<&str>) -> String {
-        let otherwise = overflow.map_or(String::new(), |o| format!(" else {{ {o} }}"));
-        format!("if {target}.len() < {capacity} {{ {target}.push({value}); }}{otherwise}")
+    // An expression that is `true` when the append failed: the list is full,
+    // or the value could not be computed. The value is computed only where
+    // there is room for it, and a checked helper answers through `?`, which
+    // needs the closure a value that can fail runs in.
+    fn append(
+        &self,
+        target: &str,
+        capacity: u32,
+        value: &str,
+        value_can_fail: bool,
+        overflow: &str,
+        failed: &str,
+    ) -> String {
+        if !value_can_fail {
+            return Self::lines(&[
+                format!("if {target}.len() < {capacity} {{"),
+                format!("    {target}.push({value});"),
+                "    false".to_string(),
+                "} else {".to_string(),
+                format!("    {overflow}"),
+                "    true".to_string(),
+                "}".to_string(),
+            ]);
+        }
+        Self::lines(&[
+            "match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {".to_string(),
+            format!("    if {target}.len() < {capacity} {{"),
+            format!("        {target}.push({value});"),
+            "        Ok(false)".to_string(),
+            "    } else {".to_string(),
+            "        Ok(true)".to_string(),
+            "    }".to_string(),
+            "})() {".to_string(),
+            "    Ok(false) => false,".to_string(),
+            "    Ok(true) => {".to_string(),
+            format!("        {overflow}"),
+            "        true".to_string(),
+            "    }".to_string(),
+            "    Err(_) => {".to_string(),
+            format!("        {failed}"),
+            "        true".to_string(),
+            "    }".to_string(),
+            "}".to_string(),
+        ])
     }
     fn clear(&self, target: &str) -> String {
         format!("{target}.clear();")
@@ -531,7 +667,23 @@ impl StaticTarget for RustTarget {
     // The checked helpers answer through `?`, which needs a `Result` to
     // return into: the statement runs in a closure that is one, so a failure
     // returns out of it before the statement writes anything.
+    // A `match` is an expression, so it answers whether it failed, and the
+    // block exit that follows it stands outside the closure it ran in.
     fn receiving_statement(&self, statement: &str, failed: &str) -> String {
+        Self::lines(&[
+            "match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {".to_string(),
+            format!("    {statement}"),
+            "    Ok(())".to_string(),
+            "})() {".to_string(),
+            "    Ok(()) => false,".to_string(),
+            "    Err(_) => {".to_string(),
+            format!("        {failed}"),
+            "        true".to_string(),
+            "    }".to_string(),
+            "}".to_string(),
+        ])
+    }
+    fn receiving_call(&self, statement: &str, failed: &str) -> String {
         let run = format!(
             "(|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {{ {statement} Ok(()) }})()"
         );
@@ -542,10 +694,24 @@ impl StaticTarget for RustTarget {
             format!("if {run}.is_err() {{ {failed} }}")
         }
     }
-    fn receiving_condition(&self, value: &str, failed: &str) -> String {
-        format!(
-            "match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {{ Ok({value}) }})() {{ Ok(sce_value) => sce_value, Err(_) => {{ {failed} false }} }}"
-        )
+    fn receiving_condition(&self, value: &str, failed: &str, flag: &str) -> String {
+        Self::lines(&[
+            "match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {".to_string(),
+            format!("    Ok({value})"),
+            "})() {".to_string(),
+            "    Ok(sce_value) => sce_value,".to_string(),
+            "    Err(_) => {".to_string(),
+            format!("        {failed}"),
+            format!("        {flag}"),
+            "        false".to_string(),
+            "    }".to_string(),
+            "}".to_string(),
+        ])
+    }
+    // The flag is the `if_cond_failed` the `<if>`'s template declares; a
+    // nested `<if>` declares its own in its own block, which shadows.
+    fn condition_failed_flag(&self, _if_ordinal: u32) -> String {
+        "if_cond_failed = true;".to_string()
     }
     fn payload_accessor(&self, _event: &str) -> String {
         "ev".to_string()
@@ -884,6 +1050,7 @@ pub fn lower(
                 );
                 // §scxml-5.9.1: a condition that fails is false, and
                 // `error.execution` says why (E12 D5).
+                // A guard stands in no block, so there is nothing to end.
                 let lowered = if cond.can_fail {
                     target.receiving_condition(
                         &cond.text,
@@ -891,6 +1058,7 @@ pub fn lower(
                             &rewrites,
                             &format!("<transition cond='{}'>", transition.cond),
                         ),
+                        "",
                     )
                 } else {
                     cond.text
@@ -1154,7 +1322,7 @@ pub(crate) fn receive_static_statement(
     } else {
         String::new()
     };
-    Some(target.receiving_statement(statement, &failed))
+    Some(target.receiving_call(statement, &failed))
 }
 
 /// The nullable field the Kotlin payload channel binds `event`'s typed
@@ -1233,15 +1401,21 @@ fn lower_action(
         })
     };
     let failed = |construct: String| execution_failure(rewrites, &construct);
-    // `write(value)`, received where it stands when `value` can fail.
-    let statement = |value: &Receiving, write: &dyn Fn(&str) -> String, construct: String| {
-        let written = write(&value.text);
-        if value.can_fail {
-            target.receiving_statement(&written, &failed(construct))
-        } else {
-            written
-        }
-    };
+    // `write(value)`, received where it stands when `value` can fail — and
+    // then an expression that says whether it did, which the dispatcher acts
+    // on by ending the block (W3C SCXML 4.9) — with whether it can.
+    let statement =
+        |value: &Receiving, write: &dyn Fn(&str) -> String, construct: String| -> (String, bool) {
+            let written = write(&value.text);
+            if value.can_fail {
+                (
+                    target.receiving_statement(&written, &failed(construct)),
+                    true,
+                )
+            } else {
+                (written, false)
+            }
+        };
     let reads = crate::forge::expr::references_event_data_lexically;
     let mut reads_payload = false;
     // Each statement lands whole in `native_code`, and each condition in
@@ -1256,7 +1430,7 @@ fn lower_action(
             rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
             let location = action.location.trim();
             let construct = format!("<assign location='{location}'>");
-            action.native_code = match location
+            (action.native_code, action.native_fails) = match location
                 .split_once('.')
                 .filter(|(var, _)| rewrites.records.contains_key(*var))
             {
@@ -1276,9 +1450,11 @@ fn lower_action(
             let cond = lower(&action.cond, InferredType::Bool)?;
             rewrites.note(&action.cond, action.spellings.get("cond"), &cond.text);
             action.native_cond = if cond.can_fail {
+                action.native_cond_fails = true;
                 target.receiving_condition(
                     &cond.text,
                     &failed(format!("<if cond='{}'>", action.cond)),
+                    &target.condition_failed_flag(action.if_ordinal),
                 )
             } else {
                 cond.text
@@ -1292,13 +1468,16 @@ fn lower_action(
             let value = lower(&action.expr, InferredType::Unknown)?;
             rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
             let label = action.label.clone();
-            action.native_code = statement(&value, &|v| target.log(&label, v), "<log>".to_string());
+            (action.native_code, action.native_fails) =
+                statement(&value, &|v| target.log(&label, v), "<log>".to_string());
         }
         // An append happens only while the list is under its bound — on
         // every backend, so a machine holds the same list wherever it runs.
         // Past the bound nothing is appended and `error.execution` says so —
         // the processor's own signal for an error in executing the document,
-        // raised the way every other execution error of the backend is.
+        // raised the way every other execution error of the backend is — and
+        // the block ends (W3C SCXML 4.9), as it does for a value that could
+        // not be computed. So an append can always fail.
         "sce_append" => {
             reads_payload = reads(&action.expr);
             let list = action.location.trim();
@@ -1310,7 +1489,7 @@ fn lower_action(
             let value = lower(&action.expr, InferredType::from_sce_type(elem))?;
             rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
             let name = renames.get(list).copied().unwrap_or(list);
-            let overflow = rewrites.raises_error.then(|| {
+            let overflow = if rewrites.raises_error {
                 target.raise_execution_error(
                     rewrites.machine,
                     &format!(
@@ -1318,12 +1497,18 @@ fn lower_action(
                          {capacity}"
                     ),
                 )
-            });
-            action.native_code = statement(
-                &value,
-                &|v| target.append(name, *capacity, v, overflow.as_deref()),
-                format!("<sce:append target='{list}'>"),
+            } else {
+                String::new()
+            };
+            action.native_code = target.append(
+                name,
+                *capacity,
+                &value.text,
+                value.can_fail,
+                &overflow,
+                &failed(format!("<sce:append target='{list}'>")),
             );
+            action.native_fails = true;
         }
         "sce_clear" => {
             let list = action.location.trim();
@@ -1346,6 +1531,8 @@ fn lower_nested(
 ) -> Result<bool, GenerateError> {
     let target = rewrites.target;
     let mut reads_payload = false;
+    // Every condition of the chain sets the flag of the `<if>` it belongs to.
+    let flag = target.condition_failed_flag(action.if_ordinal);
     for branch in action.branch_conditions_mut() {
         if branch.is_cpp_condition || branch.is_kt_condition || branch.cond.trim().is_empty() {
             continue;
@@ -1368,9 +1555,11 @@ fn lower_nested(
         })?;
         rewrites.note(&branch.cond, branch.cond_spelling.as_ref(), &cond.text);
         branch.native_cond = if cond.can_fail {
+            branch.native_cond_fails = true;
             target.receiving_condition(
                 &cond.text,
                 &execution_failure(rewrites, &format!("<elseif cond='{}'>", branch.cond)),
+                &flag,
             )
         } else {
             cond.text

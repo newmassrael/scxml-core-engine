@@ -440,6 +440,18 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_code: String,
+    /// Codegen-internal: whether [`Self::native_code`] can fail — a checked
+    /// integer operation in it overflowed, a list it appends to is full.
+    ///
+    /// When set, `native_code` is not a statement but an expression that runs
+    /// the statement where its failure is received and is `true` when it
+    /// failed, `error.execution` already raised. W3C SCXML 4.9 ends the block
+    /// the element sits in on an error, and which block that is — and what
+    /// leaves it — is the backend's to say from where it renders the action,
+    /// so the dispatcher emits the exit after a `true`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_fails: bool,
     /// Codegen-internal: an `<if>`'s condition lowered to the rendering
     /// backend's own code, the action twin of [`Transition::native_guard`].
     /// `cond_kt` / `cond_cpp` stay what the author wrote behind `kt:` /
@@ -447,6 +459,17 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_cond: String,
+    /// Codegen-internal: whether [`Self::native_cond`] can fail. A condition
+    /// that cannot be evaluated is false and raises `error.execution`
+    /// (W3C SCXML 5.9.1), so the selection goes on, and once the `<if>` has
+    /// run W3C SCXML 4.9 ends its block as it does for any element that
+    /// raised. The condition itself sets the `<if>`'s failure flag; when this
+    /// is set the dispatcher declares the flag and ends the block after the
+    /// chain — of this condition and of each `<elseif>`'s
+    /// ([`ElseIfBranch::native_cond_fails`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_cond_fails: bool,
 
     // SCE_MESH.md §13 — mesh metadata is not carried on individual
     // <send> actions. Communication pattern is inferred from event name
@@ -515,6 +538,10 @@ pub struct ElseIfBranch {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_cond: String,
+    /// See [`Action::native_cond_fails`].
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_cond_fails: bool,
     /// See [`Action::cond_cpp_transformed`].
     #[serde(default)]
     pub cond_cpp_transformed: String,

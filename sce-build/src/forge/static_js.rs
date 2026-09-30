@@ -254,7 +254,9 @@ impl StaticTarget for JsTarget {
         _target: &str,
         _capacity: u32,
         _value: &str,
-        _overflow: Option<&str>,
+        _value_can_fail: bool,
+        _overflow: &str,
+        _failed: &str,
     ) -> String {
         unreachable!("{REFUSED_BEFORE_THE_WALK}")
     }
@@ -266,13 +268,21 @@ impl StaticTarget for JsTarget {
     }
     // The script engine's own channel: a library call that throws stops the
     // statement before it writes, a condition that throws is false, and
-    // `error.execution` is raised either way (W3C SCXML 5.9.1, 3.12.2) —
-    // the outcome E12 D5 gives the generated backends.
+    // `error.execution` is raised either way (W3C SCXML 5.9.1, 3.12.2) — and
+    // W3C SCXML 4.9 ends the block, which the Interpreter does for any
+    // element that raised. Nothing here is spelled: the document's own
+    // executable content is what runs.
     fn receiving_statement(&self, statement: &str, _failed: &str) -> String {
         statement.to_string()
     }
-    fn receiving_condition(&self, value: &str, _failed: &str) -> String {
+    fn receiving_call(&self, statement: &str, _failed: &str) -> String {
+        statement.to_string()
+    }
+    fn receiving_condition(&self, value: &str, _failed: &str, _flag: &str) -> String {
         value.to_string()
+    }
+    fn condition_failed_flag(&self, _if_ordinal: u32) -> String {
+        String::new()
     }
     fn payload_accessor(&self, _event: &str) -> String {
         PAYLOAD_ACCESSOR.to_string()

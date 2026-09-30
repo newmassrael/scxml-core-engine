@@ -1,0 +1,20 @@
+{
+  "machine": "static_block_ends",
+  "about": "An error ends the block it was raised in (W3C SCXML 4.9): an integer operation that overflows skips its statement, raises error.execution, and nothing after it in the block runs — whether it stood in the block itself, in the condition of an <if>, or in a branch of one. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "waiting", "variables": { "a": 250, "b": 0, "afterAssign": 0, "thenRan": 0, "elseRan": 0, "afterIf": 0, "inBranch": 0, "afterBranch": 0, "afterOk": 0, "errors": 0 } } },
+
+    { "note": "250 + 10 does not fit a uint8: the assignment is skipped and the one after it does not run",
+      "event": "fail.assign",
+      "expect": { "variables": { "a": 250, "afterAssign": 0, "errors": 1 } } },
+    { "note": "the condition overflows, so it is false and the <else> runs; the <if> raised, so the block ends after it",
+      "event": "fail.cond",
+      "expect": { "variables": { "thenRan": 0, "elseRan": 1, "afterIf": 0, "errors": 2 } } },
+    { "note": "the overflow is inside a branch: the branch and the block that contains the <if> both end",
+      "event": "fail.branch",
+      "expect": { "variables": { "a": 250, "inBranch": 0, "afterBranch": 0, "errors": 3 } } },
+    { "note": "nothing fails, so the block runs to its end",
+      "event": "ok",
+      "expect": { "variables": { "b": 1, "afterOk": 1, "errors": 3 } } }
+  ]
+}
