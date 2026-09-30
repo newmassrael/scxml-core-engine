@@ -19215,6 +19215,10 @@ fn bytes_wrap_for(target: ExprTarget, transpiled: &str) -> String {
             // captured value before allowing the slot write.
             transpiled.to_string()
         }
+        // The target here is the forge generator's own — `expr_target()` names
+        // one of the six code-generation backends. The ecmascript lowering
+        // reads no forge kind, and it has no `bytes` value to wrap.
+        ExprTarget::Js => unreachable!("a forge kind is never generated for the ecmascript target"),
     }
 }
 

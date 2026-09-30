@@ -2538,6 +2538,35 @@ enum Commands {
         #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
         include_dir: Vec<String>,
     },
+    /// Print a `datamodel="sce-static"` statechart as the
+    /// `datamodel="ecmascript"` document the Interpreter runs.
+    ///
+    /// The Interpreter refuses a `sce-static` document
+    /// (`scxml/unsupported-datamodel`): its script engine holds no types and
+    /// checks no integer operation, so running one there would give it a
+    /// meaning the document did not. This is the way to run one anyway. It
+    /// reads the document the way `generate` does, then replaces its
+    /// expressions — and only its expressions — with the ECMAScript that
+    /// means what the typed document means, calling a small runtime library
+    /// installed by the document's first `<data>`. Every other byte is the
+    /// author's.
+    ///
+    /// A construct with no lowering yet (a record or list variable, a call
+    /// of an imported algorithm, `<sce:action>`, a read of an event's typed
+    /// payload) is refused with `generate/unsupported-feature` naming it; the
+    /// document is never passed through half-lowered. A document under any
+    /// other data model is printed as it is.
+    ///
+    /// The document goes to stdout as raw bytes with no trailing newline, as
+    /// `expand` does, so a caller can capture it exactly.
+    Lower {
+        /// Input SCXML file path
+        scxml: String,
+        /// Additional directories searched to resolve `<xi:include>` and
+        /// `<sce:use>` fragments — same semantics as `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
     /// Print, for every diagnostic code, whether a record of that code
     /// carries the `spec_provenance` of the anchor enclosing it.
     ///
@@ -3118,6 +3147,7 @@ fn main() {
         Commands::ProvenanceRoster => cmd_provenance_roster(),
         Commands::Kinds { kind } => cmd_kinds(kind.as_deref()),
         Commands::Expand { scxml, include_dir } => cmd_expand(&scxml, &include_dir),
+        Commands::Lower { scxml, include_dir } => cmd_lower(&scxml, &include_dir, error_format),
         Commands::Verify {
             out_dir,
             input_root,
@@ -3208,6 +3238,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::ProvenanceRoster
         | Commands::Kinds { .. }
         | Commands::Expand { .. }
+        | Commands::Lower { .. }
         | Commands::Verify { .. }
         | Commands::VerifyGenerator { .. }
         | Commands::Addr2Sce { .. }
@@ -9641,6 +9672,20 @@ fn cmd_expand(scxml_path: &str, include_dirs: &[String]) {
     // template parity harness can byte-compare against the C++
     // pugixml canonicalisation without newline handling quirks.
     out_bytes(expanded.as_bytes());
+}
+
+// ── Subcommand: lower ──────────────────────────────────────────
+//
+// A `sce-static` statechart as the ECMAScript one the Interpreter runs
+// (docs/SCE_ACCEPTED_SUBSET.md §2.15). Reads through `parse_file`, so the
+// judge that holds the document to its types has already run, and refuses
+// through the same error format as `generate` does.
+
+fn cmd_lower(scxml_path: &str, include_dirs: &[String], error_format: ErrorFormat) {
+    let extra_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let lowered = sce_build::forge::static_js::lower_file(scxml_path, extra_dirs)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML lowering error: "));
+    out_bytes(lowered.as_bytes());
 }
 
 // ── Subcommand: verify ─────────────────────────────────────────

@@ -64,6 +64,10 @@ use std::ops::Range;
 pub struct AttributeSpelling {
     row: u32,
     col: u32,
+    /// The byte offset [`Self::written`] starts at in the text the document
+    /// was parsed from — the row and column say where a reader looks, this is
+    /// where an edit lands (`crate::forge::static_js`).
+    offset: usize,
     written: String,
     decoding: Decoding,
 }
@@ -134,9 +138,17 @@ pub struct Written<'a> {
     pub text: &'a str,
     pub row: u32,
     pub col: u32,
+    /// The byte offset `text` starts at in the text the document was parsed
+    /// from.
+    pub offset: usize,
 }
 
 impl<'a> Written<'a> {
+    /// The bytes of the parsed text this piece was written in.
+    pub fn range(&self) -> Range<usize> {
+        self.offset..self.offset + self.text.len()
+    }
+
     /// The text, when it lies on one row — the only shape a record may
     /// carry as `actual`, since §3.1.1 has a consumer find it on one line.
     pub fn on_one_row(&self) -> Option<&'a str> {
@@ -158,6 +170,7 @@ impl AttributeSpelling {
         Some(Self {
             row: at.row,
             col: at.col,
+            offset: range.start,
             written: document.input_text()[range].to_string(),
             decoding: Decoding::Attribute,
         })
@@ -185,6 +198,7 @@ impl AttributeSpelling {
         let spelling = Self {
             row: at.row,
             col: at.col,
+            offset: start,
             written: input.get(start..end)?.to_string(),
             decoding: Decoding::CharacterData,
         };
@@ -333,6 +347,7 @@ impl AttributeSpelling {
         self.locate_trimmed(range).map(|written| Self {
             row: written.row,
             col: written.col,
+            offset: written.offset,
             written: written.text.to_string(),
             decoding: self.decoding,
         })
@@ -354,6 +369,7 @@ impl AttributeSpelling {
             text: &self.written[from..to],
             row,
             col,
+            offset: self.offset + from,
         }
     }
 }
@@ -534,6 +550,23 @@ mod tests {
         assert_eq!(decoded.trim(), "40");
         let value = spelling.value().expect("the value");
         assert_eq!((value.text, value.row, value.col), ("4&#48;", 2, 8));
+    }
+
+    /// What an edit needs: the bytes of the parsed text a piece was written
+    /// in, so replacing exactly that range replaces exactly that piece — for a
+    /// value that opens on a later row, holds a reference, and is preceded by
+    /// text of more than one byte per character.
+    #[test]
+    fn a_piece_is_found_by_its_byte_range_in_the_parsed_text() {
+        let text = "<t é=\"1\"\n   v=\"  n &lt; 3  \" w=\"x\"/>";
+        let (decoded, spelling) = spelling_of(text, "v");
+        assert_eq!(decoded.trim(), "n < 3");
+        let value = spelling.value().expect("the value");
+        assert_eq!(&text[value.range()], "n &lt; 3");
+        let operator = spelling.locate_trimmed(2..3).expect("the operator");
+        assert_eq!(&text[operator.range()], "&lt;");
+        let piece = spelling.piece_trimmed(0..1).expect("the first token");
+        assert_eq!(&text[piece.value().expect("its value").range()], "n");
     }
 
     /// A piece of a value is placed as an attribute holding only that piece

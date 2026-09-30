@@ -83,6 +83,41 @@ pub struct StaticLowering {
     /// The shape a saved state of this machine is bound to ([`saved_shape`]),
     /// or `None` for a machine whose state a saved state cannot yet hold.
     pub saved_shape: Option<String>,
+    /// Every expression the walk lowered, with the attribute the document
+    /// wrote it in. A backend that renders the rewritten model reads the
+    /// slots instead; a lowering that rewrites the document itself
+    /// ([`crate::forge::static_js`]) reads these.
+    pub sites: Vec<LoweredSite>,
+}
+
+/// One expression of the document, as the walk lowered it: the text the
+/// author wrote, the attribute it sits in, and its lowering — the value alone,
+/// before any statement, guard or failure handling is wrapped around it.
+#[derive(Debug, Clone)]
+pub struct LoweredSite {
+    /// The expression as the model holds it, decoded.
+    pub source: String,
+    /// Where the document wrote it, for a model a document produced. `None`
+    /// for one none did, and for an attribute whose written form does not
+    /// decode to [`Self::source`] — a pass rewrote it after the parse — which
+    /// no edit may be placed against.
+    pub spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    /// The lowering, in the target's own language.
+    pub text: String,
+}
+
+impl LoweredSite {
+    fn new(
+        source: &str,
+        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+        text: &str,
+    ) -> Self {
+        Self {
+            source: source.to_string(),
+            spelling: spelling.filter(|s| s.spells(source)).cloned(),
+            text: text.to_string(),
+        }
+    }
 }
 
 /// A record type a `sce-static` machine declares, as a saved state writes it:
@@ -150,6 +185,13 @@ pub trait StaticTarget {
     /// algorithms yet, which refuses a document that calls one rather than
     /// leaving the name undefined.
     fn callee(&self, document_name: &str) -> Option<Callee>;
+    /// The first construct of `model` this target has no lowering for yet,
+    /// described for a refusal — or `None` when it lowers the whole document.
+    /// Asked before the walk, so a target whose spellings for a construct are
+    /// not written yet says so in one place instead of in each of them.
+    fn unsupported(&self, _model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {
+        None
+    }
     /// The expression lowerer's target.
     fn expr_target(&self) -> ExprTarget;
     /// The declared name of variable `id`'s field.
@@ -591,6 +633,11 @@ pub fn lower(
             unreached.alias
         )));
     }
+    if let Some(construct) = target.unsupported(model, &scope) {
+        return Err(GenerateError::unsupported(format!(
+            "{construct} has no {lang} lowering yet"
+        )));
+    }
     let names = names(&scope, target);
     let imports: Vec<String> = scope
         .callees
@@ -624,6 +671,7 @@ pub fn lower(
         machine,
         raises_error: model.events.contains("error.execution"),
         target,
+        sites: Default::default(),
     };
 
     let refused = |what: &str, text: &str, refusal: Refusal| {
@@ -768,6 +816,7 @@ pub fn lower(
             let slot = InferredType::from_sce_type(ty);
             let init = initial_value(&var.expr, target, &ctx, &renames, slot)
                 .map_err(|r| refused("the initial value", &var.expr, r))?;
+            rewrites.note(&var.expr, var.expr_spelling.as_ref(), &init);
             fields.push(StaticField {
                 id: var.id.clone(),
                 name,
@@ -828,6 +877,11 @@ pub fn lower(
                     InferredType::Bool,
                 )
                 .map_err(|r| refused("the condition", &transition.cond, r))?;
+                rewrites.note(
+                    &transition.cond,
+                    transition.cond_spelling.as_ref(),
+                    &cond.text,
+                );
                 // §scxml-5.9.1: a condition that fails is false, and
                 // `error.execution` says why (E12 D5).
                 let lowered = if cond.can_fail {
@@ -878,6 +932,7 @@ pub fn lower(
         imports,
         records: saved_records,
         saved_shape,
+        sites: rewrites.sites.into_inner(),
     })
 }
 
@@ -995,6 +1050,25 @@ struct Rewrites<'m> {
     machine: &'m str,
     raises_error: bool,
     target: &'m dyn StaticTarget,
+    /// What the walk has lowered so far ([`StaticLowering::sites`]). Written
+    /// through a shared reference because the walk reads `Rewrites` from
+    /// closures.
+    sites: std::cell::RefCell<Vec<LoweredSite>>,
+}
+
+impl Rewrites<'_> {
+    /// Note that `source`, written in the attribute `spelling`, lowered to
+    /// `text`.
+    fn note(
+        &self,
+        source: &str,
+        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+        text: &str,
+    ) {
+        self.sites
+            .borrow_mut()
+            .push(LoweredSite::new(source, spelling, text));
+    }
 }
 
 /// The target that spells `lang`, when it lowers `sce-static` at all.
@@ -1179,6 +1253,7 @@ fn lower_action(
             let slot = crate::forge::expr::infer_expr_type(&action.location, ctx)
                 .unwrap_or(InferredType::Unknown);
             let value = lower(&action.expr, slot)?;
+            rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
             let location = action.location.trim();
             let construct = format!("<assign location='{location}'>");
             action.native_code = match location
@@ -1199,6 +1274,7 @@ fn lower_action(
         "if" if !action.is_cpp_condition && !action.is_kt_condition => {
             reads_payload = reads(&action.cond);
             let cond = lower(&action.cond, InferredType::Bool)?;
+            rewrites.note(&action.cond, action.spellings.get("cond"), &cond.text);
             action.native_cond = if cond.can_fail {
                 target.receiving_condition(
                     &cond.text,
@@ -1214,6 +1290,7 @@ fn lower_action(
             // Nothing is declared where a logged value lands, so any value
             // stands there.
             let value = lower(&action.expr, InferredType::Unknown)?;
+            rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
             let label = action.label.clone();
             action.native_code = statement(&value, &|v| target.log(&label, v), "<log>".to_string());
         }
@@ -1231,6 +1308,7 @@ fn lower_action(
                 ))
             })?;
             let value = lower(&action.expr, InferredType::from_sce_type(elem))?;
+            rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
             let name = renames.get(list).copied().unwrap_or(list);
             let overflow = rewrites.raises_error.then(|| {
                 target.raise_execution_error(
@@ -1288,6 +1366,7 @@ fn lower_nested(
                 r.error
             ))
         })?;
+        rewrites.note(&branch.cond, branch.cond_spelling.as_ref(), &cond.text);
         branch.native_cond = if cond.can_fail {
             target.receiving_condition(
                 &cond.text,

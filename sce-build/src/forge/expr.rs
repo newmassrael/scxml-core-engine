@@ -87,20 +87,34 @@ pub enum ExprTarget {
     /// promotion under push-down). The emitter is restricted to operators
     /// the transform fixtures exercise.
     C,
+    /// ECMAScript, spelled for the Interpreter's script engine: the lowering
+    /// that lets a `datamodel="sce-static"` document run there
+    /// (docs/SCE_ACCEPTED_SUBSET.md §2.15). It is NOT a code-generation
+    /// backend — there is no `Language` for it, and it is deliberately absent
+    /// from [`ExprTarget::ALL`], so a verdict of "lowers natively on all
+    /// backends" does not start to require it.
+    ///
+    /// Every integer is a JavaScript Number. A checked operation is the
+    /// runtime library's (`SceStatic.<type>.<helper>`), which computes exactly
+    /// and hands back a Number only when it is a safe integer.
+    Js,
 }
 
 impl ExprTarget {
     /// The code generator's name for this backend — what
-    /// [`crate::forge::enum_naming`] spells a variant reference for.
-    pub(crate) fn language(self) -> crate::generator::Language {
+    /// [`crate::forge::enum_naming`] spells a variant reference for — or
+    /// `None` for the target that is not a code-generation backend
+    /// ([`ExprTarget::Js`]).
+    pub(crate) fn language(self) -> Option<crate::generator::Language> {
         use crate::generator::Language;
         match self {
-            ExprTarget::Cpp => Language::Cpp,
-            ExprTarget::Kotlin => Language::Kotlin,
-            ExprTarget::Rust => Language::Rust,
-            ExprTarget::Go => Language::Go,
-            ExprTarget::Python => Language::Python,
-            ExprTarget::C => Language::C11,
+            ExprTarget::Cpp => Some(Language::Cpp),
+            ExprTarget::Kotlin => Some(Language::Kotlin),
+            ExprTarget::Rust => Some(Language::Rust),
+            ExprTarget::Go => Some(Language::Go),
+            ExprTarget::Python => Some(Language::Python),
+            ExprTarget::C => Some(Language::C11),
+            ExprTarget::Js => None,
         }
     }
 
@@ -375,6 +389,7 @@ fn lower_at(
         ExprTarget::Go => emit_go(&ast, expected)?,
         ExprTarget::Python => emit_python(&ast, expected)?,
         ExprTarget::C => emit_c(&ast, expected)?,
+        ExprTarget::Js => emit_js(&ast, expected)?,
     };
     Ok(Lowered {
         text,
@@ -518,7 +533,7 @@ fn resolve_then_rename(
     if !lowerings.is_empty() {
         lower_stateful_import_calls(ast, lowerings);
     }
-    lower_enum_variant_refs(ast, ctx, target);
+    lower_enum_variant_refs(ast, ctx, target)?;
     if !renames.is_empty() {
         rename_identifiers(ast, renames);
     }
@@ -1289,6 +1304,7 @@ pub fn transpile_lvalue(
         ExprTarget::Go => emit_go(&ast, InferredType::Unknown)?,
         ExprTarget::Python => emit_python(&ast, InferredType::Unknown)?,
         ExprTarget::C => emit_c(&ast, InferredType::Unknown)?,
+        ExprTarget::Js => emit_js(&ast, InferredType::Unknown)?,
     };
     Ok((emitted, ty))
 }
@@ -4228,24 +4244,44 @@ fn reject_undeclared_member(
 ///
 /// Runs after [`reject_unknown_names`], so every enum member reaching here
 /// is a declared variant.
-fn lower_enum_variant_refs(expr: &mut TypedExpr, ctx: &TypeCtx<'_>, target: ExprTarget) {
+///
+/// A target with no `Language` ([`ExprTarget::language`]) has no declaration
+/// for the variant to be spelled against, so a reference is refused there
+/// rather than left as the author's `Alias.variant`, which names nothing in
+/// the script engine.
+fn lower_enum_variant_refs(
+    expr: &mut TypedExpr,
+    ctx: &TypeCtx<'_>,
+    target: ExprTarget,
+) -> Result<(), Refusal> {
     if let ExprKind::Member { object, property } = &expr.kind {
         if let ExprKind::Ident(alias) = &object.kind {
             if let Some(scope) = ctx.lookup_enum(alias) {
+                let Some(language) = target.language() else {
+                    return Err(ExprError::UnsupportedConstruct {
+                        construct: format!(
+                            "a reference to the enum variant `{alias}.{property}` in an \
+                             ecmascript lowering"
+                        ),
+                        observed: Some(format!("{alias}.{property}")),
+                    }
+                    .at(expr.span.clone()));
+                };
                 let reference = crate::forge::enum_naming::variant_ref(
-                    target.language(),
+                    language,
                     scope.qualified_type,
                     scope.source_name,
                     property,
                 );
                 expr.kind = ExprKind::Raw(reference);
-                return;
+                return Ok(());
             }
         }
     }
     for child in expr_children_mut(expr) {
-        lower_enum_variant_refs(child, ctx, target);
+        lower_enum_variant_refs(child, ctx, target)?;
     }
+    Ok(())
 }
 
 /// Every sub-expression of `expr`, in source order, mutably — the twin of
@@ -6359,6 +6395,15 @@ pub(crate) fn pass_failure_on(
             format!("scealgorithm.Take[{value}](&sceFailure)({call})")
         }
         ExprTarget::Python => call.to_string(),
+        // A `may-fail` algorithm is a code-generation kind: a `sce-static`
+        // document's expressions reach no such callee, and the Interpreter has
+        // no failure channel to pass one on through.
+        ExprTarget::Js => {
+            return Err(ExprError::UnsupportedConstruct {
+                construct: "a call of a `may-fail` algorithm in an ecmascript lowering".to_string(),
+                observed: Some(symbol.to_string()),
+            })
+        }
     })
 }
 
@@ -6765,6 +6810,277 @@ fn python_binop(op: BinOp) -> &'static str {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Emitter — ECMAScript (the Interpreter's script engine)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// The Interpreter hands every expression to its script engine, which reads
+// ECMAScript. A `sce-static` document is ECMAScript with types the engine does
+// not hold, so this emitter writes what the document means in ECMAScript's own
+// terms:
+//
+// * Every integer is a Number. A checked operation is the runtime library's
+//   (`SceStatic.<I|U><bits>.<helper>`), which computes exactly and hands back a
+//   Number only where it is a safe integer, and throws otherwise — the failure
+//   the generated backends record (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+// * Names stand as authored: the document's variables are the script engine's
+//   globals under the ids the document declares.
+// * A construct whose ECMAScript meaning is not the document's is REFUSED, not
+//   passed through. The bitwise operators are the first: a Number's are 32-bit
+//   and signed, so `x & 0xFFFFFFFF` would read as -1 where every backend reads
+//   4294967295.
+
+/// The largest integer a Number holds exactly, 2^53 - 1 — the bound on both an
+/// integer literal and the runtime library's results.
+const JS_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+
+fn js_binop(op: BinOp) -> &'static str {
+    match op {
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
+        BinOp::Mod => "%",
+        BinOp::StrictEq => "===",
+        BinOp::StrictNeq => "!==",
+        BinOp::Lt => "<",
+        BinOp::Gt => ">",
+        BinOp::LtEq => "<=",
+        BinOp::GtEq => ">=",
+        BinOp::And => "&&",
+        BinOp::Or => "||",
+        BinOp::BitAnd => "&",
+        BinOp::BitOr => "|",
+        BinOp::BitXor => "^",
+        BinOp::Shl => "<<",
+        BinOp::Shr => ">>",
+        BinOp::UShr => ">>>",
+    }
+}
+
+/// A number literal as an ECMAScript Number holds it.
+///
+/// An integer is written as its decimal value — never as the author's text,
+/// because a decimal with a leading zero (`017`) reads as octal in sloppy-mode
+/// ECMAScript while [`integer_literal_value`], which every range check reads,
+/// takes it as seventeen. One that a Number cannot hold exactly is refused: it
+/// would round in silence, and the generated backends keep it.
+fn js_number_literal(text: &str) -> Result<String, ExprError> {
+    let is_integer = matches!(text.get(..2), Some("0x" | "0X" | "0b" | "0B" | "0o" | "0O"))
+        || text.bytes().all(|b| b.is_ascii_digit());
+    if !is_integer {
+        return Ok(text.to_string());
+    }
+    match integer_literal_value(text) {
+        Some(value) if value <= JS_MAX_SAFE_INTEGER => Ok(value.to_string()),
+        _ => Err(ExprError::UnsupportedConstruct {
+            construct: format!(
+                "the integer literal {text} in an ecmascript lowering: a Number holds an \
+                 integer exactly only up to {JS_MAX_SAFE_INTEGER}"
+            ),
+            observed: Some(text.to_string()),
+        }),
+    }
+}
+
+fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
+    use crate::forge::static_js::{INTEGER_WIDTHS, RUNTIME_GLOBAL};
+    Ok(match &expr.kind {
+        ExprKind::NumberLit(n) => js_number_literal(n)?,
+        // The author's own literal, in the quote the author chose: what the
+        // lexer keeps is ECMAScript already.
+        ExprKind::StringLit { value, quote } => format!("{quote}{value}{quote}"),
+        ExprKind::BytesLit { .. } | ExprKind::BytesView { .. } => {
+            return Err(ExprError::UnsupportedConstruct {
+                construct: "a `bytes` value in an ecmascript lowering".to_string(),
+                observed: None,
+            })
+        }
+        ExprKind::BoolLit(b) => b.to_string(),
+        ExprKind::NullLit => "null".to_string(),
+        ExprKind::Ident(s) | ExprKind::Raw(s) => s.clone(),
+        ExprKind::Binary { op, left, right } => {
+            if op.is_bitwise() {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!(
+                        "the bitwise operator `{}` in an ecmascript lowering: a Number's \
+                         bitwise operators are 32-bit and signed",
+                        js_binop(*op)
+                    ),
+                    observed: Some(js_binop(*op).to_string()),
+                });
+            }
+            // A real division is `/`; between two integers it is the truncating
+            // pair the generated backends compute (SCE_FORGE.md §3.4.1), which
+            // is not what `/` gives a Number.
+            let operand_ty = if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
+                expected
+            } else {
+                binary_operand_type(*op, left.ty, right.ty)
+            };
+            let l_raw = emit_js(left, operand_ty)?;
+            let r_raw = emit_js(right, operand_ty)?;
+            let l = if child_needs_parens(left, *op, true, ecma_precedence) {
+                format!("({l_raw})")
+            } else {
+                l_raw
+            };
+            let r = if child_needs_parens(right, *op, false, ecma_precedence) {
+                format!("({r_raw})")
+            } else {
+                r_raw
+            };
+            let integer_operands = matches!(
+                operand_ty,
+                InferredType::Int { .. } | InferredType::UntypedInt
+            );
+            if *op == BinOp::Div && integer_operands {
+                format!("Math.trunc({l} / {r})")
+            } else {
+                format!("{l} {} {r}", js_binop(*op))
+            }
+        }
+        ExprKind::Unary { op, operand } => {
+            let prefix = match op {
+                UnaryOp::Neg => "-",
+                UnaryOp::Pos => "+",
+                UnaryOp::Not => "!",
+                UnaryOp::BitNot => {
+                    return Err(ExprError::UnsupportedConstruct {
+                        construct: "the bitwise operator `~` in an ecmascript lowering: a \
+                                    Number's bitwise operators are 32-bit and signed"
+                            .to_string(),
+                        observed: Some("~".to_string()),
+                    })
+                }
+            };
+            let inner = emit_js(operand, expr.ty)?;
+            // `- -x` is one token, `--x`, in ECMAScript: a sign in front of a
+            // sign is wrapped as an operand of an operator is.
+            let sign = matches!(op, UnaryOp::Neg | UnaryOp::Pos);
+            let wrap = matches!(
+                &operand.kind,
+                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+            ) || (sign && matches!(&operand.kind, ExprKind::Unary { .. }));
+            if wrap {
+                format!("{prefix}({inner})")
+            } else {
+                format!("{prefix}{inner}")
+            }
+        }
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
+            let wrap = |e: &TypedExpr, s: String| {
+                if matches!(&e.kind, ExprKind::Conditional { .. }) {
+                    format!("({s})")
+                } else {
+                    s
+                }
+            };
+            format!(
+                "{} ? {} : {}",
+                wrap(condition, emit_js(condition, InferredType::Bool)?),
+                wrap(consequent, emit_js(consequent, expr.ty)?),
+                emit_js(alternate, expr.ty)?,
+            )
+        }
+        ExprKind::Member { object, property } => format!(
+            "{}.{property}",
+            wrap_postfix(object, emit_js(object, InferredType::Unknown)?)
+        ),
+        ExprKind::Index { object, index } => format!(
+            "{}[{}]",
+            wrap_postfix(object, emit_js(object, InferredType::Unknown)?),
+            emit_js(index, InferredType::Unknown)?,
+        ),
+        ExprKind::Call {
+            callee,
+            args,
+            params,
+            fails,
+        } => {
+            if is_len_builtin(callee, args) {
+                return Ok(format!(
+                    "{}.length",
+                    wrap_postfix(&args[0], emit_js(&args[0], InferredType::Unknown)?)
+                ));
+            }
+            if let Some(op) = real_to_int_builtin(callee, args) {
+                // ⚠ NOT `Math.round`, which rounds half toward +∞: `Math.round(-0.5)`
+                // is -0 and `Math.round(-2.5)` is -2, where the generated backends
+                // round half away from zero. The library's `round` is that rule;
+                // `Math.floor` goes toward -∞ everywhere and needs no rewrite.
+                let inner = emit_js(&args[0], InferredType::Float { bits: 64 })?;
+                return Ok(match op {
+                    RealToInt::Round => format!("{RUNTIME_GLOBAL}.round({inner})"),
+                    RealToInt::Floor => format!("Math.floor({inner})"),
+                });
+            }
+            let mut a = Vec::with_capacity(args.len());
+            for (i, arg) in args.iter().enumerate() {
+                a.push(emit_js(arg, argument_type(params, i))?);
+            }
+            let symbol = wrap_postfix(callee, emit_js(callee, InferredType::Unknown)?);
+            let call = format!("{symbol}({})", a.join(", "));
+            if *fails {
+                pass_failure_on(ExprTarget::Js, &symbol, &call, expr.ty)?
+            } else {
+                call
+            }
+        }
+        // SCE_FORGE.md §3.4.1: an index read through the library's `at`, which
+        // refuses an index outside the collection where a bare read would give
+        // `undefined`.
+        ExprKind::Checked {
+            op: CheckedOp::Index,
+            left,
+            right: Some(index),
+        } => format!(
+            "{RUNTIME_GLOBAL}.at({}, {})",
+            emit_js(left, InferredType::Unknown)?,
+            emit_js(index, InferredType::Unknown)?,
+        ),
+        // SCE_FORGE.md §3.4.1: the library's method for the operation's own
+        // width, which computes exactly and throws for a result the width does
+        // not hold.
+        ExprKind::Checked { op, left, right } => {
+            let InferredType::Int { signed, bits } = expr.ty else {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!("a checked operation of type {:?}", expr.ty),
+                    observed: None,
+                });
+            };
+            if !INTEGER_WIDTHS.contains(&bits) {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!(
+                        "a checked operation on a {bits}-bit integer in an ecmascript \
+                         lowering: the library implements {INTEGER_WIDTHS:?}"
+                    ),
+                    observed: None,
+                });
+            }
+            let operand_ty = if *op == CheckedOp::Narrow {
+                left.ty
+            } else {
+                expr.ty
+            };
+            let mut operands = vec![emit_js(left, operand_ty)?];
+            if let Some(right) = right {
+                operands.push(emit_js(right, expr.ty)?);
+            }
+            format!(
+                "{RUNTIME_GLOBAL}.{}{bits}.{}({})",
+                if signed { "I" } else { "U" },
+                op.helper(),
+                operands.join(", ")
+            )
+        }
+    })
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Emitter — C11
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //
@@ -7134,25 +7450,45 @@ mod tests {
     /// pointing the author at the array (and at every all-backend verdict
     /// that iterates it — e.g. `guard_is_native_lowerable`). The
     /// `contains` check additionally proves the array is not missing any
-    /// existing variant.
+    /// existing variant — and that the one target that is not a
+    /// code-generation backend, [`ExprTarget::Js`], is not in it.
     #[test]
     fn expr_target_all_contains_every_variant() {
-        fn assert_listed(t: ExprTarget) {
+        fn is_backend(t: ExprTarget) -> bool {
             match t {
                 ExprTarget::Cpp
                 | ExprTarget::Kotlin
                 | ExprTarget::Rust
                 | ExprTarget::Go
                 | ExprTarget::Python
-                | ExprTarget::C => {}
+                | ExprTarget::C => true,
+                // The ecmascript lowering runs a `sce-static` document in the
+                // Interpreter; it has no `Language`, and listing it in `ALL`
+                // would make every "lowers natively on all backends" verdict
+                // require a lowering no forge kind has.
+                ExprTarget::Js => false,
             }
-            assert!(
-                ExprTarget::ALL.contains(&t),
-                "{t:?} missing from ExprTarget::ALL"
-            );
         }
-        for t in ExprTarget::ALL {
-            assert_listed(t);
+        let every = [
+            ExprTarget::Cpp,
+            ExprTarget::Kotlin,
+            ExprTarget::Rust,
+            ExprTarget::Go,
+            ExprTarget::Python,
+            ExprTarget::C,
+            ExprTarget::Js,
+        ];
+        for t in every {
+            assert_eq!(
+                ExprTarget::ALL.contains(&t),
+                is_backend(t),
+                "{t:?}: membership of ExprTarget::ALL disagrees with being a backend"
+            );
+            assert_eq!(
+                t.language().is_some(),
+                is_backend(t),
+                "{t:?}: a backend has a Language and the ecmascript target has none"
+            );
         }
         assert_eq!(ExprTarget::ALL.len(), 6);
     }
@@ -9067,5 +9403,226 @@ mod tests {
         let err = transpile_lvalue("", ExprTarget::Cpp, &empty_ctx(), &empty_renames());
         assert!(err.is_err());
         assert!(err.unwrap_err().to_string().contains("empty"));
+    }
+
+    // ── ECMAScript (the Interpreter's script engine) ────────────
+
+    /// A `sce-static` machine's context: the failures of every integer
+    /// operation are received, so each one is a library call.
+    fn js_ctx() -> TypeCtx<'static> {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("level", int(false, 8));
+        ctx.insert_var("delta", int(true, 32));
+        ctx.insert_var("wide", int(false, 64));
+        ctx.insert_var("ratio", float(64));
+        ctx.insert_var("ready", InferredType::Bool);
+        ctx.insert_var("label", InferredType::Str);
+        ctx.receives_failures = true;
+        ctx
+    }
+
+    fn js(expr: &str) -> String {
+        transpile_typed(
+            expr,
+            ExprTarget::Js,
+            &js_ctx(),
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .unwrap()
+    }
+
+    fn js_refusal(expr: &str) -> String {
+        transpile_typed(
+            expr,
+            ExprTarget::Js,
+            &js_ctx(),
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .unwrap_err()
+        .to_string()
+    }
+
+    /// The one property the lowering exists for: an integer operation is the
+    /// library's, at the width the operation is checked at, so a `uint8` that
+    /// would pass 255 throws where a bare `+` would write 256.
+    #[test]
+    fn js_checks_an_integer_operation_at_its_own_width() {
+        assert_eq!(js("level + 3"), "SceStatic.U8.add(level, 3)");
+        assert_eq!(js("delta - 1"), "SceStatic.I32.sub(delta, 1)");
+        assert_eq!(js("wide * 2"), "SceStatic.U64.mul(wide, 2)");
+        assert_eq!(js("delta / 2"), "SceStatic.I32.div(delta, 2)");
+        assert_eq!(js("delta % 2"), "SceStatic.I32.rem(delta, 2)");
+        assert_eq!(js("-delta"), "SceStatic.I32.neg(delta)");
+    }
+
+    /// A width the library does not implement is refused at build time; the
+    /// call it would otherwise write names a member that is not there and
+    /// fails only when the machine reaches it.
+    #[test]
+    fn js_refuses_a_width_the_library_lacks() {
+        let mut ctx = js_ctx();
+        ctx.insert_var("odd", int(false, 24));
+        let refusal = transpile_typed(
+            "odd + 1",
+            ExprTarget::Js,
+            &ctx,
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(refusal.contains("24-bit"), "{refusal}");
+    }
+
+    /// A nested operation is checked at each node, innermost first, so the
+    /// failure is the first overflow and not the last.
+    #[test]
+    fn js_checks_a_nested_operation_at_every_node() {
+        assert_eq!(
+            js("(level + 1) * 2"),
+            "SceStatic.U8.mul(SceStatic.U8.add(level, 1), 2)"
+        );
+    }
+
+    /// A comparison, a logical operator and a conditional are ECMAScript's own.
+    #[test]
+    fn js_writes_comparison_and_logic_as_ecmascript() {
+        assert_eq!(js("level === 3 && ready"), "level === 3 && ready");
+        assert_eq!(js("level !== 3 || !ready"), "level !== 3 || !ready");
+        assert_eq!(js("ready ? level : 0"), "ready ? level : 0");
+        assert_eq!(js("label === 'idle'"), "label === 'idle'");
+        assert_eq!(js("label === \"idle\""), "label === \"idle\"");
+    }
+
+    #[test]
+    fn js_parenthesises_by_ecmascript_precedence() {
+        assert_eq!(js("(ready || false) && ready"), "(ready || false) && ready");
+        assert_eq!(js("ready || (false && ready)"), "ready || false && ready");
+        assert_eq!(
+            js("ready ? (ready ? 1 : 2) : 3"),
+            "ready ? (ready ? 1 : 2) : 3"
+        );
+        assert_eq!(js("!(level === 1)"), "!(level === 1)");
+    }
+
+    /// A sign in front of a sign is one token, `--`, in ECMAScript.
+    #[test]
+    fn js_does_not_glue_two_signs_into_a_decrement() {
+        let text = js("-(-ratio)");
+        assert!(!text.contains("--"), "{text}");
+    }
+
+    /// An integer literal is its decimal value — `017` reads as octal in
+    /// sloppy-mode ECMAScript — and one a Number cannot hold is refused.
+    #[test]
+    fn js_writes_an_integer_literal_as_its_value_and_refuses_a_lossy_one() {
+        assert_eq!(js_number_literal("017").unwrap(), "17");
+        assert_eq!(js_number_literal("0xFF").unwrap(), "255");
+        assert_eq!(js_number_literal("0b101").unwrap(), "5");
+        assert_eq!(js_number_literal("1.5").unwrap(), "1.5");
+        assert_eq!(
+            js_number_literal("9007199254740991").unwrap(),
+            "9007199254740991"
+        );
+        for lossy in [
+            "9007199254740992",
+            "18446744073709551615",
+            "0xFFFFFFFFFFFFFFFF0",
+        ] {
+            let refusal = js_number_literal(lossy).unwrap_err().to_string();
+            assert!(refusal.contains("9007199254740991"), "{lossy}: {refusal}");
+        }
+    }
+
+    /// `round` is half away from zero, which `Math.round` is not
+    /// (`Math.round(-2.5)` is -2), so it is the library's; `floor` is
+    /// `Math.floor`.
+    #[test]
+    fn js_rounds_half_away_from_zero_through_the_library() {
+        assert_eq!(js("round(ratio)"), "SceStatic.round(ratio)");
+        assert_eq!(js("floor(ratio)"), "Math.floor(ratio)");
+    }
+
+    /// The length of a list or a string is `.length`.
+    #[test]
+    fn js_reads_a_length_as_the_length_property() {
+        let mut ctx = js_ctx();
+        ctx.insert_var(
+            "history",
+            InferredType::List(crate::forge::types::ListElem::Number(
+                crate::forge::quantity::NumericBaseType::Int {
+                    signed: false,
+                    bits: 8,
+                },
+            )),
+        );
+        let text = transpile_typed(
+            "len(history)",
+            ExprTarget::Js,
+            &ctx,
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .unwrap();
+        assert_eq!(text, "history.length");
+    }
+
+    /// An operator whose ECMAScript meaning is not the document's is refused,
+    /// naming the operator, rather than written as it would be for a Number.
+    #[test]
+    fn js_refuses_the_bitwise_operators() {
+        for (expr, operator) in [
+            ("level & 3", "&"),
+            ("level | 3", "|"),
+            ("level ^ 3", "^"),
+            ("level << 1", "<<"),
+            ("level >> 1", ">>"),
+            ("level >>> 1", ">>>"),
+            ("~level", "~"),
+        ] {
+            let refusal = js_refusal(expr);
+            assert!(
+                refusal.contains(&format!("`{operator}`")),
+                "{expr}: {refusal}"
+            );
+        }
+    }
+
+    /// An enum variant reference has no ECMAScript declaration to be spelled
+    /// against, so it is refused and not left as the author's `Alias.variant`.
+    #[test]
+    fn js_refuses_an_enum_variant_reference() {
+        let variants = ["Idle".to_string(), "Run".to_string()];
+        let mut ctx = TypeCtx::new();
+        ctx.insert_enum(
+            "Mode",
+            crate::forge::types::EnumScope {
+                variants: &variants,
+                qualified_type: "Mode",
+                source_name: "Mode",
+            },
+        );
+        let refusal = transpile_typed(
+            "Mode.Idle",
+            ExprTarget::Js,
+            &ctx,
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(refusal.contains("Mode.Idle"), "{refusal}");
+    }
+
+    /// The same document lowers on the six backends and on ECMAScript from one
+    /// walk, and a difference between them is the emitters' alone: an
+    /// operation the backends check, ECMAScript checks through the library.
+    #[test]
+    fn js_is_the_only_target_outside_the_all_list() {
+        let text = js("level + 3");
+        assert!(text.starts_with("SceStatic."), "{text}");
+        assert!(!ExprTarget::ALL.contains(&ExprTarget::Js));
     }
 }
