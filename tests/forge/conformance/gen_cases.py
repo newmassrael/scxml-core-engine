@@ -46,10 +46,21 @@ Kotlin, C++ and C11 all agreed with the model on every one. The integer
 contract (SCE_FORGE.md 3.4.1) holds across the six backends for these
 operations, and a wrong expectation in one generated case fails each lane
 that was tried (Rust, Python, Go, C11), so the cases are exercised.
+
+Second run, 2026-09-30: the eight civil-date fixtures of `stdlib/time`, modelled
+on Python's `datetime` (cross-checked by `validate_calendar`, which runs first).
+It found `add_months` computing `year * 12` at int32 width before widening the
+sum, so a year past 178956970 failed `overflow` although the result year fits —
+a defect in the document, not in a backend: Python, Go, C11 and C++ all failed
+the same 103 cases, and all six agreed with the model once the document widened
+its inputs into int64 locals as `days_from_civil` does. A wrong expectation in a
+generated record, boolean or `fails` case fails Python and C11.
 """
 
 from __future__ import annotations
 
+import calendar
+import datetime
 import json
 import re
 import sys
@@ -172,6 +183,132 @@ def checked_narrow(x: int, y: int):
     if not fits(wide, I32_MIN, I32_MAX):
         return ("fails", "overflow")
     return ("ok", wide)
+
+
+# ── The civil calendar (sce:std/time) ─────────────────────────────────────
+#
+# The proleptic Gregorian calendar, the way Python's own library does it, so
+# the model shares no method with the documents it judges. Two things keep it
+# honest: `calendar` answers leap years and month lengths for any integer year,
+# and the ordinal arithmetic below — days before a year, days before a month —
+# is the textbook one, checked against `datetime.date` over its whole range by
+# `validate_calendar` before a case is written. Outside 1..9999 `datetime`
+# cannot answer, and the same arithmetic is what the model stands on.
+
+EPOCH_ORDINAL = datetime.date(1970, 1, 1).toordinal()  # 719163
+DAYS_BEFORE_MONTH = [0, 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+
+
+def days_in_month_of(year: int, month: int) -> int:
+    return calendar.monthrange(year, month)[1]
+
+
+def ordinal(year: int, month: int, day: int) -> int:
+    """Days since 0000-12-31, for a date that exists: 0001-01-01 is 1."""
+    y = year - 1
+    before_year = y * 365 + y // 4 - y // 100 + y // 400
+    leap_day = 1 if month > 2 and calendar.isleap(year) else 0
+    return before_year + DAYS_BEFORE_MONTH[month] + leap_day + day
+
+
+def civil_of(n: int):
+    """The (year, month, day) of ordinal `n`, by finding its year and then its
+    month — a search over `ordinal`, not the era arithmetic the documents use."""
+    year = n * 400 // 146097 + 1
+    while ordinal(year + 1, 1, 1) <= n:
+        year += 1
+    while ordinal(year, 1, 1) > n:
+        year -= 1
+    month = 12
+    while ordinal(year, month, 1) > n:
+        month -= 1
+    return year, month, n - ordinal(year, month, 1) + 1
+
+
+def exists(year: int, month: int, day: int) -> bool:
+    return 1 <= month <= 12 and 1 <= day <= days_in_month_of(year, month)
+
+
+def is_leap_year(year: int):
+    return ("ok", calendar.isleap(year))
+
+
+def days_in_month(year: int, month: int):
+    if not 1 <= month <= 12:
+        return ("fails", "precondition")
+    return ("ok", days_in_month_of(year, month))
+
+
+def days_from_civil(year: int, month: int, day: int):
+    if not exists(year, month, day):
+        return ("fails", "precondition")
+    return ("ok", ordinal(year, month, day) - EPOCH_ORDINAL)
+
+
+def civil_from_days(days: int):
+    year, month, day = civil_of(days + EPOCH_ORDINAL)
+    if not fits(year, I32_MIN, I32_MAX):
+        return ("fails", "overflow")
+    return ("ok", {"year": year, "month": month, "day": day})
+
+
+def weekday_from_days(days: int):
+    # 1970-01-01 was a Thursday, and 0 is Sunday; Python's `%` floors, so a
+    # negative count needs no folding.
+    return ("ok", (days + 4) % 7)
+
+
+def add_months(year: int, month: int, day: int, n: int):
+    if not exists(year, month, day):
+        return ("fails", "precondition")
+    new_year, index = divmod(year * 12 + (month - 1) + n, 12)
+    if not fits(new_year, I32_MIN, I32_MAX):
+        return ("fails", "overflow")
+    new_month = index + 1
+    return (
+        "ok",
+        {
+            "year": new_year,
+            "month": new_month,
+            "day": min(day, days_in_month_of(new_year, new_month)),
+        },
+    )
+
+
+def second_of_day(seconds: int):
+    return ("ok", seconds % 86400)
+
+
+def days_from_epoch_seconds(seconds: int):
+    return ("ok", seconds // 86400)
+
+
+def validate_calendar() -> None:
+    """Hold the model's calendar to `datetime.date` over its whole range, so a
+    mistake in the arithmetic above is found here and not in a backend."""
+    first = datetime.date.min.toordinal()
+    last = datetime.date.max.toordinal()
+    # Every day of every year would take seconds; every 61st day touches each
+    # month and weekday position many times, and the year ends are explicit.
+    samples = set(range(first, last + 1, 61))
+    for year in range(1, 10000):
+        samples.update(
+            (
+                ordinal(year, 1, 1), ordinal(year, 2, 28), ordinal(year, 3, 1),
+                ordinal(year, 12, 31),
+            )
+        )
+    for n in samples:
+        date = datetime.date.fromordinal(n)
+        if civil_of(n) != (date.year, date.month, date.day):
+            raise SystemExit(f"the model's calendar disagrees with datetime at ordinal {n}")
+        if ordinal(date.year, date.month, date.day) != n:
+            raise SystemExit(f"the model's ordinal disagrees with datetime at {date}")
+        days = n - EPOCH_ORDINAL
+        if weekday_from_days(days)[1] != (date.weekday() + 1) % 7:
+            raise SystemExit(f"the model's weekday disagrees with datetime at {date}")
+        if days_in_month_of(date.year, date.month) != calendar.monthrange(date.year, date.month)[1]:
+            raise SystemExit(f"the model's month length disagrees at {date}")
 
 
 # The edges of each type the fixtures touch: where an operation starts to
@@ -302,6 +439,128 @@ def narrow_args(rng: SplitMix64):
     return [x, y]
 
 
+YEAR_EDGES = sorted(
+    {
+        I32_MIN, I32_MIN + 1, -1000, -401, -400, -101, -100, -5, -4, -1, 0, 1, 3, 4,
+        99, 100, 101, 399, 400, 401, 1582, 1600, 1699, 1700, 1800, 1899, 1900, 1901,
+        1969, 1970, 1971, 1999, 2000, 2001, 2023, 2024, 2025, 2026, 2027, 2028, 2100,
+        2399, 2400, 9999, 10000, 12345, 65535, 65536, 1_000_000, I32_MAX - 1, I32_MAX,
+    }
+)
+
+
+def year_value(rng: SplitMix64) -> int:
+    """A year: an edge (century rules, the epoch, the int32 ends), a year a
+    calendar is used in, a wider one, or anywhere in int32."""
+    kind = rng.below(20)
+    if kind < 10:
+        return rng.pick(YEAR_EDGES)
+    if kind < 15:
+        return rng.between(-2000, 4000)
+    if kind < 17:
+        return rng.between(-100_000, 100_000)
+    return rng.between(I32_MIN, I32_MAX)
+
+
+def date_args(rng: SplitMix64):
+    """A year, a month and a day, most often a date that exists and often one
+    step from not existing: the day past a month's end, day 0, month 0 and 13."""
+    year = year_value(rng)
+    kind = rng.below(20)
+    if kind < 12:
+        month = rng.between(1, 12)
+        length = days_in_month_of(year, month)
+        day = rng.pick([1, 2, length - 1, length, rng.between(1, length)])
+    elif kind < 17:
+        month = rng.between(1, 12)
+        length = days_in_month_of(year, month)
+        day = rng.pick([0, length + 1, 29, 30, 31, 32, U8_MAX])
+    elif kind < 19:
+        month = rng.pick([0, 13, 14, 255, rng.between(0, U8_MAX)])
+        day = rng.between(0, 31)
+    else:
+        month, day = rng.between(0, U8_MAX), rng.between(0, U8_MAX)
+    return year, month, day
+
+
+def leap_args(rng: SplitMix64):
+    return [year_value(rng)]
+
+
+def month_length_args(rng: SplitMix64):
+    month = rng.between(1, 12) if rng.below(10) < 8 else rng.pick([0, 13, 14, 255])
+    return [year_value(rng), month]
+
+
+def civil_args(rng: SplitMix64):
+    return list(date_args(rng))
+
+
+def day_count_edges():
+    """Day counts where the calendar changes shape: each century-rule year's
+    first and last day, the epoch, and the two ends of int32 years."""
+    days = {0, 1, -1, 146097, -146097, 719162, -719162, 719163, -719163, 719468, -719468}
+    for year in (-400, -101, -100, -4, -1, 0, 1, 4, 100, 400, 1600, 1900, 1970, 2000, 2100):
+        first = ordinal(year, 1, 1) - EPOCH_ORDINAL
+        days.update((first - 1, first, first + 1))
+    for year in (I32_MIN, I32_MAX):
+        first = ordinal(year, 1, 1) - EPOCH_ORDINAL
+        last = ordinal(year, 12, 31) - EPOCH_ORDINAL
+        days.update((first - 1, first, last, last + 1))
+    days.update((I64_MIN, I64_MIN + 1, I64_MAX - 1, I64_MAX, 2**53, -(2**53)))
+    return sorted(days)
+
+
+DAY_COUNT_EDGES = day_count_edges()
+
+
+def day_count_args(rng: SplitMix64):
+    kind = rng.below(10)
+    if kind < 4:
+        days = rng.pick(DAY_COUNT_EDGES)
+    elif kind < 7:
+        days = rng.between(-1_000_000, 1_000_000)
+    elif kind < 9:
+        days = rng.between(-1_000_000_000_000, 1_000_000_000_000)
+    else:
+        days = rng.between(I64_MIN, I64_MAX)
+    return [days]
+
+
+def add_months_args(rng: SplitMix64):
+    year, month, day = date_args(rng)
+    kind = rng.below(10)
+    if kind < 4:
+        n = rng.pick([0, 1, -1, 11, 12, 13, -11, -12, -13, 120, -120, 1200, -1200])
+    elif kind < 6:
+        n = rng.between(-300, 300)
+    elif kind < 8:
+        # Close to the int32 ends of the year, where the sum leaves the range.
+        year = I32_MAX - rng.between(0, 2) if rng.below(2) else I32_MIN + rng.between(0, 2)
+        n = rng.between(0, 30) if year > 0 else -rng.between(0, 30)
+        month = rng.between(1, 12)
+        day = rng.between(1, days_in_month_of(year, month))
+    else:
+        n = rng.between(I32_MIN, I32_MAX)
+    return [year, month, day, n]
+
+
+def seconds_args(rng: SplitMix64):
+    kind = rng.below(10)
+    if kind < 4:
+        seconds = rng.pick(
+            [0, 1, -1, 86399, 86400, 86401, -86399, -86400, -86401, 2**31, -(2**31), 2**32,
+             I64_MIN, I64_MIN + 1, I64_MAX - 1, I64_MAX]
+        )
+    elif kind < 7:
+        seconds = rng.between(-10_000_000, 10_000_000)
+    elif kind < 9:
+        seconds = rng.between(-(10**12), 10**12)
+    else:
+        seconds = rng.between(I64_MIN, I64_MAX)
+    return [seconds]
+
+
 #: fixture -> (model, argument generator, how many cases, seed).
 #: A seed is per fixture and never reused, so adding a case to one fixture does
 #: not move another's.
@@ -309,12 +568,34 @@ FIXTURES = {
     "algorithm_checked_arith": (lambda args: arith(*args), arith_args, 600, 0xE110_0001),
     "algorithm_checked_call": (lambda args: checked_call(*args), call_args, 300, 0xE110_0002),
     "algorithm_checked_narrow": (lambda args: checked_narrow(*args), narrow_args, 300, 0xE110_0003),
+    "is_leap_year": (lambda args: is_leap_year(*args), leap_args, 150, 0xE110_0004),
+    "days_in_month": (lambda args: days_in_month(*args), month_length_args, 200, 0xE110_0005),
+    "days_from_civil": (lambda args: days_from_civil(*args), civil_args, 400, 0xE110_0006),
+    "civil_from_days": (lambda args: civil_from_days(*args), day_count_args, 400, 0xE110_0007),
+    "weekday_from_days": (lambda args: weekday_from_days(*args), day_count_args, 200, 0xE110_0008),
+    "add_months": (lambda args: add_months(*args), add_months_args, 400, 0xE110_0009),
+    "second_of_day": (lambda args: second_of_day(*args), seconds_args, 150, 0xE110_000A),
+    "days_from_epoch_seconds": (
+        lambda args: days_from_epoch_seconds(*args),
+        seconds_args,
+        150,
+        0xE110_000B,
+    ),
 }
+
+
+def render(value) -> str:
+    """A value the way the hand-written cases write it: a record as
+    `{ "year": 1970, ... }`, a boolean as `true`, a number as itself."""
+    if isinstance(value, dict):
+        members = ", ".join(f'"{key}": {render(member)}' for key, member in value.items())
+        return "{ " + members + " }"
+    return json.dumps(value)
 
 
 def case_line(args, answer) -> str:
     kind, value = answer
-    tail = f'"expected": {value}' if kind == "ok" else f'"fails": "{value}"'
+    tail = f'"expected": {render(value)}' if kind == "ok" else f'"fails": "{value}"'
     return f'        {{ "args": {json.dumps(args)}, {tail}, "note": "{MARK}" }}'
 
 
@@ -392,17 +673,18 @@ def regenerate(text: str):
         lines = [line.rstrip(",") for line in hand] + made
         body = "\n" + ",\n".join(lines)
         text = text[:start] + body + text[end:]
-        kinds = {"ok": 0, "overflow": 0, "divide-by-zero": 0}
+        kinds: dict[str, int] = {}
         for line in made:
-            for name in kinds:
-                if (name == "ok" and '"expected"' in line) or f'"fails": "{name}"' in line:
-                    kinds[name] += 1
-        report.append((fixture, checked, dropped, len(made), kinds))
+            fails = re.search(r'"fails": "([^"]+)"', line)
+            name = fails.group(1) if fails else "ok"
+            kinds[name] = kinds.get(name, 0) + 1
+        report.append((fixture, checked, dropped, len(made), dict(sorted(kinds.items()))))
     return text, report
 
 
 def main(argv) -> int:
     check = "--check" in argv
+    validate_calendar()
     original = REFERENCE.read_text(encoding="utf-8")
     json.loads(original)
     text, report = regenerate(original)

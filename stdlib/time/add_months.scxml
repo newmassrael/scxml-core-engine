@@ -35,9 +35,17 @@
   <sce:body>
     <sce:require cond="month &gt;= 1 &amp;&amp; month &lt;= 12"/>
     <sce:require cond="day &gt;= 1 &amp;&amp; day &lt;= monthLength(year, month)"/>
+    <!-- Each input is widened into an int64 local first: an operation is
+         checked at its operands' width (SCE_FORGE.md §3.4.1), so `year * 12`
+         on the int32 year would fail for a year past 178956970 although the
+         result year fits, which is the failure the contract above reserves
+         for the result. -->
+    <sce:var name="yr" type="int64" init="year"/>
+    <sce:var name="mo" type="int64" init="month"/>
+    <sce:var name="step" type="int64" init="n"/>
     <!-- Months since year 0's January, moved by n; the floor of its twelfth
          is the year, taken from the truncated quotient and remainder. -->
-    <sce:var name="total" type="int64" init="year * 12 + (month - 1) + n"/>
+    <sce:var name="total" type="int64" init="yr * 12 + (mo - 1) + step"/>
     <sce:var name="q" type="int64" init="total / 12"/>
     <sce:var name="r" type="int64" init="total % 12"/>
     <sce:var name="ny" type="int64" init="r &lt; 0 ? q - 1 : q"/>
