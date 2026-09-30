@@ -422,13 +422,14 @@ pub struct Manifest<'a> {
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub unresolved: &'a [crate::unresolved_check::UnresolvedRecord],
     /// What the accepted run still leaves to a person: the open questions,
-    /// the values chosen without the specification, a parent the machine
-    /// needs, a processor the host must serve — one sentence each, from
-    /// the records above ([`crate::open_matters`]). Omitted (not `[]`) when
-    /// there are none. A document-set run reports the questions and assumed
-    /// values of its members, and not a parent or a host processor: those
-    /// stay one document's answer, since the union would name a parent none
-    /// of the members may lack.
+    /// the values chosen without the specification, event-schemas a
+    /// statechart imports without declaring its interface closed, a parent
+    /// the machine needs, a processor the host must serve — one sentence
+    /// each, from the records above ([`crate::open_matters`]). Omitted (not
+    /// `[]`) when there are none. A document-set run reports the questions,
+    /// assumed values and open interfaces of its members, and not a parent
+    /// or a host processor: those stay one document's answer, since the
+    /// union would name a parent none of the members may lack.
     ///
     /// `accepted` means the product found nothing to refuse, and that is
     /// not the same as a finished design. The sentences live in one module

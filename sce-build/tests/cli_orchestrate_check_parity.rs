@@ -32,7 +32,16 @@
 // of them survive on the document-set route, and require `orchestrate`
 // to carry each survivor. A flag that is single-document-only excludes
 // itself by conflicting with the route, which is how `--no-std` and
-// `--strict-unresolved` stay out without anyone listing them here.
+// `--include-dir` stay out without anyone listing them here.
+//
+// ⚠ `--strict-unresolved` and `--lint` used to be on the excluded side and
+// are on the surviving side now: `check` takes both on a set, so
+// `orchestrate` takes both. Measured 2026-09-30, adding the first to `check`
+// alone turned this gate red, which is what it is for. `--lint` conflicts
+// with `--forge` (a set of forge documents has no statechart to lint), and
+// this probe offers `--forge`, so it reads as excluded whatever the route
+// does with `--document`; `orchestrate` carries it all the same, and
+// `a_payload_free_event_is_declared_not_omitted` holds the two together.
 //
 // One-directional on purpose. `orchestrate` may carry knobs `check` does
 // not — `--emit-ast-dir` and `--output-dir` are both about *writing*,

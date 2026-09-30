@@ -2921,6 +2921,18 @@ the seam could not read — missing, unreadable, or itself refused — is
 reported in its own words, at its own file and row, and not as the interface
 declaring nothing: a closed document is judged against schemas that read.
 
+The default interface is open and stays it, and it is not refused. But a
+statechart that imports event-schemas and does not declare its interface
+closed is holding schemas that describe a boundary nothing holds it to, so the
+run says so: the manifest's `open` (and the acceptance report's block B and
+record) carries an `interface` line naming the imported aliases and the
+repair — declare it closed, or tell the owner the boundary is open. A
+statechart with no schema says nothing, since nothing tells the product it was
+meant to have one, and a statechart that declares it closed says nothing
+because it is. Measured 2026-09-30: a draft handed on as passing had its
+`sce:interface="closed"` removed to get past a check, every import still in
+place, and its answer said nothing of the change.
+
 It is judged where a statechart's imports are read, the parser's import
 seam, so every entry point that parses a document from a file judges it.
 The in-memory path, which reads no sibling documents and so resolves no
@@ -3483,12 +3495,18 @@ does not say, is declared as one rather than left out: a closed interface
   specification does not say. It is the marker every other open question
   uses: accepted, published in the manifest's `unresolved` and `open`, and
   refused by `--strict-unresolved`.
+- `<datamodel sce:assumed="…" sce:assumed-reason="…"/>` — the specification
+  does not say and the author chose no payload without it. The same marker
+  everywhere else it appears: accepted, published in `unresolved` and `open`
+  as an assumed value the owner confirms or corrects, and NOT refused by
+  `--strict-unresolved`, which refuses only the question.
 
-A `<datamodel>` with neither and no field is refused as
+A `<datamodel>` with none of these and no field is refused as
 `validation/empty-collection` — it reads the same as a field the author forgot
-— and its message names both ways out. `sce:payload` with any value but `none`
+— and its message names the ways out. `sce:payload` with any value but `none`
 is `validation/invalid-attribute`; `none` beside a field, or beside
-`sce:unresolved`, contradicts itself and is `validation/incompatible-attributes`.
+`sce:unresolved` or `sce:assumed`, contradicts itself and is
+`validation/incompatible-attributes`.
 (`sce:payload` on a procedure `<send>` is another attribute of the same name;
 schemas/sce-forge-ext.xsd says which is which.) The page writes the statement
 under the head — `payload none`, or the open marker with its reason — so it

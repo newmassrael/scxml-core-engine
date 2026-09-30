@@ -242,8 +242,8 @@
       "additionalProperties": false,
       "properties": {
         "kind": {
-          "description": "question: an sce:unresolved marker. assumed: an sce:assumed marker. parent: a send to #_parent, so the machine can only run as a child. host-processor: a type the host has to serve.",
-          "enum": ["question", "assumed", "parent", "host-processor"]
+          "description": "question: an sce:unresolved marker. assumed: an sce:assumed marker. interface: a statechart imports event-schemas without declaring sce:interface=\"closed\", so an event no schema declares still crosses it unchecked. parent: a send to #_parent, so the machine can only run as a child. host-processor: a type the host has to serve.",
+          "enum": ["question", "assumed", "interface", "parent", "host-processor"]
         },
         "message": {
           "description": "What it is and what to do about it, in a sentence.",

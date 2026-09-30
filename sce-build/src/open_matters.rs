@@ -53,6 +53,11 @@ pub enum OpenKind {
     Question,
     /// A value chosen without the specification (`sce:assumed`).
     Assumed,
+    /// The statechart imports event-schemas and does not declare its
+    /// interface closed, so an event no schema declares still crosses it
+    /// unchecked: the schemas describe the boundary and nothing holds the
+    /// statechart to them.
+    Interface,
     /// The machine sends to its parent session, so it can only run as a
     /// child.
     Parent,
@@ -69,16 +74,46 @@ pub struct OpenMatter {
     pub message: String,
 }
 
+/// The aliases of the event-schemas a statechart imports without declaring
+/// its interface closed, in document order — empty when it declares it, or
+/// imports none.
+///
+/// ⚠ A fact about a statechart that imports schemas, and about no other.
+/// The default interface is open and stays it: a statechart with no schema
+/// says nothing here, since nothing tells the product it was meant to have
+/// one. What is worth saying is the mismatch — schemas written to describe
+/// the boundary, and a declaration that would hold the statechart to them
+/// left off. Measured 2026-09-30: a draft handed on as passing had its
+/// `sce:interface="closed"` removed to get past a check, with every import
+/// still in place, and its answer said nothing of it.
+pub fn interface_left_open(model: &crate::model::SCXMLModel) -> Vec<String> {
+    if model.interface_closed {
+        return Vec::new();
+    }
+    // An alias is unique per document — the parser refuses a repeat — so
+    // nothing here needs to be told apart from itself.
+    model
+        .forge_imports
+        .iter()
+        .filter(|import| matches!(import.kind, crate::forge::model::ForgeKind::EventSchema))
+        .map(|import| import.alias.clone())
+        .collect()
+}
+
 /// The open matters of ONE document, from the records the manifest carries.
 ///
-/// In a fixed order — questions, assumed values, parent, host processor —
-/// so two runs over one document say the same thing in the same order, and
-/// nothing when the document leaves nothing, so a page or manifest for a
-/// finished design stays byte for byte what it was.
+/// In a fixed order — questions, assumed values, an open interface, parent,
+/// host processor — so two runs over one document say the same thing in the
+/// same order, and nothing when the document leaves nothing, so a page or
+/// manifest for a finished design stays byte for byte what it was.
+///
+/// `open_interface` is [`interface_left_open`]: the schemas a statechart
+/// imports and does not hold itself to.
 pub fn of(
     unresolved: &[UnresolvedRecord],
     parent_sends: &[ParentSend],
     host_causes: &[HostProcessorCauseRecord],
+    open_interface: &[String],
 ) -> Vec<OpenMatter> {
     let mut out = Vec::new();
 
@@ -111,6 +146,18 @@ pub fn of(
                  corrects each",
                 assumed.len(),
                 assumed.join(", ")
+            ),
+        });
+    }
+
+    if !open_interface.is_empty() {
+        out.push(OpenMatter {
+            kind: OpenKind::Interface,
+            message: format!(
+                "imports event-schema(s) ({}) without declaring sce:interface=\"closed\", so \
+                 an event no schema declares still crosses the statechart unchecked: declare \
+                 the interface closed, or tell the owner the boundary is open",
+                open_interface.join(", ")
             ),
         });
     }
@@ -162,8 +209,8 @@ pub fn of(
 /// caller that has no manifest run to read the records from — the
 /// acceptance report parses the document and stops there.
 ///
-/// The same three records the manifest publishes, by the same functions, so
-/// a report and a manifest over one document cannot disagree.
+/// The same records the manifest publishes, by the same functions, so a
+/// report and a manifest over one document cannot disagree.
 pub fn of_statechart(model: &crate::model::SCXMLModel) -> Vec<OpenMatter> {
     let host: Vec<HostProcessorCauseRecord> = crate::host_processor_analyzer::analyze(model)
         .iter()
@@ -180,6 +227,7 @@ pub fn of_statechart(model: &crate::model::SCXMLModel) -> Vec<OpenMatter> {
         &crate::unresolved_check::unresolved_records(model),
         &crate::parent_send_analyzer::records(model),
         &host,
+        &interface_left_open(model),
     )
 }
 
@@ -215,7 +263,7 @@ mod tests {
 
     #[test]
     fn a_document_that_leaves_nothing_yields_nothing() {
-        assert!(of(&[], &[], &[]).is_empty());
+        assert!(of(&[], &[], &[], &[]).is_empty());
     }
 
     #[test]
@@ -234,6 +282,7 @@ mod tests {
                 invoke: None,
                 location: None,
             }],
+            &["Requested".to_string(), "Cancelled".to_string()],
         );
         let kinds: Vec<OpenKind> = matters.iter().map(|m| m.kind).collect();
         assert_eq!(
@@ -241,6 +290,7 @@ mod tests {
             [
                 OpenKind::Question,
                 OpenKind::Assumed,
+                OpenKind::Interface,
                 OpenKind::Parent,
                 OpenKind::HostProcessor
             ]
@@ -248,15 +298,19 @@ mod tests {
         assert!(matters[0].message.contains("2 question(s)"), "{matters:?}");
         assert!(matters[0].message.contains("q1, q2"));
         assert!(matters[1].message.contains("1 value(s)"));
+        assert!(
+            matters[2].message.contains("(Requested, Cancelled)"),
+            "{matters:?}"
+        );
         // A repeated event is named once, and a site with no literal event
         // is not named at all.
-        assert!(matters[2].message.contains("(Out)"), "{matters:?}");
-        assert!(matters[3].message.contains("(x-host)"));
+        assert!(matters[3].message.contains("(Out)"), "{matters:?}");
+        assert!(matters[4].message.contains("(x-host)"));
     }
 
     #[test]
     fn an_assumption_alone_is_not_a_question() {
-        let matters = of(&[marker(MarkerKind::Assumed, "a1")], &[], &[]);
+        let matters = of(&[marker(MarkerKind::Assumed, "a1")], &[], &[], &[]);
         assert_eq!(matters.len(), 1);
         assert_eq!(matters[0].kind, OpenKind::Assumed);
         assert!(!matters[0].message.contains("question"));
@@ -286,5 +340,37 @@ mod tests {
         let matters = of_statechart(&orphan);
         assert_eq!(matters.len(), 1, "{matters:?}");
         assert_eq!(matters[0].kind, OpenKind::Parent);
+    }
+
+    /// Only the mismatch is said: schemas imported, and the declaration that
+    /// would hold the statechart to them left off. A statechart with no
+    /// schema, and one that declares its interface closed, say nothing.
+    #[test]
+    fn an_open_interface_is_said_only_when_schemas_are_imported() {
+        let parse = |root_attrs: &str, imports: &str| {
+            crate::parser::SCXMLParser::new()
+                .parse_string(
+                    &format!(
+                        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                                 xmlns:sce="http://sce.dev/ext" version="1.0" initial="a"
+                                 {root_attrs}>
+                             {imports}
+                             <state id="a"/>
+                           </scxml>"#
+                    ),
+                    "open_matters",
+                )
+                .expect("parses")
+        };
+        let import = r#"<sce:import src="s.scxml" kind="event-schema" as="Sig"/>
+                        <sce:import src="t.scxml" kind="event-schema" as="Other"/>
+                        <sce:import src="e.scxml" kind="enum" as="Mode"/>"#;
+        assert_eq!(
+            interface_left_open(&parse("", import)),
+            ["Sig".to_string(), "Other".to_string()],
+            "the event-schemas, in document order, and an enum is not one"
+        );
+        assert!(interface_left_open(&parse("sce:interface=\"closed\"", import)).is_empty());
+        assert!(interface_left_open(&parse("", "")).is_empty());
     }
 }

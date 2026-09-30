@@ -9788,8 +9788,11 @@ fn parse_event_schema(
     // one nobody has decided about that a closed interface has to keep
     // apart. Two statements are admitted, both on the `<datamodel>` that
     // would have held the fields: the specification says the event carries
-    // no data (`sce:payload="none"`), or it does not say
-    // (`sce:unresolved`, the marker every other open question uses).
+    // no data (`sce:payload="none"`), or it does not settle it — a question
+    // it leaves open (`sce:unresolved`) or a payload the author chose without
+    // it (`sce:assumed`), the two markers every other open matter uses. The
+    // first blocks the strict check and the second does not, as everywhere
+    // else, and both reach the manifest's `open`.
     let payload_none = match sce_attr(&datamodel, "payload").as_deref() {
         None => false,
         Some("none") => true,
@@ -9814,9 +9817,9 @@ fn parse_event_schema(
                 ..marker
             })
             .collect();
-    let left_open = datamodel_markers
-        .iter()
-        .any(|marker| marker.kind == crate::provenance::MarkerKind::Unresolved);
+    // Either kind: what the marker says is that the specification did not
+    // settle the payload, whichever way the author went on.
+    let left_open = !datamodel_markers.is_empty();
 
     if payload_none {
         if let Some(field) = fields.first() {
@@ -9840,8 +9843,8 @@ fn parse_event_schema(
                 ValidationError::IncompatibleAttributes {
                     element: "EventSchema <datamodel>".into(),
                     detail: "sce:payload=\"none\" says the specification settles that the event \
-                             carries no data, and sce:unresolved says it does not — keep the \
-                             one that is true"
+                             carries no data, and sce:unresolved or sce:assumed says it does \
+                             not — keep the one that is true"
                         .into(),
                 },
             ));
@@ -9856,7 +9859,7 @@ fn parse_event_schema(
                 what: "<data> field with sce:direction=\"in\" (an event that carries no data \
                        says so with sce:payload=\"none\" on its <datamodel>; one whose \
                        payload the specification leaves open marks that <datamodel> \
-                       sce:unresolved)"
+                       sce:unresolved, or sce:assumed for a payload you chose without it)"
                     .into(),
             },
         ));

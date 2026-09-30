@@ -821,12 +821,18 @@ fn needs_script_engine_is_the_union_over_the_document_set() {
 
 /// Flags the document-set route cannot honour are refused, not ignored.
 ///
-/// `-I`, `--strict-unresolved` and `--no-std` have no counterpart in the
-/// multi-doc compile entry point: includes resolve relative to each
-/// document with no search path, and there is no `no_std` variant to
-/// render. Accepting them here and quietly dropping them would let a
-/// caller believe a constraint was checked when nothing consulted it —
-/// the failure mode a silent no-op flag always has.
+/// `-I` and `--no-std` have no counterpart in the multi-doc compile entry
+/// point: includes resolve relative to each document with no search path,
+/// and there is no `no_std` variant to render. Accepting them here and
+/// quietly dropping them would let a caller believe a constraint was checked
+/// when nothing consulted it — the failure mode a silent no-op flag always
+/// has.
+///
+/// ⚠ `--strict-unresolved` was on this list and is not any more: the route
+/// honours it (every member is held to it, and `orchestrate` takes it too),
+/// so the last loop asserts it is ACCEPTED on each spelling of the route.
+/// Refusing a flag and honouring it are both answers; ignoring it is the one
+/// this test exists to forbid.
 #[test]
 fn document_set_flags_the_route_cannot_honour_are_refused() {
     let staged = ScratchDir::new("check-xdoc-flag-conflicts");
@@ -852,20 +858,17 @@ fn document_set_flags_the_route_cannot_honour_are_refused() {
     }
 
     // Each of the three arguments that select the document-set route
-    // must refuse each of the three flags, so a route reached by an
+    // must refuse each of the two flags, so a route reached by an
     // untested spelling cannot slip past.
-    for route in [
+    let routes = [
         vec!["--scxml", scxml],
         vec!["--forge", forge],
         vec!["--deploy", deploy],
-    ] {
-        for flag in [
-            vec!["-I", "."],
-            vec!["--strict-unresolved"],
-            vec!["--no-std"],
-        ] {
+    ];
+    for route in &routes {
+        for flag in [vec!["-I", "."], vec!["--no-std"]] {
             let mut args = vec!["check", scxml];
-            args.extend_from_slice(&route);
+            args.extend_from_slice(route);
             args.extend_from_slice(&flag);
             let (verdict, stdout) = run(&args, &cwd);
             assert_eq!(
@@ -879,6 +882,31 @@ fn document_set_flags_the_route_cannot_honour_are_refused() {
                 "a refused invocation must emit no manifest: {stdout}",
             );
         }
+    }
+
+    // The flag the route honours is accepted on every spelling of it: the
+    // set this test stages carries no placeholder, so it passes, and the
+    // refusal of one that does is held by
+    // `a_payload_free_event_is_declared_not_omitted`. Each spelling is a set
+    // that builds — the refused cases above name the statechart twice, which
+    // is a collision once the run is not refused first.
+    let pool = docs.pool.to_str().unwrap();
+    for route in [
+        vec!["--scxml", scxml],
+        vec!["--scxml", scxml, "--forge", pool, "--forge", forge],
+        vec![
+            "--scxml", scxml, "--forge", pool, "--forge", forge, "--deploy", deploy,
+        ],
+    ] {
+        let mut args = vec!["check"];
+        args.extend_from_slice(&route);
+        args.push("--strict-unresolved");
+        let (verdict, _) = run(&args, &cwd);
+        assert_eq!(
+            verdict.exit,
+            Some(0),
+            "--strict-unresolved with {route:?} is honoured, and a set with no placeholder passes",
+        );
     }
 }
 

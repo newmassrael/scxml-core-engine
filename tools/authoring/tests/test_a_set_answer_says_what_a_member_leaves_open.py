@@ -77,6 +77,25 @@ class ASetAnswerSaysWhatAMemberLeavesOpen(unittest.TestCase):
         record = answer["manifest"]["unresolved"][0]
         self.assertEqual("job_cancelled.scxml", record["location"]["file"])
 
+    def test_a_statechart_that_drops_its_closed_declaration_says_so(self):
+        # The draft a check was got past by removing the declaration, every
+        # import left where it was: the answer has to say the boundary is open.
+        opened = STATECHART.replace('\n       sce:interface="closed">', '\n       >')
+        self.assertNotEqual(STATECHART, opened)
+        answer = call_tool("validate_scxml_set", {"documents_text": [
+            {"name": "job.scxml", "text": opened},
+            {"name": "job_requested.scxml", "text": NO_DATA},
+            {"name": "job_cancelled.scxml", "text": NO_DATA.replace(
+                "job_requested", "job_cancelled").replace(
+                "job.requested", "job.cancelled")},
+        ]})
+        self.assertFalse(answer.get("isError"), answer)
+        answer = json.loads(answer["content"][0]["text"])
+        self.assertEqual("accepted", answer["verdict"])
+        self.assertEqual(1, len(answer["open"]), answer["open"])
+        self.assertIn("sce:interface=\"closed\"", answer["open"][0])
+        self.assertIn("(Requested, Cancelled)", answer["open"][0])
+
     def test_a_set_whose_members_settle_everything_has_neither_field(self):
         settled = NOT_SETTLED.replace(
             'sce:unresolved="cancel-payload"\n             '

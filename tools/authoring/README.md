@@ -321,8 +321,9 @@ leaves nothing has neither field.
 
 The lines are the product's, not this server's: `sce-codegen check` and
 `generate` publish them as the manifest's `open` (a question the
-specification leaves open, a value chosen without it, a parent the machine
-needs, a processor the host must serve), the acceptance report prints the
+specification leaves open, a value chosen without it, event-schemas imported
+by a statechart that does not declare its interface closed, a parent the
+machine needs, a processor the host must serve), the acceptance report prints the
 same words at the top of its block B, and the acceptance record keeps them as
 `open_at_acceptance`, so what an owner accepted with is written down. This
 server relays them and adds no sentence of its own. `--strict-unresolved`
@@ -374,7 +375,12 @@ schema with neither and no field is refused, since an empty `<datamodel>`
 reads the same as a field the author forgot. The second form is an open
 question like any other: the check accepts the design and its answer says, in
 `open`, that the payload is still unsettled, and the strict check refuses it
-until the owner has decided. A fieldless schema changes nothing about how the
+until the owner has decided. `sce:assumed` on the same `<datamodel>` is
+accepted for a payload the author chose without the specification: it is an
+assumed value the owner confirms or corrects, and it does not block the
+strict check. A statechart that imports event-schemas but does not declare its
+interface closed is accepted too, and its answer says in `open` that the
+boundary the schemas describe is not held. A fieldless schema changes nothing about how the
 machine runs — the machine generated for it is the one generated with no
 schema — and no field can be read from or sent with such an event
 (`docs/SCE_ACCEPTED_SUBSET.md`, EventSchema kind, "Fieldless schema").

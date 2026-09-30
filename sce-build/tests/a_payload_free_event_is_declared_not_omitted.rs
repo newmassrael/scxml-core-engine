@@ -180,6 +180,55 @@ fn a_schema_that_leaves_the_payload_open_is_accepted_and_says_so() {
     assert_eq!(strict["actual"], "cancel-payload");
 }
 
+/// The same schema as [`OPEN`] with the payload a choice the author made
+/// rather than a question: `sce:assumed` where the fixture says
+/// `sce:unresolved`.
+fn assumed_payload() -> String {
+    let assumed = OPEN
+        .replace("sce:unresolved-reason", "sce:assumed-reason")
+        .replace("sce:unresolved=", "sce:assumed=");
+    assert_ne!(assumed, OPEN, "the fixture no longer says sce:unresolved");
+    assumed
+}
+
+#[test]
+fn a_payload_the_author_chose_is_an_assumed_value_and_does_not_block_the_strict_check() {
+    let assumed = assumed_payload();
+    let dir = lay("pf-assumed", &[("job_cancelled.scxml", &assumed)]);
+    let answer = manifest(&run(&dir, &["check", "job_cancelled.scxml"]));
+    assert_eq!(answer["unresolved"][0]["kind"], "assumed");
+    assert_eq!(answer["open"][0]["kind"], "assumed");
+    assert_eq!(answer["open"].as_array().expect("open").len(), 1);
+
+    // A value the author chose is on the record and blocks nothing: that is
+    // the whole difference between the two markers, here as everywhere.
+    manifest(&run(
+        &dir,
+        &["check", "--strict-unresolved", "job_cancelled.scxml"],
+    ));
+
+    // The page writes it in the marker's own word and reads back the same.
+    let parsed = sce_build::forge::parser::parse_forge_with_imports(
+        &assumed,
+        DocumentLabel {
+            identifier: "job_cancelled",
+            diagnostic_label: "job_cancelled",
+        },
+    )
+    .expect("parses")
+    .expect("a forge document");
+    let page = sce_build::forge::pseudo::render(&parsed.document).expect("renders");
+    assert!(
+        page.contains("\n  assumed cancel-payload\n"),
+        "the page has to say the payload was chosen, not asked: {page}"
+    );
+    let read_back = unpseudo::parse(&page).expect("reads back");
+    assert_eq!(
+        unpseudo::ir_for_comparison(&parsed.document).expect("serialises"),
+        unpseudo::ir_for_comparison(&read_back).expect("serialises"),
+    );
+}
+
 #[test]
 fn silence_is_refused_and_the_refusal_names_both_ways_out() {
     let silent = NONE.replace(" sce:payload=\"none\"", "");
@@ -214,6 +263,11 @@ fn statements_that_contradict_each_other_are_refused() {
             "an open marker beside none",
             "<datamodel sce:payload=\"none\" sce:unresolved=\"p\" \
              sce:unresolved-reason=\"r\"/>",
+            "validation/incompatible-attributes",
+        ),
+        (
+            "an assumed marker beside none",
+            "<datamodel sce:payload=\"none\" sce:assumed=\"p\" sce:assumed-reason=\"r\"/>",
             "validation/incompatible-attributes",
         ),
         (
@@ -311,6 +365,206 @@ fn a_closed_statechart_may_declare_its_events_in_payload_free_schemas() {
         set.get("needs_parent").is_none() && set.get("document_kind").is_none(),
         "a parent and a kind stay one document's answer: {set}"
     );
+}
+
+/// [`CLOSED_WITH_THEM`] with the declaration taken off and every import left
+/// where it was: the draft a check was got past by removing
+/// `sce:interface="closed"`.
+fn open_with_them() -> String {
+    let open = CLOSED_WITH_THEM.replace("\n       sce:interface=\"closed\">", "\n       >");
+    assert_ne!(open, CLOSED_WITH_THEM);
+    open
+}
+
+#[test]
+fn a_statechart_that_imports_schemas_and_is_not_closed_says_its_boundary_is_open() {
+    let dir = lay(
+        "pf-open-interface",
+        &[
+            ("job_requested.scxml", NONE),
+            ("job_cancelled.scxml", OPEN),
+            ("job.scxml", &open_with_them()),
+            ("closed.scxml", CLOSED_WITH_THEM),
+        ],
+    );
+    let interface_line = |answer: &serde_json::Value| {
+        answer["open"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|m| m["kind"] == "interface")
+            .map(|m| m["message"].as_str().expect("a message").to_string())
+    };
+
+    // One document, by `check` and by `generate`: the same sentence.
+    let checked = manifest(&run(&dir, &["check", "job.scxml"]));
+    let said = interface_line(&checked)
+        .unwrap_or_else(|| panic!("an open boundary with schemas imported is said: {checked}"));
+    assert!(
+        said.contains("(Requested, Cancelled)") && said.contains("sce:interface=\"closed\""),
+        "{said}"
+    );
+    let generated = manifest(&run(
+        &dir,
+        &[
+            "generate",
+            "job.scxml",
+            "-l",
+            "rust",
+            "-o",
+            dir.join("out").to_str().expect("a utf-8 path"),
+        ],
+    ));
+    assert_eq!(interface_line(&generated), Some(said.clone()));
+
+    // A set says it too: the imports are resolved there, and each member is
+    // held to the same sentence.
+    let set = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "--document",
+            "job.scxml",
+            "--document",
+            "job_requested.scxml",
+            "--document",
+            "job_cancelled.scxml",
+        ],
+    ));
+    assert_eq!(interface_line(&set), Some(said));
+
+    // Closed says nothing because it is closed.
+    let closed = manifest(&run(&dir, &["check", "closed.scxml"]));
+    assert_eq!(interface_line(&closed), None, "{closed}");
+}
+
+#[test]
+fn a_statechart_with_no_schema_says_nothing_of_its_interface() {
+    // The default interface is open and is not a finding: nothing tells the
+    // product this statechart was meant to have a schema. Only the mismatch
+    // is said.
+    let dir = lay("pf-no-schema", &[("job.scxml", &open_without_them())]);
+    let answer = manifest(&run(&dir, &["check", "job.scxml"]));
+    assert!(answer.get("open").is_none(), "{answer}");
+}
+
+#[test]
+fn the_strict_check_holds_every_member_of_a_set() {
+    let dir = lay(
+        "pf-strict-set",
+        &[
+            ("job_requested.scxml", NONE),
+            ("job_cancelled.scxml", OPEN),
+            ("job.scxml", CLOSED_WITH_THEM),
+        ],
+    );
+    let files = [
+        "--document",
+        "job.scxml",
+        "--document",
+        "job_requested.scxml",
+        "--document",
+        "job_cancelled.scxml",
+    ];
+
+    // Without the flag the set is accepted, and says what it leaves open.
+    manifest(&run(&dir, &[&["check"], &files[..]].concat()));
+
+    // With it, the question one member leaves open is the set's, and the
+    // refusal is where that member wrote it.
+    let strict = refusal(&run(
+        &dir,
+        &[&["check", "--strict-unresolved"], &files[..]].concat(),
+    ));
+    assert_eq!(strict["code"], "validation/unresolved-placeholder");
+    assert_eq!(strict["actual"], "cancel-payload");
+    assert_eq!(
+        strict["location"]["file"], "job_cancelled.scxml",
+        "{strict}"
+    );
+
+    // Answered as a choice the author made, it is on the record and blocks
+    // nothing, as on one document.
+    std::fs::write(dir.join("job_cancelled.scxml"), assumed_payload()).expect("rewrite the schema");
+    manifest(&run(
+        &dir,
+        &[&["check", "--strict-unresolved"], &files[..]].concat(),
+    ));
+
+    // A statechart of the set is held to it too.
+    let asking = CLOSED_WITH_THEM.replace(
+        "<transition event=\"job.cancelled\" target=\"idle\"/>",
+        "<transition event=\"job.cancelled\" target=\"idle\" sce:unresolved=\"cancel-target\" \
+         sce:unresolved-reason=\"the specification does not say where a cancellation goes\"/>",
+    );
+    assert_ne!(asking, CLOSED_WITH_THEM);
+    std::fs::write(dir.join("job.scxml"), asking).expect("rewrite the statechart");
+    let strict = refusal(&run(
+        &dir,
+        &[&["check", "--strict-unresolved"], &files[..]].concat(),
+    ));
+    assert_eq!(strict["actual"], "cancel-target", "{strict}");
+    assert_eq!(strict["location"]["file"], "job.scxml", "{strict}");
+}
+
+#[test]
+fn orchestrate_refuses_a_set_under_the_same_flags_and_writes_nothing() {
+    // `check` predicts `orchestrate` on a set, so a refusal `check` gives
+    // under a flag is one `orchestrate` can be asked for: the same functions,
+    // before anything is generated.
+    let dir = lay(
+        "pf-orchestrate",
+        &[
+            ("job_requested.scxml", NONE),
+            ("job_cancelled.scxml", OPEN),
+            ("job.scxml", CLOSED_WITH_THEM),
+        ],
+    );
+    let out_dir = dir.join("out");
+    let orchestrate = |extra: &[&str]| {
+        run(
+            &dir,
+            &[
+                &[
+                    "orchestrate",
+                    "--document",
+                    "job.scxml",
+                    "--document",
+                    "job_requested.scxml",
+                    "--document",
+                    "job_cancelled.scxml",
+                    "-l",
+                    "rust",
+                    "-o",
+                    out_dir.to_str().expect("a utf-8 path"),
+                ][..],
+                extra,
+            ]
+            .concat(),
+        )
+    };
+
+    let strict = refusal(&orchestrate(&["--strict-unresolved"]));
+    assert_eq!(strict["code"], "validation/unresolved-placeholder");
+    assert_eq!(
+        strict["location"]["file"], "job_cancelled.scxml",
+        "{strict}"
+    );
+    assert!(
+        !out_dir.exists()
+            || std::fs::read_dir(&out_dir)
+                .expect("the output directory reads")
+                .next()
+                .is_none(),
+        "a refused design produced files"
+    );
+
+    // Without the flag the set builds and the question is published.
+    let built = manifest(&orchestrate(&[]));
+    assert_eq!(built["open"][0]["kind"], "question", "{built}");
+
+    // `--lint` is accepted on a set that holds a statechart.
+    manifest(&orchestrate(&["--lint"]));
 }
 
 /// Every distinct code a run wrote to stderr: a set is compiled for every

@@ -347,6 +347,7 @@ fn push_open_matters(out: &mut String, open: &[crate::open_matters::OpenMatter])
         let label = match matter.kind {
             crate::open_matters::OpenKind::Question => "open question",
             crate::open_matters::OpenKind::Assumed => "assumed value",
+            crate::open_matters::OpenKind::Interface => "open interface",
             crate::open_matters::OpenKind::Parent => "needs a parent",
             crate::open_matters::OpenKind::HostProcessor => "host processor",
         };
