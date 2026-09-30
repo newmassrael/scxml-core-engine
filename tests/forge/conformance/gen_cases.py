@@ -55,6 +55,17 @@ a defect in the document, not in a backend: Python, Go, C11 and C++ all failed
 the same 103 cases, and all six agreed with the model once the document widened
 its inputs into int64 locals as `days_from_civil` does. A wrong expectation in a
 generated record, boolean or `fails` case fails Python and C11.
+
+Third run, 2026-09-30: the sync documents — `hlc_compare`, `lww_classify`,
+`orset_union`, `hlc_text`, `gcra_admit` (overflow at every checked product and
+sum) and `murmur3_32` (written as the reference writes it, checked against its 24
+vectors) — 1800 cases whose arguments are records, lists and bytes, with uint64
+node ids up to 2^64 - 1. All six backends agreed with the model on every one; no
+document or backend disagreed. What it did find is that the Kotlin lane had not
+run them: the harness reads this file by path and Gradle did not know it, so a
+change to the cases alone left `jvmTest` UP-TO-DATE. The build now declares it.
+A wrong expectation in a generated case of each new fixture fails Kotlin, C++
+and Go.
 """
 
 from __future__ import annotations
@@ -561,6 +572,317 @@ def seconds_args(rng: SplitMix64):
     return [seconds]
 
 
+# Sync: hybrid logical clocks, the last-writer-wins cell, the observed-remove
+# set, a rate limiter and the hash that keys a change log. Their arguments are
+# records, lists and bytes, so the generators below build values rather than
+# integers, and keep the field order the hand-written cases use.
+
+U16_MAX = 2**16 - 1
+U64_MAX = 2**64 - 1
+TEXT_WALL_MAX = 253_402_300_799_999  # 9999-12-31T23:59:59.999Z
+
+
+def hlc(wall: int, counter: int, node: int) -> dict:
+    return {"wallTime": wall, "counter": counter, "nodeId": node}
+
+
+def hlc_key(stamp: dict):
+    return (stamp["wallTime"], stamp["counter"], stamp["nodeId"])
+
+
+def hlc_compare(a: dict, b: dict):
+    """sce:std/merge/hlc_compare — lexicographic on (wall time, counter, node),
+    which is what a tuple comparison is."""
+    ka, kb = hlc_key(a), hlc_key(b)
+    return ("ok", (ka > kb) - (ka < kb))
+
+
+def lww_classify(logged: list, msg: dict):
+    """sce:std/merge/lww_classify — 2 a duplicate, 1 when a later stamp is held,
+    else 0."""
+    held = [hlc_key(stamp) for stamp in logged]
+    key = hlc_key(msg)
+    if key in held:
+        return ("ok", 2)
+    return ("ok", 1 if any(other > key for other in held) else 0)
+
+
+def entry(element: int, wall: int, counter: int, node: int) -> dict:
+    return {"element": element, "wallTime": wall, "counter": counter, "nodeId": node}
+
+
+def orset_union(a: list, b: list):
+    """sce:std/merge/orset_union — a, then b's entries that a does not hold."""
+    return ("ok", a + [other for other in b if other not in a])
+
+
+def hlc_text(stamp: dict):
+    """sce:std/merge/hlc_text — the 46 ASCII bytes of a stamp's canonical text."""
+    wall, counter, node = stamp["wallTime"], stamp["counter"], stamp["nodeId"]
+    if not (0 <= wall <= TEXT_WALL_MAX and counter <= U16_MAX):
+        return ("fails", "precondition")
+    instant = datetime.datetime(1970, 1, 1) + datetime.timedelta(milliseconds=wall)
+    text = f"{instant:%Y-%m-%dT%H:%M:%S}.{wall % 1000:03d}Z-{counter:04X}-{node:016x}"
+    return ("ok", list(text.encode("ascii")))
+
+
+def gcra_admit(tat: int, now: int, cost: int, interval: int, burst: int):
+    """sce:std/rate/gcra_admit — the generic cell rate algorithm in int64. Every
+    product and sum the document writes is checked, so a value that leaves int64
+    anywhere in them fails `overflow`, whether or not the answer would have."""
+    if not (cost >= 1 and interval >= 1 and burst >= 1 and cost <= burst):
+        return ("fails", "precondition")
+    start = tat if tat > now else now
+    arrival = start + cost * interval
+    limit = now + burst * interval
+    for value in (cost * interval, arrival, burst * interval, limit):
+        if not fits(value, I64_MIN, I64_MAX):
+            return ("fails", "overflow")
+    if arrival <= limit:
+        return ("ok", {"admitted": True, "tat": arrival, "retryAfter": 0})
+    wait = arrival - limit
+    if not fits(wait, I64_MIN, I64_MAX):
+        return ("fails", "overflow")
+    return ("ok", {"admitted": False, "tat": tat, "retryAfter": wait})
+
+
+def murmur3_32(data: list, seed: int):
+    """sce:std/hash/murmur3_32 — MurmurHash3 x86_32, written as the reference
+    writes it (Appleby, MurmurHash3.cpp), not as the document's uint64 masks do."""
+    mask = 0xFFFFFFFF
+
+    def rotl(value: int, shift: int) -> int:
+        return ((value << shift) | (value >> (32 - shift))) & mask
+
+    def scramble(k: int) -> int:
+        return (rotl((k * 0xCC9E2D51) & mask, 15) * 0x1B873593) & mask
+
+    h = seed
+    blocks = len(data) // 4 * 4
+    for offset in range(0, blocks, 4):
+        k = int.from_bytes(bytes(data[offset : offset + 4]), "little")
+        h = (rotl(h ^ scramble(k), 13) * 5 + 0xE6546B64) & mask
+    tail = data[blocks:]
+    if tail:
+        h ^= scramble(int.from_bytes(bytes(tail), "little"))
+    h ^= len(data)
+    h = ((h ^ (h >> 16)) * 0x85EBCA6B) & mask
+    h = ((h ^ (h >> 13)) * 0xC2B2AE35) & mask
+    return ("ok", h ^ (h >> 16))
+
+
+def epoch_ms(year, month, day, hour=0, minute=0, second=0, milli=0) -> int:
+    instant = datetime.datetime(year, month, day, hour, minute, second)
+    return (instant - datetime.datetime(1970, 1, 1)) // datetime.timedelta(milliseconds=1) + milli
+
+
+#: Wall times where the text changes shape: a day, a leap day, a century rule,
+#: 2^31 seconds, the last millisecond of year 9999 — each and its neighbours.
+WALL_TEXT_EDGES = sorted(
+    {
+        edge + step
+        for edge in (
+            epoch_ms(1970, 1, 1),
+            epoch_ms(1999, 12, 31, 23, 59, 59, 999),
+            epoch_ms(2000, 2, 29),
+            epoch_ms(2000, 3, 1),
+            epoch_ms(2024, 2, 29, 12, 34, 56, 789),
+            epoch_ms(2038, 1, 19, 3, 14, 7),
+            epoch_ms(2100, 2, 28, 23, 59, 59, 999),
+            epoch_ms(2100, 3, 1),
+            epoch_ms(2026, 9, 27, 10),
+            epoch_ms(9999, 12, 31, 23, 59, 59, 999),
+        )
+        for step in (-1, 0, 1)
+    }
+)
+WALL_EDGES = sorted(
+    {I64_MIN, I64_MIN + 1, -86_400_000, -1, 0, 1, 999, 1000, 86_399_999, 86_400_000}
+    | set(WALL_TEXT_EDGES)
+    | {2**53, I64_MAX - 1, I64_MAX}
+)
+COUNTER_EDGES = [0, 1, 2, 255, 256, U16_MAX - 1, U16_MAX, U16_MAX + 1, U32_MAX - 1, U32_MAX]
+NODE_EDGES = [0, 1, 2, 255, 2**32 - 1, 2**32, 2**53, 2**63 - 1, 2**63, U64_MAX - 1, U64_MAX]
+ELEMENT_EDGES = [0, 1, 2, 7, 2**63, U64_MAX]
+REALISTIC_WALL = 1_790_503_200_000
+
+
+def stamp_value(rng: SplitMix64) -> dict:
+    """A stamp: its wall time near a real clock or at an edge, its counter and
+    node at an edge or small, so two stamps often tie on a field."""
+    kind = rng.below(10)
+    if kind < 4:
+        wall = REALISTIC_WALL + rng.between(-1000, 1000)
+    elif kind < 8:
+        wall = rng.pick(WALL_EDGES)
+    else:
+        wall = rng.between(I64_MIN, I64_MAX)
+    counter = rng.pick(COUNTER_EDGES) if rng.below(3) == 0 else rng.between(0, 5)
+    node = rng.pick(NODE_EDGES) if rng.below(3) == 0 else rng.between(0, 5)
+    return hlc(wall, counter, node)
+
+
+def bump(rng: SplitMix64, value: int, low: int, high: int, edges) -> int:
+    """`value` moved a little, to an edge, or anywhere in [low, high]."""
+    kind = rng.below(4)
+    if kind == 0:
+        return min(value + 1, high)
+    if kind == 1:
+        return max(value - 1, low)
+    if kind == 2:
+        return rng.pick([edge for edge in edges if low <= edge <= high])
+    return rng.between(low, high)
+
+
+def near_stamp(rng: SplitMix64, base: dict) -> dict:
+    """A stamp that differs from `base` in a random subset of its fields, which
+    is how two stamps come to tie on the first and differ on a later one."""
+    wall, counter, node = base["wallTime"], base["counter"], base["nodeId"]
+    changes = rng.below(8)
+    if changes & 1:
+        wall = bump(rng, wall, I64_MIN, I64_MAX, WALL_EDGES)
+    if changes & 2:
+        counter = bump(rng, counter, 0, U32_MAX, COUNTER_EDGES)
+    if changes & 4:
+        node = bump(rng, node, 0, U64_MAX, NODE_EDGES)
+    return hlc(wall, counter, node)
+
+
+def compare_args(rng: SplitMix64):
+    a = stamp_value(rng)
+    kind = rng.below(10)
+    b = a if kind == 0 else (near_stamp(rng, a) if kind < 8 else stamp_value(rng))
+    return [a, b]
+
+
+def shuffled(rng: SplitMix64, items: list) -> list:
+    """Fisher-Yates over the generator's own stream."""
+    items = list(items)
+    for index in range(len(items) - 1, 0, -1):
+        other = rng.below(index + 1)
+        items[index], items[other] = items[other], items[index]
+    return items
+
+
+def lww_args(rng: SplitMix64):
+    msg = stamp_value(rng)
+    logged = []
+    for _ in range(rng.pick([0, 1, 1, 2, 2, 3, 3, 4, 5, 6])):
+        other = near_stamp(rng, msg) if rng.below(4) else stamp_value(rng)
+        if other not in logged and other != msg:
+            logged.append(other)
+    kind = rng.below(5)
+    if kind == 0:
+        logged.insert(rng.below(len(logged) + 1), msg)
+    return [shuffled(rng, logged), msg]
+
+
+def entry_near(rng: SplitMix64, base: dict) -> dict:
+    """An entry sharing some of `base`'s fields: the same element added twice,
+    or the same tag on another element, are the cases a union must tell apart."""
+    element, wall, counter, node = base["element"], base["wallTime"], base["counter"], base["nodeId"]
+    changes = rng.below(16)
+    if changes & 1:
+        element = bump(rng, element, 0, U64_MAX, ELEMENT_EDGES)
+    if changes & 2:
+        wall = bump(rng, wall, I64_MIN, I64_MAX, WALL_EDGES)
+    if changes & 4:
+        counter = bump(rng, counter, 0, U32_MAX, COUNTER_EDGES)
+    if changes & 8:
+        node = bump(rng, node, 0, U64_MAX, NODE_EDGES)
+    return entry(element, wall, counter, node)
+
+
+def union_args(rng: SplitMix64):
+    stamp = stamp_value(rng)
+    first = entry(rng.pick(ELEMENT_EDGES), stamp["wallTime"], stamp["counter"], stamp["nodeId"])
+    pool = [first]
+    for _ in range(rng.between(1, 8)):
+        candidate = entry_near(rng, rng.pick(pool))
+        if candidate not in pool:
+            pool.append(candidate)
+
+    def sample():
+        return shuffled(rng, pool)[: rng.between(0, len(pool))]
+
+    return [sample(), sample()]
+
+
+def text_args(rng: SplitMix64):
+    kind = rng.below(20)
+    if kind < 6:
+        wall = rng.pick(WALL_TEXT_EDGES)
+    elif kind < 13:
+        wall = rng.between(0, TEXT_WALL_MAX)
+    elif kind < 15:
+        wall = REALISTIC_WALL + rng.between(-10**9, 10**9)
+    elif kind < 17:
+        wall = rng.pick([-1, -2, I64_MIN, TEXT_WALL_MAX + 1, TEXT_WALL_MAX + 1000, I64_MAX])
+    else:
+        wall = rng.between(I64_MIN, I64_MAX)
+    counter = rng.pick(COUNTER_EDGES) if rng.below(2) == 0 else rng.between(0, U16_MAX)
+    node = rng.pick(NODE_EDGES) if rng.below(2) == 0 else rng.between(0, U64_MAX)
+    return [hlc(wall, counter, node)]
+
+
+I64_SCALES = [1, 2, 3, 1000, 131072, 2**31, 2**32, 2**53, 2**62, I64_MAX // 2, I64_MAX]
+
+
+def gcra_args(rng: SplitMix64):
+    """Mostly the limiter a service would run (millisecond clocks, intervals of
+    a few thousand, small costs), and often a product at int64's edge."""
+    kind = rng.below(10)
+    if kind < 5:
+        now = REALISTIC_WALL + rng.between(-100_000, 100_000)
+        interval = rng.between(1, 100_000)
+        burst = rng.between(1, 50)
+        cost = rng.between(1, burst)
+        tat = now + rng.between(-burst * interval, burst * interval * 2)
+    elif kind < 7:
+        now = rng.pick([0, 1, -1, REALISTIC_WALL, I64_MAX - 1, I64_MAX, I64_MIN, I64_MIN + 1])
+        interval = rng.pick(I64_SCALES)
+        burst = rng.pick([1, 2, 3, 100, U32_MAX - 1, U32_MAX])
+        cost = rng.between(1, burst)
+        tat = rng.pick([I64_MIN, 0, now, I64_MAX - 1, I64_MAX])
+    elif kind < 9:
+        # cost * interval and burst * interval straddling 2^63.
+        interval = rng.between(1, 2**32)
+        burst = rng.between(1, U32_MAX)
+        limit_interval = I64_MAX // burst
+        interval = max(1, limit_interval + rng.between(-2, 2)) if rng.below(2) else interval
+        cost = rng.between(1, burst)
+        now = rng.pick([0, REALISTIC_WALL, -REALISTIC_WALL, I64_MAX // 2])
+        tat = rng.pick([0, now, I64_MAX // 2, I64_MIN // 2])
+    else:
+        now = rng.between(I64_MIN, I64_MAX)
+        tat = rng.between(I64_MIN, I64_MAX)
+        interval = rng.between(-2, 2**40)
+        burst = rng.between(0, 10)
+        cost = rng.between(0, 12)
+    return [tat, now, cost, interval, burst]
+
+
+DATA_LENGTH_EDGES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 16, 17, 31, 32, 33, 63, 64, 65]
+SEED_EDGES = [0, 1, 2, 0x9747B28C, 2**31, U32_MAX - 1, U32_MAX]
+
+
+def murmur_args(rng: SplitMix64):
+    length = rng.pick(DATA_LENGTH_EDGES) if rng.below(3) else rng.between(0, 200)
+    style = rng.below(4)
+    if style == 0:
+        data = [rng.between(0, 255) for _ in range(length)]
+    elif style == 1:
+        data = [rng.pick([0, 0x80, 0xFF, 0x7F, 1]) for _ in range(length)]
+    elif style == 2:
+        data = list(("hlc-" + str(rng.below(10**12))).encode("ascii"))[:length] + [97] * max(
+            0, length - 16
+        )
+    else:
+        data = [rng.between(32, 126) for _ in range(length)]
+    seed = rng.pick(SEED_EDGES) if rng.below(2) else rng.between(0, U32_MAX)
+    return [data, seed]
+
+
 #: fixture -> (model, argument generator, how many cases, seed).
 #: A seed is per fixture and never reused, so adding a case to one fixture does
 #: not move another's.
@@ -581,22 +903,36 @@ FIXTURES = {
         150,
         0xE110_000B,
     ),
+    "hlc_compare": (lambda args: hlc_compare(*args), compare_args, 250, 0xE110_000C),
+    "lww_classify": (lambda args: lww_classify(*args), lww_args, 250, 0xE110_000D),
+    "orset_union": (lambda args: orset_union(*args), union_args, 300, 0xE110_000E),
+    "hlc_text": (lambda args: hlc_text(*args), text_args, 300, 0xE110_000F),
+    "gcra_admit": (lambda args: gcra_admit(*args), gcra_args, 400, 0xE110_0010),
+    "murmur3_32": (lambda args: murmur3_32(*args), murmur_args, 300, 0xE110_0011),
 }
 
 
 def render(value) -> str:
     """A value the way the hand-written cases write it: a record as
-    `{ "year": 1970, ... }`, a boolean as `true`, a number as itself."""
+    `{ "year": 1970, ... }`, a list as `[1, 2]`, a boolean as `true`, a number
+    as itself."""
     if isinstance(value, dict):
         members = ", ".join(f'"{key}": {render(member)}' for key, member in value.items())
         return "{ " + members + " }"
+    if isinstance(value, list):
+        return "[" + ", ".join(render(member) for member in value) + "]"
     return json.dumps(value)
+
+
+def identity(args) -> str:
+    """What makes two cases the same input: a record or a list is not hashable."""
+    return json.dumps(args, sort_keys=True)
 
 
 def case_line(args, answer) -> str:
     kind, value = answer
     tail = f'"expected": {render(value)}' if kind == "ok" else f'"fails": "{value}"'
-    return f'        {{ "args": {json.dumps(args)}, {tail}, "note": "{MARK}" }}'
+    return f'        {{ "args": {render(args)}, {tail}, "note": "{MARK}" }}'
 
 
 def section(text: str, fixture: str):
@@ -657,7 +993,7 @@ def regenerate(text: str):
         start, end = section(text, fixture)
         hand, dropped = hand_cases(text[start:end])
         checked = verify_model(fixture, model, hand)
-        seen = {tuple(json.loads(HAND_CASE.match(line).group(1))) for line in hand}
+        seen = {identity(json.loads(HAND_CASE.match(line).group(1))) for line in hand}
         rng = SplitMix64(seed)
         made, guard = [], 0
         while len(made) < count:
@@ -665,7 +1001,7 @@ def regenerate(text: str):
             if guard > count * 50:
                 raise SystemExit(f"{fixture}: cannot draw {count} distinct inputs")
             args = draw(rng)
-            key = tuple(args)
+            key = identity(args)
             if key in seen:
                 continue
             seen.add(key)
