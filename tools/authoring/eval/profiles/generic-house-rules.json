@@ -1,0 +1,31 @@
+{
+  "record": "sce-authoring-profile",
+  "v": 1,
+  "name": "eval-generic-house-rules",
+  "house_rules": [
+    {
+      "id": "ignored-events",
+      "rule": "An event that a state has no transition for is ignored in that state: no transition is written for it and it is not an error."
+    },
+    {
+      "id": "time-unit",
+      "rule": "A duration the specification gives without a unit is read in milliseconds."
+    },
+    {
+      "id": "count-type",
+      "rule": "A count or a size the specification gives is an unsigned 32-bit integer unless the specification says otherwise."
+    },
+    {
+      "id": "timer-scope",
+      "rule": "A timer started on entering a state is cancelled on leaving that state."
+    },
+    {
+      "id": "initial-state",
+      "rule": "The first state the specification describes is the initial state."
+    },
+    {
+      "id": "failure-reported",
+      "rule": "A failure the specification does not route is reported to the caller as an event and is not retried."
+    }
+  ]
+}
