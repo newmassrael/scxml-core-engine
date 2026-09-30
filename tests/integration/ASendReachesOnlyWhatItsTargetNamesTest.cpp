@@ -85,8 +85,9 @@ TEST_F(ASendReachesOnlyWhatItsTargetNamesTest, ASendReachesOnlyWhatItsTargetName
 
     EXPECT_EQ(sm_->terminalState().value_or(""), "done") << "the run must end in `done`";
     const std::vector<std::pair<std::string, int>> expected = {
-        {"execErrors", 1},    {"commErrors", 3},  {"afterRefused", 0}, {"afterNobody", 0},
-        {"afterStranger", 0}, {"afterOrphan", 0}, {"bareArrived", 1},  {"pongOk", 1}};
+        {"execErrors", 1},    {"commErrors", 5},  {"afterRefused", 0},    {"afterNobody", 0},
+        {"afterStranger", 0}, {"afterOrphan", 0}, {"afterOrphanExpr", 0}, {"afterOrphanExprLater", 0},
+        {"bareArrived", 1},   {"pongOk", 1}};
     for (const auto &[name, value] : expected) {
         EXPECT_EQ(read(name + " === " + std::to_string(value)), "true")
             << name << " = " << read(name) << ", want " << value;

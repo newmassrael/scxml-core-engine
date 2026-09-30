@@ -100,13 +100,13 @@ documents-floor 700
 documents-judged-floor 450
 engine-documents 264
 native-prefix-documents 2
-datamodel-variable-init 446
+datamodel-variable-init 449
 transition-guard 242
-assign-action 386
+assign-action 388
 child-invoke-needs-script-engine 55
 log-expr 46
 send-param-expr 49
-send-dynamic-attr 65
+send-dynamic-attr 67
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
@@ -350,7 +350,14 @@ never spelled correctly.
   evaluates to `0ms`, which the zero-delay case needs because a literal `0s`
   is finished at build time and never reaches the run-time check) raised
   `send-dynamic-attr` by one more, 64 to 65. It landed without this row, so
-  `main` read red until this entry.
+  `main` read red until this entry. ⚠ **2026-09-30, deliberately, again:**
+  `integration_resources/a_send_reaches_only_what_its_target_names/` took the
+  same orphan `#_parent` through a `targetexpr`, at once and delayed (the
+  document carries a `#_parent` send, so its machine can have a parent and be
+  started without one, which no other `targetexpr` fixture's root does): three
+  data items, two assigns and two `targetexpr` sends raised
+  `datamodel-variable-init` by three (446 to 449), `assign-action` by two
+  (386 to 388) and `send-dynamic-attr` by two (65 to 67).
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.

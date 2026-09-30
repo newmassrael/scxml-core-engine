@@ -57,11 +57,14 @@ TEST(ASendReachesOnlyWhatItsTargetNamesAotTest, ASendReachesOnlyWhatItsTargetNam
 
     EXPECT_EQ(sm.terminalState(), SM::State::Done) << "the run must end in `done`";
     EXPECT_EQ(sm.execErrors(), std::optional<int64_t>(1)) << "execErrors = " << show(sm.execErrors());
-    EXPECT_EQ(sm.commErrors(), std::optional<int64_t>(3)) << "commErrors = " << show(sm.commErrors());
+    EXPECT_EQ(sm.commErrors(), std::optional<int64_t>(5)) << "commErrors = " << show(sm.commErrors());
     EXPECT_EQ(sm.afterRefused(), std::optional<int64_t>(0)) << "afterRefused = " << show(sm.afterRefused());
     EXPECT_EQ(sm.afterNobody(), std::optional<int64_t>(0)) << "afterNobody = " << show(sm.afterNobody());
     EXPECT_EQ(sm.afterStranger(), std::optional<int64_t>(0)) << "afterStranger = " << show(sm.afterStranger());
     EXPECT_EQ(sm.afterOrphan(), std::optional<int64_t>(0)) << "afterOrphan = " << show(sm.afterOrphan());
+    EXPECT_EQ(sm.afterOrphanExpr(), std::optional<int64_t>(0)) << "afterOrphanExpr = " << show(sm.afterOrphanExpr());
+    EXPECT_EQ(sm.afterOrphanExprLater(), std::optional<int64_t>(0))
+        << "afterOrphanExprLater = " << show(sm.afterOrphanExprLater());
     EXPECT_EQ(sm.bareArrived(), std::optional<int64_t>(1)) << "bareArrived = " << show(sm.bareArrived());
     EXPECT_EQ(sm.pongOk(), std::optional<int64_t>(1)) << "pongOk = " << show(sm.pongOk());
 }

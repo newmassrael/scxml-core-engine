@@ -51,11 +51,13 @@ int main(void) {
         int64_t want;
     } observed[] = {
         {"execErrors", a_send_reaches_only_what_its_target_names_exec_errors, 1},
-        {"commErrors", a_send_reaches_only_what_its_target_names_comm_errors, 3},
+        {"commErrors", a_send_reaches_only_what_its_target_names_comm_errors, 5},
         {"afterRefused", a_send_reaches_only_what_its_target_names_after_refused, 0},
         {"afterNobody", a_send_reaches_only_what_its_target_names_after_nobody, 0},
         {"afterStranger", a_send_reaches_only_what_its_target_names_after_stranger, 0},
         {"afterOrphan", a_send_reaches_only_what_its_target_names_after_orphan, 0},
+        {"afterOrphanExpr", a_send_reaches_only_what_its_target_names_after_orphan_expr, 0},
+        {"afterOrphanExprLater", a_send_reaches_only_what_its_target_names_after_orphan_expr_later, 0},
         {"bareArrived", a_send_reaches_only_what_its_target_names_bare_arrived, 1},
         {"pongOk", a_send_reaches_only_what_its_target_names_pong_ok, 1},
     };

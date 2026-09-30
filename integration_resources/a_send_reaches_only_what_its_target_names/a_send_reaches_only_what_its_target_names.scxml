@@ -36,10 +36,17 @@
               carried on past it; the others dropped it, and neither C11 nor
               the C++ AOT could be started by a host at all once the
               document sent to `#_parent`.
+    orphanexpr  the same session names `#_parent` through a `targetexpr`,
+              at once and after 10ms: the same error.communication when the
+              send is made, the same ended block. This document carries a
+              `#_parent` send, so a generated machine of it is one that CAN
+              have a parent and was started without one — the shape a
+              document with no such send does not have, and the reason the
+              row is here and not with the other `targetexpr` rows.
 
-    execErrors 1, commErrors 3, afterRefused 0, afterNobody 0,
-    afterStranger 0, afterOrphan 0, bareArrived 1, pongOk 1, ending in
-    `done`.
+    execErrors 1, commErrors 5, afterRefused 0, afterNobody 0,
+    afterStranger 0, afterOrphan 0, afterOrphanExpr 0,
+    afterOrphanExprLater 0, bareArrived 1, pongOk 1, ending in `done`.
 
   This fixture is the canonical source for all 7 channels — see
   docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test locations.
@@ -55,6 +62,9 @@
     <data id="afterNobody" expr="0"/>
     <data id="afterStranger" expr="0"/>
     <data id="afterOrphan" expr="0"/>
+    <data id="tParent" expr="'#_parent'"/>
+    <data id="afterOrphanExpr" expr="0"/>
+    <data id="afterOrphanExprLater" expr="0"/>
     <data id="bareArrived" expr="0"/>
     <data id="pongOk" expr="0"/>
   </datamodel>
@@ -77,6 +87,14 @@
     <onentry>
       <send event="lost" target="#_parent"/>
       <assign location="afterOrphan" expr="1"/>
+    </onentry>
+    <onentry>
+      <send event="lost" targetexpr="tParent"/>
+      <assign location="afterOrphanExpr" expr="1"/>
+    </onentry>
+    <onentry>
+      <send event="lost" targetexpr="tParent" delay="10ms"/>
+      <assign location="afterOrphanExprLater" expr="1"/>
     </onentry>
     <onentry>
       <send event="bare" target="#_scxml_"/>

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9b9a69c667502ae1733fda8dedceeee7a01aa136c4bb06b74941e5364f09e3a3
+// source-hash: 0f1bfa983caaf70d2c074c82923a1ce8497543f0fb66b02d42558f479148c65b
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine"]
-// SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
+#![doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine"]
+// SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -308,6 +308,51 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
         )
     }
 
+    /// §scxml-5.3: what the `tParent` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `tParent` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn t_parent(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_string(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "tParent",
+        )
+    }
+
+    /// §scxml-5.3: what the `afterOrphanExpr` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `afterOrphanExpr` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn after_orphan_expr(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "afterOrphanExpr",
+        )
+    }
+
+    /// §scxml-5.3: what the `afterOrphanExprLater` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `afterOrphanExprLater` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn after_orphan_expr_later(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "afterOrphanExprLater",
+        )
+    }
+
     /// §scxml-5.3: what the `bareArrived` datamodel variable is holding now.
     ///
     /// The live value, not the authored one: `<assign>` writes into the
@@ -472,6 +517,36 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
+        // W3C SCXML 5.2/5.3: Initialize 'tParent' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "tParent",
+            "\"#_parent\"",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'afterOrphanExpr' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "afterOrphanExpr",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'afterOrphanExprLater' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "afterOrphanExprLater",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
         // W3C SCXML 5.2/5.3: Initialize 'bareArrived' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se,
@@ -610,6 +685,48 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
                 "<data id='afterOrphan'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'tParent' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "tParent",
+            "\"#_parent\"",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                "<data id='tParent'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'afterOrphanExpr' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "afterOrphanExpr",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                "<data id='afterOrphanExpr'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'afterOrphanExprLater' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "afterOrphanExprLater",
+            "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                "<data id='afterOrphanExprLater'> expr failed to evaluate",
             ));
         }
 
@@ -1151,8 +1268,8 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine"]
-    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
+    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine"]
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1161,8 +1278,8 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
     ) {
         match state {
             ASendReachesOnlyWhatItsTargetNamesState::Run => {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:62 :: run :: _state_body
-                // W3C SCXML 3.8: onentry block 1/5
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:72 :: run :: _state_body
+                // W3C SCXML 3.8: onentry block 1/7
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
@@ -1204,7 +1321,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                 }
-                // W3C SCXML 3.8: onentry block 2/5
+                // W3C SCXML 3.8: onentry block 2/7
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
@@ -1251,7 +1368,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                 }
-                // W3C SCXML 3.8: onentry block 3/5
+                // W3C SCXML 3.8: onentry block 3/7
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
@@ -1315,7 +1432,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                 }
-                // W3C SCXML 3.8: onentry block 4/5
+                // W3C SCXML 3.8: onentry block 4/7
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
@@ -1369,11 +1486,365 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                 }
-                // W3C SCXML 3.8: onentry block 5/5
+                // W3C SCXML 3.8: onentry block 5/7
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_6");
+
+                        self.ensure_script_engine();
+                        let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
+                        let __sce_arg_se = self.script_engine.clone();
+                        let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
+                        let mut _send_arg_error: Option<&'static str> = None;
+                        // A target that evaluates to nothing is not an evaluation error: it is an
+                        // address nobody answers at, which the resolution below reports as
+                        // error.communication (W3C SCXML C.1).
+                        let _send_target_value: Option<sce_rust_runtime::ScriptValue> =
+                            if _send_arg_error.is_none() {
+                                match __sce_arg_se.evaluate_expression(&__sce_arg_sid, "tParent") {
+                                    Ok(val) => Some(val),
+                                    Err(e) => {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "targetexpr eval failed: {}",
+                                            e
+                                        );
+                                        _send_arg_error =
+                                            Some("<send> targetexpr could not be evaluated");
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+                        if let Some(ref val) = _send_target_value {
+                            // W3C SCXML 6.2: a target this processor cannot address is refused as
+                            // a static one is, before anything is delivered.
+                            if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
+            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+        }
+                        }
+                        if let Some(__sce_why) = _send_arg_error {
+                            ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                __sce_why,
+                            );
+                            err_meta.metadata.send_id = send_id.clone();
+                            engine.raise(err_meta);
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        } else {
+                            // §scxml-C-1: a target expression's value is read as text — the same
+                            // reading C++ `resultToString` gives it. A value that is not there, or
+                            // text that names nothing (`SendHelper::isUnreachableTarget`: empty or
+                            // "undefined"), is no target. A self-sent event names its origin, so
+                            // `targetexpr="_event.origin"` (test336) reads this session's location,
+                            // never "".
+                            let _resolved_target: Option<String> = match _send_target_value {
+        Some(sce_rust_runtime::ScriptValue::Null) | Some(sce_rust_runtime::ScriptValue::Undefined) | None => None,
+        Some(ref val) => Some(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val))
+            .filter(|t| !::sce_rust_runtime::helpers::send::is_unreachable_target(t)),
+    };
+                            if _resolved_target.is_none() {
+                                // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
+                                // error.communication.
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                err_meta.metadata.send_id = send_id.clone();
+                                engine.raise(err_meta);
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                            if let Some(ref _rt) = _resolved_target {
+                                let event_data: &str = "";
+
+                                if ::sce_rust_runtime::helpers::send::is_mesh_target(_rt) {
+                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                                    // which declared it to this build. Dispatch rather than refuse.
+                                    {
+                                        let host_params =
+                                            std::collections::HashMap::<String, Vec<String>>::new();
+                                        let __sce_request = sce_rust_runtime::HostSendRequest {
+                                            processor_type: "sce:mesh".to_string(),
+                                            event_name: "lost".to_string(),
+                                            target: _rt.to_string(),
+                                            content: "".to_string(),
+                                            params: host_params,
+                                            send_id: send_id.to_string(),
+                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                            event_data: event_data.to_string(),
+                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                            // processed now, carried back out as a W3C child's send to its
+                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                            // every machine with a host-served send.
+                                            invoke_id: self.pending_event_invokeid.to_string(),
+                                        };
+                                        let __sce_served = engine.perform_host_send(__sce_request);
+                                        // W3C SCXML 6.2: a declared type with no handler registered is,
+                                        // from the document's side, a processor the platform does not
+                                        // support — the act it asked for was performed by nobody. Same
+                                        // event, so a wiring mistake cannot read as success.
+                                        if __sce_served.is_none()
+                                            && !engine.has_event_processor("sce:mesh")
+                                        {
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                            err_meta.metadata.send_id = send_id.clone();
+                                            engine.raise(err_meta);
+                                        }
+                                    }
+                                } else {
+                                    // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+                                    // the same value written in `target` is, at once or after the delay, by
+                                    // the table `helpers::send::classify_target` holds (C++
+                                    // `SendHelper::classifyTarget`).
+                                    {
+                                        let __sce_routed = sce_rust_runtime::Engine::send_to_target(
+                                            self,
+                                            engine,
+                                            Some(ASendReachesOnlyWhatItsTargetNamesEvent::Lost),
+                                            "lost",
+                                            _rt,
+                                            &::sce_rust_runtime::sce_string_from_str(
+                                                self.session_id.as_deref().unwrap_or(""),
+                                            ),
+                                            None,
+                                            &send_id,
+                                            &event_data,
+                                            &::sce_rust_runtime::sce_string_from_str(
+                                                self.session_id.as_deref().unwrap_or(""),
+                                            ),
+                                        );
+                                        if __sce_routed
+                                            == sce_rust_runtime::TargetSendOutcome::Unsupported
+                                        {
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            err_meta.metadata.send_id = send_id.clone();
+                                            engine.raise(err_meta);
+                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                        }
+                                        if __sce_routed
+                                            == sce_rust_runtime::TargetSendOutcome::Unreachable
+                                        {
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            err_meta.metadata.send_id = send_id.clone();
+                                            engine.raise(err_meta);
+                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                        }
+                                    }
+                                } // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            } // end of if let Some(ref _rt) = _resolved_target
+                        } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+
+                    {
+                        // W3C SCXML 5.3: <assign location="afterOrphanExpr">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "1";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "afterOrphanExpr", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'afterOrphanExpr': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                "<assign> to 'afterOrphanExpr' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+                // W3C SCXML 3.8: onentry block 6/7
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_7");
+
+                        self.ensure_script_engine();
+                        let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
+                        let __sce_arg_se = self.script_engine.clone();
+                        let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
+                        let mut _send_arg_error: Option<&'static str> = None;
+                        // A target that evaluates to nothing is not an evaluation error: it is an
+                        // address nobody answers at, which the resolution below reports as
+                        // error.communication (W3C SCXML C.1).
+                        let _send_target_value: Option<sce_rust_runtime::ScriptValue> =
+                            if _send_arg_error.is_none() {
+                                match __sce_arg_se.evaluate_expression(&__sce_arg_sid, "tParent") {
+                                    Ok(val) => Some(val),
+                                    Err(e) => {
+                                        ::sce_rust_runtime::sce_log_error!(
+                                            "targetexpr eval failed: {}",
+                                            e
+                                        );
+                                        _send_arg_error =
+                                            Some("<send> targetexpr could not be evaluated");
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+                        if let Some(ref val) = _send_target_value {
+                            // W3C SCXML 6.2: a target this processor cannot address is refused as
+                            // a static one is, before anything is delivered.
+                            if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
+            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+        }
+                        }
+                        if let Some(__sce_why) = _send_arg_error {
+                            ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                __sce_why,
+                            );
+                            err_meta.metadata.send_id = send_id.clone();
+                            engine.raise(err_meta);
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        } else {
+                            // §scxml-C-1: a target expression's value is read as text — the same
+                            // reading C++ `resultToString` gives it. A value that is not there, or
+                            // text that names nothing (`SendHelper::isUnreachableTarget`: empty or
+                            // "undefined"), is no target. A self-sent event names its origin, so
+                            // `targetexpr="_event.origin"` (test336) reads this session's location,
+                            // never "".
+                            let _resolved_target: Option<String> = match _send_target_value {
+        Some(sce_rust_runtime::ScriptValue::Null) | Some(sce_rust_runtime::ScriptValue::Undefined) | None => None,
+        Some(ref val) => Some(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val))
+            .filter(|t| !::sce_rust_runtime::helpers::send::is_unreachable_target(t)),
+    };
+                            if _resolved_target.is_none() {
+                                // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
+                                // error.communication.
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                err_meta.metadata.send_id = send_id.clone();
+                                engine.raise(err_meta);
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                            if let Some(ref _rt) = _resolved_target {
+                                let event_data: &str = "";
+
+                                if ::sce_rust_runtime::helpers::send::is_mesh_target(_rt) {
+                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                                    // which declared it to this build. Dispatch rather than refuse.
+                                    {
+                                        let host_params =
+                                            std::collections::HashMap::<String, Vec<String>>::new();
+                                        let __sce_request = sce_rust_runtime::HostSendRequest {
+                                            processor_type: "sce:mesh".to_string(),
+                                            event_name: "lost".to_string(),
+                                            target: _rt.to_string(),
+                                            content: "".to_string(),
+                                            params: host_params,
+                                            send_id: send_id.to_string(),
+                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                            event_data: event_data.to_string(),
+                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                            // processed now, carried back out as a W3C child's send to its
+                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                            // every machine with a host-served send.
+                                            invoke_id: self.pending_event_invokeid.to_string(),
+                                        };
+                                        let __sce_delay_ms = 10_u64;
+                                        // W3C SCXML 6.2.4: arm it. The engine performs the act when the
+                                        // deadline arrives and reports it there if nobody does, so the
+                                        // unregistered-handler branch below belongs only to the immediate
+                                        // form — this site has returned long before the deadline.
+                                        // W3C SCXML 6.3: it lands in the delayed-send queue under `send_id`,
+                                        // so a `<cancel>` reaches it and the host never sees the act at all.
+                                        engine.schedule_host_send(
+                                            __sce_request,
+                                            core::time::Duration::from_millis(__sce_delay_ms),
+                                            &send_id,
+                                        );
+                                    }
+                                } else {
+                                    // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+                                    // the same value written in `target` is, at once or after the delay, by
+                                    // the table `helpers::send::classify_target` holds (C++
+                                    // `SendHelper::classifyTarget`).
+                                    {
+                                        let __sce_routed = sce_rust_runtime::Engine::send_to_target(
+                                            self,
+                                            engine,
+                                            Some(ASendReachesOnlyWhatItsTargetNamesEvent::Lost),
+                                            "lost",
+                                            _rt,
+                                            &::sce_rust_runtime::sce_string_from_str(
+                                                self.session_id.as_deref().unwrap_or(""),
+                                            ),
+                                            Some(core::time::Duration::from_millis(10_u64)),
+                                            &send_id,
+                                            &event_data,
+                                            &::sce_rust_runtime::sce_string_from_str(
+                                                self.session_id.as_deref().unwrap_or(""),
+                                            ),
+                                        );
+                                        if __sce_routed
+                                            == sce_rust_runtime::TargetSendOutcome::Unsupported
+                                        {
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            err_meta.metadata.send_id = send_id.clone();
+                                            engine.raise(err_meta);
+                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                        }
+                                        if __sce_routed
+                                            == sce_rust_runtime::TargetSendOutcome::Unreachable
+                                        {
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            err_meta.metadata.send_id = send_id.clone();
+                                            engine.raise(err_meta);
+                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                        }
+                                    }
+                                } // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            } // end of if let Some(ref _rt) = _resolved_target
+                        } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+
+                    {
+                        // W3C SCXML 5.3: <assign location="afterOrphanExprLater">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "1";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "afterOrphanExprLater", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'afterOrphanExprLater': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                "<assign> to 'afterOrphanExprLater' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+                // W3C SCXML 3.8: onentry block 7/7
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_8");
 
                         let event_data: &str = "";
 
@@ -1428,8 +1899,8 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine"]
-    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
+    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine"]
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1478,8 +1949,8 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine"]
-    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
+    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine"]
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -1523,8 +1994,8 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine"]
-    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
+    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine"]
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1620,8 +2091,8 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine"]
-    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
+    #[doc = "SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine"]
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1632,7 +2103,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
             ASendReachesOnlyWhatItsTargetNamesState::Run => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:103 :: run :: _transition_0
+                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:121 :: run :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1666,7 +2137,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:106 :: run :: _transition_1
+                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:124 :: run :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1700,7 +2171,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:109 :: run :: _transition_2
+                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:127 :: run :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1734,7 +2205,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:112 :: run :: _transition_3
+                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:130 :: run :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1768,7 +2239,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:115 :: run :: _transition_4
+                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:133 :: run :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1831,7 +2302,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         }
                     }
                     5 => {
-                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:120 :: run :: _transition_5
+                        // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:138 :: run :: _transition_5
                         // W3C SCXML 3.13: Transition 5 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {

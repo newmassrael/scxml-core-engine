@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9b9a69c667502ae1733fda8dedceeee7a01aa136c4bb06b74941e5364f09e3a3
+// source-hash: 0f1bfa983caaf70d2c074c82923a1ce8497543f0fb66b02d42558f479148c65b
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:47 :: _machine
+// SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:54 :: _machine
 
 package a_send_reaches_only_what_its_target_names
 
@@ -316,6 +316,42 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) AfterOrphan() (int64, bool) {
 	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "afterOrphan")
 }
 
+// TParent reports what the `tParent` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `tParent` was assigned a value of another type, or the engine refused.
+func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) TParent() (string, bool) {
+	return sce.ReadDatamodelString(p.ScriptEngine, p.SessionID, "tParent")
+}
+
+// AfterOrphanExpr reports what the `afterOrphanExpr` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `afterOrphanExpr` was assigned a value of another type, or the engine refused.
+func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) AfterOrphanExpr() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "afterOrphanExpr")
+}
+
+// AfterOrphanExprLater reports what the `afterOrphanExprLater` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `afterOrphanExprLater` was assigned a value of another type, or the engine refused.
+func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) AfterOrphanExprLater() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "afterOrphanExprLater")
+}
+
 // BareArrived reports what the `bareArrived` datamodel variable is holding now
 // (W3C SCXML 5.3).
 //
@@ -456,6 +492,36 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) InitializeDataModel(eng *sce.
 		} else {
 			eng.Raise(sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorExecution, "<data id='afterOrphan'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "afterOrphan", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize tParent from expr="'#_parent'"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `"#_parent"`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "tParent", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorExecution, "<data id='tParent'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "tParent", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize afterOrphanExpr from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "afterOrphanExpr", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorExecution, "<data id='afterOrphanExpr'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "afterOrphanExpr", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize afterOrphanExprLater from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "afterOrphanExprLater", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorExecution, "<data id='afterOrphanExprLater'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "afterOrphanExprLater", nil)
 		}
 	}
 	// W3C SCXML 5.2/5.3: Initialize bareArrived from expr="0"
@@ -1035,12 +1101,12 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line a_send_reaches_only_what_its_target_names.scxml:47
+//line a_send_reaches_only_what_its_target_names.scxml:54
 func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteEntryActions(state ASendReachesOnlyWhatItsTargetNamesState, engine *sce.Engine[ASendReachesOnlyWhatItsTargetNamesState, ASendReachesOnlyWhatItsTargetNamesEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case ASendReachesOnlyWhatItsTargetNamesStateRun:
-		//line a_send_reaches_only_what_its_target_names.scxml:62
+		//line a_send_reaches_only_what_its_target_names.scxml:72
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1160,6 +1226,236 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteEntryActions(state ASe
 
 	// W3C SCXML 6.2: send id="__send_6"
 	{
+	p.ensureScriptEngine()
+	sendArgError := ""
+	// A target that evaluates to nothing is not an evaluation error: it is
+	// an address nobody answers at, which the arm reports as
+	// error.communication (W3C SCXML 6.2.4).
+	var sendTargetVal any
+	sendTarget := ""
+	if sendArgError == "" {
+		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `tParent`); err == nil {
+			sendTargetVal = v
+			sendTarget = sce.ToWireString(v)
+		} else {
+			sendArgError = "<send> targetexpr could not be evaluated"
+		}
+	}
+	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
+		// W3C SCXML 6.2: a target this processor cannot address is refused
+		// as a static one is, before anything is delivered.
+		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+	}
+	_ = sendTargetVal
+	_ = sendTarget
+	if sendArgError != "" {
+		errEvt := sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorExecution, sendArgError)
+		errEvt.Metadata.SendID = "__send_6"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+	if sendArgError == "" && (sendTargetVal == nil || sce.IsUnreachableTarget(sendTarget)) {
+		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value,
+		// or to text that names nothing (empty or "undefined"), is not
+		// reachable — error.communication, nothing delivered, and the error
+		// ends the block as any other would (W3C SCXML 4.9). A self-sent
+		// event names its origin, so `targetexpr="_event.origin"` (test336)
+		// reads this session's location, never "".
+		errEvt := sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt.Metadata.SendID = "__send_6"
+		engine.Raise(errEvt)
+		return
+	}
+	{
+		eventDataStr := ""
+		_ = eventDataStr
+	if sce.IsMeshTarget(sendTarget) {
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := map[string][]string{}
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "lost",
+			Target:        sendTarget,
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_6",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_6"
+			engine.Raise(errEvt)
+		}
+	}
+	} else {
+	// W3C SCXML 6.2: External send
+	// W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+	// the same value written in `target` is, at once or after the delay, by
+	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
+	{
+		sendEvt, sendHasEvt := p.GetEventFromName("lost")
+		routed := engine.SendToTarget(sendEvt, sendHasEvt, "lost", sendTarget, p.SessionID,
+0, "__send_6", eventDataStr, p.SessionID)
+		if routed == sce.TargetNotSupported {
+			errEvt := sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt.Metadata.SendID = "__send_6"
+			engine.Raise(errEvt)
+			return // W3C SCXML 4.9: the error ends the block
+		}
+		if routed == sce.TargetNotReachable {
+			errEvt := sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt.Metadata.SendID = "__send_6"
+			engine.Raise(errEvt)
+			return // W3C SCXML 4.9: the error ends the block
+		}
+	}
+	} // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
+	}
+	}
+
+	// W3C SCXML 5.3: <assign location="afterOrphanExpr" expr="1">
+	if err := p.assignVariable(`afterOrphanExpr`, `1`); err != nil {
+		engine.Raise(sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorExecution, "<assign> to 'afterOrphanExpr' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+		}()
+		// W3C SCXML 3.8 + 4.9: onentry block 5, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
+
+	// W3C SCXML 6.2: send id="__send_7"
+	{
+	p.ensureScriptEngine()
+	sendArgError := ""
+	// A target that evaluates to nothing is not an evaluation error: it is
+	// an address nobody answers at, which the arm reports as
+	// error.communication (W3C SCXML 6.2.4).
+	var sendTargetVal any
+	sendTarget := ""
+	if sendArgError == "" {
+		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `tParent`); err == nil {
+			sendTargetVal = v
+			sendTarget = sce.ToWireString(v)
+		} else {
+			sendArgError = "<send> targetexpr could not be evaluated"
+		}
+	}
+	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
+		// W3C SCXML 6.2: a target this processor cannot address is refused
+		// as a static one is, before anything is delivered.
+		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+	}
+	_ = sendTargetVal
+	_ = sendTarget
+	if sendArgError != "" {
+		errEvt := sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorExecution, sendArgError)
+		errEvt.Metadata.SendID = "__send_7"
+		engine.Raise(errEvt)
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+	if sendArgError == "" && (sendTargetVal == nil || sce.IsUnreachableTarget(sendTarget)) {
+		// W3C SCXML C.1 (test 496, 521): a target that evaluates to no value,
+		// or to text that names nothing (empty or "undefined"), is not
+		// reachable — error.communication, nothing delivered, and the error
+		// ends the block as any other would (W3C SCXML 4.9). A self-sent
+		// event names its origin, so `targetexpr="_event.origin"` (test336)
+		// reads this session's location, never "".
+		errEvt := sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt.Metadata.SendID = "__send_7"
+		engine.Raise(errEvt)
+		return
+	}
+	{
+		eventDataStr := ""
+		_ = eventDataStr
+	if sce.IsMeshTarget(sendTarget) {
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := map[string][]string{}
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "lost",
+			Target:        sendTarget,
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_7",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		hostDelayMs := int64(10)
+		// W3C SCXML 6.2.4: arm it. The engine performs the act when the
+		// deadline arrives and reports it there if nobody does, so the
+		// unregistered-handler branch belongs only to the immediate form —
+		// this site has returned long before the deadline. W3C SCXML 6.3: it
+		// lands in the delayed-send queue under SendID, so a <cancel> reaches
+		// it and the host never sees the act.
+		engine.ScheduleHostSend(hostRequest, time.Duration(hostDelayMs)*time.Millisecond, "__send_7")
+	}
+	} else {
+	// W3C SCXML 6.2: External send
+	// W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+	// the same value written in `target` is, at once or after the delay, by
+	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
+	{
+		sendEvt, sendHasEvt := p.GetEventFromName("lost")
+		routed := engine.SendToTarget(sendEvt, sendHasEvt, "lost", sendTarget, p.SessionID,
+time.Duration(10) * time.Millisecond, "__send_7", eventDataStr, p.SessionID)
+		if routed == sce.TargetNotSupported {
+			errEvt := sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt.Metadata.SendID = "__send_7"
+			engine.Raise(errEvt)
+			return // W3C SCXML 4.9: the error ends the block
+		}
+		if routed == sce.TargetNotReachable {
+			errEvt := sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt.Metadata.SendID = "__send_7"
+			engine.Raise(errEvt)
+			return // W3C SCXML 4.9: the error ends the block
+		}
+	}
+	} // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
+	}
+	}
+
+	// W3C SCXML 5.3: <assign location="afterOrphanExprLater" expr="1">
+	if err := p.assignVariable(`afterOrphanExprLater`, `1`); err != nil {
+		engine.Raise(sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorExecution, "<assign> to 'afterOrphanExprLater' failed"))
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+		}()
+		// W3C SCXML 3.8 + 4.9: onentry block 6, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
+
+	// W3C SCXML 6.2: send id="__send_8"
+	{
 	{
 		eventDataStr := ""
 		_ = eventDataStr
@@ -1169,7 +1465,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteEntryActions(state ASe
 	// nothing delivered, the block ended (W3C SCXML 4.9).
 	{
 		meta := sce.NewEventWithMetadata(ASendReachesOnlyWhatItsTargetNamesEventBare)
-		meta.Metadata = sce.ExternalMetadata("__send_6", p.SessionID)
+		meta.Metadata = sce.ExternalMetadata("__send_8", p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
@@ -1195,7 +1491,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteEntryActions(state ASe
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line a_send_reaches_only_what_its_target_names.scxml:47
+//line a_send_reaches_only_what_its_target_names.scxml:54
 func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[ASendReachesOnlyWhatItsTargetNamesState, ASendReachesOnlyWhatItsTargetNamesEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1203,7 +1499,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteHistoryDefaultContent(
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line a_send_reaches_only_what_its_target_names.scxml:47
+//line a_send_reaches_only_what_its_target_names.scxml:54
 func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteExitActions(state ASendReachesOnlyWhatItsTargetNamesState, engine *sce.Engine[ASendReachesOnlyWhatItsTargetNamesState, ASendReachesOnlyWhatItsTargetNamesEvent], configurationBeforeExit []ASendReachesOnlyWhatItsTargetNamesState) {
 	p.ensureScriptEngine()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
@@ -1236,7 +1532,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteExitActions(state ASen
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line a_send_reaches_only_what_its_target_names.scxml:47
+//line a_send_reaches_only_what_its_target_names.scxml:54
 func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) BindCurrentEvent(event ASendReachesOnlyWhatItsTargetNamesEvent, engine *sce.Engine[ASendReachesOnlyWhatItsTargetNamesState, ASendReachesOnlyWhatItsTargetNamesEvent]) {
 	if event != ASendReachesOnlyWhatItsTargetNamesEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
@@ -1251,7 +1547,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) BindCurrentEvent(event ASendR
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line a_send_reaches_only_what_its_target_names.scxml:47
+//line a_send_reaches_only_what_its_target_names.scxml:54
 func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) FirstEnabledTransition(state ASendReachesOnlyWhatItsTargetNamesState, event ASendReachesOnlyWhatItsTargetNamesEvent, engine *sce.Engine[ASendReachesOnlyWhatItsTargetNamesState, ASendReachesOnlyWhatItsTargetNamesEvent]) (sce.EnabledTransition[ASendReachesOnlyWhatItsTargetNamesState, sce.HistoryID], bool) {
 	switch state {
 	case ASendReachesOnlyWhatItsTargetNamesStateRun:
@@ -1332,14 +1628,14 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) FirstEnabledTransition(state 
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line a_send_reaches_only_what_its_target_names.scxml:47
+//line a_send_reaches_only_what_its_target_names.scxml:54
 func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteTransitionContent(source ASendReachesOnlyWhatItsTargetNamesState, transitionIndex int, engine *sce.Engine[ASendReachesOnlyWhatItsTargetNamesState, ASendReachesOnlyWhatItsTargetNamesEvent]) {
 	p.ensureScriptEngine()
 	switch source {
 	case ASendReachesOnlyWhatItsTargetNamesStateRun:
 		switch transitionIndex {
 		case 0:
-			//line a_send_reaches_only_what_its_target_names.scxml:103
+			//line a_send_reaches_only_what_its_target_names.scxml:121
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1351,7 +1647,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 1:
-			//line a_send_reaches_only_what_its_target_names.scxml:106
+			//line a_send_reaches_only_what_its_target_names.scxml:124
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1363,7 +1659,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 2:
-			//line a_send_reaches_only_what_its_target_names.scxml:109
+			//line a_send_reaches_only_what_its_target_names.scxml:127
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1375,7 +1671,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 3:
-			//line a_send_reaches_only_what_its_target_names.scxml:112
+			//line a_send_reaches_only_what_its_target_names.scxml:130
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1387,7 +1683,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 4:
-			//line a_send_reaches_only_what_its_target_names.scxml:115
+			//line a_send_reaches_only_what_its_target_names.scxml:133
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1432,7 +1728,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteTransitionContent(sour
 	}
 			}()
 		case 5:
-			//line a_send_reaches_only_what_its_target_names.scxml:120
+			//line a_send_reaches_only_what_its_target_names.scxml:138
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
