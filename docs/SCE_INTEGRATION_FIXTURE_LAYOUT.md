@@ -466,8 +466,8 @@ fixture is single-axis to the point of carrying no `src` and no `<content>`:
 §6.4.1 classifies on `type` alone, before any child document would be
 resolved, so a fixture that supplied one would let a child-materialization
 regression masquerade as an unsupported-type regression. It is also why this
-stem is the only one whose CMake registration passes no
-`SYNTH_INVOKE_CHILDREN` — there is no child to synthesize.
+stem is the only one for which `sce-codegen --plan generate` names no child:
+there is no child to synthesize.
 
 Every channel asserts it, because wiring one backend does not close the
 contract for the rest: the `Invoke::Unsupported` model variant is skipped by
@@ -671,11 +671,14 @@ channels whatever the expression said — green everywhere, measuring nothing.
 undeclared bare identifier would be refused at build time (§3.6) and never
 reach the clause, which is the nearest wrong way to write this document.
 
-It is the first integration stem to pass `HYBRID_INVOKE_CHILDREN`: a hybrid
-`<invoke>`'s stub is the one child kind the integration macro could not
-generate, because the synth-invoke naming it knew does not cover
-`<stem>_hybrid<N>`. The W3C macro had reached those children for as long as
-test216 has been registered; the integration macro learned it here.
+It is the first integration stem whose children include a hybrid `<invoke>`'s
+stub: the one child kind the integration macro could not generate, because the
+synth-invoke naming it knew does not cover `<stem>_hybrid<N>`. The W3C macro had
+reached those children for as long as test216 has been registered; the
+integration macro learned it here, and now learns every child the same way — it
+asks the generator (`sce-codegen --plan generate`, run when the tree is
+configured), which names the stub, the synthesized children and the candidates a
+document declares alike, so a registration lists none of them.
 
 Measured 2026-09-20, before the fixture existed: four AOT backends evaluated
 and raised, Kotlin evaluated and raised through its own loader, and Python did

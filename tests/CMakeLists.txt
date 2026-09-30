@@ -1552,46 +1552,34 @@ set(GENERATED_INTEGRATION_HEADERS "")
 # Integration fixtures.
 # Build-time generation only (no committed tree); the build itself is the
 # §6.2.6 freshness invariant.
-sce_generate_static_integration_test(donedata_local_invoke ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_param inv_content
-)
+sce_generate_static_integration_test(donedata_local_invoke ${STATIC_INTEGRATION_OUTPUT_DIR})
 
-sce_generate_static_integration_test(autoforward_event_fields ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_echo
-)
+sce_generate_static_integration_test(autoforward_event_fields ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML C.1: `_event.origin` must be the sender's published
 # `_ioprocessors` location, and that location must be a usable <send>
 # target. Test336 and test350 both send to the session they already are, so
 # the corpus never puts a second session on the other end.
-sce_generate_static_integration_test(event_origin_is_a_location ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_peer
-)
+sce_generate_static_integration_test(event_origin_is_a_location ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 5.10: `_sessionid` names the session, so two live sessions carry
 # two ids. C.1.1 derives the published address from that id, which is what
 # makes one shared id a routing defect and not a cosmetic one. The corpus
 # runs one session per test and cannot ask.
-sce_generate_static_integration_test(session_ids_are_distinct ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_a inv_b
-)
+sce_generate_static_integration_test(session_ids_are_distinct ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.4: Appendix D `mainEventLoop` forwards every event dequeued from
 # the external queue to each autoforward child and excludes only the cancel
 # event, and §6.4.2 puts `done.invoke.<id>` on that queue. Two concurrent
 # invokes are what it takes to observe the forward, which is why no IRP test
 # covers it.
-sce_generate_static_integration_test(autoforward_done_invoke ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_watch inv_short
-)
+sce_generate_static_integration_test(autoforward_done_invoke ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.4: the negative half of the same loop. The internal drain has
 # no forwarding step, so `error.execution` (§6.2, unsupported `<send>` type)
 # must never reach an autoforward child — excluded by the queue it was
 # raised onto, not by a filter that recognises its name.
-sce_generate_static_integration_test(autoforward_internal_queue ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_watch
-)
+sce_generate_static_integration_test(autoforward_internal_queue ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.4: *where* in the loop the forward happens. Appendix D puts it
 # one statement after `externalQueue.dequeue()`, and §6.4.2 in prose "at the
@@ -1599,9 +1587,7 @@ sce_generate_static_integration_test(autoforward_internal_queue ${STATIC_INTEGRA
 # fixtures above are blind to this by construction — queue order alone cannot
 # tell the enqueue from the dequeue, so the parent marks the child directly
 # with `<send target="#_inv_probe">` from inside a transition body.
-sce_generate_static_integration_test(autoforward_dequeue_point ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_probe
-)
+sce_generate_static_integration_test(autoforward_dequeue_point ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML Appendix D: *when* the invokes start relative to the external
 # dequeue. `mainEventLoop` completes the macrostep on eventless and internal
@@ -1609,18 +1595,14 @@ sce_generate_static_integration_test(autoforward_dequeue_point ${STATIC_INTEGRAT
 # `externalQueue.dequeue()`. The fixture above cannot see this axis — its
 # child opens the exchange, so it is alive before anything is queued; here the
 # parent queues for itself in `<onentry>` and the child starts second.
-sce_generate_static_integration_test(invoke_precedes_external_dequeue ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_watch
-)
+sce_generate_static_integration_test(invoke_precedes_external_dequeue ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML Appendix D: the same order, reached mid-run. `statesToInvoke` is
 # filled by `enterStates` inside `microstep`, so a state entered by an external
 # event's transition arms an invoke that must start before the next event is
 # dequeued. The fixture above enters its invoking state at initialization and
 # cannot see an engine that drains the external queue to exhaustion per step.
-sce_generate_static_integration_test(invoke_precedes_dequeue_midrun ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_watch
-)
+sce_generate_static_integration_test(invoke_precedes_dequeue_midrun ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 3.1.2: an event no transition matches is discarded, and the host
 # that fed it in can find out. A self transition, a targetless internal
@@ -1778,9 +1760,7 @@ sce_generate_static_integration_test(event_type_names_its_queue ${STATIC_INTEGRA
 # W3C SCXML 6.4: cancelling an invocation raises no event in the invoking
 # session. Leaving `p` cancels a child that never ends; the next state counts
 # any `cancel.invoke` that reaches it.
-sce_generate_static_integration_test(cancelling_an_invoke_raises_nothing ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN child
-)
+sce_generate_static_integration_test(cancelling_an_invoke_raises_nothing ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.4: an invoke whose state leaves within its macrostep is never
 # attempted. The only invoke is one no processor runs, so an attempt would
@@ -1845,9 +1825,7 @@ sce_generate_static_integration_test(an_error_ends_the_block_it_was_raised_in ${
 # W3C SCXML 5.7.1 + 6.4: a <param> of an <invoke> that cannot be read costs
 # error.execution and its pair, and the child still starts; a namelist that
 # cannot be read ends the element with one error and no child.
-sce_generate_static_integration_test(a_bad_invoke_argument_is_reported_once ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv1 inv2 inv3
-)
+sce_generate_static_integration_test(a_bad_invoke_argument_is_reported_once ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.2 + 4.9: a <send> whose own argument (namelist, eventexpr,
 # targetexpr, delayexpr, idlocation, typeexpr) cannot be evaluated raises
@@ -1905,9 +1883,9 @@ sce_generate_static_integration_test(parallel_done_state_is_delivered ${STATIC_I
 # implements is valid SCXML that must raise `error.execution` — not a document
 # to reject at build time. AOT used to drop such an `<invoke>` from the model
 # entirely, so there was no observable at all where the Interpreter had one;
-# the fixture rests in `probe` if any backend still does. No
-# SYNTH_INVOKE_CHILDREN: §6.4.1 classification happens on `type` alone, before
-# any child document would be resolved, so codegen emits no child here.
+# the fixture rests in `probe` if any backend still does. It has no child:
+# §6.4.1 classification happens on `type` alone, before any child document
+# would be resolved, so codegen emits none here.
 sce_generate_static_integration_test(invoke_unsupported_type ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.4.3: an `<invoke>` naming its target through an expression must
@@ -1917,44 +1895,37 @@ sce_generate_static_integration_test(invoke_unsupported_type ${STATIC_INTEGRATIO
 # exactly why the fixture is built on the FAILURE: a successful evaluation is
 # indistinguishable from no evaluation once the stub child answers.
 sce_generate_static_integration_test(invoke_expression_failure_is_reported
-    ${STATIC_INTEGRATION_OUTPUT_DIR}
-    HYBRID_INVOKE_CHILDREN invoke_expression_failure_is_reported_hybrid0)
+    ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.4.3: the value a `srcexpr` computes selects the child, out of
 # the set `sce:candidates` declares. The two candidates announce themselves
 # differently, so a machine that ran the wrong one — or ran a stub and
-# ignored the value — reaches `fail` instead of `pass`. The children named
-# here are those candidates rather than a hybrid stub: with a set declared
-# there is no stub to generate.
+# ignored the value — reaches `fail` instead of `pass`. Its children are those
+# candidates rather than a hybrid stub: with a set declared there is no stub to
+# generate.
 sce_generate_static_integration_test(invoke_candidate_selects_the_child
-    ${STATIC_INTEGRATION_OUTPUT_DIR}
-    HYBRID_INVOKE_CHILDREN chosen other)
+    ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.4.1 + 6.4.3: a hybrid invoke's `<param>`s and `namelist` reach
 # the chosen candidate exactly as a static invoke's reach its child — filtered
 # by THAT candidate's `<data>`, which is why the two candidates declare
 # different names.
 sce_generate_static_integration_test(a_hybrid_invoke_carries_its_arguments
-    ${STATIC_INTEGRATION_OUTPUT_DIR}
-    HYBRID_INVOKE_CHILDREN keeper bare)
+    ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 5.5 + 6.3.1: donedata rides `done.invoke.<id>` wherever the child
 # reaches its final state, not only where it finalises during start-up. The
 # `donedata_local_invoke` fixture pins the payload shapes on a child that is
 # already final at invoke time and is blind to this; here the child answers an
 # event first and reaches `<final>` two macrosteps in.
-sce_generate_static_integration_test(donedata_late_completion ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_late
-)
+sce_generate_static_integration_test(donedata_late_completion ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.2: a `<send>` carries its `<param>` payload on both the paths
 # that had no runtime witness — from a `datamodel="null"` child (which needs
 # no script engine, so param emission must be judged per send rather than per
 # machine) and to `#_internal` (whose raise used to take no event data). The
 # two land in distinct final states so a failure names the path.
-sce_generate_static_integration_test(send_param_payload ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_emitter
-)
+sce_generate_static_integration_test(send_param_payload ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # §scxml-6.4.3: an `<invoke>` `<param>` gives a declared `<data>` of the
 # invoked session the value the INVOKING session produced, and a name that
@@ -1962,9 +1933,7 @@ sce_generate_static_integration_test(send_param_payload ${STATIC_INTEGRATION_OUT
 # surface passes literals only, which evaluate the same in either data model,
 # so the four phases here are what separate "the parent evaluated this" from
 # "the child evaluated this text".
-sce_generate_static_integration_test(invoke_param_seeds_declared_child_data ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_shadow inv_sole inv_unmatched inv_namelist inv_infinite
-)
+sce_generate_static_integration_test(invoke_param_seeds_declared_child_data ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # §scxml-5.7.1 under §scxml-6.4: a `<param>` of an `<invoke>` whose expression
 # will not evaluate. Two clauses meet — 6.4.2 terminates the element when "the
@@ -1974,9 +1943,7 @@ sce_generate_static_integration_test(invoke_param_seeds_declared_child_data ${ST
 # sentence. No IRP document asks it here: test343 settles the same clause from
 # the `<donedata>` side and nothing reaches the invoke context, which is why
 # five channels were silent and one cancelled the whole invoke.
-sce_generate_static_integration_test(invoke_param_error_starts_the_child ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_probe
-)
+sce_generate_static_integration_test(invoke_param_error_starts_the_child ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # §scxml-6.5.2: an EMPTY `<finalize>` means the automatic data-model update —
 # "for each item in the 'namelist' attribute and each such <param> element,
@@ -1987,9 +1954,7 @@ sce_generate_static_integration_test(invoke_param_error_starts_the_child ${STATI
 # clause had no witness; it had no implementation either, because
 # `finalize_content` is one string and an empty element was indistinguishable
 # from a missing one.
-sce_generate_static_integration_test(empty_finalize_updates_the_location ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_empty inv_absent inv_unmatched
-)
+sce_generate_static_integration_test(empty_finalize_updates_the_location ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # §scxml-D-mainEventLoop: the preliminary `<finalize>` / autoforward step is
 # owed to the external event, not to the queue it arrived on. This engine has
@@ -1997,9 +1962,7 @@ sce_generate_static_integration_test(empty_finalize_updates_the_location ${STATI
 # selection — and the four sibling `autoforward_*` stems only ever drive it
 # through the drain, so none of them can see a step that runs at one door and
 # not the other.
-sce_generate_static_integration_test(host_event_reaches_the_child ${STATIC_INTEGRATION_OUTPUT_DIR}
-    SYNTH_INVOKE_CHILDREN inv_probe
-)
+sce_generate_static_integration_test(host_event_reaches_the_child ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # Wire the integration headers + include path into the integration_tests
 # target now that `sce_generate_static_integration_test` has populated

@@ -413,9 +413,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # mirroring the cpp/c11 W3C IRP pattern). The fixture closes the W3C
     # IRP gap on `<donedata>` + `<invoke>` + `done.invoke.<id>._event.data`
     # (a grep against `resources/*/test*.txml` returned zero hits).
-    sce_generate_static_integration_c_test(donedata_local_invoke "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_param inv_content
-    )
+    sce_generate_static_integration_c_test(donedata_local_invoke "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_donedata_local_invoke
         integration/test_donedata_local_invoke.c
@@ -444,9 +442,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # that the event name crosses (test229) or leaves the field comparison to a
     # human (test230 is a manual test), so a name-only forward passes both; this
     # fixture asserts the copy is exact.
-    sce_generate_static_integration_c_test(autoforward_event_fields "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_echo
-    )
+    sce_generate_static_integration_c_test(autoforward_event_fields "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_autoforward_event_fields
         integration/test_autoforward_event_fields.c
@@ -476,9 +472,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # autoforward child and excludes only the cancel event; §6.4.2 puts
     # `done.invoke.<id>` on that queue. Observing it needs two concurrent invokes,
     # which is why no IRP test covers it.
-    sce_generate_static_integration_c_test(autoforward_done_invoke "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_watch inv_short
-    )
+    sce_generate_static_integration_c_test(autoforward_done_invoke "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_autoforward_done_invoke
         integration/test_autoforward_done_invoke.c
@@ -507,9 +501,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # no forwarding step, so `error.execution` (6.2, unsupported `<send>` type)
     # must never reach an autoforward child — excluded by the queue it was
     # raised onto, not by a filter that recognises its name.
-    sce_generate_static_integration_c_test(autoforward_internal_queue "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_watch
-    )
+    sce_generate_static_integration_c_test(autoforward_internal_queue "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_autoforward_internal_queue
         integration/test_autoforward_internal_queue.c
@@ -540,9 +532,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # The two fixtures above are blind to this by construction — queue order
     # alone cannot tell the enqueue from the dequeue, so the parent marks the
     # child directly with `<send target="#_inv_probe">` from a transition body.
-    sce_generate_static_integration_c_test(autoforward_dequeue_point "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_probe
-    )
+    sce_generate_static_integration_c_test(autoforward_dequeue_point "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_autoforward_dequeue_point
         integration/test_autoforward_dequeue_point.c
@@ -573,9 +563,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # externalQueue.dequeue(). The fixture above cannot see this axis — its child
     # opens the exchange, so it is alive before anything is queued; here the
     # parent queues for itself in onentry and the child starts second.
-    sce_generate_static_integration_c_test(invoke_precedes_external_dequeue "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_watch
-    )
+    sce_generate_static_integration_c_test(invoke_precedes_external_dequeue "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_invoke_precedes_external_dequeue
         integration/test_invoke_precedes_external_dequeue.c
@@ -605,9 +593,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # event's transition arms an invoke that must start before the next event is
     # dequeued. The fixture above enters its invoking state at initialization and
     # cannot see an engine that drains the external queue to exhaustion per step.
-    sce_generate_static_integration_c_test(invoke_precedes_dequeue_midrun "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_watch
-    )
+    sce_generate_static_integration_c_test(invoke_precedes_dequeue_midrun "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_invoke_precedes_dequeue_midrun
         integration/test_invoke_precedes_dequeue_midrun.c
@@ -1383,9 +1369,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     )
 
     # W3C SCXML 6.4: cancelling an invocation raises no event in the invoking session.
-    sce_generate_static_integration_c_test(cancelling_an_invoke_raises_nothing "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN child
-    )
+    sce_generate_static_integration_c_test(cancelling_an_invoke_raises_nothing "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_cancelling_an_invoke_raises_nothing
         integration/test_cancelling_an_invoke_raises_nothing.c
@@ -1515,9 +1499,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     )
 
     # W3C SCXML 6.4: an invoked child's replies arrive ahead of the host's later events, with no clock advanced.
-    sce_generate_static_integration_c_test(a_child_reply_arrives_without_a_tick "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN kid
-    )
+    sce_generate_static_integration_c_test(a_child_reply_arrives_without_a_tick "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_a_child_reply_arrives_without_a_tick
         integration/test_a_child_reply_arrives_without_a_tick.c
@@ -1548,9 +1530,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # resource limit, and only generated code reads it — so this one target
     # raises it above the fixture's 110 events, and what is measured is the
     # delivery rather than the default bound.
-    sce_generate_static_integration_c_test(a_child_may_send_many_events_in_one_tick "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN chatty
-    )
+    sce_generate_static_integration_c_test(a_child_may_send_many_events_in_one_tick "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_a_child_may_send_many_events_in_one_tick
         integration/test_a_child_may_send_many_events_in_one_tick.c
@@ -1635,9 +1615,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # W3C SCXML 5.7.1 + 6.4: a <param> of an <invoke> that cannot be read costs
     # error.execution and its pair, and the child still starts; a namelist that
     # cannot be read ends the element with one error and no child.
-    sce_generate_static_integration_c_test(a_bad_invoke_argument_is_reported_once "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv1 inv2 inv3
-    )
+    sce_generate_static_integration_c_test(a_bad_invoke_argument_is_reported_once "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_a_bad_invoke_argument_is_reported_once
         integration/test_a_bad_invoke_argument_is_reported_once.c
@@ -1832,9 +1810,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
 
     # W3C SCXML 6.2 + 6.4 + C.1: a <send> reaches what its target names and
     # carries its payload there; a target that names nothing is reported.
-    sce_generate_static_integration_c_test(a_send_reaches_only_what_its_target_names "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN kid
-    )
+    sce_generate_static_integration_c_test(a_send_reaches_only_what_its_target_names "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_a_send_reaches_only_what_its_target_names
         integration/test_a_send_reaches_only_what_its_target_names.c
@@ -1862,9 +1838,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # W3C SCXML 6.2 + 6.4 + C.1: a delay postpones a <send>, it does not
     # change where the send goes; a target gone when the delay elapses is
     # reported.
-    sce_generate_static_integration_c_test(a_delayed_send_reaches_what_its_target_names "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN kid gone
-    )
+    sce_generate_static_integration_c_test(a_delayed_send_reaches_what_its_target_names "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_a_delayed_send_reaches_what_its_target_names
         integration/test_a_delayed_send_reaches_what_its_target_names.c
@@ -1891,9 +1865,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
 
     # W3C SCXML 6.2.4 + C.1: a targetexpr is routed as the same value written
     # in target is, at once or after a delay.
-    sce_generate_static_integration_c_test(a_target_expression_is_routed_as_its_literal_is "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN kid
-    )
+    sce_generate_static_integration_c_test(a_target_expression_is_routed_as_its_literal_is "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_a_target_expression_is_routed_as_its_literal_is
         integration/test_a_target_expression_is_routed_as_its_literal_is.c
@@ -2030,8 +2002,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # C11 embeds each child by value, so both candidates are named here and
     # each gets a slot the parent guards with its own `_active` flag.
     sce_generate_static_integration_c_test(invoke_candidate_selects_the_child
-        "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        HYBRID_INVOKE_CHILDREN chosen other)
+        "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_invoke_candidate_selects_the_child
         integration/test_invoke_candidate_selects_the_child.c
@@ -2060,8 +2031,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # candidate, filtered by THAT candidate's `<data>` — the two declare
     # different names so a wrong filter leaks one into `keeper`.
     sce_generate_static_integration_c_test(a_hybrid_invoke_carries_its_arguments
-        "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        HYBRID_INVOKE_CHILDREN keeper bare)
+        "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_a_hybrid_invoke_carries_its_arguments
         integration/test_a_hybrid_invoke_carries_its_arguments.c
@@ -2087,8 +2057,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     )
 
     sce_generate_static_integration_c_test(invoke_expression_failure_is_reported
-        "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        HYBRID_INVOKE_CHILDREN invoke_expression_failure_is_reported_hybrid0)
+        "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_invoke_expression_failure_is_reported
         integration/test_invoke_expression_failure_is_reported.c
@@ -2143,9 +2112,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # donedata_local_invoke fixture pins the payload shapes on a child that is
     # already final at invoke time and is blind to this; here the child answers
     # an event first and reaches <final> two macrosteps in.
-    sce_generate_static_integration_c_test(donedata_late_completion "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_late
-    )
+    sce_generate_static_integration_c_test(donedata_late_completion "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_donedata_late_completion
         integration/test_donedata_late_completion.c
@@ -2175,9 +2142,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # script engine, so param emission must be judged per send rather than per
     # machine) and to #_internal (whose raise used to take no event data). The
     # two land in distinct final states so a failure names the path.
-    sce_generate_static_integration_c_test(send_param_payload "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_emitter
-    )
+    sce_generate_static_integration_c_test(send_param_payload "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_send_param_payload
         integration/test_send_param_payload.c
@@ -2462,9 +2427,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # both halves — lua_xfer_top_to_child moves the value across the two Lua
     # states, and the emission is gated on the child's declared names — so the
     # driver is here to make that correctness asserted rather than incidental.
-    sce_generate_static_integration_c_test(invoke_param_seeds_declared_child_data "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_shadow inv_sole inv_unmatched inv_namelist inv_infinite
-    )
+    sce_generate_static_integration_c_test(invoke_param_seeds_declared_child_data "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_invoke_param_seeds_declared_child_data
         integration/test_invoke_param_seeds_declared_child_data.c
@@ -2496,9 +2459,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # value to the context — naming `<invoke>` in that sentence, so it is 5.7.1
     # that governs. This backend's arm popped the Lua error object and moved on,
     # so the child came up with a `<data>` nothing explained.
-    sce_generate_static_integration_c_test(invoke_param_error_starts_the_child "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_probe
-    )
+    sce_generate_static_integration_c_test(invoke_param_error_starts_the_child "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_invoke_param_error_starts_the_child
         integration/test_invoke_param_error_starts_the_child.c
@@ -2531,9 +2492,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # empty". The corpus holds two `<finalize>` documents (W3C 233/234) and zero
     # empty ones, so the clause had no witness, and `finalize_content` being one
     # string meant it had no implementation either.
-    sce_generate_static_integration_c_test(empty_finalize_updates_the_location "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_empty inv_absent inv_unmatched
-    )
+    sce_generate_static_integration_c_test(empty_finalize_updates_the_location "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_empty_finalize_updates_the_location
         integration/test_empty_finalize_updates_the_location.c
@@ -2564,9 +2523,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # for itself, so every one of them drives the engine through its drain and
     # none can see a step that runs at one door and not another. This one hands
     # the machine an event from outside, through the host-facing entry point.
-    sce_generate_static_integration_c_test(host_event_reaches_the_child "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_probe
-    )
+    sce_generate_static_integration_c_test(host_event_reaches_the_child "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_host_event_reaches_the_child
         integration/test_host_event_reaches_the_child.c
@@ -2596,9 +2553,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # location is a usable <send> target. The IRP suite checks neither half
     # across sessions — test336 and test350 both send to the session they
     # already are — so this fixture puts a peer session on the other end.
-    sce_generate_static_integration_c_test(event_origin_is_a_location "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_peer
-    )
+    sce_generate_static_integration_c_test(event_origin_is_a_location "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_event_origin_is_a_location
         integration/test_event_origin_is_a_location.c
@@ -2628,9 +2583,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # that hands both the same value publishes one address for two sessions
     # (C.1.1), and a `<send>` to either reaches both. Every corpus test that
     # reaches `_sessionid` runs a single session, so none of them can ask.
-    sce_generate_static_integration_c_test(session_ids_are_distinct "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SYNTH_INVOKE_CHILDREN inv_a inv_b
-    )
+    sce_generate_static_integration_c_test(session_ids_are_distinct "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_session_ids_are_distinct
         integration/test_session_ids_are_distinct.c
