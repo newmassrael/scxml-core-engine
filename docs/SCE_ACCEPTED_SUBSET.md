@@ -2714,7 +2714,12 @@ The appended value is judged against the element as an assignment is judged
 against its variable. The bound holds on every backend: an append to a full
 list appends nothing and raises `error.execution` (W3C SCXML 3.12.2) — unlike
 an algorithm's list, which grows past its capacity on the heap backends,
-because a machine must hold the same list wherever it runs. An expression
+because a machine must hold the same list wherever it runs — and, as any
+element that raised does, ends the block it stands in (W3C SCXML 4.9: the
+elements after it are not processed). So does an `<assign>` or a `<log>` whose
+checked integer operation fails, and an `<if>` or `<elseif>` whose condition
+cannot be evaluated once its chain has run. `scenarios/static_block_ends*.json`
+hold this on every engine that runs the model. An expression
 measures a list with the `len(…)` builtin — `len(picked) === 3` in a guard,
 `len(picked)` assigned to a count — and reads it no other way: a list read as
 a value (in an expression or a host action's argument) and a whole-list
