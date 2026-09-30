@@ -47,6 +47,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-symbol-lookup.v1.schema.json",
     "schemas/sce-saved-state.v1.schema.json",
     "schemas/sce-kind-catalog.v1.schema.json",
+    "schemas/sce-authoring-profile.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -213,6 +214,11 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "the_catalog_validates_against_the_wire_schema",
         "sce-build/src/forge/kind_catalog.rs",
     ),
+    (
+        "schemas/sce-authoring-profile.v1.schema.json",
+        "every_profile_the_product_reads_validates_against_the_wire_schema",
+        "sce-build/src/authoring_profile.rs",
+    ),
 ];
 
 /// Negative-case coverage: `(surface, test fn, file declaring it)`.
@@ -273,6 +279,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "the_catalog_schema_rejects_a_kind_the_product_does_not_have",
         "sce-build/src/forge/kind_catalog.rs",
     ),
+    (
+        "schemas/sce-authoring-profile.v1.schema.json",
+        "the_profile_schema_rejects_a_setting_the_product_does_not_know",
+        "sce-build/src/authoring_profile.rs",
+    ),
 ];
 
 /// The field a surface carries the producing commit in.
@@ -319,6 +330,16 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          restores into, and its `shape` does that; the commit that built \
          the machine is the build's to record.",
         "saved state deliberately does",
+    ),
+    (
+        "schemas/sce-authoring-profile.v1.schema.json",
+        "written by the specification's owner, not emitted by SCE: there is \
+         no run to stamp, and a commit the owner never chose would sit in a \
+         file whose bytes are what an acceptance record pins, so every \
+         regeneration would change the digest that names the profile. What \
+         identifies a profile is its own sha256, which the manifest and the \
+         acceptance record both carry.",
+        "authoring profile deliberately does",
     ),
 ];
 

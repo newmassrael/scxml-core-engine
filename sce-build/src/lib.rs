@@ -38,6 +38,10 @@ pub mod annotation_overlay;
 /// every check reads — so a refusal naming a piece of an expression
 /// reports it as written, on the row it sits on. See [`attribute_spelling`].
 pub mod attribute_spelling;
+/// What a specification owner configures about how a design is authored
+/// for them — read from a file beside the specification, enforced the same
+/// way for every entry point, and pinned by an acceptance record.
+pub mod authoring_profile;
 pub mod cli_error;
 pub mod cli_language;
 /// Text placed inside a comment in generated source — the one encoding

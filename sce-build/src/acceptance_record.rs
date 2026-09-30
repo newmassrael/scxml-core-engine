@@ -66,6 +66,17 @@
 //! [`AcceptanceRecord::recheck_for`] can say whether a specification it is
 //! asked about is the one this design was authored from.
 //!
+//! The authoring profile ([`crate::authoring_profile`]) is the third of them,
+//! under [`crate::acceptance_record::SourceRole::Profile`], and is not an
+//! input to the prose: it is what the finished design was judged against. It
+//! is here because an acceptance is the owner's statement that THIS design is
+//! what they accept, and a design accepted under one profile — say, one that
+//! requires a closed interface — is not the answer for a profile that asks
+//! something else. The same specification and the same decisions under another
+//! profile are a different request, so they get a different design and a
+//! different acceptance, and the digest is the whole of what makes them
+//! different.
+//!
 //! # What was still open when a person accepted
 //!
 //! ```text
@@ -122,6 +133,29 @@ pub enum SourceRole {
     Specification,
     /// The owner's answers to what the specification left open; one at most.
     Decisions,
+    /// The authoring profile the design was held to
+    /// ([`crate::authoring_profile`]); one at most.
+    Profile,
+}
+
+impl SourceRole {
+    /// Every role, in the order a record lists them.
+    pub const ALL: [SourceRole; 3] = [
+        SourceRole::Specification,
+        SourceRole::Decisions,
+        SourceRole::Profile,
+    ];
+
+    /// How the design stands to a file of this role, for a sentence that
+    /// says it: a design is written FROM a specification and the owner's
+    /// answers, and HELD TO a profile — the profile was not an input to the
+    /// prose, it is what the finished design was judged against.
+    fn relation(self) -> &'static str {
+        match self {
+            SourceRole::Specification | SourceRole::Decisions => "authored from",
+            SourceRole::Profile => "held to",
+        }
+    }
 }
 
 impl fmt::Display for SourceRole {
@@ -129,6 +163,7 @@ impl fmt::Display for SourceRole {
         f.write_str(match self {
             SourceRole::Specification => "specification",
             SourceRole::Decisions => "decision record",
+            SourceRole::Profile => "authoring profile",
         })
     }
 }
@@ -176,8 +211,8 @@ pub struct AcceptanceRecord {
     /// Every file the parse read, the entry document included, sorted by
     /// path.
     pub inputs: Vec<InputPin>,
-    /// The specification and the decision record the design was authored
-    /// from, sorted by role and path. Empty when the record was taken
+    /// The specification, the decision record and the authoring profile the
+    /// design was authored from and held to, sorted by role and path. Empty when the record was taken
     /// without them — see the module docs.
     pub authored_from: Vec<SourcePin>,
     /// What the design left to a person when it was accepted: the open
@@ -299,11 +334,13 @@ impl fmt::Display for Lapse {
             } => match current_sha256 {
                 None => write!(
                     f,
-                    "{path}: the {role} this design was authored from is no longer there"
+                    "{path}: the {role} this design was {} is no longer there",
+                    role.relation()
                 ),
                 Some(_) => write!(
                     f,
-                    "{path}: the {role} this design was authored from changed since it was accepted"
+                    "{path}: the {role} this design was {} changed since it was accepted",
+                    role.relation()
                 ),
             },
             Lapse::NotAuthoredFrom {
@@ -319,13 +356,15 @@ impl fmt::Display for Lapse {
                 if pinned.is_empty() {
                     write!(
                         f,
-                        "the record does not say which {role} the design was authored \
-                         from, so it cannot answer for this one: {asked}"
+                        "the record does not say which {role} the design was {}, so it \
+                         cannot answer for this one: {asked}",
+                        role.relation()
                     )
                 } else {
                     write!(
                         f,
-                        "the design was authored from the {role} {}; {asked}",
+                        "the design was {} the {role} {}; {asked}",
+                        role.relation(),
                         pinned.join(", ")
                     )
                 }
@@ -431,7 +470,8 @@ impl AcceptanceRecord {
     }
 
     /// [`Self::take`], also pinning the files the design was authored from
-    /// — see the module docs. At most one of them may be a decision record.
+    /// — see the module docs. At most one of them may be a decision record,
+    /// and at most one an authoring profile.
     pub fn take_authored(
         root: &Path,
         document: &Path,
@@ -476,7 +516,8 @@ impl AcceptanceRecord {
     ///
     /// Compared by content, role by role: the specification files asked
     /// about must be exactly the pinned ones' bytes, as a set, and so must the
-    /// decision record — including none when none was pinned. This is the
+    /// decision record and the authoring profile — including none when none
+    /// was pinned. This is the
     /// question "is this accepted design the answer for these inputs", which
     /// a caller asks before writing a new draft of the same specification.
     pub fn recheck_for(
@@ -486,7 +527,7 @@ impl AcceptanceRecord {
         asked: &[(SourceRole, &Path)],
     ) -> Result<Vec<Lapse>, RecordError> {
         let mut lapses = self.recheck(root, variant)?;
-        for role in [SourceRole::Specification, SourceRole::Decisions] {
+        for role in SourceRole::ALL {
             let pinned: Vec<&SourcePin> = self
                 .authored_from
                 .iter()
@@ -706,7 +747,8 @@ impl AcceptanceRecord {
 }
 
 /// The rules an `authored_from` list keeps, sorted: no path twice, and one
-/// decision record at most — the owner's answers are one record, and two
+/// decision record and one profile at most — the owner's answers are one
+/// record, and what a design is held to is one profile, so two of either
 /// would leave open which of them a design followed.
 fn check_sources(sorted: &[SourcePin]) -> Result<(), RecordError> {
     let mut paths = std::collections::BTreeSet::new();
@@ -720,17 +762,24 @@ fn check_sources(sorted: &[SourcePin]) -> Result<(), RecordError> {
             });
         }
     }
-    let decisions = sorted
-        .iter()
-        .filter(|p| p.role == SourceRole::Decisions)
-        .count();
-    if decisions > 1 {
-        return Err(RecordError::Source {
-            detail: format!(
-                "{decisions} decision records given; a design follows one record of the \
-                 owner's answers"
-            ),
-        });
+    for (role, what, followed) in [
+        (
+            SourceRole::Decisions,
+            "decision records",
+            "one record of the owner's answers",
+        ),
+        (
+            SourceRole::Profile,
+            "authoring profiles",
+            "one authoring profile",
+        ),
+    ] {
+        let count = sorted.iter().filter(|p| p.role == role).count();
+        if count > 1 {
+            return Err(RecordError::Source {
+                detail: format!("{count} {what} given; a design follows {followed}"),
+            });
+        }
     }
     Ok(())
 }

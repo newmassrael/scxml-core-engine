@@ -932,6 +932,13 @@ pub enum DiagnosticCode {
     //    Not a W3C violation: the declaration is SCE's. ────────────────
     #[serde(rename = "scxml/undeclared-interface-event")]
     ScxmlUndeclaredInterfaceEvent,
+    // ── A statechart that is valid, and is not what the authoring profile
+    //    it was judged under asks for: the profile requires
+    //    `sce:interface="closed"` and the root does not declare it
+    //    (`crate::authoring_profile`). Neither a W3C nor a grammar
+    //    violation — the owner's expectation, said in a file. ──────────
+    #[serde(rename = "profile/interface-not-closed")]
+    ProfileInterfaceNotClosed,
     // ── NL→IR Mapping Roadmap Item 3 — event-set
     //    exhaustiveness. Fires when a compound `<state>` has sibling
     //    children that disagree on whether a given event is handled,
@@ -2463,6 +2470,17 @@ pub enum DiagnosticCode {
     #[serde(rename = "cli/diagram-does-not-fit")]
     CliDiagramDoesNotFit,
 
+    /// An authoring profile the command was handed cannot be used: it is
+    /// unreadable, is not a profile, is a version this build does not read,
+    /// or names a setting this build does not know.
+    ///
+    /// Refused whole rather than applied in part. A profile is the owner's
+    /// statement of what a design is held to, so a run that read half of it
+    /// and passed a document would say the document was held to something it
+    /// was not (`crate::authoring_profile`).
+    #[serde(rename = "cli/profile-unusable")]
+    CliProfileUnusable,
+
     // ── Mesh pipeline ────────────────────────────────────────
     // Deploy stage
     #[serde(rename = "mesh/deploy-read")]
@@ -3331,6 +3349,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ScxmlGeneratedNameCollision,
         // An event crossing a closed interface undeclared
         ScxmlUndeclaredInterfaceEvent,
+        // A statechart that does not declare the interface a profile requires
+        ProfileInterfaceNotClosed,
         // NL→IR Mapping Roadmap Item 3 — event-set exhaustiveness
         ScxmlNonExhaustiveEventHandling,
         ScxmlContradictoryUnhandledDeclaration,
@@ -3558,6 +3578,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliPseudoUnavailable,
         CliDiagramUnavailable,
         CliDiagramDoesNotFit,
+        CliProfileUnusable,
         // Mesh Deploy
         MeshDeployRead,
         MeshDeployParse,
@@ -3919,6 +3940,9 @@ impl DiagnosticCode {
             ScxmlGeneratedNameCollision => Some("SCE Accepted Subset §2.14.1"),
             // ── A closed interface is SCE's declaration, not W3C's. ──
             ScxmlUndeclaredInterfaceEvent => Some("SCE Accepted Subset §2.16"),
+            // ── An authoring profile is the owner's expectation, not a
+            //    rule of W3C SCXML or of the grammar. ────────────────────
+            ProfileInterfaceNotClosed => Some("SCE Accepted Subset §2.17"),
 
             // ── SCXML data models ──────────────────────────────────
             // The attribute is defined in §3.2 and the data models it
@@ -4493,6 +4517,7 @@ impl DiagnosticCode {
             | CliPseudoUnavailable
             | CliDiagramUnavailable
             | CliDiagramDoesNotFit
+            | CliProfileUnusable
             | MeshDeployRead
             | MeshExternalRead
             | MeshExternalParse
@@ -4720,6 +4745,7 @@ impl DiagnosticCode {
             ScxmlParentSendWithoutParent => "scxml/parent-send-without-parent",
             ScxmlGeneratedNameCollision => "scxml/generated-name-collision",
             ScxmlUndeclaredInterfaceEvent => "scxml/undeclared-interface-event",
+            ProfileInterfaceNotClosed => "profile/interface-not-closed",
             ScxmlNonExhaustiveEventHandling => "scxml/non-exhaustive-event-handling",
             ScxmlContradictoryUnhandledDeclaration => "scxml/contradictory-unhandled-declaration",
             ScxmlStaleUnhandledDeclaration => "scxml/stale-unhandled-declaration",
@@ -4938,6 +4964,7 @@ impl DiagnosticCode {
             CliPseudoUnavailable => "cli/pseudo-unavailable",
             CliDiagramUnavailable => "cli/diagram-unavailable",
             CliDiagramDoesNotFit => "cli/diagram-does-not-fit",
+            CliProfileUnusable => "cli/profile-unusable",
             MeshDeployRead => "mesh/deploy-read",
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
@@ -5489,6 +5516,7 @@ fn forge_error_fields(err: &ForgeError) -> DiagnosticPayload {
         // boundary; the record is the wrapped error's.
         ForgeError::Positioned { error, .. } => forge_error_fields(error),
         ForgeError::Scxml(e) => scxml_semantic_fields(e),
+        ForgeError::Profile(e) => profile_fields(e),
         // Delegate to `MeshError`'s `SingleDiagnostic` impl
         // (mesh/error.rs:3219) — it already covers every variant
         // (Deploy / External / Topology / Codegen / Io) with the
@@ -5511,6 +5539,31 @@ fn forge_error_fields(err: &ForgeError) -> DiagnosticPayload {
             actual: None,
             fix: None,
             key_fragments: vec![path.display().to_string()],
+        },
+    }
+}
+
+/// The record of a valid document that departs from an authoring profile.
+fn profile_fields(e: &crate::authoring_profile::ProfileError) -> DiagnosticPayload {
+    use crate::authoring_profile::ProfileError;
+    match e {
+        ProfileError::InterfaceNotClosed {
+            profile: _,
+            machine,
+            imports: _,
+        } => DiagnosticPayload {
+            // `actual` names the machine: the repair is to the statechart
+            // (declare the interface closed) or to the profile (not require
+            // it), never to a spelling, so there is no `expected` and no
+            // fix. The profile's label and the schemas it imports are in
+            // the message, and out of the key: a renamed profile or an added
+            // import is the same departure by the same statechart.
+            code: DiagnosticCode::ProfileInterfaceNotClosed,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(machine.clone()),
+            fix: None,
+            key_fragments: vec!["profile-interface-not-closed".to_string(), machine.clone()],
         },
     }
 }
@@ -11105,6 +11158,21 @@ mod tests {
                 r##"{"v":1,"id":"fnv1a:7cd0669e44f97ce9","code":"scxml/undeclared-interface-event","stage":"validation","spec":"SCE Accepted Subset §2.16","message":"state 'idle' takes 'coin.insert', which crosses the closed interface undeclared: the imported schemas declare coin.inserted, product.selected — declare it in an imported event-schema, or take one of those","actual":"coin.insert"}"##,
             ),
             (
+                // A statechart that is valid and does not declare the
+                // interface the authoring profile requires
+                // (`crate::authoring_profile`). Keyed on the machine alone:
+                // the profile's label and the schemas it imports are in the
+                // message.
+                "forge/profile-interface-not-closed",
+                crate::authoring_profile::ProfileError::InterfaceNotClosed {
+                    profile: Some("owner-review".into()),
+                    machine: "vending".into(),
+                    imports: vec!["CoinInserted".into(), "ProductSelected".into()],
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:5c4780f9abbfa1a1","code":"profile/interface-not-closed","stage":"validation","spec":"SCE Accepted Subset §2.17","message":"the authoring profile 'owner-review' requires sce:interface=\"closed\" on a statechart, and this one does not declare it; it imports event-schema(s) (CoinInserted, ProductSelected) that describe a boundary nothing holds it to — declare it closed on the root <scxml> and give every event it takes or sends an event-schema, or use a profile that does not require it: which boundary a design is held to is the owner's decision","actual":"vending"}"##,
+            ),
+            (
                 // Two states XML keeps apart by case, which every backend
                 // spells as one member (`crate::member_names`).
                 "forge/scxml-generated-name-collision",
@@ -15190,6 +15258,19 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:c5ba580e20672c22","code":"cli/diagram-does-not-fit","stage":"cli","message":"the figure 'whole document' needs 900 x 300 pt at 7 pt type, and the page gives 510 x 757 pt; it is not shrunk below that size — use a larger page, or split the container's children","actual":"whole document: 900 x 300 pt at 7 pt, page 510 x 757 pt"}"#,
             ),
+            // ── An authoring profile that cannot be used ──
+            //    Keyed on which refusal, never on the path or on the
+            //    reader's sentence: `actual` carries the path the caller
+            //    typed, and the message is the reader's own sentence.
+            (
+                "cli/profile-unusable",
+                CliError::ProfileUnusable {
+                    path: "spec/profile.json".into(),
+                    fault: crate::authoring_profile::ProfileFault::InvalidShape,
+                    detail: "not an authoring profile: unknown field `naming`, expected `name` or `interface`".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:608b8b5d5553011d","code":"cli/profile-unusable","stage":"cli","message":"the authoring profile spec/profile.json cannot be used: not an authoring profile: unknown field `naming`, expected `name` or `interface`","actual":"spec/profile.json"}"#,
+            ),
         ]
     }
 
@@ -16083,6 +16164,9 @@ mod tests {
             // is not a name a fix could offer.
             | CliDiagramUnavailable
             | CliDiagramDoesNotFit
+            // The repair is an edit to the profile file, which no candidate
+            // list can spell; the reader's own sentence names what is wrong.
+            | CliProfileUnusable
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployDuplicateMachine
@@ -16334,6 +16418,10 @@ mod tests {
             // schema, or use one declared — and the record names the
             // declared set in its message, so no closed candidate set.
             | ScxmlUndeclaredInterfaceEvent
+            // Two repairs — declare the interface closed, or use a profile
+            // that does not require it — and the second is the owner's
+            // decision, not a value a fix could offer.
+            | ProfileInterfaceNotClosed
             // NL→IR Mapping Roadmap Item 3 — non-exhaustive
             // event handling. Repair has three axes (add the
             // transition, add a parent-level fallthrough, or declare
@@ -16676,6 +16764,7 @@ mod tests {
                 | ScxmlParentSendWithoutParent
                 | ScxmlGeneratedNameCollision
                 | ScxmlUndeclaredInterfaceEvent
+                | ProfileInterfaceNotClosed
                 | ScxmlNonExhaustiveEventHandling
                 | ScxmlContradictoryUnhandledDeclaration
                 | ScxmlStaleUnhandledDeclaration
@@ -16815,7 +16904,7 @@ mod tests {
                 | CliUsage | CliQueryNoMatch | CliClosureInputUnusable
                 | CliAcceptanceLapsed | CliReservedHostType | CliRequirementClosureBroken
                 | CliReviewTableUnavailable | CliPseudoUnavailable
-                | CliDiagramUnavailable | CliDiagramDoesNotFit
+                | CliDiagramUnavailable | CliDiagramDoesNotFit | CliProfileUnusable
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployInvalidDedupWindow
@@ -16976,9 +17065,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            407,
+            409,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 407 distinct variants to match the DiagnosticCode \
+             expected 409 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17919,7 +18008,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationBytesComparisonNotEquality
             | MeshEventSchemaMismatch
             | ScxmlGeneratedNameCollision
-            | ScxmlUndeclaredInterfaceEvent => Registered(NoAnchor::NotYetMeasured),
+            | ScxmlUndeclaredInterfaceEvent
+            | ProfileInterfaceNotClosed => Registered(NoAnchor::NotYetMeasured),
 
             // ── Registered(CoordinateNotThreaded, RaisedBeforeAnyResolvingStage) ──
             // Measured, and each here for its OWN reason.
@@ -17969,7 +18059,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CliReviewTableUnavailable
             | CliPseudoUnavailable
             | CliDiagramUnavailable
-            | CliDiagramDoesNotFit => Registered(NoAnchor::NoAuthoredArtefact),
+            | CliDiagramDoesNotFit
+            | CliProfileUnusable => Registered(NoAnchor::NoAuthoredArtefact),
         }
 }
 
@@ -18629,8 +18720,8 @@ mod anchor_contract_tests {
         // by measuring nothing at all.
         assert_eq!(
             filed.len(),
-            31,
-            "expected the 31 `cli`/`io` codes to be filed as permanent \
+            32,
+            "expected the 32 `cli`/`io` codes to be filed as permanent \
              exemptions; got {}: {filed:?}. If the code set genuinely \
              changed, re-derive this number from the namespace census \
              rather than editing it to match.",

@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-authoring-profile.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE authoring profile (wire schema v1)",
+  "description": "What a specification owner configures about how documents are authored for them: a file beside the specification, read by `sce-codegen check --profile`, `generate --profile` and `orchestrate --profile` and by the authoring MCP, and pinned by an acceptance record as part of what a design was authored from. It is data, never code, and names no subject matter. Every setting belongs to ONE class, fixed by this schema and not by the file: enforced (a draft that breaks it is refused), reported (a departure is listed and the owner decides), or guidance (handed to the author, checked by nothing). Version 1 holds one enforced setting. A build that meets a setting it does not know refuses the whole profile, so a profile written for a newer tool is never half applied. Authoritative reader is sce-build/src/authoring_profile.rs. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
+  "type": "object",
+  "required": ["record", "v"],
+  "additionalProperties": false,
+  "properties": {
+    "record": {
+      "description": "Names the kind of file, so a JSON document of another kind is refused before its settings are read.",
+      "const": "sce-authoring-profile"
+    },
+    "v": {
+      "description": "Schema version. Bumped only on a breaking shape change; a setting is added without a bump.",
+      "const": 1
+    },
+    "name": {
+      "description": "A label a report may print. Not a setting: it configures nothing, and it is part of the file's bytes like every other character, so renaming a profile is a new profile to an acceptance record.",
+      "type": "string",
+      "minLength": 1
+    },
+    "interface": {
+      "description": "ENFORCED. `closed`: every statechart declares `sce:interface=\"closed\"`, so it takes and sends only the events its imported event-schemas declare (docs/SCE_ACCEPTED_SUBSET.md §2.16) and the boundary the owner accepted is the one it is held to. A statechart that does not is refused as `profile/interface-not-closed`. Absent: the interface is not constrained, and a statechart that leaves it open is the owner's choice. It applies to statecharts alone; a forge document has no such interface and is not judged.",
+      "enum": ["closed"]
+    }
+  }
+}

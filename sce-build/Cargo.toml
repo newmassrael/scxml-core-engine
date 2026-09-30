@@ -311,6 +311,16 @@ name = "a_payload_free_event_is_declared_not_omitted"
 path = "tests/a_payload_free_event_is_declared_not_omitted.rs"
 required-features = ["cli"]
 
+# `--profile` on check, generate, orchestrate, accept and acceptance-check:
+# a design held to what its owner asked for, in a file. Spawns the binary,
+# and carries the hazard the targets above name: the first run of this test
+# without the declaration passed six cases against a binary built before
+# `accept --profile` existed and failed the seventh with `cli/usage`.
+[[test]]
+name = "an_authoring_profile_holds_a_design_to_what_its_owner_asked"
+path = "tests/an_authoring_profile_holds_a_design_to_what_its_owner_asked.rs"
+required-features = ["cli"]
+
 # The owner's acceptance flow — requirements, report, record, check — for a
 # design of any kind, and a figure refused by name for a non-statechart.
 [[test]]

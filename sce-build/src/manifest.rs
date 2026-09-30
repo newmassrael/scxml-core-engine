@@ -223,6 +223,28 @@ pub struct FormatterInfo {
     pub version: String,
 }
 
+/// The authoring profile a run held its statecharts to
+/// ([`crate::authoring_profile`]).
+///
+/// Published so the digest a design was judged under can be set beside the
+/// digest an acceptance record pinned: a manifest that says `accepted` and
+/// names no profile is a run that was held to none, and one that names it
+/// says which file, and how many statecharts it was actually applied to.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct ProfileInfo {
+    /// The profile's `name`, when it has one. A label, not identity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// The sha256 of the profile file's bytes — its identity, and what an
+    /// acceptance record pins.
+    pub sha256: String,
+    /// How many statecharts of the run the profile was judged against. Zero
+    /// for a run of forge documents alone, which no version-1 setting
+    /// applies to: the profile was given and held nothing to it, and the
+    /// manifest says so instead of leaving a reader to assume it was.
+    pub judged: u32,
+}
+
 /// Deploy declarations SCE records without acting on.
 ///
 /// An object rather than a flat `static_analyzer` key because the spec
@@ -437,6 +459,13 @@ pub struct Manifest<'a> {
     /// that relays this field say them in the same words.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub open: Vec<crate::open_matters::OpenMatter>,
+    /// The authoring profile this run was given and how many statecharts it
+    /// judged, from `--profile`. Omitted when no profile was given, so a run
+    /// that was held to none is not mistaken for one that passed. A run that
+    /// FAILED the profile emits no manifest at all: the findings are the
+    /// answer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<ProfileInfo>,
     /// Which sites made [`Self::needs_host_processor`] true. Omitted
     /// (not `[]`) when there are none, matching
     /// [`Self::script_engine_causes`].
@@ -768,6 +797,7 @@ mod tests {
             parent_sends: &[],
             unresolved: &[],
             open: Vec::new(),
+            profile: None,
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -801,6 +831,7 @@ mod tests {
             parent_sends: &[],
             unresolved: &[],
             open: Vec::new(),
+            profile: None,
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -840,6 +871,7 @@ mod tests {
             parent_sends: &[],
             unresolved: &[],
             open: Vec::new(),
+            profile: None,
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -900,6 +932,7 @@ mod tests {
             parent_sends: &[],
             unresolved: &[],
             open: Vec::new(),
+            profile: None,
             host_processor_causes: &causes,
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -945,6 +978,7 @@ mod tests {
             parent_sends: &[],
             unresolved: &[],
             open: Vec::new(),
+            profile: None,
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -998,6 +1032,7 @@ mod tests {
             parent_sends: &[],
             unresolved: &[],
             open: Vec::new(),
+            profile: None,
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -1035,6 +1070,7 @@ mod tests {
             parent_sends: &[],
             unresolved: &[],
             open: Vec::new(),
+            profile: None,
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -1079,6 +1115,7 @@ mod tests {
             parent_sends: &[],
             unresolved: &[],
             open: Vec::new(),
+            profile: None,
             host_processor_causes: &[],
             host_processor_types: &declared,
             // The invoke half declared beside it, because the two travel
@@ -1125,6 +1162,7 @@ mod tests {
             parent_sends: &[],
             unresolved: &[],
             open: Vec::new(),
+            profile: None,
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],

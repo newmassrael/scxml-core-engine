@@ -130,7 +130,18 @@ SERVER_INSTRUCTIONS = (
     "carries none, and mark that <datamodel> sce:unresolved, with the reason, "
     "when the source does not say whether it carries any -- never invent a "
     "field, and never drop sce:interface=\"closed\" to make a check pass; "
-    "state what is open and tell the owner. Put the <?xml ...?> declaration "
+    "state what is open and tell the owner. When the owner keeps an "
+    "authoring profile -- a file stating what a design is held to, such as "
+    "a closed interface -- pass it as profile (or profile_text) to "
+    "validate_scxml and validate_scxml_set, and to scxml_accept, "
+    "scxml_acceptance_check and scxml_accepted_for as the profile the design "
+    "is held to: a statechart that departs from it is refused as a profile/* "
+    "record, which you fix in the draft or put to the owner, and a design "
+    "accepted under one profile is not the answer for another. Never write a "
+    "profile yourself or choose one for the owner, and never edit the "
+    "profile to make a draft pass; when the owner keeps none, say the design "
+    "was checked under none, which the manifest shows by having no profile. "
+    "Put the <?xml ...?> declaration "
     "first in every file, with nothing before it -- not a comment. What you "
     "check is the text you save and show: check the file as saved. "
     "Hand a document to the tools by path when this server runs beside the "
@@ -161,7 +172,8 @@ SERVER_INSTRUCTIONS = (
     "reviews the pseudocode against the source. Never call scxml_accept "
     "without the owner's explicit acceptance, and when you do, give it the "
     "specification and the decision record the design was written from as "
-    "its sources. No pack or binding is needed for this flow."
+    "its sources, and the profile it is held to. No pack or binding is "
+    "needed for this flow."
 )
 
 _PACK_ARG = {
@@ -204,10 +216,15 @@ def _file_input(key: str, what: str) -> dict:
 
 _DOCUMENT_INPUT = _file_input("document", "the SCXML document")
 _MANIFEST_INPUT = _file_input("manifest", "the requirement manifest")
-# What a design was authored from: the specification files, and the owner's
-# decision record when there is one. The acceptance record pins them, so a
-# revised specification lapses an acceptance and the same one asked about
-# again is answered with the accepted design.
+# The owner's authoring profile: what a design is held to, stated in a file
+# the owner keeps beside the specification. Only the product reads it, so it
+# is handed over untouched and a setting the product adds needs no edit here.
+_PROFILE_INPUT = _file_input("profile", "the owner's authoring profile")
+# What a design was authored from and held to: the specification files, the
+# owner's decision record and authoring profile when there are ones. The
+# acceptance record pins them, so a revised specification lapses an
+# acceptance, and the same one asked about again is answered with the
+# accepted design -- but only under the profile it was accepted under.
 _AUTHORED_FROM_INPUT = {
     "sources": {"type": "array", "items": {"type": "string"},
                 "description": "Paths to the specification files (local servers only)."},
@@ -221,6 +238,7 @@ _AUTHORED_FROM_INPUT = {
         },
     },
     **_file_input("decisions", "the owner's decision record"),
+    **_PROFILE_INPUT,
 }
 
 TOOLS = [
@@ -404,11 +422,16 @@ TOOLS = [
             "nothing here invokes (manifest.needs_parent), a processor the "
             "host must serve -- the answer also carries `open`, one line "
             "for each, and `next`. Tell the owner each line of `open` before "
-            "calling the design done."
+            "calling the design done. When the owner keeps an authoring "
+            "profile, pass it (`profile` or `profile_text`): a statechart "
+            "that is valid and is not what the profile asks for is refused "
+            "as a profile/* record, and an accepted manifest names the "
+            "profile by digest. Without one the check holds the design to "
+            "nothing the owner asked for, and the manifest has no `profile`."
         ),
         "inputSchema": {
             "type": "object",
-            "properties": dict(_DOCUMENT_INPUT),
+            "properties": {**_DOCUMENT_INPUT, **_PROFILE_INPUT},
         },
     },
     {
@@ -423,7 +446,11 @@ TOOLS = [
             "every diagnostic record -- and `open` and `next` when a "
             "member leaves something to a person, such as a payload the "
             "specification does not settle. Give either `documents` (paths) "
-            "or `documents_text` (each document's name and text)."
+            "or `documents_text` (each document's name and text). When the "
+            "owner keeps an authoring profile, pass it: every statechart of "
+            "the set is judged and every departure is listed, and "
+            "manifest.profile.judged says how many statecharts it was "
+            "applied to -- zero for a set of forge documents alone."
         ),
         "inputSchema": {
             "type": "object",
@@ -441,6 +468,7 @@ TOOLS = [
                     },
                 },
                 **_file_input("deploy", "the deploy.yaml the set is deployed by"),
+                **_PROFILE_INPUT,
             },
         },
     },
@@ -1189,15 +1217,25 @@ def _kinds_tool(args: dict, staging: _Staging) -> dict:
     return _answer(*kind_catalog(_name_arg(args, "kind", "a kind name")))
 
 
+def _profile_file(args: dict, staging: _Staging) -> pathlib.Path | None:
+    """The owner's authoring profile, when they keep one: a path, or its text
+    staged beside the documents. Not read here -- the product is the only
+    reader of a profile, and refuses one it cannot use."""
+    return staging.file(args, "profile", "the owner's authoring profile", "profile.json",
+                        required=False)
+
+
 def _validate_tool(args: dict, staging: _Staging) -> dict:
     document = staging.file(args, "document", "the SCXML document", "document.scxml")
-    return _answer(*run_scxml_validation(document, cwd=staging.dir))
+    profile = _profile_file(args, staging)
+    return _answer(*run_scxml_validation(document, profile=profile, cwd=staging.dir))
 
 
 def _validate_set_tool(args: dict, staging: _Staging) -> dict:
     documents = staging.many(args, "documents", "the documents of the set")
     deploy = staging.file(args, "deploy", "the deploy.yaml", "deploy.yaml", required=False)
-    return _answer(*validate_scxml_set(documents, deploy, cwd=staging.dir))
+    profile = _profile_file(args, staging)
+    return _answer(*validate_scxml_set(documents, deploy, profile=profile, cwd=staging.dir))
 
 
 def _compare_tool(args: dict, staging: _Staging) -> dict:
@@ -1287,9 +1325,10 @@ def _acceptance_report_tool(args: dict, staging: _Staging) -> dict:
 
 
 def _authored_from(args: dict, staging: _Staging, *, aside: bool = False):
-    """The specification files (`sources` / `sources_text`) and the decision
-    record (`decisions` / `decisions_text`) a design was authored from, or a
-    question is about. Both optional; `aside` stages text apart from the
+    """The specification files (`sources` / `sources_text`), the decision
+    record (`decisions` / `decisions_text`) and the authoring profile
+    (`profile` / `profile_text`) a design was authored from and held to, or a
+    question is about. All optional; `aside` stages text apart from the
     files a record names (see `_Staging.write_aside`)."""
     sources: list[pathlib.Path] = []
     if args.get("sources") is not None or args.get("sources_text") is not None:
@@ -1319,7 +1358,20 @@ def _authored_from(args: dict, staging: _Staging, *, aside: bool = False):
         # -- the two sit side by side -- would be pinned as one and every
         # later question asked with the real record would read as a revision.
         load_decision_record(decisions if decisions.is_absolute() else staging.dir / decisions)
-    return sources, decisions
+    # The profile is not read here, unlike the decision record: the product is
+    # its only reader, and `accept` and `acceptance-check` both refuse a file
+    # that is no profile as `cli/profile-unusable`, so a specification handed
+    # over in its place is refused where the profile is used, by the reader
+    # that knows what a profile is.
+    if aside and args.get("profile_text") is not None:
+        if args.get("profile") is not None:
+            raise ToolArgumentError("give 'profile' or 'profile_text', not both")
+        name = args.get("profile_name")
+        profile = staging.write_aside("profile.json" if name is None else name,
+                                      args["profile_text"], "profile")
+    else:
+        profile = _profile_file(args, staging)
+    return sources, decisions, profile
 
 
 def _accept_tool(args: dict, staging: _Staging) -> dict:
@@ -1330,11 +1382,11 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
         # The owner's own tree: the record names their files where they are.
         if root is None or out is None:
             raise ToolArgumentError("'root' and 'out' go together")
-        sources, decisions = _authored_from(args, staging)
+        sources, decisions, profile = _authored_from(args, staging)
         report, refusal = accept_design(
             _file_arg(args, "document", "the accepted SCXML document").resolve(),
             _file_arg(args, "manifest", "the requirement manifest").resolve(),
-            variant, root, out, sources=sources, decisions=decisions)
+            variant, root, out, sources=sources, decisions=decisions, profile=profile)
         if refusal:
             return _failure(refusal)
         return _text(_with_open_at_acceptance(report, out))
@@ -1348,11 +1400,11 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
     document = staging.file(args, "document", "the accepted SCXML document", "document.scxml")
     manifest = staging.file(args, "manifest", "the requirement manifest",
                             "requirements.manifest.json")
-    sources, decisions = _authored_from(args, staging)
+    sources, decisions, profile = _authored_from(args, staging)
     record = pathlib.Path("acceptance.json")
     report, refusal = accept_design(document, manifest, variant, pathlib.Path("."),
                                     record, sources=sources, decisions=decisions,
-                                    cwd=staging.dir)
+                                    profile=profile, cwd=staging.dir)
     if refusal:
         return _failure(refusal)
     answer = json.loads(_with_open_at_acceptance(report, staging.dir / record))
@@ -1406,9 +1458,9 @@ def _staged_record(args: dict, staging: _Staging):
 def _acceptance_check_tool(args: dict, staging: _Staging) -> dict:
     variant = _name_arg(args, "variant", "the variant's name", required=True)
     record, root, cwd = _staged_record(args, staging)
-    sources, decisions = _authored_from(args, staging, aside=True)
+    sources, decisions, profile = _authored_from(args, staging, aside=True)
     return _answer(*acceptance_holds(record, variant, root, sources=sources,
-                                     decisions=decisions, cwd=cwd))
+                                     decisions=decisions, profile=profile, cwd=cwd))
 
 
 def _accepted_for_tool(args: dict, staging: _Staging) -> dict:
@@ -1424,13 +1476,13 @@ def _accepted_for_tool(args: dict, staging: _Staging) -> dict:
     """
     variant = _name_arg(args, "variant", "the variant's name", required=True)
     record, root, cwd = _staged_record(args, staging)
-    sources, decisions = _authored_from(args, staging, aside=True)
+    sources, decisions, profile = _authored_from(args, staging, aside=True)
     if not sources:
         raise ToolArgumentError(
             "'sources' or 'sources_text' is required: the specification whose "
             "accepted design is asked for")
     report, refusal = acceptance_holds(record, variant, root, sources=sources,
-                                       decisions=decisions, cwd=cwd)
+                                       decisions=decisions, profile=profile, cwd=cwd)
     if refusal:
         return _failure(refusal)
     answer = json.loads(report)

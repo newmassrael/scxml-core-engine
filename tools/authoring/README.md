@@ -385,6 +385,37 @@ machine runs — the machine generated for it is the one generated with no
 schema — and no field can be read from or sent with such an event
 (`docs/SCE_ACCEPTED_SUBSET.md`, EventSchema kind, "Fieldless schema").
 
+Whether a statechart that imports schemas and leaves its interface open is a
+mistake or a choice is the owner's to say, and the product does not guess it
+from any feature of the document: a statechart with no schema is a W3C
+conformance document, a legacy machine, or a design about to be shown to an
+owner, and nothing in it says which. The owner says it in an **authoring
+profile**, a small JSON file kept beside the specification
+(`{"record": "sce-authoring-profile", "v": 1, "name": "owner-review",
+"interface": "closed"}`; `docs/SCE_ACCEPTED_SUBSET.md` §2.17). Handed to
+`validate_scxml`, `validate_scxml_set`, `scxml_accept`,
+`scxml_acceptance_check` and `scxml_accepted_for` as `profile` or
+`profile_text`, it holds the design to what it says: a statechart that is valid
+and is not what the profile asks for is refused as
+`profile/interface-not-closed`, every statechart of a set is judged and every
+departure listed, and an accepted manifest names the profile by digest
+(`profile`: `name`, `sha256`, and `judged`, the number of statecharts it was
+applied to — zero for forge documents alone). Without a profile the tools hold
+the design to nothing the owner asked for, and the manifest carries no
+`profile`: that absence is how "checked under none" reads.
+
+An acceptance pins the profile beside the specification and the decision
+record, so a design accepted under one profile is not the answer for another
+(`scxml_accepted_for` says the design was *held to* a different profile, and a
+role left out is part of the answer), and `scxml_accept` refuses a statechart
+that departs from the profile instead of recording the owner accepting it.
+This server passes the file to the product untouched. Only the product reads a
+profile, so a setting it adds needs no edit here, and a profile it cannot
+fully read — an unknown setting, another version — is refused whole as
+`cli/profile-unusable` rather than applied in part. The server's instructions
+tell the assistant never to write a profile or to edit one to make a draft
+pass: which boundary a design is held to is the owner's decision.
+
 The requirement and acceptance tools answer for a document of any kind. A
 statechart's report shows, for each requirement, the transitions it depends
 on. A forge document's report shows the review-table lines that claim it,

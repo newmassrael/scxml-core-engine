@@ -663,12 +663,21 @@ def withheld_outputs(declared) -> dict:
 
 def validate_scxml(document: pathlib.Path,
                    codegen: pathlib.Path | None = None, *,
+                   profile: pathlib.Path | None = None,
                    cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Run the product's SCXML check without a pack or binding.
 
     Returns `(report, refusal)`, exactly one of them non-empty, each the
     same JSON object: `verdict` (`accepted` / `refused`), the generator's
     `manifest` (null on a refusal), and every `diagnostics` record it wrote.
+
+    `profile` is the owner's authoring profile (`--profile`): a statechart
+    that is valid and is not what the profile asks for is refused as a
+    `profile/*` record, and an accepted manifest names the profile by digest.
+    ⚠ Passed through, never read here: the product is the only reader of a
+    profile, so a setting it adds reaches this tool with no edit to it. Left
+    out, the check judges nothing the owner asked for, and the manifest
+    carries no `profile` to say so.
 
     Keep subprocess access in this module, as for ``pseudo_page``. The MCP
     adapter returns the generator's report or refusal without interpreting it
@@ -688,9 +697,15 @@ def validate_scxml(document: pathlib.Path,
     refusal's stderr would drop those.
     """
     report, refusal = _product_answer(
-        ["check", str(document), "--lint"], codegen,
+        ["check", str(document), "--lint", *_profile_args(profile)], codegen,
         answer="manifest", read=_json_line, verdicts=("accepted", "refused"), cwd=cwd)
     return (_with_open_matters(report), "") if report else (report, refusal)
+
+
+def _profile_args(profile: pathlib.Path | None) -> list[str]:
+    """`--profile` for the owner's authoring profile, as every route that
+    judges a design takes it; nothing when there is none."""
+    return [] if profile is None else ["--profile", str(profile)]
 
 
 def open_matters(manifest: dict) -> list[str]:
@@ -729,6 +744,7 @@ def _with_open_matters(report: str) -> str:
 def validate_scxml_set(documents: list[pathlib.Path],
                        deploy: pathlib.Path | None = None,
                        codegen: pathlib.Path | None = None, *,
+                       profile: pathlib.Path | None = None,
                        cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Check documents that refer to one another, as one set
     (`sce-codegen check --document ...`): a statechart and the event
@@ -746,12 +762,18 @@ def validate_scxml_set(documents: list[pathlib.Path],
     The design-time lints run on every statechart of the set without being
     asked (the product's library entry point refuses on the first finding),
     and only the first is reported; there is no flag to add here.
+
+    `profile` is the owner's authoring profile, judged against every
+    statechart of the set: each departure is a `profile/*` record, all of them
+    listed, and the manifest's `profile.judged` says how many statecharts it
+    was applied to — zero for a set of forge documents alone.
     """
     args = ["check"]
     for document in documents:
         args += ["--document", str(document)]
     if deploy is not None:
         args += ["--deploy", str(deploy)]
+    args += _profile_args(profile)
     report, refusal = _product_answer(args, codegen, answer="manifest",
                                       read=_json_line,
                                       verdicts=("accepted", "refused"), cwd=cwd)
@@ -920,14 +942,16 @@ def acceptance_page(document: pathlib.Path, manifest: pathlib.Path, variant: str
     return (json.loads(report)["page"], "") if report else ("", refusal)
 
 
-def _authored_from(sources, decisions) -> list[str]:
-    """`--source` for each specification file and `--decisions` for the
-    decision record, as `accept` and `acceptance-check` take them."""
+def _authored_from(sources, decisions, profile=None) -> list[str]:
+    """`--source` for each specification file, `--decisions` for the decision
+    record and `--profile` for the authoring profile, as `accept` and
+    `acceptance-check` take them."""
     args = []
     for source in sources:
         args += ["--source", str(source)]
     if decisions is not None:
         args += ["--decisions", str(decisions)]
+    args += _profile_args(profile)
     return args
 
 
@@ -935,6 +959,7 @@ def accept_design(document: pathlib.Path, manifest: pathlib.Path, variant: str,
                   root: pathlib.Path, out: pathlib.Path,
                   codegen: pathlib.Path | None = None, *,
                   sources=(), decisions: pathlib.Path | None = None,
+                  profile: pathlib.Path | None = None,
                   cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Pin what a person accepted (`sce-codegen accept`): the record at
     `out` names every file the acceptance rests on, by hash, relative to
@@ -943,10 +968,16 @@ def accept_design(document: pathlib.Path, manifest: pathlib.Path, variant: str,
     `sources` and `decisions` are what the design was authored from: the
     specification files and the owner's decision record. Pinned too, so a
     revised specification lapses the acceptance, and `acceptance_holds`
-    asked about the same files can answer that this design is theirs."""
+    asked about the same files can answer that this design is theirs.
+
+    `profile` is what the design is held to. The product judges the design
+    under it first and refuses a statechart that departs from it, so an
+    acceptance is never recorded under a profile the design breaks; it is
+    pinned beside the others, and the record then answers for this profile
+    and no other."""
     args = ["accept", str(document), "--manifest", str(manifest),
             "--variant", variant, "--root", str(root), "--out", str(out),
-            *_authored_from(sources, decisions)]
+            *_authored_from(sources, decisions, profile)]
     # The command prints nothing; what it did is the record at `out`.
     return _product_answer(args, codegen, answer="record",
                            read=lambda _stdout: str(out), cwd=cwd)
@@ -955,15 +986,19 @@ def accept_design(document: pathlib.Path, manifest: pathlib.Path, variant: str,
 def acceptance_holds(record: pathlib.Path, variant: str, root: pathlib.Path,
                      codegen: pathlib.Path | None = None, *,
                      sources=(), decisions: pathlib.Path | None = None,
+                     profile: pathlib.Path | None = None,
                      cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Whether an acceptance record still holds (`sce-codegen
     acceptance-check`): `holds`, or `lapsed` with the product's record of
     what moved. A lapsed acceptance is an answer, returned as the report.
 
-    With `sources` or `decisions`, holding also means the design was
-    authored from exactly those files, compared by content."""
+    With `sources`, `decisions` or `profile`, holding also means the design
+    was authored from exactly those files and held to that profile, compared
+    by content. A role left out is part of the answer: a design accepted under
+    no profile does not answer for a request that names one, and the
+    reverse."""
     args = ["acceptance-check", str(record), "--variant", variant,
-            "--root", str(root), *_authored_from(sources, decisions)]
+            "--root", str(root), *_authored_from(sources, decisions, profile)]
     report, refusal = _product_answer(args, codegen, answer="record",
                                       read=lambda _stdout: str(record),
                                       verdicts=("holds", "refused"),

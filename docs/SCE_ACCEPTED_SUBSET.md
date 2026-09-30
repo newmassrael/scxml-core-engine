@@ -2948,6 +2948,72 @@ first, as its own event-schema documents, holds every later draft of the
 behaviour to one boundary. No tracked document declares it, so the rule
 moves no existing verdict.
 
+### §2.17 An authoring profile — `--profile`
+
+SCE judges a document by its grammar and by what SCXML means, and it cannot
+know what its author was asked for. A statechart with no event-schema and no
+`sce:interface` is a W3C conformance document, a legacy machine, or a design
+about to be shown to an owner, and nothing in it says which. Reading intent
+off a proxy — a recorded kind basis, an import — attributes an expectation to
+a feature that means something else, so intent is stated instead, in a file
+the owner keeps beside the specification:
+
+```json
+{ "record": "sce-authoring-profile", "v": 1, "name": "owner-review", "interface": "closed" }
+```
+
+| Field | Meaning |
+|---|---|
+| `record`, `v` | `"sce-authoring-profile"` and `1`. Read and checked before any setting, so a profile from a newer tool is refused for its version. |
+| `name` | A label a report may print. Configures nothing, and is part of the file's bytes like every other character. |
+| `interface` | `"closed"`: every statechart declares `sce:interface="closed"` (§2.16). Absent: the interface is not constrained. |
+
+Every setting belongs to one class and the schema fixes it, not the file:
+**enforced** (a draft that breaks it is refused), **reported** (a departure is
+listed and the owner decides) or **guidance** (handed to the author, checked by
+nothing, and said so). Version 1 holds one setting, `interface`, and it is
+enforced. A profile that names a setting this build does not know, a value a
+setting does not take, another `record`, or a version it does not read is
+refused **whole** as `cli/profile-unusable`; applying the part that was
+understood would say a document was held to a profile it was not. The record
+is keyed on which refusal it is, and the path the caller typed is its `actual`.
+
+`--profile <PATH>` is taken by `check` (one document and a document set),
+`generate` and `orchestrate`, which judge the same way — `orchestrate` is the
+producer a set-route `check` predicts, and `cli_orchestrate_check_parity`
+holds the two flag lists together. A statechart that is valid and is not what
+the profile asks for is refused as `profile/interface-not-closed`, naming the
+statechart, the profile's `name` when it has one, and the event-schemas it
+imports and so describes a boundary with; every finding of every statechart is
+listed, since the owner is deciding about the whole design. On a set the
+profile is judged after `--strict-unresolved` and before `--lint`, the order a
+single document asks them in, and a statechart that does not read is left to
+the compile that follows. It is judged on the model as parsed, before the
+analyzer, so a design the profile refuses generates nothing.
+
+A forge document is not a statechart and no version-1 setting applies to it.
+The manifest's optional `profile` object carries the profile's `name`, its
+`sha256` and `judged`, the number of statecharts it was applied to, so a run of
+forge documents alone reports `0` and is not read as a pass; a run given no
+profile omits the object, and one that failed the profile emits no manifest.
+The in-memory path, which reads no sibling documents, takes no profile.
+
+An acceptance record pins the profile beside the specification and the
+decision record, under the role `profile`, and holds it to the same rules: at
+most one, compared by content, and a role left out is part of the answer — a
+design accepted under no profile does not answer for a request that names one,
+and the reverse. `accept --profile` judges the design first and refuses a
+statechart that departs from the profile, since an acceptance is the owner's
+statement that this design is what they accept. `acceptance-check --profile`
+asks whether the record was taken under this profile. A design is *held to* a
+profile rather than authored from it, and the lapse sentences say so.
+
+What a profile cannot configure: the obligation to mark a guess, W3C SCXML
+semantics, the kind catalog and `<sce:kind-basis>`, and acceptance by a person.
+No setting is named so that it could. The open-interface line of §2.16 stays
+as it is — it says a mismatch the document itself shows, where the profile
+states what the owner expects.
+
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 
 When a forge expression reads an imported kind's member via
@@ -3973,6 +4039,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/parent-send-without-parent` | Validation |
 | `scxml/generated-name-collision` | Validation |
 | `scxml/undeclared-interface-event` | Validation |
+| `profile/interface-not-closed` | Validation |
 | `scxml/non-exhaustive-event-handling` | Validation |
 | `scxml/contradictory-unhandled-declaration` | Validation |
 | `scxml/stale-unhandled-declaration` | Validation |
@@ -4191,6 +4258,7 @@ or SCE-internal issues.
 | `cli/pseudo-unavailable` | Cli | `sce-codegen pseudo` was given a document carrying a construct `forge::pseudo::render` does not cover. The rendering exists so that a reviewer who approves it has approved the document, which makes it total by contract: every field of the model reaches the output. A document is therefore rendered in full or refused by name, never abbreviated — a text missing part of the document reads exactly like one missing none of it, and signing it would turn an unreviewed document into a signed one. ⚠ The refusal is per DOCUMENT, not per kind: all eighteen kinds render, and the message names the construct (an `<invoke>`, an `<sce:on-sample>` block, an `<sce:context>` object) because naming the kind alone once told an author their kind was unrendered when it was not. ⚠⚠ Distinct from `cli/review-table-unavailable`, which is about a kind carrying no `sce:req` site at all; this one says nothing about annotation. Not preventable by authoring (the repair is to render the construct in `forge::pseudo`) |
 | `cli/diagram-unavailable` | Cli | `sce-codegen diagram` was given a document carrying something a print figure cannot say: an action the page's own action lines (`forge::pseudo::action_lines`) refuse, a character the generated font table (`diagram::metrics`) has no measured width for, or a page language the figure's phrases (`diagram::words`) do not cover. Refused rather than drawn without it, for the pseudocode's reason — a figure is read as the whole document, and one missing a part reads exactly like one missing none. ⚠ A width is never guessed: whether a figure fits its page rests on it. Not preventable by authoring (the repair is to render the construct, measure the character, or add the phrases) |
 | `cli/diagram-does-not-fit` | Cli | `sce-codegen diagram` laid a figure out at the requested minimum type size and it is larger than the page's printable area. Refused with both sizes, never shrunk: the minimum is what the reader was promised, and the prototype that shrank figures to fit kept two of five legible on A4. Figures are already flat (one container and its direct children), so there is no deeper fold to try — the message names the container. Preventable by the invocation (a larger page or a smaller minimum) or by authoring (fewer direct children in that container, by grouping some under a compound state) |
+| `cli/profile-unusable` | Cli | `--profile` (on `check`, `generate`, `orchestrate`, `accept`, `acceptance-check`) named an authoring profile that cannot be used: unreadable, not JSON, not the shape a profile has (a setting this build does not know, a value a setting does not take), another kind of file, a version this build does not read, or an empty `name`. Refused whole rather than applied in part: a profile is the owner's statement of what a design is held to, so a run that read half of it and passed a document would say the document was held to something it was not. Keyed on which refusal it is, never on the path or the reader's sentence. Not preventable by authoring SCXML (the repair is an edit to the profile file) |
 | `forge/source-hash-mismatch` | Cli | `sce-codegen verify` detected drift between an emitted file's embedded §6.2.6 header hash and the recomputed value over current source + template state; not preventable by authoring SCXML (regenerate via `sce-codegen` to repair) |
 | `forge/source-hash-input-uncovered` | Cli | the §6.2.6 `source-hash` about to be embedded in generated output would not describe the input that produced it — the collected set is empty (the header would carry the empty-input digest) or, where the root was inferred from the input's own location, omits that input; an invocation-layout failure, not an authoring one (re-point `--input-root` at a directory containing the input) |
 | `forge/source-hash-walk-unbounded` | Cli | the §6.2.6 source set could not be enumerated within the walk's descent ceiling — a directory symlink naming a sibling contributes under every name that reaches it, so nested levels of such links name a path count exponential in the depth; refused rather than truncated, since a digest folded over the prefix the walk reached describes a subset of the input and is unauditable in the same way the empty-input digest is. An invocation-layout failure, not an authoring one (re-point `--input-root` below the aliasing, or remove it) |

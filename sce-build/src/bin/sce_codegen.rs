@@ -944,6 +944,9 @@ struct GenerateReport {
     /// on a document-set run, those of every statechart member. Read only into
     /// the manifest's `open`.
     open_interface: Vec<String>,
+    /// The authoring profile this run was given and how many statecharts it
+    /// judged (`--profile`); `None` when no profile was given.
+    profile: Option<sce_build::manifest::ProfileInfo>,
     host_processor_causes: Vec<sce_build::host_processor_analyzer::HostProcessorCauseRecord>,
     /// The `--host-processor` declarations this run was given, echoed so
     /// a consumer can check the build's half of the contract against the
@@ -1077,6 +1080,7 @@ fn build_manifest<'a>(
                 &report.open_interface,
             )
         },
+        profile: report.profile.clone(),
         host_processor_causes: &report.host_processor_causes,
         host_processor_types: &report.host_processor_types,
         host_invoker_types: &report.host_invoker_types,
@@ -1556,6 +1560,17 @@ struct GenerateArgs {
     /// handler is nearly always a mistake.
     #[arg(long)]
     lint: bool,
+    /// Hold the statechart to an authoring profile: a JSON file the
+    /// specification's owner keeps beside the specification, stating what a
+    /// design is held to (SCE Accepted Subset §2.17). A statechart that is
+    /// valid and is not what the profile asks for is refused, every finding
+    /// listed, as a `profile/*` record; an unusable profile is refused whole
+    /// as `cli/profile-unusable`. The manifest names the profile by digest.
+    ///
+    /// Judged where `check --profile` judges it, by the same functions, so
+    /// the two commands cannot disagree about a document.
+    #[arg(long, value_name = "PATH")]
+    profile: Option<String>,
     /// Additional directories searched (in declaration order) to
     /// resolve `<xi:include href="...">` and
     /// `<sce:use template="...">` fragments by name. Tried after
@@ -1937,6 +1952,21 @@ struct CheckArgs {
     /// for the flag to judge and is refused rather than passed in silence.
     #[arg(long, conflicts_with_all = ["forge"])]
     lint: bool,
+    /// Hold the statecharts to an authoring profile: a JSON file the
+    /// specification's owner keeps beside the specification, stating what a
+    /// design is held to (SCE Accepted Subset §2.17). Mirrors
+    /// `generate --profile`.
+    ///
+    /// A statechart that is valid and is not what the profile asks for is
+    /// refused, and every finding of every statechart is listed, as a
+    /// `profile/*` record. An unusable profile is refused whole as
+    /// `cli/profile-unusable`. The manifest names the profile by digest and
+    /// says how many statecharts it judged, so a run of forge documents alone
+    /// reports zero and is not read as a pass. Taken on a document set too,
+    /// and by `orchestrate`, so the verdict this route predicts is one its
+    /// producer can be asked for.
+    #[arg(long, value_name = "PATH")]
+    profile: Option<String>,
     /// Go module path hosting the generated forge packages. Required to
     /// check any Go crossfile document; ignored for other backends.
     #[arg(long)]
@@ -2338,6 +2368,16 @@ enum Commands {
         /// The owner's decision record the design follows, if it has one.
         #[arg(long, value_name = "PATH")]
         decisions: Option<String>,
+        /// The authoring profile the design is held to, if there is one.
+        ///
+        /// The design is judged under it first, and a statechart that
+        /// departs from it is refused rather than accepted: an acceptance
+        /// is the owner's statement that this design is what they accept,
+        /// and one taken under a profile the design breaks would say
+        /// otherwise. Pinned by sha256 beside the design, so the record
+        /// answers for this profile and for no other.
+        #[arg(long, value_name = "PATH")]
+        profile: Option<String>,
     },
     /// Judge the claims that point OUT of a document — Requirement-closure
     /// RFC §5.2e/§5.2f.
@@ -2382,6 +2422,12 @@ enum Commands {
         /// The decision record the question is about.
         #[arg(long, value_name = "PATH")]
         decisions: Option<String>,
+        /// The authoring profile the question is about. Compared by
+        /// content like the two above, and a role left out is part of the
+        /// answer: a design accepted under no profile does not answer for a
+        /// request that names one, and the reverse.
+        #[arg(long, value_name = "PATH")]
+        profile: Option<String>,
     },
     Requirements {
         /// SCXML file path
@@ -2858,6 +2904,12 @@ struct OrchestrateArgs {
     /// by a check that never ran.
     #[arg(long, conflicts_with = "forge")]
     lint: bool,
+    /// Hold the statecharts to an authoring profile, mirroring
+    /// `generate --profile` and taken by `check` on its document-set route.
+    /// Every finding of every statechart is listed and the run ends before
+    /// anything is generated; an unusable profile is refused whole.
+    #[arg(long, value_name = "PATH")]
+    profile: Option<String>,
     /// Path to a .clang-format file for C++ output formatting, mirroring
     /// `generate --format-style`. When omitted, the built-in default style
     /// is used.
@@ -3026,13 +3078,14 @@ fn main() {
             out,
             source,
             decisions,
+            profile,
         } => cmd_accept(
             &scxml,
             &manifest,
             &variant,
             &root,
             &out,
-            &authored_from(&source, decisions.as_deref()),
+            &authored_from(&source, decisions.as_deref(), profile.as_deref()),
             error_format,
         ),
         Commands::AcceptanceCheck {
@@ -3041,11 +3094,12 @@ fn main() {
             root,
             source,
             decisions,
+            profile,
         } => cmd_acceptance_check(
             &record,
             &variant,
             &root,
-            &authored_from(&source, decisions.as_deref()),
+            &authored_from(&source, decisions.as_deref(), profile.as_deref()),
         ),
         Commands::RequirementClosure { manifest } => cmd_requirement_closure(&manifest),
         Commands::Unresolved { scxml } => cmd_unresolved(&scxml, error_format),
@@ -3193,9 +3247,13 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         host_invoker,
         strict_unresolved,
         lint,
+        profile: profile_path,
         format_style,
         no_format,
     } = args;
+    // Before anything else is read: an unusable profile is the first thing
+    // said about the run.
+    let profile = load_profile(profile_path.as_deref());
     let include_dirs: Vec<PathBuf> = include_dir.iter().map(PathBuf::from).collect();
     file_documents(document, &mut scxml, &mut forge, error_format);
     let scxml_paths: &[String] = &scxml;
@@ -3203,11 +3261,15 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     // The refusals `check` gives a set under the same flags, by the same
     // functions and in the same order, before anything is compiled or
     // written: a design refused here has produced nothing.
-    if strict_unresolved || lint {
+    let mut profile_facts = None;
+    if strict_unresolved || lint || profile.is_some() {
         let scxml_owned: Vec<PathBuf> = scxml_paths.iter().map(PathBuf::from).collect();
         let forge_owned: Vec<PathBuf> = forge_paths.iter().map(PathBuf::from).collect();
         if strict_unresolved {
             strict_set_unresolved(&scxml_owned, &forge_owned, error_format);
+        }
+        if let Some(profile) = &profile {
+            profile_facts = Some(judge_set_under_profile(profile, &scxml_owned, error_format));
         }
         if lint {
             lint_set_statecharts(&scxml_owned, error_format);
@@ -3337,6 +3399,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         host_processor_types: options.host_processor_types.clone(),
         host_invoker_types: options.host_invoker_types.clone(),
         target_language: Some(lang),
+        profile: profile_facts,
         ..GenerateReport::default()
     };
     accumulate_host_requirements(&mut report, &scxml_path_bufs, &forge_path_bufs);
@@ -3736,6 +3799,89 @@ fn strict_set_unresolved(
     }
 }
 
+/// `--profile`: read the owner's authoring profile, or end the run.
+///
+/// Read before anything else on every route that takes the flag, so an
+/// unusable profile is the first thing said about a run and not a footnote to
+/// a document verdict. Refused whole (`cli/profile-unusable`): a profile
+/// applied in part would say a document was held to something it was not.
+fn load_profile(path: Option<&str>) -> Option<sce_build::authoring_profile::AuthoringProfile> {
+    let path = path?;
+    match sce_build::authoring_profile::AuthoringProfile::load(Path::new(path)) {
+        Ok(profile) => Some(profile),
+        Err(unusable) => cli_exit(CliError::ProfileUnusable {
+            path: path.to_string(),
+            fault: unusable.kind,
+            detail: unusable.detail,
+        }),
+    }
+}
+
+/// Hold parsed statecharts to `profile`: every finding of every statechart is
+/// reported, and the run ends on them; a run that passes returns the
+/// manifest's account of the profile.
+///
+/// All findings, not the first: an owner reading the answer decides what to
+/// do about the boundary of the whole design, and a list that stops at the
+/// first statechart hides how far the departure goes. Forge documents are not
+/// among `models` — a version-1 setting applies to statecharts alone — so a
+/// run of forge documents reports `judged: 0`, which says the profile was
+/// given and held nothing to it.
+fn judge_under_profile(
+    profile: &sce_build::authoring_profile::AuthoringProfile,
+    models: &[(&SCXMLModel, &str)],
+    error_format: ErrorFormat,
+) -> sce_build::manifest::ProfileInfo {
+    let findings: Vec<Located<ForgeError>> = models
+        .iter()
+        .flat_map(|(model, label)| profile.judge_statechart(model, label))
+        .collect();
+    error_format.emit_all_and_exit(&findings, "Forge codegen error: ");
+    profile_info(profile, models.len())
+}
+
+/// The manifest's account of a profile a run was given.
+fn profile_info(
+    profile: &sce_build::authoring_profile::AuthoringProfile,
+    judged: usize,
+) -> sce_build::manifest::ProfileInfo {
+    sce_build::manifest::ProfileInfo {
+        name: profile.name().map(str::to_string),
+        sha256: profile.sha256().to_string(),
+        judged: u32::try_from(judged).expect("a run does not name four billion statecharts"),
+    }
+}
+
+/// `--profile` over a document set: each statechart parsed as the compile
+/// below reads it, and held to the profile.
+///
+/// A member that does not read is skipped, not reported, as
+/// [`strict_set_unresolved`] leaves it: the compile that follows refuses it
+/// in its own words, and the profile has nothing to say about a document that
+/// is not one. ⚠ `judged` counts the statecharts that read, so a set whose
+/// only statechart was skipped says zero and not one.
+fn judge_set_under_profile(
+    profile: &sce_build::authoring_profile::AuthoringProfile,
+    scxml_paths: &[PathBuf],
+    error_format: ErrorFormat,
+) -> sce_build::manifest::ProfileInfo {
+    let parsed: Vec<(SCXMLModel, String)> = scxml_paths
+        .iter()
+        .filter_map(|path| {
+            let label = path.to_string_lossy().into_owned();
+            SCXMLParser::new()
+                .parse_file(&label)
+                .ok()
+                .map(|model| (model, label))
+        })
+        .collect();
+    let models: Vec<(&SCXMLModel, &str)> = parsed
+        .iter()
+        .map(|(model, label)| (model, label.as_str()))
+        .collect();
+    judge_under_profile(profile, &models, error_format)
+}
+
 /// What one statechart document asks of the host that will run it.
 ///
 /// Carried together because the manifest reports them together and the
@@ -3890,6 +4036,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         include_dir,
         strict_unresolved,
         lint,
+        profile: profile_path,
         go_module_prefix,
         const_fold_budget,
         no_std: _,
@@ -3903,6 +4050,9 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         // what the producer can be told and is bound to honour it below.
     } = args;
 
+    // Before anything else is read: an unusable profile is the first thing
+    // said about the run.
+    let profile = load_profile(profile_path.as_deref());
     let (explicit, langs) = requested_backends(&language, error_format);
 
     // The positional is shorthand for the first statechart, so a set may
@@ -3927,6 +4077,13 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
     if strict_unresolved {
         strict_set_unresolved(&scxml_paths, &forge_paths, error_format);
     }
+    // The owner's expectation follows what a design leaves open and precedes
+    // the lints, the order the single-document route asks them in: whether
+    // the statechart is the design that was accepted comes before what a
+    // lint says of it.
+    let profile_facts = profile
+        .as_ref()
+        .map(|profile| judge_set_under_profile(profile, &scxml_paths, error_format));
     if lint {
         lint_set_statecharts(&scxml_paths, error_format);
     }
@@ -3940,6 +4097,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         // consumer cannot be shown a declaration this run did not use.
         host_processor_types: host_processor.clone(),
         host_invoker_types: host_invoker.clone(),
+        profile: profile_facts,
         ..GenerateReport::default()
     };
     accumulate_host_requirements(&mut report, &scxml_paths, &forge_paths);
@@ -4027,6 +4185,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         include_dir,
         strict_unresolved,
         lint,
+        profile: profile_path,
         go_module_prefix,
         const_fold_budget,
         no_std,
@@ -4040,6 +4199,9 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         .as_deref()
         .expect("clap requires the positional when no --scxml is given");
 
+    // Before anything else is read: an unusable profile is the first thing
+    // said about the run.
+    let profile = load_profile(profile_path.as_deref());
     let (explicit, langs) = requested_backends(&language, error_format);
 
     let scxml_content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
@@ -4126,6 +4288,10 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                     Ok(records) => records,
                     Err(e) => error_format.emit_forge_and_exit(&e),
                 };
+            // A forge document is not a statechart, so no version-1 setting
+            // applies to it; the manifest says the profile was given and
+            // judged nothing.
+            report.profile = profile.as_ref().map(|profile| profile_info(profile, 0));
 
             for lang in &langs {
                 let forge_opts = sce_build::ForgeCompileOptions {
@@ -4168,6 +4334,11 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             }
             report.unresolved = sce_build::unresolved_check::unresolved_records(&model);
             report.open_interface = sce_build::open_matters::interface_left_open(&model);
+            // The owner's expectation, judged on the model as parsed and
+            // where the set route judges it, so the two cannot disagree.
+            report.profile = profile
+                .as_ref()
+                .map(|profile| judge_under_profile(profile, &[(&model, scxml_path)], error_format));
 
             analyzer::analyze(&mut model, scxml_path);
 
@@ -4414,8 +4585,12 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         c_symbol_prefix,
         strict_unresolved,
         lint,
+        profile: profile_path,
         include_dir,
     } = args;
+    // Before anything else is read: an unusable profile is the first thing
+    // said about the run.
+    let profile = load_profile(profile_path.as_deref());
     let scxml_path: &str = &scxml;
     let language: &str = &language;
     let output_dir: &str = &output_dir;
@@ -4602,6 +4777,10 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                     Ok(records) => records,
                     Err(e) => error_format.emit_forge_and_exit(&e),
                 };
+            // A forge document is not a statechart, so no version-1 setting
+            // applies to it; the manifest says the profile was given and
+            // judged nothing.
+            report.profile = profile.as_ref().map(|profile| profile_info(profile, 0));
 
             if let Some(ast_path) = emit_ast_path {
                 let path = std::path::Path::new(ast_path);
@@ -4737,6 +4916,12 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     }
     report.unresolved = sce_build::unresolved_check::unresolved_records(&model);
     report.open_interface = sce_build::open_matters::interface_left_open(&model);
+    // The owner's expectation, judged where `check` judges it — on the model
+    // as parsed, before any codegen — so a design the profile refuses
+    // produces nothing.
+    report.profile = profile
+        .as_ref()
+        .map(|profile| judge_under_profile(profile, &[(&model, scxml_path)], error_format));
 
     // `has_parent_communication` carries two distinct meanings across
     // backends:
@@ -8750,17 +8935,19 @@ fn cmd_acceptance_report(
 }
 
 /// Pin what a person accepted — Requirement-closure RFC §8.3.
-/// `--source` and `--decisions`, as the roles the acceptance record pins
-/// them under.
+/// `--source`, `--decisions` and `--profile`, as the roles the acceptance
+/// record pins them under.
 fn authored_from(
     sources: &[String],
     decisions: Option<&str>,
+    profile: Option<&str>,
 ) -> Vec<(sce_build::acceptance_record::SourceRole, PathBuf)> {
     use sce_build::acceptance_record::SourceRole;
     sources
         .iter()
         .map(|s| (SourceRole::Specification, PathBuf::from(s)))
         .chain(decisions.map(|d| (SourceRole::Decisions, PathBuf::from(d))))
+        .chain(profile.map(|p| (SourceRole::Profile, PathBuf::from(p))))
         .collect()
 }
 
@@ -8778,8 +8965,24 @@ fn cmd_accept(
     // load reports the loader's refusal. Taking the record would refuse both
     // as one opaque failure to pin a design, which tells the caller which
     // command failed and nothing about why.
-    refuse_an_unparseable_design(scxml, error_format);
+    let design = read_design(scxml, error_format);
     let _ = load_requirement_manifest(manifest);
+
+    // A design is accepted under the profile it is held to. The profile is
+    // read through its own door, and a statechart that departs from it is
+    // refused here: the record would say the owner accepted a design under a
+    // profile that design breaks. A forge document is judged by nothing in a
+    // version-1 profile, and is pinned all the same, so the record still
+    // answers for this profile and no other.
+    let profile_path = sources
+        .iter()
+        .find(|(role, _)| *role == sce_build::acceptance_record::SourceRole::Profile)
+        .map(|(_, path)| path.to_string_lossy().into_owned());
+    if let Some(profile) = load_profile(profile_path.as_deref()) {
+        if let Design::Statechart(model) = &design {
+            judge_under_profile(&profile, &[(model.as_ref(), scxml)], error_format);
+        }
+    }
 
     let sources: Vec<_> = sources
         .iter()
@@ -8860,11 +9063,6 @@ fn read_design(document: &str, error_format: ErrorFormat) -> Design {
     }
 }
 
-/// Refuse a document that does not parse — see [`read_design`].
-fn refuse_an_unparseable_design(document: &str, error_format: ErrorFormat) {
-    let _ = read_design(document, error_format);
-}
-
 /// Re-check an acceptance record against the tree — Requirement-closure
 /// RFC §8.3.
 fn cmd_acceptance_check(
@@ -8881,6 +9079,15 @@ fn cmd_acceptance_check(
             detail,
         })
     };
+    // The profile a question is about is read through its own door, as
+    // `accept` reads it: a file that is no profile is refused as unusable
+    // rather than answered as a profile the design was not held to, so a
+    // specification handed over in its place is not reported as a lapse.
+    let profile_path = asked
+        .iter()
+        .find(|(role, _)| *role == sce_build::acceptance_record::SourceRole::Profile)
+        .map(|(_, path)| path.to_string_lossy().into_owned());
+    let _ = load_profile(profile_path.as_deref());
     let text =
         fs::read_to_string(record).unwrap_or_else(|e| unusable("read", format!("{record}: {e}")));
     let loaded = sce_build::acceptance_record::AcceptanceRecord::from_json(&text)

@@ -436,6 +436,22 @@ pub enum CliError {
         area_w: f64,
         area_h: f64,
     },
+
+    /// The authoring profile a command was handed cannot be used.
+    ///
+    /// Refused whole: a profile is the owner's statement of what a design is
+    /// held to, so a run that applied the part it understood and passed a
+    /// document would say the document met something it was never checked
+    /// against ([`crate::authoring_profile`]). `fault` says which refusal
+    /// and `detail` is the reader's own sentence; the path is what the
+    /// caller typed, so it rides `actual` and not the record's key — the same
+    /// broken profile at another path is the same finding.
+    #[error("the authoring profile {path} cannot be used: {detail}")]
+    ProfileUnusable {
+        path: String,
+        fault: crate::authoring_profile::ProfileFault,
+        detail: String,
+    },
 }
 
 impl CliError {
@@ -788,6 +804,16 @@ impl SingleDiagnostic for CliError {
                     "{figure}: {need_w:.0} x {need_h:.0} pt at {min_pt} pt, \
                      page {area_w:.0} x {area_h:.0} pt"
                 )),
+                None,
+            ),
+            // The refusal keys the record and the path does not: the same
+            // broken profile at another checkout is the same finding, and
+            // the reader's sentence can embed a platform's spelling of an
+            // error. No fix: the repair is an edit to the file.
+            CliError::ProfileUnusable { path, fault, .. } => (
+                DiagnosticCode::CliProfileUnusable,
+                vec![fault.as_str().to_string()],
+                Some(path.clone()),
                 None,
             ),
         };

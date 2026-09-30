@@ -106,6 +106,17 @@
       "minItems": 1,
       "items": { "$ref": "#/definitions/openMatter" }
     },
+    "profile": {
+      "description": "The authoring profile this run was given (--profile) and how many statecharts it judged: name is the profile's own label when it has one (a label, not identity), sha256 is the digest of the profile file's bytes (its identity, and what an acceptance record pins), judged is the number of statecharts of the run the profile was applied to. Omitted when no profile was given, so a run held to none is not mistaken for one that passed; zero judged says a profile was given and a run of forge documents alone held nothing to it. A run that fails the profile emits no manifest: its findings are the answer.",
+      "type": "object",
+      "required": ["sha256", "judged"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "judged": { "type": "integer", "minimum": 0 }
+      }
+    },
     "host_processor_causes": {
       "description": "Why needs_host_processor is true — one record per site naming a type this build has no path for. Present exactly when the flag is true; omitted (not []) otherwise. Non-fatal: generation succeeded, and the emitted code refuses these sites at runtime exactly as the specification requires.",
       "type": "array",

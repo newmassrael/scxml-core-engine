@@ -376,6 +376,18 @@ pub enum ForgeError {
     #[error(transparent)]
     Cli(Box<crate::cli_error::CliError>),
 
+    /// A valid document that is not what the authoring profile it was
+    /// judged under asks for ([`crate::authoring_profile`]).
+    ///
+    /// Not a rule of SCXML or of SCE's grammar: the same document passes
+    /// without the profile, and a document the profile refuses builds the
+    /// same machine as one it accepts. Its own variant rather than a
+    /// [`Self::Scxml`] case for that reason — a reader of the wire `code`
+    /// sees `profile/...` and knows the refusal is the owner's expectation,
+    /// not the language's.
+    #[error(transparent)]
+    Profile(Box<crate::authoring_profile::ProfileError>),
+
     #[error("I/O error on {path}: {source}")]
     Io {
         path: PathBuf,
@@ -448,6 +460,12 @@ impl From<crate::cli_error::CliError> for ForgeError {
 impl From<crate::host_processor_analyzer::ReservedHostType> for ForgeError {
     fn from(err: crate::host_processor_analyzer::ReservedHostType) -> Self {
         Self::Cli(Box::new(err.into()))
+    }
+}
+
+impl From<crate::authoring_profile::ProfileError> for ForgeError {
+    fn from(err: crate::authoring_profile::ProfileError) -> Self {
+        Self::Profile(Box::new(err))
     }
 }
 
@@ -5338,6 +5356,9 @@ impl ForgeError {
             // semantic-stage rejections; the wire `code` distinguishes
             // forge vs SCXML failures, the exit code does not.
             ForgeError::Scxml(_) => 3,
+            // A document the profile refuses is a post-parse rejection of a
+            // valid document, the same category as a semantic one.
+            ForgeError::Profile(_) => 3,
             // Mesh-deploy / topology / external / codegen failures
             // delegate to MeshError::exit_code() so the deploy-aware
             // path through `compile_scxml_with_imports` surfaces the
