@@ -106,7 +106,7 @@ assign-action 386
 child-invoke-needs-script-engine 55
 log-expr 46
 send-param-expr 49
-send-dynamic-attr 64
+send-dynamic-attr 65
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
@@ -345,7 +345,12 @@ never spelled correctly.
   Then `integration_resources/a_delayed_http_send_is_posted_when_due/` (one
   engine document: one data item and a delayed BasicHTTP `targetexpr` send;
   the `<param>` is a literal, so it counts nothing) raised `engine-documents`,
-  `datamodel-variable-init` and `send-dynamic-attr` by one each.
+  `datamodel-variable-init` and `send-dynamic-attr` by one each. ⚠ **2026-09-30,
+  deliberately:** the same document's `zeroexpr` send (a `delayexpr` that
+  evaluates to `0ms`, which the zero-delay case needs because a literal `0s`
+  is finished at build time and never reaches the run-time check) raised
+  `send-dynamic-attr` by one more, 64 to 65. It landed without this row, so
+  `main` read red until this entry.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
