@@ -139,6 +139,37 @@ class AnOwnerProfileReachesTheProduct(unittest.TestCase):
         self.assertTrue(answer.get("isError"), answer)
         self.assertIn("not both", answer["content"][0]["text"])
 
+    def test_a_name_the_document_defines_is_held_to_the_owners_spelling(self):
+        # A state id in the wrong case is refused and the record says how the
+        # style would spell it; the same document with the id respelled, under
+        # the same profile, is the control that the profile is what refuses.
+        snake = json.dumps({"record": "sce-authoring-profile", "v": 1, "name": "owner-review",
+                            "names": {"state": {"style": "snake"}}})
+        crooked = statechart(True).replace('id="a"', 'id="DoorOpen"') \
+            .replace('initial="a"', 'initial="DoorOpen"')
+        refused = call_tool("validate_scxml", {
+            "document_text": crooked, "document_name": "loop.scxml", "profile_text": snake})
+        self.assertEqual("refused", body(refused)["verdict"])
+        self.assertEqual(["profile/name-style"], codes(refused))
+        self.assertIn("door_open", body(refused)["diagnostics"][0]["message"])
+        respelled = statechart(True).replace('id="a"', 'id="door_open"') \
+            .replace('initial="a"', 'initial="door_open"')
+        kept = body(call_tool("validate_scxml", {
+            "document_text": respelled, "document_name": "loop.scxml", "profile_text": snake}))
+        self.assertEqual("accepted", kept["verdict"])
+        self.assertEqual(1, kept["manifest"]["profile"]["judged"])
+
+    def test_guidance_is_counted_and_nothing_pretends_it_was_checked(self):
+        guided = json.dumps({"record": "sce-authoring-profile", "v": 1,
+                             "guidance": ["Ask before writing."]})
+        held = body(self.validate(True, profile_text=guided))
+        self.assertEqual("accepted", held["verdict"])
+        self.assertEqual(1, held["manifest"]["profile"]["guidance"])
+        # A profile with no guidance names none, so a count of zero is not
+        # said as though it were a finding.
+        plain = body(self.validate(True, profile_text=PROFILE))
+        self.assertNotIn("guidance", plain["manifest"]["profile"])
+
 
 @unittest.skipUnless(_default_codegen().exists(),
                      "the record is the product's; build sce-codegen first")

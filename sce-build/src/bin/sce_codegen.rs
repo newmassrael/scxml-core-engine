@@ -3880,6 +3880,8 @@ fn profile_info(
         name: profile.name().map(str::to_string),
         sha256: profile.sha256().to_string(),
         judged: u32::try_from(judged).expect("a run does not name four billion statecharts"),
+        guidance: u32::try_from(profile.guidance().len())
+            .expect("a profile does not hold four billion instructions"),
     }
 }
 

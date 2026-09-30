@@ -116,14 +116,33 @@ fn codes(out: &Output) -> Vec<String> {
         .collect()
 }
 
-/// The manifest an accepted run wrote.
+/// The manifest an accepted run wrote, put through the checked-in schema
+/// first: a `profile` a consumer cannot read is no answer.
 fn manifest(out: &Output) -> serde_json::Value {
     assert!(
         out.status.success(),
         "the run was expected to be accepted: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    serde_json::from_slice(&out.stdout).expect("the manifest is one JSON line")
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("the manifest is one JSON line");
+    let schema: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../schemas/sce-manifest.v1.schema.json"),
+        )
+        .expect("read manifest schema"),
+    )
+    .expect("manifest schema is JSON");
+    let validator = jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .compile(&schema)
+        .expect("manifest schema compiles");
+    let violations: Vec<String> = match validator.validate(&manifest) {
+        Ok(()) => Vec::new(),
+        Err(errors) => errors.map(|e| e.to_string()).collect(),
+    };
+    assert!(violations.is_empty(), "{violations:?}\n{manifest}");
+    manifest
 }
 
 fn sha256_of(path: &Path) -> String {
@@ -654,4 +673,197 @@ fn an_acceptance_answers_only_for_the_profile_it_was_taken_under() {
         twice.to_string().contains("2 authoring profiles given"),
         "{twice}"
     );
+}
+
+// ── the names a document defines ──────────────────────────────────────
+
+/// A statechart whose ids are spelled three ways, that takes an event its
+/// schema declares and raises one of its own.
+const CROOKED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="job" initial="Idle" datamodel="ecmascript">
+  <sce:import src="job_requested.scxml" kind="event-schema" as="Requested"/>
+  <datamodel><data id="retryCount" expr="0"/></datamodel>
+  <state id="Idle">
+    <transition event="job.requested" target="running"/>
+  </state>
+  <state id="running">
+    <onentry><raise event="job.done"/></onentry>
+  </state>
+</scxml>
+"#;
+
+const NAMES: &str = r#"{"record":"sce-authoring-profile","v":1,"name":"owner-review",
+    "names":{"state":{"style":"snake"},"data":{"style":"snake"},"event":{"style":"upper_snake"}}}"#;
+
+/// What the document defines is judged and what its interface supplies is not:
+/// `job.requested` is spelled in lower case, the profile asks for upper snake
+/// case, and only `job.done` — the event the document raises itself — is
+/// refused for it.
+#[test]
+fn the_names_a_document_defines_are_held_to_the_profile_and_the_names_it_is_given_are_not() {
+    let dir = design("profile-names");
+    fs::write(dir.join("crooked.scxml"), CROOKED).expect("write");
+    fs::write(dir.join("names.json"), NAMES).expect("write");
+    fs::write(
+        dir.join("events-only.json"),
+        r#"{"record":"sce-authoring-profile","v":1,"names":{"event":{"style":"snake"}}}"#,
+    )
+    .expect("write");
+
+    let refused = run(
+        &dir,
+        &[
+            "check",
+            "crooked.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "names.json",
+        ],
+    );
+    assert_eq!(refused.status.code(), Some(3));
+    let found = records(&refused);
+    let said: Vec<(&str, &str)> = found
+        .iter()
+        .map(|r| (r["code"].as_str().unwrap(), r["actual"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        said,
+        [
+            ("profile/name-style", "Idle"),
+            ("profile/name-style", "job.done"),
+            ("profile/name-style", "retryCount"),
+        ],
+        "the state, the event the document raises and the data id; `running` is snake_case and \
+         `job.requested` is the schema's: {found:?}"
+    );
+    let message = found[0]["message"].as_str().expect("a message");
+    assert!(
+        message.contains("'idle'"),
+        "the respelling is offered: {message}"
+    );
+
+    // The control: a profile the same document keeps to is not refused, and
+    // the schema's own lower-case event is not what makes it pass.
+    let held = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "crooked.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "events-only.json",
+        ],
+    ));
+    assert_eq!(held["profile"]["judged"], 1, "{held}");
+}
+
+/// What the profile hands over that nothing checks is counted on the manifest,
+/// and a profile that hands nothing over leaves the count out.
+#[test]
+fn a_run_says_how_many_instructions_it_handed_over_that_nothing_checked() {
+    let dir = design("profile-guidance");
+    fs::write(
+        dir.join("guided.json"),
+        r#"{"record":"sce-authoring-profile","v":1,"interface":"closed",
+            "guidance":["Ask before writing.","Comment in the owner's language."]}"#,
+    )
+    .expect("write");
+    let guided = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "closed.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "guided.json",
+        ],
+    ));
+    assert_eq!(guided["profile"]["guidance"], 2, "{guided}");
+    let plain = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "closed.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "profile.json",
+        ],
+    ));
+    assert!(plain["profile"].get("guidance").is_none(), "{plain}");
+}
+
+/// An evidence with no anchor is refused under `evidence: anchored`, and one
+/// that names where the specification states it is not.
+#[test]
+fn an_evidence_with_no_anchor_is_refused_under_a_profile_that_asks_for_one() {
+    let dir = design("profile-evidence");
+    let basis = |evidence: &str| {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="gate" initial="a" datamodel="ecmascript">
+  <sce:kind-basis>
+    {evidence}
+    <sce:rejected kind="timer">it is not periodic</sce:rejected>
+  </sce:kind-basis>
+  <state id="a"/>
+</scxml>
+"#
+        )
+    };
+    fs::write(
+        dir.join("unanchored.scxml"),
+        basis("<sce:evidence>the gate opens on request</sce:evidence>"),
+    )
+    .expect("write");
+    fs::write(
+        dir.join("anchored.scxml"),
+        basis(r#"<sce:evidence provenance="SPEC@2#4.1">the gate opens on request</sce:evidence>"#),
+    )
+    .expect("write");
+    fs::write(
+        dir.join("anchors.json"),
+        r#"{"record":"sce-authoring-profile","v":1,"evidence":"anchored"}"#,
+    )
+    .expect("write");
+
+    let refused = run(
+        &dir,
+        &[
+            "check",
+            "unanchored.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "anchors.json",
+        ],
+    );
+    assert_eq!(refused.status.code(), Some(3));
+    assert_eq!(codes(&refused), ["profile/evidence-unanchored"]);
+    assert_eq!(
+        records(&refused)[0]["actual"],
+        "the gate opens on request",
+        "the record names the evidence, which is all that tells two of them apart"
+    );
+
+    let held = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "anchored.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "anchors.json",
+        ],
+    ));
+    assert_eq!(held["profile"]["judged"], 1, "{held}");
+    // And without the profile, the unanchored one is accepted: the refusal is
+    // the profile's.
+    manifest(&run(&dir, &["check", "unanchored.scxml", "-l", "rust"]));
 }

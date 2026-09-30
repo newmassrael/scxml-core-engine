@@ -939,6 +939,22 @@ pub enum DiagnosticCode {
     //    violation — the owner's expectation, said in a file. ──────────
     #[serde(rename = "profile/interface-not-closed")]
     ProfileInterfaceNotClosed,
+    // ── The `names` setting of an authoring profile: a name the document
+    //    defines that is not spelled the way its class is asked to be
+    //    (`crate::authoring_profile::names`). Each is a departure of a valid
+    //    document, and each names the rule it breaks. ─────────────────────
+    #[serde(rename = "profile/name-style")]
+    ProfileNameStyle,
+    #[serde(rename = "profile/name-limit")]
+    ProfileNameLimit,
+    #[serde(rename = "profile/event-structure")]
+    ProfileEventStructure,
+    #[serde(rename = "profile/event-prefix-of-another")]
+    ProfileEventPrefixOfAnother,
+    // ── The `evidence` setting: an `<sce:evidence>` that names no anchor in
+    //    the specification. ────────────────────────────────────────────────
+    #[serde(rename = "profile/evidence-unanchored")]
+    ProfileEvidenceUnanchored,
     // ── NL→IR Mapping Roadmap Item 3 — event-set
     //    exhaustiveness. Fires when a compound `<state>` has sibling
     //    children that disagree on whether a given event is handled,
@@ -3351,6 +3367,12 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ScxmlUndeclaredInterfaceEvent,
         // A statechart that does not declare the interface a profile requires
         ProfileInterfaceNotClosed,
+        // What a profile asks of the names a document defines, and of its evidence
+        ProfileNameStyle,
+        ProfileNameLimit,
+        ProfileEventStructure,
+        ProfileEventPrefixOfAnother,
+        ProfileEvidenceUnanchored,
         // NL→IR Mapping Roadmap Item 3 — event-set exhaustiveness
         ScxmlNonExhaustiveEventHandling,
         ScxmlContradictoryUnhandledDeclaration,
@@ -3942,7 +3964,12 @@ impl DiagnosticCode {
             ScxmlUndeclaredInterfaceEvent => Some("SCE Accepted Subset §2.16"),
             // ── An authoring profile is the owner's expectation, not a
             //    rule of W3C SCXML or of the grammar. ────────────────────
-            ProfileInterfaceNotClosed => Some("SCE Accepted Subset §2.17"),
+            ProfileInterfaceNotClosed
+            | ProfileNameStyle
+            | ProfileNameLimit
+            | ProfileEventStructure
+            | ProfileEventPrefixOfAnother
+            | ProfileEvidenceUnanchored => Some("SCE Accepted Subset §2.17"),
 
             // ── SCXML data models ──────────────────────────────────
             // The attribute is defined in §3.2 and the data models it
@@ -4746,6 +4773,11 @@ impl DiagnosticCode {
             ScxmlGeneratedNameCollision => "scxml/generated-name-collision",
             ScxmlUndeclaredInterfaceEvent => "scxml/undeclared-interface-event",
             ProfileInterfaceNotClosed => "profile/interface-not-closed",
+            ProfileNameStyle => "profile/name-style",
+            ProfileNameLimit => "profile/name-limit",
+            ProfileEventStructure => "profile/event-structure",
+            ProfileEventPrefixOfAnother => "profile/event-prefix-of-another",
+            ProfileEvidenceUnanchored => "profile/evidence-unanchored",
             ScxmlNonExhaustiveEventHandling => "scxml/non-exhaustive-event-handling",
             ScxmlContradictoryUnhandledDeclaration => "scxml/contradictory-unhandled-declaration",
             ScxmlStaleUnhandledDeclaration => "scxml/stale-unhandled-declaration",
@@ -5564,6 +5596,79 @@ fn profile_fields(e: &crate::authoring_profile::ProfileError) -> DiagnosticPaylo
             actual: Some(machine.clone()),
             fix: None,
             key_fragments: vec!["profile-interface-not-closed".to_string(), machine.clone()],
+        },
+        // A name departs from a rule about spelling. `actual` is the name as
+        // the document writes it; there is no `expected` and no fix, since the
+        // repair renames a definition and everything that refers to it, which
+        // is an edit at more than one place. The respelling is in the message.
+        // Keyed on the class, the name and the rule, and never on the
+        // profile's label: the same name breaking the same rule is one finding
+        // whichever file states it.
+        ProfileError::NameStyle {
+            class, name, style, ..
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ProfileNameStyle,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(name.clone()),
+            fix: None,
+            key_fragments: vec![
+                "profile-name-style".to_string(),
+                class.as_str().to_string(),
+                name.clone(),
+                style.as_str().to_string(),
+            ],
+        },
+        ProfileError::NameLimit {
+            class, name, limit, ..
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ProfileNameLimit,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(name.clone()),
+            fix: None,
+            key_fragments: vec![
+                "profile-name-limit".to_string(),
+                class.as_str().to_string(),
+                name.clone(),
+                limit.kind().to_string(),
+            ],
+        },
+        ProfileError::EventStructure { name, problem, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ProfileEventStructure,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(name.clone()),
+            fix: None,
+            key_fragments: vec![
+                "profile-event-structure".to_string(),
+                name.clone(),
+                problem.kind().to_string(),
+            ],
+        },
+        // `actual` is the shorter name — the one whose descriptor takes the
+        // other. Either name may be the one renamed.
+        ProfileError::EventPrefixOfAnother { prefix, longer, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ProfileEventPrefixOfAnother,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(prefix.clone()),
+            fix: None,
+            key_fragments: vec![
+                "profile-event-prefix-of-another".to_string(),
+                prefix.clone(),
+                longer.clone(),
+            ],
+        },
+        // `actual` is what the evidence says: it is the only thing that tells
+        // two unanchored evidence of one document apart.
+        ProfileError::EvidenceUnanchored { evidence, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ProfileEvidenceUnanchored,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(evidence.clone()),
+            fix: None,
+            key_fragments: vec!["profile-evidence-unanchored".to_string(), evidence.clone()],
         },
     }
 }
@@ -11173,6 +11278,88 @@ mod tests {
                 r##"{"v":1,"id":"fnv1a:5c4780f9abbfa1a1","code":"profile/interface-not-closed","stage":"validation","spec":"SCE Accepted Subset §2.17","message":"the authoring profile 'owner-review' requires sce:interface=\"closed\" on a statechart, and this one does not declare it; it imports event-schema(s) (CoinInserted, ProductSelected) that describe a boundary nothing holds it to — declare it closed on the root <scxml> and give every event it takes or sends an event-schema, or use a profile that does not require it: which boundary a design is held to is the owner's decision","actual":"vending"}"##,
             ),
             (
+                // A state id that is not in the style the profile asks state
+                // ids for (`crate::authoring_profile::names`). Keyed on the
+                // class, the name and the style, never on the profile's label.
+                "forge/profile-name-style",
+                crate::authoring_profile::ProfileError::NameStyle {
+                    profile: Some("owner-review".into()),
+                    class: crate::authoring_profile::names::NameClass::State,
+                    name: "DoorOpen".into(),
+                    part: "DoorOpen".into(),
+                    style: crate::authoring_profile::names::Style::Snake,
+                    respelled: Some("door_open".into()),
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:563bfc6e8d451277","code":"profile/name-style","stage":"validation","spec":"SCE Accepted Subset §2.17","message":"the authoring profile 'owner-review' spells state ids in snake_case, and the state id 'DoorOpen' is not (snake_case would spell it 'door_open') — rename it, and everything that refers to it, or use a profile that spells state ids another way","actual":"DoorOpen"}"##,
+            ),
+            (
+                // The same rule over an event, whose tokens are judged one by
+                // one: the message names the token that is not in the style.
+                "forge/profile-name-style-event-token",
+                crate::authoring_profile::ProfileError::NameStyle {
+                    profile: None,
+                    class: crate::authoring_profile::names::NameClass::Event,
+                    name: "door.Timer".into(),
+                    part: "Timer".into(),
+                    style: crate::authoring_profile::names::Style::Snake,
+                    respelled: Some("door.timer".into()),
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:895c46bcc40af053","code":"profile/name-style","stage":"validation","spec":"SCE Accepted Subset §2.17","message":"the authoring profile it was given spells event names in snake_case, and the token 'Timer' of the event name 'door.Timer' is not (snake_case would spell it 'door.timer') — rename it, and everything that refers to it, or use a profile that spells event names another way","actual":"door.Timer"}"##,
+            ),
+            (
+                // A name that is made of a word its class may not be made of.
+                "forge/profile-name-limit",
+                crate::authoring_profile::ProfileError::NameLimit {
+                    profile: Some("owner-review".into()),
+                    class: crate::authoring_profile::names::NameClass::Data,
+                    name: "infoHandler".into(),
+                    limit: crate::authoring_profile::names::NameLimit::ForbiddenWords(vec![
+                        "info".into(),
+                        "handler".into(),
+                    ]),
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:5f9b5436ea1272b2","code":"profile/name-limit","stage":"validation","spec":"SCE Accepted Subset §2.17","message":"the authoring profile 'owner-review' keeps the words 'info', 'handler' out of data ids, and the data id 'infoHandler' is made of them — choose another name for it, or use a profile that asks something else of data ids","actual":"infoHandler"}"##,
+            ),
+            (
+                // An event name with more dot-separated tokens than allowed.
+                "forge/profile-event-structure",
+                crate::authoring_profile::ProfileError::EventStructure {
+                    profile: Some("owner-review".into()),
+                    name: "door.close.request".into(),
+                    problem: crate::authoring_profile::names::EventProblem::TooManyTokens {
+                        max: 2,
+                        actual: 3,
+                    },
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:64be014a05aab1a3","code":"profile/event-structure","stage":"validation","spec":"SCE Accepted Subset §2.17","message":"the authoring profile 'owner-review' allows an event name at most 2 dot-separated token(s), and 'door.close.request' has 3 — rename the event, and everything that raises, sends or takes it, or use a profile that asks something else of event names","actual":"door.close.request"}"##,
+            ),
+            (
+                // An event name that is a token prefix of another, which W3C
+                // SCXML 3.12.1 matches by prefix.
+                "forge/profile-event-prefix-of-another",
+                crate::authoring_profile::ProfileError::EventPrefixOfAnother {
+                    profile: Some("owner-review".into()),
+                    prefix: "door.close".into(),
+                    longer: "door.close.request".into(),
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:2d3b65c52df3425e","code":"profile/event-prefix-of-another","stage":"validation","spec":"SCE Accepted Subset §2.17","message":"the authoring profile 'owner-review' keeps an event name from being a token prefix of another, and 'door.close' is one of 'door.close.request' — W3C SCXML 3.12.1 matches an event descriptor by token prefix, so a transition on 'door.close' also takes 'door.close.request'; rename one of them, or use a profile that does not ask for it","actual":"door.close"}"##,
+            ),
+            (
+                // An `<sce:evidence>` that names no anchor in the specification.
+                "forge/profile-evidence-unanchored",
+                crate::authoring_profile::ProfileError::EvidenceUnanchored {
+                    profile: Some("owner-review".into()),
+                    evidence: "the door closes by itself after a delay".into(),
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:2f8d06f5b714c068","code":"profile/evidence-unanchored","stage":"validation","spec":"SCE Accepted Subset §2.17","message":"the authoring profile 'owner-review' requires every <sce:evidence> to name where the specification states what it cites, and this one does not: 'the door closes by itself after a delay' — add the anchor in the sce:provenance form, or use a profile that does not ask for one","actual":"the door closes by itself after a delay"}"##,
+            ),
+            (
                 // Two states XML keeps apart by case, which every backend
                 // spells as one member (`crate::member_names`).
                 "forge/scxml-generated-name-collision",
@@ -16422,6 +16609,17 @@ mod tests {
             // that does not require it — and the second is the owner's
             // decision, not a value a fix could offer.
             | ProfileInterfaceNotClosed
+            // A rename of a definition and of everything that refers to it:
+            // an edit at more than one place, which no single `Fix` locates,
+            // and a name only the author can choose. The respelling a style
+            // implies is in the message.
+            | ProfileNameStyle
+            | ProfileNameLimit
+            | ProfileEventStructure
+            | ProfileEventPrefixOfAnother
+            // The anchor is a position in the owner's specification, which
+            // SCE cannot name.
+            | ProfileEvidenceUnanchored
             // NL→IR Mapping Roadmap Item 3 — non-exhaustive
             // event handling. Repair has three axes (add the
             // transition, add a parent-level fallthrough, or declare
@@ -16765,6 +16963,11 @@ mod tests {
                 | ScxmlGeneratedNameCollision
                 | ScxmlUndeclaredInterfaceEvent
                 | ProfileInterfaceNotClosed
+                | ProfileNameStyle
+                | ProfileNameLimit
+                | ProfileEventStructure
+                | ProfileEventPrefixOfAnother
+                | ProfileEvidenceUnanchored
                 | ScxmlNonExhaustiveEventHandling
                 | ScxmlContradictoryUnhandledDeclaration
                 | ScxmlStaleUnhandledDeclaration
@@ -17065,9 +17268,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            409,
+            414,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 409 distinct variants to match the DiagnosticCode \
+             expected 414 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -18009,7 +18212,12 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshEventSchemaMismatch
             | ScxmlGeneratedNameCollision
             | ScxmlUndeclaredInterfaceEvent
-            | ProfileInterfaceNotClosed => Registered(NoAnchor::NotYetMeasured),
+            | ProfileInterfaceNotClosed
+            | ProfileNameStyle
+            | ProfileNameLimit
+            | ProfileEventStructure
+            | ProfileEventPrefixOfAnother
+            | ProfileEvidenceUnanchored => Registered(NoAnchor::NotYetMeasured),
 
             // ── Registered(CoordinateNotThreaded, RaisedBeforeAnyResolvingStage) ──
             // Measured, and each here for its OWN reason.

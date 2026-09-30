@@ -243,6 +243,17 @@ pub struct ProfileInfo {
     /// applies to: the profile was given and held nothing to it, and the
     /// manifest says so instead of leaving a reader to assume it was.
     pub judged: u32,
+    /// How many instructions the profile hands to whoever writes the
+    /// document, none of which anything checks. Omitted when it hands none,
+    /// so a run under a profile that holds no guidance keeps its bytes. It is
+    /// here because a manifest that says `accepted` under a profile with
+    /// guidance would otherwise read as though the guidance had been held to.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub guidance: u32,
+}
+
+fn is_zero(count: &u32) -> bool {
+    *count == 0
 }
 
 /// Deploy declarations SCE records without acting on.
@@ -770,6 +781,65 @@ mod tests {
         assert!(
             !schema_violations(line).is_empty(),
             "schema must reject this record ({why}): {line}",
+        );
+    }
+
+    /// A manifest that names a profile says which file it was, how many
+    /// statecharts it judged and how many instructions it handed over that
+    /// nothing checked; the last is left out when it is none, so a run under a
+    /// profile with no guidance keeps the bytes it had.
+    #[test]
+    fn a_manifest_that_names_a_profile_says_how_much_of_it_was_checked() {
+        let with = |guidance: u32| {
+            let m = Manifest {
+                v: MANIFEST_SCHEMA_VERSION,
+                kind: ManifestKind::Check.as_str(),
+                generator: "deadbeefcafe",
+                document_kind: None,
+                artifacts: Vec::new(),
+                needs_script_engine: false,
+                script_engine_causes: &[],
+                script_engine_language: None,
+                needs_event_scheduler: false,
+                needs_host_processor: false,
+                needs_mesh_router: None,
+                needs_parent: None,
+                parent_sends: &[],
+                unresolved: &[],
+                open: Vec::new(),
+                profile: Some(ProfileInfo {
+                    name: Some("owner-review".to_string()),
+                    sha256: "0".repeat(64),
+                    judged: 1,
+                    guidance,
+                }),
+                host_processor_causes: &[],
+                host_processor_types: &[],
+                host_invoker_types: &[],
+                unreadable_variables: &[],
+                holder: None,
+                rejected: None,
+                deploy: None,
+                formatter: None,
+                languages: None,
+            };
+            m.to_line()
+        };
+        let none = with(0);
+        assert_valid(&none);
+        assert!(!none.contains("guidance"), "{none}");
+        let some = with(2);
+        assert_valid(&some);
+        assert!(some.contains("\"guidance\":2"), "{some}");
+        // The control the refusal starts from is the valid record above; a
+        // count of zero is spelled by leaving the key out.
+        assert_invalid(
+            &some.replace("\"guidance\":2", "\"guidance\":0"),
+            "guidance of zero",
+        );
+        assert_invalid(
+            &some.replace("\"guidance\":2", "\"guidance\":\"two\""),
+            "guidance that is not a count",
         );
     }
 

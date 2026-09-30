@@ -3,10 +3,85 @@
   "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-authoring-profile.v1.schema.json",
   "x-sce-schema-status": "pre-release",
   "title": "SCE authoring profile (wire schema v1)",
-  "description": "What a specification owner configures about how documents are authored for them: a file beside the specification, read by `sce-codegen check --profile`, `generate --profile` and `orchestrate --profile` and by the authoring MCP, and pinned by an acceptance record as part of what a design was authored from. It is data, never code, and names no subject matter. Every setting belongs to ONE class, fixed by this schema and not by the file: enforced (a draft that breaks it is refused), reported (a departure is listed and the owner decides), or guidance (handed to the author, checked by nothing). Version 1 holds one enforced setting. A build that meets a setting it does not know refuses the whole profile, so a profile written for a newer tool is never half applied. Authoritative reader is sce-build/src/authoring_profile.rs. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
+  "description": "What a specification owner configures about how documents are authored for them: a file beside the specification, read by `sce-codegen check --profile`, `generate --profile` and `orchestrate --profile` and by the authoring MCP, and pinned by an acceptance record as part of what a design was authored from. It is data, never code, and names no subject matter. Every setting belongs to ONE class, fixed by this schema and not by the file: enforced (a draft that breaks it is refused), reported (a departure is listed and the owner decides), or guidance (handed to the author, checked by nothing). A build that meets a setting it does not know refuses the whole profile, so a profile written for a newer tool is never half applied; a setting is added without a version bump. Every setting applies to statecharts; a forge document is not judged. Authoritative reader is sce-build/src/authoring_profile.rs. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
   "required": ["record", "v"],
   "additionalProperties": false,
+  "definitions": {
+    "style": {
+      "description": "A spelling convention for one token of a name, ASCII only: `snake` (door_open), `upper_snake` (DOOR_OPEN), `camel` (doorOpen), `pascal` (DoorOpen), `kebab` (door-open) or `lower` (dooropen). A capital letter in `camel` and `pascal` starts a word and is followed by a lower-case letter or a digit, so an acronym is spelled as a word (`doorHttp`, not `doorHTTP`).",
+      "enum": ["snake", "upper_snake", "camel", "pascal", "kebab", "lower"]
+    },
+    "word": {
+      "description": "One word: letters and digits, compared without regard to case against the words a name is made of (`doorOpen`, `door_open` and `DOOR-OPEN` are made of `door` and `open`).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9]+$"
+    },
+    "nameRule": {
+      "description": "What a name of one class must satisfy. Every entry is optional and a rule states at least one.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "style": { "$ref": "#/definitions/style" },
+        "max_length": {
+          "description": "The longest a whole name may be, in characters.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "forbidden_words": {
+          "description": "Words no name of this class is made of.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/word" }
+        },
+        "required_prefix": {
+          "description": "What every name of this class begins with, exactly as spelled.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "eventRule": {
+      "description": "A `nameRule` for event names, whose `style` applies to each dot-separated token, with the structure of an event name.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "style": { "$ref": "#/definitions/style" },
+        "max_length": { "type": "integer", "minimum": 1 },
+        "forbidden_words": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/word" }
+        },
+        "required_prefix": { "type": "string", "minLength": 1 },
+        "tokens": {
+          "description": "How many dot-separated tokens an event name has, at both ends inclusive; one end may be left out.",
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "min": { "type": "integer", "minimum": 1 },
+            "max": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "first_tokens": {
+          "description": "The tokens an event name may begin with, such as the subject of a `subject.verb` structure.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "prefix_free": {
+          "description": "`true`: no event name of the document is a token prefix of another. W3C SCXML 3.12.1 matches a descriptor by token prefix, so a transition on `door` also takes `door.open`; this keeps a name from taking what was meant for another.",
+          "type": "boolean"
+        }
+      }
+    }
+  },
   "properties": {
     "record": {
       "description": "Names the kind of file, so a JSON document of another kind is refused before its settings are read.",
@@ -22,8 +97,30 @@
       "minLength": 1
     },
     "interface": {
-      "description": "ENFORCED. `closed`: every statechart declares `sce:interface=\"closed\"`, so it takes and sends only the events its imported event-schemas declare (docs/SCE_ACCEPTED_SUBSET.md §2.16) and the boundary the owner accepted is the one it is held to. A statechart that does not is refused as `profile/interface-not-closed`. Absent: the interface is not constrained, and a statechart that leaves it open is the owner's choice. It applies to statecharts alone; a forge document has no such interface and is not judged.",
+      "description": "ENFORCED. `closed`: every statechart declares `sce:interface=\"closed\"`, so it takes and sends only the events its imported event-schemas declare (docs/SCE_ACCEPTED_SUBSET.md §2.16) and the boundary the owner accepted is the one it is held to. A statechart that does not is refused as `profile/interface-not-closed`. Absent: the interface is not constrained, and a statechart that leaves it open is the owner's choice.",
       "enum": ["closed"]
+    },
+    "names": {
+      "description": "ENFORCED. How the names a document DEFINES are spelled, by class: `document` (the `name` of the `<scxml>` root), `state` (the id of a state, parallel, final or history), `event` (an event the document raises, sends or takes by a literal name) and `data` (a `<data>` id). A name the interface supplies — an event an imported event-schema declares, and the platform's own `error.*` and `done.*` — is taken as it is, since it is a fact about the platform and not a choice of the author; a name that starts with an underscore belongs to the platform. A draft that breaks a rule is refused as `profile/name-style`, `profile/name-limit`, `profile/event-structure` or `profile/event-prefix-of-another`, each naming the rule.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "document": { "$ref": "#/definitions/nameRule" },
+        "state": { "$ref": "#/definitions/nameRule" },
+        "event": { "$ref": "#/definitions/eventRule" },
+        "data": { "$ref": "#/definitions/nameRule" }
+      }
+    },
+    "evidence": {
+      "description": "ENFORCED. `anchored`: every `<sce:evidence>` of the document's `<sce:kind-basis>` names where the specification states what it cites, in the `sce:provenance` form. An unanchored one is refused as `profile/evidence-unanchored`. Absent: an evidence may stand without an anchor.",
+      "enum": ["anchored"]
+    },
+    "guidance": {
+      "description": "GUIDANCE. Standing instructions to whoever writes the document — how to ask, what language the comments are in, what to do where the specification is silent. Handed over as written and checked by NOTHING: the product cannot see the conversation, and a run under a profile that has guidance says how many entries it handed over and that none was checked.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
     }
   }
 }

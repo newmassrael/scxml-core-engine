@@ -396,13 +396,32 @@ profile**, a small JSON file kept beside the specification
 `validate_scxml`, `validate_scxml_set`, `scxml_accept`,
 `scxml_acceptance_check` and `scxml_accepted_for` as `profile` or
 `profile_text`, it holds the design to what it says: a statechart that is valid
-and is not what the profile asks for is refused as
-`profile/interface-not-closed`, every statechart of a set is judged and every
-departure listed, and an accepted manifest names the profile by digest
-(`profile`: `name`, `sha256`, and `judged`, the number of statecharts it was
-applied to — zero for forge documents alone). Without a profile the tools hold
-the design to nothing the owner asked for, and the manifest carries no
-`profile`: that absence is how "checked under none" reads.
+and is not what the profile asks for is refused, every statechart of a set is
+judged and every departure listed, and an accepted manifest names the profile
+by digest (`profile`: `name`, `sha256`, and `judged`, the number of
+statecharts it was applied to — zero for forge documents alone). Without a
+profile the tools hold the design to nothing the owner asked for, and the
+manifest carries no `profile`: that absence is how "checked under none" reads.
+
+What a profile can hold a design to is what a machine can decide from the
+text. `interface: "closed"` asks that the statechart declare its interface
+closed (`profile/interface-not-closed`). `evidence: "anchored"` asks that every
+`<sce:evidence>` say where the specification states it
+(`profile/evidence-unanchored`). `names` asks how the names the document
+DEFINES are spelled, by class — the document's `name`, its state ids, its
+events and its data ids — as a style (`snake`, `upper_snake`, `camel`,
+`pascal`, `kebab`, `lower`), a maximum length, forbidden words and a required
+prefix, and for events the number of dot-separated tokens, the tokens a name
+may begin with, and that no event name is a token prefix of another
+(`profile/name-style`, `profile/name-limit`, `profile/event-structure`,
+`profile/event-prefix-of-another`). A name the document is given and did not
+choose — an event an imported event-schema declares, the platform's own
+`error.*` and `done.*` — is never judged. `guidance` is a list of standing
+instructions for whoever writes the draft, handed over as written and checked
+by nothing: the manifest says how many there were (`profile.guidance`), so
+`accepted` under a profile that has guidance is not read as though it had been
+held to. Which term in the specification a name stands for is a reading of the
+prose, and no setting here judges that.
 
 An acceptance pins the profile beside the specification and the decision
 record, so a design accepted under one profile is not the answer for another

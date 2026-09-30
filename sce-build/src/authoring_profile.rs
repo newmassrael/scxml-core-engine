@@ -32,13 +32,16 @@
 //!   guidance   handed to the author, checked by nothing, and said so
 //! ```
 //!
-//! Version 1 holds one setting, `interface`, and it is enforced: an interface
-//! is an attribute a statechart declares or does not, which a machine can
-//! check. The other classes have no setting yet, and a profile naming a
-//! setting this build does not know is REFUSED whole
-//! ([`ProfileUnusable`]): a profile written for a newer tool that was half
-//! applied would say "checked under this profile" of a document it never
-//! held to it.
+//! The settings a build knows are the rows of [`SETTINGS`]. The enforced ones
+//! are the ones a machine can decide from the text: whether the interface is
+//! declared closed, how the names a document defines are spelled
+//! ([`names`]), and whether every piece of evidence for the document's kind
+//! names an anchor. The one guidance setting is a list of instructions to the
+//! author that nothing checks, which a run under the profile says in as many
+//! words. No setting is reported yet. A profile naming a setting this build
+//! does not know is REFUSED whole ([`ProfileUnusable`]): a profile written
+//! for a newer tool that was half applied would say "checked under this
+//! profile" of a document it never held to it.
 //!
 //! # Part of the attempt key
 //!
@@ -55,6 +58,9 @@
 //! `<sce:kind-basis>`, and acceptance by a person. Nothing here can turn
 //! those off, and no setting is named so that it could.
 
+mod messages;
+pub mod names;
+
 use std::path::Path;
 
 use serde::Deserialize;
@@ -62,6 +68,7 @@ use serde::Deserialize;
 use crate::forge::error::{ForgeError, Located};
 use crate::generator_witness::{hex_encode, sha256_bytes};
 use crate::model::SCXMLModel;
+use names::{Departure, EventProblem, NameClass, NameLimit, NamesRule, Style};
 
 /// The value a profile's `record` field holds. A JSON file naming any other
 /// kind is refused before its settings are read.
@@ -91,7 +98,12 @@ pub enum SettingClass {
 /// Every setting the schema knows, with the class the schema fixes. One
 /// table, read by the schema-drift guard, so a setting cannot be added to the
 /// schema or to the reader alone.
-pub const SETTINGS: &[(&str, SettingClass)] = &[("interface", SettingClass::Enforced)];
+pub const SETTINGS: &[(&str, SettingClass)] = &[
+    ("interface", SettingClass::Enforced),
+    ("names", SettingClass::Enforced),
+    ("evidence", SettingClass::Enforced),
+    ("guidance", SettingClass::Guidance),
+];
 
 /// What `interface` asks of a statechart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -99,6 +111,15 @@ pub const SETTINGS: &[(&str, SettingClass)] = &[("interface", SettingClass::Enfo
 pub enum InterfaceRule {
     /// Every statechart declares `sce:interface="closed"`.
     Closed,
+}
+
+/// What `evidence` asks of a statechart's `<sce:kind-basis>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EvidenceRule {
+    /// Every `<sce:evidence>` names where the specification states what it
+    /// cites.
+    Anchored,
 }
 
 /// What follows the `record` and `v` header. `deny_unknown_fields` is the
@@ -112,6 +133,9 @@ pub enum InterfaceRule {
 struct Settings {
     name: Option<String>,
     interface: Option<InterfaceRule>,
+    names: Option<NamesRule>,
+    evidence: Option<EvidenceRule>,
+    guidance: Option<Vec<String>>,
 }
 
 /// Why a profile cannot be used. The wire `kind` of `cli/profile-unusable`:
@@ -182,14 +206,72 @@ pub enum ProfileError {
         /// boundary with, which nothing then holds it to.
         imports: Vec<String>,
     },
+    /// A name is not spelled in the style the profile asks its class for.
+    #[error("{}", messages::name_style(profile.as_deref(), *class, name, part, *style, respelled.as_deref()))]
+    NameStyle {
+        /// The profile's `name`, when it has one.
+        profile: Option<String>,
+        /// Which class of name.
+        class: NameClass,
+        /// The name as the document writes it.
+        name: String,
+        /// The token of the name that is not in the style: the name itself,
+        /// unless the class is `event`, whose tokens are judged one by one.
+        part: String,
+        /// The style the class is asked for.
+        style: Style,
+        /// The name respelled in that style, when the style accepts a
+        /// respelling of it.
+        respelled: Option<String>,
+    },
+    /// A name breaks a limit the profile sets its class: a word it may not be
+    /// made of, a length, or a prefix.
+    #[error("{}", messages::name_limit(profile.as_deref(), *class, name, limit))]
+    NameLimit {
+        /// The profile's `name`, when it has one.
+        profile: Option<String>,
+        /// Which class of name.
+        class: NameClass,
+        /// The name as the document writes it.
+        name: String,
+        /// Which limit, and how the name breaks it.
+        limit: NameLimit,
+    },
+    /// The structure of an event name is not what the profile asks for.
+    #[error("{}", messages::event_structure(profile.as_deref(), name, problem))]
+    EventStructure {
+        /// The profile's `name`, when it has one.
+        profile: Option<String>,
+        /// The event name as the document writes it.
+        name: String,
+        /// What is wrong with its structure.
+        problem: EventProblem,
+    },
+    /// An event name is a token prefix of another, so a descriptor on the
+    /// shorter one also matches the longer (W3C SCXML 3.12.1).
+    #[error("{}", messages::event_prefix(profile.as_deref(), prefix, longer))]
+    EventPrefixOfAnother {
+        /// The profile's `name`, when it has one.
+        profile: Option<String>,
+        /// The shorter name.
+        prefix: String,
+        /// The name it is a token prefix of.
+        longer: String,
+    },
+    /// An `<sce:evidence>` of the document's kind basis names no anchor in the
+    /// specification.
+    #[error("{}", messages::evidence_unanchored(profile.as_deref(), evidence))]
+    EvidenceUnanchored {
+        /// The profile's `name`, when it has one.
+        profile: Option<String>,
+        /// What the evidence says, as the author wrote it.
+        evidence: String,
+    },
 }
 
 /// [`ProfileError::InterfaceNotClosed`]'s message.
 fn interface_not_closed_message(profile: Option<&str>, imports: &[String]) -> String {
-    let subject = match profile {
-        Some(name) => format!("the authoring profile '{name}'"),
-        None => "the authoring profile it was given".to_string(),
-    };
+    let subject = messages::subject(profile);
     let described = if imports.is_empty() {
         String::new()
     } else {
@@ -211,6 +293,9 @@ fn interface_not_closed_message(profile: Option<&str>, imports: &[String]) -> St
 pub struct AuthoringProfile {
     name: Option<String>,
     interface: Option<InterfaceRule>,
+    names: Option<NamesRule>,
+    evidence: Option<EvidenceRule>,
+    guidance: Vec<String>,
     sha256: String,
 }
 
@@ -267,9 +352,28 @@ impl AuthoringProfile {
                 "`name` is empty; leave it out or give it a label".to_string(),
             ));
         }
+        // What the schema says with `minProperties`, `minItems` and `pattern`
+        // and `serde` cannot: a setting that is present says something.
+        if let Some(fault) = settings.names.as_ref().and_then(NamesRule::refusal) {
+            return Err(unusable(
+                ProfileFault::InvalidShape,
+                format!("not an authoring profile: {fault}"),
+            ));
+        }
+        if let Some(guidance) = &settings.guidance {
+            if guidance.is_empty() || guidance.iter().any(|entry| entry.is_empty()) {
+                return Err(unusable(
+                    ProfileFault::InvalidShape,
+                    "not an authoring profile: `guidance` lists an instruction or none".to_string(),
+                ));
+            }
+        }
         Ok(Self {
             name: settings.name,
             interface: settings.interface,
+            names: settings.names,
+            evidence: settings.evidence,
+            guidance: settings.guidance.unwrap_or_default(),
             sha256: hex_encode(&sha256_bytes(text.as_bytes())),
         })
     }
@@ -295,9 +399,15 @@ impl AuthoringProfile {
     }
 
     /// Whether the profile asks anything of a statechart at all — false for a
-    /// profile that holds only settings no statechart is judged by.
+    /// profile that holds only settings no statechart is judged by, or none.
     pub fn judges_statecharts(&self) -> bool {
-        self.interface.is_some()
+        self.interface.is_some() || self.names.is_some() || self.evidence.is_some()
+    }
+
+    /// The instructions the profile hands to whoever writes the document, in
+    /// the order the owner wrote them. Nothing checks any of them.
+    pub fn guidance(&self) -> &[String] {
+        &self.guidance
     }
 
     /// Every way a statechart departs from the profile's ENFORCED settings,
@@ -306,19 +416,86 @@ impl AuthoringProfile {
     /// The model is the one the build compiles — the caller parsed the file
     /// through the production parser — so what is judged is what would be
     /// built, not a second reading of the text.
+    ///
+    /// In the order the settings are described: the interface, the names, the
+    /// evidence.
     pub fn judge_statechart(
         &self,
         model: &SCXMLModel,
         diag_label: &str,
     ) -> Vec<Located<ForgeError>> {
+        let profile = || self.name.clone();
         let mut findings = Vec::new();
+        let mut place = |error: ProfileError, at: Option<&crate::forge::error::SourceLocation>| {
+            findings.push(model.locate(ForgeError::Profile(Box::new(error)), at, diag_label));
+        };
         if self.interface == Some(InterfaceRule::Closed) && !model.interface_closed {
-            let error = ForgeError::Profile(Box::new(ProfileError::InterfaceNotClosed {
-                profile: self.name.clone(),
-                machine: model.name.clone(),
-                imports: crate::open_matters::interface_left_open(model),
-            }));
-            findings.push(model.locate(error, model.source_location.as_ref(), diag_label));
+            place(
+                ProfileError::InterfaceNotClosed {
+                    profile: profile(),
+                    machine: model.name.clone(),
+                    imports: crate::open_matters::interface_left_open(model),
+                },
+                model.source_location.as_ref(),
+            );
+        }
+        if let Some(rule) = &self.names {
+            for found in names::judge(rule, model) {
+                let error = match found.departure {
+                    Departure::Style {
+                        class,
+                        name,
+                        part,
+                        style,
+                        respelled,
+                    } => ProfileError::NameStyle {
+                        profile: profile(),
+                        class,
+                        name,
+                        part,
+                        style,
+                        respelled,
+                    },
+                    Departure::Limit { class, name, limit } => ProfileError::NameLimit {
+                        profile: profile(),
+                        class,
+                        name,
+                        limit,
+                    },
+                    Departure::Event { name, problem } => ProfileError::EventStructure {
+                        profile: profile(),
+                        name,
+                        problem,
+                    },
+                    Departure::PrefixOfAnother { prefix, longer } => {
+                        ProfileError::EventPrefixOfAnother {
+                            profile: profile(),
+                            prefix,
+                            longer,
+                        }
+                    }
+                };
+                // A name the walk found has its own row; one it could not
+                // place (a raise inside a `<finalize>`) is put on the root,
+                // which is where the document as a whole is.
+                place(error, found.at.as_ref().or(model.source_location.as_ref()));
+            }
+        }
+        if self.evidence == Some(EvidenceRule::Anchored) {
+            let unanchored = model
+                .kind_basis
+                .iter()
+                .flat_map(|basis| basis.evidence.iter())
+                .filter(|evidence| evidence.provenance.is_none());
+            for evidence in unanchored {
+                place(
+                    ProfileError::EvidenceUnanchored {
+                        profile: profile(),
+                        evidence: evidence.text.clone(),
+                    },
+                    model.source_location.as_ref(),
+                );
+            }
         }
         findings
     }
@@ -544,5 +721,234 @@ mod tests {
         assert!(profile
             .judge_statechart(&statechart(""), "gate.scxml")
             .is_empty());
+    }
+
+    /// A profile that holds every kind of setting.
+    const EVERYTHING: &str = r#"{
+        "record":"sce-authoring-profile","v":1,"name":"owner-review",
+        "interface":"closed","evidence":"anchored",
+        "names":{
+            "document":{"style":"snake","max_length":24},
+            "state":{"style":"snake","forbidden_words":["state"],"required_prefix":"s"},
+            "event":{"style":"snake","tokens":{"min":2,"max":3},"first_tokens":["door","lock"],"prefix_free":true},
+            "data":{"style":"camel"}
+        },
+        "guidance":["Ask before writing.","Write comments in the owner's language."]
+    }"#;
+
+    #[test]
+    fn a_profile_that_holds_every_kind_of_setting_is_read_and_is_the_schemas() {
+        let instance: serde_json::Value = serde_json::from_str(EVERYTHING).expect("JSON");
+        assert!(
+            violations(&instance).is_empty(),
+            "{:?}",
+            violations(&instance)
+        );
+        let profile = AuthoringProfile::from_text(EVERYTHING).expect("reads");
+        assert!(profile.judges_statecharts());
+        assert_eq!(
+            profile.guidance(),
+            [
+                "Ask before writing.",
+                "Write comments in the owner's language."
+            ]
+        );
+        // Guidance alone asks nothing of a statechart: it is handed over, and
+        // nothing checks it.
+        let only_guidance = AuthoringProfile::from_text(
+            r#"{"record":"sce-authoring-profile","v":1,"guidance":["Ask first."]}"#,
+        )
+        .expect("reads");
+        assert!(!only_guidance.judges_statecharts());
+        assert_eq!(only_guidance.guidance(), ["Ask first."]);
+        assert!(only_guidance
+            .judge_statechart(&statechart(""), "gate.scxml")
+            .is_empty());
+    }
+
+    /// Settings the schema refuses, one thing changed in each, and the reader
+    /// refuses every one of them too: the two are one contract. What only the
+    /// reader can say — a range that runs backwards, a word listed twice in
+    /// two cases — is not in this table.
+    #[test]
+    fn the_reader_refuses_what_the_schema_refuses() {
+        let control: serde_json::Value = serde_json::from_str(EVERYTHING).expect("JSON");
+        assert!(
+            violations(&control).is_empty(),
+            "the control has to be valid"
+        );
+        let changes: [(&str, serde_json::Value); 17] = [
+            ("names", serde_json::json!({})),
+            ("names", serde_json::json!({"state": {}})),
+            ("names", serde_json::json!({"state": {"style": "title"}})),
+            ("names", serde_json::json!({"state": {"colour": "red"}})),
+            ("names", serde_json::json!({"state": {"max_length": 0}})),
+            (
+                "names",
+                serde_json::json!({"state": {"forbidden_words": []}}),
+            ),
+            (
+                "names",
+                serde_json::json!({"state": {"forbidden_words": ["a b"]}}),
+            ),
+            (
+                "names",
+                serde_json::json!({"state": {"required_prefix": ""}}),
+            ),
+            ("names", serde_json::json!({"event": {"tokens": {}}})),
+            (
+                "names",
+                serde_json::json!({"event": {"tokens": {"min": 0}}}),
+            ),
+            ("names", serde_json::json!({"event": {"first_tokens": []}})),
+            (
+                "names",
+                serde_json::json!({"event": {"first_tokens": ["a", "a"]}}),
+            ),
+            (
+                "names",
+                serde_json::json!({"transition": {"style": "snake"}}),
+            ),
+            ("evidence", serde_json::json!("cited")),
+            ("guidance", serde_json::json!([])),
+            ("guidance", serde_json::json!([""])),
+            ("guidance", serde_json::json!("ask first")),
+        ];
+        for (setting, value) in changes {
+            let mut changed = control.clone();
+            changed[setting] = value.clone();
+            assert!(
+                !violations(&changed).is_empty(),
+                "the schema accepted {setting} = {value}"
+            );
+            let text = changed.to_string();
+            let refused = AuthoringProfile::from_text(&text);
+            assert!(
+                refused.is_err(),
+                "the reader accepted {setting} = {value}, which the schema refuses"
+            );
+        }
+    }
+
+    #[test]
+    fn what_only_the_reader_can_say_is_refused_by_it() {
+        for (setting, said) in [
+            (r#"{"event":{"tokens":{"min":3,"max":2}}}"#, "at most 2"),
+            (
+                r#"{"state":{"forbidden_words":["Open","open"]}}"#,
+                "lists a word twice",
+            ),
+        ] {
+            let text = format!(r#"{{"record":"sce-authoring-profile","v":1,"names":{setting}}}"#);
+            let refused = AuthoringProfile::from_text(&text).expect_err(&text);
+            assert_eq!(refused.kind, ProfileFault::InvalidShape);
+            assert!(refused.detail.contains(said), "{refused}");
+        }
+    }
+
+    /// One statechart that breaks the interface, every kind of name rule and
+    /// the evidence rule, so the order the findings come in is pinned: the
+    /// interface, then the names by class, then the evidence.
+    fn crooked() -> SCXMLModel {
+        crate::parser::SCXMLParser::new()
+            .parse_string(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                          xmlns:sce="http://sce.dev/ext" version="1.0"
+                          name="GateControllerForTheMainEntrance" initial="idle"
+                          datamodel="ecmascript">
+                     <sce:kind-basis>
+                       <sce:evidence provenance="SPEC@2#4.1">the gate opens on request</sce:evidence>
+                       <sce:evidence>the gate closes after a delay</sce:evidence>
+                       <sce:rejected kind="timer">it is not periodic</sce:rejected>
+                     </sce:kind-basis>
+                     <datamodel><data id="open_count" expr="0"/></datamodel>
+                     <state id="idle">
+                       <transition event="gate.open" target="OpenState"/>
+                     </state>
+                     <state id="OpenState">
+                       <transition event="gate.open.now" target="idle"/>
+                     </state>
+                   </scxml>"#,
+                "gate",
+            )
+            .expect("parses")
+    }
+
+    fn codes_of(findings: &[Located<ForgeError>]) -> Vec<&'static str> {
+        use crate::forge::diagnostic::ToDiagnostics;
+        findings
+            .iter()
+            .map(|found| found.error.to_diagnostics()[0].code.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn a_crooked_statechart_is_refused_in_the_order_the_settings_are_described() {
+        let profile = AuthoringProfile::from_text(EVERYTHING).expect("reads");
+        let found = profile.judge_statechart(&crooked(), "gate.scxml");
+        assert_eq!(
+            codes_of(&found),
+            [
+                // interface
+                "profile/interface-not-closed",
+                // document: the name is neither snake_case nor at most 24 long
+                "profile/name-style",
+                "profile/name-limit",
+                // states: OpenState is not snake_case, is made of `state`,
+                // and does not begin with `s`; idle does not begin with `s`
+                "profile/name-limit",
+                "profile/name-style",
+                "profile/name-limit",
+                "profile/name-limit",
+                // events: gate.open is a prefix of gate.open.now, and the
+                // first token gate is not one the profile lists
+                "profile/event-structure",
+                "profile/event-structure",
+                "profile/event-prefix-of-another",
+                // data: open_count is snake_case where camel was asked for
+                "profile/name-style",
+                // the evidence with no anchor
+                "profile/evidence-unanchored",
+            ],
+            "{found:#?}"
+        );
+    }
+
+    #[test]
+    fn a_statechart_that_keeps_to_every_setting_is_not_refused() {
+        let profile = AuthoringProfile::from_text(EVERYTHING).expect("reads");
+        let kept = crate::parser::SCXMLParser::new()
+            .parse_string(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                          xmlns:sce="http://sce.dev/ext" version="1.0"
+                          name="gate" initial="s_idle" datamodel="ecmascript"
+                          sce:interface="closed">
+                     <sce:kind-basis>
+                       <sce:evidence provenance="SPEC@2#4.1">the gate opens on request</sce:evidence>
+                       <sce:rejected kind="timer">it is not periodic</sce:rejected>
+                     </sce:kind-basis>
+                     <datamodel><data id="openCount" expr="0"/></datamodel>
+                     <state id="s_idle">
+                       <transition event="door.open" target="s_up"/>
+                     </state>
+                     <state id="s_up">
+                       <transition event="door.shut.now" target="s_idle"/>
+                     </state>
+                   </scxml>"#,
+                "gate",
+            )
+            .expect("parses");
+        let found = profile.judge_statechart(&kept, "gate.scxml");
+        assert!(found.is_empty(), "{found:#?}");
+    }
+
+    #[test]
+    fn a_profile_without_a_setting_does_not_judge_what_it_asks_nothing_about() {
+        let profile = AuthoringProfile::from_text(
+            r#"{"record":"sce-authoring-profile","v":1,"names":{"data":{"style":"camel"}}}"#,
+        )
+        .expect("reads");
+        let found = profile.judge_statechart(&crooked(), "gate.scxml");
+        assert_eq!(codes_of(&found), ["profile/name-style"], "{found:#?}");
     }
 }

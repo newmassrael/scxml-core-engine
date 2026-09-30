@@ -2983,44 +2983,101 @@ a feature that means something else, so intent is stated instead, in a file
 the owner keeps beside the specification:
 
 ```json
-{ "record": "sce-authoring-profile", "v": 1, "name": "owner-review", "interface": "closed" }
+{ "record": "sce-authoring-profile", "v": 1, "name": "owner-review",
+  "interface": "closed", "evidence": "anchored",
+  "names": { "state": { "style": "snake" },
+             "event": { "style": "snake", "tokens": { "min": 2, "max": 3 }, "prefix_free": true } },
+  "guidance": ["Ask before writing."] }
 ```
 
-| Field | Meaning |
-|---|---|
-| `record`, `v` | `"sce-authoring-profile"` and `1`. Read and checked before any setting, so a profile from a newer tool is refused for its version. |
-| `name` | A label a report may print. Configures nothing, and is part of the file's bytes like every other character. |
-| `interface` | `"closed"`: every statechart declares `sce:interface="closed"` (§2.16). Absent: the interface is not constrained. |
+| Field | Class | Meaning |
+|---|---|---|
+| `record`, `v` | | `"sce-authoring-profile"` and `1`. Read and checked before any setting, so a profile from a newer tool is refused for its version. |
+| `name` | | A label a report may print. Configures nothing, and is part of the file's bytes like every other character. |
+| `interface` | enforced | `"closed"`: every statechart declares `sce:interface="closed"` (§2.16). Absent: the interface is not constrained. |
+| `names` | enforced | How the names a document defines are spelled, by class of name. See below. |
+| `evidence` | enforced | `"anchored"`: every `<sce:evidence>` of the `<sce:kind-basis>` carries a `provenance` anchor. An unanchored one is refused as `profile/evidence-unanchored`, quoting the evidence. |
+| `guidance` | guidance | Instructions to whoever writes the document, handed over as written. Nothing checks them. |
 
 Every setting belongs to one class and the schema fixes it, not the file:
 **enforced** (a draft that breaks it is refused), **reported** (a departure is
 listed and the owner decides) or **guidance** (handed to the author, checked by
-nothing, and said so). Version 1 holds one setting, `interface`, and it is
-enforced. A profile that names a setting this build does not know, a value a
-setting does not take, another `record`, or a version it does not read is
-refused **whole** as `cli/profile-unusable`; applying the part that was
-understood would say a document was held to a profile it was not. The record
-is keyed on which refusal it is, and the path the caller typed is its `actual`.
+nothing, and said so). No setting is reported yet; the class exists so that a
+setting that can only be listed, such as a term dictionary, has a place that
+does not pretend to refuse. A profile that names a setting this build does not
+know, a value a setting does not take, another `record`, or a version it does
+not read is refused **whole** as `cli/profile-unusable`; applying the part that
+was understood would say a document was held to a profile it was not. The
+record is keyed on which refusal it is, and the path the caller typed is its
+`actual`. A setting that is present says something: an empty `names`, a rule
+with no entry, a list with nothing in it or a range that runs backwards is
+refused the same way, by the reader and by the schema.
 
 `--profile <PATH>` is taken by `check` (one document and a document set),
 `generate` and `orchestrate`, which judge the same way — `orchestrate` is the
 producer a set-route `check` predicts, and `cli_orchestrate_check_parity`
 holds the two flag lists together. A statechart that is valid and is not what
-the profile asks for is refused as `profile/interface-not-closed`, naming the
-statechart, the profile's `name` when it has one, and the event-schemas it
-imports and so describes a boundary with; every finding of every statechart is
-listed, since the owner is deciding about the whole design. On a set the
-profile is judged after `--strict-unresolved` and before `--lint`, the order a
-single document asks them in, and a statechart that does not read is left to
-the compile that follows. It is judged on the model as parsed, before the
-analyzer, so a design the profile refuses generates nothing.
+the profile asks for is refused, and every finding of every statechart is
+listed, since the owner is deciding about the whole design: in the order the
+settings are described (the interface, the names by class, the evidence). On a
+set the profile is judged after `--strict-unresolved` and before `--lint`, the
+order a single document asks them in, and a statechart that does not read is
+left to the compile that follows. It is judged on the model as parsed, before
+the analyzer, so a design the profile refuses generates nothing.
 
-A forge document is not a statechart and no version-1 setting applies to it.
-The manifest's optional `profile` object carries the profile's `name`, its
-`sha256` and `judged`, the number of statecharts it was applied to, so a run of
-forge documents alone reports `0` and is not read as a pass; a run given no
-profile omits the object, and one that failed the profile emits no manifest.
-The in-memory path, which reads no sibling documents, takes no profile.
+`profile/interface-not-closed` names the statechart, the profile's `name` when
+it has one, and the event-schemas it imports and so describes a boundary with.
+
+#### The `names` setting
+
+Four classes of name are the ones a document introduces: `document` (the `name`
+of the `<scxml>` root), `state` (the id of a state, parallel, final or history),
+`event` (an event the document raises, sends or takes by a literal name) and
+`data` (a `<data>` id). Each takes a rule with any of `style`, `max_length`,
+`forbidden_words` and `required_prefix`; `event` takes in addition `tokens`
+(how many dot-separated tokens, `min` and `max`), `first_tokens` (the tokens a
+name may begin with) and `prefix_free`.
+
+What a document does not choose is not judged. An event an imported
+event-schema declares is a fact about the platform the schema describes, and
+is taken as it is, wherever the style would have spelled it otherwise. The
+platform's own events (`error.*`, `done.state.*`, `done.invoke.*`), any name
+that begins with an underscore, and a descriptor that is a pattern (`door.*`,
+which matches events and declares none, §3.12.1) are nobody's choice either.
+
+A style is ASCII and is applied to one token: a state id, a data id, the
+document name, or each dot-separated token of an event name. `snake` is
+`door_open`, `upper_snake` `DOOR_OPEN`, `camel` `doorOpen`, `pascal`
+`DoorOpen`, `kebab` `door-open` and `lower` `dooropen`. A capital letter in
+`camel` and `pascal` starts a word and is followed by a lower-case letter or a
+digit, so an acronym is a word (`doorHttp`, not `doorHTTP`), which is what
+makes the rule decidable and also means a one-letter word after the first has
+no camel or Pascal spelling. A forbidden word is compared with the words a name
+is made of, without regard to case, so `door`, `Door` and `DOOR_OPEN` all
+contain `door`. The respelling a style implies is in the message when the style
+accepts it, and only then.
+
+`prefix_free` is a correctness rule in the form of a naming rule. W3C SCXML
+3.12.1 matches an event descriptor by token prefix, so a transition on `door`
+also takes `door.open`. With the rule on, no literal event name of the
+document, and no name its event-schemas declare, is a token prefix of another;
+the finding is made once per pair, on the shorter name.
+
+The five codes are `profile/name-style`, `profile/name-limit` (a forbidden word,
+a length, a prefix), `profile/event-structure` (the token count or the first
+token) and `profile/event-prefix-of-another`, each keyed on the class, the name
+and the rule and never on the profile's label, and none carrying a `fix`: the
+repair renames a definition and everything that refers to it, an edit at more
+than one place that no single `fix` locates.
+
+A forge document is not a statechart and no setting applies to it. The
+manifest's optional `profile` object carries the profile's `name`, its
+`sha256`, `judged` (the number of statecharts it was applied to) and
+`guidance` (how many instructions it handed over, none of which was checked;
+omitted when there are none). A run of forge documents alone reports
+`judged: 0` and is not read as a pass; a run given no profile omits the
+object, and one that failed the profile emits no manifest. The in-memory path,
+which reads no sibling documents, takes no profile.
 
 An acceptance record pins the profile beside the specification and the
 decision record, under the role `profile`, and holds it to the same rules: at
@@ -4064,6 +4121,11 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/generated-name-collision` | Validation |
 | `scxml/undeclared-interface-event` | Validation |
 | `profile/interface-not-closed` | Validation |
+| `profile/name-style` | Validation |
+| `profile/name-limit` | Validation |
+| `profile/event-structure` | Validation |
+| `profile/event-prefix-of-another` | Validation |
+| `profile/evidence-unanchored` | Validation |
 | `scxml/non-exhaustive-event-handling` | Validation |
 | `scxml/contradictory-unhandled-declaration` | Validation |
 | `scxml/stale-unhandled-declaration` | Validation |
