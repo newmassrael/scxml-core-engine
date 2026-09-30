@@ -125,6 +125,24 @@
     U32: integer(false, 32),
     U64: integer(false, 64),
     field: field,
+    append: function (list, capacity, value) {
+      if (!Array.isArray(list)) {
+        fail('expected a list, read ' + String(list));
+      }
+      if (list.length >= capacity) {
+        fail('the list already holds its capacity of ' + String(capacity));
+      }
+      return list.concat([value]);
+    },
+    set: function (record, field, value) {
+      if (record === null || typeof record !== 'object' || Array.isArray(record)) {
+        fail('expected a record, read ' + String(record));
+      }
+      var next = {};
+      Object.keys(record).forEach(function (key) { next[key] = record[key]; });
+      next[field] = value;
+      return next;
+    },
     at: function (collection, index) {
       if (!Number.isSafeInteger(index) || index < 0 || index >= collection.length) {
         fail('the index ' + String(index) + ' is outside the collection');

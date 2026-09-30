@@ -1,0 +1,25 @@
+{
+  "machine": "static_record_fields",
+  "about": "A record variable read and updated a field at a time: `next` moves the shown day on to the twenty-eighth and no further, a picked day replaces all three fields from the event's payload, and `rewind` takes the year below what a uint16 holds — that assignment is skipped, error.execution says so, and the assignment after it in the same block is not processed, so the record keeps every field. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "built whole from its <sce:set>s",
+      "expect": { "state": "showing", "variables": { "shown": { "year": 2026, "month": 9, "dayOfMonth": 24 }, "refusals": 0 } } },
+
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2026, "month": 9, "dayOfMonth": 25 } } } },
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2026, "month": 9, "dayOfMonth": 26 } } } },
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2026, "month": 9, "dayOfMonth": 27 } } } },
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2026, "month": 9, "dayOfMonth": 28 } } } },
+    { "note": "the guard `shown.dayOfMonth < 28` is false: no transition is taken",
+      "event": "next", "expect": { "variables": { "shown": { "year": 2026, "month": 9, "dayOfMonth": 28 } } } },
+
+    { "note": "a picked day replaces the record field by field, from the typed payload",
+      "event": "day.picked", "data": { "year": 2027, "month": 1, "dayOfMonth": 3 },
+      "expect": { "variables": { "shown": { "year": 2027, "month": 1, "dayOfMonth": 3 }, "refusals": 0 } } },
+
+    { "note": "2027 - 5000 is below a uint16: that assignment is skipped and says so, and the one after it is not processed",
+      "event": "rewind",
+      "expect": { "variables": { "shown": { "year": 2027, "month": 1, "dayOfMonth": 3 }, "refusals": 1 } } },
+
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2027, "month": 1, "dayOfMonth": 4 }, "refusals": 1 } } }
+  ]
+}

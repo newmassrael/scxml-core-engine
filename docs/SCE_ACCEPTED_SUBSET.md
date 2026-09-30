@@ -2924,11 +2924,22 @@ once, where the Interpreter raises one for each expression that reads a field;
 and JSON reaches the Interpreter already parsed, so `5.0` and `5` are one
 value there, where the generated lift refuses the first as not a whole number.
 
-A construct with no lowering yet — a record or list variable, a call of an
-imported algorithm, `<sce:action>`, executable content beyond `<assign>`,
-`<if>`, `<log>`, `<raise>`, `<cancel>` and a `<send>` with no `<param>` — is
-refused with `generate/unsupported-feature` naming it, never passed through
-half lowered.
+A list is an array and a record a plain object, and neither is changed in
+place: `<sce:append>` becomes the `<assign>` of the list written again with the
+value at its end, through the library, which throws for a full one — so nothing
+is appended, `error.execution` is raised and the block ends, as on the
+generated backends; `<sce:clear>` assigns `[]`; and an `<assign>` to
+`record.field` assigns the whole record, written again with that field changed.
+The `<data>` of a list or a record is replaced by one that holds its initial
+value (an empty array, an object built from its `<sce:set>`s). Those, and
+`<sce:append>` and `<sce:clear>`, are the only elements a lowered document does
+not keep as the author wrote them.
+
+A construct with no lowering yet — a call of an imported algorithm,
+`<sce:action>`, executable content beyond `<assign>`, `<if>`, `<log>`,
+`<raise>`, `<cancel>`, `<sce:append>`, `<sce:clear>` and a `<send>` with no
+`<param>` — is refused with `generate/unsupported-feature` naming it, never
+passed through half lowered.
 `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`
 replays the scenarios the Kotlin and Rust backends replay
 (`sce-build/tests/fixtures/static_datamodel/scenarios/*.json`) against the

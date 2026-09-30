@@ -2,58 +2,65 @@
 // source-hash: 6f1f6e88d0b261e809a7851abd545bdf8052863e1e1007d70ba1b3039a13d165
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-build/tests/fixtures/static_datamodel/static_payload.scxml
+// Source: sce-build/tests/fixtures/static_datamodel/static_record_fields.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_payload.scxml:14 :: _machine
+// SCE-MAP: static_record_fields.scxml:14 :: _machine
 
-package com.sce.integration.static_payload
+package com.sce.integration.static_record_fields
 
 import com.sce.runtime.*
 
 
 // --- States (W3C SCXML 3.2) ---
 
-sealed interface StaticPayloadState : State {
-    data object Waiting : StaticPayloadState
+sealed interface StaticRecordFieldsState : State {
+    data object Showing : StaticRecordFieldsState
 }
 
 // --- Events (W3C SCXML 3.12.1) ---
 
-sealed interface StaticPayloadEvent : Event {
-    sealed interface Day : StaticPayloadEvent {
+sealed interface StaticRecordFieldsEvent : Event {
+    sealed interface Day : StaticRecordFieldsEvent {
         data object Picked : Day
     }
-    sealed interface Error : StaticPayloadEvent {
+    sealed interface Error : StaticRecordFieldsEvent {
         data object Execution : Error
     }
+    data object Next : StaticRecordFieldsEvent
+    data object Rewind : StaticRecordFieldsEvent
 }
 // ── NL→IR Item C1 Path A: typed `_event.data` payload classes ─────────
 // NL→IR Item C1 Path A (EventSchema MCU native lowering): typed
 // `_event.data` payload classes for the EventSchema-imported events whose
 // transition guards lowered to a native Kotlin comparison (no script engine).
-// The Kotlin twin of the Rust `StaticPayloadPayload` enum / Go per-event payload
+// The Kotlin twin of the Rust `StaticRecordFieldsPayload` enum / Go per-event payload
 // structs: one data class per guarded event, carried through the queue in the
 // type-erased `EventMetadata.typedPayload` and lifted into a nullable field.
-// StaticPayloadDayPickedPayload is the NL→IR Item C1 Path A typed `_event.data`
+// StaticRecordFieldsDayPickedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `day.picked`. Consumers inject it via the `raiseDayPicked` seam
 // on the machine — they never name this class directly.
-data class StaticPayloadDayPickedPayload(val year: UShort, val month: UByte, val dayOfMonth: UByte)
+data class StaticRecordFieldsDayPickedPayload(val year: UShort, val month: UByte, val dayOfMonth: UByte)
 
 
+// ── SCE Accepted Subset §2.15: sce-static record variable classes ─────
+/** SCE Accepted Subset §2.15: a `record:Day` datamodel value. */
+data class StaticRecordFieldsDayRecord(val year: UShort, val month: UByte, val dayOfMonth: UByte) {
+    /** This value as a saved state writes it. */
+    fun toSaved(): Any = linkedMapOf("year" to SavedValues.of(year), "month" to SavedValues.of(month), "dayOfMonth" to SavedValues.of(dayOfMonth))
+
+    companion object {
+        /** The value a saved state holds, refused unless it is one. */
+        fun fromSaved(value: Any?, what: String): StaticRecordFieldsDayRecord = StaticRecordFieldsDayRecord(year = SavedValues.uint16(SavedValues.field(value, what, "year"), "$what.year"), month = SavedValues.uint8(SavedValues.field(value, what, "month"), "$what.month"), dayOfMonth = SavedValues.uint8(SavedValues.field(value, what, "dayOfMonth"), "$what.dayOfMonth"))
+    }
+}
 // --- State Machine (W3C SCXML) ---
 
-class StaticPayloadStateMachine(
-) : StateMachineEngine<StaticPayloadState, StaticPayloadEvent>() {
+class StaticRecordFieldsStateMachine(
+) : StateMachineEngine<StaticRecordFieldsState, StaticRecordFieldsEvent>() {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
-    /** W3C SCXML 5.2: the `day` datamodel variable, published (`sce:direction="out"`). */
-    var day: UByte = 0.toUByte()
-        private set
-    /** W3C SCXML 5.2: the `late` datamodel variable, published (`sce:direction="out"`). */
-    var late: Boolean = false
-        private set
-    /** W3C SCXML 5.2: the `sinceEpoch` datamodel variable, published (`sce:direction="out"`). */
-    var sinceEpoch: UShort = 0.toUShort()
+    /** W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`). */
+    var shown: StaticRecordFieldsDayRecord = StaticRecordFieldsDayRecord(year = 2026.toUShort(), month = 9.toUByte(), dayOfMonth = 24.toUByte())
         private set
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
     var refusals: UInt = 0.toUInt()
@@ -61,9 +68,7 @@ class StaticPayloadStateMachine(
 
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
-        val day: UByte,
-        val late: Boolean,
-        val sinceEpoch: UShort,
+        val shown: StaticRecordFieldsDayRecord,
         val refusals: UInt,
     )
 
@@ -75,15 +80,13 @@ class StaticPayloadStateMachine(
      * configuration is not a stable one.
      */
     data class Snapshot(
-        val configuration: Set<StaticPayloadState>,
+        val configuration: Set<StaticRecordFieldsState>,
         val data: Data,
         val truncated: Boolean,
     )
 
     private fun currentData(): Data = Data(
-        day = day,
-        late = late,
-        sinceEpoch = sinceEpoch,
+        shown = shown,
         refusals = refusals,
     )
 
@@ -111,7 +114,7 @@ class StaticPayloadStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "ac4f8425a964a524cc7580fefe89402b4ca0003a776cebb0521f1eb9ab3dbb27"
+    val savedShape: String = "23e94bbee0f8862f1ad51a0f614fe3df492096ccaf6676d9eb8cd371639f9fba"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -124,9 +127,7 @@ class StaticPayloadStateMachine(
     fun save(): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "day" to SavedValues.of(day),
-            "late" to SavedValues.of(late),
-            "sinceEpoch" to SavedValues.of(sinceEpoch),
+            "shown" to shown.toSaved(),
             "refusals" to SavedValues.of(refusals),
         ),
     )
@@ -143,21 +144,17 @@ class StaticPayloadStateMachine(
      */
     fun restore(saved: SavedState) {
         beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint8(saved.variable("day"), "day")
-        val saved2 = SavedValues.bool(saved.variable("late"), "late")
-        val saved3 = SavedValues.uint16(saved.variable("sinceEpoch"), "sinceEpoch")
-        val saved4 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        day = saved1
-        late = saved2
-        sinceEpoch = saved3
-        refusals = saved4
+        val saved1 = StaticRecordFieldsDayRecord.fromSaved(saved.variable("shown"), "shown")
+        val saved2 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        shown = saved1
+        refusals = saved2
         enterSaved(saved)
     }
 
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the
     // native transition guards. `null` between events / for untyped events.
-    private var pendingDayPickedPayload: StaticPayloadDayPickedPayload? = null
+    private var pendingDayPickedPayload: StaticRecordFieldsDayPickedPayload? = null
 
     // NL→IR Item C1 Path A: bind the dequeued event's typed `_event.data` view
     // — from the type-erased carrier the inject seam fills, and otherwise by
@@ -167,16 +164,16 @@ class StaticPayloadStateMachine(
     // EventPayload.Refusal, which the engine reports as error.execution. Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
-    override fun populateTypedPayload(event: StaticPayloadEvent, metadata: EventMetadata) {
+    override fun populateTypedPayload(event: StaticRecordFieldsEvent, metadata: EventMetadata) {
         pendingDayPickedPayload = null
         when (val tp = metadata.typedPayload) {
-            is StaticPayloadDayPickedPayload -> pendingDayPickedPayload = tp
+            is StaticRecordFieldsDayPickedPayload -> pendingDayPickedPayload = tp
             else -> {
                 // No typed carrier, so the producer was not the inject seam: read the
                 // fields out of `data`, which every other producer fills.
-                if (event == StaticPayloadEvent.Day.Picked) {
+                if (event == StaticRecordFieldsEvent.Day.Picked) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDayPickedPayload = StaticPayloadDayPickedPayload(fields.uint16("year"), fields.uint8("month"), fields.uint8("dayOfMonth"))
+                    pendingDayPickedPayload = StaticRecordFieldsDayPickedPayload(fields.uint16("year"), fields.uint8("month"), fields.uint8("dayOfMonth"))
                 }
             }
         }
@@ -187,10 +184,10 @@ class StaticPayloadStateMachine(
     // `day.picked` — binds the event name and the payload field values in one call.
     fun raiseDayPicked(year: UShort, month: UByte, dayOfMonth: UByte) {
         send(
-            StaticPayloadEvent.Day.Picked,
+            StaticRecordFieldsEvent.Day.Picked,
             EventMetadata(
                 type = "external",
-                typedPayload = StaticPayloadDayPickedPayload(year, month, dayOfMonth),
+                typedPayload = StaticRecordFieldsDayPickedPayload(year, month, dayOfMonth),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
@@ -201,7 +198,7 @@ class StaticPayloadStateMachine(
     }
 
 
-    override val initialState: StaticPayloadState = StaticPayloadState.Waiting
+    override val initialState: StaticRecordFieldsState = StaticRecordFieldsState.Showing
 
     // W3C SCXML 6.2: which entry point a host must drive this machine with in
     // the synchronous mode. The same verdict the generate manifest publishes
@@ -220,68 +217,81 @@ class StaticPayloadStateMachine(
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
-    override val documentInitialTargets: List<EntryTarget<StaticPayloadState, HistoryId>>
+    override val documentInitialTargets: List<EntryTarget<StaticRecordFieldsState, HistoryId>>
         get() = documentInitialTargetList
 
     private companion object {
-        val documentInitialTargetList: List<EntryTarget<StaticPayloadState, HistoryId>> =
-            listOf(StateTarget(StaticPayloadState.Waiting))
+        val documentInitialTargetList: List<EntryTarget<StaticRecordFieldsState, HistoryId>> =
+            listOf(StateTarget(StaticRecordFieldsState.Showing))
 
-        // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
-        val transitionWaitingAt0 = EnabledTransition<StaticPayloadState, HistoryId>(
-            StaticPayloadState.Waiting,
+        // W3C SCXML 3.13: showing's transition 0, as the microstep reads it.
+        val transitionShowingAt0 = EnabledTransition<StaticRecordFieldsState, HistoryId>(
+            StaticRecordFieldsState.Showing,
             emptyList(),
             0,
             hasActions = true,
             isInternal = true,
         )
 
-        // W3C SCXML 3.13: waiting's transition 1, as the microstep reads it.
-        val transitionWaitingAt1 = EnabledTransition<StaticPayloadState, HistoryId>(
-            StaticPayloadState.Waiting,
+        // W3C SCXML 3.13: showing's transition 1, as the microstep reads it.
+        val transitionShowingAt1 = EnabledTransition<StaticRecordFieldsState, HistoryId>(
+            StaticRecordFieldsState.Showing,
             emptyList(),
             1,
             hasActions = true,
             isInternal = true,
         )
 
-        // W3C SCXML 3.13: waiting's transition 2, as the microstep reads it.
-        val transitionWaitingAt2 = EnabledTransition<StaticPayloadState, HistoryId>(
-            StaticPayloadState.Waiting,
+        // W3C SCXML 3.13: showing's transition 2, as the microstep reads it.
+        val transitionShowingAt2 = EnabledTransition<StaticRecordFieldsState, HistoryId>(
+            StaticRecordFieldsState.Showing,
             emptyList(),
             2,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: showing's transition 3, as the microstep reads it.
+        val transitionShowingAt3 = EnabledTransition<StaticRecordFieldsState, HistoryId>(
+            StaticRecordFieldsState.Showing,
+            emptyList(),
+            3,
             hasActions = true,
             isInternal = true,
         )
     }
 
     // W3C SCXML: Resolve state ID string to State object
-    override fun resolveState(stateId: String): StaticPayloadState? = when (stateId) {
-        "waiting" -> StaticPayloadState.Waiting
+    override fun resolveState(stateId: String): StaticRecordFieldsState? = when (stateId) {
+        "showing" -> StaticRecordFieldsState.Showing
         else -> null
     }
 
     // W3C SCXML: Get state ID string from State object
-    override fun stateIdOf(state: StaticPayloadState): String = when (state) {
-        is StaticPayloadState.Waiting -> "waiting"
+    override fun stateIdOf(state: StaticRecordFieldsState): String = when (state) {
+        is StaticRecordFieldsState.Showing -> "showing"
     }
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
-    override fun documentOrderOf(state: StaticPayloadState): Int = when (state) {
-        is StaticPayloadState.Waiting -> 0
+    override fun documentOrderOf(state: StaticRecordFieldsState): Int = when (state) {
+        is StaticRecordFieldsState.Showing -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
-    override fun resolveEventByName(name: String): StaticPayloadEvent? = when (name) {
-        "day.picked" -> StaticPayloadEvent.Day.Picked
-        "error.execution" -> StaticPayloadEvent.Error.Execution
+    override fun resolveEventByName(name: String): StaticRecordFieldsEvent? = when (name) {
+        "day.picked" -> StaticRecordFieldsEvent.Day.Picked
+        "error.execution" -> StaticRecordFieldsEvent.Error.Execution
+        "next" -> StaticRecordFieldsEvent.Next
+        "rewind" -> StaticRecordFieldsEvent.Rewind
         else -> null
     }
 
     // W3C SCXML 6.4: Resolve Event object to event name string
-    override fun eventNameOf(event: StaticPayloadEvent): String? = when (event) {
-        is StaticPayloadEvent.Day.Picked -> "day.picked"
-        is StaticPayloadEvent.Error.Execution -> "error.execution"
+    override fun eventNameOf(event: StaticRecordFieldsEvent): String? = when (event) {
+        is StaticRecordFieldsEvent.Day.Picked -> "day.picked"
+        is StaticRecordFieldsEvent.Error.Execution -> "error.execution"
+        is StaticRecordFieldsEvent.Next -> "next"
+        is StaticRecordFieldsEvent.Rewind -> "rewind"
     }
 
 
@@ -294,76 +304,77 @@ class StaticPayloadStateMachine(
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
     override fun firstEnabledTransition(
-        state: StaticPayloadState,
-        event: StaticPayloadEvent?
-    ): EnabledTransition<StaticPayloadState, HistoryId>? = when (state) {
-        is StaticPayloadState.Waiting -> when {
-            event is StaticPayloadEvent.Day.Picked && pendingDayPickedPayload != null && (pendingDayPickedPayload!!.dayOfMonth > 15.toUByte()) -> transitionWaitingAt0
-            event is StaticPayloadEvent.Day.Picked -> transitionWaitingAt1
-            event is StaticPayloadEvent.Error.Execution -> transitionWaitingAt2
+        state: StaticRecordFieldsState,
+        event: StaticRecordFieldsEvent?
+    ): EnabledTransition<StaticRecordFieldsState, HistoryId>? = when (state) {
+        is StaticRecordFieldsState.Showing -> when {
+            event is StaticRecordFieldsEvent.Next && shown.dayOfMonth < 28.toUByte() -> transitionShowingAt0
+            event is StaticRecordFieldsEvent.Day.Picked -> transitionShowingAt1
+            event is StaticRecordFieldsEvent.Rewind -> transitionShowingAt2
+            event is StaticRecordFieldsEvent.Error.Execution -> transitionShowingAt3
             else -> null
         }
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_payload.scxml:14 :: _machine
-    override fun onEntry(state: StaticPayloadState, isDefaultEntry: Boolean) {
+    // SCE-MAP: static_record_fields.scxml:14 :: _machine
+    override fun onEntry(state: StaticRecordFieldsState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticPayloadState.Waiting -> {
-                // SCE-MAP: static_payload.scxml:23 :: waiting :: _state_body
+            is StaticRecordFieldsState.Showing -> {
+                // SCE-MAP: static_record_fields.scxml:25 :: showing :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_payload.scxml:14 :: _machine
-    override fun onExit(state: StaticPayloadState) {
+    // SCE-MAP: static_record_fields.scxml:14 :: _machine
+    override fun onExit(state: StaticRecordFieldsState) {
         when (state) {
-            is StaticPayloadState.Waiting -> {
-                // SCE-MAP: static_payload.scxml:23 :: waiting :: _state_body
+            is StaticRecordFieldsState.Showing -> {
+                // SCE-MAP: static_record_fields.scxml:25 :: showing :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_payload.scxml:14 :: _machine
-    override fun executeTransitionContent(source: StaticPayloadState, transitionIndex: Int) {
+    // SCE-MAP: static_record_fields.scxml:14 :: _machine
+    override fun executeTransitionContent(source: StaticRecordFieldsState, transitionIndex: Int) {
         when (source) {
-        is StaticPayloadState.Waiting -> when (transitionIndex) {
+        is StaticRecordFieldsState.Showing -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_payload.scxml:24 :: waiting :: _transition_0
-                if (pendingDayPickedPayload == null) {
-                    return
-                }
+                // SCE-MAP: static_record_fields.scxml:26 :: showing :: _transition_0
 
-            late = true
-
-            day = pendingDayPickedPayload!!.dayOfMonth
-
-            if (try { sinceEpoch = com.sce.forge.runtime.SceChecked.sub(pendingDayPickedPayload!!.year, 2000.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='sinceEpoch'>: an integer operation overflowed or failed"); true }) {
+            if (try { shown = shown.copy(dayOfMonth = com.sce.forge.runtime.SceChecked.add(shown.dayOfMonth, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordFieldsEvent.Error.Execution, "<assign location='shown.dayOfMonth'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
-                // SCE-MAP: static_payload.scxml:29 :: waiting :: _transition_1
+                // SCE-MAP: static_record_fields.scxml:29 :: showing :: _transition_1
                 if (pendingDayPickedPayload == null) {
                     return
                 }
 
-            late = false
+            shown = shown.copy(year = pendingDayPickedPayload!!.year)
 
-            day = pendingDayPickedPayload!!.dayOfMonth
+            shown = shown.copy(month = pendingDayPickedPayload!!.month)
 
-            if (try { sinceEpoch = com.sce.forge.runtime.SceChecked.sub(pendingDayPickedPayload!!.year, 2000.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='sinceEpoch'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            shown = shown.copy(dayOfMonth = pendingDayPickedPayload!!.dayOfMonth)
             }
             2 -> {
-                // SCE-MAP: static_payload.scxml:34 :: waiting :: _transition_2
+                // SCE-MAP: static_record_fields.scxml:34 :: showing :: _transition_2
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { shown = shown.copy(year = com.sce.forge.runtime.SceChecked.sub(shown.year, 5000.toUShort())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordFieldsEvent.Error.Execution, "<assign location='shown.year'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            shown = shown.copy(month = 1.toUByte())
+            }
+            3 -> {
+                // SCE-MAP: static_record_fields.scxml:38 :: showing :: _transition_3
+
+            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordFieldsEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

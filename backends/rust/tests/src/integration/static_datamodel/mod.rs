@@ -8,6 +8,7 @@ pub mod static_host_call_sm;
 pub mod static_list_sm;
 pub mod static_overflow_sm;
 pub mod static_payload_sm;
+pub mod static_record_fields_sm;
 pub mod static_record_sm;
 pub mod sync_client_sm;
 pub mod sync_delete_outcome;

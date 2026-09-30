@@ -88,6 +88,25 @@ pub struct StaticLowering {
     /// slots instead; a lowering that rewrites the document itself
     /// ([`crate::forge::static_js`]) reads these.
     pub sites: Vec<LoweredSite>,
+    /// Every element the walk lowered to another — a `<sce:append>` to the
+    /// `<assign>` that does it, a list or record `<data>` to the `<data>` that
+    /// holds its initial value — for the same readers as [`Self::sites`].
+    pub elements: Vec<LoweredElement>,
+}
+
+/// One element of the document, as the walk lowered it: which element, by an
+/// attribute it carries, and the element that stands in its place.
+///
+/// Named by an attribute because that is what the model keeps of where an
+/// element was written ([`crate::attribute_spelling`]); the element is the one
+/// that owns it.
+#[derive(Debug, Clone)]
+pub struct LoweredElement {
+    /// An attribute of the element, as the document wrote it. `None` for a
+    /// model no document produced, which no edit may be placed against.
+    pub anchor: Option<crate::attribute_spelling::AttributeSpelling>,
+    /// The element that replaces it, in the target's own language.
+    pub text: String,
 }
 
 /// One expression of the document, as the walk lowered it: the text the
@@ -226,6 +245,26 @@ pub trait StaticTarget {
     fn assign(&self, target: &str, value: &str) -> String;
     /// Replace field `field` of the record at `target` with `value`.
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String;
+    /// A target that rewrites the document itself rather than a model it
+    /// renders: the `<assign>` that replaces field `field` of the record
+    /// `record` with `value` as `(location, expr)` — the whole record, written
+    /// again with that field changed. `None` for a target that spells it as a
+    /// statement ([`Self::assign_field`]).
+    fn field_assignment(
+        &self,
+        _record: &str,
+        _field: &str,
+        _value: &str,
+    ) -> Option<(String, String)> {
+        None
+    }
+    /// A target that rewrites the document itself: the `<data>` element that
+    /// holds list or record variable `id` at its initial value `init`, which
+    /// the document leaves to its own children and attributes. `None` for a
+    /// target that declares the variable as a field.
+    fn data_element(&self, _id: &str, _init: &str) -> Option<String> {
+        None
+    }
     /// Log `value`, prefixed with `label` when there is one (§scxml-4.7).
     fn log(&self, label: &str, value: &str) -> String;
     /// Append `value` to the list at `target` while it holds fewer than
@@ -838,6 +877,7 @@ pub fn lower(
         raises_error: model.events.contains("error.execution"),
         target,
         sites: Default::default(),
+        elements: Default::default(),
     };
 
     let refused = |what: &str, text: &str, refusal: Refusal| {
@@ -928,10 +968,14 @@ pub fn lower(
                     .map_err(|r| refused("the field value", &init.expr, r))?;
                     values.push((target.record_field(&field.id), value));
                 }
+                let init = target.record_value(&ty, &values);
+                if let Some(element) = target.data_element(&var.id, &init) {
+                    rewrites.note_element(var.value_type_spelling.as_ref(), &element);
+                }
                 fields.push(StaticField {
                     id: var.id.clone(),
                     name,
-                    init: target.record_value(&ty, &values),
+                    init,
                     saved_type: ty.clone(),
                     ty,
                     published,
@@ -948,6 +992,9 @@ pub fn lower(
                 .and_then(|t| t.list_elem())
                 .and_then(crate::forge::model::ListElemType::scalar)
             {
+                if let Some(element) = target.data_element(&var.id, &target.list_empty()) {
+                    rewrites.note_element(var.value_type_spelling.as_ref(), &element);
+                }
                 fields.push(StaticField {
                     id: var.id.clone(),
                     name,
@@ -1101,6 +1148,7 @@ pub fn lower(
         records: saved_records,
         saved_shape,
         sites: rewrites.sites.into_inner(),
+        elements: rewrites.elements.into_inner(),
     })
 }
 
@@ -1222,6 +1270,9 @@ struct Rewrites<'m> {
     /// through a shared reference because the walk reads `Rewrites` from
     /// closures.
     sites: std::cell::RefCell<Vec<LoweredSite>>,
+    /// The elements the walk has lowered to another
+    /// ([`StaticLowering::elements`]).
+    elements: std::cell::RefCell<Vec<LoweredElement>>,
 }
 
 impl Rewrites<'_> {
@@ -1236,6 +1287,19 @@ impl Rewrites<'_> {
         self.sites
             .borrow_mut()
             .push(LoweredSite::new(source, spelling, text));
+    }
+
+    /// Note that the element carrying the attribute `anchor` lowered to the
+    /// element `text`.
+    fn note_element(
+        &self,
+        anchor: Option<&crate::attribute_spelling::AttributeSpelling>,
+        text: &str,
+    ) {
+        self.elements.borrow_mut().push(LoweredElement {
+            anchor: anchor.cloned(),
+            text: text.to_string(),
+        });
     }
 }
 
@@ -1427,13 +1491,26 @@ fn lower_action(
             let slot = crate::forge::expr::infer_expr_type(&action.location, ctx)
                 .unwrap_or(InferredType::Unknown);
             let value = lower(&action.expr, slot)?;
-            rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
             let location = action.location.trim();
             let construct = format!("<assign location='{location}'>");
-            (action.native_code, action.native_fails) = match location
+            let record_field = location
                 .split_once('.')
-                .filter(|(var, _)| rewrites.records.contains_key(*var))
-            {
+                .filter(|(var, _)| rewrites.records.contains_key(*var));
+            // A target that rewrites the document itself writes a record's
+            // field as an `<assign>` of the whole record, changed in that
+            // field: its location and its value are both the walk's to note.
+            let rewritten = record_field.and_then(|(var, field)| {
+                let name = renames.get(var).copied().unwrap_or(var);
+                target.field_assignment(name, field.trim(), &value.text)
+            });
+            match &rewritten {
+                Some((record, expr)) => {
+                    rewrites.note(&action.location, action.spellings.get("location"), record);
+                    rewrites.note(&action.expr, action.spellings.get("expr"), expr);
+                }
+                None => rewrites.note(&action.expr, action.spellings.get("expr"), &value.text),
+            }
+            (action.native_code, action.native_fails) = match record_field {
                 Some((var, field)) => {
                     let name = renames.get(var).copied().unwrap_or(var);
                     let field = target.record_field(field.trim());
@@ -1487,7 +1564,6 @@ fn lower_action(
                 ))
             })?;
             let value = lower(&action.expr, InferredType::from_sce_type(elem))?;
-            rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
             let name = renames.get(list).copied().unwrap_or(list);
             let overflow = if rewrites.raises_error {
                 target.raise_execution_error(
@@ -1509,11 +1585,16 @@ fn lower_action(
                 &failed(format!("<sce:append target='{list}'>")),
             );
             action.native_fails = true;
+            // The whole element, for a target that rewrites the document
+            // itself: its statement is the element that does the append, and
+            // holds the value, so the value is not noted beside it.
+            rewrites.note_element(action.spellings.get("target"), &action.native_code);
         }
         "sce_clear" => {
             let list = action.location.trim();
             let name = renames.get(list).copied().unwrap_or(list);
             action.native_code = target.clear(name);
+            rewrites.note_element(action.spellings.get("target"), &action.native_code);
         }
         _ => {}
     }

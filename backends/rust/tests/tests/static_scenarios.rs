@@ -26,11 +26,17 @@ use sce_rust_tests::integration::static_datamodel::static_block_ends_sm::{
 use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
     StaticCounterPersist, StaticCounterPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_list_sm::{
+    StaticListPersist, StaticListPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_overflow_sm::{
     StaticOverflowPersist, StaticOverflowPolicy,
 };
 use sce_rust_tests::integration::static_datamodel::static_payload_sm::{
     StaticPayloadPersist, StaticPayloadPolicy,
+};
+use sce_rust_tests::integration::static_datamodel::static_record_fields_sm::{
+    StaticRecordFieldsPersist, StaticRecordFieldsPolicy,
 };
 use sce_rust_tests::integration::static_datamodel::sync_client_sm::{
     SyncClientPersist, SyncClientPolicy,
@@ -171,6 +177,28 @@ fn static_block_ends_list_ends_at_a_full_list() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_block_ends_list.json"
+        ),
+    );
+}
+
+#[test]
+fn static_list_fills_to_its_capacity_and_is_emptied() {
+    replay(
+        Engine::new(StaticListPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_list.json"
+        ),
+    );
+}
+
+#[test]
+fn static_record_fields_updates_a_record_a_field_at_a_time() {
+    replay(
+        Engine::new(StaticRecordFieldsPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_fields.json"
         ),
     );
 }

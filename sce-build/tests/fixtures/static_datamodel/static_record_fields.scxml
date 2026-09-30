@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a record variable,
+  built whole from its <sce:set>s, read field by field in a guard and an
+  assignment, and updated a field at a time — from the machine's own value and
+  from a typed event payload. It is static_record.scxml without the call of an
+  imported algorithm, so that every engine that lowers a record can run it.
+
+  `next` moves the shown day on, to the twenty-eighth and no further. `rewind`
+  takes the year below what a uint16 holds: the assignment fails and is
+  skipped, error.execution says so, and the assignment after it in the same
+  block is not processed (W3C SCXML 4.9), so the record keeps every field.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="showing" datamodel="sce-static" name="static_record_fields">
+  <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  <datamodel>
+    <data id="shown" sce:type="record:Day" sce:direction="out">
+      <sce:set name="year" expr="2026"/>
+      <sce:set name="month" expr="9"/>
+      <sce:set name="dayOfMonth" expr="24"/>
+    </data>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="showing">
+    <transition event="next" cond="shown.dayOfMonth &lt; 28" type="internal">
+      <assign location="shown.dayOfMonth" expr="shown.dayOfMonth + 1"/>
+    </transition>
+    <transition event="day.picked" type="internal">
+      <assign location="shown.year" expr="_event.data.year"/>
+      <assign location="shown.month" expr="_event.data.month"/>
+      <assign location="shown.dayOfMonth" expr="_event.data.dayOfMonth"/>
+    </transition>
+    <transition event="rewind" type="internal">
+      <assign location="shown.year" expr="shown.year - 5000"/>
+      <assign location="shown.month" expr="1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

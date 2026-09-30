@@ -2551,8 +2551,8 @@ enum Commands {
     /// installed by the document's first `<data>`. Every other byte is the
     /// author's.
     ///
-    /// A construct with no lowering yet (a record or list variable, a call
-    /// of an imported algorithm, `<sce:action>`) is refused with
+    /// A construct with no lowering yet (a call of an imported algorithm,
+    /// `<sce:action>`) is refused with
     /// `generate/unsupported-feature` naming it; the document is never passed
     /// through half-lowered. A document under any other data model is printed
     /// as it is.

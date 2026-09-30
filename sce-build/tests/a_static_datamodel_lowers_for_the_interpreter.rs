@@ -100,10 +100,12 @@ fn every_fixture_is_lowered_or_refused_by_name() {
             }
         }
     }
-    // Floor: a scan that found nothing to lower would pass. The counter, the
-    // overflow machine and the payload reader use nothing the lowering lacks.
+    // Floor: a scan that found nothing to lower would pass. What is lowered
+    // today — scalars, checked integers, the typed payload, lists and records
+    // — is at least these seven machines, and the floor rises as the lowering
+    // grows (an algorithm call is what keeps `static_record` out).
     assert!(
-        lowered.len() >= 3,
+        lowered.len() >= 7,
         "lowered {lowered:?}, refused {:?}",
         refused.iter().map(|(n, _)| n).collect::<Vec<_>>()
     );
@@ -114,6 +116,69 @@ fn every_fixture_is_lowered_or_refused_by_name() {
             "{name}: the refusal names the construct: {text}"
         );
     }
+}
+
+fn lowered_fixture(machine: &str) -> String {
+    let path = fixtures().join(format!("{machine}.scxml"));
+    lower_file(path.to_str().unwrap(), Vec::new())
+        .unwrap_or_else(|e| panic!("{machine} does not lower: {e:?}"))
+}
+
+/// A record is declared by one `<data>` built whole from its fields, read as
+/// the author wrote it, and written a field at a time as an `<assign>` of the
+/// whole record — through the library, which returns the record changed in that
+/// field and leaves the one it was given alone.
+#[test]
+fn a_record_is_built_whole_and_written_a_field_at_a_time() {
+    let out = lowered_fixture("static_record_fields");
+    let document = roxmltree::Document::parse(&out).expect("well-formed");
+    // The attributes as a reader decodes them, which is what the script engine
+    // is handed: `'` is written `&apos;` in the text of the document.
+    let attribute = |name: &str| -> Vec<(String, String)> {
+        document
+            .descendants()
+            .filter(|n| n.is_element())
+            .filter_map(|n| {
+                n.attribute(name)
+                    .map(|v| (n.tag_name().name().to_string(), v.to_string()))
+            })
+            .collect()
+    };
+    let expr = attribute("expr");
+    let has = |element: &str, value: &str| expr.contains(&(element.to_string(), value.to_string()));
+    assert!(
+        has("data", "({'year': 2026, 'month': 9, 'dayOfMonth': 24})"),
+        "the record is built whole from its fields: {expr:?}"
+    );
+    assert!(
+        has(
+            "assign",
+            "SceStatic.set(shown, 'dayOfMonth', SceStatic.U8.add(shown.dayOfMonth, 1))"
+        ),
+        "a field written from the record's own value: {expr:?}"
+    );
+    assert!(
+        has(
+            "assign",
+            "SceStatic.set(shown, 'year', SceStatic.field(_event.data, 'year', 'uint16'))"
+        ),
+        "a field replaced from the typed payload: {expr:?}"
+    );
+    assert!(
+        attribute("cond").contains(&(
+            "transition".to_string(),
+            "shown.dayOfMonth < 28".to_string()
+        )),
+        "a read of a field, in a guard that cannot fail, is the author's"
+    );
+    // The `<sce:set>`s are gone as elements — the header comment that names
+    // them is the author's, and stays.
+    assert!(
+        !document
+            .descendants()
+            .any(|n| n.is_element() && n.tag_name().name() == "set"),
+        "{out}"
+    );
 }
 
 /// A document under another data model is not this lowering's to change.

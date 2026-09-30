@@ -33,11 +33,21 @@
 //!
 //! # What it does not lower yet
 //!
-//! Records, lists, calls of imported algorithms, `<sce:action>`, and the
-//! executable content the walk does not lower are refused with
+//! Calls of imported algorithms, `<sce:action>`, and the executable content the
+//! walk does not lower are refused with
 //! `generate/unsupported-feature` naming the construct, never passed through:
 //! an expression left as the author wrote it would be run by the script engine
 //! as ECMAScript, which is the mis-execution the refusal exists to prevent.
+//!
+//! # Lists and records
+//!
+//! A list is an array and a record a plain object, and neither is changed in
+//! place: a statement that changes one is an `<assign>` of the whole value,
+//! written again (`SceStatic.append`, `SceStatic.set`). So a copy of the
+//! machine's state taken earlier keeps what it saw, as the generated backends'
+//! does, and a full list fails the way any assignment does. The `<data>` of a
+//! list or a record, and the `<sce:append>` and `<sce:clear>` elements, are
+//! replaced whole ([`StaticLowering::elements`]).
 //!
 //! # An event's data
 //!
@@ -58,7 +68,7 @@ use std::path::PathBuf;
 use crate::forge::error::{ForgeError, GenerateError, Located};
 use crate::forge::expr::ExprTarget;
 use crate::forge::model::SceType;
-use crate::forge::static_lowering::{lower, Callee, LoweredSite, StaticTarget};
+use crate::forge::static_lowering::{lower, Callee, LoweredElement, LoweredSite, StaticTarget};
 use crate::forge::type_ctx::StaticScope;
 use crate::model::{Action, Datamodel, SCXMLModel};
 
@@ -140,9 +150,16 @@ pub(crate) fn runtime_expression() -> String {
 /// never asked.
 pub struct JsTarget;
 
-/// Why a spelling this target does not have is never asked for.
-const REFUSED_BEFORE_THE_WALK: &str = "the construct is refused by JsTarget::unsupported before \
-     the walk reaches a spelling for it";
+impl JsTarget {
+    /// The `<assign>` of `location` to the expression `expr`, as the element.
+    fn assign_element(&self, location: &str, expr: &str) -> String {
+        format!(
+            "<assign location=\"{}\" expr=\"{}\"/>",
+            xml_attribute_value(location),
+            xml_attribute_value(expr)
+        )
+    }
+}
 
 impl StaticTarget for JsTarget {
     fn name(&self) -> &'static str {
@@ -151,23 +168,7 @@ impl StaticTarget for JsTarget {
     fn callee(&self, _document_name: &str) -> Option<Callee> {
         None
     }
-    fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
-        if let Some(variable) = scope.variables.iter().find(|v| {
-            v.value_type
-                .as_ref()
-                .is_some_and(|t| t.record_alias().is_some() || t.list_elem().is_some())
-        }) {
-            let kind = if variable
-                .value_type
-                .as_ref()
-                .is_some_and(|t| t.record_alias().is_some())
-            {
-                "record"
-            } else {
-                "list"
-            };
-            return Some(format!("the {kind} variable `{}`", variable.id));
-        }
+    fn unsupported(&self, model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {
         if !model.global_scripts.is_empty() {
             return Some("a top-level <script>".to_string());
         }
@@ -214,54 +215,88 @@ impl StaticTarget for JsTarget {
     fn scalar_view(&self, _ty: &SceType) -> Option<String> {
         None
     }
-    fn record_type(&self, _machine: &str, _alias: &str) -> String {
-        unreachable!("{REFUSED_BEFORE_THE_WALK}")
+    // A record is a plain object of its schema's fields, written again with a
+    // field changed rather than changed in place: a saved or published copy of
+    // the machine's state keeps what it saw, as the generated backends' does.
+    fn record_type(&self, machine: &str, alias: &str) -> String {
+        format!("{machine}{alias}Record")
     }
+    // Nothing is declared: the Interpreter's data model holds no types.
     fn record_def(
         &self,
         _ty: &str,
         _alias: &str,
         _schema: &crate::forge::model::EventSchemaModel,
     ) -> String {
-        unreachable!("{REFUSED_BEFORE_THE_WALK}")
+        String::new()
     }
-    fn record_field(&self, _id: &str) -> String {
-        unreachable!("{REFUSED_BEFORE_THE_WALK}")
+    fn record_field(&self, id: &str) -> String {
+        id.to_string()
     }
-    fn record_value(&self, _ty: &str, _fields: &[(String, String)]) -> String {
-        unreachable!("{REFUSED_BEFORE_THE_WALK}")
+    // Parenthesised: `{a: 1}` alone reads as a block.
+    fn record_value(&self, _ty: &str, fields: &[(String, String)]) -> String {
+        let members: Vec<String> = fields
+            .iter()
+            .map(|(field, value)| format!("'{field}': {value}"))
+            .collect();
+        format!("({{{}}})", members.join(", "))
     }
-    fn list_type(&self, _elem: &SceType) -> String {
-        unreachable!("{REFUSED_BEFORE_THE_WALK}")
+    fn list_type(&self, elem: &SceType) -> String {
+        format!("list<{}>", elem.as_attr())
     }
     fn list_view(&self, _elem: &SceType) -> Option<String> {
-        unreachable!("{REFUSED_BEFORE_THE_WALK}")
+        None
     }
     fn list_empty(&self) -> String {
-        unreachable!("{REFUSED_BEFORE_THE_WALK}")
+        "[]".to_string()
     }
     fn assign(&self, _target: &str, _value: &str) -> String {
         String::new()
     }
     fn assign_field(&self, _target: &str, _field: &str, _value: &str) -> String {
-        unreachable!("{REFUSED_BEFORE_THE_WALK}")
+        String::new()
+    }
+    // The document's `<assign location="rec.field">` becomes an `<assign>` of
+    // the whole record, written again with that field changed.
+    fn field_assignment(&self, record: &str, field: &str, value: &str) -> Option<(String, String)> {
+        Some((
+            record.to_string(),
+            format!("{RUNTIME_GLOBAL}.set({record}, '{field}', {value})"),
+        ))
+    }
+    // A list or a record is given its initial value by the `<data>` that
+    // declares it: the list is empty, and a record is built from its fields.
+    fn data_element(&self, id: &str, init: &str) -> Option<String> {
+        Some(format!(
+            "<data id=\"{}\" expr=\"{}\"/>",
+            xml_attribute_value(id),
+            xml_attribute_value(init)
+        ))
     }
     fn log(&self, _label: &str, _value: &str) -> String {
         String::new()
     }
+    // The element that replaces the `<sce:append>`: an `<assign>` of the list,
+    // written again with the value at its end. A full list makes the library
+    // throw, which the Interpreter answers as it does any assignment that
+    // fails: nothing is written, `error.execution` is raised, and the block
+    // ends (W3C SCXML 4.9) — the outcome the generated backends give.
     fn append(
         &self,
-        _target: &str,
-        _capacity: u32,
-        _value: &str,
+        target: &str,
+        capacity: u32,
+        value: &str,
         _value_can_fail: bool,
         _overflow: &str,
         _failed: &str,
     ) -> String {
-        unreachable!("{REFUSED_BEFORE_THE_WALK}")
+        self.assign_element(
+            target,
+            &format!("{RUNTIME_GLOBAL}.append({target}, {capacity}, {value})"),
+        )
     }
-    fn clear(&self, _target: &str) -> String {
-        unreachable!("{REFUSED_BEFORE_THE_WALK}")
+    fn clear(&self, target: &str) -> String {
+        self.assign_element(target, "[]")
     }
     fn raise_execution_error(&self, _machine: &str, _message: &str) -> String {
         String::new()
@@ -321,8 +356,7 @@ fn unsupported_action(action: &Action) -> Option<String> {
             Some("a <send> that carries <param> or <content expr>".to_string())
         }
         "send" => None,
-        "sce_append" => Some("<sce:append>".to_string()),
-        "sce_clear" => Some("<sce:clear>".to_string()),
+        "sce_append" | "sce_clear" => None,
         "native_action" => Some("<sce:action>".to_string()),
         other => Some(format!("a <{other}> action")),
     }
@@ -359,7 +393,9 @@ fn xml_attribute_value(text: &str) -> String {
 /// each is one attribute — and a pair that is not is a defect in the walk that
 /// produced them, so it is refused rather than applied in some order.
 fn apply(text: &str, mut edits: Vec<Edit>) -> Result<String, GenerateError> {
-    edits.sort_by_key(|e| e.range.start);
+    // An insertion sorts before an edit that starts where it does: the library
+    // goes in front of the first `<data>`, which may itself be replaced.
+    edits.sort_by_key(|e| (e.range.start, e.range.end));
     if let Some(pair) = edits.windows(2).find(|w| w[0].range.end > w[1].range.start) {
         return Err(GenerateError::unsupported(format!(
             "two lowered expressions claim the same place in the document ({:?} and {:?})",
@@ -395,6 +431,52 @@ fn site_edits(sites: &[LoweredSite]) -> Result<Vec<Edit>, GenerateError> {
         edits.push(Edit {
             range: written.range(),
             text: xml_attribute_value(&site.text),
+        });
+    }
+    Ok(edits)
+}
+
+/// The replacement each lowered element asks for: the element that carries the
+/// attribute the walk named, in full, becomes the element it lowered to.
+///
+/// The element is found by the attribute because that is what the model keeps
+/// of where an element was written; the attribute's range lies inside exactly
+/// one element, and that element's range is what is replaced.
+fn element_edits(text: &str, elements: &[LoweredElement]) -> Result<Vec<Edit>, GenerateError> {
+    if elements.is_empty() {
+        return Ok(Vec::new());
+    }
+    let document = roxmltree::Document::parse(text).map_err(|e| {
+        GenerateError::unsupported(format!(
+            "the document cannot be read again to be rewritten: {e}"
+        ))
+    })?;
+    let mut edits = Vec::new();
+    for element in elements {
+        let Some(written) = element.anchor.as_ref().and_then(|a| a.value()) else {
+            return Err(GenerateError::unsupported(
+                "an element has no place in the document to be rewritten at: the model holds it \
+                 as something the document does not spell"
+                    .to_string(),
+            ));
+        };
+        let range = written.range();
+        let owner = document.descendants().find(|node| {
+            node.is_element()
+                && node.attributes().any(|attribute| {
+                    let value = attribute.range_value();
+                    value.start <= range.start && range.end <= value.end
+                })
+        });
+        let Some(owner) = owner else {
+            return Err(GenerateError::unsupported(format!(
+                "no element of the document carries the attribute written at {range:?}, so \
+                 there is no element to rewrite"
+            )));
+        };
+        edits.push(Edit {
+            range: owner.range(),
+            text: element.text.clone(),
         });
     }
     Ok(edits)
@@ -482,10 +564,14 @@ fn lower_parsed(
     let machine = crate::filters::to_pascal_case(model.name.clone());
     let lowering = lower(&mut lowered, &machine, &[], &JsTarget).map_err(refuse)?;
     let mut edits = site_edits(&lowering.sites).map_err(refuse)?;
+    edits.extend(element_edits(text, &lowering.elements).map_err(refuse)?);
+    let library_call = format!("{RUNTIME_GLOBAL}.");
     let needs_library = lowering
         .sites
         .iter()
-        .any(|s| s.text.contains(&format!("{RUNTIME_GLOBAL}.")));
+        .map(|site| site.text.as_str())
+        .chain(lowering.elements.iter().map(|e| e.text.as_str()))
+        .any(|text| text.contains(&library_call));
     edits.extend(document_edits(text, needs_library).map_err(refuse)?);
     apply(text, edits).map_err(refuse)
 }
@@ -744,12 +830,6 @@ mod tests {
     /// the document is not passed through.
     #[test]
     fn what_it_cannot_lower_yet_is_refused_by_name() {
-        let with_list = COUNTER.replace(
-            r#"<data id="refusals" sce:type="uint8" expr="0"/>"#,
-            r#"<data id="refusals" sce:type="uint8" expr="0"/>
-    <data id="history" sce:type="list&lt;uint8&gt;" sce:capacity="4"/>"#,
-        );
-        assert!(refusal(&with_list).contains("the list variable `history`"));
         let with_script = COUNTER.replace(
             r#"<log label="at" expr="'253'"/>"#,
             r#"<script>level = 0;</script>"#,
@@ -795,5 +875,74 @@ mod tests {
             },
         ];
         assert_eq!(apply("0123456789", disjoint).unwrap(), "A23B6789");
+    }
+
+    /// An insertion goes in front of an edit that starts where it does — the
+    /// library is placed before the first `<data>`, which may be replaced too.
+    #[test]
+    fn an_insertion_goes_before_an_edit_that_starts_at_the_same_place() {
+        let edits = vec![
+            Edit {
+                range: 3..6,
+                text: "[replaced]".to_string(),
+            },
+            Edit {
+                range: 3..3,
+                text: "[inserted]".to_string(),
+            },
+        ];
+        assert_eq!(
+            apply("0123456789", edits).unwrap(),
+            "012[inserted][replaced]6789"
+        );
+    }
+
+    const LISTS_AND_RECORDS: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="shelf">
+  <datamodel>
+    <data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="2"/>
+    <data id="n" sce:type="uint8" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <transition event="add" type="internal">
+      <sce:append target="picked" expr="n + 1"/>
+    </transition>
+    <transition event="wipe" type="internal">
+      <sce:clear target="picked"/>
+    </transition>
+  </state>
+</scxml>"#;
+
+    /// A list is declared by the `<data>` that holds its initial value, and the
+    /// element that fills it becomes the `<assign>` that does — the list,
+    /// written again with the value at its end, through the library, which
+    /// refuses a full one.
+    #[test]
+    fn a_list_is_declared_empty_and_its_statements_become_assignments() {
+        let out = lowered(LISTS_AND_RECORDS);
+        assert!(
+            out.contains(r#"<data id="picked" expr="[]"/>"#),
+            "the list's <data> holds its initial value: {out}"
+        );
+        assert!(
+            out.contains(
+                r#"<assign location="picked" expr="SceStatic.append(picked, 2, SceStatic.U8.add(n, 1))"/>"#
+            ),
+            "{out}"
+        );
+        assert!(
+            out.contains(r#"<assign location="picked" expr="[]"/>"#),
+            "{out}"
+        );
+        assert!(
+            !out.contains("<sce:append") && !out.contains("<sce:clear"),
+            "{out}"
+        );
+        // The library is installed before the `<data>` it precedes, which was
+        // itself replaced.
+        let installed = out.find(RUNTIME_DATA_ID).expect("the library is installed");
+        let list = out.find(r#"<data id="picked""#).expect("the list");
+        assert!(installed < list, "{out}");
+        roxmltree::Document::parse(&out).expect("well-formed");
     }
 }

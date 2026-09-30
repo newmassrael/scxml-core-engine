@@ -1,0 +1,33 @@
+{
+  "machine": "static_list",
+  "about": "A list variable filled by <sce:append> from a typed payload, measured by len() in an assignment and a guard, emptied by <sce:clear>, and held to its sce:capacity of three on every backend: the fourth pick appends nothing and raises error.execution. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "collecting", "variables": { "picked": [], "refusals": 0, "count": 0 } } },
+
+    { "event": "day.picked", "data": { "year": 2026, "month": 9, "dayOfMonth": 5 },
+      "expect": { "variables": { "picked": [5], "count": 1, "refusals": 0 } } },
+    { "event": "day.picked", "data": { "year": 2026, "month": 9, "dayOfMonth": 6 },
+      "expect": { "variables": { "picked": [5, 6], "count": 2, "refusals": 0 } } },
+    { "event": "day.picked", "data": { "year": 2026, "month": 9, "dayOfMonth": 7 },
+      "expect": { "variables": { "picked": [5, 6, 7], "count": 3, "refusals": 0 } } },
+
+    { "note": "the list holds its capacity: nothing is appended and error.execution says so",
+      "event": "day.picked", "data": { "year": 2026, "month": 9, "dayOfMonth": 8 },
+      "expect": { "variables": { "picked": [5, 6, 7], "count": 3, "refusals": 1 } } },
+
+    { "note": "<sce:clear> empties it; `count` is only reassigned by the next append",
+      "event": "reset",
+      "expect": { "variables": { "picked": [], "count": 3, "refusals": 1 } } },
+    { "event": "day.picked", "data": { "year": 2026, "month": 9, "dayOfMonth": 9 },
+      "expect": { "variables": { "picked": [9], "count": 1, "refusals": 1 } } },
+
+    { "note": "`full` is guarded by len(picked) === 3, which does not hold yet",
+      "event": "full", "expect": { "state": "collecting" } },
+    { "event": "day.picked", "data": { "year": 2026, "month": 9, "dayOfMonth": 10 },
+      "expect": { "variables": { "picked": [9, 10], "count": 2 } } },
+    { "event": "day.picked", "data": { "year": 2026, "month": 9, "dayOfMonth": 11 },
+      "expect": { "variables": { "picked": [9, 10, 11], "count": 3 } } },
+    { "note": "three picked: the guard holds and the machine ends",
+      "event": "full", "expect": { "ended": true } }
+  ]
+}

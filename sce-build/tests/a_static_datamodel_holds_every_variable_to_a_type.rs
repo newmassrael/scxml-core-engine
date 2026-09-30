@@ -1177,9 +1177,27 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
             .file_stem()
             .and_then(|s| s.to_str())
             .expect("a scenario file has a name");
+        // Beside its siblings, where its `<sce:import src>`s resolve: a probe
+        // written alone would be refused for an import it cannot find, and
+        // read as a machine no backend lowers.
+        let siblings: Vec<(String, String)> = std::fs::read_dir(&fixtures)
+            .expect("the fixture directory")
+            .map(|entry| entry.expect("an entry").path())
+            .filter(|path| path.extension().is_some_and(|e| e == "scxml"))
+            .map(|path| {
+                (
+                    path.file_name().unwrap().to_string_lossy().into_owned(),
+                    std::fs::read_to_string(&path).expect("a fixture"),
+                )
+            })
+            .collect();
+        let siblings: Vec<(&str, &str)> = siblings
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect();
         let lowering: Vec<&str> = ["cpp", "c11", "go", "python", "kotlin", "rust"]
             .into_iter()
-            .filter(|lang| run(&["check", "-l", lang], &document).0)
+            .filter(|lang| run_beside(&["check", "-l", lang], &document, &siblings).0)
             .collect();
         assert!(
             !lowering.is_empty(),
