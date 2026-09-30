@@ -2874,7 +2874,7 @@ because no payload is in scope to type it. The host method's parameter types
 are the arguments' types, and every call site of one name must agree on them
 as it must under any data model.
 
-**The Interpreter does not run it.** Generated code is what runs a
+**The Interpreter does not run it as written.** Generated code is what runs a
 `sce-static` document (§3.2 lets a platform decide which data models it
 supports). The Interpreter hands every expression to its script engine, which
 evaluates it as ECMAScript, so it would give the document a meaning it does not
@@ -2891,6 +2891,30 @@ running it as something else — the counterpart of the generated side's
 different questions.
 `tests/integration/AStaticDatamodelRunsUnderTheInterpreterTest.cpp` holds it
 for every `sce-static` statechart under the shared fixture directory.
+
+**It runs once lowered.** `sce-codegen lower <document>` prints the document as
+a `datamodel="ecmascript"` one, and the Interpreter runs that. Only the
+document's expressions change: each is replaced, at the place the document
+wrote it, with the ECMAScript the typed expression means, and every other byte
+— comments, extension elements, formatting — is the author's. Each integer
+operation is a call of a small library the document's first `<data>` installs
+(`SceStatic`), which computes exactly and throws for a result the operand's
+type does not hold; the Interpreter's ECMAScript data model turns a throwing
+statement into a skipped one and a throwing condition into a false one, each
+raising `error.execution`, which is the outcome the generated backends give
+the same operation. An integer is an ECMAScript Number, so a 64-bit integer is
+exact only to ±2^53: a result beyond that is refused at run time, and an
+integer literal beyond it at build time, rather than rounded. The bitwise
+operators are refused — a Number's are 32-bit and signed. A construct with no
+lowering yet — a record or list variable, a call of an imported algorithm,
+`<sce:action>`, a read of an event's typed payload, executable content beyond
+`<assign>`, `<if>`, `<log>`, `<raise>`, `<cancel>` and a `<send>` with no
+`<param>` — is refused with `generate/unsupported-feature` naming it, never
+passed through half lowered.
+`tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`
+replays the scenarios the Kotlin and Rust backends replay
+(`sce-build/tests/fixtures/static_datamodel/scenarios/*.json`) against the
+lowered documents, so one oracle judges the three engines.
 
 ### §2.16 A closed interface — `sce:interface="closed"`
 

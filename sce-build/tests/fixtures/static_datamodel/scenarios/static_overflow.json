@@ -1,0 +1,16 @@
+{
+  "machine": "static_overflow",
+  "about": "An integer operation that overflows is not wrapped: `level` is a uint8 from 250, so the second `up` (253 + 3) cannot be held and the assignment is skipped, and a guard over an overflowing sum is false. Each says so with error.execution, which the document counts in `refusals`. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "waiting", "variables": { "level": 250, "refusals": 0 } } },
+
+    { "note": "250 + 3 fits a uint8",
+      "event": "up", "expect": { "state": "waiting", "variables": { "level": 253, "refusals": 0 } } },
+    { "note": "253 + 3 does not: the assignment is skipped and error.execution is raised",
+      "event": "up", "expect": { "state": "waiting", "variables": { "level": 253, "refusals": 1 } } },
+    { "note": "the guard `level + 10 > 0` overflows at 253, so it is false and says so: `probe` is not taken",
+      "event": "probe", "expect": { "state": "waiting", "variables": { "level": 253, "refusals": 2 } } },
+    { "note": "and the machine keeps the value it held, however often it is asked",
+      "event": "up", "expect": { "state": "waiting", "variables": { "level": 253, "refusals": 3 } } }
+  ]
+}

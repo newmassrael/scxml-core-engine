@@ -18,6 +18,8 @@
 
 package com.sce.integration
 
+import com.sce.integration.static_counter.StaticCounterStateMachine
+import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.SavedState
@@ -60,13 +62,14 @@ class StaticScenarioTest {
 
     /**
      * Replay [scenario] against a machine driven by [send] and [tick], read
-     * back with [save] after every step.
+     * back with [save] after every step, and asked whether it has [ended].
      */
     private fun replay(
         scenario: JsonObject,
         send: (String, String) -> Unit,
         tick: () -> Unit,
         save: () -> SavedState,
+        ended: () -> Boolean,
     ) {
         val steps = scenario.getValue("steps").jsonArray
         assertTrue(steps.isNotEmpty(), "a scenario with no steps judges nothing")
@@ -77,8 +80,19 @@ class StaticScenarioTest {
                 send(event, step["data"]?.toString() ?: "")
                 tick()
             }
-            val saved = Json.parseToJsonElement(save().toJson()).jsonObject
             val expect = step.getValue("expect").jsonObject
+            // A machine that ended in a top-level <final> has no saved state to
+            // read — the save refuses one — so what a scenario can say of it is
+            // that it ended, and that is the whole of the step.
+            if (expect["ended"]?.jsonPrimitive?.content == "true") {
+                assertTrue(
+                    expect["state"] == null && expect["variables"] == null,
+                    "step $n ($note): an ended machine has no state or variables to read",
+                )
+                assertTrue(ended(), "step $n ($note): the machine ended in a top-level <final>")
+                return@forEachIndexed
+            }
+            val saved = Json.parseToJsonElement(save().toJson()).jsonObject
             expect["state"]?.let { state ->
                 assertEquals(state, saved["current"], "step $n ($note): the current state")
             }
@@ -99,6 +113,58 @@ class StaticScenarioTest {
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticCounterCountsToTheFlagAndLetsGo() {
+        val sm = StaticCounterStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_counter"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticCounterCountsToItsBound() {
+        val sm = StaticCounterStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_counter_bound"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticOverflowKeepsItsValueAndSaysSo() {
+        val sm = StaticOverflowStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_overflow"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
             )
         } finally {
             sm.cleanup()

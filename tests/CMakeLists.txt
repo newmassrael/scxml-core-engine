@@ -290,9 +290,12 @@ add_test(NAME ECMAScriptSemantics COMMAND ecmascript_semantics_test)
 # ============================================================================
 # 2.6. datamodel="sce-static" under the Interpreter (SCE Accepted Subset §2.15)
 #
-# The scenarios every AOT backend replays, replayed against the engine that
-# reads the document as written. No generated code: the Interpreter is the
-# unit under test.
+# The Interpreter reads the document as written and refuses it (its script
+# engine holds no types and checks no integer operation), and runs it once
+# `sce-codegen lower` has replaced its expressions with ECMAScript that means
+# what the typed document means. The scenarios every AOT backend replays are
+# replayed against the lowered document. No generated code: the Interpreter
+# is the unit under test.
 # ============================================================================
 add_executable(static_datamodel_interpreter_test
     integration/AStaticDatamodelRunsUnderTheInterpreterTest.cpp
@@ -320,6 +323,40 @@ target_compile_definitions(static_datamodel_interpreter_test
 apply_sce_test_policies(static_datamodel_interpreter_test)
 
 add_test(NAME static_datamodel_interpreter COMMAND static_datamodel_interpreter_test)
+
+# The lowered document, run. Spawns `sce-codegen lower` via popen, so it is
+# excluded on WASM for the reason cross_producer_diagnostic_id_test is.
+if(NOT EMSCRIPTEN)
+    add_executable(static_datamodel_lowered_test
+        integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp
+    )
+
+    target_include_directories(static_datamodel_lowered_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${CMAKE_SOURCE_DIR}/tests
+    )
+
+    target_link_libraries(static_datamodel_lowered_test
+        PRIVATE
+            sce_runtime
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_definitions(static_datamodel_lowered_test
+        PRIVATE
+            SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+    )
+
+    apply_sce_test_policies(static_datamodel_lowered_test)
+
+    add_test(NAME static_datamodel_lowered COMMAND static_datamodel_lowered_test)
+    set_tests_properties(static_datamodel_lowered PROPERTIES
+        ENVIRONMENT "SCE_CODEGEN_BIN=${SCE_CODEGEN}"
+    )
+endif()
 
 # ============================================================================
 # How a string is written into JSON text (ARCHITECTURE.md, "JSON Text (Single

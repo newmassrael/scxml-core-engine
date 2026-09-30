@@ -17,6 +17,12 @@
 
 use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{Engine, StatePolicy};
+use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
+    StaticCounterPersist, StaticCounterPolicy,
+};
+use sce_rust_tests::integration::static_datamodel::static_overflow_sm::{
+    StaticOverflowPersist, StaticOverflowPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::sync_client_sm::{
     SyncClientPersist, SyncClientPolicy,
 };
@@ -45,10 +51,24 @@ fn replay<P: StatePolicy>(
             engine.raise_external_by_name(event, &data);
             engine.step();
         }
-        let saved: Value =
-            serde_json::from_str(&save(&engine).to_json()).expect("a saved state is JSON");
         let expect = &step["expect"];
         let note = step.get("note").and_then(Value::as_str).unwrap_or("");
+        // A machine that ended in a top-level <final> has no saved state to
+        // read — the save refuses one — so what a scenario can say of it is
+        // that it ended, and that is the whole of the step.
+        if expect.get("ended").and_then(Value::as_bool) == Some(true) {
+            assert!(
+                expect.get("state").is_none() && expect.get("variables").is_none(),
+                "step {n} ({note}): an ended machine has no state or variables to read"
+            );
+            assert!(
+                engine.is_in_final_state(),
+                "step {n} ({note}): the machine ended in a top-level <final>"
+            );
+            continue;
+        }
+        let saved: Value =
+            serde_json::from_str(&save(&engine).to_json()).expect("a saved state is JSON");
         if let Some(state) = expect.get("state") {
             assert_eq!(
                 &saved["current"], state,
@@ -87,6 +107,39 @@ fn sync_client_runs_its_scenario() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/sync_client.json"
+        ),
+    );
+}
+
+#[test]
+fn static_counter_counts_to_the_flag_and_lets_go() {
+    replay(
+        Engine::new(StaticCounterPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_counter.json"
+        ),
+    );
+}
+
+#[test]
+fn static_counter_counts_to_its_bound() {
+    replay(
+        Engine::new(StaticCounterPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_counter_bound.json"
+        ),
+    );
+}
+
+#[test]
+fn static_overflow_keeps_its_value_and_says_so() {
+    replay(
+        Engine::new(StaticOverflowPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_overflow.json"
         ),
     );
 }

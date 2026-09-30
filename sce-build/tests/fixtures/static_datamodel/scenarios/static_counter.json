@@ -1,0 +1,18 @@
+{
+  "machine": "static_counter",
+  "about": "The counter counted to the flag and let go: five ticks assign count + step, the <if cond=\"count === 5\"> branch sets ready, and `go` is taken because its bool guard reads true. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the variables start at their declared values",
+      "expect": { "state": "counting", "variables": { "count": 0, "ready": false } } },
+
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 1, "ready": false } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 2, "ready": false } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 3, "ready": false } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 4, "ready": false } } },
+    { "note": "the fifth tick reaches the <if> branch",
+      "event": "tick", "expect": { "state": "counting", "variables": { "count": 5, "ready": true } } },
+
+    { "note": "ready is true, so the guard `ready` takes the transition into the final `done`, and a machine that ended has no state to read",
+      "event": "go", "expect": { "ended": true } }
+  ]
+}

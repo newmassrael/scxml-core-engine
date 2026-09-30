@@ -1,0 +1,23 @@
+{
+  "machine": "static_counter",
+  "about": "The counter counted to its bound: the <elseif cond=\"count > 7\"> branch clears ready at eight, the guard `count < 10 && In('counting')` is false on the eleventh tick so count stays at ten, and `go` is refused because ready is false. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 1, "ready": false } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 2, "ready": false } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 3, "ready": false } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 4, "ready": false } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 5, "ready": true } } },
+    { "note": "neither the <if> nor the <elseif> condition holds at six and seven: ready is left alone",
+      "event": "tick", "expect": { "state": "counting", "variables": { "count": 6, "ready": true } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 7, "ready": true } } },
+    { "note": "the <elseif> branch",
+      "event": "tick", "expect": { "state": "counting", "variables": { "count": 8, "ready": false } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 9, "ready": false } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 10, "ready": false } } },
+
+    { "note": "the guard is false at ten: no transition is taken",
+      "event": "tick", "expect": { "state": "counting", "variables": { "count": 10, "ready": false } } },
+    { "note": "ready is false, so `go` is not taken",
+      "event": "go", "expect": { "state": "counting", "variables": { "count": 10, "ready": false } } }
+  ]
+}
