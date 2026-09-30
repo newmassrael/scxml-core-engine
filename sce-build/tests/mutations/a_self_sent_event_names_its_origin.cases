@@ -19,7 +19,7 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_a_self_sent_event_names_its_origin)$'
-mutation_targets sce/src/runtime/ActionExecutorImpl.cpp sce/include/static/StaticExecutionEngine.h tools/codegen/templates/actions/send.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
+mutation_targets sce/src/runtime/ActionExecutorImpl.cpp sce/include/static/StaticExecutionEngine.h tools/codegen/templates/actions/send.jinja2 backends/c/runtime/include/sce/send_target.h
 mutation_oracles tests/integration/ASelfSentEventNamesItsOriginTest.cpp tests/integration/ASelfSentEventNamesItsOriginAotTest.cpp backends/c/tests/integration/test_a_self_sent_event_names_its_origin.c
 
 # ── Interpreter: a blank target reaches this session ───────────────
@@ -49,14 +49,21 @@ PY
 
 # ── C11: a blank target reaches this session ───────────────────────
 #
-# Without the check a blank buffer falls to the chain's last arm, which
-# dispatches onto this machine's own external queue — so `nowhere` arrives.
+# A `targetexpr` on the dynamic route is read by one table,
+# `sce_classify_send_target`, and what it takes to name nothing is decided once,
+# in `sce_send_target_names_nothing`. This case removes the blank arm there, so
+# the value is no longer refused as unreachable and reads as an address of another
+# kind: error.execution replaces error.communication, and `unreachable` stays 0.
+#
+# An earlier version of this case removed a second copy of the rule from the
+# send site's template. That copy was redundant on this route — the table refuses
+# the same values — so removing it changed no binary's behaviour and the case
+# read SURVIVED. The copy was removed, not the case hardened: a rule spelled
+# twice is unobservable in one of its two places. The BasicHTTP arm still calls
+# the same predicate, and no fixture of this casefile sends over it.
 
 mutation_case "C11 delivers a blank target expression to itself" <<'PY'
-edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """            if (_send_target_buf[0] == '\\0' ||
-                strcmp(_send_target_buf, "undefined") == 0 ||
-                strcmp(_send_target_buf, "nil") == 0) {""",
-     """            if (strcmp(_send_target_buf, "undefined") == 0 ||
-                strcmp(_send_target_buf, "nil") == 0) {""")
+edit("backends/c/runtime/include/sce/send_target.h",
+     """    return target == NULL || target[0] == '\\0' || strcmp(target, "undefined") == 0 ||""",
+     """    return target == NULL || strcmp(target, "undefined") == 0 ||""")
 PY
