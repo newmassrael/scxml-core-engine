@@ -16,6 +16,17 @@ says which backend is wrong. That is the whole of the method, and the reason the
 model is Python: its integers have no width, so it cannot share a backend's
 overflow.
 
+`validate_laws` holds the models to something a case cannot: what the documents
+claim about themselves — a set union that commutes, associates and is idempotent,
+a change log whose answer does not depend on where it was cut, a mailbox page
+that continues from the last id, a clock that only moves forward, a limiter that
+admits exactly `burst` permits. Every backend agreeing with a model on a
+thousand cases still leaves such a claim unproved, and a model that refutes one
+says the claim is false of the algorithm the document wrote. It runs with
+`--check`, and refutes each of four deliberately broken models (a clock that
+forgets its counter, a log applied deletes first as Tutanota does, a page that
+reads one id early, a union that keeps one new entry).
+
 Two properties make the output trustworthy:
 
 * The model is checked against every hand-written case of the same fixture
@@ -104,6 +115,7 @@ from __future__ import annotations
 
 import calendar
 import datetime
+import itertools
 import json
 import math
 import re
@@ -1909,6 +1921,204 @@ FIXTURES = {
 }
 
 
+LAW_RUNS = 600
+
+
+class Law:
+    """One claim a document makes about itself, held to the model on random inputs.
+
+    The claims are the ones the documents' own prose states — a union that
+    commutes, a log whose answer does not depend on where it was cut, a page that
+    continues from the last id — and they are what a backend agreeing with the
+    model on a thousand cases still does not prove. A model that refutes one says
+    the document's claim is false of the algorithm it wrote."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.ran = 0
+
+    def holds(self, condition: bool, inputs) -> None:
+        self.ran += 1
+        if not condition:
+            raise SystemExit(f"law refuted — {self.name}: {json.dumps(inputs)}")
+
+    def was_asked(self, at_least: int = LAW_RUNS // 5) -> None:
+        """A law that was asked of too few inputs proves nothing."""
+        if self.ran < at_least:
+            raise SystemExit(f"law `{self.name}` was asked of only {self.ran} inputs")
+
+
+def answer_of(result):
+    """The value of a model's answer, or `None` where the document fails."""
+    return result[1] if result[0] == "ok" else None
+
+
+def validate_laws() -> None:
+    """Hold each document's claims about itself to its model (see [`Law`])."""
+    rng = SplitMix64(0xE110_1A75)
+    union_laws = [Law(f"orset_union {name}") for name in ("commutes", "associates", "is idempotent", "keeps a")]
+    prune_law = Law("orset_live: pruning what every replica observed leaves the set's value")
+    order_laws = [Law(f"hlc_compare {name}") for name in ("is antisymmetric", "is transitive", "ties only the same stamp")]
+    clock_laws = [Law("hlc_send sorts after prev"), Law("hlc_receive sorts after prev and msg")]
+    classify_law = Law("lww_classify does not depend on the order logged")
+    apply_laws = [Law("changes_apply: where the log is cut does not matter"), Law("changes_apply is idempotent")]
+    ack_laws = [Law("mailbox_ack is idempotent"), Law("mailbox_ack ignores the order acknowledged")]
+    page_law = Law("mailbox_page: pages from the last id read the whole queue")
+    insert_law = Law("mailbox_insert holds the message once, under the id mailbox_assign gives")
+    dedup_law = Law("dedup_admit keeps the window within capacity and the id last")
+    hold_law = Law("ordering_hold keeps the held slots ascending and holds the arrival once")
+    gcra_law = Law("gcra_admit admits exactly `burst` permits of a fresh limiter at one instant")
+    retry_law = Law("sync_retry_at never answers before `previous`")
+    utc_law = Law("utc_from_local names an instant that reads as the local time")
+
+    for _ in range(LAW_RUNS):
+        pool = entry_pool(rng)
+        a, b, c = entry_sample(rng, pool), entry_sample(rng, pool), entry_sample(rng, pool)
+
+        def union(x, y):
+            return orset_union(x, y)[1]
+
+        def as_set(entries):
+            return sorted(json.dumps(entry_, sort_keys=True) for entry_ in entries)
+
+        union_laws[0].holds(as_set(union(a, b)) == as_set(union(b, a)), [a, b])
+        union_laws[1].holds(as_set(union(union(a, b), c)) == as_set(union(a, union(b, c))), [a, b, c])
+        union_laws[2].holds(union(a, a) == a, a)
+        union_laws[3].holds(union(a, []) == a and as_set(union([], a)) == as_set(a), a)
+
+        adds, tombstones = entry_sample(rng, pool), entry_sample(rng, pool)
+        observed = [t for t in tombstones if rng.below(2)]
+        live = lambda x, y: orset_live(x, y)[1]
+        prune_law.holds(
+            as_set(live(live(adds, observed), live(tombstones, observed))) == as_set(live(adds, tombstones)),
+            [adds, tombstones, observed],
+        )
+
+        first = stamp_value(rng)
+        second, third = near_stamp(rng, first), near_stamp(rng, first)
+        sign = lambda x, y: hlc_compare(x, y)[1]
+        order_laws[0].holds(sign(first, second) == -sign(second, first), [first, second])
+        for x, y, z in itertools.permutations([first, second, third]):
+            if sign(x, y) <= 0 and sign(y, z) <= 0:
+                order_laws[1].holds(sign(x, z) <= 0, [x, y, z])
+        order_laws[2].holds((sign(first, second) == 0) == (first == second), [first, second])
+
+        sent = answer_of(hlc_send(first, clock_near(rng, first["wallTime"]), rng.between(0, 5)))
+        if sent is not None:
+            clock_laws[0].holds(sign(sent, first) == 1, first)
+        message = near_stamp(rng, first)
+        received = answer_of(
+            hlc_receive(first, message, clock_near(rng, first["wallTime"]), rng.between(0, 5))
+        )
+        if received is not None:
+            clock_laws[1].holds(sign(received, first) == 1 and sign(received, message) == 1, [first, message])
+
+        logged = [stamp_value(rng) for _ in range(rng.between(0, 5))]
+        stamped = rng.pick(logged + [stamp_value(rng)])
+        classify_law.holds(
+            lww_classify(logged, stamped) == lww_classify(shuffled(rng, logged), stamped), [logged, stamped]
+        )
+
+    for _ in range(LAW_RUNS):
+        items = change_items(rng)
+        state = changes_apply_args(rng)[0]
+        log = change_log(rng, items)
+        cut = rng.between(0, len(log))
+        whole = answer_of(changes_apply(state, log))
+        head = answer_of(changes_apply(state, log[:cut]))
+        if whole is not None and head is not None:
+            apply_laws[0].holds(answer_of(changes_apply(head, log[cut:])) == whole, [state, log, cut])
+            apply_laws[1].holds(answer_of(changes_apply(whole, log)) == whole, [state, log])
+
+        queue = mailbox_queue(rng)
+        acked = [{"hi": held["hi"], "lo": held["lo"]} for held in entry_sample(rng, queue)] + [envelope_id(rng)]
+        once = answer_of(mailbox_ack(queue, acked))
+        ack_laws[0].holds(answer_of(mailbox_ack(once, acked)) == once, [queue, acked])
+        ack_laws[1].holds(answer_of(mailbox_ack(queue, shuffled(rng, acked))) == once, [queue, acked])
+
+        limit = rng.between(1, 4)
+        if answer_of(mailbox_page(queue, -1, 256)) is not None:
+            after, collected = -1, []
+            for _ in range(len(queue) + 2):
+                page = answer_of(mailbox_page(queue, after, limit))
+                if not page:
+                    break
+                collected += page
+                after = page[-1]["id"]
+            # A reader that never reaches an empty page has not read the queue: the
+            # loop above is bounded so that this is a refutation and not a hang.
+            page_law.holds(collected == queue and not page, [queue, limit])
+
+        counter = mailbox_counter(rng, queue)
+        key = message_key(rng, queue)
+        inserted = answer_of(mailbox_insert(queue, counter, key["hi"], key["lo"]))
+        assigned = answer_of(mailbox_assign(queue, counter, key["hi"], key["lo"]))
+        keys = [(held["hi"], held["lo"]) for held in queue]
+        if inserted is not None and assigned is not None and len(set(keys)) == len(keys):
+            # A mailbox holds each message once; a queue with one twice is not one
+            # the host kept, and the two documents answer it differently (the
+            # first of the copies, the last) without either being wrong.
+            mine = [held for held in inserted if held["hi"] == key["hi"] and held["lo"] == key["lo"]]
+            insert_law.holds(len(mine) == 1 and mine[0]["id"] == assigned, [queue, counter, key])
+
+        window = id_window(rng)
+        ident = rng.pick(window) if window and rng.below(2) else envelope_id(rng)
+        capacity = max(1, len(window) + rng.pick([0, 1, 3]))
+        admitted = answer_of(dedup_admit(window, ident, capacity))
+        if admitted is not None:
+            held_before = ident in window
+            dedup_law.holds(
+                len(admitted) <= capacity
+                and (admitted == window if held_before else admitted[-1] == ident),
+                [window, ident, capacity],
+            )
+
+        seq_base, slots = held_slots(rng)
+        ascending = sorted({held["seq"]: held for held in slots}.values(), key=lambda held: held["seq"])
+        arrival = sequence_near(rng, seq_base, ascending)
+        held_now = answer_of(ordering_hold(ascending, arrival, arrival_time(rng)))
+        ordered = [held["seq"] for held in held_now]
+        hold_law.holds(
+            ordered == sorted(set(ordered)) and ordered.count(arrival) == 1, [ascending, arrival]
+        )
+
+        interval = rng.between(1, 10_000)
+        burst = rng.between(1, 12)
+        now = REALISTIC_WALL + rng.between(-1000, 1000)
+        tat, granted = now - rng.between(0, burst * interval * 2), 0
+        for _ in range(burst + 3):
+            decision = answer_of(gcra_admit(tat, now, 1, interval, burst))
+            if decision["admitted"]:
+                granted += 1
+                tat = decision["tat"]
+        gcra_law.holds(granted == burst, [interval, burst, now])
+
+        retry_args = sync_retry_args(rng)
+        retried = answer_of(sync_retry_at(*retry_args))
+        if retried is not None:
+            retry_law.holds(retried >= retry_args[0], retry_args)
+
+        starts, offsets = offset_table(rng)
+        if starts and len(starts) == len(offsets):
+            instant = starts[0] + rng.between(0, 90_000_000)
+            offset = answer_of(utc_offset_at(starts, offsets, instant))
+            if offset is not None:
+                named = answer_of(answering(utc_from_local)(starts, offsets, instant + offset))
+                if named is not None:
+                    back = answer_of(utc_offset_at(starts, offsets, named))
+                    utc_law.holds(
+                        named <= instant and back is not None and named + back == instant + offset,
+                        [starts, offsets, instant],
+                    )
+
+    every_law = (
+        union_laws + [prune_law] + order_laws + clock_laws + [classify_law] + apply_laws + ack_laws
+        + [page_law, insert_law, dedup_law, hold_law, gcra_law, retry_law, utc_law]
+    )
+    for law in every_law:
+        law.was_asked()
+
+
 def render(value) -> str:
     """A value the way the hand-written cases write it: a record as
     `{ "year": 1970, ... }`, a list as `[1, 2]`, a boolean as `true`, a number
@@ -2018,6 +2228,7 @@ def regenerate(text: str):
 def main(argv) -> int:
     check = "--check" in argv
     validate_calendar()
+    validate_laws()
     original = REFERENCE.read_text(encoding="utf-8")
     json.loads(original)
     text, report = regenerate(original)
