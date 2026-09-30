@@ -50,9 +50,20 @@ use crate::forge::static_lowering::{lower, Callee, LoweredSite, StaticTarget};
 use crate::forge::type_ctx::StaticScope;
 use crate::model::{Action, Datamodel, SCXMLModel};
 
-/// The global the library is bound to: the id of the lowered document's first
-/// `<data>`, so every later expression reads `SceStatic.<member>`.
+/// The global of the script engine the library is bound to, so every lowered
+/// expression reads `SceStatic.<member>`.
+///
+/// ⚠ A global, not a `<data>` value: the Interpreter carries a data value
+/// between its script engine and the machine as plain data, and an object
+/// whose members are functions comes out of that with none of them
+/// (`SceStatic.U8.add` was "not a function", measured 2026-09-30). The
+/// library is installed by the expression of a `<data>` instead, which writes
+/// the global as it runs and leaves the `<data>` holding a flag.
 pub(crate) const RUNTIME_GLOBAL: &str = "SceStatic";
+
+/// The id of the `<data>` that installs the library — the document's first, so
+/// it runs before any other `<data>` and before every expression.
+pub(crate) const RUNTIME_DATA_ID: &str = "SceStaticInstalled";
 
 /// The integer widths the library implements, and so the only ones an
 /// operation may be checked at. A width outside this list has no
@@ -81,21 +92,24 @@ fn without_block_comments(source: &str) -> String {
     code
 }
 
-/// The library as one expression: its comments dropped — they explain the
-/// source, and would ship inside every lowered document — and then every line
-/// trimmed and the lines joined by a single space, so the attribute that
-/// carries it reads the same to every XML parser however it normalises a line
-/// break.
+/// The expression of the `<data>` that installs the library: its comments
+/// dropped — they explain the source, and would ship inside every lowered
+/// document — and then every line trimmed and the lines joined by a single
+/// space, so the attribute that carries it reads the same to every XML parser
+/// however it normalises a line break. It binds the library to
+/// [`RUNTIME_GLOBAL`] and gives the `<data>` a value that survives the
+/// Interpreter's script boundary.
 ///
 /// A line comment would swallow the rest of that one line, so the source holds
 /// none (`the_library_survives_being_put_on_one_line` holds it to that).
 pub(crate) fn runtime_expression() -> String {
-    without_block_comments(RUNTIME_SOURCE)
+    let library = without_block_comments(RUNTIME_SOURCE)
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
-        .join(" ")
+        .join(" ");
+    format!("(function () {{ globalThis.{RUNTIME_GLOBAL} = {library}; return true; }})()")
 }
 
 /// The Interpreter's script engine, as a target of the `sce-static` walk.
@@ -402,7 +416,7 @@ fn document_edits(text: &str, needs_library: bool) -> Result<Vec<Edit>, Generate
         edits.push(Edit {
             range: at..at,
             text: format!(
-                "<data id=\"{RUNTIME_GLOBAL}\" expr=\"{}\"/>\n    ",
+                "<data id=\"{RUNTIME_DATA_ID}\" expr=\"{}\"/>\n    ",
                 xml_attribute_value(&runtime_expression())
             ),
         });
@@ -427,11 +441,11 @@ fn lower_parsed(
     if let Some(variable) = StaticScope::of(model)
         .into_iter()
         .flat_map(|scope| scope.variables)
-        .find(|v| v.id == RUNTIME_GLOBAL)
+        .find(|v| v.id == RUNTIME_GLOBAL || v.id == RUNTIME_DATA_ID)
     {
         return Err(refuse(GenerateError::unsupported(format!(
-            "<data id=\"{}\"> takes the name the ecmascript lowering binds its runtime library \
-             to; rename the variable",
+            "<data id=\"{}\"> takes a name the ecmascript lowering keeps for its runtime \
+             library; rename the variable",
             variable.id
         ))));
     }
@@ -538,14 +552,20 @@ mod tests {
         }
     }
 
-    /// The library is one expression the lowered document binds to
-    /// [`RUNTIME_GLOBAL`], and it puts nothing else in the script engine's
-    /// global scope.
+    /// The library is one expression that binds [`RUNTIME_GLOBAL`] and puts
+    /// nothing else in the script engine's global scope, and whose value — the
+    /// one the `<data>` holds — is a flag: a value with function members does
+    /// not survive the Interpreter's script boundary.
     #[test]
     fn the_library_is_one_self_contained_expression() {
         let text = runtime_expression();
-        assert!(text.starts_with("(function () {"), "{text}");
-        assert!(text.ends_with("})()"), "{text}");
+        assert!(
+            text.starts_with(&format!(
+                "(function () {{ globalThis.{RUNTIME_GLOBAL} = (function () {{"
+            )),
+            "{text}"
+        );
+        assert!(text.ends_with("})(); return true; })()"), "{text}");
         assert!(!text.contains('\n'));
         assert!(
             !text.contains("/*"),
@@ -635,7 +655,7 @@ mod tests {
                 r#"expr="refusals + 1""#,
             );
         let library = format!(
-            "<data id=\"SceStatic\" expr=\"{}\"/>\n    ",
+            "<data id=\"{RUNTIME_DATA_ID}\" expr=\"{}\"/>\n    ",
             xml_attribute_value(&runtime_expression())
         );
         assert_eq!(undone.replacen(&library, "", 1), COUNTER);
@@ -656,7 +676,7 @@ mod tests {
             .expect("a first <data>");
         assert_eq!(
             first.attribute("id"),
-            Some(RUNTIME_GLOBAL),
+            Some(RUNTIME_DATA_ID),
             "the library is installed before every other <data>"
         );
         assert_eq!(first.attribute("expr"), Some(runtime_expression().as_str()));
@@ -707,13 +727,17 @@ mod tests {
     }
 
     #[test]
-    fn a_variable_may_not_take_the_libraries_name() {
-        let clash = COUNTER.replace(
-            r#"<data id="refusals" sce:type="uint8" expr="0"/>"#,
-            r#"<data id="refusals" sce:type="uint8" expr="0"/>
-    <data id="SceStatic" sce:type="uint8" expr="0"/>"#,
-        );
-        assert!(refusal(&clash).contains("SceStatic"));
+    fn a_variable_may_not_take_the_libraries_names() {
+        for name in [RUNTIME_GLOBAL, RUNTIME_DATA_ID] {
+            let clash = COUNTER.replace(
+                r#"<data id="refusals" sce:type="uint8" expr="0"/>"#,
+                &format!(
+                    r#"<data id="refusals" sce:type="uint8" expr="0"/>
+    <data id="{name}" sce:type="uint8" expr="0"/>"#
+                ),
+            );
+            assert!(refusal(&clash).contains(name), "{name}");
+        }
     }
 
     #[test]
