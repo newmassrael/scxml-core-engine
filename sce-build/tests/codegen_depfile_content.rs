@@ -861,6 +861,224 @@ fn a_depfile_never_names_a_file_the_run_wrote() {
     );
 }
 
+/// Run `sce-codegen generate … --write-deps` and return the manifest it
+/// printed: the last non-empty line of stdout, one JSON object whose
+/// `artifacts` list is in the order the run wrote them.
+fn generate_manifest(
+    doc: &Path,
+    out: &Path,
+    lang: &str,
+    depfile: &Path,
+) -> Result<serde_json::Value, String> {
+    let run = Command::new(codegen_bin())
+        .arg("generate")
+        .arg(doc)
+        .arg("-o")
+        .arg(out)
+        .arg("-l")
+        .arg(lang)
+        .arg("--go-module-prefix")
+        .arg("example.com/depfile_probe")
+        .arg("--write-deps")
+        .arg(depfile)
+        .env("SCE_TEMPLATE_DIR", template_root())
+        .output()
+        .expect("sce-codegen is runnable");
+    if !run.status.success() {
+        return Err(String::from_utf8_lossy(&run.stderr).into_owned());
+    }
+    let stdout = String::from_utf8_lossy(&run.stdout).into_owned();
+    let manifest_line = stdout
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .expect("generate prints its manifest");
+    Ok(serde_json::from_str(manifest_line).expect("the manifest line is JSON"))
+}
+
+fn manifest_artefacts(manifest: &serde_json::Value) -> Vec<String> {
+    manifest["artifacts"]
+        .as_array()
+        .expect("the manifest lists its artifacts")
+        .iter()
+        .map(|a| {
+            a["path"]
+                .as_str()
+                .expect("an artifact has a path")
+                .to_string()
+        })
+        .collect()
+}
+
+/// The targets a Make-style depfile names, left of the first `: `.
+///
+/// Colon-space, not a bare colon: the targets are absolute paths.
+fn depfile_targets(text: &str) -> Vec<&str> {
+    let (targets, _) = text
+        .split_once(": ")
+        .expect("the depfile has a `target: prereqs` shape");
+    targets
+        .split(|c: char| c.is_whitespace() || c == '\\')
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+/// A depfile has one target: the first artefact the run wrote.
+///
+/// Ninja reads a depfile back on every run that follows the first, and
+/// refuses one that mentions an output its edge did not declare — "depfile
+/// mentions '…__sce_synth_invoke__inv1_sm.h' as an output, but no such
+/// output was declared". Under CMake 3.28 that stopped every rebuild of a
+/// tree whose fixture edge had left its synth children unlisted, while
+/// CMake 4.4 (which reads the depfile once and never asks) built the same
+/// tree green. Whether the edge lists a child is a fact about the
+/// consumer's build description; naming it in the depfile made it an
+/// obligation on every consumer. `sce_add_state_machine` is handed a
+/// document whose children are named from inside it, and cannot know them.
+///
+/// Every artefact of one run comes out of one command, so the first is a
+/// complete stand-in for the rest as far as a rebuild is concerned — the
+/// shape a compiler's `-MD` depfile has, one object, for the same reason.
+///
+/// The fixture carries an inline `<invoke>`, so a statechart run emits at
+/// least a second artefact on every backend that writes one: with a single
+/// artefact the assertion below would hold whether or not the depfile
+/// dropped the others. The count of runs that emitted more than one is
+/// asserted, because a fixture that stopped producing children would turn
+/// this into a check of nothing.
+#[test]
+fn a_depfile_names_the_primary_artefact_and_no_other() {
+    let mut violations = Vec::new();
+    let mut runs_with_several_artefacts = 0usize;
+
+    for lang in LANGUAGES {
+        let work = TempDir::new().expect("tempdir");
+        let doc = write_sources(work.path(), Pipeline::Statechart);
+        let out = work.path().join("out");
+        std::fs::create_dir_all(&out).expect("output directory is creatable");
+        let depfile = work.path().join("probe.d");
+
+        let manifest = match generate_manifest(&doc, &out, lang, &depfile) {
+            Ok(m) => m,
+            Err(e) => {
+                violations.push(format!("{lang}: generation failed\n{e}"));
+                continue;
+            }
+        };
+        let artefacts = manifest_artefacts(&manifest);
+        if artefacts.len() > 1 {
+            runs_with_several_artefacts += 1;
+        }
+
+        let text = std::fs::read_to_string(&depfile).expect("the depfile is readable");
+        let targets = depfile_targets(&text);
+
+        if targets.len() != 1 {
+            violations.push(format!(
+                "{lang}: the depfile names {} targets, {targets:?}; an edge that did not \
+                 declare every one of them is refused by ninja on the next build",
+                targets.len(),
+            ));
+        } else if artefacts.first().map(String::as_str) != Some(targets[0]) {
+            violations.push(format!(
+                "{lang}: the depfile's target is {}, not the run's first artefact {:?}; ninja \
+                 reads a depfile whose target is not its edge's first output as describing \
+                 another edge, and re-runs this one on every build",
+                targets[0],
+                artefacts.first(),
+            ));
+        }
+    }
+
+    assert!(
+        runs_with_several_artefacts > 0,
+        "no backend emitted more than one artefact for the fixture, so 'one target' held \
+         vacuously — the fixture stopped producing the synth child or the partial that made \
+         the depfile's old target list longer than one",
+    );
+    assert!(
+        violations.is_empty(),
+        "depfile targets do not match the contract:\n\n{}",
+        violations.join("\n\n"),
+    );
+}
+
+/// A document the generator refuses is still given its depfile.
+///
+/// W3C SCXML 5.8 rejects a document whose external script cannot be
+/// loaded; the generator writes a stub in its place so the AOT runner
+/// reports the rejection, and used to return from that branch before the
+/// depfile call at the end of the function. The build edge still declared
+/// the depfile, so Ninja on CMake 3.x found it missing after every run and
+/// read the edge as out of date: `test301` regenerated, and relinked its
+/// runner, on every build. CMake 4.x records the dependencies when the
+/// command finishes and never looks for the file, so the same tree was
+/// quiet there.
+///
+/// `resources/301` is the W3C document that is rejected this way. The
+/// manifest's `rejected` key is asserted for every backend: without it the
+/// probe could be running an ordinary document and passing for the wrong
+/// reason.
+#[test]
+fn a_rejected_document_still_writes_its_depfile() {
+    let source = repo_root().join("resources/301/test301.scxml");
+    let mut violations = Vec::new();
+    let mut probes = 0usize;
+
+    for lang in LANGUAGES {
+        probes += 1;
+        let work = TempDir::new().expect("tempdir");
+        let doc = work.path().join("test301.scxml");
+        std::fs::copy(&source, &doc).expect("the rejected fixture is copyable");
+        let out = work.path().join("out");
+        std::fs::create_dir_all(&out).expect("output directory is creatable");
+        let depfile = work.path().join("probe.d");
+
+        let manifest = match generate_manifest(&doc, &out, lang, &depfile) {
+            Ok(m) => m,
+            Err(e) => {
+                violations.push(format!("{lang}: generation failed\n{e}"));
+                continue;
+            }
+        };
+        if manifest.get("rejected").is_none() {
+            violations.push(format!(
+                "{lang}: the document was not rejected, so this probe did not reach the \
+                 rejection branch — pick another document that §5.8 refuses",
+            ));
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&depfile) else {
+            violations.push(format!(
+                "{lang}: no depfile was written for a rejected document; Ninja on CMake 3.x \
+                 treats a declared depfile that is missing as out of date and regenerates \
+                 the edge on every build",
+            ));
+            continue;
+        };
+        let artefacts = manifest_artefacts(&manifest);
+        let targets = depfile_targets(&text);
+        if targets.len() != 1 || artefacts.first().map(String::as_str) != Some(targets[0]) {
+            violations.push(format!(
+                "{lang}: the depfile names {targets:?}, not the stub's first artefact {:?}",
+                artefacts.first(),
+            ));
+        }
+    }
+
+    assert_eq!(
+        probes,
+        LANGUAGES.len(),
+        "ran {probes} probes, expected {} — a backend stopped being covered",
+        LANGUAGES.len(),
+    );
+    assert!(
+        violations.is_empty(),
+        "a rejected document's depfile is wrong:\n\n{}",
+        violations.join("\n\n"),
+    );
+}
+
 /// Every document in the synth-6.2.6 source set is a declared
 /// prerequisite — including the ones the compile never reads.
 ///

@@ -5297,6 +5297,29 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             spec: "W3C SCXML 5.8",
             name: model.name.clone(),
         });
+        // The depfile was asked for and the build edge declares it, so it is
+        // written for a rejected document too. Returning without one left
+        // Ninja on CMake 3.x with an edge whose depfile "is missing" after
+        // every run, which it reads as out of date: `test301` regenerated,
+        // and relinked its runner, on every build (CMake 4.x records the
+        // dependencies at build time instead and never looks for the file,
+        // which hid it). A stub is not rendered from a template, but the
+        // templates stay declared anyway — the depfile has one shape, and a
+        // template edit costs a stub regeneration that changes nothing.
+        if let Some(depfile) = depfile_path {
+            write_depfile(
+                depfile,
+                DepfileInputs {
+                    output_paths: &report.artifacts,
+                    template_dir: &template_dir,
+                    lang,
+                    scxml_input: Path::new(scxml_path),
+                    preprocessor_deps: parser.preprocessor_deps(),
+                    source_set: &drift_ctx.sources,
+                    self_written: &[],
+                },
+            );
+        }
         report.needs_script_engine = Some(false);
         report.needs_event_scheduler = Some(false);
         // Stubs are written as they are, so this reads `None`: nothing was
@@ -5974,8 +5997,9 @@ fn depfile_identity(path: &Path) -> PathBuf {
 /// (artefacts, side-effect writes), the last of which must be
 /// subtracted rather than added.
 struct DepfileInputs<'a> {
-    /// Files this invocation declares as artefacts — the depfile's
-    /// targets, and the first half of what it must not depend on.
+    /// Files this invocation declares as artefacts — the first of them is
+    /// the depfile's target, and all of them are the first half of what it
+    /// must not depend on.
     output_paths: &'a [PathBuf],
     /// Loader scope for the render, whose templates are prerequisites.
     template_dir: &'a Path,
@@ -6128,14 +6152,30 @@ fn write_depfile(depfile_path: &str, inputs: DepfileInputs<'_>) {
     let mut seen = std::collections::HashSet::new();
     deps.retain(|p| seen.insert(p.clone()));
 
-    if !output_paths.is_empty() {
-        // List all outputs as targets (e.g., C++ produces both .h and .inl)
-        let targets: String = output_paths
-            .iter()
-            .map(|p| p.display().to_string())
-            .collect::<Vec<_>>()
-            .join(" ");
-        let mut content = format!("{targets}: ");
+    // One target: the primary artefact, which every route writes first (the
+    // header, for the backends that also write a `.inl` or a `.c`).
+    //
+    // Naming every artefact here is what this used to do, and it made each
+    // one an obligation on the build edge rather than a fact about it. Ninja
+    // re-reads a depfile on every run unless the edge carries `deps = gcc`,
+    // and on that path it refuses one that mentions an output the edge did
+    // not declare: "depfile mentions '…__sce_synth_invoke__inv1_sm.h' as an
+    // output, but no such output was declared" stopped every build of the
+    // tree under CMake 3.28 (2026-09-30), where a fixture's synth children
+    // had gone unlisted. CMake 4.4 writes `deps = gcc`, reads the depfile
+    // once and never asks, so the same tree was green there. A build edge
+    // cannot always know those names — `sce_add_state_machine` is handed a
+    // consumer's document, and a synth child is named from inside it.
+    //
+    // The prerequisites are the same whichever artefact carries them: every
+    // artefact comes out of the one run, so the edge re-runs when any
+    // prerequisite moves, and the rest follow. That is the shape a
+    // compiler's `-MD` depfile has — one target, the object — for the same
+    // reason. What the edge still owes ninja is that this target be its
+    // FIRST output; otherwise ninja reads the depfile as describing some
+    // other edge and re-runs this one every time.
+    if let Some(primary) = output_paths.first() {
+        let mut content = format!("{}: ", primary.display());
         for (i, dep) in deps.iter().enumerate() {
             if i > 0 {
                 content.push_str(" \\\n    ");
