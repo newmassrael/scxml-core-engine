@@ -19,7 +19,7 @@
 #   cmake --build build_round_trip_c
 #   ctest --test-dir build_round_trip_c --output-on-failure
 
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 project(sce_forge_round_trip_c C)
 
 set(CMAKE_C_STANDARD 11)

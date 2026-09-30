@@ -17,7 +17,7 @@
 # (header-only, vendored under third_party) to compare generated output
 # against tests/forge/conformance/numerical_reference.json.
 
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 project(sce_forge_numerical_conformance CXX)
 
 # RFC §synth-7 A6: §synth-5-A algorithm kind joins the cpp conformance harness. The

@@ -19,7 +19,7 @@
 # zero-deps JSON parser within the backend's zero-dependency rule, so
 # the oracle is materialised at codegen time, not parsed at runtime).
 
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 project(sce_forge_numerical_conformance_c C)
 
 set(CMAKE_C_STANDARD 11)

@@ -12,14 +12,22 @@
 #   sce_add_state_machine(TARGET my_app SCXML_FILE state.scxml)
 #   sce_add_state_machines_from_dir(TARGET my_app SCXML_DIR scxml/)
 
-# The functions below give their commands a DEPFILE, and what Ninja does with
-# one depends on this policy as it stood where the function was DEFINED — not
-# on the consumer's cmake_minimum_required. Unset, the depfile reaches Ninja
-# with absolute targets that never match the command's relative outputs, and
-# every build regenerates (see the same setting in the top CMakeLists.txt).
-if(POLICY CMP0116)
-    cmake_policy(SET CMP0116 NEW)
+# The functions below give their commands a DEPFILE. A consumer's own
+# cmake_minimum_required can be lower than this repository's, so the floor is
+# enforced here, where a consumer meets it, and not left to surface as
+# "Option DEPFILE not supported by Unix Makefiles" from inside a function (see
+# the top CMakeLists.txt for the measurements behind 3.20).
+if(CMAKE_VERSION VERSION_LESS 3.20)
+    message(FATAL_ERROR
+        "SCE: sce_add_state_machine() needs CMake 3.20 or newer for "
+        "add_custom_command(DEPFILE); this is CMake ${CMAKE_VERSION}")
 endif()
+
+# What Ninja does with a DEPFILE depends on this policy as it stood where the
+# function was DEFINED, not on the consumer's cmake_minimum_required. Unset, the
+# depfile reaches Ninja with absolute targets that never match the command's
+# relative outputs, and every build regenerates.
+cmake_policy(SET CMP0116 NEW)
 
 # Find sce-codegen binary. The search itself lives in SCEFindCodegen so
 # the forge conformance and round-trip harnesses — which need the

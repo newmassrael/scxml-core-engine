@@ -1,23 +1,28 @@
-cmake_minimum_required(VERSION 3.14)
+# 3.20 is the oldest CMake whose add_custom_command(DEPFILE) every generator
+# accepts and whose CMP0116 hands Ninja a depfile in the build directory's terms.
+# A custom command's DEPFILE names its targets as sce-codegen wrote them,
+# absolute, and Ninja compares them with the command's outputs, which it holds
+# relative to the build directory; with CMP0116 unset the two never match
+# ("expected depfile ... to mention 'x_sm.h', got '/abs/x_sm.h'" under
+# `ninja -d explain`) and every build re-runs the command. The generated
+# headers' freshness contract (spec 6.2.6) rides on that depfile.
+#
+# Measured 2026-09-30 with Kitware's release tarballs and this tree: 3.19.8 and
+# 3.16.9 stop the configure under Unix Makefiles ("Option DEPFILE not supported
+# by Unix Makefiles"), and under Ninja every depfile edge re-runs on every build.
+# 3.20.6 and 3.28.3 configure, build, and then have nothing left to do. Below
+# 3.18 the zenoh-cpp package cannot load either: its config file defines an
+# ALIAS of a non-GLOBAL imported target.
+#
+# The version below also sets CMP0116 NEW here and in every directory that says
+# the same. A function keeps the policy of the scope it was DEFINED in, so the
+# modules in cmake/ that a consumer includes under a lower minimum still set it
+# for themselves.
+cmake_minimum_required(VERSION 3.20)
 
 # Set policy for Boost before project()
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
-endif()
-
-# A custom command's DEPFILE names its targets as the generator wrote them,
-# absolute; Ninja compares them with the command's outputs, which it holds
-# relative to the build directory. With the policy unset CMake hands the
-# depfile over untouched, the two never match, and every build re-runs the
-# command ("expected depfile ... to mention 'x_sm.h', got '/abs/x_sm.h'"
-# under `ninja -d explain`). NEW has CMake rewrite the depfile into the
-# build directory's terms. Measured on CMake 3.28.3: 23 of 582 depfile edges
-# were left verbatim, the six under backends/c/tests among them, because
-# this scope never set it. A subdirectory that calls cmake_minimum_required
-# resets it, so `cmake/SCECodegen.cmake` and the two `SCEStatic*` modules
-# each set it for the functions they define.
-if(POLICY CMP0116)
-    cmake_policy(SET CMP0116 NEW)
 endif()
 
 project(SCXMLCoreEngine VERSION 1.0.0 LANGUAGES C CXX)

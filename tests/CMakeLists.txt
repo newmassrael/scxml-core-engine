@@ -1,4 +1,8 @@
-cmake_minimum_required(VERSION 3.14)
+# The same floor as the root, for the same reason: a cmake_minimum_required in a
+# directory resets every policy introduced after its version to unset there, and
+# the 135 DEPFILE commands written inline below need CMP0116 NEW (see the root
+# CMakeLists.txt).
+cmake_minimum_required(VERSION 3.20)
 
 # GoogleTest setup - FetchContent approach
 find_package(GTest QUIET)
@@ -56,13 +60,12 @@ if(NOT GTest_FOUND)
         target_link_options(gmock_main PRIVATE -pthread -sUSE_PTHREADS=1)
     endif()
 
-    # Create alias (provides same interface as find_package)
+    # Create alias (provides same interface as find_package). googletest
+    # defines GTest::gtest, GTest::gtest_main, GTest::gmock and
+    # GTest::gmock_main for itself; only the legacy FindGTest names below are
+    # ours. Defining the others again is an error under CMP0107 (CMake 3.18).
     add_library(GTest::GTest ALIAS gtest)
     add_library(GTest::Main ALIAS gtest_main)
-    add_library(GTest::gtest ALIAS gtest)
-    add_library(GTest::gtest_main ALIAS gtest_main)
-    add_library(GTest::gmock ALIAS gmock)
-    add_library(GTest::gmock_main ALIAS gmock_main)
 else()
     message(STATUS "Using system-installed GTest")
 endif()

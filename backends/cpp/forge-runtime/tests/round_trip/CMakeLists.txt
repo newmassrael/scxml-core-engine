@@ -17,7 +17,7 @@
 #   cmake --build build_round_trip_cpp
 #   ctest --test-dir build_round_trip_cpp --output-on-failure
 
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 project(sce_forge_round_trip_cpp CXX)
 
 # C++20 because the cpp codec emit uses designated initializers
