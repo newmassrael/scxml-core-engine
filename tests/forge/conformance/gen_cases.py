@@ -77,6 +77,16 @@ unit in the last place off the nearest double and read that multiplier as 1.0.
 Python, Go, Kotlin and C++ parse it correctly. The defect was in the harness,
 not in a backend; both `Cargo.toml` files now enable `float_roundtrip`. JSON has
 no NaN or infinity, so those multipliers stay with the hand cases.
+
+Fifth run, 2026-09-30: `hlc_send`, `hlc_receive`, `hlc_within_drift`, `orset_live`,
+`orset_contains`, `orset_observed`, `dedup_admit`, `dedup_holds` and the four
+`ordering_*` documents — 3900 cases. Lists that a host keeps ascending are also
+given unsorted or with a sequence twice, since the documents' loops answer those
+the same way on every backend and a lowering that assumed order would not.
+`ordering_gap_end` takes the clock difference only for its first held slot, as `&&`
+short-circuits; the model does the same, and no backend read it eagerly. All six
+agreed with the model on every case, and a wrong expectation in six of the
+fixtures fails Go and C++.
 """
 
 from __future__ import annotations
@@ -740,6 +750,131 @@ def sync_retry_at(previous: int, kind: int, status: int, now: int, retry_after: 
     return ("ok", max(asked, previous))
 
 
+def hlc_send(prev: dict, now: int, node: int):
+    """sce:std/merge/hlc_send — the wall time never goes back; when it does not
+    advance the counter does, and a counter at its uint32 maximum cannot."""
+    wall = now if now > prev["wallTime"] else prev["wallTime"]
+    counter = 0
+    if wall == prev["wallTime"]:
+        counter = prev["counter"] + 1
+        if counter > U32_MAX:
+            return ("fails", "overflow")
+    return ("ok", hlc(wall, counter, node))
+
+
+def hlc_receive(prev: dict, msg: dict, now: int, node: int):
+    """sce:std/merge/hlc_receive — the largest of three wall times, the counter
+    continuing whichever of prev and msg share it."""
+    seen = max(prev["wallTime"], msg["wallTime"])
+    wall = now if now > seen else seen
+    counter = 0
+    if wall == prev["wallTime"] and wall == msg["wallTime"]:
+        counter = max(prev["counter"], msg["counter"]) + 1
+    elif wall == prev["wallTime"]:
+        counter = prev["counter"] + 1
+    elif wall == msg["wallTime"]:
+        counter = msg["counter"] + 1
+    if counter > U32_MAX:
+        return ("fails", "overflow")
+    return ("ok", hlc(wall, counter, node))
+
+
+def hlc_within_drift(wall: int, now: int, max_drift: int):
+    """sce:std/merge/hlc_within_drift — the difference of two int64 readings is
+    checked, and only taken when the wall time is ahead."""
+    if max_drift < 0:
+        return ("fails", "precondition")
+    if wall <= now:
+        return ("ok", True)
+    ahead = wall - now
+    if ahead > I64_MAX:
+        return ("fails", "overflow")
+    return ("ok", ahead <= max_drift)
+
+
+def orset_live(adds: list, tombstones: list):
+    """sce:std/merge/orset_live — adds, in order, that no tombstone equals."""
+    return ("ok", [add for add in adds if add not in tombstones])
+
+
+def orset_contains(live: list, element: int):
+    return ("ok", any(entry_["element"] == element for entry_ in live))
+
+
+def orset_observed(live: list, element: int):
+    return ("ok", [entry_ for entry_ in live if entry_["element"] == element])
+
+
+def dedup_admit(window: list, ident: dict, capacity: int):
+    """sce:std/mesh/dedup_admit — the window with the id appended, keeping the last
+    `capacity`; an id already held leaves it unchanged."""
+    if not (capacity > 0 and len(window) <= capacity):
+        return ("fails", "precondition")
+    held = ident in window
+    skip = 0 if held or len(window) < capacity else 1
+    out = window[skip:]
+    if not held:
+        out = out + [ident]
+    return ("ok", out)
+
+
+def dedup_holds(window: list, ident: dict):
+    return ("ok", ident in window)
+
+
+def slot(seq: int, arrived_at: int) -> dict:
+    return {"seq": seq, "arrivedAtMs": arrived_at}
+
+
+def ordering_drain(pending: list, start: int):
+    """sce:std/mesh/ordering_drain — one pass in the list's order: each slot at
+    the sequence expected next moves it on. A list that is not ascending is
+    answered as the document's loop answers it, which is the same on every
+    backend."""
+    nxt = start
+    for held in pending:
+        if held["seq"] == nxt:
+            if nxt + 1 > U64_MAX:
+                return ("fails", "overflow")
+            nxt += 1
+    return ("ok", nxt)
+
+
+def ordering_gap_end(pending: list, nxt: int, now: int, timeout_ms: int):
+    """sce:std/mesh/ordering_gap_end — only the first held slot counts, and the
+    clock difference is only taken for it, as `&&` short-circuits."""
+    resume = nxt
+    for index, held in enumerate(pending):
+        if index == 0 and held["seq"] != nxt:
+            waited = now - held["arrivedAtMs"]
+            if not fits(waited, I64_MIN, I64_MAX):
+                return ("fails", "overflow")
+            if waited >= timeout_ms:
+                resume = held["seq"]
+    return ("ok", resume)
+
+
+def ordering_hold(pending: list, seq: int, now: int):
+    """sce:std/mesh/ordering_hold — the arrival placed before the first held
+    slot with a larger sequence; a sequence already held is kept as it was."""
+    arrived = slot(seq, now)
+    out, placed = [], False
+    for held in pending:
+        if held["seq"] == seq:
+            placed = True
+        if not placed and seq < held["seq"]:
+            out.append(arrived)
+            placed = True
+        out.append(held)
+    if not placed:
+        out.append(arrived)
+    return ("ok", out)
+
+
+def ordering_prune(pending: list, nxt: int):
+    return ("ok", [held for held in pending if held["seq"] >= nxt])
+
+
 def epoch_ms(year, month, day, hour=0, minute=0, second=0, milli=0) -> int:
     instant = datetime.datetime(year, month, day, hour, minute, second)
     return (instant - datetime.datetime(1970, 1, 1)) // datetime.timedelta(milliseconds=1) + milli
@@ -862,7 +997,9 @@ def entry_near(rng: SplitMix64, base: dict) -> dict:
     return entry(element, wall, counter, node)
 
 
-def union_args(rng: SplitMix64):
+def entry_pool(rng: SplitMix64) -> list:
+    """Distinct entries that share fields with one another, so that a set of them
+    holds the same element twice and the same tag on two elements."""
     stamp = stamp_value(rng)
     first = entry(rng.pick(ELEMENT_EDGES), stamp["wallTime"], stamp["counter"], stamp["nodeId"])
     pool = [first]
@@ -870,11 +1007,16 @@ def union_args(rng: SplitMix64):
         candidate = entry_near(rng, rng.pick(pool))
         if candidate not in pool:
             pool.append(candidate)
+    return pool
 
-    def sample():
-        return shuffled(rng, pool)[: rng.between(0, len(pool))]
 
-    return [sample(), sample()]
+def entry_sample(rng: SplitMix64, pool: list) -> list:
+    return shuffled(rng, pool)[: rng.between(0, len(pool))]
+
+
+def union_args(rng: SplitMix64):
+    pool = entry_pool(rng)
+    return [entry_sample(rng, pool), entry_sample(rng, pool)]
 
 
 def text_args(rng: SplitMix64):
@@ -1060,6 +1202,180 @@ def sync_retry_args(rng: SplitMix64):
     return [previous, kind, status, now, retry_after]
 
 
+def clamp(value: int, low: int, high: int) -> int:
+    return min(max(value, low), high)
+
+
+def clock_near(rng: SplitMix64, wall: int) -> int:
+    """A clock reading about a stamp's wall time: the same, a step either way, a
+    little apart, at an edge, or anywhere — so the wall time advances, ties and
+    goes back each often."""
+    kind = rng.below(10)
+    if kind < 4:
+        return clamp(wall + rng.pick([0, 0, 1, -1]), I64_MIN, I64_MAX)
+    if kind < 7:
+        return clamp(wall + rng.between(-1000, 1000), I64_MIN, I64_MAX)
+    if kind < 9:
+        return rng.pick(WALL_EDGES)
+    return rng.between(I64_MIN, I64_MAX)
+
+
+def send_args(rng: SplitMix64):
+    prev = stamp_value(rng)
+    node = rng.pick(NODE_EDGES) if rng.below(3) == 0 else rng.between(0, 5)
+    return [prev, clock_near(rng, prev["wallTime"]), node]
+
+
+def receive_args(rng: SplitMix64):
+    prev = stamp_value(rng)
+    kind = rng.below(10)
+    msg = prev if kind == 0 else (near_stamp(rng, prev) if kind < 8 else stamp_value(rng))
+    anchor = prev["wallTime"] if rng.below(2) else msg["wallTime"]
+    node = rng.pick(NODE_EDGES) if rng.below(3) == 0 else rng.between(0, 5)
+    return [prev, msg, clock_near(rng, anchor), node]
+
+
+def drift_args(rng: SplitMix64):
+    kind = rng.below(10)
+    if kind < 6:
+        wall = REALISTIC_WALL + rng.between(-100_000, 100_000)
+        now = wall - rng.between(-100_000, 100_000)
+        ahead = wall - now
+        bound = rng.pick([ahead, ahead - 1, ahead + 1, 0, 1, 300_000, 5000, -1])
+    elif kind < 9:
+        edges = [I64_MIN, I64_MIN + 1, -1, 0, 1, I64_MAX - 1, I64_MAX]
+        wall, now = rng.pick(edges), rng.pick(edges)
+        bound = rng.pick([0, 1, I64_MAX, I64_MAX - 1, -1])
+    else:
+        wall, now = rng.between(I64_MIN, I64_MAX), rng.between(I64_MIN, I64_MAX)
+        bound = rng.between(-1, I64_MAX)
+    return [wall, now, bound]
+
+
+def live_args(rng: SplitMix64):
+    """Adds and the tombstones that remove some of them, sometimes an add twice
+    and a tombstone for an add the set never held."""
+    pool = entry_pool(rng)
+    adds = entry_sample(rng, pool)
+    if adds and rng.below(6) == 0:
+        adds = adds + [rng.pick(adds)]
+    tombstones = entry_sample(rng, pool)
+    if rng.below(6) == 0:
+        tombstones = tombstones + [entry_near(rng, rng.pick(pool))]
+    return [adds, tombstones]
+
+
+def element_args(rng: SplitMix64):
+    """A set's live entries and an element — mostly one it holds, or its
+    neighbour, or an edge."""
+    pool = entry_pool(rng)
+    live = entry_sample(rng, pool)
+    kind = rng.below(10)
+    if kind < 5 and live:
+        element = rng.pick(live)["element"]
+    elif kind < 7:
+        element = clamp(rng.pick(pool)["element"] + rng.pick([-1, 1]), 0, U64_MAX)
+    elif kind < 9:
+        element = rng.pick(ELEMENT_EDGES)
+    else:
+        element = rng.between(0, U64_MAX)
+    return [live, element]
+
+
+ID_EDGES = [0, 1, 2, 2**32, 2**63, U64_MAX - 1, U64_MAX]
+
+
+def envelope_id(rng: SplitMix64) -> dict:
+    """An id whose halves are small or at an edge, so two ids often share one."""
+    hi = rng.pick(ID_EDGES) if rng.below(2) else rng.between(0, 3)
+    lo = rng.pick(ID_EDGES) if rng.below(2) else rng.between(0, 3)
+    return {"hi": hi, "lo": lo}
+
+
+def id_window(rng: SplitMix64) -> list:
+    window = []
+    for _ in range(rng.between(0, 9)):
+        candidate = envelope_id(rng)
+        if candidate not in window:
+            window.append(candidate)
+    return window
+
+
+def admit_args(rng: SplitMix64):
+    window = id_window(rng)
+    ident = rng.pick(window) if window and rng.below(3) == 0 else envelope_id(rng)
+    capacity = rng.pick(
+        [len(window), len(window), len(window) + 1, len(window) - 1, 0, 1, 2, 3, 8, 256, 1000, U32_MAX]
+    )
+    return [window, ident, clamp(capacity, 0, U32_MAX)]
+
+
+def holds_args(rng: SplitMix64):
+    window = id_window(rng)
+    ident = rng.pick(window) if window and rng.below(2) else envelope_id(rng)
+    return [window, ident]
+
+
+SEQ_BASES = [0, 1, 5, 100, 2**32 - 3, 2**53 - 3, 2**63 - 3, U64_MAX - 6]
+
+
+def arrival_time(rng: SplitMix64) -> int:
+    kind = rng.below(10)
+    if kind < 6:
+        return REALISTIC_WALL + rng.between(-100_000, 100_000)
+    if kind < 9:
+        return rng.pick([0, 1, -1, I64_MIN, I64_MIN + 1, I64_MAX - 1, I64_MAX])
+    return rng.between(I64_MIN, I64_MAX)
+
+
+def held_slots(rng: SplitMix64):
+    """The base sequence, and slots near it — ascending as a host keeps them, and
+    now and then shuffled or holding one twice, which the loops answer the same
+    way on every backend."""
+    base = rng.pick(SEQ_BASES)
+    seqs = sorted(
+        {clamp(base + rng.between(0, 9), 0, U64_MAX) for _ in range(rng.between(0, 7))}
+    )
+    if seqs and rng.below(8) == 0:
+        seqs.append(rng.pick(seqs))
+    if len(seqs) > 1 and rng.below(6) == 0:
+        seqs = shuffled(rng, seqs)
+    return base, [slot(seq, arrival_time(rng)) for seq in seqs]
+
+
+def sequence_near(rng: SplitMix64, base: int, pending: list) -> int:
+    known = [held["seq"] for held in pending] + [base]
+    return clamp(rng.pick(known) + rng.pick([0, 0, 1, -1, 2]), 0, U64_MAX)
+
+
+def drain_args(rng: SplitMix64):
+    base, pending = held_slots(rng)
+    return [pending, sequence_near(rng, base, pending)]
+
+
+def gap_end_args(rng: SplitMix64):
+    base, pending = held_slots(rng)
+    nxt = sequence_near(rng, base, pending)
+    if pending and rng.below(2):
+        waited = rng.pick([0, 1, 49, 50, 51, 5000])
+        now = clamp(pending[0]["arrivedAtMs"] + waited, I64_MIN, I64_MAX)
+        timeout = clamp(waited + rng.pick([-1, 0, 1]), 0, I64_MAX)
+    else:
+        now = arrival_time(rng)
+        timeout = rng.pick([0, 1, 50, 5000, I64_MAX, -1, I64_MIN])
+    return [pending, nxt, now, timeout]
+
+
+def hold_args(rng: SplitMix64):
+    base, pending = held_slots(rng)
+    return [pending, sequence_near(rng, base, pending), arrival_time(rng)]
+
+
+def prune_args(rng: SplitMix64):
+    base, pending = held_slots(rng)
+    return [pending, sequence_near(rng, base, pending)]
+
+
 #: fixture -> (model, argument generator, how many cases, seed).
 #: A seed is per fixture and never reused, so adding a case to one fixture does
 #: not move another's.
@@ -1090,6 +1406,18 @@ FIXTURES = {
     "retry_jittered": (lambda args: retry_jittered(*args), jitter_args, 400, 0xE110_0013),
     "retry_exhausted": (lambda args: retry_exhausted(*args), exhausted_args, 150, 0xE110_0014),
     "sync_retry_at": (lambda args: sync_retry_at(*args), sync_retry_args, 400, 0xE110_0015),
+    "hlc_send": (lambda args: hlc_send(*args), send_args, 300, 0xE110_0016),
+    "hlc_receive": (lambda args: hlc_receive(*args), receive_args, 400, 0xE110_0017),
+    "hlc_within_drift": (lambda args: hlc_within_drift(*args), drift_args, 250, 0xE110_0018),
+    "orset_live": (lambda args: orset_live(*args), live_args, 300, 0xE110_0019),
+    "orset_contains": (lambda args: orset_contains(*args), element_args, 200, 0xE110_001A),
+    "orset_observed": (lambda args: orset_observed(*args), element_args, 250, 0xE110_001B),
+    "dedup_admit": (lambda args: dedup_admit(*args), admit_args, 400, 0xE110_001C),
+    "dedup_holds": (lambda args: dedup_holds(*args), holds_args, 200, 0xE110_001D),
+    "ordering_drain": (lambda args: ordering_drain(*args), drain_args, 300, 0xE110_001E),
+    "ordering_gap_end": (lambda args: ordering_gap_end(*args), gap_end_args, 400, 0xE110_001F),
+    "ordering_hold": (lambda args: ordering_hold(*args), hold_args, 400, 0xE110_0020),
+    "ordering_prune": (lambda args: ordering_prune(*args), prune_args, 250, 0xE110_0021),
 }
 
 
