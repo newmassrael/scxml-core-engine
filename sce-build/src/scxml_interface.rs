@@ -62,9 +62,10 @@ pub fn validate(
             .any(|event| descriptor.matches(event))
     };
 
-    // What the statechart gives itself: every `<raise>` (captured at parse
-    // time, `<finalize>` included) and every `<send>` addressed to itself.
-    let mut own: Vec<String> = model.raised_events.iter().cloned().collect();
+    // What the statechart gives itself: every event it puts on its internal
+    // queue (captured at parse time, `<finalize>` included) and every `<send>`
+    // addressed to itself.
+    let mut own: Vec<String> = model.internal_queue_events.iter().cloned().collect();
     walk_model_actions(model, &mut |_state, action| {
         if action.action_type == "send" && action.eventexpr.is_empty() && sends_to_itself(action) {
             own.push(action.event.clone());

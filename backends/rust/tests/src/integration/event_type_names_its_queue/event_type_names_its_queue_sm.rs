@@ -120,10 +120,8 @@ impl EventTypeNamesItsQueueEvent {
     /// agnostic; inert when unused. Associated (not a free `const`) so
     /// several machines glob-re-exported into one module never collide
     /// on the name.
-    pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [EventTypeNamesItsQueueEvent] = &[
-        EventTypeNamesItsQueueEvent::Ext,
-        EventTypeNamesItsQueueEvent::ViaInternalSend,
-    ];
+    pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [EventTypeNamesItsQueueEvent] =
+        &[EventTypeNamesItsQueueEvent::Ext];
 }
 
 // ======================================================================

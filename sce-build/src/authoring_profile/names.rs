@@ -816,10 +816,11 @@ fn event_names(model: &SCXMLModel) -> Vec<Occurrence> {
             add(&action.event, action.source_location.clone());
         }
     });
-    // Captured at parse time, `<finalize>` included, so it reaches a raise the
-    // walk above cannot see; such a name has no row of its own.
-    for raised in &model.raised_events {
-        add(raised, None);
+    // Captured at parse time, `<finalize>` included, so it reaches an event put
+    // on the internal queue that the walk above cannot see; such a name has no
+    // row of its own.
+    for queued in &model.internal_queue_events {
+        add(queued, None);
     }
     names.sort_by_key(|o| {
         (

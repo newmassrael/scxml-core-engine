@@ -3862,11 +3862,23 @@ impl SCXMLParser {
                     // is stringified to JS below and invisible to any later
                     // action-tree walk) — flows through this one arm. Record
                     // the event so the externally-drivable surface can exclude
-                    // it. See `SCXMLModel::raised_events`.
-                    model.raised_events.insert(action.event.clone());
+                    // it. See `SCXMLModel::internal_queue_events`.
+                    model.internal_queue_events.insert(action.event.clone());
                 }
             }
-            (true, "send") => self.parse_send_action(child, &mut action, model, source_name)?,
+            (true, "send") => {
+                self.parse_send_action(child, &mut action, model, source_name)?;
+                // §scxml-6.2.4: a send to `#_internal` is on the same queue as
+                // a `<raise>`, so it is the same owned signal, and it is
+                // captured here for the same reason: `<finalize>` is
+                // stringified below.
+                if action.eventexpr.is_empty()
+                    && !action.event.is_empty()
+                    && crate::scxml_self_send::sends_to_internal_queue(&action)
+                {
+                    model.internal_queue_events.insert(action.event.clone());
+                }
+            }
             (true, "assign") => {
                 check_assign_attributes(child, source_name)?;
                 action.location = child.attribute("location").unwrap_or("").to_string();
@@ -8436,7 +8448,7 @@ mod tests {
         assert_eq!(entry[0].event, "internal.event");
     }
 
-    /// `raised_events` is the authoritative internal-signal capture: every
+    /// `internal_queue_events` is the authoritative internal-signal capture: every
     /// `<raise>` — including one nested in a `<finalize>` block, which is
     /// stringified to JS at parse time and thereafter invisible to an
     /// action-tree walk — is recorded so the trust-boundary surface can
@@ -8444,7 +8456,7 @@ mod tests {
     /// the parse-time capture, `fin_ev` would leak into the externally-
     /// drivable set (an internal signal wrongly forgeable).
     #[test]
-    fn raised_events_captures_finalize_and_onentry_raises() {
+    fn internal_queue_events_capture_finalize_and_onentry_raises() {
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1">
             <state id="s1">
                 <onentry><raise event="entry_ev"/></onentry>
@@ -8456,15 +8468,56 @@ mod tests {
         let mut parser = SCXMLParser::new();
         let model = parser.parse_string(scxml, "test").unwrap();
         assert!(
-            model.raised_events.contains("entry_ev"),
+            model.internal_queue_events.contains("entry_ev"),
             "onentry raise must be captured; got {:?}",
-            model.raised_events
+            model.internal_queue_events
         );
         assert!(
-            model.raised_events.contains("fin_ev"),
+            model.internal_queue_events.contains("fin_ev"),
             "finalize-nested raise must be captured (stringified to JS, so \
              only the parse-time capture sees it); got {:?}",
-            model.raised_events
+            model.internal_queue_events
+        );
+    }
+
+    /// §scxml-6.2.4: a `<send>` reaches the internal queue only through
+    /// `#_internal`, and that is the queue a `<raise>` uses, so only that send
+    /// is an owned internal signal. A send with no `target` (a delayed timer
+    /// included) reaches the EXTERNAL queue, the one an outside party
+    /// delivers to, and stays out; so does one whose queue is computed or
+    /// handed to another processor, which no parse-time reading can place.
+    /// A send inside `<finalize>` is captured like a raise there, since the
+    /// block is stringified. Each case is a different event, so a set that
+    /// took a send it should not, or missed one it should, is named.
+    #[test]
+    fn internal_queue_events_are_the_sends_to_hash_internal_and_no_others() {
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1">
+            <state id="s1">
+                <onentry>
+                    <send event="to_internal" target="#_internal"/>
+                    <send event="to_external"/>
+                    <send event="to_external_delayed" delay="200ms"/>
+                    <send event="to_computed" targetexpr="'#_internal'"/>
+                    <send event="to_other_processor" target="#_internal" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
+                    <send event="to_typed_at_run" target="#_internal" typeexpr="'x'"/>
+                    <send eventexpr="'named_at_run'" target="#_internal"/>
+                </onentry>
+                <invoke type="http://www.w3.org/TR/scxml/" id="c" src="child.scxml">
+                    <finalize><send event="to_internal_in_finalize" target="#_internal"/></finalize>
+                </invoke>
+            </state>
+        </scxml>"##;
+        let mut parser = SCXMLParser::new();
+        let model = parser.parse_string(scxml, "test").unwrap();
+        let queued: Vec<&str> = model
+            .internal_queue_events
+            .iter()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            queued,
+            ["to_internal", "to_internal_in_finalize"],
+            "only a literal send to #_internal reaches the internal queue"
         );
     }
 

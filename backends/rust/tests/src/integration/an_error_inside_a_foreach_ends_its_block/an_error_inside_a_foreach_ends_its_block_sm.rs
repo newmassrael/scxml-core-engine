@@ -126,7 +126,6 @@ impl AnErrorInsideAForeachEndsItsBlockEvent {
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [AnErrorInsideAForeachEndsItsBlockEvent] = &[
         AnErrorInsideAForeachEndsItsBlockEvent::Finish,
         AnErrorInsideAForeachEndsItsBlockEvent::Go,
-        AnErrorInsideAForeachEndsItsBlockEvent::Sent,
         AnErrorInsideAForeachEndsItsBlockEvent::T,
     ];
 }

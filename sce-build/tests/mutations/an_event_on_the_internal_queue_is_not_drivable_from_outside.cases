@@ -1,0 +1,51 @@
+# Mutation cases for "an event on the internal queue is not drivable from outside".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_event_on_the_internal_queue_is_not_drivable_from_outside.cases`.
+#
+# W3C SCXML 6.2.4 puts a `<send>` on the session's EXTERNAL queue unless it
+# names `#_internal`, which is the internal queue a `<raise>` uses. The parser
+# records what the document puts on the internal queue (`internal_queue_events`),
+# through `scxml_self_send::sends_to_internal_queue`, and the analyzer keeps
+# those events out of the externally drivable set. Each case takes one part of
+# that away or turns it round: a send that is no longer recorded, a send with no
+# target that is recorded as if it named `#_internal`, and a send to
+# `#_internal` that another processor receives being recorded as the session's own.
+#
+# The tests are the library's (`--lib`: the parser's classification of six
+# kinds of send, and the analyzer's set logic). The runtime proof over the
+# generated Rust (`structural_markers`) is a different crate and runs in its
+# own lane.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib
+mutation_oracles sce-build/src/parser.rs
+mutation_targets sce-build/src/parser.rs sce-build/src/scxml_self_send.rs
+
+# A send to `#_internal` is never recorded: `event1` of W3C test 189 is drivable
+# from outside again, forgeable in exactly the way a `<raise>`d event is not.
+mutation_case "a send to the internal queue is not recorded" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''                    && crate::scxml_self_send::sends_to_internal_queue(&action)''',
+     r'''                    && false && crate::scxml_self_send::sends_to_internal_queue(&action)''')
+PY
+
+# Every send to the session itself is recorded, the external ones too: a timer
+# an outside party can legitimately deliver is taken for an owned signal, and
+# the fact that the machine cannot tell its own delivery from another's is lost.
+mutation_case "a send with no target is recorded as an internal one" <<'PY'
+edit("sce-build/src/scxml_self_send.rs",
+     r'''    sends_to_itself(action) && action.target == "#_internal"''',
+     r'''    sends_to_itself(action)''')
+PY
+
+# `#_internal` alone decides the queue, whatever processor receives the send: a
+# send to another processor that happens to name `#_internal` is recorded as the
+# session's own.
+mutation_case "the processor that receives the send is not asked" <<'PY'
+edit("sce-build/src/scxml_self_send.rs",
+     r'''    sends_to_itself(action) && action.target == "#_internal"''',
+     r'''    action.target == "#_internal"''')
+PY

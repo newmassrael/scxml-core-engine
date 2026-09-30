@@ -121,8 +121,7 @@ impl Test495Event {
     /// agnostic; inert when unused. Associated (not a free `const`) so
     /// several machines glob-re-exported into one module never collide
     /// on the name.
-    pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [Test495Event] =
-        &[Test495Event::Event1, Test495Event::Event2];
+    pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [Test495Event] = &[Test495Event::Event1];
 }
 
 // ======================================================================

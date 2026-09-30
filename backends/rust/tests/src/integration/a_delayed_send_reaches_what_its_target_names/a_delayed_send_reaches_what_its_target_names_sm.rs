@@ -132,7 +132,6 @@ impl ADelayedSendReachesWhatItsTargetNamesEvent {
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [ADelayedSendReachesWhatItsTargetNamesEvent] = &[
         ADelayedSendReachesWhatItsTargetNamesEvent::Early,
         ADelayedSendReachesWhatItsTargetNamesEvent::Hello,
-        ADelayedSendReachesWhatItsTargetNamesEvent::Inner,
         ADelayedSendReachesWhatItsTargetNamesEvent::Late,
         ADelayedSendReachesWhatItsTargetNamesEvent::LostReached,
         ADelayedSendReachesWhatItsTargetNamesEvent::Pong,

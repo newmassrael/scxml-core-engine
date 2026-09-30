@@ -131,7 +131,6 @@ impl APayloadRidesOnItsOwnEventEvent {
         APayloadRidesOnItsOwnEventEvent::ExtN,
         APayloadRidesOnItsOwnEventEvent::ExtV,
         APayloadRidesOnItsOwnEventEvent::Finish,
-        APayloadRidesOnItsOwnEventEvent::WithV,
     ];
 }
 

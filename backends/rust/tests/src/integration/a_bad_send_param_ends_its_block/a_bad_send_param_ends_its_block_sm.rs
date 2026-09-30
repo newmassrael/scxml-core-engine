@@ -123,9 +123,7 @@ impl ABadSendParamEndsItsBlockEvent {
     /// on the name.
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [ABadSendParamEndsItsBlockEvent] = &[
         ABadSendParamEndsItsBlockEvent::Bare,
-        ABadSendParamEndsItsBlockEvent::Carried,
         ABadSendParamEndsItsBlockEvent::Finish,
-        ABadSendParamEndsItsBlockEvent::Partial,
     ];
 }
 

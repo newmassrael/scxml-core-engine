@@ -16,7 +16,13 @@
 //! event is `Timeout` — one machine that exercises raise-exclusion,
 //! wildcard-exclusion, AND send-inclusion (a `<send>` event, unlike a
 //! `<raise>`, is legitimately external).
+//!
+//! `test189` is the queue's other half: W3C 6.2.4 puts a `<send>` on the
+//! session's EXTERNAL queue unless it names `#_internal`, which is the internal
+//! queue a `<raise>` uses. So of its two sends only the one with no target is
+//! drivable from outside.
 
+use sce_rust_tests::generated::test189::Test189Event;
 use sce_rust_tests::generated::test399::{Test399Event, Test399State};
 
 /// `<scxml initial="s0">` with `s0 initial="s01"` resolves to the deep
@@ -42,4 +48,19 @@ fn externally_drivable_const_holds_only_non_raised_concrete_triggers() {
     assert!(!Test399Event::EXTERNALLY_DRIVABLE_EVENTS.contains(&Test399Event::Foo));
     // The eventless `Null` sentinel is never a member.
     assert!(!Test399Event::EXTERNALLY_DRIVABLE_EVENTS.contains(&Test399Event::Null));
+}
+
+/// A `<send>` reaches the internal queue only through `#_internal`, so of
+/// `test189`'s two sends `event1` (`target="#_internal"`) is an owned internal
+/// signal and `event2` (no target: the external queue) is not. Before the
+/// parser recorded a send to `#_internal` with the `<raise>`s, both were
+/// members, and `event1` was forgeable from outside in exactly the way a
+/// `<raise>`d event is not.
+#[test]
+fn a_send_to_the_internal_queue_is_not_drivable_from_outside_and_a_plain_send_is() {
+    assert_eq!(
+        Test189Event::EXTERNALLY_DRIVABLE_EVENTS,
+        [Test189Event::Event2].as_slice(),
+    );
+    assert!(!Test189Event::EXTERNALLY_DRIVABLE_EVENTS.contains(&Test189Event::Event1));
 }

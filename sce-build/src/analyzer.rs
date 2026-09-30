@@ -877,24 +877,25 @@ fn compute_typed_inject_events(model: &mut SCXMLModel) {
 /// Populate [`SCXMLModel::externally_drivable_events`] — the external
 /// forgeability surface (see that field's doc for the full contract):
 /// non-reserved `<transition event>` triggers
-/// ([`SCXMLModel::external_ingress_events`]), minus internally
-/// `<raise>`d events ([`SCXMLModel::raised_events`], captured
-/// authoritatively at parse time), intersected with the concrete
-/// event-variant domain ([`SCXMLModel::events`]).
+/// ([`SCXMLModel::external_ingress_events`]), minus the events the machine
+/// puts on its own internal queue ([`SCXMLModel::internal_queue_events`]:
+/// `<raise>` and a `<send>` to `#_internal`, captured authoritatively at
+/// parse time), intersected with the concrete event-variant domain
+/// ([`SCXMLModel::events`]).
 ///
 /// Must run AFTER [`build_prefix_matching`] so `model.events` is final:
 /// the `events` intersection is what drops a prefix/wildcard descriptor
 /// (`foo.*`, `Wildcard`) — none of which is a concrete variant, so none
-/// is a forgeable event. `raised_events` comes from the parser rather
-/// than a re-walk here precisely because a `<raise>` inside `<finalize>`
-/// is stringified to JS before analysis and would be invisible to any
-/// action-tree walk at this stage.
+/// is a forgeable event. `internal_queue_events` comes from the parser
+/// rather than a re-walk here precisely because a `<raise>` inside
+/// `<finalize>` is stringified to JS before analysis and would be invisible
+/// to any action-tree walk at this stage.
 fn compute_externally_drivable_events(model: &mut SCXMLModel) {
     let drivable: std::collections::BTreeSet<String> = model
         .external_ingress_events
         .iter()
         .filter(|e| e.as_str() != "Wildcard" && model.events.contains(*e))
-        .filter(|e| !model.raised_events.contains(*e))
+        .filter(|e| !model.internal_queue_events.contains(*e))
         .cloned()
         .collect();
     model.externally_drivable_events = drivable;
@@ -1336,7 +1337,7 @@ mod tests {
             .collect();
         // Internally raised: `finev` stands in for a `<finalize><raise>`
         // the parser captured; `raised_only` is raised but not a trigger.
-        model.raised_events = ["finev", "raised_only"]
+        model.internal_queue_events = ["finev", "raised_only"]
             .iter()
             .map(|s| s.to_string())
             .collect();

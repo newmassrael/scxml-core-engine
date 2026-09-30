@@ -47,6 +47,18 @@ pub(crate) fn sends_to_itself(action: &Action) -> bool {
         && (action.send_type.is_empty() || action.send_type == SCXML_EVENT_PROCESSOR_TYPE)
 }
 
+/// Whether a `<send>` puts its event on this session's INTERNAL queue: the
+/// self-send ([`sends_to_itself`]) that names `#_internal`.
+///
+/// W3C SCXML 6.2.4: the one a `<send>` shares with `<raise>` (W3C SCXML
+/// 6.4). A send with neither `target` nor `targetexpr` is a self-send too,
+/// and it reaches the EXTERNAL queue, which is the queue an outside party
+/// delivers to; so the two are told apart here, once, for whoever asks which
+/// queue an event travels.
+pub(crate) fn sends_to_internal_queue(action: &Action) -> bool {
+    sends_to_itself(action) && action.target == "#_internal"
+}
+
 /// Whether `action` is a `<send>` whose event the session sends itself and
 /// then throws away: it goes to the session's own queue
 /// ([`sends_to_itself`]), names its event literally, and no transition in
