@@ -139,9 +139,15 @@ PY
 # reads `content_elem.children()`. What the comment did buy was a second
 # way to go stale: rewrapping that sentence, which is prose, retired a
 # case about code that had not moved.
+# ⚠ The anchor follows the branch to its present form. The element test moved
+# into `value_elements()` when a §2.10 annotation in element form stopped
+# counting as part of a `<data>`'s value (2026-09-28), so the branch reads
+# that closure now and the `node.children().any(…)` spelling is gone. What
+# the mutation removes is unchanged: the branch that tells element content
+# from text, so a text body is read as the serialisation of no elements.
 mutation_case "the parser reads only an assign's element children again" <<'PY'
 edit("sce-build/src/parser.rs",
-     "if node.children().any(|c| c.is_element()) {",
+     "if value_elements().next().is_some() {",
      "if true {")
 PY
 

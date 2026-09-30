@@ -129,14 +129,15 @@ PY
 
 # A turn that never opens is the same defect reached from the other side: the
 # latch is still consulted, it is simply never set.
+# The anchor is the line that sets the latch, and nothing around it. It was
+# the whole body of `begin_turn` until a §scxml-6.4 block that moves the
+# invoked sessions' clock was added between that line and the `true` below
+# it, and an anchor that quotes a body goes stale the first time the body
+# grows. The defect is the same: the latch is consulted and never set.
 mutation_case "the turn is never opened, so every reading is live" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        if self.turn_now.is_some() {
-            return false;
-        }
-        self.turn_now = Some(self.clock_read());
-        true""",
-     """        false""")
+     """        self.turn_now = Some(self.clock_read());""",
+     """        let _ = self.clock_read();""")
 PY
 
 # A latch that never releases is the mirror defect: the machine keeps answering

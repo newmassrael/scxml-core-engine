@@ -10,13 +10,22 @@
 # because the harness could only express a cargo selector, which is exactly
 # the procedure a tool exists to make repeatable.
 #
-# The suite named here is the pair of ctest cases that own the claim: one
-# asserts the routing table, the other that both producers answer the same
-# way. Naming those rather than the whole tree keeps a case's verdict about
-# the code it mutated.
+# The suite named here is the one ctest case that owns the claim:
+# `CrossProducerDiagnosticIdTests` runs both producers over a document per
+# `sce:kind` spelling and asserts they agree on which pipeline owns it.
+# Naming it rather than the whole tree keeps a case's verdict about the code
+# it mutated.
+#
+# ⚠ This selector also named `DiagnosticTests`, on the reading that it
+# asserted the routing table. Measured 2026-09-30, all three cases below turn
+# `BothProducersAgreeOnWhichPipelineOwnsTheDocument` red and leave every
+# `DiagnosticTests` case green: that suite checks the wire shape of a
+# diagnostic, not what routes a document to it. A suite that cannot go red
+# under any case adds nothing to a verdict but the time to run it.
 
-mutation_ctest --test-dir build -R "^(DiagnosticTests|CrossProducerDiagnosticIdTests)$"
+mutation_ctest --test-dir build -R "^CrossProducerDiagnosticIdTests$"
 mutation_targets sce/src/parsing/SCXMLParser.cpp
+mutation_oracles tests/parsing/CrossProducerDiagnosticId_test.cpp
 
 mutation_case "a document routed to Forge is parsed as a statechart" <<'PY'
 edit("sce/src/parsing/SCXMLParser.cpp",

@@ -41,14 +41,21 @@ mutation_targets backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs
 # one; `a_correctly_driven_run_reports_no_errors` is its floor, so an engine
 # that answered by raising on every guard fails too.
 
+# ⚠ The raise moved. It was written inline where a transition's guard is
+# judged; the generated code now has one helper, `evaluate_guard_raising`,
+# that a transition guard and an `<if>` guard both call, and `safe_evaluate_guard`
+# turns its `None` into the `false` §scxml-5.9.1 also asks for. The defect is
+# the same one, so the anchor is the raise inside the helper: delete it and
+# every failed guard still answers `false`, and nothing anywhere counted it.
 mutation_case "a guard that could not be evaluated is swallowed" <<'PY'
 edit("backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
      """                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
-                    "a <transition> cond failed to evaluate",
+                    reason,
                 ));
-                false""",
-     """                false""")
+                None""",
+     """                let _ = reason;
+                None""")
 PY
 
 # ── The restart budget is spent one replacement early ───────────────

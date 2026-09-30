@@ -45,10 +45,17 @@ PY
 
 # ── C11: an orphan's delayed `#_parent` waits instead of failing ───
 
+# ⚠ The anchor is the INNER test, `sm->parent_sm == NULL`, with the raise it
+# guards. The branch now reads `parent_dispatch == NULL` and then asks whether
+# the session ever had a parent: a parent that was cancelled clears only the
+# dispatch pointer (test252) and that send is dropped, while a session nothing
+# invoked has no `parent_sm` at all and must raise. Killing the outer test
+# would send both down another path; killing this one is the defect the case
+# names — the orphan's send waits instead of failing.
 mutation_case "C11 schedules a #_parent send from a session nothing invoked" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "                        if (sm->parent_dispatch == NULL) {\n                            {{ P }}_raise_platform_error_with_send_id(",
-     "                        if (false) {\n                            {{ P }}_raise_platform_error_with_send_id(")
+     "                            if (sm->parent_sm == NULL) {\n                                {{ P }}_raise_platform_error_with_send_id(\n                                    sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,\n                                    \"<send> targetexpr names #_parent, and nothing invoked this session\",",
+     "                            if (false) {\n                                {{ P }}_raise_platform_error_with_send_id(\n                                    sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,\n                                    \"<send> targetexpr names #_parent, and nothing invoked this session\",")
 PY
 
 # ── C11: an invocation target is reported unreachable ──────────────
