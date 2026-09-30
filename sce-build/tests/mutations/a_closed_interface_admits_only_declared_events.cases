@@ -1,0 +1,49 @@
+# Mutation cases for "a closed interface admits only declared events".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_closed_interface_admits_only_declared_events.cases`.
+#
+# `scxml_interface::validate` judges every event a transition takes against the
+# interface an owner closed. What the statechart gives itself on its INTERNAL
+# queue (a `<raise>`, a `<send>` to `#_internal`) never crosses; a `<send>` to
+# itself with no target goes to the EXTERNAL queue (W3C SCXML 6.2.4), which a
+# caller delivers to, so an event only that supplies crosses like any other and
+# is refused with the reason. Each case takes one part of that away or turns it
+# round: the queue the machine owns is empty, the external self-send is admitted
+# as if it were owned, and the refusal stops saying why.
+#
+# The oracle is the integration test that compiles documents through the real
+# pipeline; it is named by its cargo selector.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_closed_interface_admits_only_declared_events
+mutation_targets sce-build/src/scxml_interface.rs
+
+# The machine owns nothing: a `<raise>` and a send to `#_internal` are taken for
+# events a caller could send, so a closed statechart that raises its own signal
+# is refused for it.
+mutation_case "the internal queue is empty" <<'PY'
+edit("sce-build/src/scxml_interface.rs",
+     r'''    let owned: Vec<&String> = model.internal_queue_events.iter().collect();''',
+     r'''    let owned: Vec<&String> = Vec::new();''')
+PY
+
+# An event sent to the external queue is admitted as the statechart's own again:
+# the interface says closed and a caller can still send the timer.
+mutation_case "an external self-send is admitted as owned" <<'PY'
+edit("sce-build/src/scxml_interface.rs",
+     r'''                    || from_itself(&descriptor)''',
+     r'''                    || from_itself(&descriptor)
+                    || from_its_external_queue(&descriptor)''')
+PY
+
+# The refusal never says the event came from the machine's own external send: a
+# timer is reported as a plain undeclared event, which points at the wrong
+# repair.
+mutation_case "the refusal never names the self-sent event" <<'PY'
+edit("sce-build/src/scxml_interface.rs",
+     r'''                let crossing = if from_its_external_queue(&descriptor) {''',
+     r'''                let crossing = if false && from_its_external_queue(&descriptor) {''')
+PY

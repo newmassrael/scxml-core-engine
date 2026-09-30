@@ -2990,7 +2990,7 @@ imports (`<sce:import kind="event-schema">`) in both directions:
 
 | What crosses | Admitted when |
 |---|---|
-| an event a transition takes | a descriptor that matches an event some imported schema declares (W3C SCXML 3.12.1 matching, so `coin` admits `coin.inserted`), an event the statechart gives itself (a `<raise>`, or a `<send>` to its own session), or a platform event (`error.*`, `done.state.*`, `done.invoke.*`); `*` declares nothing and is admitted |
+| an event a transition takes | a descriptor that matches an event some imported schema declares (W3C SCXML 3.12.1 matching, so `coin` admits `coin.inserted`), an event the statechart gives itself on its INTERNAL queue (a `<raise>`, or a `<send>` to `#_internal`), or a platform event (`error.*`, `done.state.*`, `done.invoke.*`); `*` declares nothing and is admitted. A `<send>` to the session itself with no `target` is NOT an event it gives itself in this sense: W3C SCXML 6.2.4 puts it on the EXTERNAL queue, the one a caller delivers to, so a caller can send the same name, and a transition that takes it is refused as `scxml/undeclared-interface-event` with the reason (`ReceivesSelfSent`). Declare the event in an imported schema, or send it to `#_internal` |
 | a `<send>` out of the session | its `event` is exactly an event an imported schema declares |
 | a `<send>` with `eventexpr` | never: a computed name cannot be checked, so name the event |
 | a `<send>` to the session itself (no `target`/`targetexpr`/`typeexpr`, or `#_internal`, through the SCXML Event I/O Processor) | some transition takes its event — otherwise it is a message the machine sends itself and discards, which is what an output with no destination looks like |
@@ -3000,6 +3000,21 @@ The first event that breaks the rule is refused as
 listing in its message every event the imported schemas declare. The only other value
 of the attribute is its absence; anything else is refused as
 `validation/attribute-rule-violated`. A forge root does not take it.
+
+What the rule buys is a property, not a list: on a closed statechart that
+builds, **the events a caller can deliver are the events its imported schemas
+declare** (the Rust backend's `EXTERNALLY_DRIVABLE_EVENTS`, from the model's
+`externally_drivable_events` in `apis/forge-ast.v1.schema.json`), plus the
+platform's own. A timer or a retry the machine sends itself is the
+case that broke it: sent with no `target` it travels the external queue, so it
+was both "the statechart's own" to this check and a name any caller could send
+to skip a wait. Measured 2026-09-30 on a retry client (three 200 ms deadlines,
+each taken by a transition): with the deadlines sent without a target the
+closed document was accepted and its drivable events were the two declared
+inputs and `internal.deadline1..3`; with `target="#_internal"` it is accepted
+and they are the two declared inputs alone. ⚠ It does not judge intent: an
+owner who wants a caller able to fire the timer declares it, and the machine
+then says so in that constant.
 
 An event that carries no data is declared by a fieldless schema (EventSchema
 kind, "Fieldless schema"), not left out of the interface. An imported schema

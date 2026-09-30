@@ -42,15 +42,15 @@ fn schema(event: &str, field: &str) -> String {
 }
 
 /// A vending statechart that keeps to its interface: a descriptor prefix
-/// (`coin`), a platform event, its own `<raise>` and its own delayed send are
-/// all admitted, and its output goes out as a declared event.
+/// (`coin`), a platform event, its own `<raise>` and its own delayed send to
+/// `#_internal` are all admitted, and its output goes out as a declared event.
 const KEEPS_TO_IT: &str = r##"
   <state id="idle">
     <transition event="coin" target="credited"/>
     <transition event="error.execution" target="idle"/>
   </state>
   <state id="credited">
-    <onentry><send id="t" event="credit.timeout" delay="30s"/></onentry>
+    <onentry><send id="t" event="credit.timeout" delay="30s" target="#_internal"/></onentry>
     <onexit><cancel sendid="t"/></onexit>
     <transition event="product.selected" target="dispensing">
       <raise event="credit.spent"/>
@@ -98,12 +98,33 @@ fn compile(text: &str) -> Result<(), sce_build::forge::error::Located<ForgeError
 }
 
 fn compile_at(path: &Path) -> Result<(), sce_build::forge::error::Located<ForgeError>> {
+    generated_at(path).map(|_| ())
+}
+
+/// The Rust the document compiles to, all its files as one string.
+fn generated_at(path: &Path) -> Result<String, sce_build::forge::error::Located<ForgeError>> {
     compile_scxml_lang_typed(
         path.to_str().unwrap(),
         &find_template_dir_for(Language::Rust),
         Language::Rust,
     )
-    .map(|_| ())
+    .map(|out| {
+        out.files
+            .into_iter()
+            .map(|(_, content)| content)
+            .collect::<Vec<_>>()
+            .join("\n")
+    })
+}
+
+/// The `EXTERNALLY_DRIVABLE_EVENTS` constant of generated Rust: the events a
+/// caller can deliver to the machine, as the source spells them.
+fn drivable(generated: &str) -> String {
+    let at = generated
+        .find("pub const EXTERNALLY_DRIVABLE_EVENTS")
+        .expect("the generated Rust carries its drivable events");
+    let rest = &generated[at..];
+    rest[..rest.find("];").expect("the constant ends") + 2].to_string()
 }
 
 fn crossing(body: &str) -> (InterfaceCrossing, String, String) {
@@ -181,6 +202,97 @@ fn an_output_sent_to_itself_that_nothing_takes_is_refused() {
             "dispensing".into()
         )
     );
+}
+
+/// W3C SCXML 6.2.4 puts a `<send>` with no target on the session's EXTERNAL
+/// queue, the one a caller delivers to. So a timer the statechart sends
+/// itself that way is an event a caller can send too: it crosses the closed
+/// interface, and a transition taking it is refused as one, with the reason.
+/// Measured 2026-09-30 on a retry client whose three deadlines were sent
+/// without a target: each was a name any caller could deliver to skip a
+/// wait, and the closed interface had admitted all three as "the
+/// statechart's own".
+#[test]
+fn a_timer_sent_to_the_external_queue_is_an_event_a_caller_can_send_and_is_refused() {
+    let body = KEEPS_TO_IT.replace(
+        r##"event="credit.timeout" delay="30s" target="#_internal""##,
+        r#"event="credit.timeout" delay="30s""#,
+    );
+    assert_eq!(
+        crossing(&body),
+        (
+            InterfaceCrossing::ReceivesSelfSent,
+            "credit.timeout".into(),
+            "credited".into()
+        )
+    );
+}
+
+/// The two repairs the refusal names, and the controls that they are the
+/// only ones: the same timer sent to `#_internal` builds (the fixture every
+/// other test starts from), and declaring it in an imported schema builds too,
+/// since then it is part of the interface and no longer undeclared.
+#[test]
+fn the_timer_is_admitted_once_it_is_declared_or_kept_on_the_internal_queue() {
+    let external = KEEPS_TO_IT.replace(
+        r##"event="credit.timeout" delay="30s" target="#_internal""##,
+        r#"event="credit.timeout" delay="30s""#,
+    );
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    for (file, event, field) in SCHEMAS {
+        fs::write(dir.path().join(file), schema(event, field)).expect("write schema");
+    }
+    fs::write(
+        dir.path().join("schema_timeout.scxml"),
+        schema("credit.timeout", "value"),
+    )
+    .expect("write schema");
+    let with_schema = document(Some("closed"), &external).replace(
+        r#"  <sce:import src="schema_coin.scxml""#,
+        r#"  <sce:import src="schema_timeout.scxml" kind="event-schema" as="Timeout"/>
+  <sce:import src="schema_coin.scxml""#,
+    );
+    assert!(
+        with_schema.contains("schema_timeout.scxml"),
+        "the timer's schema must be imported for this control to mean anything"
+    );
+    let path = dir.path().join("vending.scxml");
+    fs::write(&path, with_schema).expect("write document");
+    let declared =
+        drivable(&generated_at(&path).expect("a declared timer is part of the interface"));
+
+    let own_dir = tempfile::TempDir::new().expect("tempdir");
+    for (file, event, field) in SCHEMAS {
+        fs::write(own_dir.path().join(file), schema(event, field)).expect("write schema");
+    }
+    let own_path = own_dir.path().join("vending.scxml");
+    fs::write(&own_path, document(Some("closed"), KEEPS_TO_IT)).expect("write document");
+    let internal = drivable(&generated_at(&own_path).expect("a timer on #_internal is its own"));
+
+    // The two builds agree on the interface and disagree on the timer, and
+    // that disagreement is the point: a closed interface promises that what a
+    // caller can send is what was declared. A declared timer IS something a
+    // caller can send, so the machine says so; a timer kept on the internal
+    // queue is not, so it is not listed.
+    assert!(
+        declared.contains("CreditTimeout"),
+        "a declared timer is an input a caller may send: {declared}"
+    );
+    assert!(
+        !internal.contains("CreditTimeout"),
+        "a timer kept on the internal queue is not something a caller can send: {internal}"
+    );
+}
+
+/// The open interface is untouched: a target-less timer taken by a
+/// transition is the ordinary W3C statechart it always was.
+#[test]
+fn an_open_interface_admits_the_timer_sent_to_the_external_queue() {
+    let body = KEEPS_TO_IT.replace(
+        r##"event="credit.timeout" delay="30s" target="#_internal""##,
+        r#"event="credit.timeout" delay="30s""#,
+    );
+    compile(&document(None, &body)).expect("an open interface holds nothing to it");
 }
 
 #[test]

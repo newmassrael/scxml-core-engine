@@ -43,6 +43,13 @@ pub enum InterfaceCrossing {
     /// A transition takes it, and neither the statechart nor the platform
     /// raises it.
     Receives,
+    /// A transition takes it, and the only thing that gives it to the
+    /// statechart is a `<send>` to itself with no target. W3C SCXML 6.2.4 puts
+    /// that on the session's EXTERNAL queue, the one a caller delivers to, so
+    /// a caller can send the same name: it crosses the interface as surely as
+    /// an event no one declared, and unlike a `<raise>` or a send to
+    /// `#_internal` the statechart cannot call it its own.
+    ReceivesSelfSent,
     /// A `<send>` sends it out of the session.
     Sends,
     /// A `<send>` computes its name (`eventexpr`), which no schema can be
@@ -70,6 +77,13 @@ fn undeclared_interface_event_message(
             "state '{state}' takes '{event}', which crosses the closed interface \
              undeclared: {schemas} — declare it in an imported event-schema, or \
              take one of those"
+        ),
+        InterfaceCrossing::ReceivesSelfSent => format!(
+            "state '{state}' takes '{event}', which the statechart sends to its own \
+             external queue: a caller can deliver '{event}' as well, so it crosses \
+             the closed interface undeclared ({schemas}) — send it with \
+             target=\"#_internal\" to keep it the statechart's own, or declare it in \
+             an imported event-schema"
         ),
         InterfaceCrossing::Sends => format!(
             "state '{state}' sends '{event}' out of the session, and the closed \

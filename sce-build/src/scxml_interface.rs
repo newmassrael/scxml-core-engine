@@ -18,7 +18,12 @@
 //!
 //! - every event a transition takes that does not come from the statechart
 //!   itself or from the platform (`error.*`, `done.state.*`,
-//!   `done.invoke.*`) matches an event a schema declares;
+//!   `done.invoke.*`) matches an event a schema declares. "From the statechart
+//!   itself" is its INTERNAL queue: a `<raise>` or a `<send>` to `#_internal`.
+//!   A `<send>` to itself with no target goes to the external queue (W3C SCXML
+//!   6.2.4), the one a caller delivers to, so a caller can send the same
+//!   name; an event only that supplies is declared or sent to `#_internal`,
+//!   and the refusal says so;
 //! - every `<send>` that leaves the session sends an event a schema
 //!   declares, and names it literally — an `eventexpr` cannot be checked;
 //! - every `<send>` the session addresses to itself sends an event some
@@ -63,15 +68,22 @@ pub fn validate(
     };
 
     // What the statechart gives itself: every event it puts on its internal
-    // queue (captured at parse time, `<finalize>` included) and every `<send>`
-    // addressed to itself.
-    let mut own: Vec<String> = model.internal_queue_events.iter().cloned().collect();
+    // queue (captured at parse time, `<finalize>` included). Nobody outside can
+    // deliver to that queue, so an event only it supplies never crosses.
+    let owned: Vec<&String> = model.internal_queue_events.iter().collect();
+    let from_itself = |descriptor: &EventDescriptor| owned.iter().any(|e| descriptor.matches(e));
+    // A `<send>` to itself with no target is NOT its own in that sense: W3C
+    // SCXML 6.2.4 puts it on the external queue, which a caller reaches too,
+    // so a transition that takes it is taking something an outside party can
+    // send. Judged apart, so the refusal can say why.
+    let mut self_sent: Vec<String> = Vec::new();
     walk_model_actions(model, &mut |_state, action| {
         if action.action_type == "send" && action.eventexpr.is_empty() && sends_to_itself(action) {
-            own.push(action.event.clone());
+            self_sent.push(action.event.clone());
         }
     });
-    let from_itself = |descriptor: &EventDescriptor| own.iter().any(|e| descriptor.matches(e));
+    let from_its_external_queue =
+        |descriptor: &EventDescriptor| self_sent.iter().any(|e| descriptor.matches(e));
 
     // Received: every descriptor of every transition, in document order.
     let mut states: Vec<_> = model.states.values().collect();
@@ -90,10 +102,15 @@ pub fn validate(
                 {
                     continue;
                 }
+                let crossing = if from_its_external_queue(&descriptor) {
+                    InterfaceCrossing::ReceivesSelfSent
+                } else {
+                    InterfaceCrossing::Receives
+                };
                 return Err(refuse(
                     model,
                     diag_label,
-                    InterfaceCrossing::Receives,
+                    crossing,
                     token,
                     &state.id,
                     transition.source_location.as_ref(),
