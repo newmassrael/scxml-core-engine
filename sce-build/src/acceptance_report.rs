@@ -297,7 +297,8 @@ pub fn render(
     }
 
     out.push_str("\nB. NEEDING ATTENTION\n");
-    let mut flagged = 0usize;
+    let open = crate::open_matters::of_statechart(model);
+    let mut flagged = push_open_matters(&mut out, &open);
     for outcome in &classification.outcomes {
         if outcome.outcome == Outcome::Implemented {
             continue;
@@ -327,6 +328,31 @@ pub fn render(
     }
 
     out
+}
+
+/// What the design leaves to a person, as the first lines of block B, and
+/// how many lines that was.
+///
+/// First, because block A is one paragraph per requirement and a person
+/// signing the page reads B for what could still be wrong: a question the
+/// specification never answered outranks a requirement that reads
+/// `implemented`. Nothing is written for a design that leaves nothing, so
+/// a report for a finished design is byte for byte what it was.
+///
+/// ⚠ The sentences are [`crate::open_matters`]'s, not this function's: the
+/// manifest and the acceptance record say the same thing in the same words,
+/// and a second author of them is a second answer.
+fn push_open_matters(out: &mut String, open: &[crate::open_matters::OpenMatter]) -> usize {
+    for matter in open {
+        let label = match matter.kind {
+            crate::open_matters::OpenKind::Question => "open question",
+            crate::open_matters::OpenKind::Assumed => "assumed value",
+            crate::open_matters::OpenKind::Parent => "needs a parent",
+            crate::open_matters::OpenKind::HostProcessor => "host processor",
+        };
+        out.push_str(&format!("  {label:<14} {}\n", matter.message));
+    }
+    open.len()
 }
 
 /// Why the document is its kind, when it says (docs/SCE_ACCEPTED_SUBSET.md
@@ -386,6 +412,7 @@ pub fn render_forge(
     manifest: &RequirementManifest,
     sidecar: Option<&RequirementSidecar>,
     variant: &str,
+    open: &[crate::open_matters::OpenMatter],
 ) -> String {
     use crate::forge::requirement_nodes::ReviewScope;
 
@@ -457,7 +484,7 @@ pub fn render_forge(
     }
 
     out.push_str("\nB. NEEDING ATTENTION\n");
-    let mut flagged = 0usize;
+    let mut flagged = push_open_matters(&mut out, open);
     for outcome in &classification.outcomes {
         if outcome.outcome == Outcome::Implemented {
             continue;

@@ -1045,6 +1045,17 @@ fn build_manifest<'a>(
         needs_parent: report.parent_sends.as_ref().map(|sends| !sends.is_empty()),
         parent_sends: report.parent_sends.as_deref().unwrap_or(&[]),
         unresolved: &report.unresolved,
+        // One document's answer: a set run's members each have their own,
+        // and the union would name a parent none of them may lack.
+        open: if report.document_kind.is_some() {
+            sce_build::open_matters::of(
+                &report.unresolved,
+                report.parent_sends.as_deref().unwrap_or(&[]),
+                &report.host_processor_causes,
+            )
+        } else {
+            Vec::new()
+        },
         host_processor_causes: &report.host_processor_causes,
         host_processor_types: &report.host_processor_types,
         host_invoker_types: &report.host_invoker_types,
@@ -2101,8 +2112,9 @@ enum Commands {
         /// Forge document path (`sce:kind` other than `statechart`)
         document: String,
     },
-    /// Render a forge document as pseudocode on stdout — the surface a
-    /// specification author reviews instead of the XML.
+    /// Render a document as pseudocode on stdout — the surface a
+    /// specification author reviews instead of the XML. A statechart and
+    /// a forge kind are both rendered.
     ///
     /// Distinct from `review-table`, which is a projection: one row per
     /// requirement-bearing node, read for what the document claims. This
@@ -2110,11 +2122,18 @@ enum Commands {
     /// it exists to be approved, and an approval of a summary is not an
     /// approval of the document.
     ///
+    /// ⚠ The page shows the model and nothing derived from it, because it
+    /// is the canonical text the reverse converter reads back. What the
+    /// model implies — a question left open, a parent the machine needs, a
+    /// processor the host must serve — is the manifest's `open` and the
+    /// top of the acceptance report's block B.
+    ///
     /// ⚠ Exits with `cli/pseudo-unavailable` for a kind the renderer
     /// does not cover. That is NOT a partial rendering: a text missing
     /// part of the document reads exactly like one missing none of it.
     Pseudo {
-        /// Forge document path (`sce:kind` other than `statechart`)
+        /// SCXML document path: a statechart, or a forge kind the
+        /// renderer covers (`sce:kind`)
         document: String,
         /// deploy.yaml to resolve this machine's `<send>` targets
         /// against, so the rendering says what each send will actually
@@ -8489,7 +8508,25 @@ fn cmd_acceptance_report(
             sce_build::acceptance_report::render(model, &manifest, sidecar.as_ref(), variant)
         }
         Design::Forge(parsed) => {
-            sce_build::acceptance_report::render_forge(parsed, &manifest, sidecar.as_ref(), variant)
+            // A forge kind has no sends to itself or a parent, so what it
+            // leaves open is its markers: read where the manifest and
+            // `sce-codegen unresolved` read them.
+            //
+            // ⚠ Named `expanded`, not `positions`: the mutation casefile that
+            // anchors on `cmd_unresolved`'s own `let positions = …` line
+            // matches by text, and a second identical line in this file makes
+            // it ambiguous, which it reports as a stale case.
+            let expanded = read_review_input(scxml, error_format);
+            let markers = sce_build::unresolved_check::unresolved_records_forge(&expanded)
+                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
+            let open = sce_build::open_matters::of(&markers, &[], &[]);
+            sce_build::acceptance_report::render_forge(
+                parsed,
+                &manifest,
+                sidecar.as_ref(),
+                variant,
+                &open,
+            )
         }
     };
     print!("{page}");

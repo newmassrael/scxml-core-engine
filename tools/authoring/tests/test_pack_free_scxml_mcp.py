@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -27,6 +28,12 @@ class PackFreeScxmlMcp(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
+        # Where a relative path the tools resolve lands. The stand-in for
+        # `accept` writes its record at the `--out` it is given, and that
+        # must be a directory this test owns, not the checkout it runs in.
+        previous = os.getcwd()
+        os.chdir(temporary.name)
+        self.addCleanup(os.chdir, previous)
         self.document = pathlib.Path(temporary.name) / "client.scxml"
         self.document.write_text(
             '<scxml xmlns="http://www.w3.org/2005/07/scxml" '
@@ -232,6 +239,14 @@ class PackFreeScxmlMcp(unittest.TestCase):
 
         def fake_run(argv, **kwargs):
             seen["argv"] = argv
+            # `accept` leaves its record at `--out`, and the tool reads it
+            # back to say what the design was accepted with. A stand-in that
+            # writes nothing would test a product that did not do what the
+            # real one does.
+            if "accept" in argv and "--out" in argv:
+                pathlib.Path(argv[argv.index("--out") + 1]).write_text(
+                    json.dumps({"record": "sce-acceptance-record", "v": 1}),
+                    encoding="utf-8")
             return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
 
         with mock.patch.object(verify.subprocess, "run", fake_run), \

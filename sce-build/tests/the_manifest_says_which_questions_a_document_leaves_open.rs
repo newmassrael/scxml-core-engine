@@ -8,11 +8,11 @@
 //! A `sce:unresolved` marker blocks only `--strict-unresolved`. That is the
 //! right rule for a draft still being written, and it meant a run over a
 //! document with an open question ended exactly like a run over one with
-//! none: measured 2026-09-30, a draft that left a retry count
-//! `sce:unresolved` was reported `accepted` by `check --lint`, with nothing
-//! in the manifest to say a question was still open. An author reading only
-//! the verdict, as a specification owner working through the authoring MCP
-//! does, saw a finished document.
+//! none: a draft that left a count `sce:unresolved` was reported
+//! `accepted` by `check --lint`, with nothing in the manifest to say a
+//! question was still open. An author reading only the verdict, as a
+//! specification owner working through the authoring MCP does, saw a
+//! finished document.
 //!
 //! So the markers are published: `unresolved` lists what
 //! `sce-codegen unresolved` prints, for a statechart and for a forge kind,
@@ -106,23 +106,23 @@ fn listed(label: &str, body: &str) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// The retried draft: a question the specification left open, a value
-/// chosen without it, and a clean rest.
+/// A draft with a question the specification left open, a value chosen
+/// without it, and a clean rest.
 const OPEN_QUESTION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" name="retry_open" initial="idle" datamodel="ecmascript">
+       version="1.0" name="gate_open" initial="idle" datamodel="ecmascript">
   <datamodel>
-    <data id="limit" expr="3" sce:assumed="retry-limit"
+    <data id="limit" expr="3" sce:assumed="wait-limit"
           sce:assumed-reason="the specification gives no number"
           sce:assumed-candidates="3 5"/>
   </datamodel>
   <state id="idle">
-    <transition event="request" target="waiting"/>
+    <transition event="start" target="waiting"/>
   </state>
   <state id="waiting">
-    <transition event="response" target="idle"/>
-    <transition event="timeout" target="idle" sce:unresolved="retry-count"
-                sce:unresolved-reason="the specification does not say how many retries"/>
+    <transition event="finish" target="idle"/>
+    <transition event="timeout" target="idle" sce:unresolved="timeout-policy"
+                sce:unresolved-reason="the specification does not say what a timeout does"/>
   </state>
 </scxml>
 "#;
@@ -195,8 +195,8 @@ fn a_run_that_succeeds_says_which_questions_are_still_open() {
     assert_eq!(
         ids(&checked),
         vec![
-            ("assumed".to_string(), "retry-limit".to_string()),
-            ("unresolved".to_string(), "retry-count".to_string()),
+            ("assumed".to_string(), "wait-limit".to_string()),
+            ("unresolved".to_string(), "timeout-policy".to_string()),
         ],
         "{checked}"
     );

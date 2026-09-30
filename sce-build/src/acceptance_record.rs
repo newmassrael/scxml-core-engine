@@ -66,6 +66,23 @@
 //! [`AcceptanceRecord::recheck_for`] can say whether a specification it is
 //! asked about is the one this design was authored from.
 //!
+//! # What was still open when a person accepted
+//!
+//! ```text
+//!   open_at_acceptance   the questions, assumed    a reader of the record
+//!                        values, needed parent     sees what the owner
+//!                        and host processor the    accepted WITH, in the
+//!                        design left to a person   words the report used
+//! ```
+//!
+//! The product accepts a design that leaves a question open — it is valid
+//! SCXML, and a draft in progress is meant to — and an acceptance that did
+//! not say so read, later, as though the design had been finished. Optional
+//! and omitted when empty, so a record for a finished design keeps the bytes
+//! it always had. It states and does not enforce: accepting with an open
+//! question is the owner's decision, and this only keeps the record honest
+//! about it.
+//!
 //! # Deliberately not `Deserialize`
 //!
 //! [`AcceptanceRecord`] is obtained from [`AcceptanceRecord::take`] or
@@ -163,6 +180,18 @@ pub struct AcceptanceRecord {
     /// from, sorted by role and path. Empty when the record was taken
     /// without them — see the module docs.
     pub authored_from: Vec<SourcePin>,
+    /// What the design left to a person when it was accepted: the open
+    /// questions, the values chosen without the specification, a parent it
+    /// needs, a processor the host must serve ([`crate::open_matters`]).
+    /// Empty when it left nothing.
+    ///
+    /// ⚠ A statement of what a person accepted WITH, not a condition the
+    /// record enforces. Accepting a design that leaves a question open is
+    /// the owner's decision to make; what this refuses is a record that
+    /// reads as though they had not. It cannot lapse: the design that was
+    /// open is pinned by its bytes, and a design whose open matters moved
+    /// has moved.
+    pub open_at_acceptance: Vec<crate::open_matters::OpenMatter>,
 }
 
 /// The record exactly as JSON spells it. Private — see the module docs.
@@ -177,6 +206,8 @@ struct RecordWire {
     inputs: Vec<InputPin>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     authored_from: Vec<SourcePin>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    open_at_acceptance: Vec<crate::open_matters::OpenMatter>,
 }
 
 /// One way what was accepted is no longer what is there.
@@ -418,7 +449,7 @@ impl AcceptanceRecord {
             sha256: file_sha256(manifest)?,
         };
         let document_path = canonical(document)?;
-        let inputs = read_design(&root, &document_path)
+        let (inputs, open_at_acceptance) = read_design(&root, &document_path)
             .map_err(|failure| failure.into_take_error(document))?;
         let mut authored_from = Vec::with_capacity(sources.len());
         for (role, path) in sources {
@@ -436,6 +467,7 @@ impl AcceptanceRecord {
             manifest: manifest_pin,
             inputs,
             authored_from,
+            open_at_acceptance,
         })
     }
 
@@ -543,8 +575,10 @@ impl AcceptanceRecord {
             });
             return Ok(lapses);
         }
+        // What was open is a fact about the moment of acceptance and not a
+        // thing to re-judge: a design that changed is a lapse by its bytes.
         let current = match read_design(&root, &canonical(&document_path)?) {
-            Ok(inputs) => inputs,
+            Ok((inputs, _open)) => inputs,
             Err(DesignFailure::Parse(detail)) => {
                 lapses.push(Lapse::Unparseable {
                     path: self.document.clone(),
@@ -602,6 +636,7 @@ impl AcceptanceRecord {
             manifest: self.manifest.clone(),
             inputs: self.inputs.clone(),
             authored_from: self.authored_from.clone(),
+            open_at_acceptance: self.open_at_acceptance.clone(),
         };
         let mut text = serde_json::to_string_pretty(&wire)
             .expect("a record of strings and one integer always serialises");
@@ -665,6 +700,7 @@ impl AcceptanceRecord {
             manifest: wire.manifest,
             inputs,
             authored_from,
+            open_at_acceptance: wire.open_at_acceptance,
         })
     }
 }
@@ -725,17 +761,23 @@ impl From<RecordError> for DesignFailure {
     }
 }
 
-/// Every file a parse of `document` reads, pinned relative to `root`.
-fn read_design(root: &Path, document: &Path) -> Result<Vec<InputPin>, DesignFailure> {
+/// Every file a parse of `document` reads, pinned relative to `root`, and
+/// what the design leaves to a person ([`crate::open_matters`]).
+fn read_design(
+    root: &Path,
+    document: &Path,
+) -> Result<(Vec<InputPin>, Vec<crate::open_matters::OpenMatter>), DesignFailure> {
     let mut pins: BTreeMap<String, String> = BTreeMap::new();
-    for path in std::iter::once(document.to_path_buf()).chain(design_inputs(document)?) {
+    let (files, open) = design_inputs(document)?;
+    for path in std::iter::once(document.to_path_buf()).chain(files) {
         let path = canonical(&path)?;
         pins.insert(relative(root, &path)?, file_sha256(&path)?);
     }
-    Ok(pins
+    let inputs = pins
         .into_iter()
         .map(|(path, sha256)| InputPin { path, sha256 })
-        .collect())
+        .collect();
+    Ok((inputs, open))
 }
 
 /// The files other than `document` that its parse reads, for either
@@ -751,7 +793,9 @@ fn read_design(root: &Path, document: &Path) -> Result<Vec<InputPin>, DesignFail
 /// - A forge document: the fragments its expansion read, and the
 ///   transitive `<sce:import>` closure — the set a forge compile reports
 ///   as its dependencies.
-fn design_inputs(document: &Path) -> Result<Vec<PathBuf>, DesignFailure> {
+fn design_inputs(
+    document: &Path,
+) -> Result<(Vec<PathBuf>, Vec<crate::open_matters::OpenMatter>), DesignFailure> {
     let text = std::fs::read_to_string(document).map_err(|source| {
         DesignFailure::Record(RecordError::Read {
             path: document.display().to_string(),
@@ -775,7 +819,10 @@ fn design_inputs(document: &Path) -> Result<Vec<PathBuf>, DesignFailure> {
                     .filter(|src| !crate::forge::stdlib::names_standard(src))
                     .map(|src| base_dir.join(src)),
             );
-            Ok(inputs)
+            // The same reading the acceptance report makes, so what a
+            // person was shown as open and what the record keeps as open
+            // are one list.
+            Ok((inputs, crate::open_matters::of_statechart(&model)))
         }
         crate::Pipeline::Forge => {
             let label_text = document.display().to_string();
@@ -788,15 +835,23 @@ fn design_inputs(document: &Path) -> Result<Vec<PathBuf>, DesignFailure> {
             let imports =
                 crate::forge::cross_kind_check::check(&parsed, base_dir, label.diagnostic_label)
                     .map_err(|located| unparseable(located.error.to_string()))?;
+            // A forge kind sends to no parent and no processor, so what it
+            // leaves open is its markers.
+            let markers = crate::unresolved_check::unresolved_records_forge(&loaded.positions)
+                .map_err(|located| unparseable(located.error.to_string()))?;
+            let open = crate::open_matters::of(&markers, &[], &[]);
             // A `sce:std/...` document is read from the library compiled
             // into the generator; it has no file to pin, and moves only
             // with the generator itself.
-            Ok(loaded
-                .deps
-                .into_iter()
-                .chain(imports)
-                .filter(|path| !crate::forge::stdlib::names_standard(path))
-                .collect())
+            Ok((
+                loaded
+                    .deps
+                    .into_iter()
+                    .chain(imports)
+                    .filter(|path| !crate::forge::stdlib::names_standard(path))
+                    .collect(),
+                open,
+            ))
         }
     }
 }

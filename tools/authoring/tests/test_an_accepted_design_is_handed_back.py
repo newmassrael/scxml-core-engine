@@ -61,6 +61,7 @@ class AnAcceptedDesignIsHandedBack(unittest.TestCase):
             "decisions": str(self.root / "spec" / "decisions.json"),
         })
         self.assertFalse(accepted.get("isError"), accepted)
+        self.accepted_answer = body(accepted)
         # The owner's own copies, somewhere else and under other names.
         self.elsewhere = pathlib.Path(temporary.name) / "owner"
         self.elsewhere.mkdir()
@@ -85,6 +86,31 @@ class AnAcceptedDesignIsHandedBack(unittest.TestCase):
                          (self.root / "design" / DOCUMENT).read_text(encoding="utf-8"))
         self.assertTrue(answer["page"], "the owner is shown the accepted page")
         self.assertIn("no new draft", answer["next"])
+
+    def test_accepting_a_design_with_open_matters_says_what_it_was_accepted_with(self):
+        # This design leaves its two inactivity timers `sce:unresolved`: the
+        # owner may accept it, and the answer and the record both say they
+        # did so with those questions open.
+        answer = self.accepted_answer
+        self.assertEqual("done", answer["verdict"])
+        self.assertTrue(answer["accepted_with"], answer)
+        self.assertTrue(any("question(s)" in line for line in answer["accepted_with"]),
+                        answer["accepted_with"])
+        self.assertIn("accepted_with", answer["next"])
+        kept = json.loads(self.record.read_text(encoding="utf-8"))["open_at_acceptance"]
+        self.assertEqual(answer["accepted_with"], [m["message"] for m in kept])
+
+    def test_a_design_that_left_nothing_open_is_answered_as_it_was(self):
+        # The control: no new field on the answer, so a finished design's
+        # acceptance reads exactly as before.
+        from sce_author.mcp import _with_open_at_acceptance
+
+        record = self.root / "finished.json"
+        record.write_text(json.dumps({"record": "sce-acceptance-record", "v": 1}),
+                          encoding="utf-8")
+        answer = json.loads(_with_open_at_acceptance(
+            json.dumps({"verdict": "done", "record": str(record)}), record))
+        self.assertEqual({"verdict": "done", "record": str(record)}, answer)
 
     def test_a_revised_specification_is_not_answered_by_the_old_design(self):
         self.prose.write_text("The connection closes after two timeouts.\n", encoding="utf-8")

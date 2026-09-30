@@ -1321,10 +1321,13 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
         if root is None or out is None:
             raise ToolArgumentError("'root' and 'out' go together")
         sources, decisions = _authored_from(args, staging)
-        return _answer(*accept_design(
+        report, refusal = accept_design(
             _file_arg(args, "document", "the accepted SCXML document").resolve(),
             _file_arg(args, "manifest", "the requirement manifest").resolve(),
-            variant, root, out, sources=sources, decisions=decisions))
+            variant, root, out, sources=sources, decisions=decisions)
+        if refusal:
+            return _failure(refusal)
+        return _text(_with_open_at_acceptance(report, out))
     # Handed over as text: the record pins them by the names they were
     # given, relative to the staging directory, and comes back itself --
     # there is no tree of the caller's to leave it in.
@@ -1342,10 +1345,26 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
                                     cwd=staging.dir)
     if refusal:
         return _failure(refusal)
-    answer = json.loads(report)
+    answer = json.loads(_with_open_at_acceptance(report, staging.dir / record))
     answer["record"] = str(record)
     answer["record_text"] = (staging.dir / record).read_text(encoding="utf-8")
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
+
+
+def _with_open_at_acceptance(report: str, record: pathlib.Path) -> str:
+    """`report` with what the record says the design was accepted WITH.
+
+    Read back from the record the product just wrote, so the answer and the
+    file cannot differ. Untouched when the design left nothing open: an
+    acceptance of a finished design answers exactly as it did.
+    """
+    answer = json.loads(report)
+    open_ = json.loads(record.read_text(encoding="utf-8")).get("open_at_acceptance")
+    if open_:
+        answer["accepted_with"] = [matter["message"] for matter in open_]
+        answer["next"] = ("this design was accepted with the matters in `accepted_with` "
+                          "still open: say so to the owner, who decided to accept it")
+    return json.dumps(answer, indent=2, ensure_ascii=False) + "\n"
 
 
 def _staged_record(args: dict, staging: _Staging):

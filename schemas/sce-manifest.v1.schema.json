@@ -100,6 +100,12 @@
       "minItems": 1,
       "items": { "$ref": "#/definitions/unresolvedMarker" }
     },
+    "open": {
+      "description": "What the accepted run still leaves to a person, one sentence each, built once from unresolved, parent_sends and host_processor_causes: a question the specification leaves open, a value chosen without it, a parent the machine needs, a processor the host must serve. accepted means the product found nothing to refuse; it does not mean the design is finished, and this is where the manifest says so. In that order, omitted (not []) when there are none, and on a document-set run, whose members each have their own.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/openMatter" }
+    },
     "host_processor_causes": {
       "description": "Why needs_host_processor is true — one record per site naming a type this build has no path for. Present exactly when the flag is true; omitted (not []) otherwise. Non-fatal: generation succeeded, and the emitted code refuses these sites at runtime exactly as the specification requires.",
       "type": "array",
@@ -228,6 +234,22 @@
           "minLength": 1
         },
         "location": { "$ref": "#/definitions/location" }
+      }
+    },
+    "openMatter": {
+      "type": "object",
+      "required": ["kind", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "question: an sce:unresolved marker. assumed: an sce:assumed marker. parent: a send to #_parent, so the machine can only run as a child. host-processor: a type the host has to serve.",
+          "enum": ["question", "assumed", "parent", "host-processor"]
+        },
+        "message": {
+          "description": "What it is and what to do about it, in a sentence.",
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "unresolvedMarker": {

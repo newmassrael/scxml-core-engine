@@ -408,11 +408,24 @@ pub struct Manifest<'a> {
     /// Published because the run succeeds either way: a marker blocks only
     /// `--strict-unresolved`, which is right for a draft still being
     /// written, and meant that a document with an open question came back
-    /// exactly like one with none. Measured 2026-09-30, a draft that left a
-    /// retry count `sce:unresolved` was reported `accepted` by `check
-    /// --lint` with nothing in its manifest to say a question was open.
+    /// exactly like one with none: a draft that left a count
+    /// `sce:unresolved` was reported `accepted` by `check --lint` with
+    /// nothing in its manifest to say a question was open.
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub unresolved: &'a [crate::unresolved_check::UnresolvedRecord],
+    /// What the accepted run still leaves to a person: the open questions,
+    /// the values chosen without the specification, a parent the machine
+    /// needs, a processor the host must serve — one sentence each, from
+    /// the records above ([`crate::open_matters`]). Omitted (not `[]`) when
+    /// there are none, and on a document-set run, whose members each have
+    /// their own.
+    ///
+    /// `accepted` means the product found nothing to refuse, and that is
+    /// not the same as a finished design. The sentences live in one module
+    /// so the acceptance report, the acceptance record and every client
+    /// that relays this field say them in the same words.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub open: Vec<crate::open_matters::OpenMatter>,
     /// Which sites made [`Self::needs_host_processor`] true. Omitted
     /// (not `[]`) when there are none, matching
     /// [`Self::script_engine_causes`].
@@ -743,6 +756,7 @@ mod tests {
             needs_parent: None,
             parent_sends: &[],
             unresolved: &[],
+            open: Vec::new(),
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -775,6 +789,7 @@ mod tests {
             needs_parent: None,
             parent_sends: &[],
             unresolved: &[],
+            open: Vec::new(),
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -813,6 +828,7 @@ mod tests {
             needs_parent: None,
             parent_sends: &[],
             unresolved: &[],
+            open: Vec::new(),
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -872,6 +888,7 @@ mod tests {
             needs_parent: None,
             parent_sends: &[],
             unresolved: &[],
+            open: Vec::new(),
             host_processor_causes: &causes,
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -916,6 +933,7 @@ mod tests {
             needs_parent: None,
             parent_sends: &[],
             unresolved: &[],
+            open: Vec::new(),
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -968,6 +986,7 @@ mod tests {
             needs_parent: None,
             parent_sends: &[],
             unresolved: &[],
+            open: Vec::new(),
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -1004,6 +1023,7 @@ mod tests {
             needs_parent: None,
             parent_sends: &[],
             unresolved: &[],
+            open: Vec::new(),
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
@@ -1047,6 +1067,7 @@ mod tests {
             needs_parent: None,
             parent_sends: &[],
             unresolved: &[],
+            open: Vec::new(),
             host_processor_causes: &[],
             host_processor_types: &declared,
             // The invoke half declared beside it, because the two travel
@@ -1092,6 +1113,7 @@ mod tests {
             needs_parent: None,
             parent_sends: &[],
             unresolved: &[],
+            open: Vec::new(),
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],

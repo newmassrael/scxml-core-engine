@@ -694,46 +694,23 @@ def validate_scxml(document: pathlib.Path,
 
 
 def open_matters(manifest: dict) -> list[str]:
-    """What an accepted run still leaves to a person, read from the product's
-    own manifest and from nothing else.
+    """What an accepted run still leaves to a person: the sentences of the
+    manifest's `open`, in its order, and nothing this module wrote.
 
     `accepted` says the product found nothing to refuse. It does not say the
-    document is finished: measured 2026-09-30, a draft that left its retry
-    count `sce:unresolved`, and one that sent its request to `#_parent` with
-    no parent to receive it, were both `accepted`, and an owner reading only
-    the verdict saw a finished design. Each line here is a fact the manifest
-    carries, in words that say what to do about it; a manifest carrying none
-    yields none, and a caller adds no sentence of its own.
+    document is finished: a draft that left a count `sce:unresolved`, and
+    one that sent an output to `#_parent` with no parent to receive it, are
+    both `accepted`, and an owner reading only the verdict sees a finished
+    design.
+
+    ⚠ Relayed, not derived. This function used to write the sentences from
+    the manifest's `unresolved`, `needs_parent` and `needs_host_processor`,
+    and the acceptance report wrote them again in Rust: two authors of one
+    answer. The product writes them once (`sce-build/src/open_matters.rs`),
+    publishes them as `open`, and the report and the acceptance record say
+    the same words, so a manifest that carries none yields none here.
     """
-    matters = []
-    open_questions = [m for m in manifest.get("unresolved") or []
-                      if m.get("kind") == "unresolved"]
-    if open_questions:
-        matters.append(
-            f"{len(open_questions)} question(s) the specification leaves open "
-            f"({', '.join(m['id'] for m in open_questions)}): ask the owner and "
-            f"record each answer; the strict check (--strict-unresolved) refuses "
-            f"this document until then")
-    assumed = [m for m in manifest.get("unresolved") or [] if m.get("kind") == "assumed"]
-    if assumed:
-        matters.append(
-            f"{len(assumed)} value(s) chosen without the specification "
-            f"({', '.join(m['id'] for m in assumed)}): the owner confirms or "
-            f"corrects each")
-    if manifest.get("needs_parent"):
-        events = sorted({s["event"] for s in manifest.get("parent_sends") or []
-                         if s.get("event")})
-        matters.append(
-            "sends to its parent session"
-            + (f" ({', '.join(events)})" if events else "")
-            + ", so it can only run as a child: check it together with the "
-              "statechart that invokes it (validate_scxml_set), or send to a "
-              "host-served processor if the specification names no parent")
-    if manifest.get("needs_host_processor"):
-        matters.append(
-            "sends to an Event I/O Processor type this build has no path for: "
-            "the host has to serve it, or the send raises error.execution at run time")
-    return matters
+    return [matter["message"] for matter in manifest.get("open") or []]
 
 
 def _with_open_matters(report: str) -> str:

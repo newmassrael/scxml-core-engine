@@ -308,16 +308,23 @@ output, and every `diagnostics` record. `scxml_accept` states a person's
 decision: call it only on the owner's word, after they have read the report.
 
 `accepted` from `validate_scxml` is the product's verdict, and a document can
-be accepted without being finished: measured on 2026-09-30, a draft that left
-a retry count `sce:unresolved` and one that sent its request to `#_parent`,
-with nothing that invokes it, were both accepted. So the answer also carries
-`open` — one line for each thing the run leaves to a person, read from the
-manifest's `unresolved`, `needs_parent` and `needs_host_processor` and from
-nothing else — and `next`, which says to settle them before the design is
-shown as finished. A run that leaves nothing has neither field. The same
-manifest field is what `check` and `generate` publish for any client, and
-`--strict-unresolved` remains the way to refuse a document with an open
-question outright.
+be accepted without being finished: a draft that left a count
+`sce:unresolved`, and one that sent an output to `#_parent` with nothing that
+invokes it, are both accepted. So the answer also carries
+`open` — one line for each thing the run leaves to a person — and `next`,
+which says to settle them before the design is shown as finished. A run that
+leaves nothing has neither field.
+
+The lines are the product's, not this server's: `sce-codegen check` and
+`generate` publish them as the manifest's `open` (a question the
+specification leaves open, a value chosen without it, a parent the machine
+needs, a processor the host must serve), the acceptance report prints the
+same words at the top of its block B, and the acceptance record keeps them as
+`open_at_acceptance`, so what an owner accepted with is written down. This
+server relays them and adds no sentence of its own. `--strict-unresolved`
+remains the way to refuse a document with an open question outright, and an
+acceptance is not refused for one: accepting with a question open is the
+owner's decision, and the record says that they did.
 
 A statechart's output needs a receiver. A `<send>` with no `target` and no
 `type` goes to the machine's own queue, and one no transition takes is thrown

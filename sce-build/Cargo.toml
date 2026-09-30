@@ -286,6 +286,14 @@ name = "the_manifest_names_the_kind_it_read"
 path = "tests/the_manifest_names_the_kind_it_read.rs"
 required-features = ["cli"]
 
+# What an accepted design still leaves to a person, on the three surfaces an
+# owner reads: the manifest's `open`, block B of the acceptance report, and
+# the record's `open_at_acceptance` -- one list, from the real binary.
+[[test]]
+name = "a_design_that_is_accepted_says_what_it_leaves_open"
+path = "tests/a_design_that_is_accepted_says_what_it_leaves_open.rs"
+required-features = ["cli"]
+
 # `unresolved` on the manifest the real binary writes: the markers a run that
 # succeeded still leaves open, from `check` and `generate`, statechart and
 # forge kind, held to `sce-codegen unresolved` and the wire schema.

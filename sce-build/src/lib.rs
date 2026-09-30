@@ -165,6 +165,11 @@ pub mod model;
 /// How far a misspelling is from what the author meant — the one edit
 /// distance every "did you mean" in this crate is measured with.
 pub mod near_miss;
+/// What a design the product accepts still leaves to a person — open
+/// questions, assumed values, a parent it needs, a processor the host must
+/// serve — written once for the acceptance report, the manifest's `open`
+/// and the acceptance record.
+pub mod open_matters;
 /// The sites that send to the parent session (`<send target="#_parent">`)
 /// — the fact that a machine needs one, which only a deployment can
 /// satisfy. Published on the manifest as `needs_parent`.
