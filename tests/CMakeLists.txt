@@ -1246,6 +1246,7 @@ add_executable(integration_tests
     integration/ASendReachesOnlyWhatItsTargetNamesAotTest.cpp
     integration/ADelayedSendReachesWhatItsTargetNamesTest.cpp
     integration/ADelayedSendReachesWhatItsTargetNamesAotTest.cpp
+    integration/ADelayedHttpSendIsPostedWhenDueTest.cpp
     integration/ADelayedHttpSendIsPostedWhenDueAotTest.cpp
     integration/ATargetExpressionIsRoutedAsItsLiteralIsTest.cpp
     integration/ATargetExpressionIsRoutedAsItsLiteralIsAotTest.cpp
