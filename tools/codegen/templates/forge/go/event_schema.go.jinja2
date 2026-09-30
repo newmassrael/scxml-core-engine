@@ -18,8 +18,12 @@ import (
 )
 {% endif %}
 
+{% if fields %}
 type {{ payload_struct_name }} struct {
 {% for f in fields %}
 	{{ f.go_field_name }} {{ f.go_type }}
 {% endfor %}
 }
+{% else %}
+// This schema declares no field: the event carries no data, so no payload type is generated.
+{% endif %}

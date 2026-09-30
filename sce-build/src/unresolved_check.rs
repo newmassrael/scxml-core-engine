@@ -362,7 +362,7 @@ fn forge_markers(
     // the shape this whole module exists to refuse.
     let doc = roxmltree::Document::parse(content).map_err(|e| {
         Located::new(
-            crate::forge::error::XmlError::Parse(e.to_string()).into(),
+            crate::forge::error::XmlError::from_roxmltree(&e).into(),
             source_name.to_string(),
             None,
             None,

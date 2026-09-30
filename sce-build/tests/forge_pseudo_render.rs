@@ -722,6 +722,8 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
         name: "tick".to_string(),
         event_name: "bus.tick".to_string(),
         fields: vec![field("seq", SceType::Uint8, Direction::In)],
+        payload_none: false,
+        datamodel_markers: Vec::new(),
         source_location: None,
     };
     assert_eq!(

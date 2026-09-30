@@ -95,13 +95,13 @@
       "items": { "$ref": "#/definitions/parentSend" }
     },
     "unresolved": {
-      "description": "Every sce:unresolved / sce:assumed marker the one document this run read carries — the records `sce-codegen unresolved` prints, in the same order. A marker blocks only --strict-unresolved, so the run succeeds either way; this is how its result says that a question is still open (kind unresolved) or a value was chosen without the specification (kind assumed). Omitted (not []) when there are none, and on a document-set run.",
+      "description": "Every sce:unresolved / sce:assumed marker the document this run read carries — the records `sce-codegen unresolved` prints, in the same order. A marker blocks only --strict-unresolved, so the run succeeds either way; this is how its result says that a question is still open (kind unresolved) or a value was chosen without the specification (kind assumed). On a document-set run, the markers of every member, each record naming the file it was written in. Omitted (not []) when there are none.",
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/definitions/unresolvedMarker" }
     },
     "open": {
-      "description": "What the accepted run still leaves to a person, one sentence each, built once from unresolved, parent_sends and host_processor_causes: a question the specification leaves open, a value chosen without it, a parent the machine needs, a processor the host must serve. accepted means the product found nothing to refuse; it does not mean the design is finished, and this is where the manifest says so. In that order, omitted (not []) when there are none, and on a document-set run, whose members each have their own.",
+      "description": "What the accepted run still leaves to a person, one sentence each, built once from unresolved, parent_sends and host_processor_causes: a question the specification leaves open, a value chosen without it, a parent the machine needs, a processor the host must serve. accepted means the product found nothing to refuse; it does not mean the design is finished, and this is where the manifest says so. In that order, omitted (not []) when there are none. A document-set run reports its members' open questions and assumed values, and not a parent or a host processor, which stay one document's answer.",
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/definitions/openMatter" }

@@ -302,6 +302,15 @@ name = "the_manifest_says_which_questions_a_document_leaves_open"
 path = "tests/the_manifest_says_which_questions_a_document_leaves_open.rs"
 required-features = ["cli"]
 
+# An event that carries no data is declared as such, not left out: a schema
+# with no field says `sce:payload="none"` or leaves the question open, a
+# closed interface admits it, and the machine generated for it is the
+# schemaless one on every backend. Spawns the binary.
+[[test]]
+name = "a_payload_free_event_is_declared_not_omitted"
+path = "tests/a_payload_free_event_is_declared_not_omitted.rs"
+required-features = ["cli"]
+
 # The owner's acceptance flow — requirements, report, record, check — for a
 # design of any kind, and a figure refused by name for a non-statechart.
 [[test]]

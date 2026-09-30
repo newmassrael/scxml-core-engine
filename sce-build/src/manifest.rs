@@ -400,10 +400,18 @@ pub struct Manifest<'a> {
     /// when there are none, matching [`Self::host_processor_causes`].
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub parent_sends: &'a [crate::parent_send_analyzer::ParentSend],
-    /// Every `sce:unresolved` / `sce:assumed` marker the ONE document this
-    /// run read carries — the records `sce-codegen unresolved` prints, in
-    /// the same order. Omitted (not `[]`) when there are none, and on a
-    /// document-set run, whose members each have their own.
+    /// Every `sce:unresolved` / `sce:assumed` marker the document this run
+    /// read carries — the records `sce-codegen unresolved` prints, in the
+    /// same order. On a document-set run, the markers of every member, each
+    /// record naming the file it was written in (statecharts first, then
+    /// forge documents, each in input order). Omitted (not `[]`) when there
+    /// are none.
+    ///
+    /// ⚠ A set used to publish none, on the reasoning that its members each
+    /// have their own. That is true of a parent and a host processor, and
+    /// false of a question: one member that leaves a payload open makes the
+    /// set leave it open, and a set that came back `accepted` with nothing
+    /// to say so is the silence this field exists to end.
     ///
     /// Published because the run succeeds either way: a marker blocks only
     /// `--strict-unresolved`, which is right for a draft still being
@@ -417,8 +425,10 @@ pub struct Manifest<'a> {
     /// the values chosen without the specification, a parent the machine
     /// needs, a processor the host must serve — one sentence each, from
     /// the records above ([`crate::open_matters`]). Omitted (not `[]`) when
-    /// there are none, and on a document-set run, whose members each have
-    /// their own.
+    /// there are none. A document-set run reports the questions and assumed
+    /// values of its members, and not a parent or a host processor: those
+    /// stay one document's answer, since the union would name a parent none
+    /// of the members may lack.
     ///
     /// `accepted` means the product found nothing to refuse, and that is
     /// not the same as a finished design. The sentences live in one module

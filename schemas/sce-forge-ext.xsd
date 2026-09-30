@@ -489,6 +489,15 @@
   <xs:attribute name="service" type="xs:string"/>
   <xs:attribute name="subfunc" type="xs:string"/>
   <xs:attribute name="addr" type="xs:string"/>
+  <!-- `sce:payload` has two readings, told apart by the element that carries
+       it. On a procedure `<send sce:service>` it names the operand that is
+       the request's payload (above). On the `<datamodel>` of a
+       `sce:kind="event-schema"` document it is `none` — the specification
+       says the event carries no data — and stands in for the field a schema
+       otherwise has to declare (SCE Accepted Subset, "Fieldless schema").
+       `xs:string` for both: the parser refuses any other value on a
+       `<datamodel>` with its own diagnostic, which a schema type would
+       pre-empt. -->
   <xs:attribute name="payload" type="xs:string"/>
 
   <!-- Section 4.7: Validator — data-attribute form (target format) -->

@@ -563,6 +563,10 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
             notes: &[
                 "cannot be declared for the W3C built-in events: error.*, done.state.*, \
                  done.invoke.*",
+                "an event that carries no data is still declared: <datamodel \
+                 sce:payload=\"none\"/> when the text says it carries none, and the \
+                 <datamodel> marked sce:unresolved, with the reason, when the text does not \
+                 say — never an invented field; an empty <datamodel> with neither is refused",
             ],
             example: Example::Document(include_str!("../../kind-examples/event-schema.scxml")),
         },

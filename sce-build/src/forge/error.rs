@@ -547,6 +547,34 @@ pub enum XmlError {
     PreprocessorNotRun { element: String },
 }
 
+impl XmlError {
+    /// The refusal of a document `roxmltree` could not read, worded with its
+    /// repair when the fault is one authors make.
+    ///
+    /// ⚠ ONE constructor for every parse site. `XmlError::Parse` took the
+    /// parser's own sentence — "unexpected XML declaration at 2:1" — which
+    /// names the fault and not the fix, and the fault is the commonest one a
+    /// document written by a model has: a comment placed above the
+    /// `<?xml ?>` line, which the XML grammar forbids. Measured 2026-09-30, a
+    /// draft handed on as passing the check was refused for exactly that when
+    /// its saved file was checked again. The wording is here so that every
+    /// site that reads a document says the same thing about it.
+    pub fn from_roxmltree(error: &roxmltree::Error) -> Self {
+        let repair = match error {
+            roxmltree::Error::UnexpectedDeclaration(_) => Some(
+                "the XML declaration (<?xml ...?>) has to be the first thing in the file: a \
+                 comment or a blank line before it is not allowed — move it below the \
+                 declaration",
+            ),
+            _ => None,
+        };
+        match repair {
+            Some(repair) => XmlError::Parse(format!("{error} — {repair}")),
+            None => XmlError::Parse(error.to_string()),
+        }
+    }
+}
+
 // ── Stage 3: Semantic validation ───────────────────────────────
 
 /// Semantic validation errors from kind-specific parsing.

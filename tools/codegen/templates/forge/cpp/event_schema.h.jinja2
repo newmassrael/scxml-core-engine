@@ -22,11 +22,15 @@
 
 namespace SCE::Generated::{{ namespace }} {
 
+{% if fields %}
 struct {{ payload_struct_name }} {
 {% for f in fields %}
     {{ f.cpp_type }} {{ f.id }};
 {% endfor %}
 };
+{% else %}
+// This schema declares no field: the event carries no data, so no payload type is generated.
+{% endif %}
 
 }  // namespace SCE::Generated::{{ namespace }}
 

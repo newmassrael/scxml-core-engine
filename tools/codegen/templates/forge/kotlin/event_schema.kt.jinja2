@@ -14,9 +14,13 @@ package com.sce.generated.{{ package }}
 import com.sce.generated.{{ imp_pkg }}.*
 {% endfor %}
 
+{% if fields %}
 data class {{ payload_struct_name }}(
 {%- for f in fields %}
     val {{ f.id }}: {{ f.kt_type }}{% if not loop.last %},{% endif %}
 
 {%- endfor %}
 )
+{% else %}
+// This schema declares no field: the event carries no data, so no payload type is generated.
+{% endif %}

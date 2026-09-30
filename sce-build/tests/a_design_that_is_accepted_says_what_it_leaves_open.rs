@@ -293,14 +293,22 @@ fn a_forge_kind_says_it_too() {
     );
 }
 
-/// A run that reads several documents has no single answer: each member has
-/// its own, and a union would name a parent one of them may not lack.
+/// A run that reads several documents publishes what its members leave open
+/// — a question one of them asks is one the set leaves — and nothing that is
+/// one document's answer: a union would name a parent, or a host processor,
+/// one of the members may not lack.
+///
+/// ⚠ This case used to pin the opposite (`a_document_set_publishes_no_open_list`),
+/// on the reasoning that a set's members each have their own. That holds for
+/// a parent and not for a question: a set that came back `accepted` with a
+/// payload nobody had settled, and nothing in its answer to say so, was the
+/// silence `open` exists to end (measured 2026-09-30).
 ///
 /// The member that leaves a question open sends to no parent, so the set
 /// passes the check — a set with a sender to a parent nothing invokes is
 /// refused outright, which is a different answer and is not this one.
 #[test]
-fn a_document_set_publishes_no_open_list() {
+fn a_document_set_publishes_the_questions_of_its_members_and_no_parent() {
     let question_only = OPEN.replace(
         r##"<onentry><send event="announce" target="#_parent"/></onentry>"##,
         "",
@@ -326,5 +334,18 @@ fn a_document_set_publishes_no_open_list() {
         "check of a set",
     );
     let manifest: serde_json::Value = serde_json::from_slice(&out.stdout).expect("one JSON line");
-    assert!(manifest.get("open").is_none(), "{manifest}");
+    let open = manifest["open"]
+        .as_array()
+        .unwrap_or_else(|| panic!("a member's open question is the set's: {manifest}"));
+    assert!(
+        open.iter().any(|m| m["kind"] == "question"),
+        "the question the member leaves open has to reach the set: {manifest}"
+    );
+    // A parent and a host processor stay one document's answer.
+    assert!(
+        open.iter()
+            .all(|m| m["kind"] == "question" || m["kind"] == "assumed"),
+        "a set publishes questions and assumed values, and no parent or processor: {manifest}"
+    );
+    assert!(manifest.get("needs_parent").is_none(), "{manifest}");
 }

@@ -1352,6 +1352,27 @@ pub struct EventSchemaModel {
     /// [`SceType::Enum`] referring to an imported `sce:kind="enum"`
     /// document.
     pub fields: Vec<ForgeField>,
+    /// `<datamodel sce:payload="none"/>`: the specification says the event
+    /// carries no data, so the schema declares no field on purpose.
+    ///
+    /// ⚠ A statement, not an absence. A `<datamodel>` with no field and
+    /// neither this nor an open marker is refused
+    /// (`validation/empty-collection`): it reads the same as a field the
+    /// author forgot. It only ever holds with `fields` empty.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub payload_none: bool,
+    /// The `<datamodel>` element's own `sce:unresolved` / `sce:assumed`
+    /// markers, in document order: the specification does not settle what,
+    /// if anything, the event carries. Together with `payload_none`, what a
+    /// schema with no field says about why it has none.
+    ///
+    /// ⚠ `location` is always `None` here. The page writes a marker as its
+    /// id, reason and candidates and reads it back, so a position could not
+    /// survive the round trip; the marker channel
+    /// ([`crate::unresolved_check`]) reads the document itself and reports
+    /// every marker where it was written.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub datamodel_markers: Vec<crate::provenance::UnresolvedMarker>,
     /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="event-schema">` root element
     /// (or the synthesized location of the lowered inline form).
@@ -1362,6 +1383,19 @@ pub struct EventSchemaModel {
 }
 
 impl EventSchemaModel {
+    /// Whether the schema declares a payload any consumer can name: a struct
+    /// with fields, which a `record:<alias>` or a host-run request and
+    /// result are made of.
+    ///
+    /// ⚠ One question with one answer. A schema without a field is a
+    /// contract about an event that carries nothing, or nothing settled, and
+    /// no backend emits a payload struct for it: an empty `data class` is
+    /// not Kotlin and an empty `struct` is not ISO C. Every place that would
+    /// name that struct asks this first and refuses in its own words.
+    pub fn carries_payload(&self) -> bool {
+        !self.fields.is_empty()
+    }
+
     /// W3C SCXML built-in event-name prefixes that an EventSchema may
     /// not declare against. Centralised here so the parse-time guard
     /// and any cross-kind binding pass agree on the closed set without

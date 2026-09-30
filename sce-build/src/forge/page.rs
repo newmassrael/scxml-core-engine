@@ -168,6 +168,12 @@ pub enum Word {
     Machine,
     EventSchema,
     Event,
+    /// After `payload`, `none`: an event-schema with no field, whose
+    /// specification says the event carries no data. A word for the reason
+    /// the traceability family is: the owner reading the page is the one
+    /// who has to tell an event that carries nothing from one nobody has
+    /// decided about.
+    Payload,
     Child,
     Assign,
     Content,
@@ -317,6 +323,7 @@ impl Word {
         Word::Machine,
         Word::EventSchema,
         Word::Event,
+        Word::Payload,
         Word::Child,
         Word::Assign,
         Word::Content,
@@ -472,6 +479,7 @@ fn en_word(w: Word) -> &'static str {
         Word::Machine => "machine",
         Word::EventSchema => "event-schema",
         Word::Event => "event",
+        Word::Payload => "payload",
         Word::Child => "child",
         Word::Assign => "assign",
         Word::Content => "content",
@@ -975,6 +983,7 @@ fn ko_word(w: Word) -> &'static str {
         Word::Machine => "상태기계",
         Word::EventSchema => "사건스키마",
         Word::Event => "사건이름",
+        Word::Payload => "페이로드",
         Word::Child => "자식",
         Word::Assign => "대입",
         Word::Content => "내용",

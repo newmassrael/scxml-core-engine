@@ -21419,6 +21419,15 @@ fn resolve_record<'i>(
         .find(|imp| imp.alias == alias)
         .and_then(|imp| imp.record.as_ref())
         .ok_or_else(|| refuse(format!("an import `{alias}` of kind event-schema")))?;
+    // A schema with no field is a contract about an event that carries no
+    // data (or nothing settled), and no backend emits a payload struct for
+    // it — there is no record for this type to name.
+    if record.fields.is_empty() {
+        return Err(refuse(format!(
+            "a schema that declares a field — `{alias}` declares none, so the event it names \
+             carries no payload and no record type is generated for it"
+        )));
+    }
     if let Some((id, ty)) = record.fields.iter().find(|(_, ty)| {
         !(AlgorithmValueType::list_elem_admitted(ty) || matches!(ty, SceType::Enum(_)))
     }) {

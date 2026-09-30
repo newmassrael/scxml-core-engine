@@ -66,6 +66,16 @@ pub fn validate(
                      <sce:import kind=\"event-schema\" as=\"{alias}\" src=\"…\"/>"
                 )));
             };
+            // A schema with no field names an event that carries no data,
+            // and no backend emits a payload struct for it: a request or a
+            // result has to be made of fields.
+            if !schema.carries_payload() {
+                return Err(refuse(
+                    "names an event schema that declares no field, so it carries no payload \
+                     and there is no record for a host-run request or result to be"
+                        .to_string(),
+                ));
+            }
             // The record crosses to and from the host as text in every
             // backend, and an enumeration has no spelling there that all six
             // share: its generated type is per-language, and the payload

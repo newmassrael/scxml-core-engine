@@ -18,10 +18,14 @@
 #include "{{ inc }}"
 {% endfor %}
 
+{% if fields %}
 typedef struct {
 {% for f in fields %}
     {{ f.c_type }} {{ f.id }};
 {% endfor %}
 } {{ payload_struct_name }}_t;
+{% else %}
+/* This schema declares no field: the event carries no data, so no payload type is generated. */
+{% endif %}
 
 #endif  /* {{ guard }} */

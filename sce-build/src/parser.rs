@@ -2098,7 +2098,7 @@ impl SCXMLParser {
             // instead of fabricating `(1, 1)` at the parser boundary.
             let pos = e.pos();
             Located::new(
-                ForgeError::Xml(XmlError::Parse(e.to_string())),
+                ForgeError::Xml(XmlError::from_roxmltree(&e)),
                 diag_label,
                 Some(pos.row),
                 Some(pos.col),
@@ -2495,6 +2495,14 @@ impl SCXMLParser {
                 &model,
                 &schemas_by_stem,
             );
+            // A record variable's schema has to declare a field: a schema
+            // with none names an event that carries no data, and no backend
+            // emits a payload struct for it.
+            crate::forge::event_schema_check::check_records_carry_payload(
+                &model,
+                &model.imported_records,
+                diag_label,
+            )?;
             // A host-run `<invoke>`'s typed interface names imported
             // schemas by alias, so it is judged against the alias map just
             // resolved — and its completion is bound to its result schema
@@ -2505,7 +2513,7 @@ impl SCXMLParser {
             // resolved, here where they are read and for the same reason
             // the typed-path validators are: every entry point that parses
             // a document from a file reaches this seam.
-            crate::scxml_interface::validate(&model, diag_label)?;
+            crate::scxml_interface::validate(&model, dir, diag_label)?;
             model.imported_algorithms =
                 crate::forge::static_imports::resolve(&model, dir, diag_label)?;
             let imported_enums =

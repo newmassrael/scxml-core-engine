@@ -31,8 +31,11 @@
 //! path, which reads no sibling documents, cannot resolve a schema and does
 //! not judge the declaration, as it does not judge the typed payload paths.
 
+use std::path::Path;
+
 use crate::event_descriptor::EventDescriptor;
-use crate::forge::error::{ForgeError, Located};
+use crate::forge::error::{ForgeError, Located, SourceLocation};
+use crate::forge::model::ForgeKind;
 use crate::host_processor_analyzer::walk_model_actions;
 use crate::model::SCXMLModel;
 use crate::scxml_self_send::{is_discarded, sends_to_itself};
@@ -40,10 +43,18 @@ use crate::scxml_semantic::{InterfaceCrossing, ScxmlSemanticError};
 
 /// Refuse the first event that crosses a closed interface undeclared. A
 /// document that does not declare its interface closed passes untouched.
-pub fn validate(model: &SCXMLModel, diag_label: &str) -> Result<(), Located<ForgeError>> {
+///
+/// `base_dir` is the directory the imports resolve against, for
+/// [`refuse_unread_schemas`].
+pub fn validate(
+    model: &SCXMLModel,
+    base_dir: &Path,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
     if !model.interface_closed {
         return Ok(());
     }
+    refuse_unread_schemas(model, base_dir, diag_label)?;
     let declared = |descriptor: &EventDescriptor| {
         model
             .imported_event_schemas
@@ -140,6 +151,45 @@ pub fn validate(model: &SCXMLModel, diag_label: &str) -> Result<(), Located<Forg
             at.as_ref(),
         )),
     }
+}
+
+/// Refuse a closed interface whose declared event-schema could not be read,
+/// in that schema's own words.
+///
+/// ⚠ The interface is judged against the schemas the imports resolved to,
+/// and this seam resolves them quietly ([`crate::forge::import_source::parse_quietly`]):
+/// an import that is missing, unreadable or refused simply is not there.
+/// Judging on regardless says the imports declare nothing — measured
+/// 2026-09-30, "the document imports no event-schema" over a document that
+/// imports four, every one refused for a reason the author was never told,
+/// because this refusal came first and the import enrichment that reports it
+/// never ran. Here is the one place that knows both facts, so it says the
+/// one that is true: what is wrong with the schema.
+///
+/// An import that reads and parses but is not an event-schema is the
+/// enrichment's to name (`KindMismatch`), and is left to it.
+fn refuse_unread_schemas(
+    model: &SCXMLModel,
+    base_dir: &Path,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    for import in &model.forge_imports {
+        if !matches!(import.kind, ForgeKind::EventSchema)
+            || model.imported_records.contains_key(&import.alias)
+        {
+            continue;
+        }
+        let at = SourceLocation {
+            file: diag_label.to_string(),
+            line: import.line,
+            col: None,
+        };
+        let source = crate::forge::import_source::ImportSource::read(base_dir, import)
+            .map_err(|error| model.locate(ForgeError::Import(error), Some(&at), diag_label))?;
+        // The refusal carries the imported document's own file and row.
+        source.parse()?;
+    }
+    Ok(())
 }
 
 fn refuse(

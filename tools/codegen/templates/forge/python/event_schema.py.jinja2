@@ -15,8 +15,12 @@ from {{ imp }}
 {% endfor %}
 
 
+{% if fields %}
 @dataclass
 class {{ payload_struct_name }}:
 {% for f in fields %}
     {{ f.id }}: {{ f.py_type }}
 {% endfor %}
+{% else %}
+# This schema declares no field: the event carries no data, so no payload type is generated.
+{% endif %}

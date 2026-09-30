@@ -147,6 +147,63 @@ pub fn resolve_imported_records(
     resolved
 }
 
+/// Refuse a `record:<alias>` variable whose schema declares no field.
+///
+/// A schema with no field is a contract about an event that carries no data
+/// (or nothing settled), and no backend emits a payload struct for it
+/// ([`EventSchemaModel::carries_payload`]) — so there is no record type for
+/// the variable to have. Judged at the import seam, next to the resolution
+/// that finds the schema, and not in the static data model's own pass: the
+/// same alias reaches a host-run request and an algorithm's local by other
+/// routes, each refusing in its own words, and this is the statechart's.
+pub fn check_records_carry_payload(
+    scxml: &SCXMLModel,
+    records: &BTreeMap<String, EventSchemaModel>,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    let variables = scxml.variables.iter().chain(
+        scxml
+            .states
+            .values()
+            .flat_map(|state| state.datamodel.iter()),
+    );
+    for var in variables {
+        let Some(alias) = var
+            .value_type
+            .as_ref()
+            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
+        else {
+            continue;
+        };
+        let Some(schema) = records.get(alias) else {
+            continue;
+        };
+        if schema.carries_payload() {
+            continue;
+        }
+        let at = var
+            .value_type_spelling
+            .as_ref()
+            .map(|spelling| (spelling.row(), spelling.col()));
+        return Err(Located::new(
+            ValidationError::AttributeRuleViolated {
+                element: format!("<data id=\"{}\">", var.id),
+                attr: "sce:type".into(),
+                value: format!("record:{alias}"),
+                rule: format!(
+                    "a schema that declares a field — `{alias}` declares none, so the event it \
+                     names carries no payload and no record type is generated for it"
+                ),
+            }
+            .into(),
+            diag_label,
+            at.map(|(row, _)| row),
+            at.map(|(_, col)| col),
+        ));
+    }
+    Ok(())
+}
+
 pub fn resolve_imported_event_schemas(
     scxml: &SCXMLModel,
     event_schemas_by_doc_name: &BTreeMap<String, EventSchemaModel>,
@@ -1987,6 +2044,8 @@ mod tests {
             name: format!("{event}_schema"),
             event_name: event.to_string(),
             fields,
+            payload_none: false,
+            datamodel_markers: Vec::new(),
             source_location: None,
         }
     }

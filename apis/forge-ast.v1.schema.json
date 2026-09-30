@@ -3695,6 +3695,13 @@
         {
           "description": "Typed `_event.data` payload contract. Parse-time metadata plus per-backend payload struct codegen. See [`EventSchemaModel`].",
           "properties": {
+            "datamodel_markers": {
+              "description": "The `<datamodel>` element's own `sce:unresolved` / `sce:assumed` markers, in document order: the specification does not settle what, if anything, the event carries. Together with `payload_none`, what a schema with no field says about why it has none.\n\n⚠ `location` is always `None` here. The page writes a marker as its id, reason and candidates and reads it back, so a position could not survive the round trip; the marker channel ([`crate::unresolved_check`]) reads the document itself and reports every marker where it was written.",
+              "items": {
+                "$ref": "#/definitions/UnresolvedMarker"
+              },
+              "type": "array"
+            },
             "event_name": {
               "description": "SCXML event name this schema constrains (e.g. `\"job.completed\"`, `\"task.failed\"`). Treated case-sensitively per W3C SCXML 1.0 §5.10 event-matching rules. Built-in event names (`error.*`, `done.invoke.*`, `done.state.*`) are rejected at parse time by the schema-on-builtin guard.",
               "type": "string"
@@ -3715,6 +3722,10 @@
             "name": {
               "description": "Symbol name for the schema document — drives symbol mangling and import-table lookup. For the top-level surface form this is the document's basename (e.g. `job_completed_schema`); for the inline form, the parser synthesizes a deterministic name from the enclosing statechart name + event name so anonymous lowered schemas remain referenceable in diagnostics.",
               "type": "string"
+            },
+            "payload_none": {
+              "description": "`<datamodel sce:payload=\"none\"/>`: the specification says the event carries no data, so the schema declares no field on purpose.\n\n⚠ A statement, not an absence. A `<datamodel>` with no field and neither this nor an open marker is refused (`validation/empty-collection`): it reads the same as a field the author forgot. It only ever holds with `fields` empty.",
+              "type": "boolean"
             },
             "source_location": {
               "anyOf": [

@@ -2915,6 +2915,12 @@ listing in its message every event the imported schemas declare. The only other 
 of the attribute is its absence; anything else is refused as
 `validation/attribute-rule-violated`. A forge root does not take it.
 
+An event that carries no data is declared by a fieldless schema (EventSchema
+kind, "Fieldless schema"), not left out of the interface. An imported schema
+the seam could not read — missing, unreadable, or itself refused — is
+reported in its own words, at its own file and row, and not as the interface
+declaring nothing: a closed document is judged against schemas that read.
+
 It is judged where a statechart's imports are read, the parser's import
 seam, so every entry point that parses a document from a file judges it.
 The in-memory path, which reads no sibling documents and so resolves no
@@ -3465,6 +3471,43 @@ may be any of the primitive `SceType` values (`uint8` / `uint16`
 **Direction invariant** (DL-5'): `sce:direction` must be `in` —
 the payload is the receiver's read-only view. `out` / `internal`
 directions raise `validation/invalid-attribute` at parse time.
+
+**Fieldless schema.** An event the specification says carries no data, or
+does not say, is declared as one rather than left out: a closed interface
+(§2.16) admits only events an imported schema declares. A schema may have no
+`<data>` field only if its `<datamodel>` says why:
+
+- `<datamodel sce:payload="none"/>` — the specification says the event carries
+  no data. Nothing is left open.
+- `<datamodel sce:unresolved="…" sce:unresolved-reason="…"/>` — the
+  specification does not say. It is the marker every other open question
+  uses: accepted, published in the manifest's `unresolved` and `open`, and
+  refused by `--strict-unresolved`.
+
+A `<datamodel>` with neither and no field is refused as
+`validation/empty-collection` — it reads the same as a field the author forgot
+— and its message names both ways out. `sce:payload` with any value but `none`
+is `validation/invalid-attribute`; `none` beside a field, or beside
+`sce:unresolved`, contradicts itself and is `validation/incompatible-attributes`.
+(`sce:payload` on a procedure `<send>` is another attribute of the same name;
+schemas/sce-forge-ext.xsd says which is which.) The page writes the statement
+under the head — `payload none`, or the open marker with its reason — so it
+never reads as an event that carries nothing when the specification left that
+open.
+
+A fieldless schema is a build-time contract and nothing else, so no W3C
+behaviour moves. No backend emits a payload struct for it (an empty `data
+class` is not Kotlin, an empty `struct` is not ISO C). The machine generated
+for an event it names is the machine generated with no schema at all — the
+same output on all six backends but for the `source-hash` header and the source
+positions — so an event delivered with data is delivered as W3C SCXML 5.10.1
+has it, and none of the typed-payload machinery below exists for it. What the
+build does refuse is a use that needs a field: `_event.data.<field>` in a guard
+(`validation/cross-kind-field-not-found`, with no candidates to offer), a
+`<param>` sent with the event (`validation/event-payload-field-unknown`), and a
+record made of it — a `record:<alias>` variable or parameter
+(`validation/attribute-rule-violated`) or a host-run `<invoke>` request or
+result (`validation/typed-invoke-schema`).
 
 **Schemaless fallback** (DL-9'): events without an imported
 EventSchema retain the dynamic `_event.data` baseline — no

@@ -347,7 +347,12 @@ fn parse_transform(head: &Line<'_>, body: &[&Line<'_>]) -> Result<TransformModel
     Ok(m)
 }
 
-/// `event-schema <name> event <event>`
+/// `event-schema <name> event <event>`, then what it says about having no
+/// field (`payload none`, and the datamodel's open markers), then the fields.
+///
+/// The renderer writes the first two under the head, ahead of every field,
+/// so they are read from that leading run only: a `payload none` after a
+/// field is not a line the renderer wrote.
 fn parse_event_schema(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EventSchemaModel, ParseError> {
     let w: Vec<&str> = head.text.split_whitespace().collect();
     if w.get(2) != Some(&"event") {
@@ -356,13 +361,50 @@ fn parse_event_schema(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EventSchema
             why: "an event-schema head needs `event <name>`".to_string(),
         });
     }
+    let mut payload_none = false;
+    let mut traced = Traced::default();
+    let mut fields: Vec<ForgeField> = Vec::new();
+    let mut leading = true;
+    for (l, sub) in group(body) {
+        if leading {
+            if l.text == "payload none" {
+                if let Some(extra) = sub.first() {
+                    return Err(ParseError {
+                        line: extra.number,
+                        why: "a `payload none` line holds nothing under it".to_string(),
+                    });
+                }
+                payload_none = true;
+                continue;
+            }
+            if read_traceability(l, &sub, &mut traced)? {
+                continue;
+            }
+        }
+        leading = false;
+        if let Some(extra) = sub.first() {
+            return Err(ParseError {
+                line: extra.number,
+                why: "a field line holds nothing under it".to_string(),
+            });
+        }
+        fields.push(parse_field(l)?);
+    }
+    // The document has no place for a requirement or a provenance anchor on
+    // an event-schema (`ReviewScope::NoAnnotationSite`), so a line naming one
+    // is not something the renderer wrote — refused rather than dropped.
+    if !traced.req.is_empty() || !traced.provenance.is_empty() {
+        return Err(ParseError {
+            line: head.number,
+            why: "an event-schema takes no `req` or `provenance` line".to_string(),
+        });
+    }
     Ok(EventSchemaModel {
         name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
         event_name: undo(w.get(3).copied().unwrap_or(""), head.number)?,
-        fields: body
-            .iter()
-            .map(|l| parse_field(l))
-            .collect::<Result<_, _>>()?,
+        fields,
+        payload_none,
+        datamodel_markers: traced.unresolved,
         source_location: None,
     })
 }

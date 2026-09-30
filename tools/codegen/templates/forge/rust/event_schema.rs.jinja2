@@ -13,6 +13,7 @@
 use crate::{{ use_path }};
 {% endfor %}
 
+{% if fields %}
 {{ event_schema_payload_derives_attr }}
 pub struct {{ payload_struct_name }} {
 {# ⚠ `rs_field_name`, not `id`: this crate denies `non_snake_case`, and a
@@ -22,3 +23,10 @@ pub struct {{ payload_struct_name }} {
     pub {{ f.rs_field_name }}: {{ f.rs_type }},
 {% endfor %}
 }
+{% else %}
+{# ⚠ No struct for a schema with no field: an empty one is not valid in every
+   backend (Kotlin `data class`, ISO C), and the event carries no data a struct
+   could hold. Every consumer that would name the type is refused first, by
+   `EventSchemaModel::carries_payload`. #}
+// This schema declares no field: the event carries no data, so no payload type is generated.
+{% endif %}

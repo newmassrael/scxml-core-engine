@@ -935,8 +935,9 @@ struct GenerateReport {
     /// kind, or a document set, whose answer is not a union — see
     /// `Manifest::needs_parent`).
     parent_sends: Option<Vec<sce_build::parent_send_analyzer::ParentSend>>,
-    /// Every marker of the ONE document this run read, statechart or forge
-    /// kind; empty on a document-set run — see `Manifest::unresolved`.
+    /// Every marker of the document this run read, statechart or forge kind;
+    /// on a document-set run, of every member, each record naming the file it
+    /// was written in — see `Manifest::unresolved`.
     unresolved: Vec<sce_build::unresolved_check::UnresolvedRecord>,
     host_processor_causes: Vec<sce_build::host_processor_analyzer::HostProcessorCauseRecord>,
     /// The `--host-processor` declarations this run was given, echoed so
@@ -1045,16 +1046,26 @@ fn build_manifest<'a>(
         needs_parent: report.parent_sends.as_ref().map(|sends| !sends.is_empty()),
         parent_sends: report.parent_sends.as_deref().unwrap_or(&[]),
         unresolved: &report.unresolved,
-        // One document's answer: a set run's members each have their own,
-        // and the union would name a parent none of them may lack.
-        open: if report.document_kind.is_some() {
+        // What a document leaves open is the union over a set's members — a
+        // question one of them asks is one the set leaves — so `unresolved`
+        // is read for a set too. A parent and a host processor stay ONE
+        // document's answer: a set run's members each have their own, and the
+        // union would name a parent none of them may lack.
+        open: {
+            let one_document = report.document_kind.is_some();
             sce_build::open_matters::of(
                 &report.unresolved,
-                report.parent_sends.as_deref().unwrap_or(&[]),
-                &report.host_processor_causes,
+                if one_document {
+                    report.parent_sends.as_deref().unwrap_or(&[])
+                } else {
+                    &[]
+                },
+                if one_document {
+                    &report.host_processor_causes
+                } else {
+                    &[]
+                },
             )
-        } else {
-            Vec::new()
         },
         host_processor_causes: &report.host_processor_causes,
         host_processor_types: &report.host_processor_types,
@@ -1894,7 +1905,21 @@ struct CheckArgs {
     /// `generate --lint` — same `sce_build::lint_statechart` call, so
     /// `check --lint` and `generate --lint` cannot disagree about a
     /// document.
-    #[arg(long, conflicts_with_all = ["scxml_set", "forge", "document", "deploy"])]
+    ///
+    /// On a document set, each statechart of it is linted alone, by the same
+    /// call, in input order; the first one with findings ends the run, every
+    /// finding of it reported, and an expression the ECMAScript frontend
+    /// refused ends it too — the answer `check --lint` gives for one
+    /// document, so the two routes agree under the flag.
+    ///
+    /// ⚠ A set is linted whether or not the flag is given: the library entry
+    /// point every statechart of a set is compiled through refuses on the
+    /// FIRST design-time finding, which is why `orchestrate` has no such flag.
+    /// What the flag adds on a set is the whole list of findings for a
+    /// statechart, where its absence reports one, and the refused-expression
+    /// check. A set with no statechart in it has nothing for the flag to
+    /// judge and is refused rather than passed in silence.
+    #[arg(long, conflicts_with_all = ["forge"])]
     lint: bool,
     /// Go module path hosting the generated forge packages. Required to
     /// check any Go crossfile document; ignored for other backends.
@@ -3258,7 +3283,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         target_language: Some(lang),
         ..GenerateReport::default()
     };
-    accumulate_host_requirements(&mut report, &scxml_path_bufs);
+    accumulate_host_requirements(&mut report, &scxml_path_bufs, &forge_path_bufs);
 
     for (basename, generated) in &outputs {
         for (file_name, code) in &maybe_format_files(generated.files.clone(), &cpp_formatter) {
@@ -3582,6 +3607,8 @@ fn report_refused_expressions(
 fn scxml_host_requirement_facts(path: &str) -> Option<HostRequirements> {
     let mut parser = SCXMLParser::new();
     let mut model = parser.parse_file(path).ok()?;
+    // Read before the analysis, where the single-document routes read them.
+    let unresolved = sce_build::unresolved_check::unresolved_records(&model);
     analyzer::analyze(&mut model, path);
     Some(HostRequirements {
         needs_script_engine: model.needs_script_engine,
@@ -3590,7 +3617,23 @@ fn scxml_host_requirement_facts(path: &str) -> Option<HostRequirements> {
         needs_host_processor: !model.host_processor_causes.is_empty(),
         host_processor_causes: model.host_processor_cause_records(),
         unreadable_variables: model.unreadable_variables,
+        unresolved,
     })
+}
+
+/// Every marker of one forge document of a set, or `None` when it does not
+/// read — silent on failure for the reason [`scxml_host_requirement_facts`]
+/// is: the compile pass that follows reads the same file and reports it.
+fn forge_document_markers(
+    path: &Path,
+) -> Option<Vec<sce_build::unresolved_check::UnresolvedRecord>> {
+    let content = fs::read_to_string(path).ok()?;
+    let label = path.to_string_lossy();
+    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let (expanded, map, _deps) =
+        sce_build::parser::expand_preprocessors(&content, &label, Some(base_dir), &[]).ok()?;
+    let positions = sce_build::model::AuthoredPositions::new(&*label, expanded, map);
+    sce_build::unresolved_check::unresolved_records_forge(&positions).ok()
 }
 
 /// What one statechart document asks of the host that will run it.
@@ -3606,6 +3649,8 @@ struct HostRequirements {
     needs_host_processor: bool,
     host_processor_causes: Vec<sce_build::host_processor_analyzer::HostProcessorCauseRecord>,
     unreadable_variables: Vec<sce_build::reader_names::UnreadableVariable>,
+    /// What the document leaves open — `sce:unresolved` / `sce:assumed`.
+    unresolved: Vec<sce_build::unresolved_check::UnresolvedRecord>,
 }
 
 /// Fold every document's [`HostRequirements`] into `report`.
@@ -3621,7 +3666,16 @@ struct HostRequirements {
 /// compile pass that follows reads the same files and is what raises the
 /// parse error, with the diagnostic code and exit status the producer
 /// would give.
-fn accumulate_host_requirements(report: &mut GenerateReport, paths: &[PathBuf]) {
+///
+/// The markers ride along, statecharts and forge documents alike, for the
+/// reason the flags do: a set is accepted or refused as one, and one member
+/// that leaves a question open must not disappear into that verdict. Each
+/// record carries the file it was written in, so the union loses nothing.
+fn accumulate_host_requirements(
+    report: &mut GenerateReport,
+    paths: &[PathBuf],
+    forge_paths: &[PathBuf],
+) {
     let mut needs_script_engine = false;
     let mut needs_event_scheduler = false;
     let mut needs_host_processor = false;
@@ -3647,10 +3701,55 @@ fn accumulate_host_requirements(report: &mut GenerateReport, paths: &[PathBuf]) 
         report
             .unreadable_variables
             .extend(facts.unreadable_variables);
+        report.unresolved.extend(facts.unresolved);
+    }
+    for path in forge_paths {
+        if let Some(markers) = forge_document_markers(path) {
+            report.unresolved.extend(markers);
+        }
     }
     report.needs_script_engine = Some(needs_script_engine);
     report.needs_event_scheduler = Some(needs_event_scheduler);
     report.needs_host_processor = Some(needs_host_processor);
+}
+
+/// `--lint` over a document set: every statechart of it, linted as
+/// `generate --lint` lints one — the design-time findings, then the
+/// expressions the ECMAScript frontend refused — and the first statechart
+/// with findings ends the run, every finding of it reported.
+///
+/// A statechart that does not parse is skipped, not reported: the compile
+/// pass that follows reads the same file and raises the parse error with its
+/// own code and exit status, as [`scxml_host_requirement_facts`] leaves it.
+///
+/// ⚠ Not what makes a set linted: the compile pass that follows lints every
+/// statechart anyway and refuses on its first finding. This is what makes the
+/// flag mean, on a set, what it means on one document — every finding, and
+/// the refused expressions.
+///
+/// ⚠ A set with no statechart is refused. The flag judges statecharts, so
+/// over a set of forge documents it would have judged nothing and reported
+/// nothing — an opt-in check that passes because it never ran.
+fn lint_set_statecharts(scxml_paths: &[PathBuf], error_format: ErrorFormat) {
+    if scxml_paths.is_empty() {
+        cli_exit(CliError::Usage {
+            detail: "--lint judges statecharts, and this document set holds none — drop the \
+                     flag, or add the statechart the design-time lints are meant for"
+                .to_string(),
+        });
+    }
+    for path in scxml_paths {
+        let label = path.to_string_lossy();
+        let mut parser = SCXMLParser::new();
+        let Ok(model) = parser.parse_file(&label) else {
+            continue;
+        };
+        error_format.emit_all_and_exit(
+            &sce_build::lint_statechart_findings(&model, &label),
+            "Forge codegen error: ",
+        );
+        report_refused_expressions(&model, &label, true, error_format);
+    }
 }
 
 /// `sce-codegen check` over a document set — every verdict
@@ -3683,7 +3782,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         script_engine: _,
         include_dir,
         strict_unresolved: _,
-        lint: _,
+        lint,
         go_module_prefix,
         const_fold_budget,
         no_std: _,
@@ -3716,6 +3815,10 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         .as_deref()
         .map(|p| load_deploy_config(p, error_format));
 
+    if lint {
+        lint_set_statecharts(&scxml_paths, error_format);
+    }
+
     let mut report = GenerateReport {
         deploy_facts: deploy_cfg.as_ref().map(|cfg| sce_build::DeployFacts {
             static_analyzer: cfg.build.as_ref().and_then(|b| b.static_analyzer),
@@ -3727,7 +3830,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         host_invoker_types: host_invoker.clone(),
         ..GenerateReport::default()
     };
-    accumulate_host_requirements(&mut report, &scxml_paths);
+    accumulate_host_requirements(&mut report, &scxml_paths, &forge_paths);
 
     let options = sce_build::ForgeCompileOptions {
         go_module_prefix,

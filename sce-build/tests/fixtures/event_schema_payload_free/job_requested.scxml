@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  An event-schema that declares no field because the specification says the
+  event carries no data: `sce:payload="none"` on the datamodel. Generic
+  vocabulary (`job.requested`) — no protocol token, no domain identifier.
+  Held by `a_payload_free_event_is_declared_not_omitted`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="job_requested"
+       sce:event-name="job.requested">
+  <datamodel sce:payload="none"/>
+</scxml>

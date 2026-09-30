@@ -286,7 +286,7 @@ fn forge_source_location_of(node: &roxmltree::Node, source_name: &str) -> Option
 /// the higher-level `parse_forge_with_imports` entry point; this
 /// lower-level helper reports the file-less version.
 pub fn detect_kind(content: &str) -> Result<Option<ForgeKind>, ForgeError> {
-    let doc = roxmltree::Document::parse(content).map_err(|e| XmlError::Parse(e.to_string()))?;
+    let doc = roxmltree::Document::parse(content).map_err(|e| XmlError::from_roxmltree(&e))?;
     let root = doc.root_element();
     Ok(detect_kind_from_node(&root)?)
 }
@@ -352,7 +352,7 @@ pub fn parse_forge_with_imports_and_plugin(
     crate::forge::xsd_validator::warn_if_not_validated(xsd_outcome);
 
     let doc = roxmltree::Document::parse(content)
-        .map_err(|e| Located::new(XmlError::Parse(e.to_string()).into(), diag, None, None))?;
+        .map_err(|e| Located::new(XmlError::from_roxmltree(&e).into(), diag, None, None))?;
     let root = doc.root_element();
 
     // Open before the first read: `sce:kind` below is an `sce:` attribute
@@ -9782,13 +9782,82 @@ fn parse_event_schema(
         fields.push(field);
     }
 
-    if fields.is_empty() {
+    // A schema with no field has to say why it has none. Silence is refused:
+    // an empty `<datamodel>` reads the same as a field the author forgot,
+    // and it is the difference between an event that carries nothing and
+    // one nobody has decided about that a closed interface has to keep
+    // apart. Two statements are admitted, both on the `<datamodel>` that
+    // would have held the fields: the specification says the event carries
+    // no data (`sce:payload="none"`), or it does not say
+    // (`sce:unresolved`, the marker every other open question uses).
+    let payload_none = match sce_attr(&datamodel, "payload").as_deref() {
+        None => false,
+        Some("none") => true,
+        Some(other) => {
+            return Err(located(
+                &datamodel,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "EventSchema <datamodel>".into(),
+                    attr: "sce:payload".into(),
+                    value: other.to_string(),
+                    allowed: vec!["none".into()],
+                },
+            ));
+        }
+    };
+    let datamodel_markers: Vec<crate::provenance::UnresolvedMarker> =
+        crate::parser::collect_sce_unresolved(&datamodel, label.diagnostic_label)
+            .into_iter()
+            .map(|marker| crate::provenance::UnresolvedMarker {
+                location: None,
+                ..marker
+            })
+            .collect();
+    let left_open = datamodel_markers
+        .iter()
+        .any(|marker| marker.kind == crate::provenance::MarkerKind::Unresolved);
+
+    if payload_none {
+        if let Some(field) = fields.first() {
+            return Err(located(
+                &datamodel,
+                label.diagnostic_label,
+                ValidationError::IncompatibleAttributes {
+                    element: "EventSchema <datamodel>".into(),
+                    detail: format!(
+                        "sce:payload=\"none\" says the event carries no data, and the \
+                         datamodel declares the field '{}' — drop one of them",
+                        field.id
+                    ),
+                },
+            ));
+        }
+        if left_open {
+            return Err(located(
+                &datamodel,
+                label.diagnostic_label,
+                ValidationError::IncompatibleAttributes {
+                    element: "EventSchema <datamodel>".into(),
+                    detail: "sce:payload=\"none\" says the specification settles that the event \
+                             carries no data, and sce:unresolved says it does not — keep the \
+                             one that is true"
+                        .into(),
+                },
+            ));
+        }
+    }
+    if fields.is_empty() && !payload_none && !left_open {
         return Err(located(
-            root,
+            &datamodel,
             label.diagnostic_label,
             ValidationError::EmptyCollection {
                 kind: ForgeKind::EventSchema,
-                what: "<data> field with sce:direction=\"in\"".into(),
+                what: "<data> field with sce:direction=\"in\" (an event that carries no data \
+                       says so with sce:payload=\"none\" on its <datamodel>; one whose \
+                       payload the specification leaves open marks that <datamodel> \
+                       sce:unresolved)"
+                    .into(),
             },
         ));
     }
@@ -9797,6 +9866,8 @@ fn parse_event_schema(
         name: label.identifier.to_string(),
         event_name,
         fields,
+        payload_none,
+        datamodel_markers,
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
@@ -10075,7 +10146,7 @@ pub fn parse_imports_only(
     doc_name: &str,
 ) -> Result<Vec<ForgeImport>, Located<ForgeError>> {
     let doc = roxmltree::Document::parse(content)
-        .map_err(|e| Located::new(XmlError::Parse(e.to_string()).into(), doc_name, None, None))?;
+        .map_err(|e| Located::new(XmlError::from_roxmltree(&e).into(), doc_name, None, None))?;
     let root = doc.root_element();
     parse_imports(&root, doc_name)
 }
@@ -10444,7 +10515,7 @@ use crate::near_miss::edit_distance;
 /// silently stops covering a kind added tomorrow.
 pub fn reject_unknown_sce_attrs(content: &str, doc_name: &str) -> Result<(), Located<ForgeError>> {
     let doc = roxmltree::Document::parse(content)
-        .map_err(|e| Located::new(XmlError::Parse(e.to_string()).into(), doc_name, None, None))?;
+        .map_err(|e| Located::new(XmlError::from_roxmltree(&e).into(), doc_name, None, None))?;
     reject_unknown_sce_attrs_below(&doc.root_element(), doc_name)
 }
 

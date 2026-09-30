@@ -550,7 +550,7 @@ pub fn render_nodes(
         ForgeDocument::Condition(m) => Ok(render_condition(m)),
         ForgeDocument::Transform(m) => Ok(render_transform(m)),
         ForgeDocument::Validator(m) => Ok(render_validator(m)),
-        ForgeDocument::EventSchema(m) => Ok(render_event_schema(m)),
+        ForgeDocument::EventSchema(m) => render_event_schema(m),
         ForgeDocument::Enum(m) => Ok(render_enum(m)),
         ForgeDocument::Timer(m) => Ok(render_timer(m)),
         ForgeDocument::Lookup(m) => Ok(render_lookup(m)),
@@ -1612,7 +1612,19 @@ fn render_validator(m: &ValidatorModel) -> Vec<Node> {
     out.nodes
 }
 
-fn render_event_schema(m: &EventSchemaModel) -> Vec<Node> {
+/// ```text
+/// event-schema <name> event <event>
+///   payload none                    (the specification: no data)
+///   unresolved <id>                 (the datamodel's open markers)
+///     reason <text>
+///   in <field>: <type>              (the fields, if it has any)
+/// ```
+///
+/// ⚠ What a schema with no field says about having none is written before
+/// its fields, and always: a page that showed only `event-schema X event Y`
+/// would read as an event that carries nothing, when the specification may
+/// have left that open.
+fn render_event_schema(m: &EventSchemaModel) -> Result<Vec<Node>, Unsupported> {
     let mut out = Out::new();
     out.line_of(vec![
         Part::Word(Word::EventSchema),
@@ -1621,11 +1633,22 @@ fn render_event_schema(m: &EventSchemaModel) -> Vec<Node> {
         Part::Text(text(&m.event_name).into_owned()),
     ]);
     out.nested(|out| {
+        if m.payload_none {
+            out.line_of(vec![Part::Word(Word::Payload), Part::Word(Word::None)]);
+        }
+        out.traceability(&Traced {
+            req: &[],
+            provenance: &[],
+            unresolved: &m.datamodel_markers,
+        });
         for f in &m.fields {
             render_field(f, out);
         }
     });
-    out.nodes
+    if let Some(gap) = out.refused {
+        return Err(Unsupported::feature("event-schema", gap));
+    }
+    Ok(out.nodes)
 }
 
 fn render_enum(m: &EnumModel) -> Vec<Node> {

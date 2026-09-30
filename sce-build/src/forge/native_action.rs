@@ -1473,6 +1473,8 @@ mod tests {
                     initial_spelling: None,
                 },
             ],
+            payload_none: false,
+            datamodel_markers: Vec::new(),
             source_location: None,
         };
         let mut m = BTreeMap::new();
