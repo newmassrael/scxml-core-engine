@@ -11208,14 +11208,14 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:065deaecdc3cc4e6","code":"scxml/recording-intercepted","stage":"validation","spec":"W3C SCXML §3.13","message":"State 'released' records speed on 'speed.update', but its descendant 'unlocked' has its own transition on that event, which is taken instead while 'unlocked' is active — the record is skipped. Assign it in the transition of 'unlocked' too, or keep the recording in a <parallel> region of its own.","actual":"speed"}"#,
             ),
             (
-                // The retried request draft: its request goes to itself.
+                // A draft whose output goes to the machine itself.
                 "forge/scxml-self-send-discarded",
                 crate::scxml_semantic::ScxmlSemanticError::SelfSendDiscarded {
-                    event: "SendRequest".into(),
+                    event: "announce".into(),
                     state: "waiting".into(),
                 }
                 .into(),
-                r##"{"v":1,"id":"fnv1a:a4c93f488479a2f4","code":"scxml/self-send-discarded","stage":"validation","spec":"W3C SCXML §6.2.4","message":"State 'waiting' sends 'SendRequest' to its own session and no transition takes it, so the machine discards it: a <send> with neither target nor type goes to the machine's own queue. To send it out, give it its receiver — the type of an Event I/O Processor the host serves, or target=\"#_parent\" when the specification names the statechart that invokes this one; to act on it, add a transition that takes it.","actual":"SendRequest"}"##,
+                r##"{"v":1,"id":"fnv1a:519547a92d98d38e","code":"scxml/self-send-discarded","stage":"validation","spec":"W3C SCXML §6.2.4","message":"State 'waiting' sends 'announce' to its own session and no transition takes it, so the machine discards it: a <send> with neither target nor type goes to the machine's own queue. To send it out, give it its receiver — the type of an Event I/O Processor the host serves, or target=\"#_parent\" when the specification names the statechart that invokes this one; to act on it, add a transition that takes it.","actual":"announce"}"##,
             ),
             (
                 // SCE Protocol-Synthesis RFC §synth-5-E sample-callback placement rule

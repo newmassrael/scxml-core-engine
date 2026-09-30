@@ -7,15 +7,15 @@
 //!
 //! # The case, measured
 //!
-//! Five drafts of one vending specification (2026-09-29) and a retried
-//! request draft (2026-09-30) wrote their outputs as `<send event="…"/>`
-//! with no target: the prose said what the machine announces and not to
-//! whom, and a `<send>` with no `target` is a message to the session
-//! itself. No transition took any of them, so every output was queued and
-//! thrown away — and `check --lint` accepted all six, because the document
-//! is valid SCXML with a defined meaning. The closed interface
-//! ([`crate::scxml_interface`]) refuses it where it is declared; this lint
-//! says it for every statechart an author asks design advice about.
+//! Drafted statecharts wrote their outputs as `<send event="…"/>` with no
+//! target: the prose said what the machine announces and not to whom, and a
+//! `<send>` with no `target` is a message to the session itself. No
+//! transition took any of them, so every output was queued and thrown away
+//! — and `check --lint` accepted them, because the document is valid SCXML
+//! with a defined meaning. All five drafts of one vending specification
+//! (2026-09-29) did it. The closed interface ([`crate::scxml_interface`])
+//! refuses it where it is declared; this lint says it for every statechart
+//! an author asks design advice about.
 //!
 //! # What is flagged
 //!
@@ -132,25 +132,25 @@ mod tests {
             .collect()
     }
 
-    /// The retried draft: the request goes to the machine itself, and the
-    /// machine waits for a response that nothing can send.
-    const RETRY: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+    /// A draft that announces its output to the machine itself, and waits
+    /// for a completion that nothing can send.
+    const GATE: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
         initial="idle">
   <state id="idle">
-    <transition event="request" target="waiting"/>
+    <transition event="start" target="waiting"/>
   </state>
   <state id="waiting">
-    <onentry><send event="SendRequest"/></onentry>
-    <transition event="response" target="idle"/>
+    <onentry><send event="announce"/></onentry>
+    <transition event="finish" target="idle"/>
   </state>
 </scxml>"#;
 
     #[test]
     fn an_output_sent_to_itself_that_nothing_takes_is_flagged() {
-        let f = found(RETRY);
+        let f = found(GATE);
         assert_eq!(f.len(), 1, "{f:?}");
         assert!(
-            f[0].contains("'waiting'") && f[0].contains("'SendRequest'"),
+            f[0].contains("'waiting'") && f[0].contains("'announce'"),
             "{f:?}"
         );
     }
@@ -160,10 +160,10 @@ mod tests {
     #[test]
     fn the_internal_queue_and_a_delay_are_the_session_too() {
         for send in [
-            r##"<send event="SendRequest" target="#_internal"/>"##,
-            r#"<send event="SendRequest" delay="1s"/>"#,
+            r##"<send event="announce" target="#_internal"/>"##,
+            r#"<send event="announce" delay="1s"/>"#,
         ] {
-            let body = RETRY.replace(r#"<send event="SendRequest"/>"#, send);
+            let body = GATE.replace(r#"<send event="announce"/>"#, send);
             assert_eq!(found(&body).len(), 1, "{send}");
         }
     }
@@ -172,18 +172,18 @@ mod tests {
     /// message the machine acts on, not a lost output.
     #[test]
     fn a_self_send_some_transition_takes_is_not_flagged() {
-        for taker in ["SendRequest", "SendRequest.*", "SendRequest.", "*"] {
-            let body = RETRY.replace(
-                r#"<transition event="response" target="idle"/>"#,
+        for taker in ["announce", "announce.*", "announce.", "*"] {
+            let body = GATE.replace(
+                r#"<transition event="finish" target="idle"/>"#,
                 &format!(
-                    r#"<transition event="response" target="idle"/><transition event="{taker}"/>"#
+                    r#"<transition event="finish" target="idle"/><transition event="{taker}"/>"#
                 ),
             );
             assert!(found(&body).is_empty(), "{taker}: {:?}", found(&body));
         }
-        let body = RETRY.replace(
-            r#"<transition event="response" target="idle"/>"#,
-            r#"<transition event="SendRequestX"/>"#,
+        let body = GATE.replace(
+            r#"<transition event="finish" target="idle"/>"#,
+            r#"<transition event="announceX"/>"#,
         );
         assert_eq!(found(&body).len(), 1, "another token is another event");
     }
@@ -193,12 +193,12 @@ mod tests {
     #[test]
     fn a_send_that_leaves_the_session_is_not_flagged() {
         for send in [
-            r##"<send event="SendRequest" target="#_parent"/>"##,
-            r#"<send event="SendRequest" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" target="http://host/in"/>"#,
-            r#"<send event="SendRequest" type="x-host-bus"/>"#,
-            r#"<send event="SendRequest" targetexpr="'#_parent'"/>"#,
+            r##"<send event="announce" target="#_parent"/>"##,
+            r#"<send event="announce" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" target="http://host/in"/>"#,
+            r#"<send event="announce" type="x-host-bus"/>"#,
+            r#"<send event="announce" targetexpr="'#_parent'"/>"#,
         ] {
-            let body = RETRY.replace(r#"<send event="SendRequest"/>"#, send);
+            let body = GATE.replace(r#"<send event="announce"/>"#, send);
             assert!(found(&body).is_empty(), "{send}: {:?}", found(&body));
         }
     }
@@ -207,15 +207,15 @@ mod tests {
     /// 6.4.1), so the send reaches it; the internal queue is not forwarded.
     #[test]
     fn an_autoforwarding_child_receives_what_the_external_queue_gets() {
-        let body = RETRY.replace(
-            r#"<transition event="response" target="idle"/>"#,
+        let body = GATE.replace(
+            r#"<transition event="finish" target="idle"/>"#,
             r#"<invoke type="scxml" autoforward="true"><content><scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"><final id="f"/></scxml></content></invoke>
-    <transition event="response" target="idle"/>"#,
+    <transition event="finish" target="idle"/>"#,
         );
         assert!(found(&body).is_empty(), "{:?}", found(&body));
         let internal = body.replace(
-            r#"<send event="SendRequest"/>"#,
-            r##"<send event="SendRequest" target="#_internal"/>"##,
+            r#"<send event="announce"/>"#,
+            r##"<send event="announce" target="#_internal"/>"##,
         );
         assert_eq!(found(&internal).len(), 1);
     }
@@ -223,8 +223,8 @@ mod tests {
     /// A computed name cannot be judged, and is not.
     #[test]
     fn a_computed_event_name_is_not_judged() {
-        let body = RETRY.replace(
-            r#"<send event="SendRequest"/>"#,
+        let body = GATE.replace(
+            r#"<send event="announce"/>"#,
             r#"<send eventexpr="'Send' + 'Request'"/>"#,
         );
         assert!(found(&body).is_empty());

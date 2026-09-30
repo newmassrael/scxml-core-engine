@@ -3330,9 +3330,8 @@ queue and nothing happens.
 The document is legal, which is why this is a `--lint` finding. It was
 added on a measurement: drafted statecharts wrote an output whose
 receiver the specification did not name as `<send event="…"/>`, and the
-machine announced each output to itself and threw it away — five drafts
-of one specification, and a retried request draft whose request went to
-itself while it waited for the response. `check --lint` accepted all of
+machine announced each output to itself and threw it away, as all five
+drafts of one specification did. `check --lint` accepted every one of
 them.
 
 Not flagged: a send with a `target`, `targetexpr`, `type` or `typeexpr`,

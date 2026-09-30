@@ -1143,7 +1143,7 @@ mod tests {
                 inner: "unlocked".into(),
             },
             ScxmlSemanticError::SelfSendDiscarded {
-                event: "SendRequest".into(),
+                event: "announce".into(),
                 state: "waiting".into(),
             },
         ];
