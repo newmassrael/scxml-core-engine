@@ -46,6 +46,90 @@ mutation_failures_from_gtest() {
     }' | sort -u
 }
 
+# How much of ONE test's output a detail parser keeps.
+#
+# The account of a failure is read by a person, and what they read it for lives
+# at its edges: the start of the test, and the lines just before it failed. A
+# test that FLOODS its log is the case that has to be bounded, because the
+# parsers below buffer a test until its verdict arrives, and they used to do it
+# by appending every line to one string.
+#
+# MEASURED 2026-09-30, on the first mutation round of a casefile that had never
+# been run: one mutated test looped and printed a single block of 979,037 lines
+# and 148 MB. Appending to a string copies the string, so buffering n lines costs
+# n squared — the `awk` held one CPU for fifty minutes with its buffer at 73 MB,
+# an estimated six more hours to go, and the round was killed by the two-hour cap
+# of a background job before it could print a verdict. The verdict itself is read
+# from the JUnit document AFTER this parser returns, so the only thing the flood
+# cost was the verdict: the parser produces a diagnostic, and it held the round
+# hostage. A re-run meets the same input.
+#
+# So each block keeps its first HEAD lines, its last TAIL lines, and — between
+# them — the lines around a failure the runner announced there (up to NOTE lines,
+# NOTE_CONTEXT of them after each announcement), and says how many it dropped. A
+# block that fits in HEAD + TAIL is carried whole and unmarked, byte for byte as
+# before. The time is linear and the memory is bounded, whatever a test prints.
+MUTATION_DETAIL_HEAD_LINES="${MUTATION_DETAIL_HEAD_LINES:-200}"
+MUTATION_DETAIL_TAIL_LINES="${MUTATION_DETAIL_TAIL_LINES:-200}"
+MUTATION_DETAIL_NOTE_LINES="${MUTATION_DETAIL_NOTE_LINES:-120}"
+MUTATION_DETAIL_NOTE_CONTEXT="${MUTATION_DETAIL_NOTE_CONTEXT:-12}"
+
+# The bounded block buffer, as awk text both parsers below are built from. Awk
+# has no library, so this is concatenated in front of each program.
+#
+#   block_open(line)   a block starts; `line` is its opening line
+#   block_add(line)    one more line of it
+#   block_close(line)  the runner says it FAILED: print the block and `line`
+#
+# The variables it reads come in with -v: head_max, tail_max, note_max,
+# note_ctx and note_re (the runner's own announcement of a failure).
+#
+# The tail is a ring, so a line is stored once and overwritten by the line
+# `tail_max` after it; a note records WHICH line it was, and a note that is still
+# in the tail when the block closes is not printed twice. No single quote may
+# appear in this text: it lives inside a shell string.
+MUTATION_BOUNDED_BLOCK_AWK='
+    BEGIN {
+        if (head_max < 0) head_max = 0
+        if (tail_max < 1) tail_max = 1
+    }
+    function block_open(line) {
+        head[0] = line
+        nhead = 1
+        rest = 0
+        nnote = 0
+        ctx = 0
+    }
+    function block_add(line) {
+        if (nhead <= head_max) { head[nhead++] = line; return }
+        ring[rest % tail_max] = line
+        if (line ~ note_re) ctx = note_ctx
+        if (ctx > 0) {
+            if (nnote < note_max) { notes[nnote] = line; note_at[nnote] = rest; nnote++ }
+            ctx--
+        }
+        rest++
+    }
+    function block_close(closing,   kept, from, i, j, headed) {
+        kept = (rest < tail_max) ? rest : tail_max
+        from = rest - kept
+        for (i = 0; i < nhead; i++) print head[i]
+        if (from > 0) {
+            printf "[mutate: %d line(s) of this test output were dropped here; the first %d and the last %d lines of it are kept]\n", from, head_max, kept
+            headed = 0
+            for (j = 0; j < nnote; j++) {
+                if (note_at[j] < from) {
+                    if (!headed) { print "[mutate: the failure lines that fell in the dropped part:]"; headed = 1 }
+                    print notes[j]
+                }
+            }
+            print "[mutate: the end of the test output:]"
+        }
+        for (j = from; j < rest; j++) print ring[j % tail_max]
+        print closing
+    }
+'
+
 # What gtest printed between starting a test and failing it.
 #
 # gtest brackets every test with `[ RUN      ]` and closes it with one of
@@ -57,14 +141,21 @@ mutation_failures_from_gtest() {
 # The summary repeat at the end of a run is NOT a bracket and so never opens a
 # buffer: `[  FAILED  ] 1 test, listed below:` arrives with no `[ RUN      ]`
 # in front of it, and is dropped along with everything else outside a bracket.
+#
+# The buffer is bounded (see MUTATION_DETAIL_HEAD_LINES above). gtest announces
+# a failed assertion with `<file>:<line>: Failure`, and that is the line whose
+# neighbourhood is kept from the middle of a block that had to be cut.
 mutation_detail_from_gtest() {
-    awk '{
+    awk -v head_max="$MUTATION_DETAIL_HEAD_LINES" -v tail_max="$MUTATION_DETAIL_TAIL_LINES" \
+        -v note_max="$MUTATION_DETAIL_NOTE_LINES" -v note_ctx="$MUTATION_DETAIL_NOTE_CONTEXT" \
+        -v note_re=': Failure$' "$MUTATION_BOUNDED_BLOCK_AWK"'
+    {
         sub(/^[0-9]+: /, "")
-        if ($0 ~ /^\[ RUN +\]/) { buf = $0 "\n"; open = 1; next }
+        if ($0 ~ /^\[ RUN +\]/) { block_open($0); open = 1; next }
         if (!open) next
-        if ($0 ~ /^\[ +FAILED +\]/) { printf "%s%s\n", buf, $0; open = 0; next }
+        if ($0 ~ /^\[ +FAILED +\]/) { block_close($0); open = 0; next }
         if ($0 ~ /^\[ +OK +\]/ || $0 ~ /^\[ +SKIPPED +\]/) { open = 0; next }
-        buf = buf $0 "\n"
+        block_add($0)
     }'
 }
 
@@ -148,12 +239,18 @@ mutation_failures_from_go() {
 # failing row, and those row names are the whole answer to "which case of the
 # table did the mutation reach" — the name parser above cannot carry them,
 # because it deliberately counts the parent only.
+#
+# The buffer is bounded like gtest's (see MUTATION_DETAIL_HEAD_LINES above), and
+# the line whose neighbourhood is kept from the middle of a block that had to be
+# cut is the one `t.Errorf` writes: an indented `<file>.go:<line>: <message>`.
 mutation_detail_from_go() {
-    awk '
-        /^=== RUN/ { buf = $0 "\n"; open = 1; trailing = 0; next }
-        open && /^ *--- FAIL: / { printf "%s%s\n", buf, $0; open = 0; trailing = 1; next }
+    awk -v head_max="$MUTATION_DETAIL_HEAD_LINES" -v tail_max="$MUTATION_DETAIL_TAIL_LINES" \
+        -v note_max="$MUTATION_DETAIL_NOTE_LINES" -v note_ctx="$MUTATION_DETAIL_NOTE_CONTEXT" \
+        -v note_re='^ +[^ ]+[.]go:[0-9]+: ' "$MUTATION_BOUNDED_BLOCK_AWK"'
+        /^=== RUN/ { block_open($0); open = 1; trailing = 0; next }
+        open && /^ *--- FAIL: / { block_close($0); open = 0; trailing = 1; next }
         open && /^ *--- (PASS|SKIP): / { open = 0; next }
-        open { buf = buf $0 "\n"; next }
+        open { block_add($0); next }
         trailing && /^ +--- (FAIL|PASS|SKIP): / { print; next }
         { trailing = 0 }
     '
