@@ -734,18 +734,28 @@ def validate_scxml_set(documents: list[pathlib.Path],
     (`sce-codegen check --document ...`): a statechart and the event
     schemas it imports, a worker and the link it reads.
 
-    The same JSON object as `validate_scxml`. ⚠ Each document goes in as
-    `--document`, so the PRODUCT decides which pipeline reads it; filing
-    them here would be a copy of that rule. The manifest describes the set,
-    so it carries no single `document_kind`.
+    The same JSON object as `validate_scxml`, `open` and `next` included:
+    what one member of the set leaves open — a payload the specification
+    does not settle, a value chosen without it — is what the set leaves open,
+    and a set that came back `accepted` with nothing to say so would be the
+    silence `open` exists to end. ⚠ Each document goes in as `--document`, so
+    the PRODUCT decides which pipeline reads it; filing them here would be a
+    copy of that rule. The manifest describes the set, so it carries no single
+    `document_kind`.
+
+    The design-time lints run on every statechart of the set without being
+    asked (the product's library entry point refuses on the first finding),
+    and only the first is reported; there is no flag to add here.
     """
     args = ["check"]
     for document in documents:
         args += ["--document", str(document)]
     if deploy is not None:
         args += ["--deploy", str(deploy)]
-    return _product_answer(args, codegen, answer="manifest", read=_json_line,
-                           verdicts=("accepted", "refused"), cwd=cwd)
+    report, refusal = _product_answer(args, codegen, answer="manifest",
+                                      read=_json_line,
+                                      verdicts=("accepted", "refused"), cwd=cwd)
+    return (_with_open_matters(report), "") if report else (report, refusal)
 
 
 def kind_catalog(kind: str | None = None,

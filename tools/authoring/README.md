@@ -293,7 +293,11 @@ together import one another by name. Without `out`, `render_scxml_diagram`
 returns each figure's SVG text. `validate_scxml_set` checks documents that
 refer to one another as one set, such as a statechart and the event schemas
 it imports, or a worker, its link and the link's codec. It passes each as
-`sce-codegen check --document`, so the product reads each document's kind.
+`sce-codegen check --document`, so the product reads each document's kind. Its
+answer carries `open` and `next` like `validate_scxml`'s: what one member of the
+set leaves open is what the set leaves open. The design-time lints already run
+on every statechart of a set, reporting the first finding; `sce-codegen check
+--lint --document …` reports every one.
 `validate_scxml` runs `sce-codegen check --lint --error-format=json` and returns
 every diagnostic record with the verdict and manifest, as JSON;
 `render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page;
@@ -361,6 +365,19 @@ does not close anything — an event no schema declares is still accepted.
 The server's instructions ask the assistant to write the event-schemas
 first and close the interface: that is the choice the vending case above
 left open, and each of its drafts made it differently.
+
+An event that carries no data is declared like any other, so the interface
+can stay closed: its schema says `<datamodel sce:payload="none"/>` when the
+specification says the event carries nothing, and marks the `<datamodel>`
+`sce:unresolved`, with the reason, when the specification does not say. A
+schema with neither and no field is refused, since an empty `<datamodel>`
+reads the same as a field the author forgot. The second form is an open
+question like any other: the check accepts the design and its answer says, in
+`open`, that the payload is still unsettled, and the strict check refuses it
+until the owner has decided. A fieldless schema changes nothing about how the
+machine runs — the machine generated for it is the one generated with no
+schema — and no field can be read from or sent with such an event
+(`docs/SCE_ACCEPTED_SUBSET.md`, EventSchema kind, "Fieldless schema").
 
 The requirement and acceptance tools answer for a document of any kind. A
 statechart's report shows, for each requirement, the transitions it depends
