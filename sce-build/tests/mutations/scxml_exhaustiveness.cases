@@ -69,9 +69,15 @@ PY
 # ── The attribute's own shape ──────────────────────────────────────
 
 mutation_case "the withdrawn sce:exhaustive is ignored instead of rejected" <<'PY'
+# ⚠ The attribute is still READ here and its value dropped, rather than the
+# read removed. Since the read ledger (an `sce:` attribute nothing reads is
+# refused when the parse ends), removing the read would make the LEDGER
+# refuse the attribute — under another code — and this case would then
+# measure the ledger, not the by-name rejection it exists to hold. Reading
+# and ignoring is the pre-ledger defect: the attribute accepted in silence.
 edit("sce-build/src/parser.rs",
-     'if let Some(withdrawn) = node.attribute((SCE_NAMESPACE, "exhaustive")) {',
-     'if let Some(withdrawn) = Option::<&str>::None {')
+     'if let Some(withdrawn) = crate::sce_attr::read(node, "exhaustive") {',
+     'if let Some(withdrawn) = crate::sce_attr::read(node, "exhaustive").filter(|_| false) {')
 PY
 
 mutation_case "wildcard tokens are accepted, giving the attribute a second matching rule" <<'PY'
@@ -150,16 +156,24 @@ PY_CASE
 # from the unfiltered set floods every sequential protocol machine in the
 # W3C corpus.
 
+# ⚠ Both anchors below are in `findings`, the one place the two questions are
+# asked together. They carry the binding (`let mut out = `, `out.extend(`)
+# because `check_declarations(model, &found.inconsistent, source)` is also
+# how `declaration_findings` calls it, and an anchor that matches two places
+# would silently mutate the first. They are the two forms the call took when
+# `findings` stopped returning at its first error (2026-09-28) and collected
+# every record instead; the sets they are given, which is the claim, did not
+# change.
 mutation_case "declarations are judged against the reportable subset again" <<'PY'
 edit("sce-build/src/scxml_exhaustiveness.rs",
-     "    check_declarations(model, &found.inconsistent, source)?;",
-     "    check_declarations(model, &found.reportable, source)?;")
+     "    let mut out = check_declarations(model, &found.inconsistent, source);",
+     "    let mut out = check_declarations(model, &found.reportable, source);")
 PY
 
 mutation_case "the report fires wherever an inconsistency exists" <<'PY'
 edit("sce-build/src/scxml_exhaustiveness.rs",
-     "    report_uncovered_gaps(model, &found.reportable, source)",
-     "    report_uncovered_gaps(model, &found.inconsistent, source)")
+     "    out.extend(report_uncovered_gaps(model, &found.reportable, source));",
+     "    out.extend(report_uncovered_gaps(model, &found.inconsistent, source));")
 PY
 
 # `common_ground` is bound rather than dropped: with the `if` gone the

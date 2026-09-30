@@ -22,11 +22,14 @@ mutation_targets sce-build/src/generator.rs sce-build/src/model.rs sce-build/src
 mutation_oracles sce-build/tests/a_marker_names_where_a_state_was_written.rs sce-build/tests/an_ast_export_names_where_a_node_was_written.rs sce-build/src/model.rs
 
 mutation_case "the AST envelope carries the expanded text's rows" <<'PY'
+# The anchor is the call alone, not the call and the line that follows it.
+# It was the two together until 2026-09-29, when the kind basis was moved
+# onto the envelope between them and the case went stale: the mutation
+# reads the same wherever the neighbouring lines are, so it should not
+# quote them.
 edit("sce-build/src/forge/ast_export.rs",
-     r'''    model.into_artifact_coordinates();
-    ParsedForge {''',
-     r'''    let _ = &mut model;
-    ParsedForge {''')
+     r'''    model.into_artifact_coordinates();''',
+     r'''    let _ = &mut model;''')
 PY
 
 mutation_case "the Rust backend renders the expanded text's rows" <<'PY'
