@@ -180,7 +180,13 @@ min_free_gb = 60
 # 2026-09-11: the build machine had a jar at all only because an earlier run
 # in that session happened to route a `jvmJar` to it, which is a property of
 # that history and not of the host.
-build  = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build && cargo test --workspace --features cli --no-run && ./gradlew :sce-forge-runtime-kotlin:jvmJar --console=plain"
+#
+# Gradle is called through `scripts/gradlew-on-ci-jdk.sh`, not directly: a bare
+# `./gradlew` runs on the machine's default JDK, and Gradle 8.11.1 with this
+# repository's Kotlin plugin dies on JDK 25 (`* What went wrong: 25.0.4`,
+# measured 2026-09-30 on the build machine, whose `java` is 25.0.4). The script
+# picks the JDK the Kotlin gates pick, from the version CI installs.
+build  = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build && cargo test --workspace --features cli --no-run && scripts/gradlew-on-ci-jdk.sh :sce-forge-runtime-kotlin:jvmJar --console=plain"
 
 # The echo server is started here rather than assumed: a bare workspace run
 # reports failures that look like backend defects and are not.
