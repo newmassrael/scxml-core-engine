@@ -247,4 +247,11 @@ kotlin {
 
 tasks.withType<Test>().configureEach {
     systemProperty("sce.repo.root", rootProject.projectDir.absolutePath)
+    // The generated harness reads the reference cases at run time, by path
+    // (harness.kt.jinja2), so to Gradle they are an input like any other: left
+    // undeclared, a change to the cases alone leaves jvmTest UP-TO-DATE and the
+    // lane green without running them. Measured 2026-09-30, 1800 new cases.
+    inputs.file(rootProject.layout.projectDirectory.file("tests/forge/conformance/numerical_reference.json"))
+        .withPropertyName("numericalReference")
+        .withPathSensitivity(PathSensitivity.NONE)
 }
