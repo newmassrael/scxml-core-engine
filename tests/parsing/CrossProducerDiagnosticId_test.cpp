@@ -204,6 +204,15 @@ const std::map<std::string, std::string> &exemptLeaves() {
          "`validation/wrong-pipeline`. What matters across the two — that neither engine RUNS the document — is "
          "pinned by `BothProducersAgreeOnWhichPipelineOwnsTheDocument` below, which is the property this leaf was "
          "added for: before it existed the C++ parser accepted such documents and ran them as statecharts."},
+        {"SemanticUnsupportedDatamodel",
+         "Different accepted sets by design, measured 2026-09-30: `sce-codegen check` ACCEPTS "
+         "`datamodel=\"sce-static\"` (rc 0, `rust` status ok, on `static_overflow.scxml` and "
+         "`sync_client.scxml`) because generated code runs it, while this engine refuses it — its script engine "
+         "would evaluate every expression as ECMAScript, wrapping an overflowing integer and leaving an imported "
+         "algorithm undefined. So no document puts the two producers on one input for this code: Rust raises "
+         "`scxml/unsupported-datamodel` for `xpath` and invented tokens, which this engine does not refuse. What "
+         "is pinned instead is the property the leaf exists for, that this engine never RUNS a `sce-static` "
+         "document: `AStaticDatamodelRunsUnderTheInterpreterTest.TheInterpreterRefusesWhatGeneratedCodeRuns`."},
         {"SemanticTopLevelScriptUnloaded",
          "Both producers reject what §scxml-5.8 forbids — measured on all three shapes — but "
          "through different surfaces: the C++ parser raises this leaf, while the Rust pipeline "

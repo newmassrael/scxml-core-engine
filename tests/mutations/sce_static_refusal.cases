@@ -1,0 +1,33 @@
+# Mutation cases for "the Interpreter refuses datamodel=\"sce-static\"".
+#
+# Run with `scripts/mutate tests/mutations/sce_static_refusal.cases`.
+#
+# The defect this stands for: generated code holds a `sce-static` document's
+# variables to their types and checks its integer operations, while the
+# Interpreter hands every expression to its script engine, which evaluates it
+# as ECMAScript. Measured 2026-09-30, the Interpreter accepted the document and
+# ran it with a different meaning — an overflowing `uint8` wrote 256 where every
+# AOT backend keeps 253 and raises `error.execution`, and an imported algorithm
+# was an undefined name — with no diagnostic at all.
+#
+# The suite named here is the one ctest case that owns both halves of the
+# claim: every `sce-static` statechart under the shared fixture directory is
+# refused with `scxml/unsupported-datamodel`, and a document declaring the data
+# model this engine runs still loads. Naming it rather than the whole tree
+# keeps a case's verdict about the code it mutated.
+
+mutation_ctest --test-dir build -R "^static_datamodel_interpreter$"
+mutation_targets sce/src/parsing/SCXMLParser.cpp
+mutation_oracles tests/integration/AStaticDatamodelRunsUnderTheInterpreterTest.cpp
+
+mutation_case "a sce-static document is run as ECMAScript again" <<'PY'
+edit("sce/src/parsing/SCXMLParser.cpp",
+     '        if (datamodelType == "sce-static") {',
+     '        if (false && datamodelType == "sce-static") {')
+PY
+
+mutation_case "every datamodel is refused along with sce-static" <<'PY'
+edit("sce/src/parsing/SCXMLParser.cpp",
+     '        if (datamodelType == "sce-static") {',
+     '        if (datamodelType == datamodelType) {')
+PY

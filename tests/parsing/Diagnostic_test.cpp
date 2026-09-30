@@ -1109,6 +1109,30 @@ TEST(SemanticErrorWire, WrongPipelineConformsToV1Schema) {
     EXPECT_FALSE(j.contains("fix")) << "the Rust producer emits no fix for this code: " << j.dump();
 }
 
+TEST(SemanticErrorWire, UnsupportedDatamodelConformsToV1Schema) {
+    // The Interpreter refuses `datamodel="sce-static"`, which generated
+    // code runs. Same wire code as the Rust arm that refuses `xpath` and any
+    // invented token: `actual` is what the document wrote, the values this
+    // engine runs ride `fix.candidates` alone (`expected` stays empty), and
+    // the code carries its `spec` anchor after `stage`.
+    const SemanticUnsupportedDatamodel err(/*declared=*/"sce-static", /*supported=*/{"null", "ecmascript"},
+                                           /*reason=*/"generated code runs it");
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "scxml/unsupported-datamodel");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_EQ(j.at("spec").get<std::string>(), "W3C SCXML §3.2");
+    EXPECT_EQ(j.at("actual").get<std::string>(), "sce-static");
+    EXPECT_FALSE(j.contains("expected")) << "the vocabulary rides `fix` alone: " << j.dump();
+    ASSERT_TRUE(j.contains("fix")) << j.dump();
+    EXPECT_EQ(j.at("fix").at("kind").get<std::string>(), "replace_one_of");
+    const auto &candidates = j.at("fix").at("candidates");
+    ASSERT_EQ(candidates.size(), 2u);
+    EXPECT_EQ(candidates[0].get<std::string>(), "null");
+    EXPECT_EQ(candidates[1].get<std::string>(), "ecmascript");
+    EXPECT_NE(j.at("message").get<std::string>().find("sce-static"), std::string::npos)
+        << "the message names the value it refuses: " << j.dump();
+}
+
 TEST(SemanticErrorWire, NoStatesConformsToV1Schema) {
     const SemanticNoStates err;
     const auto j = err.to_json();

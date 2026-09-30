@@ -459,6 +459,60 @@ private:
     std::string kind_;
 };
 
+// The root declares a `datamodel` this engine does not run.
+//
+// W3C SCXML §3.2 lets a platform define data models beyond `null` and
+// `ecmascript`, and SCE defines one — `sce-static` (SCE Accepted Subset
+// §2.15), whose variables are typed and whose integer operations are checked.
+// Generated code runs it. The Interpreter does not: it hands every
+// expression to its script engine, which evaluates it as ECMAScript, so a
+// `uint8` that overflows wraps instead of raising `error.execution`, and an
+// imported algorithm is an undefined name.
+//
+// Measured 2026-09-30 by replaying the fixtures the AOT backends replay
+// (`sce-build/tests/fixtures/static_datamodel`): the parser stored the
+// attribute as a string no decision consulted, and the Interpreter ran the
+// document with a different meaning and no diagnostic. Refusing it is what
+// the generated side already does for a backend it cannot lower
+// (`generate/unsupported-feature`), so an accepted document never runs with
+// a meaning the engine does not give it.
+//
+// Mirrors Rust `ScxmlSemanticError::UnsupportedDatamodel`, which refuses
+// `xpath` and any invented token on the `sce-codegen` side: the same
+// `scxml/unsupported-datamodel` code, `actual` the value the document wrote
+// and `fix.candidates` the values THIS engine runs. The two producers refuse
+// different values (Rust accepts `sce-static`; this engine does not), so no
+// fixture puts them on one input — see `CrossProducerDiagnosticId_test.cpp`.
+class SemanticUnsupportedDatamodel : public SemanticError {
+public:
+    SemanticUnsupportedDatamodel(std::string declared, std::vector<std::string> supported, std::string reason)
+        : SemanticError("datamodel=\"" + declared + "\" is not run by the Interpreter: " + reason,
+                        {"datamodel", declared, "not-interpreted"}),
+          declared_(std::move(declared)), supported_(std::move(supported)) {}
+
+    std::string_view code() const noexcept override {
+        return "scxml/unsupported-datamodel";
+    }
+
+    nlohmann::ordered_json to_json() const override;
+
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<SemanticUnsupportedDatamodel>(*this);
+    }
+
+    const std::string &declared() const noexcept {
+        return declared_;
+    }
+
+    const std::vector<std::string> &supported() const noexcept {
+        return supported_;
+    }
+
+private:
+    std::string declared_;
+    std::vector<std::string> supported_;
+};
+
 // An element lacks an attribute the Recommendation requires. Mirrors Rust
 // `ValidationError::MissingAttribute { element, attr }` — the same
 // `validation/missing-attribute` code, the same message, key fragments

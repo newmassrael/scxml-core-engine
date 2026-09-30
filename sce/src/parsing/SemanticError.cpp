@@ -153,6 +153,30 @@ nlohmann::ordered_json SemanticWrongPipeline::to_json() const {
     return out;
 }
 
+nlohmann::ordered_json SemanticUnsupportedDatamodel::to_json() const {
+    // The Rust arm: `actual` is what the document wrote, the closed
+    // vocabulary rides `fix` alone (`expected` stays empty — §3.2 forbids
+    // the same list in both), and the code carries the `spec` anchor
+    // "W3C SCXML §3.2". `spec` is spliced in after `stage`, the position the
+    // Rust struct declares it at, by copying the envelope wholesale so a
+    // future envelope field needs no second edit here (see
+    // `SemanticTopLevelScriptUnloaded::to_json`).
+    auto envelope = baseEnvelope();
+    nlohmann::ordered_json out;
+    for (auto it = envelope.begin(); it != envelope.end(); ++it) {
+        out[it.key()] = *it;
+        if (it.key() == "stage") {
+            out["spec"] = "W3C SCXML §3.2";
+        }
+    }
+    out["actual"] = declared_;
+    nlohmann::ordered_json fix;
+    fix["kind"] = "replace_one_of";
+    fix["candidates"] = supported_;
+    out["fix"] = std::move(fix);
+    return out;
+}
+
 nlohmann::ordered_json SemanticNoStates::to_json() const {
     // `validation/empty-collection` carries no extra payload on the
     // Rust side either (only `key_fragments` for id derivation, no

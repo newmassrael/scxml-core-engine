@@ -1315,6 +1315,15 @@ mod tests {
             // a statechart) — so no new wire code, only a second producer
             // of an existing one.
             ("validation/wrong-pipeline", "SemanticWrongPipeline"),
+            // A root declaring a `datamodel` this engine does not run: the
+            // Interpreter refuses `sce-static`, which generated code runs.
+            // Reuses `scxml/unsupported-datamodel`, which this side already
+            // emits for `xpath` and any invented token — a second producer
+            // of an existing code, refusing a different value.
+            (
+                "scxml/unsupported-datamodel",
+                "SemanticUnsupportedDatamodel",
+            ),
             // The legal-state-specification leaf (`IllegalStateSpecification`
             // cites the rule): reuses the rule-violation code.
             (
@@ -1342,15 +1351,15 @@ mod tests {
         ];
         assert_eq!(
             rust_to_cpp.len(),
-            10,
-            "Expected 10 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 9 REUSED)"
+            11,
+            "Expected 11 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 10 REUSED)"
         );
 
         let expected_cpp: BTreeSet<&str> = rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
         assert_eq!(
             expected_cpp.len(),
-            10,
-            "Expected 10 distinct SemanticError subtypes"
+            11,
+            "Expected 11 distinct SemanticError subtypes"
         );
 
         let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
@@ -1434,8 +1443,12 @@ mod tests {
                 "SemanticExactlyOneAttribute",
                 "validation/exactly-one-attribute",
             ),
+            (
+                "SemanticUnsupportedDatamodel",
+                "scxml/unsupported-datamodel",
+            ),
         ];
-        assert_eq!(class_to_code.len(), 9);
+        assert_eq!(class_to_code.len(), 10);
 
         let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
 

@@ -2874,6 +2874,24 @@ because no payload is in scope to type it. The host method's parameter types
 are the arguments' types, and every call site of one name must agree on them
 as it must under any data model.
 
+**The Interpreter does not run it.** Generated code is what runs a
+`sce-static` document (§3.2 lets a platform decide which data models it
+supports). The Interpreter hands every expression to its script engine, which
+evaluates it as ECMAScript, so it would give the document a meaning it does not
+have: measured 2026-09-30 against the scenarios every backend replays, a
+`uint8` at 253 written `level + 3` became 256 where the generated machines keep
+253 and raise `error.execution`, a guard over an overflowing sum was true where
+theirs is false, and an imported algorithm was an undefined name. The
+Interpreter therefore refuses the value at the root, with
+`scxml/unsupported-datamodel` (`actual` the value written, `fix.candidates` the
+data models it runs: `null`, `ecmascript`), instead of accepting a document and
+running it as something else — the counterpart of the generated side's
+`generate/unsupported-feature` for a backend that cannot lower the model.
+`sce-codegen check` still accepts the document; the two engines are asked
+different questions.
+`tests/integration/AStaticDatamodelRunsUnderTheInterpreterTest.cpp` holds it
+for every `sce-static` statechart under the shared fixture directory.
+
 ### §2.16 A closed interface — `sce:interface="closed"`
 
 An event-schema types the payload of the one event it names; an event no

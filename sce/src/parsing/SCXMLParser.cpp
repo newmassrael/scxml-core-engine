@@ -291,6 +291,22 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
 
     if (scxmlNode->hasAttribute("datamodel")) {
         std::string datamodelType = scxmlNode->getAttribute("datamodel");
+        // SCE Accepted Subset §2.15 defines `sce-static`, whose variables are
+        // typed and whose integer operations are checked. Generated code runs
+        // it; this engine hands every expression to its script engine, which
+        // evaluates it as ECMAScript — a `uint8` that overflows would wrap
+        // instead of raising `error.execution`, and an imported algorithm
+        // would be an undefined name. Refused before the value is stored,
+        // rather than run with a meaning the document did not give it
+        // (measured 2026-09-30 against the scenarios every AOT backend
+        // replays).
+        if (datamodelType == "sce-static") {
+            throw SCE::parsing::SemanticUnsupportedDatamodel(
+                datamodelType, {"null", "ecmascript"},
+                "its variables are typed and its integer operations checked, and generated code is what runs them "
+                "(generate this document with sce-codegen); the Interpreter would evaluate every expression as "
+                "ECMAScript, which wraps an overflowing integer and cannot call an imported algorithm");
+        }
         model->setDatamodel(datamodelType);
         context.setDatamodelType(datamodelType);
         // §scxml-5.5 + Appendix B.2.2: `<donedata><content>text</content>`

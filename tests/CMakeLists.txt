@@ -288,6 +288,40 @@ apply_sce_test_policies(ecmascript_semantics_test)
 add_test(NAME ECMAScriptSemantics COMMAND ecmascript_semantics_test)
 
 # ============================================================================
+# 2.6. datamodel="sce-static" under the Interpreter (SCE Accepted Subset §2.15)
+#
+# The scenarios every AOT backend replays, replayed against the engine that
+# reads the document as written. No generated code: the Interpreter is the
+# unit under test.
+# ============================================================================
+add_executable(static_datamodel_interpreter_test
+    integration/AStaticDatamodelRunsUnderTheInterpreterTest.cpp
+)
+
+target_include_directories(static_datamodel_interpreter_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(static_datamodel_interpreter_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+target_compile_definitions(static_datamodel_interpreter_test
+    PRIVATE
+        SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+)
+
+apply_sce_test_policies(static_datamodel_interpreter_test)
+
+add_test(NAME static_datamodel_interpreter COMMAND static_datamodel_interpreter_test)
+
+# ============================================================================
 # How a string is written into JSON text (ARCHITECTURE.md, "JSON Text (Single
 # Source of Truth)"): SCE::JsonText, nlohmann and the script engines'
 # JSON.stringify, each held to tests/json_text/string_escape.json — the table
