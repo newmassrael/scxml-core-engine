@@ -5,6 +5,21 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
 
+# A custom command's DEPFILE names its targets as the generator wrote them,
+# absolute; Ninja compares them with the command's outputs, which it holds
+# relative to the build directory. With the policy unset CMake hands the
+# depfile over untouched, the two never match, and every build re-runs the
+# command ("expected depfile ... to mention 'x_sm.h', got '/abs/x_sm.h'"
+# under `ninja -d explain`). NEW has CMake rewrite the depfile into the
+# build directory's terms. Measured on CMake 3.28.3: 23 of 582 depfile edges
+# were left verbatim, the six under backends/c/tests among them, because
+# this scope never set it. A subdirectory that calls cmake_minimum_required
+# resets it, so `cmake/SCECodegen.cmake` and the two `SCEStatic*` modules
+# each set it for the functions they define.
+if(POLICY CMP0116)
+    cmake_policy(SET CMP0116 NEW)
+endif()
+
 project(SCXMLCoreEngine VERSION 1.0.0 LANGUAGES C CXX)
 
 # =============================================================================

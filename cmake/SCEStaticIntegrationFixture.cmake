@@ -108,12 +108,11 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
     # the §6.2.6 source-hash to the canonical fixture dir so the build-time
     # output advertises the same hash the committed-tree backends embed.
     #
-    # ⚠ Every file the parent's depfile names has to be an output of this
-    # command. The depfile names the children's `_sm.{h,inl}`, and while a
-    # separate `--as-child` command declared them instead, ninja 1.11
-    # refused every rebuild of the directory: "depfile mentions ... as an
-    # output, but no such output was declared" (pc3, 2026-09-24). A fresh
-    # build never reads the depfile back, which is why CI never saw it.
+    # The children's `_sm.{h,inl}` are declared here because this command is
+    # what writes them; a separate `--as-child` command that declared them
+    # instead had ninja refuse every rebuild of the directory (pc3,
+    # 2026-09-24). The depfile names only the parent header, which is why the
+    # header has to be this command's FIRST output: ninja compares the two.
     set(_CHILD_SCXMLS "")
     set(_CHILD_MACHINES "")
     foreach(_CHILD ${_INT_SYNTH_INVOKE_CHILDREN})
@@ -314,10 +313,15 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
     # See the cpp generator above for why DEPFILE is load-bearing: the C11
     # path is where the stale-artefact defect was first hit, and it took a
     # manual `rm` of the generated `.c` to get a template fix compiled.
+    #
+    # The header comes first in OUTPUT because it is the depfile's one
+    # target. With the source first, ninja on CMake 3.x read the depfile as
+    # describing another edge ("expected depfile ... to mention '_sm.c', got
+    # '_sm.h'") and regenerated every C11 parent on every build.
     set(_PARENT_DEPFILE "${PARENT_SOURCE}.d")
 
     add_custom_command(
-        OUTPUT "${PARENT_SOURCE}"
+        OUTPUT "${PARENT_HEADER}" "${PARENT_SOURCE}"
         COMMAND "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
                 -l c11 -o "${OUTPUT_DIR}"
                 --input-root "${FIXTURE_ROOT}"
@@ -325,7 +329,7 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
                 --write-deps "${_PARENT_DEPFILE}"
         DEPENDS "${STAGED_SCXML}" "${SCE_CODEGEN}"
         DEPFILE "${_PARENT_DEPFILE}"
-        BYPRODUCTS "${PARENT_HEADER}" ${_CHILD_SCXMLS} ${_CHILD_MACHINES}
+        BYPRODUCTS ${_CHILD_SCXMLS} ${_CHILD_MACHINES}
         COMMENT "Generating C11 integration parent: ${STEM}_sm.c"
         VERBATIM
     )
@@ -348,7 +352,7 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
         set(_HYBRID_DEPFILE "${_HYBRID_SOURCE}.d")
 
         add_custom_command(
-            OUTPUT "${_HYBRID_SOURCE}" "${_HYBRID_HEADER}"
+            OUTPUT "${_HYBRID_HEADER}" "${_HYBRID_SOURCE}"
             COMMAND "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}"
                     --as-child
                     -l c11 -o "${OUTPUT_DIR}"

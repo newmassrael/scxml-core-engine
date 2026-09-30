@@ -12,6 +12,15 @@
 #   sce_add_state_machine(TARGET my_app SCXML_FILE state.scxml)
 #   sce_add_state_machines_from_dir(TARGET my_app SCXML_DIR scxml/)
 
+# The functions below give their commands a DEPFILE, and what Ninja does with
+# one depends on this policy as it stood where the function was DEFINED — not
+# on the consumer's cmake_minimum_required. Unset, the depfile reaches Ninja
+# with absolute targets that never match the command's relative outputs, and
+# every build regenerates (see the same setting in the top CMakeLists.txt).
+if(POLICY CMP0116)
+    cmake_policy(SET CMP0116 NEW)
+endif()
+
 # Find sce-codegen binary. The search itself lives in SCEFindCodegen so
 # the forge conformance and round-trip harnesses — which need the
 # binary but none of the generation functions below — resolve it the

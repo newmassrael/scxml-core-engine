@@ -2799,7 +2799,7 @@ set(_ES_FIXTURE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/event_sc
 set(_ES_PARENT_SOURCE "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_native_sm.c")
 set(_ES_PARENT_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_native_sm.h")
 add_custom_command(
-    OUTPUT "${_ES_PARENT_SOURCE}"
+    OUTPUT "${_ES_PARENT_HEADER}" "${_ES_PARENT_SOURCE}"
     COMMAND "${SCE_CODEGEN}" generate
             "${_ES_FIXTURE_ROOT}/event_schema_native.scxml"
             -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
@@ -2808,7 +2808,6 @@ add_custom_command(
             "${_ES_FIXTURE_ROOT}/schema_job_completed.scxml"
             "${SCE_CODEGEN}"
     DEPFILE "${_ES_PARENT_SOURCE}.d"
-    BYPRODUCTS "${_ES_PARENT_HEADER}"
     COMMENT "Generating C11 EventSchema native-lowering fixture: event_schema_native_sm.{h,c}"
     VERBATIM
 )
@@ -2846,7 +2845,7 @@ set(_ESB_FIXTURE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/event_s
 set(_ESB_SOURCE "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_bytes_sm.c")
 set(_ESB_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_bytes_sm.h")
 add_custom_command(
-    OUTPUT "${_ESB_SOURCE}"
+    OUTPUT "${_ESB_HEADER}" "${_ESB_SOURCE}"
     COMMAND "${SCE_CODEGEN}" generate
             "${_ESB_FIXTURE_ROOT}/event_schema_bytes.scxml"
             -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
@@ -2855,7 +2854,6 @@ add_custom_command(
             "${_ESB_FIXTURE_ROOT}/schema_signal_bytes.scxml"
             "${SCE_CODEGEN}"
     DEPFILE "${_ESB_SOURCE}.d"
-    BYPRODUCTS "${_ESB_HEADER}"
     COMMENT "Generating C11 EventSchema bytes-guard fixture: event_schema_bytes_sm.{h,c}"
     VERBATIM
 )
@@ -2905,7 +2903,7 @@ set(_ESL_FIXTURE_ROOT "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/event_schema
 set(_ESL_SOURCE "${SCE_C_INTEGRATION_GENERATED_DIR}/statechart_lifted_sm.c")
 set(_ESL_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/statechart_lifted_sm.h")
 add_custom_command(
-    OUTPUT "${_ESL_SOURCE}"
+    OUTPUT "${_ESL_HEADER}" "${_ESL_SOURCE}"
     COMMAND "${SCE_CODEGEN}" generate
             "${_ESL_FIXTURE_ROOT}/statechart_lifted.scxml"
             -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
@@ -2915,7 +2913,6 @@ add_custom_command(
             "${_ESL_FIXTURE_ROOT}/schema_job_completed_minimal.scxml"
             "${SCE_CODEGEN}"
     DEPFILE "${_ESL_SOURCE}.d"
-    BYPRODUCTS "${_ESL_HEADER}"
     COMMENT "Generating C11 EventSchema lifted-payload fixture: statechart_lifted_sm.{h,c}"
     VERBATIM
 )

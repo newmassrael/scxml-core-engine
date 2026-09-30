@@ -1845,7 +1845,9 @@ sce_generate_static_integration_test(an_error_ends_the_block_it_was_raised_in ${
 # W3C SCXML 5.7.1 + 6.4: a <param> of an <invoke> that cannot be read costs
 # error.execution and its pair, and the child still starts; a namelist that
 # cannot be read ends the element with one error and no child.
-sce_generate_static_integration_test(a_bad_invoke_argument_is_reported_once ${STATIC_INTEGRATION_OUTPUT_DIR})
+sce_generate_static_integration_test(a_bad_invoke_argument_is_reported_once ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN inv1 inv2 inv3
+)
 
 # W3C SCXML 6.2 + 4.9: a <send> whose own argument (namelist, eventexpr,
 # targetexpr, delayexpr, idlocation, typeexpr) cannot be evaluated raises
