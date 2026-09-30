@@ -24,7 +24,7 @@ rollout.
 This RFC is structured for partial adoption. §1–§3 are the motivation
 and end-state that every reader should understand. §4 is a capability
 survey of current SCE (what already exists — respect prior work). §5
-proposes the additions, grouped A through O, each individually
+proposes the additions, grouped A through P, each individually
 reviewable. §6 covers cross-cutting concerns (diagnostics, testing,
 tooling). §7 is a phased rollout plan. §8 lists open questions. The
 appendices contain worked examples and an honest scope statement for
@@ -3363,6 +3363,382 @@ with `_u_` escape; `#[doc]` attribute for Rust mapping. Codegen
 emits both the attribute and the line comment until OQ-W16 is
 resolved, so neither survival path is foreclosed.
 
+### 5.P New kind: `queue`
+
+**Status.** Decided 2026-09-30; nothing below is implemented. The
+owner asked that nothing be left open, so every choice this section
+makes is a decision of that date, and none is deferred to
+implementation. Three of them are the owner's own: the kind is named
+`queue`; the worker's inline inbox attributes are removed in favour of
+a `queue` import (§5.D migration below); and the kind's first consumer
+is its own verification suite, not a downstream project.
+
+**Problem.** A queue that hands elements from one execution context
+to another exists in the tree four times, with four contracts:
+
+| Where | Cardinality | Element | Storage | Progress it states |
+|---|---|---|---|---|
+| `tools/codegen/templates/forge/rust/worker.rs.jinja2` | SPSC | generic `E` | instance | none |
+| `tools/codegen/templates/forge/c/worker.c.jinja2` | SPSC | `uint32_t` only | translation-unit `static` | none |
+| `sce/include/mesh/EventQueueBridge.h` | MPSC (Vyukov bounded) | template `T` | instance | "lock-free" (not so formally; see migration) |
+| `sce/include/mesh/ShmChannel.h` control ring | SPSC over the bridge above | `ControlSlot` | shared memory | none |
+
+None is a document an author can name, and none states what progress
+it guarantees. The worker's `<sce:inbox ordering="relaxed">` lets an
+author choose an ordering under which the Rust template's slot write
+is a data race: a plain write through `UnsafeCell` published by a
+`Relaxed` store establishes no happens-before, on one core or on
+many, and the compiler may sink the write past the store. §5.I
+already states that worker inboxes MUST use acquire/release pairs;
+the template accepts `relaxed` anyway, and the diagnostic
+`worker/inbox-ordering-relaxed-across-cores` fires only when a
+deploy placement puts the two sides on different cores. The C ring
+holds `depth - 1` elements, which only a test comment says.
+
+Beyond those four, no kind expresses an unbounded queue, and none
+expresses a queue that needs no allocation while leaving its bound to
+memory the caller owns.
+
+**Admission (`SCE_FORGE.md` §10).** All three axes hold.
+- *Domain alignment*: a concurrency primitive, which is named in the
+  domain definition.
+- *Futamura compatibility*: element type, cardinality, storage mode,
+  capacity and required progress are all known at build time; only
+  occupancy varies at run time, as with `bounded-collection`.
+- *Cross-domain reuse*: ISR-to-task hand-off, network receive,
+  logging, audio, game tick, and SCE Mesh's own inter-machine
+  transport.
+
+**Principles.**
+1. The document states a contract; it names no algorithm. The
+   algorithms live once per language in `sce_forge_runtime`
+   (`SCE_FORGE.md` §2.1).
+2. Memory ordering is not authorable. The contract is linearizable
+   FIFO in which the push of an element happens-before the pop that
+   returns it. Which instructions achieve that is the backend's
+   choice, informed by deploy target facts. An author-chosen ordering
+   is what made the relaxed data race above expressible.
+3. Progress is declared, checked, and never silently weakened. A
+   declaration the selected algorithm cannot meet on the selected
+   backend is refused.
+
+**Proposal.** New `ForgeKind::Queue`.
+
+```xml
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="queue" name="rx_events" version="1.0">
+  <sce:element-type>rx_event</sce:element-type>
+  <sce:producers>many</sce:producers>       <!-- one | many -->
+  <sce:consumers>one</sce:consumers>        <!-- one | many -->
+  <sce:progress>lock-free</sce:progress>    <!-- wait-free | lock-free | blocking -->
+
+  <!-- storage: exactly one of the three -->
+  <sce:bounded capacity="64"/>
+  <!-- <sce:bounded source="deploy" key="machines.<m>.limits.<k>"/> -->
+  <!-- <sce:segmented segment="64" allocator-progress="lock-free"/> -->
+  <!-- <sce:intrusive link-field="next"/> -->
+
+  <!-- required only when the selected algorithm needs a reclamation domain -->
+  <sce:participants const="4"/>
+</scxml>
+```
+
+- `<sce:element-type>` resolves as in §5.L.
+- `<sce:producers>`, `<sce:consumers>` and `<sce:progress>` are
+  required and have no default. Each selects the algorithm, so a
+  default would choose one the author never saw.
+- `<sce:participants>` is the number of contexts that hold a handle
+  at the same time. It sizes a reclamation domain statically and
+  takes the §5.L `CapacitySource` forms (`const`, or `source="deploy"`
+  with a key).
+
+**Capacity is exact.** `<sce:bounded capacity="N">` holds exactly N
+elements. The ring behind it is an implementation detail: its size
+is rounded up to a power of two, and SCQ keeps two index rings of
+twice that size, as the algorithm requires (Nikolaev 2019). The
+storage cost that results is emitted as a generated constant
+(`STORAGE_BYTES`) so that a no-alloc target can budget it.
+
+**Storage modes.**
+
+| Mode | What bounds occupancy | std profile | no-alloc profile | Reclamation |
+|---|---|---|---|---|
+| `bounded` | the declared capacity | yes | yes; the instance owns a fixed array | none; slots are reused |
+| `segmented` | the injected allocator | yes | refused: `queue/segmented-needs-alloc` | retired segments through a hazard-pointer domain |
+| `intrusive` | how many nodes the caller owns | yes | yes | none; the caller owns every node |
+
+In the no-alloc profile the whole of memory is fixed at build time,
+so an unbounded queue can mean only that the queue itself imposes no
+bound. `intrusive` is that mode: each element carries its own link
+field, the caller owns the element, and push cannot fail.
+
+**Algorithm selection.** The generator takes the first row that
+matches the storage mode and cardinality and whose guarantee is at
+least the declared progress.
+
+| Storage | Producers | Consumers | Algorithm | Push | Pop |
+|---|---|---|---|---|---|
+| `bounded` | one | one | Lamport ring, free-running counters | wait-free | wait-free |
+| `bounded` | any other | | SCQ data queue: an allocated-index ring and a free-index ring over a data array | lock-free | lock-free |
+| `segmented` | one | one | Linked Lamport rings | wait-free, bounded by the allocator | wait-free |
+| `segmented` | any other | | LSCQ: a list of SCQ rings | lock-free, bounded by the allocator | lock-free |
+| `intrusive` | one | one | Vyukov intrusive list, single producer | wait-free | wait-free |
+| `intrusive` | many | one | Vyukov intrusive MPSC | wait-free | blocking |
+| `intrusive` | any | many | Vyukov intrusive list; consumers serialised by a test-and-set flag | wait-free | blocking |
+
+- *SCQ* (Nikolaev, DISC 2019) is lock-free and linearizable. It is
+  ABA-safe without an external allocator or safe memory reclamation,
+  and it needs only single-width CAS, FAA and OR. C11, C++ and Rust
+  use a native fetch-or. Go (the forge runtime is on Go 1.22, which
+  predates `atomic.Or*`) and Kotlin implement OR as a
+  compare-and-swap loop. A CAS loop fails only because another
+  participant's operation succeeded, so it stays lock-free.
+- *Segmented push* allocates a segment when the tail segment is full,
+  so its progress is the lesser of the ring's and the injected
+  allocator's, which the document declares (below).
+- *Vyukov intrusive MPSC*: a producer preempted between its exchange
+  on the tail and its store of the link hides every later element
+  from the consumer until it resumes, and in that window `try_pop`
+  returns empty. That is why its pop row is `blocking`, and why a
+  `lock-free` declaration with that cardinality is refused.
+- *Intrusive pop is never lock-free when either side is `many`, and
+  that is final.* The intrusive contract is that the caller gets back
+  the very node it pushed and may reuse it at once. Michael-Scott's
+  dequeue breaks the first half: the node that carried the returned
+  value stays in the queue as the new dummy. Deferring reuse until a
+  reclamation domain clears the node breaks the second half. A
+  declaration of `lock-free` on those rows is refused with
+  `queue/progress-unreachable`, and its fix names a `bounded` queue
+  whose element is a reference to the caller's node and whose
+  capacity is the number of nodes the caller owns. That is not
+  a weaker substitute: on the no-alloc profile the node count is
+  fixed at build time, so it was the bound all along, and SCQ meets
+  `lock-free` over it.
+- *Segment allocator progress is declared in the document.*
+  `<sce:segmented>` requires `allocator-progress` (`wait-free`,
+  `lock-free` or `blocking`), because the progress check runs at build
+  time and the allocator arrives only at run time. The generated
+  constructor then holds the allocator to it: in Rust through an
+  associated constant on the allocator trait, in C++ through a
+  `static_assert` on a `static constexpr` member, and in C11, Kotlin
+  and Go by failing construction when the allocator reports less.
+  Python is `blocking` in any case.
+
+**Reclamation domain.** A domain exists only where a segment can
+still be read by one participant after another has retired it, which
+is `segmented` with `many` on either side, on C11, C++ and Rust. A
+one-producer, one-consumer `segmented` queue needs none: the producer
+never touches a segment again after publishing its successor, and the
+consumer frees a segment only after reading that successor, so the
+consumer frees it directly. The domain holds hazard pointers and is
+an object the caller constructs and passes in; there is no global
+default domain (C2). Hazard pointers are chosen over epoch-based
+reclamation because a stalled participant bounds the unreclaimed
+memory under hazard pointers and does not under epochs, which is also
+what lets the domain be sized statically from `<sce:participants>`.
+The domain is implemented once per language in `sce_forge_runtime`,
+including C++: C++26's `std::hazard_pointer` (P2530R3) is not used,
+because one implementation per language is what keeps the six
+backends' behaviour a single thing to verify, and a toolchain's
+standard library would be a seventh. Kotlin, Go and Python reclaim
+through their garbage collectors and take no domain.
+
+**Counter width.** SCQ's ABA safety rests on Head and Tail not
+wrapping: they "will not wrap around until after the number of
+operations exceeds the CPU word's largest value" (Nikolaev 2019).
+Each entry is one atomic word of width `w`, laid out as the
+cycle, one `IsSafe` bit and `log2(2r)` index bits for a ring of `r`
+slots, with no spare bits, so the cycle has `c = w - 1 - log2(2r)`
+bits. A participant delayed between reading an entry and acting on it
+can be misled only once that entry's cycle has advanced by half its
+range, `2^(c-1)`, because cycles are compared modulo `2^c`. Each
+cycle advance costs `2r` operations, so the bound is
+`WRAP_BOUND_OPS = 2^(c-1) × 2r = 2^(w-2)` operations, independent of
+the capacity. The generator emits it as a constant for every queue
+that selects an SCQ row, and judges it as follows:
+- `platform.atomic_rmw_width` 64: the bound is 2^62, which at 10^9
+  operations a second is 146 years; nothing is checked.
+- `platform.atomic_rmw_width` 32: the bound is 2^30, about 1.07 × 10^9
+  operations, which a busy queue reaches in minutes. The deploy must
+  state `machines.<m>.queues.<q>.min_wrap_ops`, the longest delay the
+  design relies on, measured in operations. Leaving it out is
+  `queue/wrap-bound-unstated`; a value above 2^30 is
+  `queue/wrap-bound-below-deploy-minimum`.
+- `platform.atomic_rmw_width` 0: no SCQ row is selected (see
+  Backends), so there is nothing to bound.
+- No deploy file: generation cannot know the target. The C++ and Rust
+  output of an SCQ row asserts at compile time that 64-bit atomics are
+  lock-free (`static_assert(std::atomic<std::uint64_t>::is_always_lock_free)`,
+  `#[cfg(not(target_has_atomic = "64"))] compile_error!`), so a 32-bit
+  target cannot build it. C11 cannot assert this: its atomics are the
+  §5.I `sce_atomic_*` extern symbols, whose implementation the
+  compiler never sees. An SCQ row on C11 therefore requires
+  `platform.atomic_rmw_width`, and generating without it is
+  `queue/atomic-width-unstated`. Go implements 64-bit atomics with a
+  spinlock on some 32-bit architectures (`mips`, `mipsle`), so the Go
+  output of an SCQ row carries a `//go:build` constraint listing the
+  64-bit architectures, and a companion file under the negated
+  constraint that does not compile, naming the reason. The JVM
+  promises the semantics of `AtomicLong` but not that it is lock-free,
+  so the Kotlin output checks `os.arch` against the same list of
+  64-bit architectures when the queue is constructed, and fails
+  construction outside it. Python selects no SCQ row.
+
+The Lamport rows use free-running counters compared by unsigned
+difference and have no ABA exposure. Their one requirement, a
+capacity below `2^(w-1)`, is a static assertion in the generated
+code.
+
+**Backends.**
+
+| Backend | Highest guarantee reachable | Notes |
+|---|---|---|
+| Rust, C++, C11 | the selection table as written | C11 atomics are the §5.I `sce_atomic_*` family |
+| Kotlin | the selection table as written | `kotlin.concurrent.atomics`, the API `backends/kotlin/runtime` already uses; SCQ entries are an `Array<AtomicLong>`. The forge runtime's only target is `jvm()` |
+| Go | the selection table as written | `sync/atomic` is sequentially consistent: stronger than required, still correct |
+| Python | `blocking` | no CAS primitive; implemented under a lock; `wait-free` or `lock-free` is refused |
+
+A C11 target with no native read-modify-write atomics (ARMv6-M, for
+instance) implements every row in an `sce_irq_save`/`sce_irq_restore`
+critical section, so it too reaches `blocking` only. Such a target is
+supported only with `platform.core_count` 1: masking interrupts
+excludes nothing on another core, so a multi-core target without
+read-modify-write atomics is refused (`queue/no-atomics-across-cores`).
+On the single-core target an ISR can never preempt inside the masked
+section, so the ISR check below is met there although the row is
+`blocking`. A new deploy fact `platform.atomic_rmw_width` (0, 32 or
+64) states what the target has. It feeds this row and the
+counter-width check above.
+
+**Placement.** A deploy block
+`machines.<m>.queues.<q>.placement` lists, for each side, the cores
+it runs on and whether it runs in a thread or an ISR. An ISR-side
+operation must be `lock-free` or better, or run inside the
+interrupt-masked section of a single-core target without atomics
+(`queue/progress-insufficient-for-isr`). Lock-free suffices: while
+an ISR has preempted a participant partway through an operation, the
+ISR is the only thing running, and lock-freedom guarantees that some
+operation completes in a bounded number of steps, which can only be
+the ISR's. An ISR producer on a `segmented` queue is refused
+(`queue/alloc-in-isr`) because its push may allocate. These checks
+subsume `worker/inbox-ordering-relaxed-across-cores`.
+
+**Generated interface.** Every backend emits the same operations:
+
+```
+try_push(&producer, elem: T) -> Result<(), PushError<T>>  // Full(T) | OutOfMemory(T)
+push(&producer, node: NodeRef<T>)                         // intrusive only; cannot fail
+try_pop(&consumer) -> Option<T>                           // intrusive: Option<NodeRef<T>>
+capacity() -> usize                                       // bounded only; a compile-time constant
+```
+
+- Construction takes the storage, plus the allocator (`segmented`)
+  and the domain (where one is needed). The instance owns its
+  storage; nothing is translation-unit `static`, and there is no
+  global default allocator or domain (C2).
+- A `one` side yields exactly one handle. In Rust that handle is not
+  `Clone`; the other backends check ownership in debug builds. A
+  `many` side's handles can be cloned, and where a domain exists
+  each clone takes one of its `participants` slots.
+- A full bounded queue rejects the push. Overwriting the oldest
+  element is excluded from this kind: a producer that removes an
+  element is a second consumer, so that is a different contract, and
+  a kind for it would be admitted under `SCE_FORGE.md` §10 on its own
+  evidence.
+- There is no blocking pop. Waiting is scheduling, which `SCE_FORGE.md`
+  §2.1 leaves to the user; a `worker` or `timer` supplies it.
+- Elements still queued when the queue is destroyed are destroyed
+  with it: Rust `Drop`, and the element's destructor on C++ and C11
+  when the element type has one.
+
+**Migration.**
+- *Worker (§5.D).* `<sce:inbox ref="<alias>"/>` names a queue that
+  the worker imports with `<sce:import kind="queue">`. The imported
+  queue must declare `consumers` `one`
+  (`worker/inbox-queue-not-single-consumer`). The inline `depth` and
+  `ordering` attributes are removed. A document that still carries
+  them receives `worker/inbox-inline-removed`, whose fix names a queue
+  document with `capacity = depth - 1`, one producer, one consumer
+  and `wait-free` progress, which is exactly what the current ring
+  holds. The change is not additive; it is admissible while the
+  authoring grammar and the forge AST are `pre-release`
+  (`SCE_WIRE_CONTRACTS.md`). The C worker's `static` storage and its
+  `uint32_t`-only element go with it.
+- *Mesh.* `EventQueueBridge` becomes a `bounded` queue with many
+  producers and one consumer, and `ShmChannel`'s control ring is
+  built on it. The bridge's header comment calls the Vyukov bounded
+  MPSC lock-free; it is not, formally, because a producer that
+  claims a cell and then stalls hides every later cell from the
+  consumer. SCQ works on indices, not pointers, so it is
+  position-independent in shared memory.
+  `sce/src/mesh/generated/envelope.h` already includes `sce/forge/`
+  headers, so the mesh runtime gains no new dependency direction.
+
+**Verification.** This suite is the kind's first consumer. Each
+layer states what it establishes and what it cannot.
+
+| Layer | Means | Establishes |
+|---|---|---|
+| 1. Contract scenarios | single-threaded operation sequences in the `tests/forge/conformance/fixtures.json` shape, run on all six backends | FIFO order, exact capacity and failure reasons, identical everywhere |
+| 2. Linearizability | per-backend stress runs write histories in one JSON format; one checker, written once, judges them all | that each concurrent history is equivalent to a sequential one |
+| 3. Memory-model exploration | loom (Rust), GenMC (C11, C++), Lincheck model checking (Kotlin JVM) | every interleaving and weak-memory outcome within the model's bounds |
+| 4. Progress | Lincheck `checkObstructionFreedom`; loom schedules that suspend one participant | finds violations; passing does not prove lock-freedom (Lincheck checks obstruction-freedom only) |
+| 5. Memory safety | Miri, ASan, TSan (`scripts/build_tsan.sh`) | no use-after-free, no data race |
+| 6. No allocation | Rust `no_std` without the `alloc` crate; C11 linked without a `malloc` symbol | an allocation shows up as a build failure |
+| 7. Mutation | a casefile for every ordering and fence in the runtime; each weakening must turn layer 3 red | that layer 3 observes what it claims to |
+| 8. Refusals | a fixture for every refused combination, listed in the `docs/SCE_ACCEPTED_SUBSET.md` appendix | that no refusal silently becomes a weaker guarantee |
+
+Go and Python have no tool for layer 3. Their evidence stops at
+layer 2 and the race detector, and the catalog entry says so. The
+Kotlin backend is JVM-only, so Lincheck covers all of it.
+
+**IR additions** (`forge/model.rs`):
+
+```rust
+pub struct QueueModel {
+    pub element_type: SceType,
+    pub producers: Cardinality,
+    pub consumers: Cardinality,
+    pub progress: Progress,
+    pub storage: QueueStorage,
+    pub participants: Option<CapacitySource>,   // §5.L
+}
+pub enum Cardinality { One, Many }
+pub enum Progress { WaitFree, LockFree, Blocking }
+pub enum QueueStorage {
+    Bounded { capacity: CapacitySource },
+    Segmented { segment: u32, allocator_progress: Progress },
+    Intrusive { link_field: String },
+}
+```
+
+**Diagnostics:**
+- `queue/storage-not-exactly-one` — none, or more than one, of `bounded` / `segmented` / `intrusive`
+- `queue/element-type-not-a-kind` — as `collection/element-type-not-a-kind`
+- `queue/intrusive-link-field-missing` — `link-field` is not a field of the element type
+- `queue/progress-unreachable` — no selection row meets the declared progress for this storage, cardinality and backend
+- `queue/segmented-needs-alloc` — `segmented` on the no-alloc profile
+- `queue/allocator-progress-missing` — `<sce:segmented>` without `allocator-progress`
+- `queue/participants-unresolved` — the selected algorithm needs a domain and `<sce:participants>` is absent or its deploy key is missing
+- `queue/progress-insufficient-for-isr` — an ISR-side operation below `lock-free`
+- `queue/alloc-in-isr` — an ISR producer on a `segmented` queue
+- `queue/atomic-width-unstated` — an SCQ row generated for C11 without `platform.atomic_rmw_width`
+- `queue/no-atomics-across-cores` — `platform.atomic_rmw_width` 0 with `platform.core_count` above 1
+- `queue/wrap-bound-unstated` — an SCQ row on a 32-bit target whose deploy states no `min_wrap_ops`
+- `queue/wrap-bound-below-deploy-minimum` — `WRAP_BOUND_OPS` below `min_wrap_ops`
+- `worker/inbox-queue-not-single-consumer` — a worker inbox naming a queue with `consumers` `many`
+- `worker/inbox-inline-removed` — `depth` or `ordering` on `<sce:inbox>`; the fix names the equivalent queue document
+
+**Landing order.** First, this section and the admission record in
+`SCE_FORGE.md` §10. Then the layer-1 fixtures, the layer-2 history
+format and its checker, which land before or together with the first
+algorithm; no algorithm lands without its layer-3 suite and its
+layer-7 casefiles. Then the per-language runtime algorithms; then the
+parser, model, XSD, kind catalog, `codegen_matrix` and templates.
+The worker migration and the mesh migration come last, in that
+order.
+
 ---
 
 ## §6 Cross-cutting concerns
@@ -3708,6 +4084,12 @@ Phase D from being a refactor cliff.
 earlier in this RFC. XSD/IR/emitter work for them is included in
 Phase C (C6 for §5.L, C9 for §5.M, C10 for §5.N).
 
+**§5.P sits outside these phases.** The `queue` kind is not part of
+the zenoh-pico parity gate, and its consumer is its own verification
+suite. It lands in the order §5.P states, independently of Phases
+A–E; its worker migration is the only step that touches a §5.D
+artefact.
+
 ---
 
 ## §8 Open questions
@@ -3877,9 +4259,14 @@ vs. hand-written zenoh-pico peer+client parity in two languages:
 delivers roughly **3–5× reduction in authoring volume** plus
 **structural drift elimination** between AP and MCU.
 
-**Backward compatibility:** Fully additive. No existing SCXML document
-becomes invalid. No existing generated code changes behavior. Existing
-tests remain green throughout.
+**Backward compatibility:** Fully additive, with one exception. §5.P
+removes the worker's inline `<sce:inbox depth ordering>` attributes, so
+a worker document that carries them is refused
+(`worker/inbox-inline-removed`). Its fix names the replacement queue
+document, which keeps the capacity the current ring actually has. That
+removal is admissible while the authoring grammar is `pre-release`.
+Beyond it, no existing SCXML document becomes invalid and no existing
+generated code changes behavior.
 
 ---
 

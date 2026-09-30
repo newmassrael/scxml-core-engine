@@ -2233,6 +2233,18 @@ Result:
 
 Failed 3-of-3 axes; rejected. Counter-proposal: that consumer uses existing kinds (`codec` for UBO/vertex/PSO layout, `buffer-pool` for GPU resource pools, `worker` for render thread) and that consumer's own thin RHI layer handles the per-frame dispatch and driver call sequence. Approved on the consumer's side, in a record held outside this repository.
 
+### Application: 2026-09-30 `queue` (bounded, unbounded and no-alloc)
+
+The request, from the owner, was a kind for queues that hand elements between execution contexts: bounded and unbounded, both usable on the no-alloc profile. The full design is SCE Protocol-Synthesis RFC §synth-5-P.
+
+| Axis | Pass/Fail | Reason |
+|---|---|---|
+| Domain alignment | PASS | A concurrency primitive, named in the domain definition above; its observable contract (FIFO order, capacity, failure reasons) is byte-identical across backends, and its progress guarantee is declared per backend and checked rather than assumed |
+| Futamura projection compatibility | PASS | Element type, producer and consumer cardinality, storage mode, capacity and required progress are all build-time; only occupancy is runtime, as with `bounded-collection` |
+| Cross-domain reuse | PASS | ISR-to-task hand-off, network receive, logging, audio, game tick, and SCE Mesh's own inter-machine transport |
+
+Passed 3-of-3 axes; admitted. Two alternatives were ruled out before admission. Extending `bounded-collection` was rejected because its invariants (a slot table addressed by handles, with insert/remove/get) are not a FIFO's, and serving both would need the bolt-on validator that marks a category error. Keeping the queue inside `worker` was rejected because the tree already carried four queue implementations with four contracts (two worker templates, `EventQueueBridge`, `ShmChannel`), and none could be named by a document. Its first consumer is its own verification suite (owner decision, 2026-09-30); `worker` and SCE Mesh migrate onto it afterwards.
+
 ### When admission is borderline
 
 If a candidate fails one axis but passes two, the candidate is rejected from the Forge catalog and reconsidered as either:
