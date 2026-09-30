@@ -212,10 +212,22 @@ fn the_fields_the_analyzer_writes_are_the_ones_it_declares() {
 /// not a list update.
 const ANALYZER_WRITTEN: &[&str] = &[
     "datamodel",
+    // Template dispatch, this and `has_delayed_host_send` below, and neither
+    // reaches the page: whether a delayed `<send>` waits for a host to serve
+    // it, and the most `<param>`s such a send carries, which is how much room
+    // the C11 backend's fixed-size queue entry must make. Both are arithmetic
+    // over the authored `delay` and `<param>`, which a rendering shows as
+    // themselves — so this is not a second thing to approve. The analyzer
+    // writes them itself, not only the host declaration, because a delayed
+    // BasicHTTP send owes the same storage whether or not the build declared
+    // a host processor.
+    "delayed_host_send_max_params",
     "events",
     "execute_entry_actions_needs_this",
     "external_ingress_events",
     "externally_drivable_events",
+    // The other half of `delayed_host_send_max_params` above: the yes-or-no.
+    "has_delayed_host_send",
     "internal_source",
     "is_true_internal",
     "matches_any_event",
