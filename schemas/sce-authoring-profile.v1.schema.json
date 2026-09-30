@@ -3,7 +3,7 @@
   "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-authoring-profile.v1.schema.json",
   "x-sce-schema-status": "pre-release",
   "title": "SCE authoring profile (wire schema v1)",
-  "description": "What a specification owner configures about how documents are authored for them: a file beside the specification, read by `sce-codegen check --profile`, `generate --profile` and `orchestrate --profile` and by the authoring MCP, and pinned by an acceptance record as part of what a design was authored from. It is data, never code, and names no subject matter. Every setting belongs to ONE class, fixed by this schema and not by the file: enforced (a draft that breaks it is refused), reported (a departure is listed and the owner decides), or guidance (handed to the author, checked by nothing). A build that meets a setting it does not know refuses the whole profile, so a profile written for a newer tool is never half applied; a setting is added without a version bump. Every setting applies to statecharts; a forge document is not judged. Authoritative reader is sce-build/src/authoring_profile.rs. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
+  "description": "What a specification owner configures about how documents are authored for them: a file beside the specification, read by `sce-codegen check --profile`, `generate --profile` and `orchestrate --profile` and by the authoring MCP, and pinned by an acceptance record as part of what a design was authored from. It is data, never code, and names no subject matter. Every setting belongs to ONE class, fixed by this schema and not by the file: enforced (a draft that breaks it is refused), reported (a departure is listed and the owner decides), or guidance (handed to the author, checked by nothing). A build that meets a setting it does not know refuses the whole profile, so a profile written for a newer tool is never half applied; a setting is added without a version bump. A setting applies to statecharts, and `evidence` and `names` reach the forge documents they name; a forge document that no setting reaches is not judged. Authoritative reader is sce-build/src/authoring_profile.rs. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
   "required": ["record", "v"],
   "additionalProperties": false,
@@ -101,7 +101,7 @@
       "enum": ["closed"]
     },
     "names": {
-      "description": "ENFORCED. How the names a document DEFINES are spelled, by class: `document` (the `name` of the `<scxml>` root), `state` (the id of a state, parallel, final or history), `event` (an event the document raises, sends or takes by a literal name) and `data` (a `<data>` id). A name the interface supplies — an event an imported event-schema declares, and the platform's own `error.*` and `done.*` — is taken as it is, since it is a fact about the platform and not a choice of the author; a name that starts with an underscore belongs to the platform. A draft that breaks a rule is refused as `profile/name-style`, `profile/name-limit`, `profile/event-structure` or `profile/event-prefix-of-another`, each naming the rule.",
+      "description": "ENFORCED. How the names a document DEFINES are spelled, by class: `document` (the `name` of the `<scxml>` root), `state` (the id of a state, parallel, final or history), `event` (an event the document raises, sends or takes by a literal name) and `data` (a `<data>` id). An event-schema document is judged too: the event it declares (`sce:event-name`) is class `event`, and the ids of its fields are class `data`, since that is where a boundary event is spelled once. A statechart is not judged for a name it takes from an imported event-schema, nor for the platform's own `error.*` and `done.*`, since those are not its author's choice; a name that starts with an underscore belongs to the platform. A draft that breaks a rule is refused as `profile/name-style`, `profile/name-limit`, `profile/event-structure` or `profile/event-prefix-of-another`, each naming the rule.",
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
@@ -113,7 +113,7 @@
       }
     },
     "evidence": {
-      "description": "ENFORCED. `anchored`: every `<sce:evidence>` of the document's `<sce:kind-basis>` names where the specification states what it cites, in the `sce:provenance` form. An unanchored one is refused as `profile/evidence-unanchored`. Absent: an evidence may stand without an anchor.",
+      "description": "ENFORCED. `anchored`: every `<sce:evidence>` of a document's `<sce:kind-basis>`, in a statechart or in a forge document of any kind, names where the specification states what it cites, in the `sce:provenance` form. An unanchored one is refused as `profile/evidence-unanchored`. Absent: an evidence may stand without an anchor.",
       "enum": ["anchored"]
     },
     "guidance": {

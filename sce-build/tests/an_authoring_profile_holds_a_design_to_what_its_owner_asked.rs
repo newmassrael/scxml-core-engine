@@ -867,3 +867,149 @@ fn an_evidence_with_no_anchor_is_refused_under_a_profile_that_asks_for_one() {
     // the profile's.
     manifest(&run(&dir, &["check", "unanchored.scxml", "-l", "rust"]));
 }
+
+// ── the documents an interface is made of ─────────────────────────────
+
+/// A schema that declares an event spelled in two cases, with a field id in a
+/// third.
+const CROOKED_SCHEMA: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="job_started"
+       sce:event-name="Job.started">
+  <datamodel><data id="retryCount" sce:type="uint8" sce:direction="in"/></datamodel>
+</scxml>
+"#;
+
+const SNAKE_NAMES: &str = r#"{"record":"sce-authoring-profile","v":1,"name":"owner-review",
+    "names":{"event":{"style":"snake"},"data":{"style":"snake"}}}"#;
+
+/// The names an interface is made of are written in its event-schemas, and it
+/// is there that a boundary event is spelled once: a statechart takes the name
+/// from the schema and is not judged for it, so a rule that reached only the
+/// statechart would leave them outside the profile.
+#[test]
+fn an_event_schema_is_held_to_the_names_it_declares() {
+    let dir = design("profile-schema-names");
+    fs::write(dir.join("crooked_schema.scxml"), CROOKED_SCHEMA).expect("write");
+    fs::write(dir.join("snake.json"), SNAKE_NAMES).expect("write");
+
+    let refused = run(
+        &dir,
+        &[
+            "check",
+            "crooked_schema.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "snake.json",
+        ],
+    );
+    assert_eq!(
+        refused.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    let found = records(&refused);
+    let said: Vec<(&str, &str)> = found
+        .iter()
+        .map(|r| (r["code"].as_str().unwrap(), r["actual"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        said,
+        [
+            ("profile/name-style", "Job.started"),
+            ("profile/name-style", "retryCount")
+        ],
+        "{found:?}"
+    );
+
+    // The control: the schema the fixtures already carry is snake_case
+    // throughout, and the profile judges it.
+    let held = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "job_requested.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "snake.json",
+        ],
+    ));
+    assert_eq!(held["profile"]["judged"], 1, "{held}");
+
+    // On a set the statechart and its schema are both judged, and the count
+    // says so: a profile that reached only the statechart would say 1.
+    let set = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "--document",
+            "closed.scxml",
+            "--document",
+            "job_requested.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "snake.json",
+        ],
+    ));
+    assert_eq!(set["profile"]["judged"], 2, "{set}");
+    let refused_set = run(
+        &dir,
+        &[
+            "check",
+            "--document",
+            "closed.scxml",
+            "--document",
+            "crooked_schema.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "snake.json",
+        ],
+    );
+    assert_eq!(
+        codes(&refused_set),
+        ["profile/name-style", "profile/name-style"]
+    );
+}
+
+/// A profile whose settings do not reach a kind does not count it as judged,
+/// so a run of such documents is not read as a pass.
+#[test]
+fn a_document_no_setting_reaches_is_not_counted_as_judged() {
+    let dir = design("profile-schema-unreached");
+    // `interface` is about a statechart; a schema is not one.
+    let unreached = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "job_requested.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "profile.json",
+        ],
+    ));
+    assert_eq!(unreached["profile"]["judged"], 0, "{unreached}");
+    // `names.state` is about a statechart too, and a schema has no state.
+    fs::write(
+        dir.join("states.json"),
+        r#"{"record":"sce-authoring-profile","v":1,"names":{"state":{"style":"snake"}}}"#,
+    )
+    .expect("write");
+    let states = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "job_requested.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "states.json",
+        ],
+    ));
+    assert_eq!(states["profile"]["judged"], 0, "{states}");
+}

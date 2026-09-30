@@ -398,8 +398,9 @@ profile**, a small JSON file kept beside the specification
 `profile_text`, it holds the design to what it says: a statechart that is valid
 and is not what the profile asks for is refused, every statechart of a set is
 judged and every departure listed, and an accepted manifest names the profile
-by digest (`profile`: `name`, `sha256`, and `judged`, the number of
-statecharts it was applied to — zero for forge documents alone). Without a
+by digest (`profile`: `name`, `sha256`, and `judged`, the number of documents
+it was applied to — zero when no setting reaches any document of the run).
+Without a
 profile the tools hold the design to nothing the owner asked for, and the
 manifest carries no `profile`: that absence is how "checked under none" reads.
 
@@ -414,9 +415,11 @@ events and its data ids — as a style (`snake`, `upper_snake`, `camel`,
 prefix, and for events the number of dot-separated tokens, the tokens a name
 may begin with, and that no event name is a token prefix of another
 (`profile/name-style`, `profile/name-limit`, `profile/event-structure`,
-`profile/event-prefix-of-another`). A name the document is given and did not
-choose — an event an imported event-schema declares, the platform's own
-`error.*` and `done.*` — is never judged. `guidance` is a list of standing
+`profile/event-prefix-of-another`). The event-schema documents an interface is
+made of are judged too — the event one declares and the ids of its fields — since
+that is where a boundary event is spelled once; a statechart that takes the name
+from the schema it imports is not judged for it, nor for the platform's own
+`error.*` and `done.*`, which its author did not choose. `guidance` is a list of standing
 instructions for whoever writes the draft, handed over as written and checked
 by nothing: the manifest says how many there were (`profile.guidance`), so
 `accepted` under a profile that has guidance is not read as though it had been

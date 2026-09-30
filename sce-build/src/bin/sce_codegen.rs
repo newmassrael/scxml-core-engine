@@ -3301,7 +3301,12 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
             strict_set_unresolved(&scxml_owned, &forge_owned, error_format);
         }
         if let Some(profile) = &profile {
-            profile_facts = Some(judge_set_under_profile(profile, &scxml_owned, error_format));
+            profile_facts = Some(judge_set_under_profile(
+                profile,
+                &scxml_owned,
+                &forge_owned,
+                error_format,
+            ));
         }
         if lint {
             lint_set_statecharts(&scxml_owned, error_format);
@@ -3849,27 +3854,49 @@ fn load_profile(path: Option<&str>) -> Option<sce_build::authoring_profile::Auth
     }
 }
 
-/// Hold parsed statecharts to `profile`: every finding of every statechart is
+/// A document of a run, parsed as the compile reads it, and the label its
+/// findings are reported under.
+enum Judged<'a> {
+    Statechart(&'a SCXMLModel, &'a str),
+    Forge(&'a sce_build::forge::model::ParsedForge, &'a str),
+}
+
+/// Hold parsed documents to `profile`: every finding of every document is
 /// reported, and the run ends on them; a run that passes returns the
 /// manifest's account of the profile.
 ///
 /// All findings, not the first: an owner reading the answer decides what to
-/// do about the boundary of the whole design, and a list that stops at the
-/// first statechart hides how far the departure goes. Forge documents are not
-/// among `models` — a version-1 setting applies to statecharts alone — so a
-/// run of forge documents reports `judged: 0`, which says the profile was
-/// given and held nothing to it.
+/// do about the whole design, and a list that stops at the first document
+/// hides how far the departure goes. `judged` counts the documents the
+/// profile was applied to: every statechart, and a forge document only when
+/// some setting reaches its kind ([`AuthoringProfile::judges_forge`]), so a run
+/// of forge documents the profile does not reach reports `judged: 0`, which
+/// says the profile was given and held nothing to it.
+///
+/// [`AuthoringProfile::judges_forge`]: sce_build::authoring_profile::AuthoringProfile::judges_forge
 fn judge_under_profile(
     profile: &sce_build::authoring_profile::AuthoringProfile,
-    models: &[(&SCXMLModel, &str)],
+    documents: &[Judged<'_>],
     error_format: ErrorFormat,
 ) -> sce_build::manifest::ProfileInfo {
-    let findings: Vec<Located<ForgeError>> = models
-        .iter()
-        .flat_map(|(model, label)| profile.judge_statechart(model, label))
-        .collect();
+    let mut findings: Vec<Located<ForgeError>> = Vec::new();
+    let mut judged = 0usize;
+    for document in documents {
+        match document {
+            Judged::Statechart(model, label) => {
+                judged += 1;
+                findings.extend(profile.judge_statechart(model, label));
+            }
+            Judged::Forge(parsed, label) => {
+                if profile.judges_forge(parsed.document.kind()) {
+                    judged += 1;
+                    findings.extend(profile.judge_forge(parsed, label));
+                }
+            }
+        }
+    }
     error_format.emit_all_and_exit(&findings, "Forge codegen error: ");
-    profile_info(profile, models.len())
+    profile_info(profile, judged)
 }
 
 /// The manifest's account of a profile a run was given.
@@ -3886,20 +3913,33 @@ fn profile_info(
     }
 }
 
-/// `--profile` over a document set: each statechart parsed as the compile
-/// below reads it, and held to the profile.
+/// One forge document of a set parsed as the compile reads it — expanded, then
+/// through the forge parse with its imports — or `None` when it does not read
+/// (silent on failure, for [`forge_document_positions`]'s reason).
+fn forge_document_parsed(path: &Path) -> Option<sce_build::forge::model::ParsedForge> {
+    let positions = forge_document_positions(path)?;
+    let spelled = path.to_string_lossy();
+    let label = sce_build::DocumentLabel::for_input_path(&spelled);
+    sce_build::forge::parser::parse_forge_with_imports(&positions.expanded, label)
+        .ok()
+        .flatten()
+}
+
+/// `--profile` over a document set: each member parsed as the compile below
+/// reads it, and held to the profile.
 ///
 /// A member that does not read is skipped, not reported, as
 /// [`strict_set_unresolved`] leaves it: the compile that follows refuses it
 /// in its own words, and the profile has nothing to say about a document that
-/// is not one. ⚠ `judged` counts the statecharts that read, so a set whose
-/// only statechart was skipped says zero and not one.
+/// is not one. ⚠ `judged` counts the documents that read and that the profile
+/// reaches, so a set whose only statechart was skipped says zero and not one.
 fn judge_set_under_profile(
     profile: &sce_build::authoring_profile::AuthoringProfile,
     scxml_paths: &[PathBuf],
+    forge_paths: &[PathBuf],
     error_format: ErrorFormat,
 ) -> sce_build::manifest::ProfileInfo {
-    let parsed: Vec<(SCXMLModel, String)> = scxml_paths
+    let statecharts: Vec<(SCXMLModel, String)> = scxml_paths
         .iter()
         .filter_map(|path| {
             let label = path.to_string_lossy().into_owned();
@@ -3909,11 +3949,22 @@ fn judge_set_under_profile(
                 .map(|model| (model, label))
         })
         .collect();
-    let models: Vec<(&SCXMLModel, &str)> = parsed
+    let forge: Vec<(sce_build::forge::model::ParsedForge, String)> = forge_paths
         .iter()
-        .map(|(model, label)| (model, label.as_str()))
+        .filter_map(|path| {
+            forge_document_parsed(path).map(|parsed| (parsed, path.to_string_lossy().into_owned()))
+        })
         .collect();
-    judge_under_profile(profile, &models, error_format)
+    let documents: Vec<Judged<'_>> = statecharts
+        .iter()
+        .map(|(model, label)| Judged::Statechart(model, label))
+        .chain(
+            forge
+                .iter()
+                .map(|(parsed, label)| Judged::Forge(parsed, label)),
+        )
+        .collect();
+    judge_under_profile(profile, &documents, error_format)
 }
 
 /// What one statechart document asks of the host that will run it.
@@ -4117,7 +4168,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
     // lint says of it.
     let profile_facts = profile
         .as_ref()
-        .map(|profile| judge_set_under_profile(profile, &scxml_paths, error_format));
+        .map(|profile| judge_set_under_profile(profile, &scxml_paths, &forge_paths, error_format));
     if lint {
         lint_set_statecharts(&scxml_paths, error_format);
     }
@@ -4322,10 +4373,11 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                     Ok(records) => records,
                     Err(e) => error_format.emit_forge_and_exit(&e),
                 };
-            // A forge document is not a statechart, so no version-1 setting
-            // applies to it; the manifest says the profile was given and
-            // judged nothing.
-            report.profile = profile.as_ref().map(|profile| profile_info(profile, 0));
+            // Only the settings that reach this kind judge it; when none does
+            // the manifest says the profile was given and judged nothing.
+            report.profile = profile.as_ref().map(|profile| {
+                judge_under_profile(profile, &[Judged::Forge(&parsed, scxml_path)], error_format)
+            });
 
             for lang in &langs {
                 let forge_opts = sce_build::ForgeCompileOptions {
@@ -4370,9 +4422,13 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             report.open_interface = sce_build::open_matters::interface_left_open(&model);
             // The owner's expectation, judged on the model as parsed and
             // where the set route judges it, so the two cannot disagree.
-            report.profile = profile
-                .as_ref()
-                .map(|profile| judge_under_profile(profile, &[(&model, scxml_path)], error_format));
+            report.profile = profile.as_ref().map(|profile| {
+                judge_under_profile(
+                    profile,
+                    &[Judged::Statechart(&model, scxml_path)],
+                    error_format,
+                )
+            });
 
             analyzer::analyze(&mut model, scxml_path);
 
@@ -4811,10 +4867,11 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                     Ok(records) => records,
                     Err(e) => error_format.emit_forge_and_exit(&e),
                 };
-            // A forge document is not a statechart, so no version-1 setting
-            // applies to it; the manifest says the profile was given and
-            // judged nothing.
-            report.profile = profile.as_ref().map(|profile| profile_info(profile, 0));
+            // Only the settings that reach this kind judge it; when none does
+            // the manifest says the profile was given and judged nothing.
+            report.profile = profile.as_ref().map(|profile| {
+                judge_under_profile(profile, &[Judged::Forge(&parsed, scxml_path)], error_format)
+            });
 
             if let Some(ast_path) = emit_ast_path {
                 let path = std::path::Path::new(ast_path);
@@ -4953,9 +5010,13 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // The owner's expectation, judged where `check` judges it — on the model
     // as parsed, before any codegen — so a design the profile refuses
     // produces nothing.
-    report.profile = profile
-        .as_ref()
-        .map(|profile| judge_under_profile(profile, &[(&model, scxml_path)], error_format));
+    report.profile = profile.as_ref().map(|profile| {
+        judge_under_profile(
+            profile,
+            &[Judged::Statechart(&model, scxml_path)],
+            error_format,
+        )
+    });
 
     // `has_parent_communication` carries two distinct meanings across
     // backends:
@@ -9003,19 +9064,21 @@ fn cmd_accept(
     let _ = load_requirement_manifest(manifest);
 
     // A design is accepted under the profile it is held to. The profile is
-    // read through its own door, and a statechart that departs from it is
+    // read through its own door, and a document that departs from it is
     // refused here: the record would say the owner accepted a design under a
-    // profile that design breaks. A forge document is judged by nothing in a
-    // version-1 profile, and is pinned all the same, so the record still
+    // profile that design breaks. A forge document the profile does not reach
+    // is judged by nothing, and is pinned all the same, so the record still
     // answers for this profile and no other.
     let profile_path = sources
         .iter()
         .find(|(role, _)| *role == sce_build::acceptance_record::SourceRole::Profile)
         .map(|(_, path)| path.to_string_lossy().into_owned());
     if let Some(profile) = load_profile(profile_path.as_deref()) {
-        if let Design::Statechart(model) = &design {
-            judge_under_profile(&profile, &[(model.as_ref(), scxml)], error_format);
-        }
+        let judged = match &design {
+            Design::Statechart(model) => Judged::Statechart(model.as_ref(), scxml),
+            Design::Forge(parsed) => Judged::Forge(parsed.as_ref(), scxml),
+        };
+        judge_under_profile(&profile, &[judged], error_format);
     }
 
     let sources: Vec<_> = sources

@@ -542,6 +542,54 @@ pub fn judge(rule: &NamesRule, model: &SCXMLModel) -> Vec<Found> {
     found
 }
 
+/// Every departure of an event-schema document from `rule`: the event it
+/// declares, and the ids of the fields its payload carries.
+///
+/// The event a schema declares is a name the OWNER's document defines, and it
+/// is here that a boundary event is spelled once: a statechart that imports
+/// the schema takes the name from it and is not judged for it
+/// ([`event_names`]), so a rule that reached only the statechart would leave
+/// the names an interface is made of, and where they part between drafts,
+/// outside the profile.
+///
+/// `event_name` is what the document writes in `sce:event-name`, and `fields`
+/// the ids of its `<data>`. Neither carries a row: the model keeps none for
+/// them, so a finding is placed on the document.
+pub fn judge_event_schema(rule: &NamesRule, event_name: &str, fields: &[String]) -> Vec<Found> {
+    let mut found = Vec::new();
+    if let Some(event) = &rule.event {
+        let occurrence = Occurrence {
+            name: event_name.to_string(),
+            at: None,
+        };
+        apply(
+            &event.name_rule(),
+            NameClass::Event,
+            &occurrence,
+            &mut found,
+        );
+        structure(event, &occurrence, &mut found);
+    }
+    if let Some(data) = &rule.data {
+        for id in fields.iter().filter(|id| !id.starts_with('_')) {
+            let occurrence = Occurrence {
+                name: id.clone(),
+                at: None,
+            };
+            apply(data, NameClass::Data, &occurrence, &mut found);
+        }
+    }
+    found
+}
+
+impl NamesRule {
+    /// Whether the setting reaches an event-schema document: it asks something
+    /// of the events or of the data ids.
+    pub fn reaches_event_schemas(&self) -> bool {
+        self.event.is_some() || self.data.is_some()
+    }
+}
+
 /// The style and the limits of `rule` applied to one name.
 fn apply(rule: &NameRule, class: NameClass, occurrence: &Occurrence, found: &mut Vec<Found>) {
     let name = occurrence.name.as_str();
@@ -1115,6 +1163,38 @@ mod tests {
             &model,
         );
         assert!(found.is_empty(), "{found:?}");
+    }
+
+    /// The event a schema declares and its fields' ids are names the owner's
+    /// document defines, and are held to the rule; what the rule says of a
+    /// state or of the document name does not reach a schema.
+    #[test]
+    fn an_event_schema_is_judged_for_its_event_and_its_fields() {
+        let rule = rule(
+            r#"{"state":{"style":"pascal"},"document":{"style":"pascal"},
+                "event":{"style":"snake","tokens":{"min":2}},
+                "data":{"style":"snake"}}"#,
+        );
+        let found = judge_event_schema(
+            &rule,
+            "Door.open",
+            &[
+                "retryCount".to_string(),
+                "_reserved".to_string(),
+                "delay".to_string(),
+            ],
+        );
+        assert_eq!(
+            spelled(&found),
+            ["style event Door.open", "style data retryCount"],
+            "the event's first token is in the wrong case, `delay` is snake_case, `_reserved` is \
+             the platform's, and the state and document rules are not about a schema"
+        );
+        let short = judge_event_schema(&rule, "door", &[]);
+        assert_eq!(spelled(&short), ["event door tokens-min"]);
+        assert!(judge_event_schema(&rule, "door.open", &["delay".to_string()]).is_empty());
+        assert!(rule.reaches_event_schemas());
+        assert!(!self::rule(r#"{"state":{"style":"snake"}}"#).reaches_event_schemas());
     }
 
     #[test]

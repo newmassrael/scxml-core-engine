@@ -441,63 +441,121 @@ impl AuthoringProfile {
         }
         if let Some(rule) = &self.names {
             for found in names::judge(rule, model) {
-                let error = match found.departure {
-                    Departure::Style {
-                        class,
-                        name,
-                        part,
-                        style,
-                        respelled,
-                    } => ProfileError::NameStyle {
-                        profile: profile(),
-                        class,
-                        name,
-                        part,
-                        style,
-                        respelled,
-                    },
-                    Departure::Limit { class, name, limit } => ProfileError::NameLimit {
-                        profile: profile(),
-                        class,
-                        name,
-                        limit,
-                    },
-                    Departure::Event { name, problem } => ProfileError::EventStructure {
-                        profile: profile(),
-                        name,
-                        problem,
-                    },
-                    Departure::PrefixOfAnother { prefix, longer } => {
-                        ProfileError::EventPrefixOfAnother {
-                            profile: profile(),
-                            prefix,
-                            longer,
-                        }
-                    }
-                };
                 // A name the walk found has its own row; one it could not
                 // place (a raise inside a `<finalize>`) is put on the root,
                 // which is where the document as a whole is.
-                place(error, found.at.as_ref().or(model.source_location.as_ref()));
-            }
-        }
-        if self.evidence == Some(EvidenceRule::Anchored) {
-            let unanchored = model
-                .kind_basis
-                .iter()
-                .flat_map(|basis| basis.evidence.iter())
-                .filter(|evidence| evidence.provenance.is_none());
-            for evidence in unanchored {
                 place(
-                    ProfileError::EvidenceUnanchored {
-                        profile: profile(),
-                        evidence: evidence.text.clone(),
-                    },
-                    model.source_location.as_ref(),
+                    self.error_for(found.departure),
+                    found.at.as_ref().or(model.source_location.as_ref()),
                 );
             }
         }
+        if let Some(basis) = &model.kind_basis {
+            for error in self.unanchored(basis) {
+                place(error, model.source_location.as_ref());
+            }
+        }
         findings
+    }
+
+    /// Whether some setting of the profile reaches a forge document of `kind`:
+    /// the evidence rule reaches every kind that states a kind basis, and the
+    /// names rule reaches an event-schema, whose event and fields are names the
+    /// owner's document defines.
+    ///
+    /// The other kinds have names of their own — a transform's outputs, a
+    /// codec's fields — that no setting judges yet, and a run that says
+    /// `judged: 0` of them says so rather than passing them.
+    pub fn judges_forge(&self, kind: crate::forge::model::ForgeKind) -> bool {
+        self.evidence.is_some()
+            || (kind == crate::forge::model::ForgeKind::EventSchema
+                && self
+                    .names
+                    .as_ref()
+                    .is_some_and(NamesRule::reaches_event_schemas))
+    }
+
+    /// Every way a forge document departs from the profile's ENFORCED
+    /// settings. Empty for a kind [`Self::judges_forge`] says no setting
+    /// reaches.
+    ///
+    /// A finding carries the document and no row: the forge model keeps none
+    /// for the event a schema declares, its fields, or an evidence.
+    pub fn judge_forge(
+        &self,
+        parsed: &crate::forge::model::ParsedForge,
+        diag_label: &str,
+    ) -> Vec<Located<ForgeError>> {
+        let place = |error: ProfileError| {
+            Located::new(ForgeError::Profile(Box::new(error)), diag_label, None, None)
+        };
+        let mut findings = Vec::new();
+        if let (Some(rule), crate::forge::model::ForgeDocument::EventSchema(schema)) =
+            (&self.names, &parsed.document)
+        {
+            let fields: Vec<String> = schema.fields.iter().map(|f| f.id.clone()).collect();
+            for found in names::judge_event_schema(rule, &schema.event_name, &fields) {
+                findings.push(place(self.error_for(found.departure)));
+            }
+        }
+        if let Some(basis) = &parsed.kind_basis {
+            findings.extend(self.unanchored(basis).into_iter().map(place));
+        }
+        findings
+    }
+
+    /// The errors for a kind basis's evidence that names no anchor, when the
+    /// profile asks for one.
+    fn unanchored(&self, basis: &crate::forge::kind_basis::KindBasis) -> Vec<ProfileError> {
+        if self.evidence != Some(EvidenceRule::Anchored) {
+            return Vec::new();
+        }
+        basis
+            .evidence
+            .iter()
+            .filter(|evidence| evidence.provenance.is_none())
+            .map(|evidence| ProfileError::EvidenceUnanchored {
+                profile: self.name.clone(),
+                evidence: evidence.text.clone(),
+            })
+            .collect()
+    }
+
+    /// The error a departure from the `names` setting is reported as.
+    fn error_for(&self, departure: Departure) -> ProfileError {
+        let profile = self.name.clone();
+        match departure {
+            Departure::Style {
+                class,
+                name,
+                part,
+                style,
+                respelled,
+            } => ProfileError::NameStyle {
+                profile,
+                class,
+                name,
+                part,
+                style,
+                respelled,
+            },
+            Departure::Limit { class, name, limit } => ProfileError::NameLimit {
+                profile,
+                class,
+                name,
+                limit,
+            },
+            Departure::Event { name, problem } => ProfileError::EventStructure {
+                profile,
+                name,
+                problem,
+            },
+            Departure::PrefixOfAnother { prefix, longer } => ProfileError::EventPrefixOfAnother {
+                profile,
+                prefix,
+                longer,
+            },
+        }
     }
 }
 

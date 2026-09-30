@@ -3111,14 +3111,29 @@ and the rule and never on the profile's label, and none carrying a `fix`: the
 repair renames a definition and everything that refers to it, an edit at more
 than one place that no single `fix` locates.
 
-A forge document is not a statechart and no setting applies to it. The
-manifest's optional `profile` object carries the profile's `name`, its
-`sha256`, `judged` (the number of statecharts it was applied to) and
+A forge document is judged only where a setting reaches its kind. `evidence`
+reaches every kind that states a kind basis. `names` reaches an event-schema
+document: the event it declares (`sce:event-name`) is a name of the `event`
+class, judged by the same rule, `tokens` and `first_tokens` included, and the
+ids of its fields are names of the `data` class. That is where a boundary event
+is spelled once: a statechart takes the name from the schema it imports and is
+not judged for it, so a rule that reached only the statechart would leave the
+names an interface is made of outside the profile. The other kinds have names
+of their own — a transform's outputs, a codec's fields — that no setting
+judges yet. A finding in a forge document names the document and no row, since
+the model keeps none for an event's name, a field or an evidence.
+
+The manifest's optional `profile` object carries the profile's `name`, its
+`sha256`, `judged` (the number of documents it was applied to: every
+statechart, and a forge document only when some setting reaches its kind) and
 `guidance` (how many instructions it handed over, none of which was checked;
-omitted when there are none). A run of forge documents alone reports
+omitted when there are none). A run whose documents no setting reaches reports
 `judged: 0` and is not read as a pass; a run given no profile omits the
 object, and one that failed the profile emits no manifest. The in-memory path,
-which reads no sibling documents, takes no profile.
+which reads no sibling documents, takes no profile. `prefix_free` is judged
+over the names a statechart defines and the event-schemas it imports, so it
+needs the statechart: a schema judged alone has one event and no other to be a
+prefix of.
 
 An acceptance record pins the profile beside the specification and the
 decision record, under the role `profile`, and holds it to the same rules: at
