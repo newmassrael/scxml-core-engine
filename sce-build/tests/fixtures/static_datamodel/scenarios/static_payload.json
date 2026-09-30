@@ -1,0 +1,20 @@
+{
+  "machine": "static_payload",
+  "about": "An event's typed payload read in a guard and in assignments: a day after the fifteenth is late, `sinceEpoch` is year - 2000 in a uint16, and a year before 2000 does not fit, so that assignment is skipped and error.execution says so. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "waiting", "variables": { "day": 0, "late": false, "sinceEpoch": 0, "refusals": 0 } } },
+
+    { "note": "the thirtieth is after the fifteenth: the first transition",
+      "event": "day.picked", "data": { "year": 2026, "month": 9, "dayOfMonth": 30 },
+      "expect": { "state": "waiting", "variables": { "day": 30, "late": true, "sinceEpoch": 26, "refusals": 0 } } },
+    { "note": "the twelfth is not: the second transition",
+      "event": "day.picked", "data": { "year": 2027, "month": 1, "dayOfMonth": 12 },
+      "expect": { "state": "waiting", "variables": { "day": 12, "late": false, "sinceEpoch": 27, "refusals": 0 } } },
+    { "note": "1999 - 2000 is below a uint16: that assignment is skipped and says so; the two before it ran",
+      "event": "day.picked", "data": { "year": 1999, "month": 1, "dayOfMonth": 5 },
+      "expect": { "state": "waiting", "variables": { "day": 5, "late": false, "sinceEpoch": 27, "refusals": 1 } } },
+    { "note": "the thirty-first, in a year that fits",
+      "event": "day.picked", "data": { "year": 2000, "month": 12, "dayOfMonth": 31 },
+      "expect": { "state": "waiting", "variables": { "day": 31, "late": true, "sinceEpoch": 0, "refusals": 1 } } }
+  ]
+}

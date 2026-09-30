@@ -2905,12 +2905,25 @@ raising `error.execution`, which is the outcome the generated backends give
 the same operation. An integer is an ECMAScript Number, so a 64-bit integer is
 exact only to ±2^53: a result beyond that is refused at run time, and an
 integer literal beyond it at build time, rather than rounded. The bitwise
-operators are refused — a Number's are 32-bit and signed. A construct with no
-lowering yet — a record or list variable, a call of an imported algorithm,
-`<sce:action>`, a read of an event's typed payload, executable content beyond
-`<assign>`, `<if>`, `<log>`, `<raise>`, `<cancel>` and a `<send>` with no
-`<param>` — is refused with `generate/unsupported-feature` naming it, never
-passed through half lowered.
+operators are refused — a Number's are 32-bit and signed.
+
+An event's data reaches the Interpreter as untyped JSON, which a generated
+machine reads through the event's schema. So a read of a schema field is a call
+of the library's `field`, at the type the schema declares, and it refuses what
+the generated machines' lift of a payload refuses — no data, a bare value, a
+missing field, a value of another type, a value beyond the field's width — by
+throwing, so the expression that read it fails as an overflow does. Two
+differences stand, both for a malformed delivery only: a generated machine
+lifts the payload once when the event is dequeued and raises `error.execution`
+once, where the Interpreter raises one for each expression that reads a field;
+and JSON reaches the Interpreter already parsed, so `5.0` and `5` are one
+value there, where the generated lift refuses the first as not a whole number.
+
+A construct with no lowering yet — a record or list variable, a call of an
+imported algorithm, `<sce:action>`, executable content beyond `<assign>`,
+`<if>`, `<log>`, `<raise>`, `<cancel>` and a `<send>` with no `<param>` — is
+refused with `generate/unsupported-feature` naming it, never passed through
+half lowered.
 `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`
 replays the scenarios the Kotlin and Rust backends replay
 (`sce-build/tests/fixtures/static_datamodel/scenarios/*.json`) against the

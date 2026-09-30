@@ -2552,10 +2552,10 @@ enum Commands {
     /// author's.
     ///
     /// A construct with no lowering yet (a record or list variable, a call
-    /// of an imported algorithm, `<sce:action>`, a read of an event's typed
-    /// payload) is refused with `generate/unsupported-feature` naming it; the
-    /// document is never passed through half-lowered. A document under any
-    /// other data model is printed as it is.
+    /// of an imported algorithm, `<sce:action>`) is refused with
+    /// `generate/unsupported-feature` naming it; the document is never passed
+    /// through half-lowered. A document under any other data model is printed
+    /// as it is.
     ///
     /// The document goes to stdout as raw bytes with no trailing newline, as
     /// `expand` does, so a caller can capture it exactly.

@@ -20,6 +20,7 @@ package com.sce.integration
 
 import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
+import com.sce.integration.static_payload.StaticPayloadStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.SavedState
@@ -161,6 +162,23 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_overflow"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticPayloadReadsTheFieldsOfItsEvent() {
+        val sm = StaticPayloadStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_payload"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

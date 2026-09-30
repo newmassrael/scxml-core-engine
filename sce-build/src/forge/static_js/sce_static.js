@@ -1,7 +1,7 @@
 (function () {
-  /* SceStatic: the checked arithmetic of a datamodel="sce-static" document,
-     for the script engine the Interpreter runs it on
-     (docs/SCE_ACCEPTED_SUBSET.md 2.15).
+  /* SceStatic: the checked arithmetic and the typed event data of a
+     datamodel="sce-static" document, for the script engine the Interpreter
+     runs it on (docs/SCE_ACCEPTED_SUBSET.md 2.15).
 
      A Number holds an integer exactly only up to 2^53 - 1, and a generated
      backend's int64 holds more. So every operation is computed exactly, as a
@@ -10,11 +10,18 @@
      script engine's failure channel is the one a generated backend records,
      so a document that raises error.execution there raises it here.
 
+     An event's data reaches the Interpreter as untyped JSON, and a generated
+     machine reads it through its event-schema. field() is that reading: the
+     refusals are the generated backends' (no data, a bare value, a missing
+     field, a value of another type or beyond its width), each thrown, so the
+     expression that read the field fails the way an overflow does.
+
      The library is embedded in one attribute and its newlines collapse, so it
      holds no line comment and no statement that relies on a line break. */
   var SAFE = BigInt(Number.MAX_SAFE_INTEGER);
   var ZERO = BigInt(0);
   var ONE = BigInt(1);
+  var RANGES = {};
 
   function fail(reason) {
     throw new Error('sce-static: ' + reason);
@@ -32,6 +39,7 @@
     var min = signed ? -(span >> ONE) : ZERO;
     var max = signed ? (span >> ONE) - ONE : span - ONE;
     var name = (signed ? 'int' : 'uint') + bits;
+    RANGES[name] = { min: min, max: max };
 
     function hold(value) {
       if (value < min || value > max) {
@@ -62,6 +70,51 @@
     };
   }
 
+  function field(data, name, type) {
+    if (data === undefined || data === null) {
+      fail('the event carries no data');
+    }
+    if (typeof data !== 'object' || Array.isArray(data)) {
+      fail('the event data is a bare value, and its schema declares named fields');
+    }
+    if (!Object.prototype.hasOwnProperty.call(data, name)) {
+      fail('the event data has no ' + name);
+    }
+    var value = data[name];
+    var range = RANGES[type];
+    if (range !== undefined) {
+      if (typeof value !== 'number') {
+        fail(name + ' is not a number');
+      }
+      if (!Number.isSafeInteger(value)) {
+        fail(name + ' is not an integer a Number holds exactly');
+      }
+      if (BigInt(value) < range.min || BigInt(value) > range.max) {
+        fail(name + ' does not fit ' + type);
+      }
+      return value;
+    }
+    if (type === 'float32' || type === 'float64') {
+      if (typeof value !== 'number') {
+        fail(name + ' is not a number');
+      }
+      return value;
+    }
+    if (type === 'bool') {
+      if (typeof value !== 'boolean') {
+        fail(name + ' is not a truth value');
+      }
+      return value;
+    }
+    if (type === 'string') {
+      if (typeof value !== 'string') {
+        fail(name + ' is not text');
+      }
+      return value;
+    }
+    fail('a field of type ' + String(type) + ' has no reader');
+  }
+
   return {
     I8: integer(true, 8),
     I16: integer(true, 16),
@@ -71,6 +124,7 @@
     U16: integer(false, 16),
     U32: integer(false, 32),
     U64: integer(false, 64),
+    field: field,
     at: function (collection, index) {
       if (!Number.isSafeInteger(index) || index < 0 || index >= collection.length) {
         fail('the index ' + String(index) + ' is outside the collection');

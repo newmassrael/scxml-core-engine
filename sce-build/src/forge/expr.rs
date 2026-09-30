@@ -6883,7 +6883,7 @@ fn js_number_literal(text: &str) -> Result<String, ExprError> {
 }
 
 fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
-    use crate::forge::static_js::{INTEGER_WIDTHS, RUNTIME_GLOBAL};
+    use crate::forge::static_js::{INTEGER_WIDTHS, PAYLOAD_ACCESSOR, RUNTIME_GLOBAL};
     Ok(match &expr.kind {
         ExprKind::NumberLit(n) => js_number_literal(n)?,
         // The author's own literal, in the quote the author chose: what the
@@ -6985,6 +6985,28 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
                 wrap(consequent, emit_js(consequent, expr.ty)?),
                 emit_js(alternate, expr.ty)?,
             )
+        }
+        // A field of the event's data. Under `sce-static` it is typed by the
+        // event's schema, and an event's data reaches the Interpreter as
+        // untyped JSON, so the read goes through the library's `field`, which
+        // refuses what a generated machine's lift of the payload refuses.
+        ExprKind::Member { object, property } if matches!(&object.kind, ExprKind::Raw(accessor) if accessor == PAYLOAD_ACCESSOR) =>
+        {
+            let Some(kind) = expr
+                .ty
+                .declared_spelling()
+                .filter(|kind| !matches!(*kind, "bytes"))
+            else {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!(
+                        "a read of the payload field `{property}`, of a type an ecmascript \
+                         lowering has no reader for ({})",
+                        expr.ty.describe()
+                    ),
+                    observed: Some(format!("{PAYLOAD_ACCESSOR}.{property}")),
+                });
+            };
+            format!("{RUNTIME_GLOBAL}.field({PAYLOAD_ACCESSOR}, '{property}', '{kind}')")
         }
         ExprKind::Member { object, property } => format!(
             "{}.{property}",
@@ -9614,6 +9636,56 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(refusal.contains("Mode.Idle"), "{refusal}");
+    }
+
+    /// A field of the event's data reaches the Interpreter as untyped JSON, so
+    /// its read is the library's, at the type the event's schema declares —
+    /// and an arithmetic operation over it is checked at that type.
+    #[test]
+    fn js_reads_a_payload_field_through_the_library() {
+        let mut ctx = js_ctx();
+        ctx.insert_var("_event.data.dayOfMonth", int(false, 8));
+        ctx.insert_var("_event.data.late", InferredType::Bool);
+        ctx.insert_var("_event.data.title", InferredType::Str);
+        let renames: HashMap<&str, &str> = HashMap::from([("_event.data", "_event.data")]);
+        let lower = |expr: &str| {
+            transpile_typed(expr, ExprTarget::Js, &ctx, &renames, InferredType::Unknown).unwrap()
+        };
+        assert_eq!(
+            lower("_event.data.dayOfMonth"),
+            "SceStatic.field(_event.data, 'dayOfMonth', 'uint8')"
+        );
+        assert_eq!(
+            lower("_event.data.late"),
+            "SceStatic.field(_event.data, 'late', 'bool')"
+        );
+        assert_eq!(
+            lower("_event.data.title"),
+            "SceStatic.field(_event.data, 'title', 'string')"
+        );
+        assert_eq!(
+            lower("_event.data.dayOfMonth + 1"),
+            "SceStatic.U8.add(SceStatic.field(_event.data, 'dayOfMonth', 'uint8'), 1)"
+        );
+    }
+
+    /// A payload field of a type the library has no reader for is refused at
+    /// build time, naming the field, and not read as an untyped value.
+    #[test]
+    fn js_refuses_a_payload_field_it_cannot_read() {
+        let mut ctx = js_ctx();
+        ctx.insert_var("_event.data.raw", InferredType::Bytes);
+        let renames: HashMap<&str, &str> = HashMap::from([("_event.data", "_event.data")]);
+        let refusal = transpile_typed(
+            "_event.data.raw",
+            ExprTarget::Js,
+            &ctx,
+            &renames,
+            InferredType::Unknown,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(refusal.contains("`raw`"), "{refusal}");
     }
 
     /// The same document lowers on the six backends and on ECMAScript from one

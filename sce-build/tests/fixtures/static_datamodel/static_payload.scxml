@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): an event's typed
+  payload read in a guard and in assignments. `day.picked` carries the fields
+  of schema_day.scxml, so `_event.data.dayOfMonth` is a uint8 and
+  `_event.data.year` a uint16 wherever the document reads them.
+
+  A later day than the fifteenth takes the first transition, any other the
+  second. `sinceEpoch` is `year - 2000` in a uint16: a year before 2000 does
+  not fit, so that assignment is skipped and error.execution says so, which
+  `refusals` counts. It is the last statement of its block, so what follows
+  it is not in question.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="waiting" datamodel="sce-static" name="static_payload">
+  <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  <datamodel>
+    <data id="day" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="late" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="sinceEpoch" sce:type="uint16" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="waiting">
+    <transition event="day.picked" cond="_event.data.dayOfMonth &gt; 15" type="internal">
+      <assign location="late" expr="true"/>
+      <assign location="day" expr="_event.data.dayOfMonth"/>
+      <assign location="sinceEpoch" expr="_event.data.year - 2000"/>
+    </transition>
+    <transition event="day.picked" type="internal">
+      <assign location="late" expr="false"/>
+      <assign location="day" expr="_event.data.dayOfMonth"/>
+      <assign location="sinceEpoch" expr="_event.data.year - 2000"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

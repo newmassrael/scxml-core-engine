@@ -33,12 +33,24 @@
 //!
 //! # What it does not lower yet
 //!
-//! Records, lists, calls of imported algorithms, `<sce:action>`, an event's
-//! typed payload, and the executable content the walk does not lower are
-//! refused with `generate/unsupported-feature` naming the construct, never
-//! passed through: an expression left as the author wrote it would be run by
-//! the script engine as ECMAScript, which is the mis-execution the refusal
-//! exists to prevent.
+//! Records, lists, calls of imported algorithms, `<sce:action>`, and the
+//! executable content the walk does not lower are refused with
+//! `generate/unsupported-feature` naming the construct, never passed through:
+//! an expression left as the author wrote it would be run by the script engine
+//! as ECMAScript, which is the mis-execution the refusal exists to prevent.
+//!
+//! # An event's data
+//!
+//! An event's data reaches the Interpreter as untyped JSON, and a generated
+//! machine reads it through the event's schema. So a read of a schema field is
+//! a call of the library's `field`, which refuses what the generated lift of a
+//! payload refuses — no data, a bare value, a missing field, a value of another
+//! type or beyond its width — by throwing, and the expression that read it
+//! fails as an overflow does. One difference is left standing and stated
+//! (docs/SCE_ACCEPTED_SUBSET.md §2.15): a generated machine lifts the payload
+//! once when the event is dequeued and raises `error.execution` once for a
+//! malformed delivery, and the Interpreter raises one for each expression that
+//! reads a field.
 
 use std::ops::Range;
 use std::path::PathBuf;
@@ -64,6 +76,11 @@ pub(crate) const RUNTIME_GLOBAL: &str = "SceStatic";
 /// The id of the `<data>` that installs the library — the document's first, so
 /// it runs before any other `<data>` and before every expression.
 pub(crate) const RUNTIME_DATA_ID: &str = "SceStaticInstalled";
+
+/// What `_event.data` is read through: the Interpreter's own name for the data
+/// of the event being processed. The expression lowerer spells a field of it
+/// as a call of the library's `field` (`ExprTarget::Js`).
+pub(crate) const PAYLOAD_ACCESSOR: &str = "_event.data";
 
 /// The integer widths the library implements, and so the only ones an
 /// operation may be checked at. A width outside this list has no
@@ -258,8 +275,10 @@ impl StaticTarget for JsTarget {
         value.to_string()
     }
     fn payload_accessor(&self, _event: &str) -> String {
-        "_event.data".to_string()
+        PAYLOAD_ACCESSOR.to_string()
     }
+    // A delivery that carried no payload makes the read throw, so the guard
+    // is false and says so: there is no channel to check before it.
     fn payload_guard(&self, _machine: &str, _event: &str, lowered: &str) -> String {
         lowered.to_string()
     }
@@ -452,12 +471,6 @@ fn lower_parsed(
     let mut lowered = model.clone();
     let machine = crate::filters::to_pascal_case(model.name.clone());
     let lowering = lower(&mut lowered, &machine, &[], &JsTarget).map_err(refuse)?;
-    if let Some(event) = lowering.payload_events.iter().next() {
-        return Err(refuse(GenerateError::unsupported(format!(
-            "a read of the typed payload of the event `{event}` has no {LOWERED_DATAMODEL} \
-             lowering yet"
-        ))));
-    }
     let mut edits = site_edits(&lowering.sites).map_err(refuse)?;
     let needs_library = lowering
         .sites
@@ -540,8 +553,16 @@ mod tests {
                 assert!(text.contains(&method), "no `{method}` in the library");
             }
         }
-        for member in ["at: function", "round: function"] {
+        for member in ["at: function", "round: function", "field: field"] {
             assert!(text.contains(member), "no `{member}` in the library");
+        }
+        // Every type a payload field is read at is one `field` knows: the
+        // integer types by their range, the rest by name.
+        for kind in ["float32", "float64", "bool", "string"] {
+            assert!(
+                text.contains(&format!("'{kind}'")),
+                "`field` has no reader for `{kind}`"
+            );
         }
         for signed in [false, true] {
             for bits in INTEGER_WIDTHS {

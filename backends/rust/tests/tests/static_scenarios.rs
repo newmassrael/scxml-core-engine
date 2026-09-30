@@ -23,6 +23,9 @@ use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
 use sce_rust_tests::integration::static_datamodel::static_overflow_sm::{
     StaticOverflowPersist, StaticOverflowPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_payload_sm::{
+    StaticPayloadPersist, StaticPayloadPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::sync_client_sm::{
     SyncClientPersist, SyncClientPolicy,
 };
@@ -140,6 +143,17 @@ fn static_overflow_keeps_its_value_and_says_so() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_overflow.json"
+        ),
+    );
+}
+
+#[test]
+fn static_payload_reads_the_fields_of_its_event() {
+    replay(
+        Engine::new(StaticPayloadPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_payload.json"
         ),
     );
 }
