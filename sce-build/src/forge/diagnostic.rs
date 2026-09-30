@@ -955,6 +955,10 @@ pub enum DiagnosticCode {
     //    the specification. ────────────────────────────────────────────────
     #[serde(rename = "profile/evidence-unanchored")]
     ProfileEvidenceUnanchored,
+    // ── The `traceability` setting: a state or a transition that claims no
+    //    requirement of the specification. ───────────────────────────────────
+    #[serde(rename = "profile/element-untraced")]
+    ProfileElementUntraced,
     // ── NL→IR Mapping Roadmap Item 3 — event-set
     //    exhaustiveness. Fires when a compound `<state>` has sibling
     //    children that disagree on whether a given event is handled,
@@ -3373,6 +3377,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ProfileEventStructure,
         ProfileEventPrefixOfAnother,
         ProfileEvidenceUnanchored,
+        ProfileElementUntraced,
         // NL→IR Mapping Roadmap Item 3 — event-set exhaustiveness
         ScxmlNonExhaustiveEventHandling,
         ScxmlContradictoryUnhandledDeclaration,
@@ -3969,7 +3974,8 @@ impl DiagnosticCode {
             | ProfileNameLimit
             | ProfileEventStructure
             | ProfileEventPrefixOfAnother
-            | ProfileEvidenceUnanchored => Some("SCE Accepted Subset §2.17"),
+            | ProfileEvidenceUnanchored
+            | ProfileElementUntraced => Some("SCE Accepted Subset §2.17"),
 
             // ── SCXML data models ──────────────────────────────────
             // The attribute is defined in §3.2 and the data models it
@@ -4778,6 +4784,7 @@ impl DiagnosticCode {
             ProfileEventStructure => "profile/event-structure",
             ProfileEventPrefixOfAnother => "profile/event-prefix-of-another",
             ProfileEvidenceUnanchored => "profile/evidence-unanchored",
+            ProfileElementUntraced => "profile/element-untraced",
             ScxmlNonExhaustiveEventHandling => "scxml/non-exhaustive-event-handling",
             ScxmlContradictoryUnhandledDeclaration => "scxml/contradictory-unhandled-declaration",
             ScxmlStaleUnhandledDeclaration => "scxml/stale-unhandled-declaration",
@@ -5669,6 +5676,17 @@ fn profile_fields(e: &crate::authoring_profile::ProfileError) -> DiagnosticPaylo
             actual: Some(evidence.clone()),
             fix: None,
             key_fragments: vec!["profile-evidence-unanchored".to_string(), evidence.clone()],
+        },
+        // `actual` names the element: it is the only thing that tells two
+        // untraced elements of one document apart, and the location is not
+        // part of a record's identity.
+        ProfileError::ElementUntraced { element, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ProfileElementUntraced,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(element.clone()),
+            fix: None,
+            key_fragments: vec!["profile-element-untraced".to_string(), element.clone()],
         },
     }
 }
@@ -11360,6 +11378,16 @@ mod tests {
                 r##"{"v":1,"id":"fnv1a:2f8d06f5b714c068","code":"profile/evidence-unanchored","stage":"validation","spec":"SCE Accepted Subset §2.17","message":"the authoring profile 'owner-review' requires every <sce:evidence> to name where the specification states what it cites, and this one does not: 'the door closes by itself after a delay' — add the anchor in the sce:provenance form, or use a profile that does not ask for one","actual":"the door closes by itself after a delay"}"##,
             ),
             (
+                // A transition that claims no requirement of the specification.
+                "forge/profile-element-untraced",
+                crate::authoring_profile::ProfileError::ElementUntraced {
+                    profile: Some("owner-review".into()),
+                    element: "the transition of state idle on open.request to opening".into(),
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:0112edbb3c8cc54b","code":"profile/element-untraced","stage":"validation","spec":"SCE Accepted Subset §2.17","message":"the authoring profile 'owner-review' requires every state and transition to claim a requirement of the specification, and the transition of state idle on open.request to opening claims none: put the id of the requirement it is there for on it (sce:req=\"R3\"; scxml_requirement_set makes the ids from the specification's own words), or use a profile that does not ask for traceability","actual":"the transition of state idle on open.request to opening"}"##,
+            ),
+            (
                 // Two states XML keeps apart by case, which every backend
                 // spells as one member (`crate::member_names`).
                 "forge/scxml-generated-name-collision",
@@ -16620,6 +16648,9 @@ mod tests {
             // The anchor is a position in the owner's specification, which
             // SCE cannot name.
             | ProfileEvidenceUnanchored
+            // Which requirement an element is there for is a reading of the
+            // specification that only its author makes.
+            | ProfileElementUntraced
             // NL→IR Mapping Roadmap Item 3 — non-exhaustive
             // event handling. Repair has three axes (add the
             // transition, add a parent-level fallthrough, or declare
@@ -16968,6 +16999,7 @@ mod tests {
                 | ProfileEventStructure
                 | ProfileEventPrefixOfAnother
                 | ProfileEvidenceUnanchored
+                | ProfileElementUntraced
                 | ScxmlNonExhaustiveEventHandling
                 | ScxmlContradictoryUnhandledDeclaration
                 | ScxmlStaleUnhandledDeclaration
@@ -17268,9 +17300,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            414,
+            415,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 414 distinct variants to match the DiagnosticCode \
+             expected 415 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -18217,7 +18249,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ProfileNameLimit
             | ProfileEventStructure
             | ProfileEventPrefixOfAnother
-            | ProfileEvidenceUnanchored => Registered(NoAnchor::NotYetMeasured),
+            | ProfileEvidenceUnanchored
+            | ProfileElementUntraced => Registered(NoAnchor::NotYetMeasured),
 
             // ── Registered(CoordinateNotThreaded, RaisedBeforeAnyResolvingStage) ──
             // Measured, and each here for its OWN reason.

@@ -100,6 +100,19 @@ class AnOwnerProfileReachesTheProduct(unittest.TestCase):
         self.assertEqual("refused", body(refused)["verdict"])
         self.assertEqual(["profile/interface-not-closed"], codes(refused))
 
+    def test_a_setting_added_after_these_tools_were_written_reaches_the_product_untouched(self):
+        """`traceability` was added to the product with no edit to these tools:
+        the profile is handed over as written and the product's own record comes
+        back. The statechart claims no requirement, and a profile asking for one
+        refuses it; the same statechart without that profile is accepted, so the
+        refusal is the profile's."""
+        traced = json.dumps({"record": "sce-authoring-profile", "v": 1,
+                             "name": "owner-review", "traceability": "required"})
+        refused = self.validate(True, profile_text=traced)
+        self.assertEqual("refused", body(refused)["verdict"])
+        self.assertEqual(["profile/element-untraced"] * 3, codes(refused))
+        self.assertEqual("accepted", body(self.validate(True))["verdict"])
+
     def test_the_same_statechart_is_accepted_without_a_profile_and_names_none(self):
         # The control: the refusal is the profile's, not the document's, and a
         # run held to nothing says so by carrying no `profile`.

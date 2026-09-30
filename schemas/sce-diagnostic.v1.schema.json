@@ -127,6 +127,7 @@
         "profile/event-structure",
         "profile/event-prefix-of-another",
         "profile/evidence-unanchored",
+        "profile/element-untraced",
         "scxml/non-exhaustive-event-handling",
         "scxml/contradictory-unhandled-declaration",
         "scxml/stale-unhandled-declaration",

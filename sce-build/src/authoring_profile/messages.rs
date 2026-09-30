@@ -141,3 +141,14 @@ pub(super) fn evidence_unanchored(profile: Option<&str>, evidence: &str) -> Stri
         subject(profile)
     )
 }
+
+/// A state or transition that claims no requirement.
+pub(super) fn element_untraced(profile: Option<&str>, element: &str) -> String {
+    format!(
+        "{} requires every state and transition to claim a requirement of the specification, \
+         and {element} claims none: put the id of the requirement it is there for on it \
+         (sce:req=\"R3\"; scxml_requirement_set makes the ids from the specification's own \
+         words), or use a profile that does not ask for traceability",
+        subject(profile)
+    )
+}

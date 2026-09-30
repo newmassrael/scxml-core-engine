@@ -116,6 +116,10 @@
       "description": "ENFORCED. `anchored`: every `<sce:evidence>` of a document's `<sce:kind-basis>`, in a statechart or in a forge document of any kind, names where the specification states what it cites, in the `sce:provenance` form. An unanchored one is refused as `profile/evidence-unanchored`. Absent: an evidence may stand without an anchor.",
       "enum": ["anchored"]
     },
+    "traceability": {
+      "description": "ENFORCED. `required`: every state and every transition of a statechart claims a requirement of the specification (`sce:req`), so the design says which sentence each element is there for. An element that claims none is refused as `profile/element-untraced`, naming it. It reads states and transitions and not what runs inside them: a transition's own actions do not inherit its `sce:req`, so a rule over every node would refuse a design that claims every sentence. It says an element CLAIMS a requirement and never that the claim is right; the acceptance report puts each sentence beside its element for the owner to judge. Absent: a statechart with no `sce:req` is accepted.",
+      "enum": ["required"]
+    },
     "house_rules": {
       "description": "REPORTED. The owner's standing answers to gaps that recur across specifications — what a draft does where the specification is silent, decided once: `an event a state does not mention is ignored`, `the initial state is the first condition the specification lists`. A draft that applies one does not ask, and cites it by its id: `sce:assumed=\"<id>\"` on the element it applies to. Every citation is listed in the run's `open` (a `house-rule` entry) and marked `house_rule` in the `unresolved` records, so a rule is never applied silently, and it is not counted among the values chosen without an answer. The authoring core's `decisions` check licenses the citation the way it licenses a decision's. What nothing here can see is a rule applied WITHOUT its citation: a rule is prose, and no check reads a document's behaviour against prose. An id names one rule.",
       "type": "array",

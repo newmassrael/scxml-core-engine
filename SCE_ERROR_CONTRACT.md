@@ -843,6 +843,7 @@ references against a real document and drift silently.
 | `pool/speculative-prefetch-flag-missing` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
 | `pool/stage-copy-accept-rejected-under-forbid` | `validation` | no | SCE Protocol-Synthesis RFC §5.K |
 | `pool/stage-copy-policy-error` | `validation` | no | SCE Protocol-Synthesis RFC §5.K |
+| `profile/element-untraced` | `validation` | no | SCE Accepted Subset §2.17 |
 | `profile/event-prefix-of-another` | `validation` | no | SCE Accepted Subset §2.17 |
 | `profile/event-structure` | `validation` | no | SCE Accepted Subset §2.17 |
 | `profile/evidence-unanchored` | `validation` | no | SCE Accepted Subset §2.17 |

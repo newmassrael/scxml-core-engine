@@ -102,6 +102,7 @@ pub const SETTINGS: &[(&str, SettingClass)] = &[
     ("interface", SettingClass::Enforced),
     ("names", SettingClass::Enforced),
     ("evidence", SettingClass::Enforced),
+    ("traceability", SettingClass::Enforced),
     ("house_rules", SettingClass::Reported),
     ("guidance", SettingClass::Guidance),
 ];
@@ -121,6 +122,33 @@ pub enum EvidenceRule {
     /// Every `<sce:evidence>` names where the specification states what it
     /// cites.
     Anchored,
+}
+
+/// What `traceability` asks of a statechart.
+///
+/// ⚠ Why a setting and not a line in every answer. Measured 2026-10-01, fifteen
+/// drafts by a real client, told in the server's instructions to put each
+/// requirement's id on the element that carries it: none did, and none named the
+/// tool that lists them. The request asked for a kind, a draft, a check and
+/// what is open, and the client did that. An owner who wants each sentence of
+/// their specification found in the design is the one to say so, in the file
+/// that says what a design is held to, and a draft that ignores it is then
+/// refused rather than left to an instruction. Left out, nothing changes: a
+/// statechart with no `sce:req` on it is as accepted as it was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TraceabilityRule {
+    /// Every state and every transition claims a requirement (`sce:req`), so
+    /// each element of the design says which sentence of the specification it
+    /// is there for.
+    ///
+    /// ⚠ States and transitions, and not what runs inside them. A transition's
+    /// own actions do not inherit its `sce:req` (an `<onentry>`'s do), so the
+    /// product's own table counts a `<cancel>` inside a claimed transition as
+    /// unclaimed, and a rule over every node would refuse a design that claims
+    /// every sentence (`requirements_report.rs`, "The unclaimed block
+    /// dilutes"). A state and a transition are the units that do not dilute.
+    Required,
 }
 
 /// A standing answer of the owner to a gap that recurs across specifications:
@@ -155,6 +183,7 @@ struct Settings {
     interface: Option<InterfaceRule>,
     names: Option<NamesRule>,
     evidence: Option<EvidenceRule>,
+    traceability: Option<TraceabilityRule>,
     house_rules: Option<Vec<HouseRule>>,
     guidance: Option<Vec<String>>,
 }
@@ -288,6 +317,16 @@ pub enum ProfileError {
         /// What the evidence says, as the author wrote it.
         evidence: String,
     },
+    /// A state or a transition claims no requirement (`sce:req`), so nothing
+    /// says which sentence of the specification it is there for.
+    #[error("{}", messages::element_untraced(profile.as_deref(), element))]
+    ElementUntraced {
+        /// The profile's `name`, when it has one.
+        profile: Option<String>,
+        /// The element, as the model names it: `state idle`, or the transition
+        /// with its event and target.
+        element: String,
+    },
 }
 
 /// [`ProfileError::InterfaceNotClosed`]'s message.
@@ -341,6 +380,52 @@ fn house_rules_refusal(rules: &[HouseRule]) -> Option<String> {
         })
 }
 
+/// The states and transitions of a statechart that claim no requirement, in
+/// the order the document writes them, each named as an author reads it and
+/// placed where it is written.
+///
+/// A state is named by its id and a transition by its owning state, its event
+/// (`(eventless)` for none) and its target, which is what tells two transitions
+/// of one state apart in a sentence an owner reads without the document open.
+/// A transition inside a state that claims a requirement is still judged on its
+/// own: `sce:req` on a state says the state is asked for, not that each way out
+/// of it is.
+fn untraced_elements(
+    model: &SCXMLModel,
+) -> Vec<(String, Option<crate::forge::error::SourceLocation>)> {
+    let mut states: Vec<_> = model.states.values().collect();
+    states.sort_by_key(|state| state.document_order);
+    let mut found = Vec::new();
+    for state in states {
+        if state.req.is_empty() {
+            found.push((format!("state {}", state.id), state.source_location.clone()));
+        }
+        for transition in &state.transitions {
+            if !transition.req.is_empty() {
+                continue;
+            }
+            let event = if transition.event.is_empty() {
+                "(eventless)"
+            } else {
+                transition.event.as_str()
+            };
+            let target = if transition.target.is_empty() {
+                "(no target)"
+            } else {
+                transition.target.as_str()
+            };
+            found.push((
+                format!(
+                    "the transition of state {} on {event} to {target}",
+                    state.id
+                ),
+                transition.source_location.clone(),
+            ));
+        }
+    }
+    found
+}
+
 /// A profile, read and validated.
 #[derive(Debug, Clone)]
 pub struct AuthoringProfile {
@@ -348,6 +433,7 @@ pub struct AuthoringProfile {
     interface: Option<InterfaceRule>,
     names: Option<NamesRule>,
     evidence: Option<EvidenceRule>,
+    traceability: Option<TraceabilityRule>,
     house_rules: Vec<HouseRule>,
     guidance: Vec<String>,
     sha256: String,
@@ -437,6 +523,7 @@ impl AuthoringProfile {
             interface: settings.interface,
             names: settings.names,
             evidence: settings.evidence,
+            traceability: settings.traceability,
             house_rules: settings.house_rules.unwrap_or_default(),
             guidance: settings.guidance.unwrap_or_default(),
             sha256: hex_encode(&sha256_bytes(text.as_bytes())),
@@ -466,7 +553,10 @@ impl AuthoringProfile {
     /// Whether the profile asks anything of a statechart at all — false for a
     /// profile that holds only settings no statechart is judged by, or none.
     pub fn judges_statecharts(&self) -> bool {
-        self.interface.is_some() || self.names.is_some() || self.evidence.is_some()
+        self.interface.is_some()
+            || self.names.is_some()
+            || self.evidence.is_some()
+            || self.traceability.is_some()
     }
 
     /// The instructions the profile hands to whoever writes the document, in
@@ -534,6 +624,17 @@ impl AuthoringProfile {
         if let Some(basis) = &model.kind_basis {
             for error in self.unanchored(basis) {
                 place(error, model.source_location.as_ref());
+            }
+        }
+        if self.traceability == Some(TraceabilityRule::Required) {
+            for (element, at) in untraced_elements(model) {
+                place(
+                    ProfileError::ElementUntraced {
+                        profile: profile(),
+                        element,
+                    },
+                    at.as_ref().or(model.source_location.as_ref()),
+                );
             }
         }
         findings

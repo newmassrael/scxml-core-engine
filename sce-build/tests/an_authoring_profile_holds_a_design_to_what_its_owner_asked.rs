@@ -1051,6 +1051,152 @@ fn a_document_no_setting_reaches_is_not_counted_as_judged() {
     assert_eq!(states["profile"]["judged"], 0, "{states}");
 }
 
+// ── traceability ──────────────────────────────────────────────────────
+
+/// A statechart with a state, two transitions and a `<cancel>` inside one of
+/// them, each carrying a requirement where `claims` says. The cancel is the
+/// case the rule must NOT reach: a transition's own actions do not inherit its
+/// `sce:req`, so a rule over every node would refuse a design that claims every
+/// sentence.
+fn traced(idle: &str, go: &str, back: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="lamp" initial="off" datamodel="ecmascript">
+  <state id="off"{idle}>
+    <onentry><send id="t" event="tick" delay="1s" target="#_internal"/></onentry>
+    <transition event="press" target="on"{go}>
+      <cancel sendid="t"/>
+    </transition>
+  </state>
+  <state id="on" sce:req="R2">
+    <transition event="press" target="off"{back}/>
+  </state>
+</scxml>
+"##
+    )
+}
+
+const TRACED: &str = r#"{"record":"sce-authoring-profile","v":1,"name":"owner-review",
+    "traceability":"required"}"#;
+
+#[test]
+fn an_element_that_claims_no_requirement_is_refused_under_a_profile_that_asks_for_one() {
+    let dir = design("profile-traceability");
+    fs::write(dir.join("traced.json"), TRACED).expect("write");
+    let claimed = traced(r#" sce:req="R1""#, r#" sce:req="R1""#, r#" sce:req="R2""#);
+    fs::write(dir.join("claimed.scxml"), &claimed).expect("write");
+    // The control that matters most: every state and transition claims one and
+    // the `<cancel>` inside the first transition claims nothing, and it is
+    // accepted. A rule over every node would refuse it, and the acceptance
+    // report's own table does count that cancel as unclaimed.
+    let held = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "claimed.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "traced.json",
+        ],
+    ));
+    assert_eq!(held["profile"]["judged"], 1, "{held}");
+
+    // Each way of leaving one out is its own record, naming the element.
+    let cases = [
+        (
+            traced("", r#" sce:req="R1""#, r#" sce:req="R2""#),
+            "state off",
+        ),
+        (
+            traced(r#" sce:req="R1""#, "", r#" sce:req="R2""#),
+            "the transition of state off on press to on",
+        ),
+        (
+            traced(r#" sce:req="R1""#, r#" sce:req="R1""#, ""),
+            "the transition of state on on press to off",
+        ),
+    ];
+    for (document, element) in cases {
+        fs::write(dir.join("crooked.scxml"), &document).expect("write");
+        let refused = run(
+            &dir,
+            &[
+                "check",
+                "crooked.scxml",
+                "-l",
+                "rust",
+                "--profile",
+                "traced.json",
+            ],
+        );
+        assert_eq!(refused.status.code(), Some(3), "{element}");
+        assert_eq!(codes(&refused), ["profile/element-untraced"], "{element}");
+        assert_eq!(records(&refused)[0]["actual"], element);
+    }
+
+    // Every element left out is listed, not the first: an owner told about one
+    // fixes it and meets the next.
+    fs::write(dir.join("bare.scxml"), traced("", "", "")).expect("write");
+    let bare = run(
+        &dir,
+        &[
+            "check",
+            "bare.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "traced.json",
+        ],
+    );
+    // `state on` claims R2 in the fixture, so what is left is `state off` and
+    // the two transitions: three records, in the order the document writes them.
+    assert_eq!(
+        codes(&bare),
+        ["profile/element-untraced"; 3],
+        "{:?}",
+        records(&bare)
+    );
+    let named: Vec<String> = records(&bare)
+        .iter()
+        .map(|r| r["actual"].as_str().expect("actual").to_string())
+        .collect();
+    assert_eq!(
+        named,
+        [
+            "state off",
+            "the transition of state off on press to on",
+            "the transition of state on on press to off",
+        ]
+    );
+}
+
+#[test]
+fn a_statechart_that_claims_nothing_is_accepted_without_the_setting() {
+    let dir = design("profile-traceability-off");
+    fs::write(dir.join("bare.scxml"), traced("", "", "")).expect("write");
+    // No profile at all.
+    manifest(&run(&dir, &["check", "bare.scxml", "-l", "rust"]));
+    // A profile that holds another setting and not this one.
+    fs::write(
+        dir.join("other.json"),
+        r#"{"record":"sce-authoring-profile","v":1,"evidence":"anchored"}"#,
+    )
+    .expect("write");
+    manifest(&run(
+        &dir,
+        &[
+            "check",
+            "bare.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "other.json",
+        ],
+    ));
+}
+
 // ── house rules ───────────────────────────────────────────────────────
 
 const HOUSE_RULES: &str = r#"{"record":"sce-authoring-profile","v":1,"name":"owner-review",

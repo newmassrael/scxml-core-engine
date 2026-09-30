@@ -131,3 +131,66 @@ edit("sce-build/src/open_matters.rs",
      r'''        if self.places() == self.distinct() {''',
      r'''        if true {''')
 PY
+
+# `traceability`: a state that claims no requirement is passed over, so a design
+# whose states say nothing of the specification is accepted under a profile that
+# asked each one to.
+mutation_case "a state claiming no requirement is not refused" <<'PY'
+edit("sce-build/src/authoring_profile.rs",
+     r'''        if state.req.is_empty() {''',
+     r'''        if false && state.req.is_empty() {''')
+PY
+
+# `traceability`: a transition that claims no requirement is passed over, which
+# is where the specification's behaviour is, so this is the refusal that matters.
+mutation_case "a transition claiming no requirement is not refused" <<'PY'
+edit("sce-build/src/authoring_profile.rs",
+     r'''            if !transition.req.is_empty() {
+                continue;
+            }''',
+     r'''            if true {
+                continue;
+            }''')
+PY
+
+# `traceability`: the walk stops after the first element, so an owner told about
+# one fixes it and meets the next, one refusal at a time.
+mutation_case "only the first untraced element is reported" <<'PY'
+edit("sce-build/src/authoring_profile.rs",
+     r'''            for (element, at) in untraced_elements(model) {''',
+     r'''            for (element, at) in untraced_elements(model).into_iter().take(1) {''')
+PY
+
+# `traceability`: the rule is read as a rule over every node the acceptance
+# report counts, so a design that claims every state and transition is refused
+# for the `<cancel>` inside one of them, which inherits nothing from it.
+# (The mutation counts an action as an element that must claim.)
+mutation_case "an action inside a claimed transition is held to the rule" <<'PY'
+edit("sce-build/src/authoring_profile.rs",
+     r'''                transition.source_location.clone(),
+            ));
+        }
+    }
+    found''',
+     r'''                transition.source_location.clone(),
+            ));
+        }
+        for transition in &state.transitions {
+            for action in &transition.actions {
+                if action.req.is_empty() {
+                    found.push((format!("an action of state {}", state.id), None));
+                }
+            }
+        }
+    }
+    found''')
+PY
+
+# `traceability`: the setting is read but never set, so a profile that asks for
+# it changes nothing, which is the state the first draft of this feature was in
+# and the state an instruction alone leaves a real client in.
+mutation_case "the setting is read and never applied" <<'PY'
+edit("sce-build/src/authoring_profile.rs",
+     r'''        if self.traceability == Some(TraceabilityRule::Required) {''',
+     r'''        if false && self.traceability == Some(TraceabilityRule::Required) {''')
+PY

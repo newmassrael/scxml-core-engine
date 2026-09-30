@@ -3093,6 +3093,7 @@ the owner keeps beside the specification:
 | `interface` | enforced | `"closed"`: every statechart declares `sce:interface="closed"` (§2.16). Absent: the interface is not constrained. |
 | `names` | enforced | How the names a document defines are spelled, by class of name. See below. |
 | `evidence` | enforced | `"anchored"`: every `<sce:evidence>` of the `<sce:kind-basis>` carries a `provenance` anchor. An unanchored one is refused as `profile/evidence-unanchored`, quoting the evidence. |
+| `traceability` | enforced | `"required"`: every state and every transition claims a requirement (`sce:req`). One that claims none is refused as `profile/element-untraced`, naming it. See below. |
 | `house_rules` | reported | The owner's standing answers to gaps that recur, each `{id, rule}`. A draft that applies one cites it, `sce:assumed="<id>"`; every citation is listed. See below. |
 | `guidance` | guidance | Instructions to whoever writes the document, handed over as written. Nothing checks them. |
 
@@ -3175,6 +3176,39 @@ drafts of one door specification under a profile of spellings all kept to it,
 and the number of classes the drafts fall into did not fall (the words parted
 where the spellings had): a naming rule makes drafts agree on how a name is
 written, not on which name.
+
+#### The `traceability` setting
+
+`"traceability": "required"` asks that each state and each transition of a
+statechart claim a requirement (`sce:req`), so that the design says, element by
+element, which sentence of the specification it is there for. An element that
+claims none is refused as `profile/element-untraced`, once per element, naming
+the state or the transition (its state, its event, its target) and placed where
+it is written. Which id is the right one is a reading of the specification that
+only its author makes, so the refusal offers no fix; `scxml_requirement_set`
+(`tools/authoring`) makes the ids from the words of the specification a client
+quotes.
+
+It exists because an instruction did not do it. Measured 2026-10-01, fifteen
+drafts by a real client under a closed-interface profile, the server's
+instructions telling it to put each requirement's id on the element that carries
+it: none did, and none named the tool that lists them, because the request asked
+for a kind, a draft, a check and what is left open, and that is what it did. An
+owner who wants each sentence found in the design says so here, and a draft that
+ignores it is refused. Absent, nothing changes: a statechart with no `sce:req`
+is as accepted as it was.
+
+It reads states and transitions and NOT what runs inside them. A transition's
+own actions do not inherit its `sce:req` (an `<onentry>`'s do), so the
+acceptance report's table counts a `<cancel>` inside a claimed transition as
+claiming nothing (`requirements_report.rs`, "The unclaimed block dilutes"; on one
+real document its unclaimed block went from 2 to 7 with no new behaviour), and a
+rule over every node would refuse a design that claims every sentence. A state
+and a transition are the units that do not dilute. The rule says an element
+CLAIMS a requirement and never that the claim is right: whether the id belongs
+on it is what the acceptance report puts beside the sentence for the owner to
+judge, and whether every requirement is claimed is `scxml_requirements` with the
+specification's manifest.
 
 #### The `house_rules` setting
 
@@ -4277,6 +4311,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `profile/event-structure` | Validation |
 | `profile/event-prefix-of-another` | Validation |
 | `profile/evidence-unanchored` | Validation |
+| `profile/element-untraced` | Validation |
 | `scxml/non-exhaustive-event-handling` | Validation |
 | `scxml/contradictory-unhandled-declaration` | Validation |
 | `scxml/stale-unhandled-declaration` | Validation |
