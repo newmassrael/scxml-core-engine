@@ -2935,11 +2935,23 @@ value (an empty array, an object built from its `<sce:set>`s). Those, and
 `<sce:append>` and `<sce:clear>`, are the only elements a lowered document does
 not keep as the author wrote them.
 
-A construct with no lowering yet — a call of an imported algorithm,
-`<sce:action>`, executable content beyond `<assign>`, `<if>`, `<log>`,
-`<raise>`, `<cancel>`, `<sce:append>`, `<sce:clear>` and a `<send>` with no
-`<param>` — is refused with `generate/unsupported-feature` naming it, never
-passed through half lowered.
+An imported algorithm travels in the document: the `<data>` that installs the
+library installs each algorithm the document calls as `SceStatic.algorithms.<name>`,
+and the guard or assignment that calls it calls that. Its body is lowered through
+the same expression lowerer and the same typing as the generated backends', so a
+name, an operand type and a checked integer operation are judged as they are for
+Kotlin; a `may-fail` algorithm's failure, and a `<sce:require>` that does not
+hold, are throws, and the expression that called it fails as an overflow of its
+own does. What is lowered of an algorithm today is its scalar core — scalar
+parameters and locals, `<sce:var>`, `<sce:assign>`, `<sce:if>`, `<sce:while>`,
+`<sce:require>`, `<sce:return>`, which is every algorithm of `sce:std/sync`.
+
+A construct with no lowering yet — `<sce:action>`, an algorithm with a `bytes`,
+list or record parameter or return, a constant, a buffer, `<sce:foreach>`,
+`<sce:call>` or an import of its own, and executable content beyond `<assign>`,
+`<if>`, `<log>`, `<raise>`, `<cancel>`, `<sce:append>`, `<sce:clear>` and a
+`<send>` with no `<param>` — is refused with `generate/unsupported-feature`
+naming it, never passed through half lowered.
 `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`
 replays the scenarios the Kotlin and Rust backends replay
 (`sce-build/tests/fixtures/static_datamodel/scenarios/*.json`) against the

@@ -6395,15 +6395,10 @@ pub(crate) fn pass_failure_on(
             format!("scealgorithm.Take[{value}](&sceFailure)({call})")
         }
         ExprTarget::Python => call.to_string(),
-        // A `may-fail` algorithm is a code-generation kind: a `sce-static`
-        // document's expressions reach no such callee, and the Interpreter has
-        // no failure channel to pass one on through.
-        ExprTarget::Js => {
-            return Err(ExprError::UnsupportedConstruct {
-                construct: "a call of a `may-fail` algorithm in an ecmascript lowering".to_string(),
-                observed: Some(symbol.to_string()),
-            })
-        }
+        // A failure is a throw, which passes itself on as Python's does: the
+        // expression that called the algorithm fails as an overflow of its own
+        // does, and the Interpreter answers that with `error.execution`.
+        ExprTarget::Js => call.to_string(),
     })
 }
 

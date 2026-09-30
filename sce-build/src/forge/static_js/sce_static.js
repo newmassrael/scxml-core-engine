@@ -143,6 +143,12 @@
       next[field] = value;
       return next;
     },
+    require: function (holds, what) {
+      if (holds !== true) {
+        fail('the precondition ' + what + ' does not hold');
+      }
+    },
+    algorithms: {},
     at: function (collection, index) {
       if (!Number.isSafeInteger(index) || index < 0 || index >= collection.length) {
         fail('the index ' + String(index) + ' is outside the collection');

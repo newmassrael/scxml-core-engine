@@ -1,0 +1,34 @@
+{
+  "machine": "static_record",
+  "about": "A record variable whose shown day steps on no further than the month allows, the bound computed by the imported algorithm days_in_month from the record's own fields on every step: September has 30 days, so six steps from the 24th reach 30 and the seventh finds the guard false; February has 28 in 2027 and 29 in the leap year 2028. A picked day replaces the record field by field from the event's typed payload. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "one <sce:set> per field of Day",
+      "expect": { "state": "showing", "variables": { "shown": { "year": 2026, "month": 9, "dayOfMonth": 24 }, "refusals": 0 } } },
+
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2026, "month": 9, "dayOfMonth": 25 } } } },
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2026, "month": 9, "dayOfMonth": 26 } } } },
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2026, "month": 9, "dayOfMonth": 27 } } } },
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2026, "month": 9, "dayOfMonth": 28 } } } },
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2026, "month": 9, "dayOfMonth": 29 } } } },
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2026, "month": 9, "dayOfMonth": 30 } } } },
+    { "note": "September has 30 days: the guard `shown.dayOfMonth < DaysInMonth(shown.year, shown.month)` is false",
+      "event": "next", "expect": { "variables": { "shown": { "year": 2026, "month": 9, "dayOfMonth": 30 } } } },
+
+    { "note": "February 2027 has 28 days",
+      "event": "day.picked", "data": { "year": 2027, "month": 2, "dayOfMonth": 27 },
+      "expect": { "variables": { "shown": { "year": 2027, "month": 2, "dayOfMonth": 27 } } } },
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2027, "month": 2, "dayOfMonth": 28 } } } },
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2027, "month": 2, "dayOfMonth": 28 } } } },
+
+    { "note": "February 2028, a leap year, has 29 days: the bound is computed from the fields each time, not folded to a constant",
+      "event": "day.picked", "data": { "year": 2028, "month": 2, "dayOfMonth": 27 },
+      "expect": { "variables": { "shown": { "year": 2028, "month": 2, "dayOfMonth": 27 } } } },
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2028, "month": 2, "dayOfMonth": 28 } } } },
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2028, "month": 2, "dayOfMonth": 29 } } } },
+    { "event": "next", "expect": { "variables": { "shown": { "year": 2028, "month": 2, "dayOfMonth": 29 } } } },
+
+    { "note": "a picked day replaces the record from the typed payload",
+      "event": "day.picked", "data": { "year": 2027, "month": 1, "dayOfMonth": 3 },
+      "expect": { "variables": { "shown": { "year": 2027, "month": 1, "dayOfMonth": 3 }, "refusals": 0 } } }
+  ]
+}

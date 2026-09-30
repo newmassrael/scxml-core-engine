@@ -33,11 +33,20 @@
 //!
 //! # What it does not lower yet
 //!
-//! Calls of imported algorithms, `<sce:action>`, and the executable content the
-//! walk does not lower are refused with
-//! `generate/unsupported-feature` naming the construct, never passed through:
-//! an expression left as the author wrote it would be run by the script engine
-//! as ECMAScript, which is the mis-execution the refusal exists to prevent.
+//! `<sce:action>`, an algorithm with more in it than its scalar core
+//! ([`crate::forge::static_js_algorithm`]), and the executable content the walk
+//! does not lower are refused with `generate/unsupported-feature` naming the
+//! construct, never passed through: an expression left as the author wrote it
+//! would be run by the script engine as ECMAScript, which is the
+//! mis-execution the refusal exists to prevent.
+//!
+//! # Algorithms
+//!
+//! An imported algorithm is read from beside the document and lowered to a
+//! function installed by the `<data>` that installs the library, as
+//! `SceStatic.algorithms.<name>`; a call of it is a call of that. A failure —
+//! a checked operation, a `<sce:require>` — is a throw, so the expression that
+//! called it fails as an overflow of its own does.
 //!
 //! # Lists and records
 //!
@@ -62,12 +71,14 @@
 //! malformed delivery, and the Interpreter raises one for each expression that
 //! reads a field.
 
+use std::collections::BTreeMap;
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::forge::error::{ForgeError, GenerateError, Located};
 use crate::forge::expr::ExprTarget;
-use crate::forge::model::SceType;
+use crate::forge::model::{ForgeDocument, ForgeKind, SceType};
+use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{lower, Callee, LoweredElement, LoweredSite, StaticTarget};
 use crate::forge::type_ctx::StaticScope;
 use crate::model::{Action, Datamodel, SCXMLModel};
@@ -129,14 +140,37 @@ fn without_block_comments(source: &str) -> String {
 ///
 /// A line comment would swallow the rest of that one line, so the source holds
 /// none (`the_library_survives_being_put_on_one_line` holds it to that).
-pub(crate) fn runtime_expression() -> String {
+///
+/// The algorithms the document calls are installed beside the library, each as
+/// `SceStatic.algorithms.<symbol>`: they are written in the same attribute, so
+/// the function a guard calls exists before the first guard is evaluated.
+pub(crate) fn runtime_expression(algorithms: &[LoweredAlgorithm]) -> String {
     let library = without_block_comments(RUNTIME_SOURCE)
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
         .join(" ");
-    format!("(function () {{ globalThis.{RUNTIME_GLOBAL} = {library}; return true; }})()")
+    let installed: String = algorithms
+        .iter()
+        .map(|a| {
+            format!(
+                " {RUNTIME_GLOBAL}.algorithms.{} = {};",
+                a.symbol, a.function
+            )
+        })
+        .collect();
+    format!(
+        "(function () {{ globalThis.{RUNTIME_GLOBAL} = {library};{installed} return true; }})()"
+    )
+}
+
+/// An algorithm the document calls, as the function it becomes
+/// ([`crate::forge::static_js_algorithm`]) and the name it is installed under.
+#[derive(Debug, Clone)]
+pub(crate) struct LoweredAlgorithm {
+    pub(crate) symbol: String,
+    pub(crate) function: String,
 }
 
 /// The Interpreter's script engine, as a target of the `sce-static` walk.
@@ -148,9 +182,21 @@ pub(crate) fn runtime_expression() -> String {
 /// ([`StaticLowering::sites`]). So the methods that spell a statement answer
 /// nothing, and the ones for a construct [`Self::unsupported`] refuses are
 /// never asked.
-pub struct JsTarget;
+///
+/// It is built with the algorithms the document calls, already lowered: a call
+/// of one it has none for is refused by the walk, where the document is read,
+/// and never left as a name the script engine does not define.
+pub struct JsTarget {
+    /// Each imported algorithm's document name, and the symbol it is installed
+    /// under.
+    algorithms: BTreeMap<String, String>,
+}
 
 impl JsTarget {
+    fn new(algorithms: BTreeMap<String, String>) -> Self {
+        Self { algorithms }
+    }
+
     /// The `<assign>` of `location` to the expression `expr`, as the element.
     fn assign_element(&self, location: &str, expr: &str) -> String {
         format!(
@@ -165,8 +211,14 @@ impl StaticTarget for JsTarget {
     fn name(&self) -> &'static str {
         LOWERED_DATAMODEL
     }
-    fn callee(&self, _document_name: &str) -> Option<Callee> {
-        None
+    fn callee(&self, document_name: &str) -> Option<Callee> {
+        let symbol = self.algorithms.get(document_name)?;
+        Some(Callee {
+            call: format!("{RUNTIME_GLOBAL}.algorithms.{symbol}"),
+            // The function travels in the document, so there is nothing to
+            // import.
+            import: String::new(),
+        })
     }
     fn unsupported(&self, model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {
         if !model.global_scripts.is_empty() {
@@ -493,7 +545,11 @@ fn is_scxml_element(node: &roxmltree::Node<'_, '_>, name: &str) -> bool {
 /// The edits that turn the document into an ECMAScript one: its data model,
 /// and — when an expression calls the library — the `<data>` that installs it,
 /// placed first so every other `<data>` and every later expression finds it.
-fn document_edits(text: &str, needs_library: bool) -> Result<Vec<Edit>, GenerateError> {
+fn document_edits(
+    text: &str,
+    needs_library: bool,
+    algorithms: &[LoweredAlgorithm],
+) -> Result<Vec<Edit>, GenerateError> {
     let document = roxmltree::Document::parse(text).map_err(|e| {
         GenerateError::unsupported(format!(
             "the document cannot be read again to be rewritten: {e}"
@@ -528,7 +584,7 @@ fn document_edits(text: &str, needs_library: bool) -> Result<Vec<Edit>, Generate
             range: at..at,
             text: format!(
                 "<data id=\"{RUNTIME_DATA_ID}\" expr=\"{}\"/>\n    ",
-                xml_attribute_value(&runtime_expression())
+                xml_attribute_value(&runtime_expression(algorithms))
             ),
         });
     }
@@ -544,6 +600,7 @@ fn lower_parsed(
     text: &str,
     model: &SCXMLModel,
     label: &str,
+    base_dir: Option<&Path>,
 ) -> Result<String, Located<ForgeError>> {
     let refuse = |error: GenerateError| Located::in_file(ForgeError::from(error), label);
     if model.datamodel != Datamodel::SceStatic {
@@ -560,9 +617,17 @@ fn lower_parsed(
             variable.id
         ))));
     }
+    let algorithms = lowered_algorithms(model, base_dir).map_err(refuse)?;
+    let target = JsTarget::new(
+        algorithms
+            .iter()
+            .map(|(document, algorithm)| (document.clone(), algorithm.symbol.clone()))
+            .collect(),
+    );
+    let installed: Vec<LoweredAlgorithm> = algorithms.into_values().collect();
     let mut lowered = model.clone();
     let machine = crate::filters::to_pascal_case(model.name.clone());
-    let lowering = lower(&mut lowered, &machine, &[], &JsTarget).map_err(refuse)?;
+    let lowering = lower(&mut lowered, &machine, &[], &target).map_err(refuse)?;
     let mut edits = site_edits(&lowering.sites).map_err(refuse)?;
     edits.extend(element_edits(text, &lowering.elements).map_err(refuse)?);
     let library_call = format!("{RUNTIME_GLOBAL}.");
@@ -572,8 +637,59 @@ fn lower_parsed(
         .map(|site| site.text.as_str())
         .chain(lowering.elements.iter().map(|e| e.text.as_str()))
         .any(|text| text.contains(&library_call));
-    edits.extend(document_edits(text, needs_library).map_err(refuse)?);
+    edits.extend(document_edits(text, needs_library, &installed).map_err(refuse)?);
     apply(text, edits).map_err(refuse)
+}
+
+/// Every algorithm `model` imports, read from beside the document and lowered,
+/// by the name of the document it came from. The walk asks the target for each
+/// call, so one that is not here is refused there.
+///
+/// Refused here, by name: an import with no directory to be read from, one that
+/// cannot be read, one that is not an algorithm, one that imports something of
+/// its own, and every construct of its body that has no lowering yet.
+fn lowered_algorithms(
+    model: &SCXMLModel,
+    base_dir: Option<&Path>,
+) -> Result<BTreeMap<String, LoweredAlgorithm>, GenerateError> {
+    let mut lowered = BTreeMap::new();
+    let Some(scope) = StaticScope::of(model) else {
+        return Ok(lowered);
+    };
+    for callee in &scope.callees {
+        let what = |reason: &str| {
+            GenerateError::unsupported(format!(
+                "`{}(…)`: the algorithm it imports {reason}",
+                callee.alias
+            ))
+        };
+        let import = model
+            .forge_imports
+            .iter()
+            .find(|i| i.alias == callee.alias && i.kind == ForgeKind::Algorithm)
+            .ok_or_else(|| what("has no <sce:import> this lowering can read"))?;
+        let dir = base_dir
+            .ok_or_else(|| what("cannot be read: the document was given with no directory"))?;
+        let parsed = crate::forge::import_source::parse_quietly(dir, import)
+            .ok_or_else(|| what("cannot be read"))?;
+        if !parsed.imports.is_empty() {
+            return Err(what(
+                "imports another document, which has no ecmascript lowering yet",
+            ));
+        }
+        let ForgeDocument::Algorithm(algorithm) = parsed.document else {
+            return Err(what("is not an algorithm"));
+        };
+        let function = static_js_algorithm::lower(&algorithm)?;
+        lowered.insert(
+            callee.document_name.clone(),
+            LoweredAlgorithm {
+                symbol: static_js_algorithm::symbol(&algorithm.name),
+                function,
+            },
+        );
+    }
+    Ok(lowered)
 }
 
 /// The document `path` names, lowered for the Interpreter — through the same
@@ -595,14 +711,14 @@ pub fn lower_file(path: &str, include_dirs: Vec<PathBuf>) -> Result<String, Loca
                 path,
             )
         })?;
-    lower_parsed(&expanded, &model, path)
+    lower_parsed(&expanded, &model, path, Path::new(path).parent())
 }
 
 /// `text`, a document read from memory, lowered for the Interpreter. Nothing
 /// beside it is resolved: no include, no import.
 pub fn lower_source(text: &str, name: &str) -> Result<String, Located<ForgeError>> {
     let model = crate::parser::SCXMLParser::new().parse_string(text, name)?;
-    lower_parsed(text, &model, name)
+    lower_parsed(text, &model, name, None)
 }
 
 #[cfg(test)]
@@ -642,7 +758,7 @@ mod tests {
     /// the emitter can write is one the library defines.
     #[test]
     fn the_library_defines_every_name_the_emitter_writes() {
-        let text = runtime_expression();
+        let text = runtime_expression(&[]);
         for op in EVERY_OP {
             let method = format!("{}: function", op.helper());
             if is_integer_method(op) {
@@ -675,7 +791,7 @@ mod tests {
     /// not survive the Interpreter's script boundary.
     #[test]
     fn the_library_is_one_self_contained_expression() {
-        let text = runtime_expression();
+        let text = runtime_expression(&[]);
         assert!(
             text.starts_with(&format!(
                 "(function () {{ globalThis.{RUNTIME_GLOBAL} = (function () {{"
@@ -773,7 +889,7 @@ mod tests {
             );
         let library = format!(
             "<data id=\"{RUNTIME_DATA_ID}\" expr=\"{}\"/>\n    ",
-            xml_attribute_value(&runtime_expression())
+            xml_attribute_value(&runtime_expression(&[]))
         );
         assert_eq!(undone.replacen(&library, "", 1), COUNTER);
     }
@@ -796,7 +912,10 @@ mod tests {
             Some(RUNTIME_DATA_ID),
             "the library is installed before every other <data>"
         );
-        assert_eq!(first.attribute("expr"), Some(runtime_expression().as_str()));
+        assert_eq!(
+            first.attribute("expr"),
+            Some(runtime_expression(&[]).as_str())
+        );
         let condition = root
             .descendants()
             .find(|n| is_scxml_element(n, "transition") && n.attribute("event") == Some("bump"))

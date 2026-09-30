@@ -101,11 +101,12 @@ fn every_fixture_is_lowered_or_refused_by_name() {
         }
     }
     // Floor: a scan that found nothing to lower would pass. What is lowered
-    // today — scalars, checked integers, the typed payload, lists and records
-    // — is at least these seven machines, and the floor rises as the lowering
-    // grows (an algorithm call is what keeps `static_record` out).
+    // today — scalars, checked integers, the typed payload, lists, records and
+    // calls of scalar algorithms — is at least these nine machines, and the
+    // floor rises as the lowering grows (`static_host_call` needs a host action
+    // and is the one left).
     assert!(
-        lowered.len() >= 7,
+        lowered.len() >= 9,
         "lowered {lowered:?}, refused {:?}",
         refused.iter().map(|(n, _)| n).collect::<Vec<_>>()
     );
@@ -178,6 +179,43 @@ fn a_record_is_built_whole_and_written_a_field_at_a_time() {
             .descendants()
             .any(|n| n.is_element() && n.tag_name().name() == "set"),
         "{out}"
+    );
+}
+
+/// An algorithm the document imports travels in it: installed by the library's
+/// `<data>` under `SceStatic.algorithms`, and called by that name from the
+/// guard that calls it — the function a generated machine would have linked.
+#[test]
+fn an_imported_algorithm_travels_in_the_document_and_is_called_by_its_name() {
+    let out = lowered_fixture("static_record");
+    let document = roxmltree::Document::parse(&out).expect("well-formed");
+    let installer = document
+        .descendants()
+        .find(|n| n.attribute("id") == Some("SceStaticInstalled"))
+        .and_then(|n| n.attribute("expr"))
+        .expect("the library is installed");
+    assert!(
+        installer.contains(
+            "SceStatic.algorithms.days_in_month = function (year, month) { var days = 31;"
+        ),
+        "the algorithm is installed beside the library: {installer}"
+    );
+    let guard = document
+        .descendants()
+        .filter(|n| n.attribute("event") == Some("next"))
+        .find_map(|n| n.attribute("cond"))
+        .expect("the guard that calls it");
+    assert_eq!(
+        guard, "shown.dayOfMonth < SceStatic.algorithms.days_in_month(shown.year, shown.month)",
+        "the call reads the record's fields, and fails as an expression of the document does"
+    );
+
+    // A may-fail algorithm keeps its preconditions, and the document that
+    // calls it says nothing of how a failure is passed on: it is a throw.
+    let sync = lowered_fixture("sync_client");
+    assert!(
+        sync.contains("SceStatic.require("),
+        "a precondition of sync_failure is checked: {sync}"
     );
 }
 

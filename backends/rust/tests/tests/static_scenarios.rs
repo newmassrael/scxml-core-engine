@@ -38,6 +38,9 @@ use sce_rust_tests::integration::static_datamodel::static_payload_sm::{
 use sce_rust_tests::integration::static_datamodel::static_record_fields_sm::{
     StaticRecordFieldsPersist, StaticRecordFieldsPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_record_sm::{
+    StaticRecordPersist, StaticRecordPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::sync_client_sm::{
     SyncClientPersist, SyncClientPolicy,
 };
@@ -188,6 +191,17 @@ fn static_list_fills_to_its_capacity_and_is_emptied() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_list.json"
+        ),
+    );
+}
+
+#[test]
+fn static_record_steps_no_further_than_the_month_allows() {
+    replay(
+        Engine::new(StaticRecordPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record.json"
         ),
     );
 }

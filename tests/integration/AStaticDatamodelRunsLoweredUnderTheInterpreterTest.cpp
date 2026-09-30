@@ -219,11 +219,11 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     }
 
     // Floor: a scan that found nothing to replay would pass, so what it must
-    // have replayed is asserted. Every scenario but sync_client's is of a
-    // machine whose every construct the lowering covers today, and the floor
-    // rises as the lowering grows.
-    EXPECT_GE(replayed.size(), 8u) << "replayed " << replayed.size()
-                                   << " scenarios, not yet lowered: " << notYetLowered.size();
+    // have replayed is asserted. Every scenario is of a machine whose every
+    // construct the lowering covers today, and the floor rises as the lowering
+    // grows.
+    EXPECT_GE(replayed.size(), 10u) << "replayed " << replayed.size()
+                                    << " scenarios, not yet lowered: " << notYetLowered.size();
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");
     }
