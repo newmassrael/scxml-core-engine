@@ -83,6 +83,44 @@ edit("scripts/lib/mutation_failures.sh",
      "")
 PY
 
+# ── A test that floods its log holds the round hostage ─────────────
+#
+# The account of a failure is a diagnostic, and it was buffered by appending
+# every line of a test to one string — quadratic, so a single test that printed
+# a million lines kept `awk` on one CPU for fifty minutes while the verdict,
+# which is read after it, waited. The bound keeps the start of a block, the end
+# of it, and the failure the runner announced between them, and says what it cut.
+# Each part is a case, because each one lets a different reader down.
+
+mutation_case "the head of a block is no longer bounded" <<'PY'
+edit("scripts/lib/mutation_failures.sh",
+     """        if (nhead <= head_max) { head[nhead++] = line; return }
+""",
+     """        if (1) { head[nhead++] = line; return }
+""")
+PY
+
+mutation_case "the end of a block is dropped with its middle" <<'PY'
+edit("scripts/lib/mutation_failures.sh",
+     """        for (j = from; j < rest; j++) print ring[j % tail_max]
+""",
+     "")
+PY
+
+mutation_case "a failure announced in the dropped middle is not kept" <<'PY'
+edit("scripts/lib/mutation_failures.sh",
+     """            if (nnote < note_max) { notes[nnote] = line; note_at[nnote] = rest; nnote++ }
+""",
+     "")
+PY
+
+mutation_case "a cut block no longer says it was cut" <<'PY'
+edit("scripts/lib/mutation_failures.sh",
+     """            printf "[mutate: %d line(s) of this test output were dropped here; the first %d and the last %d lines of it are kept]\\n", from, head_max, kept
+""",
+     "")
+PY
+
 # ── A parser that reads outside its bracket ────────────────────────
 #
 # gtest repeats every failure in an end-of-run summary that opens no

@@ -83,6 +83,35 @@ fn parser_output(function: &str, captured: &str) -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
+/// The same, under a wall-clock ceiling. A parser that buffers a flood the
+/// wrong way does not fail an assertion, it takes hours; `timeout` turns that
+/// into a failure this test can read (exit 124) instead of a hang.
+fn parser_output_within(function: &str, captured: &str, seconds: u32) -> String {
+    let dir = tempdir().expect("temp dir");
+    let sample = dir.path().join("captured.txt");
+    fs::write(&sample, captured).expect("write the sample");
+
+    let out = Command::new("timeout")
+        .arg(seconds.to_string())
+        .arg("bash")
+        .arg("-c")
+        .arg(format!(
+            "source scripts/lib/mutation_failures.sh; {function} < {}",
+            sample.display()
+        ))
+        .current_dir(repo_root())
+        .output()
+        .expect("run the parser under timeout");
+    assert!(
+        out.status.success(),
+        "{function} did not finish {} lines in {seconds}s (exit {}): a parser that buffers \
+         a test's output by appending it to one string is quadratic in that output",
+        captured.lines().count(),
+        out.status
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
 #[test]
 fn gtest_detail_is_the_bracket_around_the_failure_and_not_the_summary() {
     // gtest brackets a test with `[ RUN      ]` and closes it with a verdict;
@@ -112,6 +141,120 @@ fn gtest_detail_is_the_bracket_around_the_failure_and_not_the_summary() {
     assert!(
         !detail.contains("1 test, listed below"),
         "the end-of-run summary opens no bracket and must not be read as one:\n{detail}"
+    );
+}
+
+/// A gtest console holding ONE failing test that floods its log, with the
+/// failure announced in the middle of the flood — the shape that stopped a
+/// mutation round on 2026-09-30 (979,037 lines, 148 MB, fifty minutes of one
+/// CPU and no end in sight). Scaled to what a test can afford; the old parser
+/// needs minutes for this, the bounded one a fraction of a second.
+fn a_flooding_gtest_console(each_side: usize) -> String {
+    let mut console = String::from("3: [ RUN      ] Suite.Flood\n");
+    for i in 0..each_side {
+        console.push_str(&format!("3: [debug] spinning {i}\n"));
+    }
+    console.push_str(
+        "3: /w/x.cc:12: Failure\n\
+         3: Expected equality of these values:\n\
+         3:   a\n\
+         3:     Which is: 1\n",
+    );
+    for i in 0..each_side {
+        console.push_str(&format!("3: [debug] spinning again {i}\n"));
+    }
+    console.push_str("3: [  FAILED  ] Suite.Flood (5008 ms)\n");
+    console
+}
+
+#[test]
+fn a_test_that_floods_its_log_is_read_in_bounded_time_and_keeps_its_diagnosis() {
+    // What a person reads a failure's account for is its edges and the failure
+    // the runner announced. A flood must cost neither the time it takes to read
+    // it once nor those lines.
+    let each_side = 300_000;
+    let detail = parser_output_within(
+        "mutation_detail_from_gtest",
+        &a_flooding_gtest_console(each_side),
+        60,
+    );
+
+    let lines = detail.lines().count();
+    assert!(
+        lines < 800,
+        "a block of {} lines must be bounded, and {lines} lines came out",
+        2 * each_side
+    );
+    assert!(
+        detail.starts_with("[ RUN      ] Suite.Flood\n") && detail.contains("spinning 0\n"),
+        "the start of the test is what a reader looks for first:\n{}",
+        &detail[..detail.len().min(400)]
+    );
+    assert!(
+        detail.contains(&format!("spinning again {}\n", each_side - 1))
+            && detail
+                .trim_end()
+                .ends_with("[  FAILED  ] Suite.Flood (5008 ms)"),
+        "the lines just before the verdict, and the verdict, are kept"
+    );
+    assert!(
+        detail.contains("/w/x.cc:12: Failure") && detail.contains("Which is: 1"),
+        "a failure announced in the middle of the flood is the diagnosis and must survive the cut"
+    );
+    assert!(
+        detail.contains("line(s) of this test output were dropped here"),
+        "a cut that does not say it was made reads as a short account, and a missing \
+         failure as one that did not happen"
+    );
+}
+
+#[test]
+fn a_block_that_fits_is_carried_whole_and_unmarked() {
+    // The bound is for floods. A block within HEAD + TAIL is exactly what the
+    // runner printed, in order, with nothing added — so nothing that read this
+    // account before has to read it differently now.
+    let mut captured = String::from("[ RUN      ] Suite.Red\n");
+    let mut expected = captured.clone();
+    for i in 0..300 {
+        let line = format!("line {i}\n");
+        captured.push_str(&line);
+        expected.push_str(&line);
+    }
+    captured.push_str("[  FAILED  ] Suite.Red (1 ms)\n");
+    expected.push_str("[  FAILED  ] Suite.Red (1 ms)\n");
+
+    let detail = parser_output("mutation_detail_from_gtest", &captured);
+    assert_eq!(
+        detail, expected,
+        "a block that fits must come out unchanged"
+    );
+}
+
+#[test]
+fn go_detail_of_a_flooding_test_is_bounded_too() {
+    // The Go parser buffered the same way and is bounded the same way; its
+    // announcement of a failure is the indented `file.go:line:` t.Errorf writes.
+    let each_side = 200_000;
+    let mut captured = String::from("=== RUN   TestFlood\n");
+    for i in 0..each_side {
+        captured.push_str(&format!("    spinning {i}\n"));
+    }
+    captured.push_str("    thing_test.go:41: the raiser answered 1, want 2\n");
+    for i in 0..each_side {
+        captured.push_str(&format!("    spinning again {i}\n"));
+    }
+    captured.push_str("--- FAIL: TestFlood (5.00s)\nFAIL\n");
+
+    let detail = parser_output_within("mutation_detail_from_go", &captured, 60);
+    assert!(
+        detail.lines().count() < 800,
+        "a Go flood must be bounded too"
+    );
+    assert!(
+        detail.contains("thing_test.go:41: the raiser answered 1, want 2")
+            && detail.contains("--- FAIL: TestFlood"),
+        "the logged failure and the verdict are the account:\n{}",
+        &detail[..detail.len().min(400)]
     );
 }
 
