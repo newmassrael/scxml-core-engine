@@ -87,6 +87,17 @@ the same way on every backend and a lowering that assumed order would not.
 short-circuits; the model does the same, and no backend read it eagerly. All six
 agreed with the model on every case, and a wrong expectation in six of the
 fixtures fails Go and C++.
+
+Sixth run, 2026-09-30: the three `outbound_*` documents, the sync client's
+`sync_failure`, `sync_delete_outcome` and `sync_upload_outcome`, the HTTP
+`precondition`, the four `mailbox_*` documents, `changes_since`, `changes_apply`,
+`utc_offset_at` and `utc_from_local` — 5300 cases. The models state each document's
+meaning (a change log is decided by each item's last row; a mailbox page is the ids
+above `after`; a local reading names the earliest instant, else the gap's) and are
+held to 280 hand cases before they generate; only where a failure's name depends on
+the order the document evaluates in (`utc_from_local`, `outbound_stale`) do they
+follow that order. All six backends agreed on every case, and a wrong expectation in
+seven of the fixtures fails Go and C++.
 """
 
 from __future__ import annotations
@@ -875,6 +886,250 @@ def ordering_prune(pending: list, nxt: int):
     return ("ok", [held for held in pending if held["seq"] >= nxt])
 
 
+class Failure(Exception):
+    """A checked operation of the document that has no value: its contract name."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self.name = name
+
+
+def checked(value: int, low: int = I64_MIN, high: int = I64_MAX) -> int:
+    """`value` if it fits, else the `overflow` the document's checked operation
+    reports — for a model that follows the document's order of evaluation."""
+    if not fits(value, low, high):
+        raise Failure("overflow")
+    return value
+
+
+def answering(model):
+    """A model that raises `Failure` where the document fails, as a model that
+    answers `("fails", name)`."""
+
+    def answer(*args):
+        try:
+            return model(*args)
+        except Failure as failure:
+            return ("fails", failure.name)
+
+    return answer
+
+
+def outbound_overflows(depth: int, max_pending: int):
+    return ("ok", depth >= max_pending)
+
+
+def outbound_sends_now(ready: bool, depth: int):
+    return ("ok", ready and depth == 0)
+
+
+def outbound_stale(enqueued_at: int, now: int, max_age: int):
+    """sce:std/mesh/outbound_stale — the clock difference is taken only when a
+    bound is given, and is checked."""
+    if max_age > 0:
+        return ("ok", checked(now - enqueued_at) > max_age)
+    return ("ok", False)
+
+
+def http_status_holds(kind: int, status: int, low: int) -> bool:
+    return low <= status <= 599 if kind == 4 else status == 0
+
+
+def sync_failure(kind: int, status: int):
+    """sce:std/sync/sync_failure — what to do about the failure that stopped a
+    run, the reference's order (each later rule wins)."""
+    if not (1 <= kind <= 9 and http_status_holds(kind, status, 300)):
+        return ("fails", "precondition")
+    action = 2
+    if kind in (8, 1, 2):
+        action = 1
+    if kind == 7:
+        action = 4
+    if kind == 3:
+        action = 0
+    if kind == 4 and status == 401:
+        action = 3
+    if kind == 4 and status in (503, 502):
+        action = 1
+    return ("ok", action)
+
+
+def sync_delete_outcome(kind: int, status: int):
+    """sce:std/sync/sync_delete_outcome — 0 forget the item, 1 forget the local
+    deletion and resynchronise, 2 keep the deletion and stop."""
+    if not (1 <= kind <= 9 and http_status_holds(kind, status, 200)):
+        return ("fails", "precondition")
+    outcome = 2
+    if kind == 4 and status < 500:
+        outcome = 0 if status < 300 or status in (404, 410) else 1
+    return ("ok", outcome)
+
+
+def sync_upload_outcome(create: bool, status: int, dav_error: bool):
+    """sce:std/sync/sync_upload_outcome — 0 stored, 1 discard the local change,
+    2 stop the run."""
+    if not 200 <= status <= 599:
+        return ("fails", "precondition")
+    outcome = 2
+    if status < 300:
+        outcome = 0
+    if status in (403, 412) or (status == 409 and dav_error):
+        outcome = 1
+    if not create and status in (404, 410, 409):
+        outcome = 1
+    return ("ok", outcome)
+
+
+def http_precondition(exists: bool, read_only: bool, if_match: int, unmodified: int, none_match: int, modified: int):
+    """sce:std/http/precondition — RFC 9110 13.2.2 in its order: If-Match, else
+    If-Unmodified-Since; then If-None-Match, else, for GET and HEAD, If-Modified-Since."""
+    if not (if_match <= 3 and unmodified <= 2 and none_match <= 3 and modified <= 2):
+        return ("fails", "precondition")
+    if if_match != 0:
+        if not exists or if_match == 3:
+            return ("ok", 412)
+    elif unmodified == 2:
+        return ("ok", 412)
+    if none_match != 0:
+        if (none_match == 1 and exists) or none_match == 2:
+            return ("ok", 304 if read_only else 412)
+    elif read_only and modified == 2:
+        return ("ok", 304)
+    return ("ok", 0)
+
+
+def slot_entry(ident: int, hi: int, lo: int) -> dict:
+    return {"id": ident, "hi": hi, "lo": lo}
+
+
+def mailbox_ack(queue: list, acked: list):
+    """sce:std/sync/mailbox_ack — every message not acknowledged, in order."""
+    return ("ok", [s for s in queue if {"hi": s["hi"], "lo": s["lo"]} not in acked])
+
+
+def mailbox_assign(queue: list, counter: int, hi: int, lo: int):
+    """sce:std/sync/mailbox_assign — the id already held for the message, or one
+    more than the counter; every queued id must be within the counter."""
+    if not 0 <= counter < I64_MAX:
+        return ("fails", "precondition")
+    ident = counter + 1
+    for held in queue:
+        if not 1 <= held["id"] <= counter:
+            return ("fails", "precondition")
+        if held["hi"] == hi and held["lo"] == lo:
+            ident = held["id"]
+    return ("ok", ident)
+
+
+def mailbox_insert(queue: list, counter: int, hi: int, lo: int):
+    """sce:std/sync/mailbox_insert — unchanged when the message is held, else
+    with it appended under `counter + 1`; ids must ascend and stay within counter."""
+    if not 0 <= counter < I64_MAX:
+        return ("fails", "precondition")
+    previous, held_already = 0, False
+    for held in queue:
+        if not previous < held["id"] <= counter:
+            return ("fails", "precondition")
+        previous = held["id"]
+        held_already = held_already or (held["hi"] == hi and held["lo"] == lo)
+    out = list(queue)
+    if not held_already:
+        out.append(slot_entry(counter + 1, hi, lo))
+    return ("ok", out)
+
+
+def mailbox_page(queue: list, after: int, limit: int):
+    """sce:std/sync/mailbox_page — the messages with an id above `after`, in id
+    order, at most `limit`; ids must ascend."""
+    if not 1 <= limit <= 256:
+        return ("fails", "precondition")
+    previous = 0
+    for held in queue:
+        if not held["id"] > previous:
+            return ("fails", "precondition")
+        previous = held["id"]
+    return ("ok", [held for held in queue if held["id"] > after][:limit])
+
+
+def change_entry(item: int, op: int, token: int) -> dict:
+    return {"item": item, "op": op, "token": token}
+
+
+def log_is_ordered(log: list) -> bool:
+    """Non-decreasing tokens and an `op` of 1 to 3, in every row."""
+    previous = 0
+    for row in log:
+        if not (row["token"] >= previous and 1 <= row["op"] <= 3):
+            return False
+        previous = row["token"]
+    return True
+
+
+def changes_since(log: list, since: int, current: int, low_water: int, limit: int):
+    """sce:std/sync/changes_since — of the rows at or after `since`, each item's
+    last one, in token order, at most `limit`."""
+    if not low_water <= since <= current or not 1 <= limit <= 256 or not log_is_ordered(log):
+        return ("fails", "precondition")
+    last_of = {}
+    for index, row in enumerate(log):
+        last_of[row["item"]] = index
+    rows = [
+        row for index, row in enumerate(log) if row["token"] >= since and last_of[row["item"]] == index
+    ]
+    return ("ok", rows[:limit])
+
+
+def changes_apply(state: list, log: list):
+    """sce:std/sync/changes_apply — each item decided by its last row alone: an
+    add or a modify writes it at the row's token, a delete removes it; an item no
+    row names keeps what `state` held; the answer ascends by item."""
+    items = [held["item"] for held in state]
+    if any(later <= earlier for earlier, later in zip(items, items[1:])) or not log_is_ordered(log):
+        return ("fails", "precondition")
+    held = {entry_["item"]: entry_["token"] for entry_ in state}
+    for row in log:
+        if row["op"] == 3:
+            held.pop(row["item"], None)
+        else:
+            held[row["item"]] = row["token"]
+    return ("ok", [{"item": item, "token": held[item]} for item in sorted(held)])
+
+
+def utc_offset_at(starts: list, offsets: list, t: int):
+    """sce:std/time/utc_offset_at — the offset of the last transition at or
+    before `t`; the table must be non-empty, equal in length, strictly ascending."""
+    if not (len(starts) == len(offsets) and len(starts) > 0):
+        return ("fails", "precondition")
+    if not t >= starts[0]:
+        return ("fails", "precondition")
+    if any(later <= earlier for earlier, later in zip(starts, starts[1:])):
+        return ("fails", "precondition")
+    in_force = max(index for index, start in enumerate(starts) if start <= t)
+    return ("ok", offsets[in_force])
+
+
+def utc_from_local(starts: list, offsets: list, local: int):
+    """sce:std/time/utc_from_local — the earliest instant whose offset gives the
+    reading, else, for a gap, the reading under the offset before it; each
+    subtraction is checked, in the order the document takes them."""
+    if not (len(starts) == len(offsets) and len(starts) > 0):
+        return ("fails", "precondition")
+    if not checked(local - offsets[0]) >= starts[0]:
+        return ("fails", "precondition")
+    count = len(starts)
+    for k in range(count):
+        if k > 0 and not starts[k] > starts[k - 1]:
+            return ("fails", "precondition")
+        instant = checked(local - offsets[k])
+        if instant >= starts[k] and (k + 1 == count or instant < starts[k + 1]):
+            return ("ok", instant)
+    for g in range(1, count):
+        before = checked(local - offsets[g - 1])
+        if before >= starts[g] and checked(local - offsets[g]) < starts[g]:
+            return ("ok", before)
+    return ("fails", "precondition")
+
+
 def epoch_ms(year, month, day, hour=0, minute=0, second=0, milli=0) -> int:
     instant = datetime.datetime(year, month, day, hour, minute, second)
     return (instant - datetime.datetime(1970, 1, 1)) // datetime.timedelta(milliseconds=1) + milli
@@ -1376,6 +1631,214 @@ def prune_args(rng: SplitMix64):
     return [pending, sequence_near(rng, base, pending)]
 
 
+# Mesh queues, the sync client's outcomes, the mailbox, the change log and the
+# time-zone table: the documents whose answers are decisions over a few small
+# codes or over lists a host keeps in order.
+
+
+def depth_value(rng: SplitMix64) -> int:
+    """A queue depth: small, at an edge of a width, or anywhere in uint32."""
+    kind = rng.below(10)
+    if kind < 5:
+        return rng.between(0, 6)
+    if kind < 8:
+        return rng.pick([255, 256, 65535, 65536, U32_MAX - 1, U32_MAX])
+    return rng.between(0, U32_MAX)
+
+
+def outbound_overflows_args(rng: SplitMix64):
+    depth = depth_value(rng)
+    return [depth, clamp(depth + rng.pick([-1, 0, 0, 1]), 0, U32_MAX) if rng.below(2) else depth_value(rng)]
+
+
+def outbound_sends_now_args(rng: SplitMix64):
+    return [rng.below(2) == 0, depth_value(rng)]
+
+
+def outbound_stale_args(rng: SplitMix64):
+    kind = rng.below(10)
+    if kind < 6:
+        enqueued = arrival_time(rng) if rng.below(3) == 0 else REALISTIC_WALL + rng.between(-100_000, 100_000)
+        age = rng.pick([0, 1, 49, 50, 51, 1000, 5000, rng.between(0, 100_000)])
+        now = clamp(enqueued + age + rng.pick([-1, 0, 1]), I64_MIN, I64_MAX)
+        bound = rng.pick([age, age - 1, age + 1, 0, 1, 50, 5000, -1])
+    else:
+        enqueued, now = arrival_time(rng), arrival_time(rng)
+        bound = rng.pick([0, 1, 50, I64_MAX, -1, I64_MIN])
+    return [enqueued, now, bound]
+
+
+STATUS_EDGES = [
+    0, 1, 199, 200, 201, 204, 206, 299, 300, 301, 302, 304, 400, 401, 403, 404, 409, 410, 412,
+    429, 499, 500, 501, 502, 503, 504, 599, 600, 601, -1, I32_MIN, I32_MAX,
+]
+
+
+def response_status(rng: SplitMix64) -> int:
+    return rng.pick(STATUS_EDGES) if rng.below(2) else rng.between(190, 610)
+
+
+def failure_args(rng: SplitMix64):
+    """A failure kind and the status it carries: a response has one, everything
+    else none, and now and then the pairing is wrong."""
+    kind = 4 if rng.below(3) == 0 else (rng.between(1, 9) if rng.below(10) else rng.pick([0, 10, 255]))
+    if kind == 4:
+        status = response_status(rng) if rng.below(4) == 0 else rng.between(300, 599)
+    else:
+        status = response_status(rng) if rng.below(8) == 0 else 0
+    return [kind, status]
+
+
+def upload_args(rng: SplitMix64):
+    return [rng.below(2) == 0, response_status(rng), rng.below(2) == 0]
+
+
+def http_precondition_args(rng: SplitMix64):
+    """The conditional headers of a request, in the codes the document names; an
+    occasional code beyond them is a precondition failure."""
+
+    def code(limit: int) -> int:
+        return rng.between(0, limit) if rng.below(20) else rng.pick([limit + 1, 4, 255])
+
+    return [rng.below(2) == 0, rng.below(2) == 0, code(3), code(2), code(3), code(2)]
+
+
+def mailbox_ids(rng: SplitMix64):
+    """Ascending slot ids from a base, near int64's end as well as near 1, and
+    now and then out of order, repeated or zero — a queue the host did not keep."""
+    base = rng.pick([1, 1, 7, 2**53, I64_MAX - 12])
+    ids, current = [], base - 1
+    for _ in range(rng.between(0, 7)):
+        step = rng.pick([1, 1, 1, 2, 5])
+        if current + step > I64_MAX - 2:
+            break
+        current += step
+        ids.append(current)
+    if len(ids) > 1 and rng.below(8) == 0:
+        ids = shuffled(rng, ids)
+    if ids and rng.below(10) == 0:
+        ids[rng.below(len(ids))] = rng.pick([0, -1, ids[0]])
+    return ids
+
+
+def mailbox_queue(rng: SplitMix64) -> list:
+    return [slot_entry(ident, **envelope_id(rng)) for ident in mailbox_ids(rng)]
+
+
+def mailbox_counter(rng: SplitMix64, queue: list) -> int:
+    top = max([held["id"] for held in queue], default=0)
+    room = [top] * 5 + [top + 1] * 3 + [min(top + 4, I64_MAX - 1)]
+    return rng.pick(room + [top - 1, 0, -1, I64_MAX - 1, I64_MAX])
+
+
+def message_key(rng: SplitMix64, queue: list) -> dict:
+    return rng.pick(queue) if queue and rng.below(2) else envelope_id(rng)
+
+
+def mailbox_ack_args(rng: SplitMix64):
+    queue = mailbox_queue(rng)
+    acked = [
+        {"hi": held["hi"], "lo": held["lo"]} for held in entry_sample(rng, queue)
+    ] + ([envelope_id(rng)] if rng.below(3) == 0 else [])
+    return [queue, shuffled(rng, acked)]
+
+
+def mailbox_assign_args(rng: SplitMix64):
+    queue = mailbox_queue(rng)
+    key = message_key(rng, queue)
+    return [queue, mailbox_counter(rng, queue), key["hi"], key["lo"]]
+
+
+def mailbox_page_args(rng: SplitMix64):
+    queue = mailbox_queue(rng)
+    known = [held["id"] for held in queue]
+    after = clamp(rng.pick(known + [0, -1, I64_MIN, I64_MAX]) + rng.pick([0, 0, -1, 1]), I64_MIN, I64_MAX)
+    limit = rng.pick([0, 257, U32_MAX, 256]) if rng.below(6) == 0 else rng.between(1, 8)
+    return [queue, after, limit]
+
+
+ITEM_EDGES = [0, 1, 2, 2**32, 2**53, 2**63, U64_MAX - 1, U64_MAX]
+TOKEN_BASES = [0, 1, 10, 2**53, U64_MAX - 12]
+
+
+def change_log(rng: SplitMix64, items: list) -> list:
+    """Rows in non-decreasing token order over a few items, each row an add, a
+    modify or a delete — and now and then one out of order or of an unknown op."""
+    rows, token = [], rng.pick(TOKEN_BASES)
+    for _ in range(rng.between(0, 8)):
+        token = clamp(token + rng.pick([0, 1, 1, 2, 5]), 0, U64_MAX)
+        rows.append(change_entry(rng.pick(items), rng.between(1, 3), token))
+    if rows and rng.below(10) == 0:
+        index = rng.below(len(rows))
+        if rng.below(2):
+            rows[index]["op"] = rng.pick([0, 4, 255])
+        else:
+            rows[index]["token"] = rng.pick([0, rows[index]["token"] + 7, U64_MAX])
+    return rows
+
+
+def change_items(rng: SplitMix64) -> list:
+    pool = [rng.pick(ITEM_EDGES) if rng.below(4) == 0 else rng.between(1, 6) for _ in range(rng.between(1, 5))]
+    return pool
+
+
+def changes_since_args(rng: SplitMix64):
+    log = change_log(rng, change_items(rng))
+    tokens = [row["token"] for row in log] or [0]
+    since = clamp(rng.pick(tokens) + rng.pick([0, 0, 1, -1]), 0, U64_MAX)
+    current = clamp(max(tokens) + rng.pick([1, 1, 2, 2, 3, 0, -1]), 0, U64_MAX)
+    low_water = clamp(since - rng.pick([0, 0, 0, 1, 3, 5, -1]), 0, U64_MAX)
+    limit = rng.pick([0, 257, U32_MAX, 256]) if rng.below(6) == 0 else rng.between(1, 6)
+    return [log, since, current, low_water, limit]
+
+
+def changes_apply_args(rng: SplitMix64):
+    items = change_items(rng)
+    held = sorted(set(entry_sample(rng, items)))
+    state = [{"item": item, "token": rng.pick(TOKEN_BASES) + rng.between(0, 3)} for item in held]
+    if len(state) > 1 and rng.below(10) == 0:
+        state = shuffled(rng, state)
+    return [state, change_log(rng, items)]
+
+
+def offset_table(rng: SplitMix64):
+    """A time-zone table: ascending transition instants and the offset each
+    starts, sometimes too short, empty, unsorted, or of two lengths."""
+    base = rng.pick([0, 1_700_000_000, -(2**40), 2**53, I64_MIN + 1, I64_MAX - 100_000])
+    starts, at = [], base
+    for _ in range(rng.between(1, 5)):
+        starts.append(at)
+        at += rng.pick([1, 60, 3600, 86_400, 10_000_000])
+        if at > I64_MAX:
+            break
+    offsets = [rng.pick([0, 3600, -18_000, 7200, 32_400, -43_200, 50_400, 64_800]) for _ in starts]
+    if rng.below(20) == 0:
+        starts, offsets = [], []
+    elif len(starts) > 1 and rng.below(12) == 0:
+        starts = shuffled(rng, starts)
+    if offsets and rng.below(12) == 0:
+        offsets = offsets[:-1] if rng.below(2) else offsets + [0]
+    return starts, offsets
+
+
+def utc_offset_args(rng: SplitMix64):
+    starts, offsets = offset_table(rng)
+    anchor = rng.pick(starts) if starts else 0
+    t = clamp(anchor + rng.pick([0, 0, 1, -1, 30, 3600, -3600]), I64_MIN, I64_MAX) if rng.below(5) else arrival_time(rng)
+    return [starts, offsets, t]
+
+
+def utc_local_args(rng: SplitMix64):
+    starts, offsets = offset_table(rng)
+    if starts and rng.below(5):
+        k = rng.below(len(starts))
+        shift = offsets[k] if k < len(offsets) else 0
+        local = clamp(starts[k] + shift + rng.pick([0, 0, 1, -1, 30, 59, 60, 3599, 3600, -60]), I64_MIN, I64_MAX)
+    else:
+        local = arrival_time(rng)
+    return [starts, offsets, local]
+
+
 #: fixture -> (model, argument generator, how many cases, seed).
 #: A seed is per fixture and never reused, so adding a case to one fixture does
 #: not move another's.
@@ -1418,6 +1881,31 @@ FIXTURES = {
     "ordering_gap_end": (lambda args: ordering_gap_end(*args), gap_end_args, 400, 0xE110_001F),
     "ordering_hold": (lambda args: ordering_hold(*args), hold_args, 400, 0xE110_0020),
     "ordering_prune": (lambda args: ordering_prune(*args), prune_args, 250, 0xE110_0021),
+    "outbound_overflows": (
+        lambda args: outbound_overflows(*args),
+        outbound_overflows_args,
+        150,
+        0xE110_0022,
+    ),
+    "outbound_sends_now": (
+        lambda args: outbound_sends_now(*args),
+        outbound_sends_now_args,
+        100,
+        0xE110_0023,
+    ),
+    "outbound_stale": (lambda args: answering(outbound_stale)(*args), outbound_stale_args, 300, 0xE110_0024),
+    "sync_failure": (lambda args: sync_failure(*args), failure_args, 300, 0xE110_0025),
+    "sync_delete_outcome": (lambda args: sync_delete_outcome(*args), failure_args, 300, 0xE110_0026),
+    "sync_upload_outcome": (lambda args: sync_upload_outcome(*args), upload_args, 300, 0xE110_0027),
+    "precondition": (lambda args: http_precondition(*args), http_precondition_args, 400, 0xE110_0028),
+    "mailbox_ack": (lambda args: mailbox_ack(*args), mailbox_ack_args, 300, 0xE110_0029),
+    "mailbox_assign": (lambda args: mailbox_assign(*args), mailbox_assign_args, 400, 0xE110_002A),
+    "mailbox_insert": (lambda args: mailbox_insert(*args), mailbox_assign_args, 400, 0xE110_002B),
+    "mailbox_page": (lambda args: mailbox_page(*args), mailbox_page_args, 400, 0xE110_002C),
+    "changes_since": (lambda args: changes_since(*args), changes_since_args, 400, 0xE110_002D),
+    "changes_apply": (lambda args: changes_apply(*args), changes_apply_args, 400, 0xE110_002E),
+    "utc_offset_at": (lambda args: utc_offset_at(*args), utc_offset_args, 400, 0xE110_002F),
+    "utc_from_local": (lambda args: answering(utc_from_local)(*args), utc_local_args, 500, 0xE110_0030),
 }
 
 
