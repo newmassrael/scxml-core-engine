@@ -380,6 +380,15 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
         "selects one partition of a deploy topology",
     ),
     f(
+        "--plan",
+        Reach::Emission,
+        Some(&["--plan"]),
+        "rust",
+        "runs the generation in memory and prints the paths it would write \
+         instead of writing them; the run is refused exactly where the plain \
+         one is, so `check` needs no counterpart",
+    ),
+    f(
         "--profile",
         Reach::Verdict,
         None,

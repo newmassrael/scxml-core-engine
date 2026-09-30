@@ -102,10 +102,29 @@ impl SuitePackaging {
 /// one check that sees a hand edit, a changed template and a changed generator
 /// alike: each of them changes bytes, and none of them has to change a hash a
 /// header carries.
+///
+/// `Plan` is `--plan`: the same run against the same [`PendingTree`], and
+/// [`finish_generated_output`] then prints the path of every file the run
+/// produced instead of comparing any of them. It is the generator's answer to
+/// "which files would this write" — the question a build system has to be able
+/// to ask before it has run the generator, since a command whose outputs it
+/// does not know has a dependency graph it cannot check. The answer comes from
+/// the generation itself, never from a list kept beside it: a list of a
+/// document's synthesized children fell behind the documents it described, six
+/// times over, before this existed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OutputMode {
     Write,
     AssertUnchanged,
+    Plan,
+}
+
+impl OutputMode {
+    /// Whether a run in this mode produces its files in the [`PendingTree`]
+    /// and touches the disk not at all.
+    const fn holds_in_memory(self) -> bool {
+        !matches!(self, Self::Write)
+    }
 }
 
 /// Installed once by `main`, like [`ERROR_FORMAT`].
@@ -195,7 +214,7 @@ fn emit_generated(path: &Path, content: &[u8], policy: WritePolicy) {
 /// [`emit_generated`], handing a failed write back to the caller.
 fn try_emit_generated(path: &Path, content: &[u8], policy: WritePolicy) -> std::io::Result<()> {
     match output_mode() {
-        OutputMode::AssertUnchanged => {
+        OutputMode::AssertUnchanged | OutputMode::Plan => {
             pending_tree().set(tree_key(path), Some(content.to_vec()));
         }
         OutputMode::Write => {
@@ -226,7 +245,7 @@ fn remove_generated(path: &Path) -> bool {
                 fs::remove_file(path).is_ok()
             }
         }
-        OutputMode::AssertUnchanged => {
+        OutputMode::AssertUnchanged | OutputMode::Plan => {
             let doomed = if path.is_dir() {
                 RunTree.files_under(path)
             } else {
@@ -245,7 +264,7 @@ fn remove_generated(path: &Path) -> bool {
 /// the run has produced there so far, falling back to the disk for a path it
 /// has not touched; in a `Write` run, the disk, which it has written.
 fn read_generated(path: &Path) -> Option<String> {
-    if output_mode() == OutputMode::AssertUnchanged {
+    if output_mode().holds_in_memory() {
         if let Some(held) = pending_tree().content.get(&tree_key(path)) {
             return held.clone().and_then(|bytes| String::from_utf8(bytes).ok());
         }
@@ -264,7 +283,7 @@ impl drift::GeneratedTree for RunTree {
             .into_iter()
             .map(|path| tree_key(&path))
             .collect();
-        if output_mode() == OutputMode::AssertUnchanged {
+        if output_mode().holds_in_memory() {
             let dir = tree_key(dir);
             for (path, held) in &pending_tree().content {
                 if !path.starts_with(&dir) {
@@ -290,7 +309,7 @@ impl drift::GeneratedTree for RunTree {
 /// through the files it should have held.
 fn ensure_output_dir(dir: &Path) -> std::io::Result<()> {
     match output_mode() {
-        OutputMode::AssertUnchanged => Ok(()),
+        OutputMode::AssertUnchanged | OutputMode::Plan => Ok(()),
         OutputMode::Write => fs::create_dir_all(dir),
     }
 }
@@ -299,9 +318,25 @@ fn ensure_output_dir(dir: &Path) -> std::io::Result<()> {
 /// against the disk and fail the run naming each one that differs — bytes
 /// that differ, a file that is absent, a file the run would have removed. A
 /// `Write` run, and one where nothing differed, pass through.
+///
+/// End a `--plan` run: print, one per line and in the order the run first
+/// produced them, every file it would have left behind. A file the run removed
+/// is not in the answer — it is not among the files the run produces — and
+/// nothing is judged against the disk, so the run cannot fail for what is or is
+/// not there.
 fn finish_generated_output() {
-    if output_mode() != OutputMode::AssertUnchanged {
-        return;
+    match output_mode() {
+        OutputMode::Write => return,
+        OutputMode::Plan => {
+            let tree = std::mem::take(&mut *pending_tree());
+            for path in &tree.order {
+                if tree.content[path].is_some() {
+                    out_line(&path.display().to_string());
+                }
+            }
+            return;
+        }
+        OutputMode::AssertUnchanged => {}
     }
     let tree = std::mem::take(&mut *pending_tree());
     let mut paths = Vec::new();
@@ -1211,7 +1246,13 @@ fn resolve_script_engine_target(
 }
 
 /// Serialise `report` and write it as a single JSON line to stdout.
+///
+/// Not in a `--plan` run, whose stdout is the list of paths and nothing else:
+/// a consumer that reads it line by line takes every line for a path.
 fn emit_generate_manifest(report: &GenerateReport) {
+    if output_mode() == OutputMode::Plan {
+        return;
+    }
     outln!(
         "{}",
         build_manifest(report, ManifestKind::Generate, None, report.target_language).to_line()
@@ -1276,6 +1317,24 @@ struct Cli {
     /// `generate-w3c --clean` and `--list`, which generate nothing.
     #[arg(long, global = true)]
     assert_unchanged: bool,
+
+    /// Write nothing: run the whole generation in memory, and print the path
+    /// of every file it would have produced, one per line, in place of the
+    /// artifact manifest. The exit status is the generation's own — a run
+    /// that would have been refused is refused — and never says anything
+    /// about what is on disk.
+    ///
+    /// This is how a build system learns a command's outputs before it has
+    /// run it: a document can synthesize files the author never wrote (an
+    /// inline `<invoke>` becomes a child document with a machine of its own),
+    /// and a list of them kept in the build description is a second copy that
+    /// falls behind the document. Pass the arguments the real run takes, with
+    /// `--output-dir` naming where the files will go.
+    /// Accepted by `generate` alone, which is the command that produces files
+    /// a build has to declare; `--assert-unchanged` is its opposite number and
+    /// the two cannot be combined.
+    #[arg(long, global = true, conflicts_with = "assert_unchanged")]
+    plan: bool,
 
     /// Diagnostic output format on stderr. `human` (default) preserves
     /// the existing CLI text. `json` emits one NDJSON record per error
@@ -3089,6 +3148,17 @@ fn main() {
             cli_exit(CliError::Usage { detail });
         }
         let _ = OUTPUT_MODE.set(OutputMode::AssertUnchanged);
+    }
+    if cli.plan {
+        if !matches!(cli.command, Commands::Generate(_)) {
+            cli_exit(CliError::Usage {
+                detail: "--plan applies only to `generate`: it is the one command whose outputs \
+                         a build has to declare, and the answer is the list of files a \
+                         `generate` run with the same arguments would write"
+                    .to_string(),
+            });
+        }
+        let _ = OUTPUT_MODE.set(OutputMode::Plan);
     }
     match cli.command {
         Commands::Generate(args) => cmd_generate(*args, error_format),
@@ -6052,9 +6122,10 @@ struct DepfileInputs<'a> {
 ///
 /// An `--assert-unchanged` run writes no depfile and compares none: a
 /// depfile describes what a build read, not what the generator produced,
-/// and a run that writes nothing is not a build step.
+/// and a run that writes nothing is not a build step. A `--plan` run is the
+/// same: it is asked for the files a build step would produce, and is not one.
 fn write_depfile(depfile_path: &str, inputs: DepfileInputs<'_>) {
-    if output_mode() == OutputMode::AssertUnchanged {
+    if output_mode().holds_in_memory() {
         return;
     }
     let DepfileInputs {
