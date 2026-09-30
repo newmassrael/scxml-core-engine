@@ -46,26 +46,30 @@ TEST(ADelayedHttpSendIsPostedWhenDueAotTest, ADelayedHttpSendIsPostedWhenDue) {
     sm.setHttpSendCallback([&posted](const SCE::Static::HttpSendRequest &request) { posted.push_back(request); });
     sm.initialize();
 
-    EXPECT_EQ(events(posted), (std::vector<std::string>{"now"})) << "only the undelayed send is POSTed at once";
+    // A zero wait, written or evaluated, is no deferral: the POST is made
+    // before initialize() returns, with no tick to bring it out.
+    EXPECT_EQ(events(posted), (std::vector<std::string>{"now", "zero", "zeroexpr"}))
+        << "the undelayed send and the two zero-delay sends are POSTed at once";
 
     sm.advanceTimeMs(99);
-    EXPECT_EQ(events(posted), (std::vector<std::string>{"now"})) << "a send delayed 100ms is not POSTed at 99ms";
+    EXPECT_EQ(events(posted), (std::vector<std::string>{"now", "zero", "zeroexpr"}))
+        << "a send delayed 100ms is not POSTed at 99ms";
 
     sm.advanceTimeMs(1);
-    ASSERT_EQ(events(posted), (std::vector<std::string>{"now", "later"}))
+    ASSERT_EQ(events(posted), (std::vector<std::string>{"now", "zero", "zeroexpr", "later"}))
         << "it is POSTed when the delay has elapsed, and the cancelled one never is";
-    EXPECT_EQ(posted[1].target, "http://127.0.0.1:18081/later");
-    EXPECT_EQ(posted[1].sendId, "later");
+    EXPECT_EQ(posted[3].target, "http://127.0.0.1:18081/later");
+    EXPECT_EQ(posted[3].sendId, "later");
 
     sm.advanceTimeMs(100);
-    ASSERT_EQ(events(posted), (std::vector<std::string>{"now", "later", "dynamic"}));
-    EXPECT_EQ(posted[2].target, "http://127.0.0.1:18081/dynamic") << "a targetexpr is read when the send is made";
-    ASSERT_EQ(posted[2].params.count("k"), 1u);
-    EXPECT_EQ(posted[2].params.at("k"), (std::vector<std::string>{"v"}));
+    ASSERT_EQ(events(posted), (std::vector<std::string>{"now", "zero", "zeroexpr", "later", "dynamic"}));
+    EXPECT_EQ(posted[4].target, "http://127.0.0.1:18081/dynamic") << "a targetexpr is read when the send is made";
+    ASSERT_EQ(posted[4].params.count("k"), 1u);
+    EXPECT_EQ(posted[4].params.at("k"), (std::vector<std::string>{"v"}));
 
     sm.advanceTimeMs(100);
     EXPECT_EQ(sm.terminalState(), SM::State::Done) << "the run must end in `done`";
-    EXPECT_EQ(events(posted), (std::vector<std::string>{"now", "later", "dynamic"}));
+    EXPECT_EQ(events(posted), (std::vector<std::string>{"now", "zero", "zeroexpr", "later", "dynamic"}));
 }
 
 }  // namespace SCE::Tests

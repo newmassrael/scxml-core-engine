@@ -44,32 +44,37 @@ fn a_delayed_http_send_is_posted_when_due() {
     e.set_clock(SceClock::Manual(0));
     e.initialize();
 
+    // A zero wait, written or evaluated, is no deferral: the POST is made
+    // before initialize() returns, with no tick to bring it out.
     assert_eq!(
         events(&posted),
-        ["now"],
-        "only the undelayed send is POSTed at once"
+        ["now", "zero", "zeroexpr"],
+        "the undelayed send and the two zero-delay sends are POSTed at once"
     );
 
     e.advance_time_ms(99);
     assert_eq!(
         events(&posted),
-        ["now"],
+        ["now", "zero", "zeroexpr"],
         "a send delayed 100ms is not POSTed at 99ms"
     );
 
     e.advance_time_ms(1);
     assert_eq!(
         events(&posted),
-        ["now", "later"],
+        ["now", "zero", "zeroexpr", "later"],
         "it is POSTed when the delay has elapsed, and the cancelled one never is"
     );
-    let later = posted.lock().unwrap()[1].clone();
+    let later = posted.lock().unwrap()[3].clone();
     assert_eq!(later.target, "http://127.0.0.1:18081/later");
     assert_eq!(later.send_id, "later");
 
     e.advance_time_ms(100);
-    assert_eq!(events(&posted), ["now", "later", "dynamic"]);
-    let dynamic = posted.lock().unwrap()[2].clone();
+    assert_eq!(
+        events(&posted),
+        ["now", "zero", "zeroexpr", "later", "dynamic"]
+    );
+    let dynamic = posted.lock().unwrap()[4].clone();
     assert_eq!(
         dynamic.target, "http://127.0.0.1:18081/dynamic",
         "a targetexpr is read when the send is made"
@@ -82,5 +87,8 @@ fn a_delayed_http_send_is_posted_when_due() {
         Some(State::Done),
         "the run must end in `done`"
     );
-    assert_eq!(events(&posted), ["now", "later", "dynamic"]);
+    assert_eq!(
+        events(&posted),
+        ["now", "zero", "zeroexpr", "later", "dynamic"]
+    );
 }

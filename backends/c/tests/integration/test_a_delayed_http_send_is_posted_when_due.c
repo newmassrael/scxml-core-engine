@@ -222,25 +222,29 @@ int main(void) {
 
     static const recorded_t all[] = {
         {"/now", "_scxmleventname=now"},
+        {"/zero", "_scxmleventname=zero"},
+        {"/zeroexpr", "_scxmleventname=zeroexpr"},
         {"/later", "_scxmleventname=later"},
         {"/dynamic", "_scxmleventname=dynamic&k=v"},
     };
 
     sm_t sm;
     a_delayed_http_send_is_posted_when_due_init_with_clock(&sm, sce_clock_manual(0u));
-    expect("at once", 1, all);
+    // A zero wait, written or evaluated, is no deferral: the POST is made
+    // before init returns, with no tick to bring it out.
+    expect("at once (the undelayed send and the two zero-delay sends)", 3, all);
 
     a_delayed_http_send_is_posted_when_due_advance_time_ms(&sm, 99u);
-    expect("at 99ms (a send delayed 100ms is not due)", 1, all);
+    expect("at 99ms (a send delayed 100ms is not due)", 3, all);
 
     a_delayed_http_send_is_posted_when_due_advance_time_ms(&sm, 1u);
-    expect("at 100ms (due now; the cancelled one never is)", 2, all);
+    expect("at 100ms (due now; the cancelled one never is)", 4, all);
 
     a_delayed_http_send_is_posted_when_due_advance_time_ms(&sm, 100u);
-    expect("at 200ms", 3, all);
+    expect("at 200ms", 5, all);
 
     a_delayed_http_send_is_posted_when_due_advance_time_ms(&sm, 100u);
-    expect("at 300ms", 3, all);
+    expect("at 300ms", 5, all);
     if (!a_delayed_http_send_is_posted_when_due_ended_in(&sm, A_DELAYED_HTTP_SEND_IS_POSTED_WHEN_DUE_STATE_DONE)) {
         fprintf(stderr, "FAIL: the run must end in `done`\n");
         g_ok = 0;

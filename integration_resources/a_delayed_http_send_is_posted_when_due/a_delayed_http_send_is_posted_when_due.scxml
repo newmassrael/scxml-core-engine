@@ -5,9 +5,13 @@
   POSTed when the delay has elapsed — not at once, and not never — and
   `<cancel>` reaches it while it waits, as it reaches any delayed send.
 
-  Four sends are armed in one `<onentry>`:
+  Six sends are armed in one `<onentry>`:
 
     now       no delay: POSTed at once;
+    zero      delay "0s": POSTed at once too — a zero wait is no deferral, so
+              the document must not need a tick to see the POST;
+    zeroexpr  delayexpr evaluating to "0ms": the same, when the wait is read
+              at run time rather than written;
     later     delay 100ms, id "later": POSTed at 100ms;
     dropped   delay 100ms, id "dropped", then cancelled in the same block:
               never POSTed;
@@ -43,6 +47,10 @@
     <onentry>
       <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
             target="http://127.0.0.1:18081/now" event="now"/>
+      <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+            target="http://127.0.0.1:18081/zero" event="zero" delay="0s"/>
+      <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+            target="http://127.0.0.1:18081/zeroexpr" event="zeroexpr" delayexpr="'0ms'"/>
       <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
             target="http://127.0.0.1:18081/later" event="later" delay="100ms" id="later"/>
       <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"

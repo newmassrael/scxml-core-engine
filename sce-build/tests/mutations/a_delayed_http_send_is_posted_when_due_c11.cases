@@ -28,6 +28,16 @@ edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "{% if false %}\n                /* W3C SCXML 6.2.4: a `delay` is a property of the SEND, not")
 PY
 
+# ── The zero wait: a delayexpr that came out zero is still queued ──
+
+# A literal `0s` is finished at codegen time and never reaches the check;
+# `zeroexpr` is the fixture's send that does.
+mutation_case "C11 queues a BasicHTTP send whose delayexpr came out zero instead of POSTing it at once" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "                if (_host_delay_ms == 0u) {\n                    {{ host_perform }}(sm, &_host_req);",
+     "                if (false) {\n                    {{ host_perform }}(sm, &_host_req);")
+PY
+
 # ── The deadline: the queued request is handed to no HTTP client ───
 
 # This fixture declares no host processor, so its drain is the unconditional
@@ -59,8 +69,13 @@ PY
 
 # ── The id: `<cancel>` can no longer name the queued request ───────
 
+# The BasicHTTP call site hands every wait over as `resolved_delay`, so a send
+# that waits reaches the queue through the zero-check branch, and the push in
+# its `else` is the one this fixture can observe. The push below it, for a
+# host-served type with a literal delay, is reached by no fixture of this
+# casefile: a mutation of it leaves every binary identical.
 mutation_case "C11 queues a delayed BasicHTTP send under an empty send id" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "                scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,\n                                    _host_req.send_id, &_host_req);",
-     "                scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,\n                                    \"\", &_host_req);")
+     "                } else {\n                    scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,\n                                        _host_req.send_id, &_host_req);",
+     "                } else {\n                    scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,\n                                        \"\", &_host_req);")
 PY

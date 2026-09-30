@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: be365956e2cd4f10de50194eb64631e18107006a343b77a292ce8dd3ead3eaa1
+// source-hash: f57c85a480d19551bf19c9634af42126614c04ca02a56cf3e71a6176ba7b9f85
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine"]
-// SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
+#![doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine"]
+// SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -103,6 +103,8 @@ pub enum ADelayedHttpSendIsPostedWhenDueEvent {
     Later,
     Now,
     Settle,
+    Zero,
+    Zeroexpr,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -582,6 +584,8 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
             ADelayedHttpSendIsPostedWhenDueEvent::Later => "later",
             ADelayedHttpSendIsPostedWhenDueEvent::Now => "now",
             ADelayedHttpSendIsPostedWhenDueEvent::Settle => "settle",
+            ADelayedHttpSendIsPostedWhenDueEvent::Zero => "zero",
+            ADelayedHttpSendIsPostedWhenDueEvent::Zeroexpr => "zeroexpr",
             ADelayedHttpSendIsPostedWhenDueEvent::Null => "",
         }
     }
@@ -595,6 +599,8 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
             "later" => Some(ADelayedHttpSendIsPostedWhenDueEvent::Later),
             "now" => Some(ADelayedHttpSendIsPostedWhenDueEvent::Now),
             "settle" => Some(ADelayedHttpSendIsPostedWhenDueEvent::Settle),
+            "zero" => Some(ADelayedHttpSendIsPostedWhenDueEvent::Zero),
+            "zeroexpr" => Some(ADelayedHttpSendIsPostedWhenDueEvent::Zeroexpr),
             _ => None,
         }
     }
@@ -660,8 +666,8 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine"]
-    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
+    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine"]
+    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -670,7 +676,7 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
     ) {
         match state {
             ADelayedHttpSendIsPostedWhenDueState::Run => {
-                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:42 :: run :: _state_body
+                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:46 :: run :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -693,6 +699,98 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                         }
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+
+                        let event_data: &str = "";
+
+                        // W3C SCXML C.2: BasicHTTP send to HTTP target
+                        {
+                            let http_params =
+                                std::collections::HashMap::<String, Vec<String>>::new();
+                            engine.perform_http_send(
+                                "http://127.0.0.1:18081/zero".to_string(),
+                                "zero".to_string(),
+                                "".to_string(),
+                                http_params,
+                                send_id.clone(),
+                            );
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+
+                        self.ensure_script_engine();
+                        let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
+                        let __sce_arg_se = self.script_engine.clone();
+                        let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
+                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The expression failing is the argument error, and so is a value that is
+                        // not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"): the
+                        // message is not scheduled under some default wait.
+                        let _send_delay_ms: u64 = if _send_arg_error.is_none() {
+                            match __sce_arg_se.evaluate_expression(&__sce_arg_sid, "\"0ms\"") {
+                                Ok(val) => {
+                                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                                    sce_rust_runtime::helpers::send::parse_delay_to_ms(&s)
+                                        .unwrap_or_else(|| {
+                                            _send_arg_error =
+                                                Some("<send> delayexpr is not a CSS2 time");
+                                            0
+                                        })
+                                }
+                                Err(e) => {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "delayexpr eval failed: {}",
+                                        e
+                                    );
+                                    _send_arg_error =
+                                        Some("<send> delayexpr could not be evaluated");
+                                    0
+                                }
+                            }
+                        } else {
+                            0
+                        };
+                        if let Some(__sce_why) = _send_arg_error {
+                            ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution,
+                                __sce_why,
+                            );
+                            err_meta.metadata.send_id = send_id.clone();
+                            engine.raise(err_meta);
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        } else {
+                            let event_data: &str = "";
+
+                            // W3C SCXML C.2: BasicHTTP send to HTTP target
+                            {
+                                let http_params =
+                                    std::collections::HashMap::<String, Vec<String>>::new();
+                                // W3C SCXML 6.2.4: a delay postpones the POST, not the processor that
+                                // makes it — the request waits in the queue every delayed send does (so
+                                // `<cancel>` reaches it) and its deadline dispatches it through
+                                // `perform_http_send`.
+                                engine.schedule_http_send(
+                                    "http://127.0.0.1:18081/zeroexpr".to_string(),
+                                    "zeroexpr".to_string(),
+                                    "".to_string(),
+                                    http_params,
+                                    core::time::Duration::from_millis(_send_delay_ms),
+                                    send_id.clone(),
+                                );
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 
@@ -866,7 +964,7 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
 
                         let event_data: &str = "";
 
@@ -899,8 +997,8 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine"]
-    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
+    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine"]
+    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -915,8 +1013,8 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine"]
-    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
+    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine"]
+    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -960,8 +1058,8 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine"]
-    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
+    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine"]
+    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -991,8 +1089,8 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine"]
-    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
+    #[doc = "SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine"]
+    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,

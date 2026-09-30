@@ -42,28 +42,30 @@ func TestADelayedHttpSendIsPostedWhenDue(t *testing.T) {
 	engine.SetClock(sce.NewManualClock(0))
 	engine.Initialize()
 
-	if got, want := events(), []string{"now"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("at once: POSTed %v, want %v (only the undelayed send)", got, want)
+	// A zero wait, written or evaluated, is no deferral: the POST is made
+	// before Initialize returns, with no tick to bring it out.
+	if got, want := events(), []string{"now", "zero", "zeroexpr"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("at once: POSTed %v, want %v (the undelayed send and the two zero-delay sends)", got, want)
 	}
 
 	engine.AdvanceTimeMs(99)
-	if got, want := events(), []string{"now"}; !reflect.DeepEqual(got, want) {
+	if got, want := events(), []string{"now", "zero", "zeroexpr"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("at 99ms: POSTed %v, want %v (a send delayed 100ms is not due)", got, want)
 	}
 
 	engine.AdvanceTimeMs(1)
-	if got, want := events(), []string{"now", "later"}; !reflect.DeepEqual(got, want) {
+	if got, want := events(), []string{"now", "zero", "zeroexpr", "later"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("at 100ms: POSTed %v, want %v (due now; the cancelled one never is)", got, want)
 	}
-	if got := posted[1]; got.Target != "http://127.0.0.1:18081/later" || got.SendID != "later" {
+	if got := posted[3]; got.Target != "http://127.0.0.1:18081/later" || got.SendID != "later" {
 		t.Errorf("the delayed send carried target %q sendid %q", got.Target, got.SendID)
 	}
 
 	engine.AdvanceTimeMs(100)
-	if got, want := events(), []string{"now", "later", "dynamic"}; !reflect.DeepEqual(got, want) {
+	if got, want := events(), []string{"now", "zero", "zeroexpr", "later", "dynamic"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("at 200ms: POSTed %v, want %v", got, want)
 	}
-	dynamic := posted[2]
+	dynamic := posted[4]
 	if dynamic.Target != "http://127.0.0.1:18081/dynamic" {
 		t.Errorf("a targetexpr is read when the send is made: target = %q", dynamic.Target)
 	}
@@ -75,7 +77,7 @@ func TestADelayedHttpSendIsPostedWhenDue(t *testing.T) {
 	if ended, ok := engine.TerminalState(); !ok || ended != ADelayedHttpSendIsPostedWhenDueStateDone {
 		t.Errorf("the run must end in `done`")
 	}
-	if got, want := events(), []string{"now", "later", "dynamic"}; !reflect.DeepEqual(got, want) {
+	if got, want := events(), []string{"now", "zero", "zeroexpr", "later", "dynamic"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("at 300ms: POSTed %v, want %v", got, want)
 	}
 }

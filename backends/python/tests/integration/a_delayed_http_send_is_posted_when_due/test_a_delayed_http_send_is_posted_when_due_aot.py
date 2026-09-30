@@ -35,23 +35,27 @@ def test_a_delayed_http_send_is_posted_when_due() -> None:
     def events():
         return [request.event_name for request in posted]
 
-    assert events() == ["now"], "only the undelayed send is POSTed at once"
+    # A zero wait, written or evaluated, is no deferral: the POST is made
+    # before initialize() returns, with no tick to bring it out.
+    assert events() == ["now", "zero", "zeroexpr"], (
+        "the undelayed send and the two zero-delay sends are POSTed at once"
+    )
 
     engine.advance_time(99)
-    assert events() == ["now"], "a send delayed 100ms is not POSTed at 99ms"
+    assert events() == ["now", "zero", "zeroexpr"], "a send delayed 100ms is not POSTed at 99ms"
 
     engine.advance_time(1)
-    assert events() == ["now", "later"], (
+    assert events() == ["now", "zero", "zeroexpr", "later"], (
         "it is POSTed when the delay has elapsed, and the cancelled one never is"
     )
-    assert posted[1].target == "http://127.0.0.1:18081/later"
-    assert posted[1].send_id == "later"
+    assert posted[3].target == "http://127.0.0.1:18081/later"
+    assert posted[3].send_id == "later"
 
     engine.advance_time(100)
-    assert events() == ["now", "later", "dynamic"]
-    assert posted[2].target == "http://127.0.0.1:18081/dynamic", "a targetexpr is read when the send is made"
-    assert posted[2].params.get("k") == ["v"]
+    assert events() == ["now", "zero", "zeroexpr", "later", "dynamic"]
+    assert posted[4].target == "http://127.0.0.1:18081/dynamic", "a targetexpr is read when the send is made"
+    assert posted[4].params.get("k") == ["v"]
 
     engine.advance_time(100)
     assert engine.terminal_state == _State.DONE, "the run must end in `done`"
-    assert events() == ["now", "later", "dynamic"]
+    assert events() == ["now", "zero", "zeroexpr", "later", "dynamic"]

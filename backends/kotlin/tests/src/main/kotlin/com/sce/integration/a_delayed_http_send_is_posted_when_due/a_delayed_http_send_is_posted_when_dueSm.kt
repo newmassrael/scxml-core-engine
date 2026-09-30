@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: be365956e2cd4f10de50194eb64631e18107006a343b77a292ce8dd3ead3eaa1
+// source-hash: f57c85a480d19551bf19c9634af42126614c04ca02a56cf3e71a6176ba7b9f85
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/a_delayed_http_send_is_posted_when_due/a_delayed_http_send_is_posted_when_due.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
+// SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine
 
 package com.sce.integration.a_delayed_http_send_is_posted_when_due
 
@@ -30,6 +30,8 @@ sealed interface ADelayedHttpSendIsPostedWhenDueEvent : Event {
     data object Later : ADelayedHttpSendIsPostedWhenDueEvent
     data object Now : ADelayedHttpSendIsPostedWhenDueEvent
     data object Settle : ADelayedHttpSendIsPostedWhenDueEvent
+    data object Zero : ADelayedHttpSendIsPostedWhenDueEvent
+    data object Zeroexpr : ADelayedHttpSendIsPostedWhenDueEvent
 }
 // --- State Machine (W3C SCXML) ---
 
@@ -127,6 +129,8 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
         "later" -> ADelayedHttpSendIsPostedWhenDueEvent.Later
         "now" -> ADelayedHttpSendIsPostedWhenDueEvent.Now
         "settle" -> ADelayedHttpSendIsPostedWhenDueEvent.Settle
+        "zero" -> ADelayedHttpSendIsPostedWhenDueEvent.Zero
+        "zeroexpr" -> ADelayedHttpSendIsPostedWhenDueEvent.Zeroexpr
         else -> null
     }
 
@@ -139,6 +143,8 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
         is ADelayedHttpSendIsPostedWhenDueEvent.Later -> "later"
         is ADelayedHttpSendIsPostedWhenDueEvent.Now -> "now"
         is ADelayedHttpSendIsPostedWhenDueEvent.Settle -> "settle"
+        is ADelayedHttpSendIsPostedWhenDueEvent.Zero -> "zero"
+        is ADelayedHttpSendIsPostedWhenDueEvent.Zeroexpr -> "zeroexpr"
     }
 
 
@@ -391,16 +397,16 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
+    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine
     override fun onEntry(state: ADelayedHttpSendIsPostedWhenDueState, isDefaultEntry: Boolean) {
         when (state) {
             is ADelayedHttpSendIsPostedWhenDueState.Done -> {
-                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:60 :: done :: _state_body
+                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:68 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is ADelayedHttpSendIsPostedWhenDueState.Run -> {
-                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:42 :: run :: _state_body
+                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:46 :: run :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -411,6 +417,50 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
             // W3C SCXML C.2: BasicHTTP send — one arm for a static and a dynamic target
             val httpContent = ""
             performHttpSend("http://127.0.0.1:18081/now", "now", httpContent, sendWireParams, "__send_0")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return@run
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+
+
+            if (run send@{
+            val sendData = ""
+            val sendWireParams = emptyMap<String, List<String>>()
+            // W3C SCXML C.2: BasicHTTP send — one arm for a static and a dynamic target
+            val httpContent = ""
+            scheduleHttpSend(0L, "http://127.0.0.1:18081/zero", "zero", httpContent, sendWireParams, "__send_1")
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return@run
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+
+
+            if (run send@{
+            ensureScriptEngine()
+            val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+            val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            // The expression failing is the argument error, and so is a value
+            // that is not the CSS2 time the clause names (ARCHITECTURE.md,
+            // "Durations"): the message is not scheduled under some default wait.
+            val sendDelayText = try {
+                valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("\"0ms\"", "'0ms'")))
+            } catch (_: Exception) {
+                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_2")
+                return@send true
+            }
+            val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
+                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_2")
+                return@send true
+            }
+            val sendData = ""
+            val sendWireParams = emptyMap<String, List<String>>()
+            // W3C SCXML C.2: BasicHTTP send — one arm for a static and a dynamic target
+            val httpContent = ""
+            scheduleHttpSend(sendDelayMs, "http://127.0.0.1:18081/zeroexpr", "zeroexpr", httpContent, sendWireParams, "__send_2")
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -500,7 +550,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_1", 300L, ADelayedHttpSendIsPostedWhenDueEvent.Settle, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_3", 300L, ADelayedHttpSendIsPostedWhenDueEvent.Settle, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -513,21 +563,21 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
+    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine
     override fun onExit(state: ADelayedHttpSendIsPostedWhenDueState) {
         when (state) {
             is ADelayedHttpSendIsPostedWhenDueState.Done -> {
-                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:60 :: done :: _state_body
+                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:68 :: done :: _state_body
             }
             is ADelayedHttpSendIsPostedWhenDueState.Run -> {
-                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:42 :: run :: _state_body
+                // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:46 :: run :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:35 :: _machine
+    // SCE-MAP: a_delayed_http_send_is_posted_when_due.scxml:39 :: _machine
     override fun executeTransitionContent(source: ADelayedHttpSendIsPostedWhenDueState, transitionIndex: Int) {
         when (source) {
         else -> {}

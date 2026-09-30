@@ -36,6 +36,17 @@ edit("tools/codegen/templates/actions/send.jinja2",
      "{% if false %}\n// W3C SCXML 6.2.4: a delay postpones the POST")
 PY
 
+# ── The zero wait: a delay that is zero is still queued for a tick ─
+
+# `zero` writes the wait as `0s` and `zeroexpr` computes it; both go through
+# this one check, so the fixture's first expectation — three POSTs before
+# init returns — is what a mutation of it disturbs.
+mutation_case "the C++ AOT defers a zero-delay BasicHTTP send to a tick instead of POSTing it at once" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     "        if (delay.count() <= 0) {\n            performDeferredHostSend(request);",
+     "        if (false) {\n            performDeferredHostSend(request);")
+PY
+
 # ── The id: `<cancel>` can no longer name the queued request ───────
 
 mutation_case "the C++ AOT queues a delayed BasicHTTP send under an id the document never wrote" <<'PY'
