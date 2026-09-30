@@ -380,6 +380,19 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
         "selects one partition of a deploy topology",
     ),
     f(
+        "--profile",
+        Reach::Verdict,
+        None,
+        "rust",
+        "holds the design to the owner's authoring profile, and a design that \
+         departs from it is REFUSED as a `profile/*` record: it moves whether \
+         the document is accepted, so `check --profile` exists and reaches the \
+         same verdict. The unit that judges a design under a profile is shared \
+         by both subcommands (`judge_under_profile`), and \
+         `an_authoring_profile_holds_a_design_to_what_its_owner_asked` runs it \
+         through `check`, `generate` and `orchestrate`",
+    ),
+    f(
         "--script-engine",
         Reach::Verdict,
         None,
