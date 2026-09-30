@@ -2,8 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! A `datamodel="sce-static"` document, lowered to the ECMAScript document the
-//! Interpreter runs (docs/SCE_ACCEPTED_SUBSET.md §2.15,
-//! claudedocs/shared-calendar/e7-static-datamodel-design.md D11–D16).
+//! Interpreter runs (docs/SCE_ACCEPTED_SUBSET.md §2.15).
 //!
 //! The generated backends hold the document's variables to their types and
 //! check its integer operations. The Interpreter hands every expression to a
@@ -77,7 +76,7 @@ use std::path::{Path, PathBuf};
 
 use crate::forge::error::{ForgeError, GenerateError, Located};
 use crate::forge::expr::ExprTarget;
-use crate::forge::model::{ForgeDocument, ForgeKind, SceType};
+use crate::forge::model::{ForgeDocument, ForgeKind, ParsedForge, SceType};
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{lower, Callee, LoweredElement, LoweredSite, StaticTarget};
 use crate::forge::type_ctx::StaticScope;
@@ -672,24 +671,93 @@ fn lowered_algorithms(
             .ok_or_else(|| what("cannot be read: the document was given with no directory"))?;
         let parsed = crate::forge::import_source::parse_quietly(dir, import)
             .ok_or_else(|| what("cannot be read"))?;
-        if !parsed.imports.is_empty() {
-            return Err(what(
-                "imports another document, which has no ecmascript lowering yet",
-            ));
-        }
-        let ForgeDocument::Algorithm(algorithm) = parsed.document else {
-            return Err(what("is not an algorithm"));
-        };
-        let function = static_js_algorithm::lower(&algorithm)?;
         lowered.insert(
             callee.document_name.clone(),
-            LoweredAlgorithm {
-                symbol: static_js_algorithm::symbol(&algorithm.name),
-                function,
-            },
+            algorithm_function(parsed, &what)?,
         );
     }
     Ok(lowered)
+}
+
+/// The algorithm `parsed` is, as the function it becomes. `what` words a
+/// refusal in the caller's own name for the document.
+fn algorithm_function(
+    parsed: ParsedForge,
+    what: &dyn Fn(&str) -> GenerateError,
+) -> Result<LoweredAlgorithm, GenerateError> {
+    if !parsed.imports.is_empty() {
+        return Err(what(
+            "imports another document, which has no ecmascript lowering yet",
+        ));
+    }
+    let ForgeDocument::Algorithm(algorithm) = parsed.document else {
+        return Err(what("is not an algorithm"));
+    };
+    Ok(LoweredAlgorithm {
+        symbol: static_js_algorithm::symbol(&algorithm.name),
+        function: static_js_algorithm::lower(&algorithm)?,
+    })
+}
+
+/// An algorithm document lowered on its own, for a caller that runs it in a
+/// script engine and not from a statechart: the differential check that holds
+/// the Interpreter to the numerical conformance cases (E11) is one.
+#[derive(Debug, Clone)]
+pub struct LoweredAlgorithmDocument {
+    /// The name it is installed under: `SceStatic.algorithms.<symbol>`.
+    pub symbol: String,
+    /// The expression that installs the runtime library and the algorithm —
+    /// the one a lowered statechart holds in its first `<data>`.
+    pub install: String,
+}
+
+/// The algorithm document `document` names — an `sce:std/...` document, or a
+/// path — lowered as a statechart's import of it would be, and refused for the
+/// same reasons: it imports another document, or its body holds a construct with
+/// no lowering yet. A refusal names the construct.
+pub fn lower_algorithm_document(
+    document: &str,
+) -> Result<LoweredAlgorithmDocument, Located<ForgeError>> {
+    let refuse = |error: GenerateError| Located::in_file(ForgeError::from(error), document);
+    let path = crate::forge::stdlib::resolve(Path::new("."), document);
+    let content = if crate::forge::stdlib::names_standard(&path) {
+        crate::forge::stdlib::lookup(&path)
+            .map(str::to_string)
+            .ok_or_else(|| {
+                refuse(GenerateError::unsupported(format!(
+                    "`{document}` names no document of the standard library"
+                )))
+            })?
+    } else {
+        std::fs::read_to_string(&path).map_err(|error| {
+            refuse(GenerateError::unsupported(format!(
+                "`{document}` cannot be read: {error}"
+            )))
+        })?
+    };
+    let identifier = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("unknown");
+    let parsed = crate::forge::parser::parse_forge_with_imports(
+        &content,
+        crate::DocumentLabel {
+            identifier,
+            diagnostic_label: document,
+        },
+    )?
+    .ok_or_else(|| {
+        refuse(GenerateError::unsupported(format!(
+            "`{document}` is a statechart, not an algorithm"
+        )))
+    })?;
+    let what =
+        |reason: &str| GenerateError::unsupported(format!("`{document}`: the document {reason}"));
+    let algorithm = algorithm_function(parsed, &what).map_err(refuse)?;
+    Ok(LoweredAlgorithmDocument {
+        symbol: algorithm.symbol.clone(),
+        install: runtime_expression(&[algorithm]),
+    })
 }
 
 /// The document `path` names, lowered for the Interpreter — through the same
@@ -825,6 +893,62 @@ mod tests {
                 "`{line}` ends in neither a brace, a comma nor a semicolon"
             );
         }
+    }
+
+    /// A caller that compares this engine with a generated backend reads the
+    /// failure's name, so each name a backend reports (SCE_FORGE.md 3.4.1) has
+    /// a place in the library that throws it, and the one the Interpreter adds
+    /// — an integer a Number cannot hold — is named too.
+    #[test]
+    fn every_failure_of_the_library_names_itself() {
+        let code = without_block_comments(RUNTIME_SOURCE);
+        for name in [
+            "overflow",
+            "divide-by-zero",
+            "precondition",
+            "out-of-range",
+            "capacity-exceeded",
+            "unrepresentable",
+        ] {
+            assert!(
+                code.contains(&format!(", '{name}');")),
+                "no `fail(…, '{name}')` in sce_static.js"
+            );
+        }
+    }
+
+    /// An algorithm document on its own is lowered as a statechart's import of
+    /// it would be, under the name it is installed by.
+    #[test]
+    fn an_algorithm_document_is_lowered_on_its_own() {
+        let lowered = lower_algorithm_document("sce:std/time/second_of_day.scxml").expect("lowers");
+        assert_eq!(lowered.symbol, "second_of_day");
+        assert!(
+            lowered
+                .install
+                .contains("SceStatic.algorithms.second_of_day = function"),
+            "{}",
+            lowered.install
+        );
+        assert!(!lowered.install.contains('\n'));
+    }
+
+    /// The reasons an import of the document is refused are the reasons the
+    /// document is: what has no lowering yet is named, never half lowered.
+    #[test]
+    fn an_algorithm_document_with_no_lowering_is_refused_by_name() {
+        let imports = lower_algorithm_document("sce:std/time/days_from_civil.scxml")
+            .expect_err("it imports another document");
+        assert!(
+            format!("{imports:?}").contains("imports another document"),
+            "{imports:?}"
+        );
+        let absent = lower_algorithm_document("sce:std/time/no_such_document.scxml")
+            .expect_err("no such document");
+        assert!(
+            format!("{absent:?}").contains("names no document of the standard library"),
+            "{absent:?}"
+        );
     }
 
     const COUNTER: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"

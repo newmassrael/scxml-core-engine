@@ -324,11 +324,14 @@ apply_sce_test_policies(static_datamodel_interpreter_test)
 
 add_test(NAME static_datamodel_interpreter COMMAND static_datamodel_interpreter_test)
 
-# The lowered document, run. Spawns `sce-codegen lower` via popen, so it is
-# excluded on WASM for the reason cross_producer_diagnostic_id_test is.
+# The lowered document, run, and the lowered algorithm, held to the numerical
+# conformance cases the six backends are held to (E11). Spawns `sce-codegen
+# lower` and `lower-algorithm` via popen, so it is excluded on WASM for the
+# reason cross_producer_diagnostic_id_test is.
 if(NOT EMSCRIPTEN)
     add_executable(static_datamodel_lowered_test
         integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp
+        integration/AnAlgorithmRunsLoweredUnderTheInterpreterTest.cpp
     )
 
     target_include_directories(static_datamodel_lowered_test

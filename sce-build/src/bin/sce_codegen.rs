@@ -2589,6 +2589,27 @@ enum Commands {
         #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
         include_dir: Vec<String>,
     },
+    /// Lower one `sce:kind="algorithm"` document for a script engine, without
+    /// a statechart around it.
+    ///
+    /// `lower` serves a statechart that imports algorithms; this serves a
+    /// caller that runs one algorithm directly — the check that holds the
+    /// Interpreter to the numerical conformance cases (E11) is one. The
+    /// document is an `sce:std/...` name or a path. The result is one JSON line,
+    /// `{"v":1,"kind":"lower-algorithm","symbol":...,"install":...}`: evaluate
+    /// `install` once in the script engine, then call
+    /// `SceStatic.algorithms.<symbol>(...)`. A failure throws an Error whose
+    /// `sceFailure` names it (overflow, divide-by-zero, precondition, out-of-range,
+    /// capacity-exceeded — or unrepresentable, for an integer beyond the 2^53 a
+    /// Number holds exactly).
+    ///
+    /// Refused as `lower` refuses an import of it, with `generate/unsupported-feature`
+    /// naming the construct: an algorithm that imports another document, or
+    /// whose body holds a buffer, list, record, loop over one, or call.
+    LowerAlgorithm {
+        /// An `sce:std/...` document name, or the path of an algorithm document
+        document: String,
+    },
     /// Print, for every diagnostic code, whether a record of that code
     /// carries the `spec_provenance` of the anchor enclosing it.
     ///
@@ -3172,6 +3193,7 @@ fn main() {
         Commands::Kinds { kind } => cmd_kinds(kind.as_deref()),
         Commands::Expand { scxml, include_dir } => cmd_expand(&scxml, &include_dir),
         Commands::Lower { scxml, include_dir } => cmd_lower(&scxml, &include_dir, error_format),
+        Commands::LowerAlgorithm { document } => cmd_lower_algorithm(&document, error_format),
         Commands::Verify {
             out_dir,
             input_root,
@@ -3263,6 +3285,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::Kinds { .. }
         | Commands::Expand { .. }
         | Commands::Lower { .. }
+        | Commands::LowerAlgorithm { .. }
         | Commands::Verify { .. }
         | Commands::VerifyGenerator { .. }
         | Commands::Addr2Sce { .. }
@@ -9801,6 +9824,24 @@ fn cmd_lower(scxml_path: &str, include_dirs: &[String], error_format: ErrorForma
     let lowered = sce_build::forge::static_js::lower_file(scxml_path, extra_dirs)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML lowering error: "));
     out_bytes(lowered.as_bytes());
+}
+
+// ── Subcommand: lower-algorithm ────────────────────────────────
+//
+// One algorithm document as what a script engine installs and calls, for the
+// caller that runs an algorithm without a statechart (E11's check of the
+// Interpreter). Refuses through the same error format as `lower`.
+
+fn cmd_lower_algorithm(document: &str, error_format: ErrorFormat) {
+    let lowered = sce_build::forge::static_js::lower_algorithm_document(document)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML lowering error: "));
+    let line = serde_json::json!({
+        "v": 1,
+        "kind": "lower-algorithm",
+        "symbol": lowered.symbol,
+        "install": lowered.install,
+    });
+    outln!("{line}");
 }
 
 // ── Subcommand: verify ─────────────────────────────────────────

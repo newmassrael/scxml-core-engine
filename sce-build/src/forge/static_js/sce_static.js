@@ -8,13 +8,26 @@
      BigInt, and handed back as a Number only where the result fits the
      declared type AND is a Number's exact integer. Anything else throws: the
      script engine's failure channel is the one a generated backend records,
-     so a document that raises error.execution there raises it here.
+     so a document that raises error.execution there raises it here. A signed
+     minimum divided or reduced by -1 is one such throw: the remainder is
+     mathematically 0, and it still fails overflow, since the division it comes
+     from traps on the hardware and the contract makes that one answer on every
+     backend (SCE_FORGE.md 3.4.1).
 
      An event's data reaches the Interpreter as untyped JSON, and a generated
      machine reads it through its event-schema. field() is that reading: the
      refusals are the generated backends' (no data, a bare value, a missing
      field, a value of another type or beyond its width), each thrown, so the
      expression that read the field fails the way an overflow does.
+
+     A failure names itself. The thrown Error carries sceFailure, one of the
+     names a generated backend reports (SCE_FORGE.md 3.4.1): overflow,
+     divide-by-zero, precondition, out-of-range, capacity-exceeded. A caller that
+     compares this engine with a backend reads that name, not the message. The one
+     name no backend has is unrepresentable: the operation is defined, and its
+     operand or result is an integer a Number cannot hold exactly. A read of an
+     event's data carries none, since a backend answers that with error.execution
+     as well, and only ever for the shape of the event.
 
      The library is embedded in one attribute and its newlines collapse, so it
      holds no line comment and no statement that relies on a line break. */
@@ -23,13 +36,15 @@
   var ONE = BigInt(1);
   var RANGES = {};
 
-  function fail(reason) {
-    throw new Error('sce-static: ' + reason);
+  function fail(reason, name) {
+    var error = new Error('sce-static: ' + reason);
+    error.sceFailure = name;
+    throw error;
   }
 
   function exact(value) {
     if (!Number.isSafeInteger(value)) {
-      fail('expected an integer a Number holds exactly, read ' + String(value));
+      fail('expected an integer a Number holds exactly, read ' + String(value), 'unrepresentable');
     }
     return BigInt(value);
   }
@@ -43,10 +58,10 @@
 
     function hold(value) {
       if (value < min || value > max) {
-        fail('the value does not fit ' + name);
+        fail('the value does not fit ' + name, 'overflow');
       }
       if (value > SAFE || value < -SAFE) {
-        fail('the value of ' + name + ' is beyond the integers a Number holds exactly');
+        fail('the value of ' + name + ' is beyond the integers a Number holds exactly', 'unrepresentable');
       }
       return Number(value);
     }
@@ -54,9 +69,18 @@
     function divisor(value) {
       var d = exact(value);
       if (d === ZERO) {
-        fail('division by zero');
+        fail('division by zero', 'divide-by-zero');
       }
       return d;
+    }
+
+    function remainder(a, b) {
+      var x = exact(a);
+      var d = divisor(b);
+      if (signed && x === min && d === -ONE) {
+        fail('the remainder of the minimum of ' + name + ' by -1 is not a value', 'overflow');
+      }
+      return hold(x % d);
     }
 
     return {
@@ -64,7 +88,7 @@
       sub: function (a, b) { return hold(exact(a) - exact(b)); },
       mul: function (a, b) { return hold(exact(a) * exact(b)); },
       div: function (a, b) { return hold(exact(a) / divisor(b)); },
-      rem: function (a, b) { return hold(exact(a) % divisor(b)); },
+      rem: function (a, b) { return remainder(a, b); },
       neg: function (a) { return hold(-exact(a)); },
       narrow: function (a) { return hold(exact(a)); }
     };
@@ -130,7 +154,7 @@
         fail('expected a list, read ' + String(list));
       }
       if (list.length >= capacity) {
-        fail('the list already holds its capacity of ' + String(capacity));
+        fail('the list already holds its capacity of ' + String(capacity), 'capacity-exceeded');
       }
       return list.concat([value]);
     },
@@ -145,13 +169,13 @@
     },
     require: function (holds, what) {
       if (holds !== true) {
-        fail('the precondition ' + what + ' does not hold');
+        fail('the precondition ' + what + ' does not hold', 'precondition');
       }
     },
     algorithms: {},
     at: function (collection, index) {
       if (!Number.isSafeInteger(index) || index < 0 || index >= collection.length) {
-        fail('the index ' + String(index) + ' is outside the collection');
+        fail('the index ' + String(index) + ' is outside the collection', 'out-of-range');
       }
       return collection[index];
     },

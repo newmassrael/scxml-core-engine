@@ -2957,6 +2957,27 @@ replays the scenarios the Kotlin and Rust backends replay
 (`sce-build/tests/fixtures/static_datamodel/scenarios/*.json`) against the
 lowered documents, so one oracle judges the three engines.
 
+**An algorithm on its own.** `sce-codegen lower-algorithm <document>` lowers one
+`sce:kind="algorithm"` document without a statechart around it — an
+`sce:std/...` name or a path — and prints one JSON line naming the symbol and the
+expression that installs the library and the algorithm. It is refused as an
+import of it would be, and for the same reasons. A failure throws an Error whose
+`sceFailure` is the name a generated backend reports (`overflow`,
+`divide-by-zero`, `precondition`, `out-of-range`, `capacity-exceeded`), so a
+caller compares failures by name and not by message. A signed minimum divided by
+`-1` fails `overflow` and so does its remainder, which is `0` mathematically:
+SCE_FORGE.md §3.4.1 makes the pair one answer on every backend. The one name no
+backend has is `unrepresentable`, for an integer beyond the 2^53 a Number holds
+exactly, used as an operand or produced as a result: the operation is defined,
+and this engine cannot hold its value.
+`tests/integration/AnAlgorithmRunsLoweredUnderTheInterpreterTest.cpp` holds every
+algorithm fixture of the conformance catalog to the cases the six backends are
+held to (`tests/forge/conformance/numerical_reference.json`). A case with an
+argument beyond 2^53 is not asked, one that fails `unrepresentable` is counted
+and not compared, and a fixture the lowering refuses is reported with the
+construct it names; each of the three counts is printed, so a comparison that
+stopped being made shows as a number that fell.
+
 ### §2.16 A closed interface — `sce:interface="closed"`
 
 An event-schema types the payload of the one event it names; an event no
