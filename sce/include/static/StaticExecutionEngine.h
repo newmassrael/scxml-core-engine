@@ -3424,10 +3424,23 @@ public:
      * The act lands in the same queue as scheduleEvent(), so cancelEvent()
      * drops it (§scxml-6.3) and timeUntilNextScheduled() counts it.
      *
-     * @return The sendId used, generated when @p sendId is empty
+     * §scxml-6.2.4: a delay that is zero — written as `0s` or evaluated to it
+     * by a `delayexpr` — is no deferral. The act is performed here, before
+     * this call returns, exactly as the immediate site performs it: waiting
+     * for the next tick would make the same send take effect at one instant
+     * when the document wrote the wait as a literal and at another when it
+     * computed it. Nothing is queued, so there is nothing for `<cancel>` to
+     * reach and the id is the caller's own.
+     *
+     * @return The sendId used, generated when @p sendId is empty and the send
+     *         was queued
      */
     std::string scheduleHostSend(const ::SCE::HostSendRequest &request, std::chrono::milliseconds delay,
                                  const std::string &sendId = "") {
+        if (delay.count() <= 0) {
+            performDeferredHostSend(request);
+            return sendId;
+        }
         const uint64_t fireTimeMs = schedNowMs() + static_cast<uint64_t>(delay.count());
         return scheduler_.scheduleHostSendAt(std::make_shared<const ::SCE::HostSendRequest>(request), fireTimeMs,
                                              sendId);

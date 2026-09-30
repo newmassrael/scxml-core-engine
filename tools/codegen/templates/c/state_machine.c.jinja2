@@ -838,6 +838,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                    its parent carries it (§scxml-6.4.1). */
                 _host_req.invoke_id = sm->current_event_invoke_id;
 {% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
+{% set host_perform = csym_prefix ~ model.name ~ ('_perform_basic_http' if basic_http else '_perform_host_send') %}
 {% if action.delayexpr or host_delay_ms > 0 %}
                 /* W3C SCXML 6.2.4: a `delay` is a property of the SEND, not
                    of the processor it named, so this waits exactly as an
@@ -870,12 +871,23 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% else %}
                 const uint64_t _host_delay_ms = {{ host_delay_ms }}u;
 {% endif %}
+{% if resolved_delay or action.delayexpr %}
+                /* W3C SCXML 6.2.4: a wait that came out zero is no deferral.
+                   A literal `0s` is finished at codegen time and never reaches
+                   here; one an expression computed is the same wait and is
+                   performed at the same instant, before this call returns. */
+                if (_host_delay_ms == 0u) {
+                    {{ host_perform }}(sm, &_host_req);
+                } else {
+                    scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,
+                                        _host_req.send_id, &_host_req);
+                }
+{% else %}
                 scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,
                                     _host_req.send_id, &_host_req);
-{% elif basic_http %}
-                {{ csym_prefix }}{{ model.name }}_perform_basic_http(sm, &_host_req);
+{% endif %}
 {% else %}
-                {{ csym_prefix }}{{ model.name }}_perform_host_send(sm, &_host_req);
+                {{ host_perform }}(sm, &_host_req);
 {% endif %}
             }
 {%- endmacro %}
