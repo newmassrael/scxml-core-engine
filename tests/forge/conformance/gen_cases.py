@@ -109,6 +109,19 @@ held to 280 hand cases before they generate; only where a failure's name depends
 the order the document evaluates in (`utc_from_local`, `outbound_stale`) do they
 follow that order. All six backends agreed on every case, and a wrong expectation in
 seven of the fixtures fails Go and C++.
+
+Seventh run, 2026-09-30: `algorithm_crc16` and its table form, `algorithm_checked_index`,
+`algorithm_bytes_squeeze`, `algorithm_list_param_sum`, the two HLC resources,
+`algorithm_weekly_expand` (`week % interval` is reached only for a day the mask names),
+`acl_membership`, `acl_granted` and the three `merkle_*` documents — 4600 cases; all
+six backends agreed. What the laws found: `merkle_diff` promises that its answer is
+never later than the earliest change one side lacks, and that is false once one side
+has been pruned — a branch only the pruned side held, and dropped, is listed by
+neither digest, so the search descends into the branches both list and answers a
+later minute. The algorithm is Actual's and does what its correction intends; the
+document's sentence was too strong, so it now says where the bound holds, and two
+hand cases pin the same pair of digests pruned and not. A wrong expectation in five
+of the fixtures fails Go and C++.
 """
 
 from __future__ import annotations
@@ -1142,6 +1155,211 @@ def utc_from_local(starts: list, offsets: list, local: int):
     return ("fails", "precondition")
 
 
+def crc16_ccitt_false(data: list):
+    """algorithm_crc16, algorithm_crc16_table — CRC-16/CCITT-FALSE (poly 0x1021,
+    init 0xFFFF, no reflection, no final xor), bit by bit."""
+    crc = 0xFFFF
+    for byte in data:
+        crc ^= byte << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+    return ("ok", crc)
+
+
+def checked_index(data: list, signed: int, unsigned: int):
+    """algorithm_checked_index — `data[i] ^ data[u]`, either index outside the
+    buffer failing `out-of-range`."""
+    if not (0 <= signed < len(data) and 0 <= unsigned < len(data)):
+        return ("fails", "out-of-range")
+    return ("ok", data[signed] ^ data[unsigned])
+
+
+def bytes_squeeze(data: list):
+    """algorithm_bytes_squeeze — each run of one byte written once, as `tr -s`."""
+    out: list = []
+    for byte in data:
+        if not out or out[-1] != byte:
+            out.append(byte)
+    return ("ok", out)
+
+
+def list_param_sum(values: list):
+    """algorithm_list_param_sum — the sum, and the last element once more."""
+    return ("ok", sum(values) + (values[-1] if values else 0))
+
+
+def legacy_hlc_compare(a: dict, b: dict):
+    """algorithm_hlc_compare — 1 when `a` is the later stamp, else 0."""
+    return ("ok", 1 if hlc_key(a) > hlc_key(b) else 0)
+
+
+def weekly_expand(dtstart: int, mask: int, interval: int, window_start: int, window_end: int):
+    """algorithm_weekly_expand — each day of the window, on or after `dtstart`,
+    whose weekday (day 0 is a Thursday) is in `mask` and whose week since `dtstart`
+    is a multiple of `interval`. Every operation is checked, and `week % interval`
+    is reached only for a day the mask names, as `&&` short-circuits."""
+    out = []
+    day = window_start if window_start > dtstart else dtstart
+    while day < window_end:
+        weekday = truncated_remainder(checked(day + 3), 7)
+        week = truncated_quotient(checked(day - dtstart), 7)
+        if (mask >> weekday) & 1 == 1:
+            if interval == 0:
+                raise Failure("divide-by-zero")
+            if truncated_remainder(week, interval) == 0:
+                out.append(day)
+        day = checked(day + 1)
+    return ("ok", out)
+
+
+ACL_ALL, ACL_AUTHENTICATED, ACL_UNAUTHENTICATED, ACL_OWNER = 4294967295, 4294967294, 4294967293, 4294967292
+
+
+def acl_membership(edges: list, user: int):
+    """sce:std/acl/acl_membership — every group the user belongs to, directly or
+    through others, in the order a breadth-first walk meets them; the user is never
+    their own group and 0 is no group."""
+    if user == 0:
+        return ("ok", [])
+    found: list = []
+    queue = [user]
+    for current in queue:
+        for edge in edges:
+            group = edge["group"]
+            if edge["member"] == current and group != user and group != 0 and group not in found:
+                found.append(group)
+                queue.append(group)
+    return ("ok", found)
+
+
+def acl_granted(tree: list, acl: list, user: int, groups: list, owner: int):
+    """sce:std/acl/acl_granted — of the privileges of `tree`, those an applicable
+    entry of `acl` grants, itself or through an aggregate above it, in tree order."""
+    for position, privilege in enumerate(tree):
+        earlier = tree[:position]
+        root_first = privilege["id"] == 0 and privilege["parent"] == 0 if position == 0 else privilege["id"] != 0
+        parent_known = position == 0 or any(q["id"] == privilege["parent"] for q in earlier)
+        if not root_first or not parent_known or any(q["id"] == privilege["id"] for q in earlier):
+            return ("fails", "precondition")
+    parent_of = {privilege["id"]: privilege["parent"] for privilege in tree}
+
+    def applies(entry_: dict) -> bool:
+        principal = entry_["principal"]
+        if principal == ACL_ALL:
+            return True
+        if principal == ACL_AUTHENTICATED and user != 0:
+            return True
+        if principal == ACL_UNAUTHENTICATED and user == 0:
+            return True
+        who = owner if principal == ACL_OWNER else principal
+        return who != 0 and user != 0 and who < ACL_OWNER and (who == user or who in groups)
+
+    def granted(privilege_id: int) -> bool:
+        at = privilege_id
+        while True:
+            if any(entry_["privilege"] == at and applies(entry_) for entry_ in acl):
+                return True
+            if at == 0:
+                return False
+            at = parent_of[at]
+
+    return ("ok", [privilege["id"] for privilege in tree if granted(privilege["id"])])
+
+
+def merkle_path(minute: int) -> list:
+    """The nodes a change at `minute` lies under: the root, then for each depth 1
+    to 16 the node whose prefix is the minute's base-3 digits down to that depth."""
+    return [(0, 0)] + [(depth, minute // 3 ** (16 - depth)) for depth in range(1, 17)]
+
+
+def merkle_node(depth: int, prefix: int, hash_: int) -> dict:
+    return {"depth": depth, "prefix": prefix, "hash": hash_}
+
+
+def merkle_digest_valid(nodes: list) -> bool:
+    """Ascending (depth, prefix) with no depth past 16 — a digest the family wrote."""
+    keys = [(node["depth"], node["prefix"]) for node in nodes]
+    return all(depth <= 16 for depth, _ in keys) and all(a < b for a, b in zip(keys, keys[1:]))
+
+
+def merkle_insert(nodes: list, minute: int, hash_: int):
+    """sce:std/merge/merkle_insert — the change's hash XORed into every node on its
+    path, a missing node created with the hash alone."""
+    if minute < 0 or not merkle_digest_valid(nodes):
+        return ("fails", "precondition")
+    table = {(node["depth"], node["prefix"]): node["hash"] for node in nodes}
+    for key in merkle_path(minute):
+        table[key] = table.get(key, 0) ^ hash_
+    return ("ok", [merkle_node(depth, prefix, table[(depth, prefix)]) for depth, prefix in sorted(table)])
+
+
+def merkle_prune(nodes: list, keep: int):
+    """sce:std/merge/merkle_prune — under every kept node only the `keep` children
+    with the largest prefixes stay, and nothing under a dropped node."""
+    if keep < 1 or not merkle_digest_valid(nodes):
+        return ("fails", "precondition")
+    kept = []
+    for node in nodes:
+        stays, depth, prefix = True, node["depth"], node["prefix"]
+        while stays and depth >= 1:
+            after = sum(
+                1
+                for other in nodes
+                if other["depth"] == depth
+                and (depth == 1 or other["prefix"] // 3 == prefix // 3)
+                and other["prefix"] > prefix
+            )
+            stays = after < keep
+            prefix = prefix // 3 if depth >= 2 else 0
+            depth -= 1
+        if stays:
+            kept.append(node)
+    return ("ok", kept)
+
+
+def merkle_diff(a: list, b: list):
+    """sce:std/merge/merkle_diff — where two digests part: equal roots mean the
+    same changes, else descend from the root into the first child, in ascending
+    prefix, whose hashes differ, stopping at a child missing on one side; the answer
+    is the minute the path so far begins at, in milliseconds."""
+
+    def root(nodes: list) -> int:
+        return next((node["hash"] for node in reversed(nodes) if node["depth"] == 0), 0)
+
+    def child_hash(nodes: list, depth: int, prefix: int):
+        return next(
+            (node["hash"] for node in reversed(nodes) if node["depth"] == depth and node["prefix"] == prefix),
+            None,
+        )
+
+    if root(a) == root(b):
+        return ("ok", {"differs": False, "millis": 0})
+    depth, prefix, span = 0, 0, 3**16
+    while depth < 16:
+        children = sorted(
+            {
+                node["prefix"]
+                for node in a + b
+                if node["depth"] == depth + 1 and (depth == 0 or node["prefix"] // 3 == prefix)
+            }
+        )
+        descended = False
+        for child in children:
+            in_a, in_b = child_hash(a, depth + 1, child), child_hash(b, depth + 1, child)
+            if in_a is None or in_b is None:
+                break
+            if in_a != in_b:
+                prefix, descended = child, True
+                break
+        if not descended:
+            break
+        depth += 1
+        span //= 3
+    minute = checked(prefix * span, 0, U64_MAX)
+    minute = checked(minute)
+    return ("ok", {"differs": True, "millis": checked(minute * 60000)})
+
+
 def epoch_ms(year, month, day, hour=0, minute=0, second=0, milli=0) -> int:
     instant = datetime.datetime(year, month, day, hour, minute, second)
     return (instant - datetime.datetime(1970, 1, 1)) // datetime.timedelta(milliseconds=1) + milli
@@ -1840,6 +2058,201 @@ def utc_offset_args(rng: SplitMix64):
     return [starts, offsets, t]
 
 
+def byte_list(rng: SplitMix64, longest: int = 40) -> list:
+    """Bytes: of a length at an edge of the loops that walk them, and random,
+    repeated, all-ones or printable."""
+    length = rng.pick([0, 1, 2, 3, 4, 5, 8, 9, 16, 31, 32, 33]) if rng.below(2) else rng.between(0, longest)
+    length = min(length, longest)
+    style = rng.below(4)
+    if style == 0:
+        return [rng.between(0, 255) for _ in range(length)]
+    if style == 1:
+        return [rng.pick([0, 0x80, 0xFF, 1, 0x7F]) for _ in range(length)]
+    if style == 2:
+        return [rng.between(32, 126) for _ in range(length)]
+    return [rng.pick([0x31, 0x32, 0x33]) for _ in range(length)]
+
+
+def crc_args(rng: SplitMix64):
+    return [byte_list(rng)]
+
+
+def index_args(rng: SplitMix64):
+    """Mostly indices inside the buffer, and often enough one at or past its end or
+    below its start, where the read fails."""
+    data = byte_list(rng, 12)
+    count = len(data)
+    if count > 0 and rng.below(10) < 7:
+        return [data, rng.between(0, count - 1), rng.between(0, count - 1)]
+    signed = rng.pick([-1, 0, count - 1, count, count + 1, I32_MIN, I32_MAX]) if rng.below(3) == 0 else rng.between(-2, count + 2)
+    unsigned = rng.pick([0, count - 1, count, count + 1, U32_MAX]) if rng.below(3) == 0 else rng.between(0, count + 2)
+    return [data, clamp(signed, I32_MIN, I32_MAX), clamp(unsigned, 0, U32_MAX)]
+
+
+def squeeze_args(rng: SplitMix64):
+    """Bytes made of at most sixteen runs, the buffer the algorithm fills."""
+    data, previous = [], None
+    for _ in range(rng.between(0, 16)):
+        byte = rng.between(0, 255) if rng.below(2) else rng.pick([0, 1, 2, 255])
+        if byte == previous:
+            byte = (byte + 1) & 0xFF
+        data += [byte] * rng.pick([1, 1, 2, 3, 5])
+        previous = byte
+    return [data]
+
+
+def list_sum_args(rng: SplitMix64):
+    longest = 200 if rng.below(10) == 0 else 12
+    return [[rng.pick(I32_EDGES) if rng.below(3) == 0 else rng.between(I32_MIN, I32_MAX) for _ in range(rng.between(0, longest))]]
+
+
+def weekly_args(rng: SplitMix64):
+    """A recurrence and a window of at most 366 days at or after day 0: the
+    usual week, a window at the end of int64, and a start far enough before it
+    that the difference overflows."""
+    kind = rng.below(10)
+    if kind < 7:
+        dtstart = rng.pick([0, 1, 3, 4, 19723, 20000]) + rng.between(0, 30)
+        window_start = max(0, dtstart + rng.between(-40, 40))
+    elif kind < 9:
+        window_start = I64_MAX - rng.between(0, 20)
+        dtstart = window_start - rng.pick([0, 1, 7, 400, 2**40])
+    else:
+        dtstart = I64_MIN + rng.between(0, 5)
+        window_start = rng.between(0, 30)
+    window_end = min(window_start + rng.pick([0, 1, 7, 8, 14, 31, 100, 365, 366, rng.between(0, 366)]), I64_MAX)
+    interval = rng.pick([1, 1, 2, 3, 4, 0, -1, rng.between(1, 8)])
+    return [dtstart, rng.between(0, 255), interval, window_start, window_end]
+
+
+ACL_SMALL = [1, 2, 3, 4, 5, 6]
+
+
+def acl_tree(rng: SplitMix64) -> list:
+    """A privilege tree: the root first as its own parent, each later one under an
+    earlier parent — and now and then one that is not: out of order, repeated, with
+    a parent nobody declares, or with no root."""
+    tree, ids = [{"id": 0, "parent": 0}], [0]
+    for _ in range(rng.between(0, 6)):
+        fresh = rng.pick([i for i in range(1, 12) if i not in ids] + [U32_MAX - 4])
+        if fresh in ids:
+            continue
+        tree.append({"id": fresh, "parent": rng.pick(ids)})
+        ids.append(fresh)
+    if rng.below(8) == 0:
+        how = rng.below(4)
+        if how == 0 and len(tree) > 2:
+            tree = shuffled(rng, tree)
+        elif how == 1 and len(tree) > 1:
+            tree.append(dict(rng.pick(tree[1:])))
+        elif how == 2 and len(tree) > 1:
+            tree[-1] = {"id": tree[-1]["id"], "parent": 99}
+        elif how == 3 and len(tree) > 1:
+            tree = tree[1:]
+    return tree
+
+
+def principal_value(rng: SplitMix64) -> int:
+    return rng.pick([ACL_ALL, ACL_AUTHENTICATED, ACL_UNAUTHENTICATED, ACL_OWNER, 0] + ACL_SMALL + ACL_SMALL)
+
+
+def granted_args(rng: SplitMix64):
+    tree = acl_tree(rng)
+    ids = [privilege["id"] for privilege in tree] + [99]
+    acl = [{"principal": principal_value(rng), "privilege": rng.pick(ids)} for _ in range(rng.between(0, 6))]
+    user = rng.pick([0] + ACL_SMALL)
+    groups = [rng.pick(ACL_SMALL + [0]) for _ in range(rng.between(0, 3))]
+    owner = rng.pick([0] + ACL_SMALL + [ACL_OWNER, U32_MAX])
+    return [tree, acl, user, groups, owner]
+
+
+def membership_args(rng: SplitMix64):
+    edges = [
+        {"member": rng.pick(ACL_SMALL + [0]), "group": rng.pick(ACL_SMALL + [0])}
+        for _ in range(rng.between(0, 10))
+    ]
+    return [edges, rng.pick([0] + ACL_SMALL)]
+
+
+def merkle_minute(rng: SplitMix64) -> int:
+    """A change's minute: a real one, near the start or the 3^16 boundary where the
+    leading digit outgrows 2, and far past what a clock reads."""
+    kind = rng.below(10)
+    if kind < 4:
+        return 29_841_720 + rng.between(-100_000, 100_000)
+    if kind < 6:
+        return rng.pick([0, 1, 2, 3, 8, 26, 27, 28])
+    if kind < 8:
+        return 3**16 + rng.between(-3, 3)
+    if kind < 9:
+        return rng.pick([2**40, I64_MAX // 60_000 - 1, I64_MAX // 60_000, I64_MAX // 60_000 + 1])
+    return rng.pick([I64_MAX - 1, I64_MAX, 2**62])
+
+
+def digest_of(changes: list) -> list:
+    """The digest of a set of changes, each a (minute, hash) pair: what the host
+    builds by inserting each one as it first stores it."""
+    nodes: list = []
+    for minute, hash_ in changes:
+        nodes = answer_of(merkle_insert(nodes, minute, hash_))
+    return nodes
+
+
+def change_hash(rng: SplitMix64) -> int:
+    return rng.pick([0, 1, U32_MAX]) if rng.below(5) == 0 else rng.between(0, U32_MAX)
+
+
+def near_changes(rng: SplitMix64, count: int, base: int | None = None) -> list:
+    """Changes at minutes sharing most of their base-3 prefix, so the digest has
+    siblings and a path worth descending; the same `base` gives the changes of two
+    replicas that part only below their shared prefix."""
+    base = merkle_minute(rng) if base is None else base
+    return [
+        (clamp(base + rng.pick([0, 1, 2, 3, 9, 27, 243, 6561, 100_000]), 0, I64_MAX), change_hash(rng))
+        for _ in range(count)
+    ]
+
+
+def any_changes(rng: SplitMix64, count: int) -> list:
+    return [(merkle_minute(rng), change_hash(rng)) for _ in range(count)]
+
+
+def merkle_insert_args(rng: SplitMix64):
+    changes = near_changes(rng, rng.between(0, 4)) if rng.below(2) else any_changes(rng, rng.between(0, 3))
+    nodes = digest_of(changes)
+    if nodes and rng.below(10) == 0:
+        nodes = shuffled(rng, nodes) if rng.below(2) else nodes + [merkle_node(17, 0, 1)]
+    if changes and rng.below(4) == 0:
+        minute, hash_ = rng.pick(changes)
+    else:
+        minute, hash_ = merkle_minute(rng), change_hash(rng)
+    if rng.below(15) == 0:
+        minute = -1 - rng.between(0, 5)
+    return [nodes, minute, hash_]
+
+
+def merkle_prune_args(rng: SplitMix64):
+    nodes = digest_of(near_changes(rng, rng.between(1, 6)))
+    if nodes and rng.below(12) == 0:
+        nodes = shuffled(rng, nodes)
+    return [nodes, rng.pick([1, 1, 2, 2, 3, 0, 1000]) if rng.below(2) else rng.between(1, 4)]
+
+
+def merkle_diff_args(rng: SplitMix64):
+    """Two replicas that share most of their changes and each hold a few the other
+    lacks, one sometimes pruned so a child is missing on one side."""
+    base = merkle_minute(rng)
+    shared = near_changes(rng, rng.between(0, 4), base)
+    only_a = near_changes(rng, rng.between(0, 3), base) if rng.below(4) else any_changes(rng, rng.between(0, 2))
+    only_b = near_changes(rng, rng.between(0, 3), base) if rng.below(4) else any_changes(rng, rng.between(0, 2))
+    a, b = digest_of(shared + only_a), digest_of(shared + only_b)
+    if rng.below(3) == 0:
+        b = answer_of(merkle_prune(b, rng.pick([1, 2])))
+    if rng.below(6) == 0:
+        a, b = b, a
+    return [a, b]
+
+
 def utc_local_args(rng: SplitMix64):
     starts, offsets = offset_table(rng)
     if starts and rng.below(5):
@@ -1918,6 +2331,19 @@ FIXTURES = {
     "changes_apply": (lambda args: changes_apply(*args), changes_apply_args, 400, 0xE110_002E),
     "utc_offset_at": (lambda args: utc_offset_at(*args), utc_offset_args, 400, 0xE110_002F),
     "utc_from_local": (lambda args: answering(utc_from_local)(*args), utc_local_args, 500, 0xE110_0030),
+    "algorithm_crc16": (lambda args: crc16_ccitt_false(*args), crc_args, 300, 0xE110_0031),
+    "algorithm_crc16_table": (lambda args: crc16_ccitt_false(*args), crc_args, 300, 0xE110_0032),
+    "algorithm_checked_index": (lambda args: checked_index(*args), index_args, 300, 0xE110_0033),
+    "algorithm_bytes_squeeze": (lambda args: bytes_squeeze(*args), squeeze_args, 300, 0xE110_0034),
+    "algorithm_list_param_sum": (lambda args: list_param_sum(*args), list_sum_args, 200, 0xE110_0035),
+    "algorithm_hlc_compare": (lambda args: legacy_hlc_compare(*args), compare_args, 200, 0xE110_0036),
+    "algorithm_hlc_tick": (lambda args: hlc_send(*args), send_args, 300, 0xE110_0037),
+    "algorithm_weekly_expand": (lambda args: answering(weekly_expand)(*args), weekly_args, 500, 0xE110_0038),
+    "acl_membership": (lambda args: acl_membership(*args), membership_args, 300, 0xE110_0039),
+    "acl_granted": (lambda args: acl_granted(*args), granted_args, 400, 0xE110_003A),
+    "merkle_insert": (lambda args: merkle_insert(*args), merkle_insert_args, 400, 0xE110_003B),
+    "merkle_prune": (lambda args: merkle_prune(*args), merkle_prune_args, 300, 0xE110_003C),
+    "merkle_diff": (lambda args: answering(merkle_diff)(*args), merkle_diff_args, 500, 0xE110_003D),
 }
 
 
@@ -2111,9 +2537,70 @@ def validate_laws() -> None:
                         [starts, offsets, instant],
                     )
 
+    insert_order_law = Law("merkle_insert: the order the changes are inserted in does not matter")
+    cancel_law = Law("merkle_insert: a change inserted twice cancels itself on every node")
+    prune_keeps_law = Law("merkle_prune only drops nodes, keeps the rest in order, and keeps the root")
+    diff_bound_law = Law("merkle_diff never answers later than the earliest change one side lacks")
+    diff_pruned_law = Law("merkle_diff still tells a pruned digest apart from one that differs")
+    membership_law = Law("acl_membership lists each group once and never the user")
+    for _ in range(LAW_RUNS):
+        # Distinct nonzero hashes: a change whose hash is 0, or two on opposite sides
+        # whose hashes are equal, cancel out of an XOR digest, and no digest of this
+        # family can see them — a limit of the structure, not of a document.
+        hashes = shuffled(rng, [rng.between(1, U32_MAX) for _ in range(12)])
+        if len(set(hashes)) < len(hashes):
+            continue
+        base = merkle_minute(rng)
+        minutes = [clamp(base + rng.pick([0, 1, 2, 3, 9, 27, 243, 6561, 100_000]), 0, I64_MAX) for _ in range(9)]
+        pairs = list(dict.fromkeys(zip(minutes, hashes)))
+        changes = pairs[: rng.between(1, 5)]
+        forward = digest_of(changes)
+        insert_order_law.holds(forward == digest_of(shuffled(rng, changes)), changes)
+        again = answer_of(merkle_insert(forward, changes[0][0], changes[0][1]))
+        rest = {(node["depth"], node["prefix"]): node["hash"] for node in digest_of(changes[1:])}
+        cancel_law.holds(
+            all(node["hash"] == rest.get((node["depth"], node["prefix"]), 0) for node in again)
+            and set(rest) <= {(node["depth"], node["prefix"]) for node in again},
+            changes,
+        )
+
+        pruned = answer_of(merkle_prune(forward, rng.between(1, 3)))
+        kept = [node for node in forward if node in pruned]
+        prune_keeps_law.holds(
+            pruned == kept and any(node["depth"] == 0 for node in pruned) == any(node["depth"] == 0 for node in forward),
+            [forward],
+        )
+
+        left = pairs[: rng.between(0, len(pairs))]
+        right = pairs[rng.between(0, len(pairs)) :]
+        differing = set(left) ^ set(right)
+        b_digest = digest_of(right)
+        pruned_side = rng.below(3) == 0
+        if pruned_side:
+            b_digest = answer_of(merkle_prune(b_digest, rng.between(1, 2)))
+        divergence = answer_of(answering(merkle_diff)(digest_of(left), b_digest))
+        if divergence is not None and differing:
+            earliest = min(minute for minute, _ in differing)
+            if pruned_side:
+                # Pruning leaves the root as it was, so the sides are still told apart;
+                # how early the answer is is not promised for a branch that only the
+                # pruned side held and dropped — see merkle_diff.scxml.
+                diff_pruned_law.holds(divergence["differs"], [left, right])
+            else:
+                diff_bound_law.holds(
+                    divergence["differs"] and divergence["millis"] <= earliest * 60_000,
+                    [left, right],
+                )
+
+        edges = membership_args(rng)[0]
+        user = rng.between(1, 6)
+        groups = answer_of(acl_membership(edges, user))
+        membership_law.holds(len(groups) == len(set(groups)) and user not in groups and 0 not in groups, [edges, user])
+
     every_law = (
         union_laws + [prune_law] + order_laws + clock_laws + [classify_law] + apply_laws + ack_laws
         + [page_law, insert_law, dedup_law, hold_law, gcra_law, retry_law, utc_law]
+        + [insert_order_law, cancel_law, prune_keeps_law, diff_bound_law, diff_pruned_law, membership_law]
     )
     for law in every_law:
         law.was_asked()
@@ -2151,44 +2638,61 @@ def section(text: str, fixture: str):
     return opening, closing
 
 
-HAND_CASE = re.compile(
-    r'^\s*\{ "args": (\[.*?\]), (?:"expected": (.+?)|"fails": "(.+?)")(?:, "note": .*)? \},?$'
-)
+def case_objects(body: str):
+    """The top-level objects of a `cases` body, in order, each as the text it is
+    written in — from the start of its first line to its closing brace — whether
+    it sits on one line or several, so a hand-written case is carried over as it
+    was written."""
+    found, depth, begin, in_string, escaped = [], 0, 0, False, False
+    for index, char in enumerate(body):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "{":
+            if depth == 0:
+                begin = body.rfind("\n", 0, index) + 1
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                found.append(body[begin : index + 1])
+    return found
 
 
 def hand_cases(body: str):
-    """The hand-written lines of a `cases` body, and how many generated lines
-    it held — which regeneration drops."""
+    """The hand-written cases of a `cases` body, each as its text, and how many
+    generated cases it held — which regeneration drops."""
     hand, generated = [], 0
-    for line in body.splitlines():
-        if not line.strip():
-            continue
-        if f'"note": "{MARK}' in line:
+    for text in case_objects(body):
+        if str(json.loads(text).get("note", "")).startswith(MARK):
             generated += 1
-            continue
-        hand.append(line)
+        else:
+            hand.append(text)
     return hand, generated
 
 
-def verify_model(fixture: str, model, lines) -> int:
+def verify_model(fixture: str, model, cases) -> int:
     """Hold the model to every hand-written case of `fixture`."""
     checked = 0
-    for line in lines:
-        match = HAND_CASE.match(line)
-        if not match:
-            raise SystemExit(f"{fixture}: cannot read the hand case {line.strip()!r}")
-        args = json.loads(match.group(1))
+    for text in cases:
+        case = json.loads(text)
+        args = case["args"]
         answer = model(args)
-        expected = match.group(2)
-        fails = match.group(3)
-        if fails is not None:
-            ok = answer == ("fails", fails)
+        if "fails" in case:
+            ok = answer == ("fails", case["fails"])
         else:
-            ok = answer[0] == "ok" and answer[1] == json.loads(expected)
+            ok = answer[0] == "ok" and answer[1] == case["expected"]
         if not ok:
             raise SystemExit(
                 f"{fixture}: the model answers {answer} for {args}, but the hand case "
-                f"says {line.strip()} — the model is wrong, since every backend holds the case"
+                f"says {' '.join(text.split())} — the model is wrong, since every backend "
+                "holds the case"
             )
         checked += 1
     return checked
@@ -2200,7 +2704,7 @@ def regenerate(text: str):
         start, end = section(text, fixture)
         hand, dropped = hand_cases(text[start:end])
         checked = verify_model(fixture, model, hand)
-        seen = {identity(json.loads(HAND_CASE.match(line).group(1))) for line in hand}
+        seen = {identity(json.loads(text)["args"]) for text in hand}
         rng = SplitMix64(seed)
         made, guard = [], 0
         while len(made) < count:
@@ -2213,8 +2717,7 @@ def regenerate(text: str):
                 continue
             seen.add(key)
             made.append(case_line(args, model(args)))
-        lines = [line.rstrip(",") for line in hand] + made
-        body = "\n" + ",\n".join(lines)
+        body = "\n" + ",\n".join(hand + made)
         text = text[:start] + body + text[end:]
         kinds: dict[str, int] = {}
         for line in made:

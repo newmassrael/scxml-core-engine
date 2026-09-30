@@ -9,9 +9,20 @@
   first whose hashes differ; it stops, and answers the minute the path so
   far begins at, when there is none — or when the next child is missing on
   one side, since pruning may have dropped it there and descending past it
-  could answer a time after the change. The answer is never later than the
-  earliest change one side holds and the other lacks, which is what makes
-  "exchange everything since `millis`" enough.
+  could answer a time after the change. For digests that hold every node of
+  their changes the answer is never later than the earliest change one side
+  holds and the other lacks, which is what makes "exchange everything since
+  `millis`" enough.
+
+  Pruning (merkle_prune) gives that bound up in one case. A branch that only
+  the pruned side held, and dropped, is a child neither digest lists, so the
+  search cannot see it: the sides are still told apart by the roots, and when
+  they also differ in a branch both list, the answer is that later minute and
+  the exchange leaves the change in the dropped branch where it was. Nothing is
+  lost — the next search, equal in every listed branch, finds no child to
+  descend into and answers the start of time — but it takes that second round.
+  The conformance cases pin both answers for one pair of digests, pruned and
+  not.
 
   The reference's earlier form (jlongster/crdt-example-app) descended into
   a child missing on one side; the stop is Actual's correction of it, kept
