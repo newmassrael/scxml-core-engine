@@ -36,6 +36,16 @@ PY
 # and the case SURVIVED (measured 2026-09-30). The orphan's `#_parent` through
 # a `targetexpr` is held in `a_send_reaches_only_what_its_target_names.cases`,
 # whose root carries a literal `#_parent` send and so has the guard to mutate.
+#
+# What this fixture does reach is the `else` itself: a machine with no parent
+# delivery, told to send to `#_parent`, reports it unreachable at compile time.
+# Reporting it as sent instead is the silence the row was written against.
+
+mutation_case "the C++ AOT reports a #_parent send from a machine with no parent as sent" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     "            } else {\n                return TargetSendOutcome::Unreachable;\n            }\n            route = ::SCE::ScheduledRoute{RouteKind::Parent, eventName, \"\"};",
+     "            } else {\n                return TargetSendOutcome::Sent;\n            }\n            route = ::SCE::ScheduledRoute{RouteKind::Parent, eventName, \"\"};")
+PY
 
 # ── C++ AOT: a session target is delivered to no one ───────────────
 
