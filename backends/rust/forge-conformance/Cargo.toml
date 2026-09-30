@@ -37,7 +37,13 @@ sce-portable-bytes = { path = "../portable-bytes", default-features = false }
 sce-build = { path = "../../../sce-build" }
 
 [dev-dependencies]
-serde_json = "1"
+# `float_roundtrip` makes a JSON real parse to the nearest double. serde_json's
+# default parser is faster but can land one unit in the last place away, which
+# turns the multiplier 0.9999999999999999 of a `retry_next_backoff` case into
+# 1.0 — a case that must fail `precondition` then yields a value, on this
+# harness alone (measured 2026-09-30: Python, Go, Kotlin and C++ parse it
+# correctly). The reference file holds reals written with 16 and 17 digits.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 
 [[test]]
 name = "numerical_conformance"

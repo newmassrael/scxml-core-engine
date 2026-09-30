@@ -39,7 +39,11 @@ libxml = { version = "0.3", optional = true }
 minijinja = { version = "2", features = ["builtins", "loader"] }
 # Serialization for template context
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# `float_roundtrip`: the C harness bakes the reference file's reals into its
+# source (conformance.rs `c_literal_for`), and serde_json's default parser can
+# land one unit in the last place off the nearest double, so 0.9999999999999999
+# was baked as 1.0. See backends/rust/forge-conformance/Cargo.toml.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 # YAML parsing for deploy.yaml (SCE Mesh topology configuration).
 # serde_yaml_ng is the actively-maintained successor to the deprecated serde_yaml.
 serde_yaml_ng = "0.9"
