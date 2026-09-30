@@ -484,7 +484,7 @@ TOOLS = [
         "name": "compare",
         "description": (
             "Compare two or more drafts of one specification -- written in "
-            "separate conversations, or by separate agents -- at every level: "
+            "separate conversations, or in separate sessions -- at every level: "
             "bytes, canonical XML, the logic the build compiles, the review "
             "table, the pseudocode page, the open questions each draft marks, "
             "and, for statecharts, what they do when driven alike. Returns "
