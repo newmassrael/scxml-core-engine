@@ -105,6 +105,71 @@ pub fn interface_left_open(model: &crate::model::SCXMLModel) -> Vec<String> {
         .collect()
 }
 
+/// The markers of one kind counted by id, in the order each id is first
+/// written.
+///
+/// An id is a QUESTION or a VALUE, and a marker is a PLACE: a specification
+/// that leaves the caller's route open leaves ONE question and the draft may
+/// mark it where six sends need it. Saying "6 question(s)" told an owner there
+/// were six things to decide when there was one, so a sentence names both —
+/// how many questions, and how many places — whenever they differ, and keeps
+/// its old bytes when they do not.
+struct Tally<'a> {
+    counted: Vec<(&'a str, usize)>,
+}
+
+impl<'a> Tally<'a> {
+    fn of(ids: impl Iterator<Item = &'a str>) -> Self {
+        let mut counted: Vec<(&str, usize)> = Vec::new();
+        for id in ids {
+            match counted.iter_mut().find(|(seen, _)| *seen == id) {
+                Some((_, times)) => *times += 1,
+                None => counted.push((id, 1)),
+            }
+        }
+        Tally { counted }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.counted.is_empty()
+    }
+
+    /// How many different ids.
+    fn distinct(&self) -> usize {
+        self.counted.len()
+    }
+
+    /// How many markers.
+    fn places(&self) -> usize {
+        self.counted.iter().map(|(_, times)| times).sum()
+    }
+
+    /// The ids, an id written in more than one place followed by how many.
+    fn named(&self) -> String {
+        self.counted
+            .iter()
+            .map(|(id, times)| {
+                if *times == 1 {
+                    (*id).to_string()
+                } else {
+                    format!("{id} x{times}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// What follows the count in a sentence: the ids in parentheses, and when
+    /// some id is written in more than one place, how many places there are.
+    fn said(&self) -> String {
+        if self.places() == self.distinct() {
+            format!(" ({})", self.named())
+        } else {
+            format!(", written in {} place(s) ({})", self.places(), self.named())
+        }
+    }
+}
+
 /// The open matters of ONE document, from the records the manifest carries.
 ///
 /// In a fixed order — questions, assumed values, an open interface, parent,
@@ -124,63 +189,50 @@ pub fn of(
 
     // A marker that cites a house rule is the owner's standing answer and not
     // a value chosen without one, so it is said separately below.
-    let ids = |kind: MarkerKind| -> Vec<&str> {
-        unresolved
-            .iter()
-            .filter(|m| m.kind == kind && !m.house_rule)
-            .map(|m| m.id.as_str())
-            .collect()
+    let tally = |kind: MarkerKind, house_rule: bool| -> Tally {
+        Tally::of(
+            unresolved
+                .iter()
+                .filter(|m| m.kind == kind && m.house_rule == house_rule)
+                .map(|m| m.id.as_str()),
+        )
     };
-    let questions = ids(MarkerKind::Unresolved);
+    let questions = tally(MarkerKind::Unresolved, false);
     if !questions.is_empty() {
         out.push(OpenMatter {
             kind: OpenKind::Question,
             message: format!(
-                "{} question(s) the specification leaves open ({}): ask the owner and \
+                "{} question(s) the specification leaves open{}: ask the owner and \
                  record each answer; the strict check (--strict-unresolved) refuses this \
                  document until then",
-                questions.len(),
-                questions.join(", ")
+                questions.distinct(),
+                questions.said(),
             ),
         });
     }
-    let assumed = ids(MarkerKind::Assumed);
+    let assumed = tally(MarkerKind::Assumed, false);
     if !assumed.is_empty() {
         out.push(OpenMatter {
             kind: OpenKind::Assumed,
             message: format!(
-                "{} value(s) chosen without the specification ({}): the owner confirms or \
+                "{} value(s) chosen without the specification{}: the owner confirms or \
                  corrects each",
-                assumed.len(),
-                assumed.join(", ")
+                assumed.distinct(),
+                assumed.said(),
             ),
         });
     }
-    let mut applied: Vec<(&str, usize)> = Vec::new();
-    for marker in unresolved.iter().filter(|m| m.house_rule) {
-        match applied.iter_mut().find(|(id, _)| *id == marker.id) {
-            Some((_, times)) => *times += 1,
-            None => applied.push((marker.id.as_str(), 1)),
-        }
-    }
+    // A house rule is said by its places, since applying one twice is two
+    // things for the owner to confirm and the rule is one.
+    let applied = tally(MarkerKind::Assumed, true);
     if !applied.is_empty() {
-        let places: usize = applied.iter().map(|(_, times)| times).sum();
-        let named: Vec<String> = applied
-            .iter()
-            .map(|(id, times)| {
-                if *times == 1 {
-                    (*id).to_string()
-                } else {
-                    format!("{id} x{times}")
-                }
-            })
-            .collect();
         out.push(OpenMatter {
             kind: OpenKind::HouseRule,
             message: format!(
-                "{places} place(s) apply the profile's house rule(s) ({}): the owner's \
+                "{} place(s) apply the profile's house rule(s) ({}): the owner's \
                  standing answer, not the specification's — the owner confirms each still fits",
-                named.join(", ")
+                applied.places(),
+                applied.named(),
             ),
         });
     }
@@ -423,6 +475,75 @@ mod tests {
         assert!(interface_left_open(&parse("", "")).is_empty());
     }
 
+    /// An id is a question and a marker is a place. One question written in six
+    /// places is ONE thing to decide, and the sentence says so: measured
+    /// 2026-09-30 on a draft whose caller's route was marked on six sends, the
+    /// old sentence said "10 question(s)" over five, and the owner was told there
+    /// were ten decisions. When every id is written once the sentence is what it
+    /// always was.
+    #[test]
+    fn a_question_written_in_several_places_is_counted_once_and_placed_every_time() {
+        let many = [
+            marker(MarkerKind::Unresolved, "route"),
+            marker(MarkerKind::Unresolved, "route"),
+            marker(MarkerKind::Unresolved, "route"),
+            marker(MarkerKind::Unresolved, "payload"),
+        ];
+        let said = of(&many, &[], &[], &[]);
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(
+            said[0].message.starts_with(
+                "2 question(s) the specification leaves open, written in 4 place(s) \
+                 (route x3, payload):"
+            ),
+            "{said:?}"
+        );
+
+        // The control: each id once is the sentence it always was, with no
+        // mention of places.
+        let once = of(
+            &[
+                marker(MarkerKind::Unresolved, "route"),
+                marker(MarkerKind::Unresolved, "payload"),
+            ],
+            &[],
+            &[],
+            &[],
+        );
+        assert!(
+            once[0]
+                .message
+                .starts_with("2 question(s) the specification leaves open (route, payload):"),
+            "{once:?}"
+        );
+        assert!(!once[0].message.contains("place(s)"), "{once:?}");
+
+        // Values chosen without an answer are counted the same way, and a
+        // question and a value of one id are still two different things.
+        let mixed = of(
+            &[
+                marker(MarkerKind::Assumed, "delay"),
+                marker(MarkerKind::Assumed, "delay"),
+                marker(MarkerKind::Unresolved, "delay"),
+            ],
+            &[],
+            &[],
+            &[],
+        );
+        assert!(
+            mixed[0]
+                .message
+                .starts_with("1 question(s) the specification leaves open (delay):"),
+            "{mixed:?}"
+        );
+        assert!(
+            mixed[1].message.starts_with(
+                "1 value(s) chosen without the specification, written in 2 place(s) (delay x2):"
+            ),
+            "{mixed:?}"
+        );
+    }
+
     /// A house rule is the owner's standing answer, so it is said apart from a
     /// value chosen without one, and counted once per place it is applied. An
     /// `sce:unresolved` that names a house rule's id is still a question.
@@ -440,7 +561,12 @@ mod tests {
         let without = of(&records, &[], &[], &[]);
         let kinds: Vec<OpenKind> = without.iter().map(|m| m.kind).collect();
         assert_eq!(kinds, [OpenKind::Question, OpenKind::Assumed]);
-        assert!(without[1].message.starts_with("4 value(s)"), "{without:?}");
+        assert!(
+            without[1]
+                .message
+                .starts_with("3 value(s) chosen without the specification, written in 4 place(s)"),
+            "{without:?}"
+        );
 
         crate::unresolved_check::cite_house_rules(&mut records, &["H1", "H2"]);
         let matters = of(&records, &[], &[], &[]);

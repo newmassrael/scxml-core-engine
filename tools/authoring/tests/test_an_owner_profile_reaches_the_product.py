@@ -165,6 +165,10 @@ class AnOwnerProfileReachesTheProduct(unittest.TestCase):
         held = body(self.validate(True, profile_text=guided))
         self.assertEqual("accepted", held["verdict"])
         self.assertEqual(1, held["manifest"]["profile"]["guidance"])
+        # Guidance asks nothing of a document, so the profile judged none: the
+        # count says how many documents it was APPLIED to, and a statechart it
+        # enforced nothing on is not one.
+        self.assertEqual(0, held["manifest"]["profile"]["judged"])
         # A profile with no guidance names none, so a count of zero is not
         # said as though it were a finding.
         plain = body(self.validate(True, profile_text=PROFILE))

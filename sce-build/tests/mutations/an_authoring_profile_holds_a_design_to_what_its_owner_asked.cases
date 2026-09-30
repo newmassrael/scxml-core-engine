@@ -20,7 +20,7 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --lib --test an_authoring_profile_holds_a_design_to_what_its_owner_asked
-mutation_targets sce-build/src/authoring_profile.rs sce-build/src/authoring_profile/names.rs sce-build/src/unresolved_check.rs sce-build/src/bin/sce_codegen.rs
+mutation_targets sce-build/src/authoring_profile.rs sce-build/src/authoring_profile/names.rs sce-build/src/unresolved_check.rs sce-build/src/open_matters.rs sce-build/src/bin/sce_codegen.rs
 
 # A name is never found out of style: every spelling is accepted.
 mutation_case "a name is never out of its style" <<'PY'
@@ -105,4 +105,29 @@ mutation_case "a question naming a rule id counts as the rule" <<'PY'
 edit("sce-build/src/unresolved_check.rs",
      r'''            record.kind == MarkerKind::Assumed && house_rule_ids.contains(&record.id.as_str());''',
      r'''            house_rule_ids.contains(&record.id.as_str());''')
+PY
+
+# A statechart the profile asks nothing of is counted as judged: a profile of
+# house rules and guidance alone reports one document judged, which reads as a
+# constraint held that nothing enforced.
+mutation_case "a statechart the profile asks nothing of counts as judged" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     r'''                if profile.judges_statecharts() {''',
+     r'''                if profile.judges_statecharts() || true {''')
+PY
+
+# One question written in several places is counted once per place again: the
+# owner is told there are as many decisions as there are markers.
+mutation_case "a question is counted once for every place it is written" <<'PY'
+edit("sce-build/src/open_matters.rs",
+     r'''        self.counted.len()''',
+     r'''        self.counted.iter().map(|(_, times)| times).sum()''')
+PY
+
+# The sentence never says how many places a question is written in, so the
+# count of questions and the count of markers can no longer be told apart.
+mutation_case "the places a question is written in are never said" <<'PY'
+edit("sce-build/src/open_matters.rs",
+     r'''        if self.places() == self.distinct() {''',
+     r'''        if true {''')
 PY

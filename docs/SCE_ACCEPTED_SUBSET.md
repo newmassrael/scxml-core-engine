@@ -3162,11 +3162,13 @@ judges yet. A finding in a forge document names the document and no row, since
 the model keeps none for an event's name, a field or an evidence.
 
 The manifest's optional `profile` object carries the profile's `name`, its
-`sha256`, `judged` (the number of documents it was applied to: every
-statechart, and a forge document only when some setting reaches its kind) and
-`guidance` (how many instructions it handed over, none of which was checked;
-omitted when there are none). A run whose documents no setting reaches reports
-`judged: 0` and is not read as a pass; a run given no profile omits the
+`sha256`, `judged` (the number of documents it was applied to: the ones it asks
+something of — a statechart when some setting reaches statecharts, a forge
+document when some setting reaches its kind) and `guidance` (how many
+instructions it handed over, none of which was checked; omitted when there are
+none). A profile of house rules and guidance alone asks nothing of any document,
+so a run under it, and a run whose documents no setting reaches, report
+`judged: 0` and are not read as a pass; a run given no profile omits the
 object, and one that failed the profile emits no manifest. The in-memory path,
 which reads no sibling documents, takes no profile. `prefix_free` is judged
 over the names a statechart defines and the event-schemas it imports, so it

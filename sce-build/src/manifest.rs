@@ -238,9 +238,12 @@ pub struct ProfileInfo {
     /// The sha256 of the profile file's bytes — its identity, and what an
     /// acceptance record pins.
     pub sha256: String,
-    /// How many statecharts of the run the profile was judged against. Zero
-    /// for a run of forge documents alone, which no version-1 setting
-    /// applies to: the profile was given and held nothing to it, and the
+    /// How many documents of the run the profile was applied to: the ones it
+    /// asks something of — a statechart when some setting reaches
+    /// statecharts, a forge document when some setting reaches its kind.
+    /// Zero when it asks nothing of any document of the run (a profile of
+    /// house rules and guidance alone, or a run of forge documents no setting
+    /// reaches): the profile was given and held nothing to it, and the
     /// manifest says so instead of leaving a reader to assume it was.
     pub judged: u32,
     /// How many instructions the profile hands to whoever writes the

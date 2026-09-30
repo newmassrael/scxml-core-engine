@@ -765,8 +765,9 @@ def validate_scxml_set(documents: list[pathlib.Path],
 
     `profile` is the owner's authoring profile, judged against every
     statechart of the set: each departure is a `profile/*` record, all of them
-    listed, and the manifest's `profile.judged` says how many statecharts it
-    was applied to — zero for a set of forge documents alone.
+    listed, and the manifest's `profile.judged` says how many documents it was
+    applied to — the ones it asks something of, so zero when it asks nothing
+    of any document of the set.
     """
     args = ["check"]
     for document in documents:

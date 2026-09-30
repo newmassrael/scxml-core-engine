@@ -220,12 +220,23 @@ fn a_statechart_that_leaves_its_interface_open_is_refused_under_a_profile_that_c
     );
 }
 
-/// A profile that constrains nothing judges nothing and says how many it
-/// looked at, so a run that was given one is not read as a run that passed a
-/// constraint it never had.
+/// A profile that constrains nothing judges nothing and says so: `judged` is
+/// the number of documents it ASKS something of, and it asks nothing of a
+/// statechart, so a run that was given one is not read as a run that passed a
+/// constraint it never had. The same holds for a profile of house rules and
+/// guidance alone, which is reported and handed over and enforces nothing; a
+/// statechart the profile enforces something on is the control that the count
+/// is not simply zero.
 #[test]
-fn a_profile_that_constrains_nothing_refuses_nothing() {
+fn a_profile_that_constrains_nothing_refuses_nothing_and_judges_nothing() {
     let dir = design("profile-check-empty");
+    fs::write(
+        dir.join("rules-only.json"),
+        r#"{"record":"sce-authoring-profile","v":1,
+            "house_rules":[{"id":"H1","rule":"An unmentioned event is ignored."}],
+            "guidance":["Ask first."]}"#,
+    )
+    .expect("write");
     let held = manifest(&run(
         &dir,
         &[
@@ -241,7 +252,33 @@ fn a_profile_that_constrains_nothing_refuses_nothing() {
         held["profile"].get("name").is_none(),
         "a profile with no label publishes none: {held}"
     );
-    assert_eq!(held["profile"]["judged"], 1);
+    assert_eq!(held["profile"]["judged"], 0, "{held}");
+    let rules = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "open.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "rules-only.json",
+        ],
+    ));
+    assert_eq!(rules["profile"]["judged"], 0, "{rules}");
+    assert_eq!(rules["profile"]["guidance"], 1, "{rules}");
+    // The control: a profile that enforces one thing on a statechart counts it.
+    let enforcing = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "closed.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "profile.json",
+        ],
+    ));
+    assert_eq!(enforcing["profile"]["judged"], 1, "{enforcing}");
 }
 
 /// A forge document is not a statechart and no version-1 setting applies to

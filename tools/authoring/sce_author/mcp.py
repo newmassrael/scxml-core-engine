@@ -455,10 +455,10 @@ TOOLS = [
             "member leaves something to a person, such as a payload the "
             "specification does not settle. Give either `documents` (paths) "
             "or `documents_text` (each document's name and text). When the "
-            "owner keeps an authoring profile, pass it: every statechart of "
-            "the set is judged and every departure is listed, and "
-            "manifest.profile.judged says how many statecharts it was "
-            "applied to -- zero for a set of forge documents alone."
+            "owner keeps an authoring profile, pass it: every document of "
+            "the set the profile asks something of is judged and every "
+            "departure is listed, and manifest.profile.judged says how many "
+            "that was -- zero when it asks nothing of any document of the set."
         ),
         "inputSchema": {
             "type": "object",

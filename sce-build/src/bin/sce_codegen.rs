@@ -3892,11 +3892,16 @@ enum Judged<'a> {
 /// All findings, not the first: an owner reading the answer decides what to
 /// do about the whole design, and a list that stops at the first document
 /// hides how far the departure goes. `judged` counts the documents the
-/// profile was applied to: every statechart, and a forge document only when
-/// some setting reaches its kind ([`AuthoringProfile::judges_forge`]), so a run
-/// of forge documents the profile does not reach reports `judged: 0`, which
-/// says the profile was given and held nothing to it.
+/// profile was APPLIED to, which is the documents it asks something of: a
+/// statechart only when some setting reaches statecharts
+/// ([`AuthoringProfile::judges_statecharts`]), and a forge document only when
+/// some setting reaches its kind ([`AuthoringProfile::judges_forge`]). A
+/// profile that holds only house rules and guidance asks nothing of any
+/// document, so a run under it reports `judged: 0` — which says the profile was
+/// given and held nothing to it, and is the reading a `1` for a statechart it
+/// enforced nothing on would have contradicted.
 ///
+/// [`AuthoringProfile::judges_statecharts`]: sce_build::authoring_profile::AuthoringProfile::judges_statecharts
 /// [`AuthoringProfile::judges_forge`]: sce_build::authoring_profile::AuthoringProfile::judges_forge
 fn judge_under_profile(
     profile: &sce_build::authoring_profile::AuthoringProfile,
@@ -3908,8 +3913,10 @@ fn judge_under_profile(
     for document in documents {
         match document {
             Judged::Statechart(model, label) => {
-                judged += 1;
-                findings.extend(profile.judge_statechart(model, label));
+                if profile.judges_statecharts() {
+                    judged += 1;
+                    findings.extend(profile.judge_statechart(model, label));
+                }
             }
             Judged::Forge(parsed, label) => {
                 if profile.judges_forge(parsed.document.kind()) {
