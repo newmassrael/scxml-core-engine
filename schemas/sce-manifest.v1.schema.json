@@ -254,8 +254,8 @@
       "additionalProperties": false,
       "properties": {
         "kind": {
-          "description": "question: an sce:unresolved marker. assumed: an sce:assumed marker that cites no house rule of the profile the run was given. house-rule: places that apply a house rule of that profile, cited by its id in sce:assumed: the owner's standing answer, not the specification's, listed so a rule is never applied silently. interface: a statechart imports event-schemas without declaring sce:interface=\"closed\", so an event no schema declares still crosses it unchecked. parent: a send to #_parent, so the machine can only run as a child. host-processor: a type the host has to serve.",
-          "enum": ["question", "assumed", "house-rule", "interface", "parent", "host-processor"]
+          "description": "question: an sce:unresolved marker. assumed: an sce:assumed marker that cites no house rule of the profile the run was given. house-rule: places that apply a house rule of that profile, cited by its id in sce:assumed: the owner's standing answer, not the specification's, listed so a rule is never applied silently. interface: a statechart imports event-schemas without declaring sce:interface=\"closed\", so an event no schema declares still crosses it unchecked. self-delivered: the machine sends itself an event with no target and something takes it, which W3C SCXML 6.2.4 puts on the external queue a caller delivers to, so a caller can send the same name and take the same transition. parent: a send to #_parent, so the machine can only run as a child. host-processor: a type the host has to serve.",
+          "enum": ["question", "assumed", "house-rule", "interface", "self-delivered", "parent", "host-processor"]
         },
         "message": {
           "description": "What it is and what to do about it, in a sentence.",

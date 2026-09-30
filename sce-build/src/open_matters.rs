@@ -63,6 +63,14 @@ pub enum OpenKind {
     /// unchecked: the schemas describe the boundary and nothing holds the
     /// statechart to them.
     Interface,
+    /// The machine sends an event to ITSELF with no target, and something
+    /// takes it. W3C SCXML 6.2.4 puts that on the EXTERNAL queue, the one a
+    /// caller delivers to, so a caller can send the same name and take the
+    /// same transition: for a timer, a way to skip the wait. Whether a caller
+    /// should be able to is the owner's to say, and a closed interface does not
+    /// say it for them — a draft that declares the event as one of its inputs
+    /// is accepted, and its interface then lists a timer as something to send.
+    SelfDelivered,
     /// The machine sends to its parent session, so it can only run as a
     /// child.
     Parent,
@@ -103,6 +111,43 @@ pub fn interface_left_open(model: &crate::model::SCXMLModel) -> Vec<String> {
         .filter(|import| matches!(import.kind, crate::forge::model::ForgeKind::EventSchema))
         .map(|import| import.alias.clone())
         .collect()
+}
+
+/// The events a statechart sends ITSELF with no target that something takes,
+/// in the order they are first written: what a caller can send too.
+///
+/// ⚠ W3C SCXML 6.2.4: a `<send>` with no target goes to the session's
+/// EXTERNAL queue, the one a caller delivers to, so an outside party can send
+/// the same name and reach the same transition. What the statechart puts on
+/// its INTERNAL queue — a `<raise>`, a send to `#_internal` — is left out, by
+/// NAME: the reading the externally drivable events already take
+/// ([`crate::model::SCXMLModel::internal_queue_events`]), so a name it also sends
+/// with no target is left out too and the two lists cannot disagree. (A test of
+/// the send's own target would add nothing: the parser has already put every
+/// literal send to `#_internal` in that set.) A self-send nothing takes is the
+/// lint's (`scxml/self-send-discarded`) and not this list's.
+///
+/// ⚠ Read from the model as PARSED, before the analyzer runs, like
+/// [`interface_left_open`]: the manifest's `open` is built on routes that read
+/// the model at that point, and a fact that needed the analysis would be missing
+/// from the ones that do not run it. The literal names only — a computed name
+/// (`eventexpr`) cannot be listed, the same limit the closed interface has.
+pub fn self_delivered_events(model: &crate::model::SCXMLModel) -> Vec<String> {
+    let mut events: Vec<String> = Vec::new();
+    crate::host_processor_analyzer::walk_model_actions(model, &mut |_state, action| {
+        if action.action_type == "send"
+            && action.eventexpr.is_empty()
+            && !action.event.is_empty()
+            && crate::scxml_self_send::sends_to_itself(action)
+            && !crate::analyzer::is_reserved_ingress_event(&action.event)
+            && !model.internal_queue_events.contains(&action.event)
+            && !crate::scxml_self_send::is_discarded(model, action)
+            && !events.contains(&action.event)
+        {
+            events.push(action.event.clone());
+        }
+    });
+    events
 }
 
 /// The markers of one kind counted by id, in the order each id is first
@@ -172,18 +217,22 @@ impl<'a> Tally<'a> {
 
 /// The open matters of ONE document, from the records the manifest carries.
 ///
-/// In a fixed order — questions, assumed values, an open interface, parent,
+/// In a fixed order — questions, assumed values, house rules, an open
+/// interface, events a caller can send that the machine sends itself, parent,
 /// host processor — so two runs over one document say the same thing in the
 /// same order, and nothing when the document leaves nothing, so a page or
 /// manifest for a finished design stays byte for byte what it was.
 ///
 /// `open_interface` is [`interface_left_open`]: the schemas a statechart
-/// imports and does not hold itself to.
+/// imports and does not hold itself to. `self_delivered` is
+/// [`self_delivered_events`]: the events it sends itself that a caller can send
+/// too.
 pub fn of(
     unresolved: &[UnresolvedRecord],
     parent_sends: &[ParentSend],
     host_causes: &[HostProcessorCauseRecord],
     open_interface: &[String],
+    self_delivered: &[String],
 ) -> Vec<OpenMatter> {
     let mut out = Vec::new();
 
@@ -245,6 +294,21 @@ pub fn of(
                  an event no schema declares still crosses the statechart unchecked: declare \
                  the interface closed, or tell the owner the boundary is open",
                 open_interface.join(", ")
+            ),
+        });
+    }
+
+    if !self_delivered.is_empty() {
+        out.push(OpenMatter {
+            kind: OpenKind::SelfDelivered,
+            message: format!(
+                "sends itself {} event(s) with no target ({}), which puts them on the \
+                 queue a caller delivers to: a caller can send the same name and take the \
+                 same transition, which for a timer is a way to skip the wait. If callers \
+                 must not, send each with target=\"#_internal\"; if they may, the owner \
+                 says so",
+                self_delivered.len(),
+                self_delivered.join(", ")
             ),
         });
     }
@@ -328,6 +392,7 @@ pub fn of_statechart_under(
         &crate::parent_send_analyzer::records(model),
         &host,
         &interface_left_open(model),
+        &self_delivered_events(model),
     )
 }
 
@@ -364,7 +429,7 @@ mod tests {
 
     #[test]
     fn a_document_that_leaves_nothing_yields_nothing() {
-        assert!(of(&[], &[], &[], &[]).is_empty());
+        assert!(of(&[], &[], &[], &[], &[]).is_empty());
     }
 
     #[test]
@@ -384,6 +449,7 @@ mod tests {
                 location: None,
             }],
             &["Requested".to_string(), "Cancelled".to_string()],
+            &["tick".to_string()],
         );
         let kinds: Vec<OpenKind> = matters.iter().map(|m| m.kind).collect();
         assert_eq!(
@@ -392,6 +458,7 @@ mod tests {
                 OpenKind::Question,
                 OpenKind::Assumed,
                 OpenKind::Interface,
+                OpenKind::SelfDelivered,
                 OpenKind::Parent,
                 OpenKind::HostProcessor
             ]
@@ -403,15 +470,21 @@ mod tests {
             matters[2].message.contains("(Requested, Cancelled)"),
             "{matters:?}"
         );
+        assert!(
+            matters[3]
+                .message
+                .contains("1 event(s) with no target (tick)"),
+            "{matters:?}"
+        );
         // A repeated event is named once, and a site with no literal event
         // is not named at all.
-        assert!(matters[3].message.contains("(Out)"), "{matters:?}");
-        assert!(matters[4].message.contains("(x-host)"));
+        assert!(matters[4].message.contains("(Out)"), "{matters:?}");
+        assert!(matters[5].message.contains("(x-host)"));
     }
 
     #[test]
     fn an_assumption_alone_is_not_a_question() {
-        let matters = of(&[marker(MarkerKind::Assumed, "a1")], &[], &[], &[]);
+        let matters = of(&[marker(MarkerKind::Assumed, "a1")], &[], &[], &[], &[]);
         assert_eq!(matters.len(), 1);
         assert_eq!(matters[0].kind, OpenKind::Assumed);
         assert!(!matters[0].message.contains("question"));
@@ -441,6 +514,52 @@ mod tests {
         let matters = of_statechart(&orphan);
         assert_eq!(matters.len(), 1, "{matters:?}");
         assert_eq!(matters[0].kind, OpenKind::Parent);
+    }
+
+    /// What a caller can send is what the machine sends ITSELF with no target
+    /// and something takes (W3C SCXML 6.2.4: the external queue). Every other
+    /// shape is a control, each a different event so one that took a shape it
+    /// should not, or missed the one it should, is named.
+    #[test]
+    fn an_event_the_machine_sends_itself_for_a_caller_to_send_too_is_listed() {
+        let parse = |sends: &str| {
+            crate::parser::SCXMLParser::new()
+                .parse_string(
+                    &format!(
+                        r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="a">
+                             <state id="a">
+                               <onentry>{sends}</onentry>
+                               <transition event="listed" target="b"/>
+                               <transition event="listed.again" target="b"/>
+                               <transition event="on_internal" target="b"/>
+                               <transition event="raised" target="b"/>
+                               <transition event="both" target="b"/>
+                               <transition event="typed" target="b"/>
+                               <transition event="error.custom" target="b"/>
+                             </state>
+                             <state id="b"/>
+                           </scxml>"##
+                    ),
+                    "open_matters",
+                )
+                .expect("parses")
+        };
+        let model = parse(
+            r##"<send event="listed" delay="5s"/>
+                <send event="listed"/>
+                <send event="listed.again" target="#_scxml_x"/>
+                <send event="on_internal" target="#_internal"/>
+                <raise event="raised"/>
+                <raise event="both"/>
+                <send event="both"/>
+                <send event="typed" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
+                <send event="nothing_takes_it"/>
+                <send event="error.custom"/>
+                <send eventexpr="'listed'"/>"##,
+        );
+        // Named once each, in the order first written: a delayed and an
+        // immediate send of one event are one thing to tell the owner.
+        assert_eq!(self_delivered_events(&model), ["listed"]);
     }
 
     /// Only the mismatch is said: schemas imported, and the declaration that
@@ -489,7 +608,7 @@ mod tests {
             marker(MarkerKind::Unresolved, "route"),
             marker(MarkerKind::Unresolved, "payload"),
         ];
-        let said = of(&many, &[], &[], &[]);
+        let said = of(&many, &[], &[], &[], &[]);
         assert_eq!(said.len(), 1, "{said:?}");
         assert!(
             said[0].message.starts_with(
@@ -506,6 +625,7 @@ mod tests {
                 marker(MarkerKind::Unresolved, "route"),
                 marker(MarkerKind::Unresolved, "payload"),
             ],
+            &[],
             &[],
             &[],
             &[],
@@ -526,6 +646,7 @@ mod tests {
                 marker(MarkerKind::Assumed, "delay"),
                 marker(MarkerKind::Unresolved, "delay"),
             ],
+            &[],
             &[],
             &[],
             &[],
@@ -558,7 +679,7 @@ mod tests {
         ];
         // The control: with no profile every assumed value reads as one chosen
         // without an answer, whatever its id.
-        let without = of(&records, &[], &[], &[]);
+        let without = of(&records, &[], &[], &[], &[]);
         let kinds: Vec<OpenKind> = without.iter().map(|m| m.kind).collect();
         assert_eq!(kinds, [OpenKind::Question, OpenKind::Assumed]);
         assert!(
@@ -569,7 +690,7 @@ mod tests {
         );
 
         crate::unresolved_check::cite_house_rules(&mut records, &["H1", "H2"]);
-        let matters = of(&records, &[], &[], &[]);
+        let matters = of(&records, &[], &[], &[], &[]);
         let kinds: Vec<OpenKind> = matters.iter().map(|m| m.kind).collect();
         assert_eq!(
             kinds,

@@ -1,0 +1,96 @@
+# Mutation cases for "an event the machine sends itself is said to be one a
+# caller can send".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_event_the_machine_sends_itself_is_said_to_be_one_a_caller_can_send.cases`.
+#
+# W3C SCXML 6.2.4 puts a `<send>` with no target on the session's EXTERNAL queue,
+# the one a caller delivers to. `open_matters::self_delivered_events` lists what
+# the machine sends itself that way and something takes, and the manifest says so
+# in `open` on every route that builds one: a single `check`, a `generate` run,
+# and a document set. Each case takes one part of that away or turns it round: a
+# boundary of the list, or a route that stops feeding it.
+#
+# The oracles are the library's unit test, which holds the boundaries of the list
+# shape by shape, and the integration test that reads the manifest, the report and
+# the record through the binary on all three routes.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test a_design_that_is_accepted_says_what_it_leaves_open
+mutation_targets sce-build/src/open_matters.rs sce-build/src/bin/sce_codegen.rs
+
+# ⚠ There is no case for the send's OWN target. The first draft of this list
+# tested `sends_to_internal_queue(action)` beside the name-based exclusion below,
+# and a hand round that replaced it with `true` SURVIVED: the parser has already
+# put every literal send to `#_internal` in `internal_queue_events`, so the second
+# test could never be the one that decided. It was an equivalent mutant, and the
+# repair was to delete the line, not to write a test that could tell them apart.
+
+# A platform event is listed: `error.*` and `done.*` are the platform's, not
+# something a caller sends.
+mutation_case "a platform event is listed" <<'PY'
+edit("sce-build/src/open_matters.rs",
+     r'''            && !crate::analyzer::is_reserved_ingress_event(&action.event)''',
+     r'''            && true''')
+PY
+
+# What the machine puts on its internal queue is listed: a `<raise>` and a send to
+# `#_internal` are the machine's own and no caller can deliver to them, and a name
+# it also sends with no target is read the same way the externally drivable events
+# read it, so the two must agree.
+mutation_case "a name the machine also raises is listed" <<'PY'
+edit("sce-build/src/open_matters.rs",
+     r'''            && !model.internal_queue_events.contains(&action.event)''',
+     r'''            && true''')
+PY
+
+# A send nothing takes is listed: that is the discarded-self-send lint's, and an
+# event no transition takes gives a caller nothing to do.
+mutation_case "a send nothing takes is listed" <<'PY'
+edit("sce-build/src/open_matters.rs",
+     r'''            && !crate::scxml_self_send::is_discarded(model, action)''',
+     r'''            && true''')
+PY
+
+# An event sent twice is listed twice: a delayed and an immediate send of one
+# name are one thing to tell the owner, and the sentence counts them.
+mutation_case "an event sent twice is listed twice" <<'PY'
+edit("sce-build/src/open_matters.rs",
+     r'''            && !events.contains(&action.event)''',
+     r'''            && true''')
+PY
+
+# The line is never written: the list is computed and no `open` entry says it.
+mutation_case "the sentence is never written" <<'PY'
+edit("sce-build/src/open_matters.rs",
+     r'''    if !self_delivered.is_empty() {''',
+     r'''    if false && !self_delivered.is_empty() {''')
+PY
+
+# The single `check` route stops feeding the list, so a design checked alone says
+# nothing while the same design in a set does.
+mutation_case "the check route never reads it" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     r'''            report.self_delivered = sce_build::open_matters::self_delivered_events(&model);
+            // The owner's expectation, judged on the model as parsed and''',
+     r'''            // The owner's expectation, judged on the model as parsed and''')
+PY
+
+# The `generate` route stops feeding it: the manifest of the run that writes the
+# code is silent about what a caller can do to that code.
+mutation_case "the generate route never reads it" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     r'''    report.self_delivered = sce_build::open_matters::self_delivered_events(&model);
+    // The owner's expectation, judged where `check` judges it — on the model''',
+     r'''    // The owner's expectation, judged where `check` judges it — on the model''')
+PY
+
+# A set does not union its members: one member's timer is lost in the verdict
+# the set gets as one.
+mutation_case "a set never unions its members" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     r'''        for event in facts.self_delivered {''',
+     r'''        for event in facts.self_delivered.into_iter().take(0) {''')
+PY

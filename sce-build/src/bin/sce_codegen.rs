@@ -944,6 +944,11 @@ struct GenerateReport {
     /// on a document-set run, those of every statechart member. Read only into
     /// the manifest's `open`.
     open_interface: Vec<String>,
+    /// The events a statechart of this run sends itself with no target that
+    /// something takes ([`sce_build::open_matters::self_delivered_events`]): the
+    /// ones a caller can send too; on a document-set run, those of every
+    /// statechart member. Read only into the manifest's `open`.
+    self_delivered: Vec<String>,
     /// The authoring profile this run was given and how many statecharts it
     /// judged (`--profile`); `None` when no profile was given.
     profile: Option<sce_build::manifest::ProfileInfo>,
@@ -1093,6 +1098,9 @@ fn build_manifest<'a>(
                 // whichever run reads it, and a set is where the imports are
                 // resolved.
                 &report.open_interface,
+                // Said of a set too, for the same reason: an event one member
+                // sends itself is one a caller can send, whichever run reads it.
+                &report.self_delivered,
             )
         },
         profile: report.profile.clone(),
@@ -3813,6 +3821,7 @@ fn scxml_host_requirement_facts(path: &str) -> Option<HostRequirements> {
     // Read before the analysis, where the single-document routes read them.
     let unresolved = sce_build::unresolved_check::unresolved_records(&model);
     let open_interface = sce_build::open_matters::interface_left_open(&model);
+    let self_delivered = sce_build::open_matters::self_delivered_events(&model);
     analyzer::analyze(&mut model, path);
     Some(HostRequirements {
         needs_script_engine: model.needs_script_engine,
@@ -3823,6 +3832,7 @@ fn scxml_host_requirement_facts(path: &str) -> Option<HostRequirements> {
         unreadable_variables: model.unreadable_variables,
         unresolved,
         open_interface,
+        self_delivered,
     })
 }
 
@@ -4038,6 +4048,8 @@ struct HostRequirements {
     unresolved: Vec<sce_build::unresolved_check::UnresolvedRecord>,
     /// The event-schemas it imports without declaring its interface closed.
     open_interface: Vec<String>,
+    /// The events it sends itself with no target that something takes.
+    self_delivered: Vec<String>,
 }
 
 /// Fold every document's [`HostRequirements`] into `report`.
@@ -4092,6 +4104,12 @@ fn accumulate_host_requirements(
         for alias in facts.open_interface {
             if !report.open_interface.contains(&alias) {
                 report.open_interface.push(alias);
+            }
+        }
+        // Named once however many members send it, like the aliases above.
+        for event in facts.self_delivered {
+            if !report.self_delivered.contains(&event) {
+                report.self_delivered.push(event);
             }
         }
     }
@@ -4477,6 +4495,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             report.unresolved = sce_build::unresolved_check::unresolved_records(&model);
             report.cite_house_rules(profile.as_ref());
             report.open_interface = sce_build::open_matters::interface_left_open(&model);
+            report.self_delivered = sce_build::open_matters::self_delivered_events(&model);
             // The owner's expectation, judged on the model as parsed and
             // where the set route judges it, so the two cannot disagree.
             report.profile = profile.as_ref().map(|profile| {
@@ -5066,6 +5085,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     report.unresolved = sce_build::unresolved_check::unresolved_records(&model);
     report.cite_house_rules(profile.as_ref());
     report.open_interface = sce_build::open_matters::interface_left_open(&model);
+    report.self_delivered = sce_build::open_matters::self_delivered_events(&model);
     // The owner's expectation, judged where `check` judges it — on the model
     // as parsed, before any codegen — so a design the profile refuses
     // produces nothing.
@@ -9115,7 +9135,7 @@ fn cmd_acceptance_report(
             let expanded = read_review_input(scxml, error_format);
             let markers = sce_build::unresolved_check::unresolved_records_forge(&expanded)
                 .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
-            let open = sce_build::open_matters::of(&markers, &[], &[], &[]);
+            let open = sce_build::open_matters::of(&markers, &[], &[], &[], &[]);
             sce_build::acceptance_report::render_forge(
                 parsed,
                 &manifest,

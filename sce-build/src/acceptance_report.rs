@@ -349,6 +349,7 @@ fn push_open_matters(out: &mut String, open: &[crate::open_matters::OpenMatter])
             crate::open_matters::OpenKind::Assumed => "assumed value",
             crate::open_matters::OpenKind::HouseRule => "house rule",
             crate::open_matters::OpenKind::Interface => "open interface",
+            crate::open_matters::OpenKind::SelfDelivered => "caller sends",
             crate::open_matters::OpenKind::Parent => "needs a parent",
             crate::open_matters::OpenKind::HostProcessor => "host processor",
         };

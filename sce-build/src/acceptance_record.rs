@@ -923,7 +923,7 @@ fn design_inputs(
             let mut markers = crate::unresolved_check::unresolved_records_forge(&loaded.positions)
                 .map_err(|located| unparseable(located.error.to_string()))?;
             crate::unresolved_check::cite_house_rules(&mut markers, house_rule_ids);
-            let open = crate::open_matters::of(&markers, &[], &[], &[]);
+            let open = crate::open_matters::of(&markers, &[], &[], &[], &[]);
             // A `sce:std/...` document is read from the library compiled
             // into the generator; it has no file to pin, and moves only
             // with the generator itself.

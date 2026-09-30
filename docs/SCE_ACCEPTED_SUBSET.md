@@ -3034,6 +3034,25 @@ because it is. Measured 2026-09-30: a draft handed on as passing had its
 `sce:interface="closed"` removed to get past a check, every import still in
 place, and its answer said nothing of the change.
 
+A closed interface does not say that a CALLER may send an event the machine
+also sends itself, and the owner is the one to say it. A `<send>` to the
+session with no `target` goes to the external queue (W3C SCXML 6.2.4), so an
+event a transition takes and the machine sends itself that way is one a caller
+can send too, and for a timer that is a way to skip the wait. Declaring it in an
+imported schema is one of the two repairs the closed rule names, and it makes
+the timer a listed input of the interface with nothing said about it. So the
+manifest's `open` carries a `self-delivered` line for every statechart, open or
+closed, naming those events (`open_matters::self_delivered_events`: literal
+names, sent to itself with no `target`, taken by a transition or an
+autoforwarded child, not also put on the internal queue) and the two ways
+out: send each with `target="#_internal"`, or the owner says callers may. A send
+to `#_internal` and a `<raise>` are the internal queue and are not listed. The
+acceptance report shows it as `caller sends` and the record keeps it in
+`open_at_acceptance`, so an accepted design says what a caller could do to it.
+Measured 2026-09-30, fifteen drafts by a real client under a closed-interface
+profile: fourteen declared a timer they send themselves as an input event, and
+the answer to the owner said nothing of it.
+
 It is judged where a statechart's imports are read, the parser's import
 seam, so every entry point that parses a document from a file judges it.
 The in-memory path, which reads no sibling documents and so resolves no

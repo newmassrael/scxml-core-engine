@@ -61,6 +61,22 @@ const FINISHED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+/// A wait the machine sends itself with no target and a transition takes:
+/// W3C SCXML 6.2.4 puts it on the external queue, so a caller can send `expire`
+/// too and end the wait early.
+const TIMER: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="timer" initial="idle">
+  <state id="idle"><transition event="start" target="waiting"/></state>
+  <state id="waiting">
+    <onentry><send id="t" event="expire" delay="200ms"/></onentry>
+    <onexit><cancel sendid="t"/></onexit>
+    <transition event="finish" target="idle"/>
+    <transition event="expire" target="idle"/>
+  </state>
+</scxml>
+"##;
+
 const TRANSFORM_OPEN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        sce:kind="transform" name="scaled">
@@ -233,6 +249,91 @@ fn the_manifest_the_report_and_the_record_say_the_same_words() {
     for message in &said {
         assert!(page.contains(message), "the report lacks: {message}");
     }
+}
+
+/// An owner is told when a caller can end a wait early. Measured 2026-09-30,
+/// fifteen drafts by a real client under a closed-interface profile: fourteen
+/// declared the timer they send themselves as an input, so the interface listed
+/// it and the answer said nothing. The line is in all three surfaces, in the
+/// same words, and the control is the same timer sent to `#_internal`.
+#[test]
+fn a_timer_the_machine_sends_itself_is_said_to_be_one_a_caller_can_send() {
+    let root = design_root("d/timer.scxml", TIMER);
+    let open = manifest_open(root.path(), "d/timer.scxml");
+    let said = &open
+        .iter()
+        .find(|(kind, _)| kind == "self-delivered")
+        .unwrap_or_else(|| panic!("the manifest says nothing of it: {open:?}"))
+        .1;
+    assert!(
+        said.contains("1 event(s) with no target (expire)"),
+        "{said}"
+    );
+    assert!(said.contains("target=\"#_internal\""), "{said}");
+
+    let page = report(root.path(), "d/timer.scxml");
+    assert!(page.contains(said.as_str()), "the report lacks: {said}");
+    assert!(page.contains("caller sends"), "{page}");
+    let record = accepted(root.path(), "d/timer.scxml");
+    let kept = record["open_at_acceptance"]
+        .as_array()
+        .expect("the record keeps what was open");
+    assert!(
+        kept.iter()
+            .any(|m| m["kind"] == "self-delivered" && m["message"] == said.as_str()),
+        "the record lacks it: {record}"
+    );
+
+    // The other two routes a manifest is built on say the same words: a
+    // `generate` run, and a document SET, where one member's timer is a caller's
+    // to send whichever run reads it.
+    let says = |manifest: &serde_json::Value| -> Option<String> {
+        manifest["open"]
+            .as_array()?
+            .iter()
+            .find(|m| m["kind"] == "self-delivered")
+            .map(|m| m["message"].as_str().expect("message").to_string())
+    };
+    let generated = ok(
+        run(
+            &["generate", "d/timer.scxml", "-o", "out", "-l", "rust"],
+            root.path(),
+        ),
+        "generate",
+    );
+    let generated: serde_json::Value =
+        serde_json::from_slice(&generated.stdout).expect("one JSON line");
+    assert_eq!(
+        says(&generated).as_deref(),
+        Some(said.as_str()),
+        "{generated}"
+    );
+    fs::write(root.path().join("d/finished.scxml"), FINISHED).expect("write");
+    let set = ok(
+        run(
+            &[
+                "check",
+                "--document",
+                "d/timer.scxml",
+                "--document",
+                "d/finished.scxml",
+            ],
+            root.path(),
+        ),
+        "check of a set",
+    );
+    let set: serde_json::Value = serde_json::from_slice(&set.stdout).expect("one JSON line");
+    assert_eq!(says(&set).as_deref(), Some(said.as_str()), "{set}");
+
+    // The control: the same timer on the internal queue is the machine's own,
+    // and there is nothing to say.
+    let internal = TIMER.replace(r#"delay="200ms""#, r##"delay="200ms" target="#_internal""##);
+    let root = design_root("d/timer.scxml", &internal);
+    let open = manifest_open(root.path(), "d/timer.scxml");
+    assert!(
+        open.iter().all(|(kind, _)| kind != "self-delivered"),
+        "{open:?}"
+    );
 }
 
 /// A record for a finished design has no new field, so it keeps the bytes
