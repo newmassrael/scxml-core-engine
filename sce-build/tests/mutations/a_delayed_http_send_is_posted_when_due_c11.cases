@@ -73,7 +73,8 @@ PY
 # that waits reaches the queue through the zero-check branch, and the push in
 # its `else` is the one this fixture can observe. The push below it, for a
 # host-served type with a literal delay, is reached by no fixture of this
-# casefile: a mutation of it leaves every binary identical.
+# casefile: a mutation of it leaves every binary identical. It is held by
+# `host_processor_delayed_dispatch_c11.cases`, whose fixture does reach it.
 mutation_case "C11 queues a delayed BasicHTTP send under an empty send id" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "                } else {\n                    scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,\n                                        _host_req.send_id, &_host_req);",

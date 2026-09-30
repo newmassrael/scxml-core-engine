@@ -1,0 +1,79 @@
+# Mutation cases for a DELAYED host-served Event I/O Processor send on the C11
+# backend — the wait a literal `delay` names, the id `<cancel>` finds it by, and
+# the act performed when the deadline comes due.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/host_processor_delayed_dispatch_c11.cases`.
+#
+# Sibling of `host_processor_delayed_dispatch.cases` (the Rust runtime) and of
+# `a_delayed_http_send_is_posted_when_due_c11.cases`. That one holds the two
+# call sites that hand the template a wait it has already resolved — BasicHTTP,
+# and Mesh — and says so in its own text: the arm a host-served send with a
+# LITERAL delay takes "is reached by no fixture of this casefile: a mutation of
+# it leaves every binary identical". This is the fixture that does reach it. The
+# document's `<send type="x-sce-host" delay="200ms">` reaches the macro with no
+# `resolved_delay`, so it lands in the `{% else %}` beside the two zero checks,
+# and its deadline drains through the host-only arm of the tick.
+#
+# Driven on `sce_clock_manual` (nothing here sleeps), so a verdict cannot depend
+# on how loaded the machine is. The targets are the TEMPLATE and not a
+# generated file: this backend commits no generated tree, and the template is
+# what the built binary carries.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_delayed_host_send$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_delayed_host_send.c
+
+# ── The wait: a literal delay is performed at the instant the block runs ──
+#
+# The defect the fixture was written for, put back at the arm that owns it. The
+# statement that names the wait is kept as a `(void)` so the constant is still
+# read and `-Werror=unused-variable` does not refuse the mutant before a test
+# can run.
+
+mutation_case "C11 performs a host-served send with a literal delay at once" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "{% else %}\n                scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,\n                                    _host_req.send_id, &_host_req);\n{% endif %}",
+     "{% else %}\n                (void)_host_delay_ms;\n                {{ host_perform }}(sm, &_host_req);\n{% endif %}")
+PY
+
+# ── The id: `<cancel>` can no longer name the queued act ───────────────────
+#
+# The second host-served send waits under `id="h2"` and is cancelled while it
+# waits; the handler must never be asked to perform it. Queued under an empty
+# id, the cancel finds nothing and the act reaches the host at its deadline —
+# which no configuration assertion could undo, because the side effect is the
+# point of the act.
+
+mutation_case "C11 queues a literal-delay host-served send under an empty send id" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "{% else %}\n                scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,\n                                    _host_req.send_id, &_host_req);\n{% endif %}",
+     "{% else %}\n                scheduled_push_host(sm, sched_now_ms(sm) + _host_delay_ms,\n                                    \"\", &_host_req);\n{% endif %}")
+PY
+
+# ── The deadline: the queued act is handed to no handler ───────────────────
+#
+# This document declares a host processor and no BasicHTTP send, so its drain
+# is the host-only arm. The arms for a machine that also POSTs are not emitted
+# for it.
+#
+# ⚠ TWO edits, and the second one changes no behaviour at all. This document
+# sends to the host only after a delay, so the drain is the one caller of
+# `_perform_host_send`; without it the function is defined and called from
+# nowhere, and this tree builds with `-Werror`, so `-Werror=unused-function`
+# refused the mutant before any test ran — the first round reported
+# INCONCLUSIVE and proved nothing (measured 2026-09-30). Dropping `static`
+# gives the now-uncalled definition external linkage, as
+# `host_processor_dispatch_c11.cases` does for the same reason.
+
+mutation_case "C11 drops a deferred host-served send at its deadline" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "{% else %}\n            {{ csym_prefix }}{{ model.name }}_perform_host_send(sm, &_ready_req);\n{% endif %}",
+     "{% else %}\n            (void)_ready_req;\n{% endif %}")
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send(",
+     "SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_perform_host_send(")
+PY
