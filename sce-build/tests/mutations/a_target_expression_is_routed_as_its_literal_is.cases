@@ -27,13 +27,15 @@ edit("sce/include/common/SendHelper.h",
      "            (scxmlProcessor && target.empty());")
 PY
 
-# ── C++ AOT: an orphan's delayed `#_parent` waits instead of failing ──
-
-mutation_case "the C++ AOT schedules a #_parent send from a session nothing invoked" <<'PY'
-edit("sce/include/static/StaticExecutionEngine.h",
-     "                if (!policy_.hasParentSession()) {\n                    return TargetSendOutcome::Unreachable;",
-     "                if (false) {\n                    return TargetSendOutcome::Unreachable;")
-PY
+# ── C++ AOT: an orphan's `#_parent` is held by another casefile ────
+#
+# The guard on `hasParentSession()` in `StaticExecutionEngine.h` is not a case
+# of this file: this fixture's root sends to `#_parent` only through a
+# `targetexpr`, so its generated machine carries no parent delivery and takes
+# the compile-time `else` beside the guard — the guard is not in the binary,
+# and the case SURVIVED (measured 2026-09-30). The orphan's `#_parent` through
+# a `targetexpr` is held in `a_send_reaches_only_what_its_target_names.cases`,
+# whose root carries a literal `#_parent` send and so has the guard to mutate.
 
 # ── C++ AOT: a session target is delivered to no one ───────────────
 

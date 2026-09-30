@@ -19,7 +19,7 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_a_send_reaches_only_what_its_target_names)$'
-mutation_targets sce/src/runtime/ActionExecutorImpl.cpp sce/src/events/InvokeEventTarget.cpp sce/src/events/ParentEventTarget.cpp tools/codegen/templates/actions/send.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
+mutation_targets sce/include/static/StaticExecutionEngine.h sce/src/runtime/ActionExecutorImpl.cpp sce/src/events/InvokeEventTarget.cpp sce/src/events/ParentEventTarget.cpp tools/codegen/templates/actions/send.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
 mutation_oracles tests/integration/ASendReachesOnlyWhatItsTargetNamesTest.cpp tests/integration/ASendReachesOnlyWhatItsTargetNamesAotTest.cpp backends/c/tests/integration/test_a_send_reaches_only_what_its_target_names.c
 
 # ── Interpreter: `<content>` does not cross a session boundary ─────
@@ -96,4 +96,20 @@ mutation_case "C11 has no route for a target naming this session" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "{% set route = 'session' %}",
      "{% set route = 'none' %}")
+PY
+
+# ── C++ AOT: an orphan's `#_parent` from a targetexpr waits or is lost ──
+#
+# ⚠ This case lives HERE and not with the other `targetexpr` cases. The guard
+# sits in `Kind::Parent`, under `if constexpr (HasParentDelivery<StatePolicy>)`,
+# and a machine has that delivery only when its document carries a literal
+# `#_parent` send (or was built `--as-child`); a `targetexpr` alone does not
+# give it. The `targetexpr` fixture's root has no such send, so its machine
+# takes the compile-time `else` and this branch is not in the binary: the case
+# SURVIVED there, unreachable. This document's root does carry one, and is
+# started by its host, which is the shape that reaches the guard.
+mutation_case "the C++ AOT sends a targetexpr #_parent from a session nothing invoked" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     "                if (!policy_.hasParentSession()) {\n                    return TargetSendOutcome::Unreachable;",
+     "                if (false) {\n                    return TargetSendOutcome::Unreachable;")
 PY
