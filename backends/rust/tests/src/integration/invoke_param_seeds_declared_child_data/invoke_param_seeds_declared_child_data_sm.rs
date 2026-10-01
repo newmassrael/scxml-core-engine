@@ -534,6 +534,105 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
         let _ = se.set_variable(&sid, name, value);
     }
 
+    // W3C SCXML 6.4: Defer the start of invoke 'inv_infinite' of state 'infinite' to macrostep end
+    fn defer_invoke_inv_infinite(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id =
+                format!("{}.{}.inv_infinite", "infinite", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: InvokeParamSeedsDeclaredChildDataState::Infinite,
+                        document_id: "inv_infinite",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'inv_namelist' of state 'namelistPhase' to macrostep end
+    fn defer_invoke_inv_namelist(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!(
+                "{}.{}.inv_namelist",
+                "namelistPhase", self as *const _ as usize
+            );
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: InvokeParamSeedsDeclaredChildDataState::NamelistPhase,
+                        document_id: "inv_namelist",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'inv_shadow' of state 'shadowed' to macrostep end
+    fn defer_invoke_inv_shadow(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id =
+                format!("{}.{}.inv_shadow", "shadowed", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: InvokeParamSeedsDeclaredChildDataState::Shadowed,
+                        document_id: "inv_shadow",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'inv_sole' of state 'soleName' to macrostep end
+    fn defer_invoke_inv_sole(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id =
+                format!("{}.{}.inv_sole", "soleName", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: InvokeParamSeedsDeclaredChildDataState::SoleName,
+                        document_id: "inv_sole",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'inv_unmatched' of state 'unmatched' to macrostep end
+    fn defer_invoke_inv_unmatched(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!(
+                "{}.{}.inv_unmatched",
+                "unmatched", self as *const _ as usize
+            );
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: InvokeParamSeedsDeclaredChildDataState::Unmatched,
+                        document_id: "inv_unmatched",
+                    },
+                );
+            }
+        }
+    }
+
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -1729,99 +1828,35 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:235 :: infinite :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.inv_infinite", "infinite", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: InvokeParamSeedsDeclaredChildDataState::Infinite,
-                                document_id: "inv_infinite",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv_infinite(engine);
                 }
             }
             InvokeParamSeedsDeclaredChildDataState::NamelistPhase => {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:193 :: namelistPhase :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id = format!(
-                        "{}.{}.inv_namelist",
-                        "namelistPhase", self as *const _ as usize
-                    );
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: InvokeParamSeedsDeclaredChildDataState::NamelistPhase,
-                                document_id: "inv_namelist",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv_namelist(engine);
                 }
             }
             InvokeParamSeedsDeclaredChildDataState::Shadowed => {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:92 :: shadowed :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.inv_shadow", "shadowed", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: InvokeParamSeedsDeclaredChildDataState::Shadowed,
-                                document_id: "inv_shadow",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv_shadow(engine);
                 }
             }
             InvokeParamSeedsDeclaredChildDataState::SoleName => {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:123 :: soleName :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.inv_sole", "soleName", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: InvokeParamSeedsDeclaredChildDataState::SoleName,
-                                document_id: "inv_sole",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv_sole(engine);
                 }
             }
             InvokeParamSeedsDeclaredChildDataState::Unmatched => {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:149 :: unmatched :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id = format!(
-                        "{}.{}.inv_unmatched",
-                        "unmatched", self as *const _ as usize
-                    );
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: InvokeParamSeedsDeclaredChildDataState::Unmatched,
-                                document_id: "inv_unmatched",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv_unmatched(engine);
                 }
             }
             _ => {}

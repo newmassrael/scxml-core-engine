@@ -2226,6 +2226,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 .sortedBy { it.first }
                 .toMap(LinkedHashMap()),
             pending = pending,
+            invokes = runningInvokes(),
             external = externalEventQueue.map { queued ->
                 SavedEvent(
                     name = eventNameOf(queued.event)
@@ -2323,7 +2324,57 @@ abstract class StateMachineEngine<S : State, E : Event>(
         }
         savedHistory(saved)
         savedPending(saved)
+        savedInvokes(saved, states)
         savedExternal(saved)
+    }
+
+    /**
+     * §scxml-6.4: the `<invoke type="scxml">`s of this document, each with the
+     * state that holds it, in document order — what a restore judges the
+     * invocations a saved state lists against. Overridden by generated code
+     * when the document saves.
+     */
+    protected open val staticInvokes: List<Pair<String, S>> get() = emptyList()
+
+    /**
+     * §scxml-6.4: defer the start of the `<invoke>` [invokeId] held by [state],
+     * as entering [state] defers it; the macrostep's end then starts its child.
+     * A restore calls this for each running invocation a saved state lists. The
+     * child is not saved, so what it needs is exactly what entering the state
+     * does. Overridden by generated code when the document saves.
+     */
+    protected open fun restartInvoke(invokeId: String, state: S) {}
+
+    /**
+     * The ids of the `<invoke>`s whose child session is running, in document
+     * order. A child that has ended is not running, though its entry may stay
+     * until the macrostep's cleanup: a restore starts every id listed here
+     * again, and an invocation already complete must not run twice.
+     */
+    private fun runningInvokes(): List<String> =
+        staticInvokes.map { it.first }.filter { id -> activeInvokes[id]?.child?.isInFinalState == false }
+
+    /**
+     * The running invocations [saved] lists, each with the state that holds it,
+     * or the refusal that says which one this document cannot restart: one it
+     * does not invoke, one whose state the saved configuration does not stand
+     * in, or one named twice — each would start a child the saved machine could
+     * not have had.
+     */
+    private fun savedInvokes(saved: SavedState, configuration: List<S>): List<Pair<String, S>> {
+        val seen = HashSet<String>()
+        return saved.invokes.mapIndexed { i, id ->
+            val owner = staticInvokes.firstOrNull { it.first == id }?.second
+                ?: throw StateRefusal("invokes[$i] is '$id', which the document does not invoke")
+            if (owner !in configuration) {
+                throw StateRefusal(
+                    "invokes[$i] is '$id', whose state the saved configuration does not stand in")
+            }
+            if (!seen.add(id)) {
+                throw StateRefusal("invokes[$i] is '$id', which an earlier entry already names")
+            }
+            id to owner
+        }
     }
 
     /**
@@ -2364,6 +2415,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // Behind nothing, in the order they were saved: enterAt left the
         // machine in the host-driven mode, whose queue this is.
         externalEventQueue.addAll(savedExternal(saved))
+        // Last, so what a child sends as it starts stands behind what was
+        // already waiting: the saved machine's queue was ahead of it. Started as
+        // entering the state starts them — deferred, then run together — so a
+        // child that ends as it starts raises `done.invoke` the way it would
+        // have.
+        for ((id, owner) in savedInvokes(saved, states)) restartInvoke(id, owner)
+        executePendingInvokes()
         onMacrostepComplete(false)
     }
 

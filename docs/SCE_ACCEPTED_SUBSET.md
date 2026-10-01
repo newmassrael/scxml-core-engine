@@ -2897,7 +2897,8 @@ of `initialize`: Kotlin `sm.save()` / `sm.restore(saved)` on a machine not
 yet started, Rust `engine.save()` / `Engine::<P>::restore(policy, &saved)`
 through the generated `<Machine>Persist` trait. A saved state holds every
 variable, the machine's own included, the configuration, the current leaf,
-what each `<history>` recorded, the delayed `<send>`s still waiting and the
+what each `<history>` recorded, the delayed `<send>`s still waiting, the
+`<invoke>`s whose child is running and the
 external queue in order — only the internal queue is empty at a macrostep
 boundary, so an event a host raised and has not yet driven the machine
 through is part of the state — as one JSON document (`SavedState::to_json` / `SavedState.toJson`, schema
@@ -2945,12 +2946,37 @@ notion of the wall is. The same run saves the same text on every backend,
 `pending` included: `static_timers.json` and `static_timers_midway.json` in the
 shared instances are the text each backend writes, and each restores from them.
 
+**Running invocations.** A child session an `<invoke type="scxml">` started is
+part of what a machine is doing (§scxml-6.4: the invocation lives as long as its
+state is active), and the process that ran it is gone. A saved state lists the
+`<invoke>`s whose child is running as `invokes`, by the id the document gives
+each, in document order; a restore starts each again, from the beginning of its
+child, under the same id. So `done.invoke.<id>` still names the invocation the
+document wrote, and a child's PROGRESS is lost: a machine saved after its child
+took one of two events and restored needs that event again. The child's own
+delayed `<send>`s are part of that progress, and start over with it. The
+children are started after the saved external queue and the waiting sends are
+restored, as entering the state starts them — deferred, then run together — so
+what a child sends as it starts stands behind what was already queued, and a
+child that ends as it starts raises `done.invoke` the way it would have.
+
+"Running" is started and not ended. A child that has ended is absent from
+`invokes` — its `done.invoke` is in the saved external queue, or already taken,
+and the invocation is complete — so it is not started a second time; the
+backends agree on that although the engine keeps an ended child until its state
+exits on one and drops it at the macrostep's end on the other. A restore refuses
+an id the document does not invoke, one whose state the saved configuration does
+not stand in, and one named twice. The field is always present, as `pending` is:
+a document with an `<invoke>` that restored from a state with no `invokes` would
+stand in "working" with nobody working. `sce-build/tests/fixtures/static_datamodel/static_invoke.scxml`
+and `saved/static_invoke_working.json` hold it on both backends.
+
 A restore runs no `<onentry>` and evaluates no `<data>` (the saved run did
 both, and its host calls cannot be made twice), and it is refused, leaving
 the machine as it was, for a state saved from a document of another shape, a
 configuration that is not one of the document, a value its variable's type
 or bound cannot hold, a waiting send that names an event the document does not
-name, or a history value the document could not have
+name, an invocation the document could not have been running, or a history value the document could not have
 recorded: an id it does not declare or names twice, a state it does not name,
 none at all, one that is not below the history's parent (or, for a shallow
 history, not a child of it), a deep history's state that has children, or
@@ -2970,20 +2996,24 @@ moment.
 
 A saved state is bound to the document's SHAPE, not its source hash: a
 SHA-256 the generator computes over every state with its kind and parent,
-every `<history>` with its id, kind and parent, and every variable with its
-type and bound (`static_lowering::saved_shape`); a document with no `<history>`
-hashes what it did before histories were saved. A guard, an action, an initial
+every `<history>` with its id, kind and parent, every `<invoke>` with its id and
+the state that holds it, and every variable with its type and bound
+(`static_lowering::saved_shape`); a document with no `<history>` or `<invoke>`
+hashes what it did before either was saved. A guard, an action, an initial
 value or a comment changed leaves it restorable, so an app update does not
 lose its users' state; a state, history or variable renamed, re-typed,
 re-parented or re-bounded refuses it. What the shape cannot see — a
 variable of the same name and type whose meaning changed — is the author's to
 avoid until a document can declare a migration.
 
-A document that waits on ANOTHER SESSION has state this version of the format
-does not carry: an `<invoke>`, whose child is a session of its own, or a
-delayed `<send>` whose target is a `#_` location other than `#_internal` — the
-parent, an invocation, a child session — which is delivered through a session
-the state does not hold. Such a machine is generated WITHOUT `save` /
+A document that waits on ANOTHER SESSION whose start a restore cannot repeat has
+state this version of the format does not carry: an `<invoke>` that is not a
+child session of its own (a host-run one, started with a request the host holds
+and a deadline it may be counting, a mesh-rpc call with one request in flight,
+or a peer on another device), or a delayed `<send>` whose target is a `#_`
+location other than `#_internal` — the parent, an invocation, a child session —
+which is delivered through a session the state does not hold. Such a machine is
+generated WITHOUT `save` /
 `restore`, so a host finds out when it compiles rather than when a restore
 drops part of the state. The delay and the target are read as written, since
 `sce-static` refuses `delayexpr` and `targetexpr`; a send to another session

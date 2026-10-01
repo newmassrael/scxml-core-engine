@@ -684,6 +684,60 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
         let _ = se.set_variable(&sid, name, value);
     }
 
+    // W3C SCXML 6.4: Defer the start of invoke 'inv1' of state 's0' to macrostep end
+    fn defer_invoke_inv1(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!("{}.{}.inv1", "s0", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: ABadInvokeArgumentIsReportedOnceState::S0,
+                        document_id: "inv1",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'inv2' of state 's1' to macrostep end
+    fn defer_invoke_inv2(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!("{}.{}.inv2", "s1", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: ABadInvokeArgumentIsReportedOnceState::S1,
+                        document_id: "inv2",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'inv3' of state 's1' to macrostep end
+    fn defer_invoke_inv3(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!("{}.{}.inv3", "s1", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: ABadInvokeArgumentIsReportedOnceState::S1,
+                        document_id: "inv3",
+                    },
+                );
+            }
+        }
+    }
+
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -1535,53 +1589,17 @@ impl StatePolicy for ABadInvokeArgumentIsReportedOncePolicy {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:65 :: s0 :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.inv1", "s0", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: ABadInvokeArgumentIsReportedOnceState::S0,
-                                document_id: "inv1",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv1(engine);
                 }
             }
             ABadInvokeArgumentIsReportedOnceState::S1 => {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:105 :: s1 :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.inv2", "s1", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: ABadInvokeArgumentIsReportedOnceState::S1,
-                                document_id: "inv2",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv2(engine);
                 }
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.inv3", "s1", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: ABadInvokeArgumentIsReportedOnceState::S1,
-                                document_id: "inv3",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv3(engine);
                 }
             }
             _ => {}

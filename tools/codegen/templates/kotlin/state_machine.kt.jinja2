@@ -240,6 +240,19 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+{% if model.invokes | scxml %}
+
+    // §scxml-6.4: a saved state names the `<invoke>`s whose child is running,
+    // and a restore starts each again from its beginning. This document saves
+    // only when every invoke is a static child session.
+    override val staticInvokes: List<Pair<String, {{ machine_name }}State>> = listOf(
+{% for invoke_info in model.invokes | scxml %}
+        "{{ invoke_info.invoke_id | escape_kotlin }}" to {{ machine_name }}State.{{ invoke_info.state_name | to_state_class_name }},
+{% endfor %}
+    )
+
+    override fun restartInvoke(invokeId: String, state: {{ machine_name }}State) = deferStaticInvoke(invokeId, state)
+{% endif %}
 {% endif %}
 {# W3C SCXML 5.3: the datamodel has ONE home, and it is not this class.
 

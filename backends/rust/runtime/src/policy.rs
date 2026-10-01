@@ -481,6 +481,40 @@ pub trait StatePolicy: Sized + 'static {
     /// Generated only when `HAS_INVOKE_SUPPORT` is `true`.
     fn execute_pending_invokes(&mut self, _engine: &mut Engine<Self>) {}
 
+    /// The state whose `<invoke>` the document gives the id `invoke_id`
+    /// (§scxml-6.4), or `None` when it has no such invoke — what a restore
+    /// judges a saved invocation against.
+    ///
+    /// Generated only when `HAS_INVOKE_SUPPORT` is `true` and the document
+    /// saves. `std` only, as the saved state is.
+    #[cfg(not(feature = "no_std"))]
+    fn invoke_owner(_invoke_id: &str) -> Option<Self::State> {
+        None
+    }
+
+    /// The ids of the `<invoke>`s whose child session is running (§scxml-6.4),
+    /// in document order. A child that has ended is not running, though the
+    /// policy may keep it until its state exits: a restore starts every id
+    /// listed here again, and an invocation already complete must not run twice.
+    ///
+    /// Generated only when `HAS_INVOKE_SUPPORT` is `true` and the document
+    /// saves. `std` only, as the saved state is.
+    #[cfg(not(feature = "no_std"))]
+    fn running_invokes(&self) -> Vec<&'static str> {
+        Vec::new()
+    }
+
+    /// Defer the start of the `<invoke>` `invoke_id`, as entering its state
+    /// defers it (§scxml-6.4): the next
+    /// [`execute_pending_invokes`](StatePolicy::execute_pending_invokes) starts
+    /// its child. A restore calls this for each running invocation it was given
+    /// and then runs them together.
+    ///
+    /// Generated only when `HAS_INVOKE_SUPPORT` is `true` and the document
+    /// saves. `std` only, as the saved state is.
+    #[cfg(not(feature = "no_std"))]
+    fn restart_invoke(&mut self, _invoke_id: &str, _engine: &mut Engine<Self>) {}
+
     /// Execute `<finalize>` handlers for child events (§scxml-6.5).
     ///
     /// Generated only when `HAS_FINALIZE` is `true`. Called from the engine's

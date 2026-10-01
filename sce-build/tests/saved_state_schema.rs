@@ -99,6 +99,7 @@ fn the_schema_refuses_what_no_backend_writes() {
                 "sendid": "__send_2", "data": "", "invokeid": ""
             }
         ],
+        "invokes": ["worker"],
         "external": [{
             "name": "tick", "data": "", "type": "external",
             "sendid": "", "origin": "", "origintype": "", "invokeid": ""
@@ -178,6 +179,21 @@ fn the_schema_refuses_what_no_backend_writes() {
             }]),
         ),
         (
+            "a running invocation that is not an id",
+            "invokes",
+            serde_json::json!([5]),
+        ),
+        (
+            "a running invocation named twice",
+            "invokes",
+            serde_json::json!(["worker", "worker"]),
+        ),
+        (
+            "a running invocation with no id",
+            "invokes",
+            serde_json::json!([""]),
+        ),
+        (
             "a queued event of no type",
             "external",
             serde_json::json!([{
@@ -196,14 +212,15 @@ fn the_schema_refuses_what_no_backend_writes() {
     }
 
     // Every field is always present: a state with nothing waiting says so
-    // with `[]`, and one that does not say is not this format.
-    let mut without = good.clone();
-    without
-        .as_object_mut()
-        .expect("an object")
-        .remove("pending");
-    assert!(
-        !errors(&validator, &without).is_empty(),
-        "the schema admitted a saved state with no pending field"
-    );
+    // with `[]`, and one that does not say is not this format. For `invokes`
+    // that is what keeps a document with an `<invoke>` from restoring a state
+    // that says "working" with nobody working.
+    for field in ["pending", "invokes"] {
+        let mut without = good.clone();
+        without.as_object_mut().expect("an object").remove(field);
+        assert!(
+            !errors(&validator, &without).is_empty(),
+            "the schema admitted a saved state with no {field} field"
+        );
+    }
 }

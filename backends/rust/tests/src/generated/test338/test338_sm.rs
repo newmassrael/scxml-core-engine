@@ -429,6 +429,41 @@ impl Test338Policy {
         let _ = se.set_variable(&sid, name, value);
     }
 
+    // W3C SCXML 6.4: Defer the start of invoke '_invoke_0' of state 's0' to macrostep end
+    fn defer_invoke_invoke_0(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!("{}.{}._invoke_0", "s0", self as *const _ as usize);
+            self.ensure_script_engine();
+            let id_stored = {
+                let sid = self.session_id.as_ref().unwrap().clone();
+                let se = self.script_engine.clone();
+                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                ::sce_rust_runtime::helpers::idlocation::store_id_in_location(
+                    se,
+                    &sid,
+                    "Var1",
+                    &generated_invoke_id,
+                )
+            };
+            if !id_stored {
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    Test338Event::ErrorExecution,
+                    "<invoke idlocation='Var1'> could not take the invoke id",
+                ));
+            }
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: Test338State::S0,
+                        document_id: "_invoke_0",
+                    },
+                );
+            }
+        }
+    }
+
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -846,36 +881,7 @@ impl StatePolicy for Test338Policy {
                 }
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}._invoke_0", "s0", self as *const _ as usize);
-                    self.ensure_script_engine();
-                    let id_stored = {
-                        let sid = self.session_id.as_ref().unwrap().clone();
-                        let se = self.script_engine.clone();
-                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                        ::sce_rust_runtime::helpers::idlocation::store_id_in_location(
-                            se,
-                            &sid,
-                            "Var1",
-                            &generated_invoke_id,
-                        )
-                    };
-                    if !id_stored {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                            Test338Event::ErrorExecution,
-                            "<invoke idlocation='Var1'> could not take the invoke id",
-                        ));
-                    }
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: Test338State::S0,
-                                document_id: "_invoke_0",
-                            },
-                        );
-                    }
+                    self.defer_invoke_invoke_0(engine);
                 }
             }
             _ => {}

@@ -539,6 +539,65 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
         let _ = se.set_variable(&sid, name, value);
     }
 
+    // W3C SCXML 6.4: Defer the start of invoke 'inv_absent' of state 'absentPhase' to macrostep end
+    fn defer_invoke_inv_absent(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id =
+                format!("{}.{}.inv_absent", "absentPhase", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: EmptyFinalizeUpdatesTheLocationState::AbsentPhase,
+                        document_id: "inv_absent",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'inv_empty' of state 'emptyPhase' to macrostep end
+    fn defer_invoke_inv_empty(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id =
+                format!("{}.{}.inv_empty", "emptyPhase", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: EmptyFinalizeUpdatesTheLocationState::EmptyPhase,
+                        document_id: "inv_empty",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'inv_unmatched' of state 'unmatchedPhase' to macrostep end
+    fn defer_invoke_inv_unmatched(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!(
+                "{}.{}.inv_unmatched",
+                "unmatchedPhase", self as *const _ as usize
+            );
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: EmptyFinalizeUpdatesTheLocationState::UnmatchedPhase,
+                        document_id: "inv_unmatched",
+                    },
+                );
+            }
+        }
+    }
+
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -1438,19 +1497,7 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                 }
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.inv_absent", "absentPhase", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: EmptyFinalizeUpdatesTheLocationState::AbsentPhase,
-                                document_id: "inv_absent",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv_absent(engine);
                 }
             }
             EmptyFinalizeUpdatesTheLocationState::EmptyPhase => {
@@ -1482,19 +1529,7 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                 }
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.inv_empty", "emptyPhase", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: EmptyFinalizeUpdatesTheLocationState::EmptyPhase,
-                                document_id: "inv_empty",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv_empty(engine);
                 }
             }
             EmptyFinalizeUpdatesTheLocationState::UnmatchedPhase => {
@@ -1526,21 +1561,7 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                 }
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id = format!(
-                        "{}.{}.inv_unmatched",
-                        "unmatchedPhase", self as *const _ as usize
-                    );
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: EmptyFinalizeUpdatesTheLocationState::UnmatchedPhase,
-                                document_id: "inv_unmatched",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv_unmatched(engine);
                 }
             }
             _ => {}

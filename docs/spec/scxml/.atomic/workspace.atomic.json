@@ -10949,6 +10949,29 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "follow_clock_in_children",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/saved_state.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/static_lowering.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SavedState.kt",
+          "symbol": "SavedState",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "staticInvokes",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "restartInvoke",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {

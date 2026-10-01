@@ -186,6 +186,42 @@ impl Test239Policy {
         }
     }
 
+    // W3C SCXML 6.4: Defer the start of invoke '_invoke_0' of state 's01' to macrostep end
+    fn defer_invoke_invoke_0(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!("{}.{}._invoke_0", "s01", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: Test239State::S01,
+                        document_id: "_invoke_0",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke '_invoke_1' of state 's02' to macrostep end
+    fn defer_invoke_invoke_1(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!("{}.{}._invoke_1", "s02", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: Test239State::S02,
+                        document_id: "_invoke_1",
+                    },
+                );
+            }
+        }
+    }
+
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -725,38 +761,14 @@ impl StatePolicy for Test239Policy {
                 // SCE-MAP: test239.scxml:14 :: s01 :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}._invoke_0", "s01", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: Test239State::S01,
-                                document_id: "_invoke_0",
-                            },
-                        );
-                    }
+                    self.defer_invoke_invoke_0(engine);
                 }
             }
             Test239State::S02 => {
                 // SCE-MAP: test239.scxml:19 :: s02 :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}._invoke_1", "s02", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: Test239State::S02,
-                                document_id: "_invoke_1",
-                            },
-                        );
-                    }
+                    self.defer_invoke_invoke_1(engine);
                 }
             }
             _ => {}

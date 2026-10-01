@@ -8,12 +8,14 @@
 //
 // A saved state holds what this session holds: its configuration, its
 // variables, what each `<history>` recorded, the delayed `<send>`s it is
-// waiting to deliver to its own queues or to a host-served processor, and its
-// external queue. What it cannot hold is a session it does not carry — an
-// invoked child, or a delayed send waiting to be delivered to the parent, to an
-// invocation or to a child session. The rule is the safety of the whole
-// feature: a `save()` that left an invoked child out would restore a machine
-// that waits for a `done.invoke` nobody will send, and nothing would say so.
+// waiting to deliver to its own queues or to a host-served processor, the child
+// sessions it is running (a restore starts each again), and its external queue.
+// What it cannot hold is a session whose start a restore cannot repeat — an
+// invocation the host runs, with a request and a deadline of its own, or a
+// delayed send waiting to be delivered to the parent, to an invocation or to a
+// child session. The rule is the safety of the whole feature: a `save()` that
+// left a host-run invocation out would restore a machine that waits for a
+// `done.invoke` nobody will send, and nothing would say so.
 //
 // It is decided by the shape the generator computes (`saved_shape`), from a
 // model the ANALYZER has already read, so this runs the generator end to end
@@ -197,7 +199,10 @@ fn a_send_to_another_session_that_is_not_delayed_is_generated_with_it() {
 }
 
 #[test]
-fn an_invoked_session_is_generated_without_it() {
+fn a_static_child_session_is_generated_with_the_save_api() {
+    // A saved state names the child that is running and a restore starts it
+    // again from its beginning, so a machine whose only invoke is a static
+    // child session saves.
     let extra = r#"<invoke type="scxml" id="child">
       <content>
         <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="f"><final id="f"/></scxml>
@@ -205,10 +210,33 @@ fn an_invoked_session_is_generated_without_it() {
     </invoke>"#;
     for (language, has) in save_api_per_backend(&machine(extra)) {
         assert!(
-            !has,
-            "{language}: a running child session is not in a saved state, so the machine must \
-             not offer to save one"
+            has,
+            "{language}: a running child session is in a saved state, so the machine saves it"
         );
+    }
+}
+
+#[test]
+fn an_invoke_that_a_restore_cannot_start_is_generated_without_it() {
+    // A host-run invocation was started with a request the host received and a
+    // deadline it may be counting: neither is in a saved state, so a machine
+    // that saved one would restore waiting for a `done.invoke` nobody sends.
+    for extra in [
+        r#"<invoke type="x-sce-host" id="child"/>"#,
+        r#"<invoke type="scxml" id="child">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="f"><final id="f"/></scxml>
+      </content>
+    </invoke>
+    <invoke type="x-sce-host" id="other"/>"#,
+    ] {
+        for (language, has) in save_api_per_backend(&machine(extra)) {
+            assert!(
+                !has,
+                "{language}: an invocation a restore cannot start is not in a saved state, so \
+                 the machine must not offer to save one: {extra}"
+            );
+        }
     }
 }
 

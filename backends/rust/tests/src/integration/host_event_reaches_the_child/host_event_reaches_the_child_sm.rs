@@ -185,6 +185,25 @@ impl HostEventReachesTheChildPolicy {
         }
     }
 
+    // W3C SCXML 6.4: Defer the start of invoke 'inv_probe' of state 'phase' to macrostep end
+    fn defer_invoke_inv_probe(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id =
+                format!("{}.{}.inv_probe", "phase", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: HostEventReachesTheChildState::Phase,
+                        document_id: "inv_probe",
+                    },
+                );
+            }
+        }
+    }
+
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -606,19 +625,7 @@ impl StatePolicy for HostEventReachesTheChildPolicy {
                 // SCE-MAP: host_event_reaches_the_child.scxml:70 :: phase :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.inv_probe", "phase", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: HostEventReachesTheChildState::Phase,
-                                document_id: "inv_probe",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv_probe(engine);
                 }
             }
             _ => {}

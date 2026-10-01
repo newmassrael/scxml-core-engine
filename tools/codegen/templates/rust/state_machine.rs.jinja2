@@ -1125,6 +1125,42 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
         self.do_execute_pending_invokes(engine);
     }
 {% endif %}
+{% if static_saved_shape and not no_std and model.invokes | scxml %}
+
+    // SCE Accepted Subset 2.15, "Saving and restoring": a saved state names the
+    // `<invoke>`s whose child is running, and a restore starts each again. This
+    // document saves only when every invoke is a static child session.
+    fn invoke_owner(invoke_id: &str) -> Option<Self::State> {
+        match invoke_id {
+{% for invoke_info in model.invokes | scxml %}
+            "{{ invoke_info.invoke_id }}" => Some({{ machine_name }}State::{{ invoke_info.state_name | to_state_variant }}),
+{% endfor %}
+            _ => None,
+        }
+    }
+
+    // W3C SCXML 6.4: running means started and not ended. The policy keeps an
+    // ended child until its state exits, so the ending is what is asked here;
+    // an invocation whose `done.invoke` is queued or taken must not run twice.
+    fn running_invokes(&self) -> Vec<&'static str> {
+        let mut running = Vec::new();
+{% for invoke_info in model.invokes | scxml %}
+        if self.child_{{ invoke_info.field_suffix }}.is_some() && !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
+            running.push("{{ invoke_info.invoke_id }}");
+        }
+{% endfor %}
+        running
+    }
+
+    fn restart_invoke(&mut self, invoke_id: &str, engine: &mut Engine<Self>) {
+        match invoke_id {
+{% for invoke_info in model.invokes | scxml %}
+            "{{ invoke_info.invoke_id }}" => self.defer_invoke_{{ invoke_info.field_suffix }}(engine),
+{% endfor %}
+            _ => {}
+        }
+    }
+{% endif %}
 {% if model.invokes | scxml_family %}
 
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_<invokeid>">` whose wait

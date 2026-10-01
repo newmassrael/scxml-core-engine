@@ -1182,6 +1182,28 @@ impl<P: StatePolicy> Engine<P> {
         unsafe { f(&mut *policy_ptr, self) }
     }
 
+    /// §scxml-6.4: start the child session of each `<invoke>` in `ids` again,
+    /// in the order given — what a restore does for the invocations a saved
+    /// state lists, since a child is not saved and the process that ran it is
+    /// gone.
+    ///
+    /// Started as entering the invoking state starts them: each is deferred,
+    /// then [`execute_pending_invokes`](StatePolicy::execute_pending_invokes)
+    /// runs them together, so a child that ends as it starts raises
+    /// `done.invoke` the way it would have. `std` only, as the saved state is.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) fn restart_invokes(&mut self, ids: &[&str]) {
+        if ids.is_empty() {
+            return;
+        }
+        self.with_policy(|policy, engine| {
+            for id in ids {
+                policy.restart_invoke(id, engine);
+            }
+            policy.execute_pending_invokes(engine);
+        });
+    }
+
     /// Execute the policy's `execute_exit_actions` for one state.
     ///
     /// The `configuration_before_exit` slice is borrowed from the caller's

@@ -416,17 +416,33 @@ class AutoforwardEventFieldsStateMachine(
             is AutoforwardEventFieldsState.Phase -> {
                 // SCE-MAP: autoforward_event_fields.scxml:33 :: phase :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                run {
-                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                    val generatedInvokeId = "phase.${System.identityHashCode(this)}.inv_echo"
-                    deferInvoke(state, generatedInvokeId) {
+                deferStaticInvoke("inv_echo", state)
+            }
+        }
+    }
 
-                        val childSM = AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
-                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                        startInvoke("inv_echo", childSM, true, AutoforwardEventFieldsEvent.Done.Invoke, "", generatedInvokeId)
-                    }
+    // W3C SCXML 6.4: defer the start of the static child session of the
+    // `<invoke type="scxml">` `invokeId`, held by `state`, to the macrostep's
+    // end. One body for the two things that start a child: entering the state
+    // (`onEntry` above) and a restore, which starts again each running
+    // invocation a saved state lists (`restartInvoke`). The child is not saved,
+    // so what a restore needs is exactly what entering the state does, and two
+    // spellings of it would be two places a change to one is forgotten in the
+    // other. A state that exits before the macrostep ends cancels the entry
+    // (`cancelPendingInvokesForState`) in either case.
+    private fun deferStaticInvoke(invokeId: String, state: AutoforwardEventFieldsState) {
+        when (invokeId) {
+            "inv_echo" -> run {
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                val generatedInvokeId = "phase.${System.identityHashCode(this)}.inv_echo"
+                deferInvoke(state, generatedInvokeId) {
+
+                    val childSM = AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                    startInvoke("inv_echo", childSM, true, AutoforwardEventFieldsEvent.Done.Invoke, "", generatedInvokeId)
                 }
             }
+            else -> error("the document has no static child session '$invokeId' (codegen invariant)")
         }
     }
 

@@ -452,41 +452,58 @@ class Test225StateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                run {
-                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
-                    // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via
-                    // idlocation, through the assignment `<assign>` makes — a member
-                    // path lands, and a location that cannot take the id raises
-                    // error.execution and the invocation is never deferred.
-                    if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), generatedInvokeId, "<invoke>")) return@run
-                    deferInvoke(state, generatedInvokeId) {
-
-                        val childSM = Test225SceSynthInvokeInvoke0StateMachine()
-                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                        startInvoke("_invoke_0", childSM, false, Test225Event.Done.Invoke, "", generatedInvokeId)
-                    }
-                }
+                deferStaticInvoke("_invoke_0", state)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                run {
-                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_1"
-                    // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via
-                    // idlocation, through the assignment `<assign>` makes — a member
-                    // path lands, and a location that cannot take the id raises
-                    // error.execution and the invocation is never deferred.
-                    if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), generatedInvokeId, "<invoke>")) return@run
-                    deferInvoke(state, generatedInvokeId) {
-
-                        val childSM = Test225SceSynthInvokeInvoke1StateMachine()
-                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                        startInvoke("_invoke_1", childSM, false, Test225Event.Done.Invoke, "", generatedInvokeId)
-                    }
-                }
+                deferStaticInvoke("_invoke_1", state)
             }
             is Test225State.S1 -> {
                 // SCE-MAP: test225.scxml:34 :: s1 :: _state_body
             }
+        }
+    }
+
+    // W3C SCXML 6.4: defer the start of the static child session of the
+    // `<invoke type="scxml">` `invokeId`, held by `state`, to the macrostep's
+    // end. One body for the two things that start a child: entering the state
+    // (`onEntry` above) and a restore, which starts again each running
+    // invocation a saved state lists (`restartInvoke`). The child is not saved,
+    // so what a restore needs is exactly what entering the state does, and two
+    // spellings of it would be two places a change to one is forgotten in the
+    // other. A state that exits before the macrostep ends cancels the entry
+    // (`cancelPendingInvokesForState`) in either case.
+    private fun deferStaticInvoke(invokeId: String, state: Test225State) {
+        when (invokeId) {
+            "_invoke_0" -> run {
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
+                // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via
+                // idlocation, through the assignment `<assign>` makes — a member
+                // path lands, and a location that cannot take the id raises
+                // error.execution and the invocation is never deferred.
+                if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), generatedInvokeId, "<invoke>")) return@run
+                deferInvoke(state, generatedInvokeId) {
+
+                    val childSM = Test225SceSynthInvokeInvoke0StateMachine()
+                    // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                    startInvoke("_invoke_0", childSM, false, Test225Event.Done.Invoke, "", generatedInvokeId)
+                }
+            }
+            "_invoke_1" -> run {
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_1"
+                // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via
+                // idlocation, through the assignment `<assign>` makes — a member
+                // path lands, and a location that cannot take the id raises
+                // error.execution and the invocation is never deferred.
+                if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), generatedInvokeId, "<invoke>")) return@run
+                deferInvoke(state, generatedInvokeId) {
+
+                    val childSM = Test225SceSynthInvokeInvoke1StateMachine()
+                    // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                    startInvoke("_invoke_1", childSM, false, Test225Event.Done.Invoke, "", generatedInvokeId)
+                }
+            }
+            else -> error("the document has no static child session '$invokeId' (codegen invariant)")
         }
     }
 

@@ -447,6 +447,46 @@ impl DonedataLocalInvokePolicy {
         let _ = se.set_variable(&sid, name, value);
     }
 
+    // W3C SCXML 6.4: Defer the start of invoke 'inv_content' of state 'phase_content' to macrostep end
+    fn defer_invoke_inv_content(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!(
+                "{}.{}.inv_content",
+                "phase_content", self as *const _ as usize
+            );
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: DonedataLocalInvokeState::PhaseContent,
+                        document_id: "inv_content",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'inv_param' of state 'phase_param' to macrostep end
+    fn defer_invoke_inv_param(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id =
+                format!("{}.{}.inv_param", "phase_param", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: DonedataLocalInvokeState::PhaseParam,
+                        document_id: "inv_param",
+                    },
+                );
+            }
+        }
+    }
+
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -972,40 +1012,14 @@ impl StatePolicy for DonedataLocalInvokePolicy {
                 // SCE-MAP: donedata_local_invoke.scxml:55 :: phase_content :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id = format!(
-                        "{}.{}.inv_content",
-                        "phase_content", self as *const _ as usize
-                    );
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: DonedataLocalInvokeState::PhaseContent,
-                                document_id: "inv_content",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv_content(engine);
                 }
             }
             DonedataLocalInvokeState::PhaseParam => {
                 // SCE-MAP: donedata_local_invoke.scxml:34 :: phase_param :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.inv_param", "phase_param", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: DonedataLocalInvokeState::PhaseParam,
-                                document_id: "inv_param",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv_param(engine);
                 }
             }
             _ => {}

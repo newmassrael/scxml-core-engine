@@ -107,6 +107,12 @@ pub struct SavedState {
     /// would be delivered: earliest first, entries due at the same moment in
     /// the order they were sent.
     pub pending: Vec<SavedSend>,
+    /// The `<invoke>`s whose child session is running (§scxml-6.4), by the id
+    /// the document gives each, in document order. A child is not saved: a
+    /// restored machine starts each of these again from its beginning, under
+    /// the same id. One whose child has ended is absent — its `done.invoke` is
+    /// in the external queue, or already taken — so it is not started twice.
+    pub invokes: Vec<String>,
     /// The external queue, front first: events a host raised and has not yet
     /// driven the machine through. Only the internal queue is empty at a
     /// macrostep boundary, so a state that left these out would lose them.
@@ -452,6 +458,10 @@ impl SavedState {
                 Value::Array(self.pending.iter().map(SavedSend::to_value).collect()),
             ),
             (
+                "invokes".to_string(),
+                Value::Array(self.invokes.iter().cloned().map(Value::Text).collect()),
+            ),
+            (
                 "external".to_string(),
                 Value::Array(self.external.iter().map(SavedEvent::to_value).collect()),
             ),
@@ -514,6 +524,13 @@ impl SavedState {
                 .collect::<Result<Vec<_>, _>>()?,
             _ => return Err(StateRefusal::new("'pending' is not an array")),
         };
+        let invokes = match field("invokes")? {
+            Value::Array(items) => items
+                .iter()
+                .map(|v| text_of(v, "invokes"))
+                .collect::<Result<Vec<_>, _>>()?,
+            _ => return Err(StateRefusal::new("'invokes' is not an array")),
+        };
         let external = match field("external")? {
             Value::Array(items) => items
                 .iter()
@@ -529,6 +546,7 @@ impl SavedState {
             variables,
             history,
             pending,
+            invokes,
             external,
         })
     }
@@ -761,6 +779,14 @@ pub fn save<P: StatePolicy>(
         variables,
         history,
         pending,
+        // §scxml-6.4: the children that are running, which a restore starts
+        // again. The policy lists them in document order.
+        invokes: engine
+            .policy()
+            .running_invokes()
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
         external: engine
             .external_queue
             .queued()
@@ -1069,6 +1095,28 @@ pub fn enter<P: StatePolicy>(
         .enumerate()
         .map(|(i, send)| ReadSend::<P::Event>::read::<P>(send, i))
         .collect::<Result<Vec<_>, StateRefusal>>()?;
+    // The same for a running invocation: one the document does not have, one
+    // whose state the saved configuration does not stand in, or one named
+    // twice would start a child the saved machine could not have had.
+    let mut restarts: Vec<&str> = Vec::with_capacity(saved.invokes.len());
+    for (i, id) in saved.invokes.iter().enumerate() {
+        let owner = P::invoke_owner(id).ok_or_else(|| {
+            StateRefusal::new(format!(
+                "invokes[{i}] is '{id}', which the document does not invoke"
+            ))
+        })?;
+        if !configuration.contains(&owner) {
+            return Err(StateRefusal::new(format!(
+                "invokes[{i}] is '{id}', whose state the saved configuration does not stand in"
+            )));
+        }
+        if restarts.contains(&id.as_str()) {
+            return Err(StateRefusal::new(format!(
+                "invokes[{i}] is '{id}', which an earlier entry already names"
+            )));
+        }
+        restarts.push(id);
+    }
     let mut engine = Engine::new(policy);
     engine.set_clock(clock);
     engine
@@ -1078,6 +1126,9 @@ pub fn enter<P: StatePolicy>(
         engine.raise_external_with_meta(queued);
     }
     arm_pending(&mut engine, pending, wall_now_ms);
+    // Last, so what a child sends as it starts stands behind what was already
+    // waiting: the saved machine's queue was ahead of it.
+    engine.restart_invokes(&restarts);
     Ok(engine)
 }
 
@@ -1316,6 +1367,7 @@ mod tests {
                     }),
                 },
             ],
+            invokes: vec!["worker".to_string(), "spare".to_string()],
             external: vec![SavedEvent {
                 name: "tick".to_string(),
                 data: "{\"n\":1}".to_string(),

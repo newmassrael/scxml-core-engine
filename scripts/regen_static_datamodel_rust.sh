@@ -71,18 +71,17 @@ mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*.rs' ! -name 'mod.rs' -delete
 cp "$TMP"/*.rs "$GENERATED_DIR/"
 
+# Derived from what was generated, not from the three lists above: a machine
+# whose `<invoke>` holds an inline child is generated beside it as
+# `<machine>__sce_synth_invoke__<id>_sm`, and the machine names that module
+# (`super::...`), so a list that named only the machines would leave the
+# generated tree uncompilable.
 MODRS="$GENERATED_DIR/mod.rs"
 {
     echo "// GENERATED -- DO NOT EDIT (scripts/regen_static_datamodel_rust.sh)"
     echo ""
-    for algorithm in "${ALGORITHMS[@]}"; do
-        echo "pub mod $algorithm;"
-    done
-    for algorithm in "${STD_ALGORITHMS[@]}"; do
-        echo "pub mod ${algorithm##*/};"
-    done
-    for machine in "${MACHINES[@]}"; do
-        echo "pub mod ${machine}_sm;"
+    for generated in "$TMP"/*.rs; do
+        echo "pub mod $(basename "$generated" .rs);"
     done
 } > "$MODRS"
 

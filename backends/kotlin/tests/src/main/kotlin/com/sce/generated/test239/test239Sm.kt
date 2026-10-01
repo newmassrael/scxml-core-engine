@@ -235,31 +235,48 @@ class Test239StateMachine(
             is Test239State.S01 -> {
                 // SCE-MAP: test239.scxml:14 :: s01 :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                run {
-                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                    val generatedInvokeId = "s01.${System.identityHashCode(this)}._invoke_0"
-                    deferInvoke(state, generatedInvokeId) {
-
-                        val childSM = Test239sub1StateMachine()
-                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                        startInvoke("_invoke_0", childSM, false, Test239Event.Done.Invoke, "", generatedInvokeId)
-                    }
-                }
+                deferStaticInvoke("_invoke_0", state)
             }
             is Test239State.S02 -> {
                 // SCE-MAP: test239.scxml:19 :: s02 :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                run {
-                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                    val generatedInvokeId = "s02.${System.identityHashCode(this)}._invoke_1"
-                    deferInvoke(state, generatedInvokeId) {
+                deferStaticInvoke("_invoke_1", state)
+            }
+        }
+    }
 
-                        val childSM = Test239SceSynthInvokeInvoke1StateMachine()
-                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                        startInvoke("_invoke_1", childSM, false, Test239Event.Done.Invoke, "", generatedInvokeId)
-                    }
+    // W3C SCXML 6.4: defer the start of the static child session of the
+    // `<invoke type="scxml">` `invokeId`, held by `state`, to the macrostep's
+    // end. One body for the two things that start a child: entering the state
+    // (`onEntry` above) and a restore, which starts again each running
+    // invocation a saved state lists (`restartInvoke`). The child is not saved,
+    // so what a restore needs is exactly what entering the state does, and two
+    // spellings of it would be two places a change to one is forgotten in the
+    // other. A state that exits before the macrostep ends cancels the entry
+    // (`cancelPendingInvokesForState`) in either case.
+    private fun deferStaticInvoke(invokeId: String, state: Test239State) {
+        when (invokeId) {
+            "_invoke_0" -> run {
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                val generatedInvokeId = "s01.${System.identityHashCode(this)}._invoke_0"
+                deferInvoke(state, generatedInvokeId) {
+
+                    val childSM = Test239sub1StateMachine()
+                    // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                    startInvoke("_invoke_0", childSM, false, Test239Event.Done.Invoke, "", generatedInvokeId)
                 }
             }
+            "_invoke_1" -> run {
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                val generatedInvokeId = "s02.${System.identityHashCode(this)}._invoke_1"
+                deferInvoke(state, generatedInvokeId) {
+
+                    val childSM = Test239SceSynthInvokeInvoke1StateMachine()
+                    // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                    startInvoke("_invoke_1", childSM, false, Test239Event.Done.Invoke, "", generatedInvokeId)
+                }
+            }
+            else -> error("the document has no static child session '$invokeId' (codegen invariant)")
         }
     }
 

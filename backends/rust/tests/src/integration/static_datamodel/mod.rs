@@ -6,6 +6,8 @@ pub mod static_block_ends_sm;
 pub mod static_counter_sm;
 pub mod static_history_sm;
 pub mod static_host_call_sm;
+pub mod static_invoke__sce_synth_invoke__worker_sm;
+pub mod static_invoke_sm;
 pub mod static_list_sm;
 pub mod static_overflow_sm;
 pub mod static_payload_sm;

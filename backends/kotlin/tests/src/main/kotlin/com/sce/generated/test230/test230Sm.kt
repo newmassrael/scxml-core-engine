@@ -473,16 +473,7 @@ class Test230StateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                run {
-                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
-                    deferInvoke(state, generatedInvokeId) {
-
-                        val childSM = Test230SceSynthInvokeInvoke0StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
-                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                        startInvoke("_invoke_0", childSM, true, Test230Event.Done.Invoke, "", generatedInvokeId)
-                    }
-                }
+                deferStaticInvoke("_invoke_0", state)
             }
             is Test230State.S01 -> {
                 // SCE-MAP: test230.scxml:43 :: s01 :: _state_body
@@ -490,6 +481,31 @@ class Test230StateMachine(
             is Test230State.S02 -> {
                 // SCE-MAP: test230.scxml:56 :: s02 :: _state_body
             }
+        }
+    }
+
+    // W3C SCXML 6.4: defer the start of the static child session of the
+    // `<invoke type="scxml">` `invokeId`, held by `state`, to the macrostep's
+    // end. One body for the two things that start a child: entering the state
+    // (`onEntry` above) and a restore, which starts again each running
+    // invocation a saved state lists (`restartInvoke`). The child is not saved,
+    // so what a restore needs is exactly what entering the state does, and two
+    // spellings of it would be two places a change to one is forgotten in the
+    // other. A state that exits before the macrostep ends cancels the entry
+    // (`cancelPendingInvokesForState`) in either case.
+    private fun deferStaticInvoke(invokeId: String, state: Test230State) {
+        when (invokeId) {
+            "_invoke_0" -> run {
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
+                deferInvoke(state, generatedInvokeId) {
+
+                    val childSM = Test230SceSynthInvokeInvoke0StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                    startInvoke("_invoke_0", childSM, true, Test230Event.Done.Invoke, "", generatedInvokeId)
+                }
+            }
+            else -> error("the document has no static child session '$invokeId' (codegen invariant)")
         }
     }
 

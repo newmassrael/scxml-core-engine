@@ -492,6 +492,42 @@ impl SessionIdsAreDistinctPolicy {
         let _ = se.set_variable(&sid, name, value);
     }
 
+    // W3C SCXML 6.4: Defer the start of invoke 'inv_a' of state 'phase' to macrostep end
+    fn defer_invoke_inv_a(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!("{}.{}.inv_a", "phase", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: SessionIdsAreDistinctState::Phase,
+                        document_id: "inv_a",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'inv_b' of state 'phase' to macrostep end
+    fn defer_invoke_inv_b(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!("{}.{}.inv_b", "phase", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: SessionIdsAreDistinctState::Phase,
+                        document_id: "inv_b",
+                    },
+                );
+            }
+        }
+    }
+
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -1020,34 +1056,10 @@ impl StatePolicy for SessionIdsAreDistinctPolicy {
                 // SCE-MAP: session_ids_are_distinct.scxml:70 :: phase :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.inv_a", "phase", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: SessionIdsAreDistinctState::Phase,
-                                document_id: "inv_a",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv_a(engine);
                 }
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.inv_b", "phase", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: SessionIdsAreDistinctState::Phase,
-                                document_id: "inv_b",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv_b(engine);
                 }
             }
             _ => {}

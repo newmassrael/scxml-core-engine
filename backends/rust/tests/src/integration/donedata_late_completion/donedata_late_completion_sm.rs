@@ -415,6 +415,24 @@ impl DonedataLateCompletionPolicy {
         let _ = se.set_variable(&sid, name, value);
     }
 
+    // W3C SCXML 6.4: Defer the start of invoke 'inv_late' of state 'phase' to macrostep end
+    fn defer_invoke_inv_late(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!("{}.{}.inv_late", "phase", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: DonedataLateCompletionState::Phase,
+                        document_id: "inv_late",
+                    },
+                );
+            }
+        }
+    }
+
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -804,19 +822,7 @@ impl StatePolicy for DonedataLateCompletionPolicy {
                 // SCE-MAP: donedata_late_completion.scxml:48 :: phase :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.inv_late", "phase", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: DonedataLateCompletionState::Phase,
-                                document_id: "inv_late",
-                            },
-                        );
-                    }
+                    self.defer_invoke_inv_late(engine);
                 }
             }
             _ => {}

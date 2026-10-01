@@ -763,6 +763,42 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
         let _ = se.set_variable(&sid, name, value);
     }
 
+    // W3C SCXML 6.4: Defer the start of invoke 'kid' of state 'run' to macrostep end
+    fn defer_invoke_kid(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!("{}.{}.kid", "run", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: ADelayedSendReachesWhatItsTargetNamesState::Run,
+                        document_id: "kid",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'gone' of state 'run' to macrostep end
+    fn defer_invoke_gone(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!("{}.{}.gone", "run", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: ADelayedSendReachesWhatItsTargetNamesState::Run,
+                        document_id: "gone",
+                    },
+                );
+            }
+        }
+    }
+
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -1401,34 +1437,10 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                 }
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.kid", "run", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: ADelayedSendReachesWhatItsTargetNamesState::Run,
-                                document_id: "kid",
-                            },
-                        );
-                    }
+                    self.defer_invoke_kid(engine);
                 }
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.gone", "run", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: ADelayedSendReachesWhatItsTargetNamesState::Run,
-                                document_id: "gone",
-                            },
-                        );
-                    }
+                    self.defer_invoke_gone(engine);
                 }
             }
             _ => {}

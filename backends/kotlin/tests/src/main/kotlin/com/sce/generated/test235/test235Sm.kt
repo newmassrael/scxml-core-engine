@@ -182,17 +182,33 @@ class Test235StateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                run {
-                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                    val generatedInvokeId = "s0.${System.identityHashCode(this)}.foo"
-                    deferInvoke(state, generatedInvokeId) {
+                deferStaticInvoke("foo", state)
+            }
+        }
+    }
 
-                        val childSM = Test235SceSynthInvokeFooStateMachine()
-                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                        startInvoke("foo", childSM, false, Test235Event.Done.Invoke.Foo, "", generatedInvokeId)
-                    }
+    // W3C SCXML 6.4: defer the start of the static child session of the
+    // `<invoke type="scxml">` `invokeId`, held by `state`, to the macrostep's
+    // end. One body for the two things that start a child: entering the state
+    // (`onEntry` above) and a restore, which starts again each running
+    // invocation a saved state lists (`restartInvoke`). The child is not saved,
+    // so what a restore needs is exactly what entering the state does, and two
+    // spellings of it would be two places a change to one is forgotten in the
+    // other. A state that exits before the macrostep ends cancels the entry
+    // (`cancelPendingInvokesForState`) in either case.
+    private fun deferStaticInvoke(invokeId: String, state: Test235State) {
+        when (invokeId) {
+            "foo" -> run {
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                val generatedInvokeId = "s0.${System.identityHashCode(this)}.foo"
+                deferInvoke(state, generatedInvokeId) {
+
+                    val childSM = Test235SceSynthInvokeFooStateMachine()
+                    // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                    startInvoke("foo", childSM, false, Test235Event.Done.Invoke.Foo, "", generatedInvokeId)
                 }
             }
+            else -> error("the document has no static child session '$invokeId' (codegen invariant)")
         }
     }
 

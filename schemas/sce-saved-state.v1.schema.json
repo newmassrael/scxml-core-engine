@@ -5,7 +5,7 @@
   "title": "SCE saved state (wire schema v1)",
   "description": "A datamodel=\"sce-static\" machine's whole state, saved at a macrostep boundary and restored into a new process in place of initialize (docs/SCE_ACCEPTED_SUBSET.md §2.15, \"Saving and restoring\"). The same document on every backend: what one backend saved, another restores. Producers and readers are the runtimes — sce_rust_runtime::saved_state (Rust) and com.sce.runtime.SavedState (Kotlin) — and the generated save/restore of each machine. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
-  "required": ["format", "shape", "configuration", "current", "variables", "history", "pending", "external"],
+  "required": ["format", "shape", "configuration", "current", "variables", "history", "pending", "invokes", "external"],
   "additionalProperties": false,
   "properties": {
     "format": {
@@ -13,7 +13,7 @@
       "const": 1
     },
     "shape": {
-      "description": "The SHA-256, as lowercase hex, of the document's shape as the generator computes it: every state with its kind and parent in document order, every <history> with its id, kind and parent, every variable with its type and bound, a record's fields with their types. A machine refuses a saved state of another shape. Not the document's source hash: a guard, an action, an initial value or a comment changed leaves the shape as it was.",
+      "description": "The SHA-256, as lowercase hex, of the document's shape as the generator computes it: every state with its kind and parent in document order, every <history> with its id, kind and parent, every <invoke> with its id and the state that holds it, every variable with its type and bound, a record's fields with their types. A machine refuses a saved state of another shape. Not the document's source hash: a guard, an action, an initial value or a comment changed leaves the shape as it was.",
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
@@ -42,7 +42,7 @@
       }
     },
     "pending": {
-      "description": "The delayed <send>s still waiting (W3C SCXML 6.2), in the order they would be delivered: earliest first, entries due at the same moment in the order they were sent. Each is written as the moment it comes due on the wall clock of the host that saved it, not as a wait: a wait would start again when the process came back, and a timer that ran out while it was dead would be late by exactly as long as it was dead. A restore arms each to come due when its moment does, and one already due to come due now, in this order. A document that makes a delayed send to a parent, an invocation or a child session, or that invokes anything, has no saved state: the session it waits for is not part of this one.",
+      "description": "The delayed <send>s still waiting (W3C SCXML 6.2), in the order they would be delivered: earliest first, entries due at the same moment in the order they were sent. Each is written as the moment it comes due on the wall clock of the host that saved it, not as a wait: a wait would start again when the process came back, and a timer that ran out while it was dead would be late by exactly as long as it was dead. A restore arms each to come due when its moment does, and one already due to come due now, in this order. A document that makes a delayed send to a parent, an invocation or a child session has no saved state: the session it waits for is not part of this one.",
       "type": "array",
       "items": {
         "oneOf": [
@@ -51,6 +51,12 @@
           { "$ref": "#/definitions/pendingHost" }
         ]
       }
+    },
+    "invokes": {
+      "description": "The <invoke type=\"scxml\">s whose child session is running (W3C SCXML 6.4), by the id the document gives each, in document order. A child session is not saved: a restore starts each listed one again from its beginning, under the same id, as entering its state would, so a child's progress is lost and `done.invoke.<id>` still names the invocation the document wrote. One whose child has ended is absent, because its done.invoke is in `external` or already taken, and an invocation complete must not run twice. A restore refuses an id the document does not invoke, one whose state the configuration does not stand in, and one named twice. A document with an <invoke> of any other kind — one the host runs, a mesh-rpc call, a mesh peer — has no saved state: what it was started with is not part of this one.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
     },
     "external": {
       "description": "The external queue, front first: events raised to the machine that it has not yet been driven through. Only the internal queue is empty at a macrostep boundary. Restored in this order, behind nothing. A typed payload is not saved; it is lifted again from `data` on delivery.",

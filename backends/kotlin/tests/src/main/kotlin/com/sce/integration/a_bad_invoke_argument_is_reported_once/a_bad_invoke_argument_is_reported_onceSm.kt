@@ -600,10 +600,33 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
             is ABadInvokeArgumentIsReportedOnceState.S0 -> {
                 // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:65 :: s0 :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                run {
-                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                    val generatedInvokeId = "s0.${System.identityHashCode(this)}.inv1"
-                    deferInvoke(state, generatedInvokeId) {
+                deferStaticInvoke("inv1", state)
+            }
+            is ABadInvokeArgumentIsReportedOnceState.S1 -> {
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:105 :: s1 :: _state_body
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                deferStaticInvoke("inv2", state)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                deferStaticInvoke("inv3", state)
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: defer the start of the static child session of the
+    // `<invoke type="scxml">` `invokeId`, held by `state`, to the macrostep's
+    // end. One body for the two things that start a child: entering the state
+    // (`onEntry` above) and a restore, which starts again each running
+    // invocation a saved state lists (`restartInvoke`). The child is not saved,
+    // so what a restore needs is exactly what entering the state does, and two
+    // spellings of it would be two places a change to one is forgotten in the
+    // other. A state that exits before the macrostep ends cancels the entry
+    // (`cancelPendingInvokesForState`) in either case.
+    private fun deferStaticInvoke(invokeId: String, state: ABadInvokeArgumentIsReportedOnceState) {
+        when (invokeId) {
+            "inv1" -> run {
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                val generatedInvokeId = "s0.${System.identityHashCode(this)}.inv1"
+                deferInvoke(state, generatedInvokeId) {
                         // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
                         // is executed — at macrostep end, where this deferred body
                         // runs — not when the state was entered.
@@ -640,20 +663,16 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='notInChild'> could not be read")
                         }
 
-                        val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
-                        setInvokeParams(childSM, invokeParams)
-                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                        startInvoke("inv1", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId)
-                    }
+                    val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    setInvokeParams(childSM, invokeParams)
+                    // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                    startInvoke("inv1", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId)
                 }
             }
-            is ABadInvokeArgumentIsReportedOnceState.S1 -> {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:105 :: s1 :: _state_body
-                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                run {
-                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                    val generatedInvokeId = "s1.${System.identityHashCode(this)}.inv2"
-                    deferInvoke(state, generatedInvokeId) {
+            "inv2" -> run {
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                val generatedInvokeId = "s1.${System.identityHashCode(this)}.inv2"
+                deferInvoke(state, generatedInvokeId) {
                         // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
                         // is executed — at macrostep end, where this deferred body
                         // runs — not when the state was entered.
@@ -668,17 +687,16 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         invokeParams["undeclaredA"] = engineInv.getVariable(sidInv, "undeclaredA")
                         invokeParams["undeclaredB"] = engineInv.getVariable(sidInv, "undeclaredB")
 
-                        val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2StateMachine()
-                        setInvokeParams(childSM, invokeParams)
-                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                        startInvoke("inv2", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId)
-                    }
+                    val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2StateMachine()
+                    setInvokeParams(childSM, invokeParams)
+                    // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                    startInvoke("inv2", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId)
                 }
-                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                run {
-                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                    val generatedInvokeId = "s1.${System.identityHashCode(this)}.inv3"
-                    deferInvoke(state, generatedInvokeId) {
+            }
+            "inv3" -> run {
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                val generatedInvokeId = "s1.${System.identityHashCode(this)}.inv3"
+                deferInvoke(state, generatedInvokeId) {
                         // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
                         // is executed — at macrostep end, where this deferred body
                         // runs — not when the state was entered.
@@ -701,13 +719,13 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='alsoBroken'> could not be read")
                         }
 
-                        val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
-                        setInvokeParams(childSM, invokeParams)
-                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                        startInvoke("inv3", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId)
-                    }
+                    val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    setInvokeParams(childSM, invokeParams)
+                    // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                    startInvoke("inv3", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId)
                 }
             }
+            else -> error("the document has no static child session '$invokeId' (codegen invariant)")
         }
     }
 

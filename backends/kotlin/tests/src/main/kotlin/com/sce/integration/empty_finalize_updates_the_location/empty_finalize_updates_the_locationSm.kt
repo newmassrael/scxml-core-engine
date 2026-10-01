@@ -573,29 +573,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                run {
-                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                    val generatedInvokeId = "absentPhase.${System.identityHashCode(this)}.inv_absent"
-                    deferInvoke(state, generatedInvokeId) {
-                        // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
-                        // is executed — at macrostep end, where this deferred body
-                        // runs — not when the state was entered.
-                        ensureScriptEngine()
-                        val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                        val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                        val invokeParams = mutableMapOf<String, Any?>()
-                        if (!(engineInv.hasVariable(sidInv, "guard"))) {
-                            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
-                            return@deferInvoke
-                        }
-                        invokeParams["guard"] = engineInv.getVariable(sidInv, "guard")
-
-                        val childSM = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
-                        setInvokeParams(childSM, invokeParams)
-                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                        startInvoke("inv_absent", childSM, false, EmptyFinalizeUpdatesTheLocationEvent.Done.Invoke, "", generatedInvokeId)
-                    }
-                }
+                deferStaticInvoke("inv_absent", state)
             }
             is EmptyFinalizeUpdatesTheLocationState.EmptyPhase -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:71 :: emptyPhase :: _state_body
@@ -615,29 +593,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                run {
-                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                    val generatedInvokeId = "emptyPhase.${System.identityHashCode(this)}.inv_empty"
-                    deferInvoke(state, generatedInvokeId) {
-                        // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
-                        // is executed — at macrostep end, where this deferred body
-                        // runs — not when the state was entered.
-                        ensureScriptEngine()
-                        val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                        val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                        val invokeParams = mutableMapOf<String, Any?>()
-                        if (!(engineInv.hasVariable(sidInv, "tally"))) {
-                            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
-                            return@deferInvoke
-                        }
-                        invokeParams["tally"] = engineInv.getVariable(sidInv, "tally")
-
-                        val childSM = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
-                        setInvokeParams(childSM, invokeParams)
-                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                        startInvoke("inv_empty", childSM, false, EmptyFinalizeUpdatesTheLocationEvent.Done.Invoke, "if (_event.data && _event.data.tally !== undefined) { tally = _event.data.tally; }", generatedInvokeId)
-                    }
-                }
+                deferStaticInvoke("inv_empty", state)
             }
             is EmptyFinalizeUpdatesTheLocationState.FailAbsentChildSilent -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:183 :: failAbsentChildSilent :: _state_body
@@ -692,10 +648,72 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                run {
-                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                    val generatedInvokeId = "unmatchedPhase.${System.identityHashCode(this)}.inv_unmatched"
-                    deferInvoke(state, generatedInvokeId) {
+                deferStaticInvoke("inv_unmatched", state)
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: defer the start of the static child session of the
+    // `<invoke type="scxml">` `invokeId`, held by `state`, to the macrostep's
+    // end. One body for the two things that start a child: entering the state
+    // (`onEntry` above) and a restore, which starts again each running
+    // invocation a saved state lists (`restartInvoke`). The child is not saved,
+    // so what a restore needs is exactly what entering the state does, and two
+    // spellings of it would be two places a change to one is forgotten in the
+    // other. A state that exits before the macrostep ends cancels the entry
+    // (`cancelPendingInvokesForState`) in either case.
+    private fun deferStaticInvoke(invokeId: String, state: EmptyFinalizeUpdatesTheLocationState) {
+        when (invokeId) {
+            "inv_absent" -> run {
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                val generatedInvokeId = "absentPhase.${System.identityHashCode(this)}.inv_absent"
+                deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
+                        // is executed — at macrostep end, where this deferred body
+                        // runs — not when the state was entered.
+                        ensureScriptEngine()
+                        val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val invokeParams = mutableMapOf<String, Any?>()
+                        if (!(engineInv.hasVariable(sidInv, "guard"))) {
+                            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            return@deferInvoke
+                        }
+                        invokeParams["guard"] = engineInv.getVariable(sidInv, "guard")
+
+                    val childSM = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    setInvokeParams(childSM, invokeParams)
+                    // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                    startInvoke("inv_absent", childSM, false, EmptyFinalizeUpdatesTheLocationEvent.Done.Invoke, "", generatedInvokeId)
+                }
+            }
+            "inv_empty" -> run {
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                val generatedInvokeId = "emptyPhase.${System.identityHashCode(this)}.inv_empty"
+                deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
+                        // is executed — at macrostep end, where this deferred body
+                        // runs — not when the state was entered.
+                        ensureScriptEngine()
+                        val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val invokeParams = mutableMapOf<String, Any?>()
+                        if (!(engineInv.hasVariable(sidInv, "tally"))) {
+                            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            return@deferInvoke
+                        }
+                        invokeParams["tally"] = engineInv.getVariable(sidInv, "tally")
+
+                    val childSM = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    setInvokeParams(childSM, invokeParams)
+                    // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                    startInvoke("inv_empty", childSM, false, EmptyFinalizeUpdatesTheLocationEvent.Done.Invoke, "if (_event.data && _event.data.tally !== undefined) { tally = _event.data.tally; }", generatedInvokeId)
+                }
+            }
+            "inv_unmatched" -> run {
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                val generatedInvokeId = "unmatchedPhase.${System.identityHashCode(this)}.inv_unmatched"
+                deferInvoke(state, generatedInvokeId) {
                         // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
                         // is executed — at macrostep end, where this deferred body
                         // runs — not when the state was entered.
@@ -709,13 +727,13 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
                         }
                         invokeParams["keeper"] = engineInv.getVariable(sidInv, "keeper")
 
-                        val childSM = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
-                        setInvokeParams(childSM, invokeParams)
-                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                        startInvoke("inv_unmatched", childSM, false, EmptyFinalizeUpdatesTheLocationEvent.Done.Invoke, "if (_event.data && _event.data.keeper !== undefined) { keeper = _event.data.keeper; }", generatedInvokeId)
-                    }
+                    val childSM = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    setInvokeParams(childSM, invokeParams)
+                    // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                    startInvoke("inv_unmatched", childSM, false, EmptyFinalizeUpdatesTheLocationEvent.Done.Invoke, "if (_event.data && _event.data.keeper !== undefined) { keeper = _event.data.keeper; }", generatedInvokeId)
                 }
             }
+            else -> error("the document has no static child session '$invokeId' (codegen invariant)")
         }
     }
 

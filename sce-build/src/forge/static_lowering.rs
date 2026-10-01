@@ -1211,18 +1211,25 @@ pub fn lower(
 /// its id, whether it is deep, and the state it is declared in — and a document
 /// without one hashes exactly what it did before histories were saved.
 ///
+/// An `<invoke type="scxml">` is named by the saved state too — which child a
+/// restore starts again — so each is part of the shape with its id and the
+/// state that holds it, and a document without one hashes exactly what it did
+/// before invocations were saved.
+///
 /// `None` for a machine whose state lives partly in a session other than this
-/// one — an invoked session, or a delayed `<send>` waiting to be delivered to
-/// another session ([`delays_a_send_to_another_session`]) — which this version
-/// of the saved state cannot hold. Such a machine is generated without the
-/// save API rather than with one that would silently drop part of its state.
-/// A delayed `<send>` to this session or to a host-served processor is not
-/// such a send: a saved state holds it as the moment it comes due.
+/// one that a restore cannot start again — an `<invoke>` of any other kind
+/// ([`invokes_what_a_restore_cannot_start`]), or a delayed `<send>` waiting to
+/// be delivered to another session ([`delays_a_send_to_another_session`]) —
+/// which this version of the saved state cannot hold. Such a machine is
+/// generated without the save API rather than with one that would silently drop
+/// part of its state. A delayed `<send>` to this session or to a host-served
+/// processor is not such a send: a saved state holds it as the moment it comes
+/// due.
 fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
     use sha2::{Digest, Sha256};
     use std::fmt::Write as _;
 
-    if model.has_invoke() || delays_a_send_to_another_session(model) {
+    if invokes_what_a_restore_cannot_start(model) || delays_a_send_to_another_session(model) {
         return None;
     }
     let mut text = String::from("sce-saved-state-shape 1\n");
@@ -1253,6 +1260,19 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
             "shallow"
         };
         let _ = writeln!(text, "history {id} {kind} {}", history.parent);
+    }
+    // By the state that holds each, in document order, so the same document
+    // hashes the same.
+    let mut holders: Vec<_> = model
+        .states
+        .values()
+        .filter(|s| !s.invokes.is_empty())
+        .collect();
+    holders.sort_by_key(|s| s.document_order);
+    for state in holders {
+        for invoke in &state.invokes {
+            let _ = writeln!(text, "invoke {} {}", invoke.base().invoke_id, state.id);
+        }
     }
     for var in &scope.variables {
         let ty = var
@@ -1304,6 +1324,30 @@ fn delays_a_send_to_another_session(model: &SCXMLModel) -> bool {
     model.sends().into_iter().any(|(_, send)| {
         !send.delay.is_empty() && send.target.starts_with("#_") && send.target != "#_internal"
     })
+}
+
+/// Whether the document holds an `<invoke>` that is not a child session this
+/// machine starts itself: any kind but `type="scxml"`, or one whose child is a
+/// peer on another device.
+///
+/// A saved state names an invocation by its id and a restore starts its child
+/// again from the beginning (§scxml-6.4). That is all a child session of this
+/// model needs: it has no parameters and no `<finalize>` (both refused in
+/// `static_datamodel`), so what it was started with is the document. Another
+/// kind does not reduce to that — a host-run invocation was started with a
+/// request the host received and a deadline it may be holding, a mesh-rpc call
+/// has one request in flight that cannot be sent twice, and a mesh peer is a
+/// session this machine does not own — and a saved state that left one out
+/// would restore a machine waiting on something nobody is doing.
+fn invokes_what_a_restore_cannot_start(model: &SCXMLModel) -> bool {
+    model
+        .states
+        .values()
+        .flat_map(|s| &s.invokes)
+        .any(|invoke| match invoke {
+            crate::model::Invoke::Scxml(info) => info.remote_mesh_target.is_some(),
+            _ => true,
+        })
 }
 
 /// A variable's initial value. It is computed while the machine is being
@@ -1940,6 +1984,75 @@ mod tests {
             let send = format!(r#"<send event="later" target="{target}" delay="5s"/>"#);
             assert_eq!(shape(&counter_sending(&send)), None, "{send}");
         }
+    }
+
+    /// `COUNTER` whose `counting` state holds `invoke`.
+    fn counter_invoking(invoke: &str) -> String {
+        COUNTER.replace(
+            r#"<state id="counting">"#,
+            &format!(r#"<state id="counting">{invoke}"#),
+        )
+    }
+
+    /// A static child session of `id`, which ends as it starts.
+    fn child_session(id: &str) -> String {
+        format!(
+            r#"<invoke type="scxml" id="{id}"><content>
+          <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="f"><final id="f"/></scxml>
+        </content></invoke>"#
+        )
+    }
+
+    #[test]
+    fn a_static_child_session_is_part_of_the_shape_a_saved_state_is_bound_to() {
+        // A saved state names the child it starts again, by id, and the state
+        // that holds it: a document that renamed the invocation or moved it to
+        // another state is one a saved state must refuse.
+        let none = shape(COUNTER).expect("shape");
+        let worker = shape(&counter_invoking(&child_session("worker")))
+            .expect("a machine whose only invoke is a child session has a shape");
+        assert_ne!(worker, none, "the invocation is declared");
+        assert_ne!(
+            shape(&counter_invoking(&child_session("helper"))).expect("shape"),
+            worker,
+            "the id is what a saved state names it by"
+        );
+        let moved = COUNTER
+            .replace(
+                r#"<final id="done"/>"#,
+                &format!(
+                    r#"<state id="after">{}</state><final id="done"/>"#,
+                    child_session("worker")
+                ),
+            )
+            .replace(
+                r#"<transition event="go" target="done"/>"#,
+                r#"<transition event="go" target="after"/>"#,
+            );
+        assert_ne!(
+            shape(&moved).expect("shape"),
+            worker,
+            "the state that holds it decides whether a restore may start it"
+        );
+    }
+
+    #[test]
+    fn an_invoke_a_restore_cannot_start_has_no_saved_shape() {
+        // A host-run invocation was started with a request the host holds and a
+        // deadline it may be counting; saving the machine would drop both.
+        assert_eq!(
+            shape(&counter_invoking(r#"<invoke type="x-sce-host" id="h"/>"#)),
+            None
+        );
+        // A child session beside one that cannot be started again is no more
+        // savable than the other alone.
+        assert_eq!(
+            shape(&counter_invoking(&format!(
+                r#"{}<invoke type="x-sce-host" id="h"/>"#,
+                child_session("worker")
+            ))),
+            None
+        );
     }
 
     #[test]

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and
+  restoring"): a child session an <invoke> started is part of what a machine is
+  doing, so a saved machine that left it out would restore into a state that
+  says "working" with nobody working — and nothing would say so.
+
+  `working` invokes `worker`, a child that takes two events in order, `a` then
+  `b`, and ends. The parent forwards what it is sent (autoforward), so the host
+  drives the child through the parent and a run is read from the parent alone:
+  `done.invoke.worker` counts the run in `completed` and leaves the parent in
+  `working`, so a machine saved after its child ended stands in the state that
+  invokes it with no child running; `finish` leaves for `finished`.
+
+  A restored machine starts `worker` again from its beginning (W3C SCXML 6.4:
+  the invocation lives as long as its state is active, and the process that ran
+  it is gone), under the same `<invoke>` id. So a machine saved after `a` and
+  restored needs `a` again before `b` ends the child: `b` alone leaves it in
+  `working`. `abort` leaves `working`, which cancels the child, and `idle` has no
+  <invoke> — a saved machine there restarts nothing.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="working" datamodel="sce-static" name="static_invoke">
+  <datamodel>
+    <data id="completed" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="working">
+    <invoke type="scxml" id="worker" autoforward="true">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="first">
+          <state id="first">
+            <transition event="a" target="second"/>
+          </state>
+          <state id="second">
+            <transition event="b" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <!-- `a` and `b` are the child's events. The parent names them, because an
+         event its document does not name cannot be sent to it, and what it is
+         sent it forwards (autoforward); it does nothing else with them. -->
+    <transition event="a"/>
+    <transition event="b"/>
+    <transition event="done.invoke.worker">
+      <assign location="completed" expr="completed + 1"/>
+    </transition>
+    <transition event="finish" target="finished"/>
+    <transition event="abort" target="idle"/>
+  </state>
+  <state id="idle"/>
+  <final id="finished"/>
+</scxml>

@@ -1,0 +1,64 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{# W3C SCXML 6.4.1: an invoke's generated id goes to its `idlocation` when the
+   element is evaluated (test 224 checks the stored form), and binds
+   `id_stored` for the caller. The write is the assignment `<assign>` makes —
+   the location is lowered, so a member path lands, and one that cannot take
+   the id raises error.execution and the invocation does not start, as any
+   argument of the element that cannot be evaluated does. `model` and
+   `machine_name` are parameters because a macro body does not see the render
+   context. #}
+{% macro store_invoke_idlocation(invoke_info, model, machine_name) %}
+{% if invoke_info.idlocation %}
+                    self.ensure_script_engine();
+                    let id_stored = {
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        ::sce_rust_runtime::helpers::idlocation::store_id_in_location(
+                            se, &sid, "{{ invoke_info.idlocation | to_lua_location | escape_rust }}", &generated_invoke_id,
+                        )
+                    };
+                    if !id_stored {
+{% if 'error.execution' in model.events %}
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke idlocation='{{ invoke_info.idlocation | escape_rust }}'> could not take the invoke id"));
+{% endif %}
+                    }
+{% else %}
+                    let id_stored = true;
+{% endif %}
+{% endmacro %}
+
+{# W3C SCXML 6.4: defer the start of the static `<invoke type="scxml">`
+   `invoke_info`, held by the state `state_id`, to the end of the macrostep.
+
+   One body for the two things that start a child. Entering the state defers it
+   from `execute_entry_actions`; a restore (SCE Accepted Subset 2.15, "Saving
+   and restoring") defers each running invocation of a saved state from
+   `restart_invoke`. The child is not saved, so what a restore needs is exactly
+   what entering the state does, and two spellings of it would be two places a
+   change to one is forgotten in the other. A state that exits before the
+   macrostep ends cancels the entry (`cancel_invokes_for_state`) in either case.
+
+   Emitted as an inherent method of the policy, once per invoke, named by the
+   invoke's `field_suffix`. #}
+{% macro defer_scxml_invoke_fn(invoke_info, state_id, model, machine_name) %}
+    // W3C SCXML 6.4: Defer the start of invoke '{{ invoke_info.invoke_id }}' of state '{{ state_id }}' to macrostep end
+    fn defer_invoke_{{ invoke_info.field_suffix }}(&mut self, {{ 'engine' if (invoke_info.idlocation and 'error.execution' in model.events) else '_engine' }}: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!("{}.{}.{{ invoke_info.invoke_id }}",
+                "{{ state_id }}", self as *const _ as usize);
+{{ store_invoke_idlocation(invoke_info, model, machine_name) -}}
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: {{ machine_name }}State::{{ state_id | to_state_variant }},
+                        document_id: "{{ invoke_info.invoke_id }}",
+                    },
+                );
+            }
+        }
+    }
+{% endmacro %}

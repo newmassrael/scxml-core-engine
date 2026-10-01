@@ -59,6 +59,12 @@ class StateRefusal(message: String) : Exception(message)
  * @property pending the delayed `<send>`s still waiting (§scxml-6.2), in the
  *   order they would be delivered: earliest first, entries due at the same
  *   moment in the order they were sent.
+ * @property invokes the `<invoke>`s whose child session is running
+ *   (§scxml-6.4), by the id the document gives each, in document order. A child
+ *   is not saved: a restored machine starts each of these again from its
+ *   beginning, under the same id. One whose child has ended is absent — its
+ *   `done.invoke` is in the external queue, or already taken — so it is not
+ *   started twice.
  * @property external the external queue, front first: events raised to the
  *   machine that it has not yet been driven through. Only the internal queue
  *   is empty at a macrostep boundary, so a state that left these out would
@@ -71,6 +77,7 @@ class SavedState(
     val variables: Map<String, Any?>,
     val history: Map<String, List<String>> = emptyMap(),
     val pending: List<SavedSend> = emptyList(),
+    val invokes: List<String> = emptyList(),
     val external: List<SavedEvent> = emptyList(),
 ) {
     /** The variable [id], or a refusal naming it. */
@@ -89,6 +96,7 @@ class SavedState(
             "variables" to variables,
             "history" to history,
             "pending" to pending.map { it.toJsonValue() },
+            "invokes" to invokes,
             "external" to external.map { it.toJsonValue() },
         )
     )
@@ -96,10 +104,10 @@ class SavedState(
     override fun equals(other: Any?): Boolean =
         other is SavedState && other.shape == shape && other.configuration == configuration &&
             other.current == current && other.variables == variables && other.history == history &&
-            other.pending == pending && other.external == external
+            other.pending == pending && other.invokes == invokes && other.external == external
 
     override fun hashCode(): Int =
-        listOf(shape, configuration, current, variables, history, pending, external).hashCode()
+        listOf(shape, configuration, current, variables, history, pending, invokes, external).hashCode()
 
     companion object {
         /** The format version this runtime writes and reads. */
@@ -146,6 +154,8 @@ class SavedState(
             }
             val pending = (field("pending") as? List<*> ?: throw StateRefusal("'pending' is not an array"))
                 .mapIndexed { i, item -> SavedSend.fromJsonValue(item, "pending[$i]") }
+            val invokes = (field("invokes") as? List<*> ?: throw StateRefusal("'invokes' is not an array"))
+                .map { text(it, "invokes") }
             val external = (field("external") as? List<*> ?: throw StateRefusal("'external' is not an array"))
                 .mapIndexed { i, item -> SavedEvent.fromJsonValue(item, "external[$i]") }
             return SavedState(
@@ -155,6 +165,7 @@ class SavedState(
                 variables = variables,
                 history = history,
                 pending = pending,
+                invokes = invokes,
                 external = external,
             )
         }

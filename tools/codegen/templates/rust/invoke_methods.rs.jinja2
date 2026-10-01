@@ -1,6 +1,7 @@
 {# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 {% from 'param_macros.rs.jinja2' import collect_params_into, collect_typed_param_into %}
+{% from 'invoke_macros.rs.jinja2' import defer_scxml_invoke_fn %}
 
 {% macro hybrid_child_tick(invoke_info, slot) %}
         if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
@@ -243,6 +244,11 @@
     Ports from C++ entry_exit_actions.jinja2 executePendingInvokes() and tickChildren().
 #}
 {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
+{% for state_id, state in model.states | dictsort %}
+{% for invoke_info in state.invokes | scxml %}
+{{ defer_scxml_invoke_fn(invoke_info, state_id, model, machine_name) }}
+{% endfor %}
+{% endfor %}
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {

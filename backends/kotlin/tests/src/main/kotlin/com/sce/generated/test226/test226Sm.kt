@@ -408,10 +408,26 @@ class Test226StateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
-                run {
-                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
-                    deferInvoke(state, generatedInvokeId) {
+                deferStaticInvoke("_invoke_0", state)
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: defer the start of the static child session of the
+    // `<invoke type="scxml">` `invokeId`, held by `state`, to the macrostep's
+    // end. One body for the two things that start a child: entering the state
+    // (`onEntry` above) and a restore, which starts again each running
+    // invocation a saved state lists (`restartInvoke`). The child is not saved,
+    // so what a restore needs is exactly what entering the state does, and two
+    // spellings of it would be two places a change to one is forgotten in the
+    // other. A state that exits before the macrostep ends cancels the entry
+    // (`cancelPendingInvokesForState`) in either case.
+    private fun deferStaticInvoke(invokeId: String, state: Test226State) {
+        when (invokeId) {
+            "_invoke_0" -> run {
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
+                deferInvoke(state, generatedInvokeId) {
                         // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
                         // is executed — at macrostep end, where this deferred body
                         // runs — not when the state was entered.
@@ -429,13 +445,13 @@ class Test226StateMachine(
                             raisePlatformError(Test226Event.Error.Execution, "<invoke> <param name='Var1'> could not be read")
                         }
 
-                        val childSM = Test226sub1StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
-                        setInvokeParams(childSM, invokeParams)
-                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                        startInvoke("_invoke_0", childSM, false, Test226Event.Done.Invoke, "", generatedInvokeId)
-                    }
+                    val childSM = Test226sub1StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    setInvokeParams(childSM, invokeParams)
+                    // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                    startInvoke("_invoke_0", childSM, false, Test226Event.Done.Invoke, "", generatedInvokeId)
                 }
             }
+            else -> error("the document has no static child session '$invokeId' (codegen invariant)")
         }
     }
 
