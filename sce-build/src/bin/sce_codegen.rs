@@ -2512,8 +2512,10 @@ enum Commands {
         profile: Option<String>,
     },
     Requirements {
-        /// SCXML file path
-        scxml: String,
+        /// SCXML file path. Several documents are read as ONE design, and
+        /// then `--manifest` is required.
+        #[arg(required = true, num_args = 1..)]
+        scxml: Vec<String>,
         /// Closed requirement set to measure this document against.
         ///
         /// Without it the subcommand reports what the document claims;
@@ -9488,7 +9490,12 @@ fn load_requirement_sidecar(
         })
 }
 
-fn cmd_requirements(scxml: &str, manifest: Option<&str>, error_format: ErrorFormat) {
+fn cmd_requirements(scxml: &[String], manifest: Option<&str>, error_format: ErrorFormat) {
+    if scxml.len() > 1 {
+        cmd_requirements_of_design(scxml, manifest, error_format);
+        return;
+    }
+    let scxml = scxml[0].as_str();
     let design = read_design(scxml, error_format);
     let Some(manifest_path) = manifest else {
         match &design {
@@ -9513,6 +9520,48 @@ fn cmd_requirements(scxml: &str, manifest: Option<&str>, error_format: ErrorForm
             sce_build::requirement_manifest::classify_document(&parsed.document, &loaded).0
         }
     };
+    out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));
+}
+
+/// `requirements` over the documents of one design, together.
+///
+/// A statechart that closes its interface is checked WITH the event schemas it
+/// imports, and the owner's question is whether the design carries each
+/// requirement, not whether each file does: measured one file at a time every
+/// schema that claims nothing reads every requirement `missing`. So the claims
+/// of every document are pooled and classified once against the one manifest.
+///
+/// ⚠ A manifest is required. Without one the command reports what a document
+/// claims, one record per node with no document named, and the claims of
+/// several documents in one stream would not say which file a node is in.
+fn cmd_requirements_of_design(
+    documents: &[String],
+    manifest: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    let Some(manifest_path) = manifest else {
+        cli_exit(CliError::Usage {
+            detail: "several documents are read as one design and measured against a \
+                     requirement set: give `--manifest`"
+                .to_string(),
+        })
+    };
+    let loaded = load_requirement_manifest(manifest_path);
+    let members: Vec<(String, Vec<sce_build::requirement_manifest::OwnedCitation>)> = documents
+        .iter()
+        .map(|path| {
+            let claims = match read_design(path, error_format) {
+                Design::Statechart(model) => {
+                    sce_build::requirement_manifest::citations_of_model(&model)
+                }
+                Design::Forge(parsed) => {
+                    sce_build::requirement_manifest::citations_of_document(&parsed.document)
+                }
+            };
+            (path.clone(), claims)
+        })
+        .collect();
+    let classification = sce_build::requirement_manifest::classify_documents(&members, &loaded);
     out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));
 }
 

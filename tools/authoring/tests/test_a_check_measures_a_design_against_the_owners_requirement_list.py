@@ -155,14 +155,113 @@ class TheOwnersListIsTheDenominator(unittest.TestCase):
         self.assertIn("synthesized", tool["description"])
 
 
+def closed_lamp(press_off: str = "R3") -> str:
+    """The lamp with its interface closed, so it imports the event it admits and
+    is checked with that schema as a set."""
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<scxml {NS} name="lamp" initial="off" sce:interface="closed">
+  <sce:import as="press" src="press.scxml" kind="event-schema"/>
+  <state id="off" sce:req="R1">
+    <transition event="press" target="on" sce:req="R2"/>
+  </state>
+  <state id="on" sce:req="R2">
+    <transition event="press" target="off" sce:req="{press_off}"/>
+  </state>
+</scxml>
+"""
+
+
+PRESS = f"""<?xml version="1.0" encoding="UTF-8"?>
+<scxml {NS} sce:kind="event-schema" name="press" sce:event-name="press">
+  <sce:kind-basis>
+    <sce:evidence>the specification names the switch press</sce:evidence>
+    <sce:rejected kind="codec">no wire layout is stated</sce:rejected>
+  </sce:kind-basis>
+  <datamodel sce:unresolved="payload" sce:unresolved-reason="the payload is not stated"/>
+</scxml>
+"""
+
+
+@unittest.skipUnless(_default_codegen().exists(),
+                     "the product's code generator is not built")
+class TheListReachesTheCheckADesignWithCompanionsGoesThrough(unittest.TestCase):
+    """A statechart that closes its interface imports one event schema for each
+    event it admits, so the check it goes through is `validate_scxml_set`. The
+    list landed on `validate_scxml` alone, and for that design it could not be
+    given: measured on a real client's draft (2026-10-01) the only call that
+    accepted the document had no place for it."""
+
+    def check(self, document: str, **extra) -> dict:
+        result = call("validate_scxml_set",
+                      documents_text=[{"name": "lamp.scxml", "text": document},
+                                      {"name": "press.scxml", "text": PRESS}], **extra)
+        self.assertFalse(result.get("isError"), result["content"][0]["text"])
+        return json.loads(result["content"][0]["text"])
+
+    def test_the_set_is_measured_as_one_design_and_the_schema_takes_nothing_away(self):
+        answer = self.check(closed_lamp(), manifest_text=manifest_text())
+        measured = answer["requirements"]
+        self.assertEqual("accepted", answer["verdict"])
+        self.assertEqual("measured", measured["verdict"])
+        # The schema claims nothing. Measured on its own it would read R1..R3
+        # missing; with the statechart it is part of the design that carries them.
+        self.assertEqual({"implemented": 3, "missing": 1, "needs-scenario": 1},
+                         measured["counts"])
+        self.assertEqual({"missing": ["R4"], "needs-scenario": ["R5"]}, measured["ids"])
+
+    def test_the_order_the_documents_are_given_in_does_not_decide_what_is_measured(self):
+        result = call("validate_scxml_set",
+                      documents_text=[{"name": "press.scxml", "text": PRESS},
+                                      {"name": "lamp.scxml", "text": closed_lamp()}],
+                      manifest_text=manifest_text())
+        self.assertFalse(result.get("isError"), result["content"][0]["text"])
+        measured = json.loads(result["content"][0]["text"])["requirements"]
+        self.assertEqual({"implemented": 3, "missing": 1, "needs-scenario": 1},
+                         measured["counts"])
+
+    def test_a_node_path_names_the_document_it_is_in(self):
+        measured = self.check(closed_lamp(), manifest_text=manifest_text())["requirements"]
+        by_id = {r["id"]: r for r in measured["records"] if r.get("kind") == "requirement"}
+        self.assertIn("lamp.scxml#states.off.transitions[0]", by_id["R2"]["node_paths"])
+
+    def test_an_id_the_list_does_not_hold_is_dangling_in_a_set_too(self):
+        measured = self.check(closed_lamp(press_off="R99"),
+                              manifest_text=manifest_text())["requirements"]
+        self.assertEqual(["R99"], measured["ids"]["dangling"])
+        self.assertIn("R3", measured["ids"]["missing"])
+
+    def test_without_a_list_the_set_answer_is_what_it_was(self):
+        answer = self.check(closed_lamp())
+        self.assertEqual("accepted", answer["verdict"])
+        self.assertNotIn("requirements", answer)
+
+    def test_a_set_the_product_refuses_is_not_measured(self):
+        refused = closed_lamp().replace("</scxml>", '  <state id="orphan"/>\n</scxml>')
+        result = call("validate_scxml_set",
+                      documents_text=[{"name": "lamp.scxml", "text": refused},
+                                      {"name": "press.scxml", "text": PRESS}],
+                      manifest_text=manifest_text())
+        answer = json.loads(result["content"][0]["text"])
+        self.assertEqual("refused", answer["verdict"])
+        self.assertNotIn("requirements", answer)
+
+    def test_the_set_tool_offers_the_list_and_says_what_comes_back(self):
+        tool = next(t for t in mcp.TOOLS if t["name"] == "validate_scxml_set")
+        self.assertIn("manifest", tool["inputSchema"]["properties"])
+        self.assertIn("manifest_text", tool["inputSchema"]["properties"])
+        self.assertIn("requirements", tool["description"])
+        self.assertIn("ONE design", tool["description"])
+
+
 class TheCountIsArithmeticOverTheProductsRecords(unittest.TestCase):
     """No product needed: the summary is a fold over records the product wrote,
     and it must not invent an outcome or drop one."""
 
     def summarise(self, records: list) -> dict:
         report = json.dumps({"verdict": "done", "records": records})
-        with mock.patch.object(mcp, "requirement_records", lambda *a, **k: (report, "")):
-            return mcp._requirement_outcomes(pathlib.Path("d.scxml"),
+        with mock.patch.object(mcp, "design_requirement_records",
+                               lambda *a, **k: (report, "")):
+            return mcp._requirement_outcomes([pathlib.Path("d.scxml")],
                                              pathlib.Path("m.json"), mock.Mock())
 
     def test_each_outcome_is_counted_and_listed_in_the_order_the_product_wrote(self):
@@ -190,9 +289,9 @@ class TheCountIsArithmeticOverTheProductsRecords(unittest.TestCase):
         self.assertEqual({"contradicted": ["A"]}, measured["ids"])
 
     def test_a_product_that_refuses_the_list_is_reported_as_its_refusal(self):
-        with mock.patch.object(mcp, "requirement_records",
+        with mock.patch.object(mcp, "design_requirement_records",
                                lambda *a, **k: ("", "bad manifest\nwhy")):
-            measured = mcp._requirement_outcomes(pathlib.Path("d.scxml"),
+            measured = mcp._requirement_outcomes([pathlib.Path("d.scxml")],
                                                  pathlib.Path("m.json"), mock.Mock())
         self.assertEqual({"verdict": "refused", "refusal": "bad manifest"}, measured)
 

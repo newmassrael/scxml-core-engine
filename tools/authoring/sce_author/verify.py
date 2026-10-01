@@ -934,6 +934,27 @@ def requirement_records(document: pathlib.Path,
                            cwd=cwd)
 
 
+def design_requirement_records(documents: list[pathlib.Path],
+                               manifest: pathlib.Path,
+                               codegen: pathlib.Path | None = None, *,
+                               cwd: pathlib.Path | None = None) -> tuple[str, str]:
+    """Each requirement's outcome for the documents of ONE design, measured
+    together (`sce-codegen requirements A B C --manifest`).
+
+    ⚠ A design is often a set: a statechart that closes its interface is
+    checked with the event schemas it imports, and a schema claims nothing, so
+    measured file by file every requirement reads `missing` in each of them. The
+    PRODUCT pools the claims — a requirement is met when a node of any document
+    claims it — and names each node by its document, so this passes the files
+    through and decides nothing. With one document the answer is the product's
+    answer for that document, byte for byte.
+    """
+    args = ["requirements", *(str(document) for document in documents),
+            "--manifest", str(manifest)]
+    return _product_answer(args, codegen, answer="records", read=_diagnostic_records,
+                           cwd=cwd)
+
+
 def acceptance_page(document: pathlib.Path, manifest: pathlib.Path, variant: str,
                     sidecar: pathlib.Path | None = None,
                     codegen: pathlib.Path | None = None, *,

@@ -74,8 +74,8 @@ from .pseudo import render as render_pseudo
 from . import requirement_set
 from .verify import validate_scxml as run_scxml_validation
 from .verify import (accept_design, acceptance_holds, acceptance_page,
-                     diagram_figures, kind_catalog, requirement_records,
-                     unresolved_markers, validate_scxml_set)
+                     design_requirement_records, diagram_figures, kind_catalog,
+                     requirement_records, unresolved_markers, validate_scxml_set)
 from .verify import page_provenance, pseudo_page, verify as run_verify
 from .prose import load_prose
 from .questions import ask
@@ -506,7 +506,17 @@ TOOLS = [
             "When the set is ACCEPTED, each document's pseudocode page follows "
             "the JSON as its own block, in the order the documents were given, "
             "and `pages` names each one's sha256: show each verbatim in a "
-            "fenced block and print its sha256 under it (`show` says the rest)."
+            "fenced block and print its sha256 under it (`show` says the rest). "
+            "When the owner keeps a requirement list for the specification (a "
+            "`manifest`, made once by scxml_requirement_set), pass it here "
+            "too: a statechart that closes its interface is checked with the "
+            "event schemas it imports, so this is the call it goes through. "
+            "The documents are measured as ONE design -- a requirement is met "
+            "when a state or transition of any of them carries its "
+            "sce:req=\"R3\" -- and the answer carries `requirements`, the "
+            "product's own outcome for each id, with node paths that name "
+            "their document (`draft.scxml#states.idle`). Tell the owner each "
+            "missing and dangling id."
         ),
         "inputSchema": {
             "type": "object",
@@ -526,6 +536,7 @@ TOOLS = [
                 **_file_input("deploy", "the deploy.yaml the set is deployed by"),
                 **_PROFILE_INPUT,
                 **_LEXICON_INPUT,
+                **_MANIFEST_INPUT,
             },
         },
     },
@@ -1400,10 +1411,16 @@ def _with_pages(answer: dict, documents: list[pathlib.Path], staging: _Staging,
                         *({"type": "text", "text": block} for block in blocks)]}
 
 
-def _requirement_outcomes(document: pathlib.Path, manifest: pathlib.Path,
+def _requirement_outcomes(documents: list[pathlib.Path], manifest: pathlib.Path,
                           staging: _Staging) -> dict:
-    """What the owner's requirement list makes of a document, from the
+    """What the owner's requirement list makes of a design, from the
     product's own records and none of this module's reading.
+
+    ⚠ `documents` is ONE design. A statechart that closes its interface is
+    checked with the event schemas it imports, so the check the client makes is
+    `validate_scxml_set`, and the list has to reach that call too: it is the
+    product that pools the claims of every document, because measured file by
+    file each schema that claims nothing reads every requirement `missing`.
 
     ⚠ The records are the product's, passed through whole: a requirement's
     `outcome` and the `node_paths` that carry it, an id the document cites that
@@ -1425,7 +1442,7 @@ def _requirement_outcomes(document: pathlib.Path, manifest: pathlib.Path,
     cut, and a client left to number its own `sce:req` made the ids up in twelve
     drafts of fifteen.
     """
-    report, refusal = requirement_records(document, manifest, cwd=staging.dir)
+    report, refusal = design_requirement_records(documents, manifest, cwd=staging.dir)
     if refusal or not report:
         return {"verdict": "refused", "refusal": refusal.splitlines()[0] if refusal else ""}
     records = json.loads(report)["records"]
@@ -1456,7 +1473,7 @@ def _validate_tool(args: dict, staging: _Staging) -> dict:
         return _answer(report, refusal)
     answer = json.loads(report)
     if manifest is not None:
-        answer["requirements"] = _requirement_outcomes(document, manifest, staging)
+        answer["requirements"] = _requirement_outcomes([document], manifest, staging)
     return _with_pages(answer, [document], staging, [before], lexicon)
 
 
@@ -1464,12 +1481,17 @@ def _validate_set_tool(args: dict, staging: _Staging) -> dict:
     documents = staging.many(args, "documents", "the documents of the set")
     deploy = staging.file(args, "deploy", "the deploy.yaml", "deploy.yaml", required=False)
     profile = _profile_file(args, staging)
+    manifest = staging.file(args, "manifest", "the owner's requirement list",
+                            "requirements.manifest.json", required=False)
     lexicon = _name_arg(args, "lexicon", "a lexicon name")
     digests = [_digest_of(document, staging) for document in documents]
     report, refusal = validate_scxml_set(documents, deploy, profile=profile, cwd=staging.dir)
     if refusal or not report:
         return _answer(report, refusal)
-    return _with_pages(json.loads(report), documents, staging, digests, lexicon)
+    answer = json.loads(report)
+    if manifest is not None:
+        answer["requirements"] = _requirement_outcomes(documents, manifest, staging)
+    return _with_pages(answer, documents, staging, digests, lexicon)
 
 
 def _compare_tool(args: dict, staging: _Staging) -> dict:

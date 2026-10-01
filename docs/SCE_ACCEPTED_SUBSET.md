@@ -1820,6 +1820,24 @@ annotated node for downstream req-coverage tooling — annotated
 by `sce:req` or by `sce:provenance`, since the two are
 orthogonal and either alone is worth reporting.
 
+With `--manifest`, several files are read as ONE design:
+`sce-codegen requirements front.scxml press.scxml --manifest m.json`.
+A statechart that closes its interface is checked together with the
+event schemas it imports, and a schema claims nothing, so measured file
+by file every requirement reads `missing` in each of them, which is true
+of the schema and says nothing about the design. The claims of every
+document are pooled and classified once, by the function that answers
+for a single document: a requirement is met when a node of any of them
+carries it, and an id the manifest does not hold is `dangling` wherever
+it is cited. Each node path then names its document
+(`front.scxml#states.idle`), because `states.idle` is a place in every
+statechart; with one document the paths are unqualified as before.
+Several documents without `--manifest` are refused (`cli/usage`):
+without a denominator the claims of several files in one stream would
+not say which file a node is in.
+`sce-build/tests/a_design_of_several_documents_is_measured_together.rs`
+holds each of these.
+
 ⚠ "Opaque" is checked, not merely promised:
 `sce-build/tests/requirement_id_opacity.rs` drives ten id
 spellings through the parser — a leading digit, a bare number,

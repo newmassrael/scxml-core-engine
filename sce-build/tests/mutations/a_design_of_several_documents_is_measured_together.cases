@@ -1,0 +1,79 @@
+# Mutation cases for "the documents of one design are measured against a
+# requirement set TOGETHER".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_design_of_several_documents_is_measured_together.cases`.
+#
+# A statechart that closes its interface is checked with the event schemas it
+# imports, so the design an owner asks about is a set, and the requirement
+# command used to take one file. Measured file by file, a schema that claims
+# nothing reads every requirement `missing`. The repair pools the claims of
+# every document and classifies once, by the function that answers for a single
+# document; one document must still answer as it always did.
+#
+# Each case below removes one thing that pooling relies on, and each must red.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_design_of_several_documents_is_measured_together
+mutation_targets sce-build/src/requirement_manifest.rs sce-build/src/bin/sce_codegen.rs
+
+# ── The documents are not read together ─────────────────────────────
+
+mutation_case "only the first document's claims reach the classification" <<'PY'
+edit("sce-build/src/requirement_manifest.rs",
+     "        .zip(&paths)\n",
+     "        .zip(&paths)\n        .take(1)\n")
+PY
+
+mutation_case "several documents are routed to the one-document path" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    if scxml.len() > 1 {\n        cmd_requirements_of_design(",
+     "    if scxml.len() > 8 {\n        cmd_requirements_of_design(")
+PY
+
+# ── …or read together and the places lost ───────────────────────────
+#
+# `states.idle` is a place in every statechart. Unqualified, two documents'
+# claims name one place and a reviewer is sent to look in the wrong file.
+
+mutation_case "a node path is never qualified by its document" <<'PY'
+edit("sce-build/src/requirement_manifest.rs",
+     "    let qualified = members.len() > 1;",
+     "    let qualified = false;")
+PY
+
+mutation_case "a node path is qualified even for one document" <<'PY'
+edit("sce-build/src/requirement_manifest.rs",
+     "    let qualified = members.len() > 1;",
+     "    let qualified = true;")
+PY
+
+# ── A kind of document stops claiming ───────────────────────────────
+
+mutation_case "a document of another kind contributes no claims" <<'PY'
+edit("sce-build/src/requirement_manifest.rs",
+     "                requirement_ids: node.requirements.clone(),",
+     "                requirement_ids: Vec::new(),")
+PY
+
+# ── The open question and the answer are confused ───────────────────
+#
+# A requirement is open only when EVERY claim on it is. One settled claim in
+# another document is an answer, and reading the pool as open sends a reviewer
+# to look for a decision already made.
+
+mutation_case "every claim is read as open" <<'PY'
+edit("sce-build/src/requirement_manifest.rs",
+     "            spec_provenance: node.record.spec_provenance.to_vec(),\n            unresolved: node.unresolved,",
+     "            spec_provenance: node.record.spec_provenance.to_vec(),\n            unresolved: true,")
+PY
+
+# ── The refusal stops naming what to give ───────────────────────────
+
+mutation_case "the refusal no longer says which flag to give" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "                     requirement set: give `--manifest`\"",
+     "                     requirement set: give one\"")
+PY

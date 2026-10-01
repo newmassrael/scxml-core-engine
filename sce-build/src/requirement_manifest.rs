@@ -1480,6 +1480,114 @@ pub fn classify_document(
     (classification, scope)
 }
 
+/// One node's claim on requirements, owned, so claims read from several
+/// documents can be held side by side until one classification reads them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnedCitation {
+    pub node_path: String,
+    pub requirement_ids: Vec<String>,
+    pub spec_provenance: Vec<crate::provenance::SpecProvenance>,
+    pub unresolved: bool,
+}
+
+/// The claims of a statechart: the nodes [`classify`] reads, by the same
+/// traversal.
+pub fn citations_of_model(model: &SCXMLModel) -> Vec<OwnedCitation> {
+    crate::requirements_report::annotated_nodes(model)
+        .iter()
+        .map(|node| OwnedCitation {
+            node_path: node.record.node_path.clone(),
+            requirement_ids: node
+                .record
+                .requirement_ids
+                .iter()
+                .map(|id| (*id).to_string())
+                .collect(),
+            spec_provenance: node.record.spec_provenance.to_vec(),
+            unresolved: node.unresolved,
+        })
+        .collect()
+}
+
+/// The claims of a document of any kind: a statechart as
+/// [`citations_of_model`], a forge document from the nodes
+/// [`crate::forge::requirement_nodes::requirement_nodes`] reads `sce:req`
+/// on, as [`classify_document`] does.
+pub fn citations_of_document(doc: &crate::forge::model::ForgeDocument) -> Vec<OwnedCitation> {
+    use crate::forge::requirement_nodes::{requirement_nodes, ReviewScope};
+    match (doc, requirement_nodes(doc)) {
+        (crate::forge::model::ForgeDocument::Statechart(model), _) => citations_of_model(model),
+        (_, ReviewScope::Annotatable(nodes)) => nodes
+            .iter()
+            .filter(|node| !node.requirements.is_empty())
+            .map(|node| OwnedCitation {
+                node_path: node.node_path.clone(),
+                requirement_ids: node.requirements.clone(),
+                spec_provenance: Vec::new(),
+                unresolved: false,
+            })
+            .collect(),
+        (_, ReviewScope::NoAnnotationSite { .. }) => Vec::new(),
+    }
+}
+
+/// Compare the documents of one design, TOGETHER, against `manifest`.
+///
+/// A design is often more than one document: a statechart that closes its
+/// interface imports one event schema for each event it admits, and the check
+/// that takes it takes the set. Measured one document at a time, every
+/// companion that claims nothing reads every requirement `missing`, which is
+/// true of the companion and tells the owner nothing about the design. A
+/// requirement is met when a node of ANY document claims it, and the answer
+/// is the one [`classify_citations`] gives for every kind.
+///
+/// `members` pairs a label (the path the document was named by) with its
+/// claims. ⚠ With one member the node paths are left as they were, so the
+/// answer for a single document is byte for byte what [`classify`] gives. With
+/// several, each path is `<label>#<node path>`: `states.idle` in two
+/// statecharts is two places, and a reviewer has to be told which.
+pub fn classify_documents(
+    members: &[(String, Vec<OwnedCitation>)],
+    manifest: &RequirementManifest,
+) -> Classification {
+    let qualified = members.len() > 1;
+    let paths: Vec<Vec<String>> = members
+        .iter()
+        .map(|(label, citations)| {
+            citations
+                .iter()
+                .map(|citation| {
+                    if qualified {
+                        format!("{label}#{}", citation.node_path)
+                    } else {
+                        citation.node_path.clone()
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    let citations: Vec<Citation<'_>> = members
+        .iter()
+        .zip(&paths)
+        .flat_map(|((_, owned), paths)| {
+            owned
+                .iter()
+                .zip(paths)
+                .map(|(citation, node_path)| Citation {
+                    node_path,
+                    requirement_ids: citation
+                        .requirement_ids
+                        .iter()
+                        .map(String::as_str)
+                        .collect(),
+                    spec_provenance: &citation.spec_provenance,
+                    unresolved: citation.unresolved,
+                })
+        })
+        .collect();
+    classify_citations(&citations, manifest)
+}
+
 /// One node's claim on requirements, whatever kind of document it sits in:
 /// all [`classify_citations`] reads of a node.
 pub struct Citation<'a> {

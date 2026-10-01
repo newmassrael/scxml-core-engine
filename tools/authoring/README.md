@@ -361,6 +361,13 @@ document cites that the list does not hold, `needs-scenario` a requirement met b
 something not happening, and `denominator` says whether the list is the
 specification's own or a reading of it (`synthesized`). A list the product cannot
 read is said as that and the check stands.
+`validate_scxml_set` takes the same list, and that is the call a statechart that
+closes its interface goes through, since it is checked with the event schemas it
+imports. The documents are measured as ONE design -- the product pools their
+claims, so a schema that claims nothing does not make every requirement `missing`
+-- and each node path names its document (`draft.scxml#states.idle`). Until
+2026-10-01 only `validate_scxml` took the list, and a design with companion files
+could not be given it in the check it had to make.
 `render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page
 as its FIRST block and, as a second block, a note on what the page was rendered
 from: the sha256 of the document, the product's check of that same document
