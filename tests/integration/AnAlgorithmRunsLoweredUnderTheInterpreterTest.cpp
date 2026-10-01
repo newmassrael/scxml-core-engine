@@ -158,9 +158,11 @@ Lowered lower(const std::string &document) {
 }
 
 /// An argument as script source: a list or bytes is an array, a record an
-/// object, each spelled from what it holds. An integer past what a Number holds
-/// exactly has no spelling here, wherever it sits, and the case that carries one
-/// is not asked.
+/// object, each spelled from what it holds. An integer a Number holds exactly is
+/// a Number and one it does not is a BigInt literal, which is the one form the
+/// lowered functions hold an integer in (`SceStatic`, docs/SCE_ACCEPTED_SUBSET.md
+/// 2.15); nothing is left unspelled but a value of a kind the reference does not
+/// carry.
 bool spell(const nlohmann::json &value, std::string &out) {
     if (value.is_array()) {
         out = "[";
@@ -193,15 +195,13 @@ bool spell(const nlohmann::json &value, std::string &out) {
         return true;
     }
     if (value.is_number_integer()) {
-        const bool unsignedBeyond = value.is_number_unsigned() && value.get<uint64_t>() > static_cast<uint64_t>(kSafe);
-        if (unsignedBeyond) {
-            return false;
+        if (value.is_number_unsigned()) {
+            const uint64_t number = value.get<uint64_t>();
+            out = std::to_string(number) + (number > static_cast<uint64_t>(kSafe) ? "n" : "");
+            return true;
         }
         const int64_t number = value.get<int64_t>();
-        if (number > kSafe || number < -kSafe) {
-            return false;
-        }
-        out = std::to_string(number);
+        out = std::to_string(number) + (number > kSafe || number < -kSafe ? "n" : "");
         return true;
     }
     if (value.is_number_float()) {
@@ -219,11 +219,27 @@ struct Answer {
     nlohmann::json value;
 };
 
+/// JSON has no BigInt, so the answer carries one as `{"sceBigInt": "<digits>"}`
+/// and this puts the integer back.
+void restoreBigInts(nlohmann::json &value) {
+    if (value.is_object() && value.size() == 1 && value.contains("sceBigInt")) {
+        const std::string digits = value.at("sceBigInt").get<std::string>();
+        value = digits.front() == '-' ? nlohmann::json(std::stoll(digits)) : nlohmann::json(std::stoull(digits));
+        return;
+    }
+    if (value.is_array() || value.is_object()) {
+        for (auto &element : value) {
+            restoreBigInts(element);
+        }
+    }
+}
+
 Answer call(::SCE::IScriptEngine &engine, const std::string &session, const std::string &symbol,
             const std::string &arguments) {
     const std::string source =
         "(function () { try { return JSON.stringify({ ok: SceStatic.algorithms." + symbol + "(" + arguments +
-        ") }); } catch (e) { return JSON.stringify({ failure: (e && e.sceFailure) || null, message: String(e && "
+        ") }, function (key, value) { return typeof value === 'bigint' ? { sceBigInt: value.toString() } : value; "
+        "}); } catch (e) { return JSON.stringify({ failure: (e && e.sceFailure) || null, message: String(e && "
         "e.message) }); } })()";
     Answer answer;
     auto result = engine.evaluateExpression(session, source).get();
@@ -246,6 +262,7 @@ Answer call(::SCE::IScriptEngine &engine, const std::string &session, const std:
     }
     if (parsed.contains("ok")) {
         answer.value = parsed.at("ok");
+        restoreBigInts(answer.value);
         return answer;
     }
     answer.failed = true;
@@ -282,6 +299,11 @@ bool sameValue(const nlohmann::json &got, const nlohmann::json &want) {
     }
     if (got.is_boolean() || want.is_boolean()) {
         return got.is_boolean() && want.is_boolean() && got.get<bool>() == want.get<bool>();
+    }
+    // Two integers are compared as integers: past 2^53 a double is a different
+    // value from its neighbour.
+    if (got.is_number_integer() && want.is_number_integer()) {
+        return got == want;
     }
     if (got.is_number() && want.is_number()) {
         const double a = got.get<double>();

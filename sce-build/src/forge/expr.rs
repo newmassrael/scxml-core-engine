@@ -389,12 +389,34 @@ fn lower_at(
         ExprTarget::Go => emit_go(&ast, expected)?,
         ExprTarget::Python => emit_python(&ast, expected)?,
         ExprTarget::C => emit_c(&ast, expected)?,
-        ExprTarget::Js => emit_js(&ast, expected)?,
+        ExprTarget::Js => {
+            let text = emit_js(&ast, expected)?;
+            if !ctx.exact_integers && js_value_may_be_wide(&ast, expected) {
+                format!("{}.out({text})", crate::forge::static_js::RUNTIME_GLOBAL)
+            } else {
+                text
+            }
+        }
     };
     Ok(Lowered {
         text,
         can_fail: can_fail(&ast),
     })
+}
+
+/// Whether a value this expression gives, written for the Interpreter, may hold
+/// an integer a Number does not — a 64-bit integer, or a record or a list that
+/// may carry one. Such a value is computed exactly while the expressions that
+/// make it run, and has to pass the library's `out` before the Interpreter's
+/// data model can take it, which loses a BigInt without a word.
+fn js_value_may_be_wide(ast: &TypedExpr, expected: InferredType) -> bool {
+    match ast.ty {
+        InferredType::Int { bits: 64, .. } | InferredType::Record(_) | InferredType::List(_) => {
+            true
+        }
+        InferredType::UntypedInt => matches!(expected, InferredType::Int { bits: 64, .. }),
+        _ => false,
+    }
 }
 
 /// Infer the static [`InferredType`] of an expression without emitting any
@@ -6813,19 +6835,25 @@ fn python_binop(op: BinOp) -> &'static str {
 // not hold, so this emitter writes what the document means in ECMAScript's own
 // terms:
 //
-// * Every integer is a Number. A checked operation is the runtime library's
+// * Every integer is a Number while a Number holds it exactly, and a BigInt
+//   past that. A checked operation is the runtime library's
 //   (`SceStatic.<I|U><bits>.<helper>`), which computes exactly and hands back a
-//   Number only where it is a safe integer, and throws otherwise — the failure
-//   the generated backends record (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+//   Number where it is a safe integer, a BigInt where it is not, and throws
+//   where the type does not hold it — the failure the generated backends record
+//   (docs/SCE_ACCEPTED_SUBSET.md §2.15). One value has one form, so `===`
+//   between two integers is the comparison the document wrote, and an
+//   operation at 64 bits is the library's whether or not a proof says it cannot
+//   fail: a bare `+` of a BigInt and a Number throws a TypeError.
 // * Names stand as authored: the document's variables are the script engine's
 //   globals under the ids the document declares.
 // * A construct whose ECMAScript meaning is not the document's is REFUSED, not
-//   passed through. The bitwise operators are the first: a Number's are 32-bit
-//   and signed, so `x & 0xFFFFFFFF` would read as -1 where every backend reads
-//   4294967295.
+//   passed through. The bitwise operators are written as the library's, at
+//   their width: a Number's own are 32-bit and signed, so `x & 0xFFFFFFFF` would
+//   read as -1 where every backend reads 4294967295.
 
-/// The largest integer a Number holds exactly, 2^53 - 1 — the bound on both an
-/// integer literal and the runtime library's results.
+/// The largest integer a Number holds exactly, 2^53 - 1 — the largest an integer
+/// literal is written as a Number, and the largest the runtime library hands
+/// back as one.
 const JS_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 fn js_binop(op: BinOp) -> &'static str {
@@ -6852,13 +6880,14 @@ fn js_binop(op: BinOp) -> &'static str {
     }
 }
 
-/// A number literal as an ECMAScript Number holds it.
+/// A number literal as ECMAScript holds it.
 ///
 /// An integer is written as its decimal value — never as the author's text,
 /// because a decimal with a leading zero (`017`) reads as octal in sloppy-mode
 /// ECMAScript while [`integer_literal_value`], which every range check reads,
-/// takes it as seventeen. One that a Number cannot hold exactly is refused: it
-/// would round in silence, and the generated backends keep it.
+/// takes it as seventeen. One a Number holds exactly is a Number, and one it
+/// does not is a BigInt literal (`9223372036854775807n`): rounded to a Number it
+/// would be a different integer, and the generated backends keep it.
 fn js_number_literal(text: &str) -> Result<String, ExprError> {
     let is_integer = matches!(text.get(..2), Some("0x" | "0X" | "0b" | "0B" | "0o" | "0O"))
         || text.bytes().all(|b| b.is_ascii_digit());
@@ -6867,14 +6896,75 @@ fn js_number_literal(text: &str) -> Result<String, ExprError> {
     }
     match integer_literal_value(text) {
         Some(value) if value <= JS_MAX_SAFE_INTEGER => Ok(value.to_string()),
-        _ => Err(ExprError::UnsupportedConstruct {
+        Some(value) => Ok(format!("{value}n")),
+        None => Err(ExprError::UnsupportedConstruct {
             construct: format!(
-                "the integer literal {text} in an ecmascript lowering: a Number holds an \
-                 integer exactly only up to {JS_MAX_SAFE_INTEGER}"
+                "the integer literal {text} in an ecmascript lowering: it is past `u64`, \
+                 the widest integer any backend declares"
             ),
             observed: Some(text.to_string()),
         }),
     }
+}
+
+/// Whether `node` is an integer: typed as one, or a literal with no type of its
+/// own.
+fn js_is_integer(node: &TypedExpr) -> bool {
+    matches!(node.ty, InferredType::Int { .. } | InferredType::UntypedInt)
+}
+
+/// Whether the integer `node` may be a BigInt: a 64-bit one, or a literal a
+/// Number cannot hold.
+fn js_may_be_big(node: &TypedExpr) -> bool {
+    match &node.kind {
+        ExprKind::NumberLit(text) => {
+            integer_literal_value(text).is_some_and(|value| value > JS_MAX_SAFE_INTEGER)
+        }
+        _ => matches!(node.ty, InferredType::Int { bits: 64, .. }),
+    }
+}
+
+/// The library's operation for a bitwise operator, and the width it is held to.
+fn js_bitwise_helper(op: BinOp) -> &'static str {
+    match op {
+        BinOp::BitAnd => "and",
+        BinOp::BitOr => "or",
+        BinOp::BitXor => "xor",
+        BinOp::Shl => "shl",
+        BinOp::Shr => "shr",
+        BinOp::UShr => "ushr",
+        _ => unreachable!("only a bitwise operator is asked for"),
+    }
+}
+
+/// The library's namespace for an integer type — `U16`, `I64` — or the refusal
+/// for one it has no namespace for. An integer with no type of its own (two
+/// literals) is a 64-bit signed one: the widest that holds both.
+fn js_integer_namespace(ty: InferredType, what: &str) -> Result<String, ExprError> {
+    use crate::forge::static_js::{INTEGER_WIDTHS, RUNTIME_GLOBAL};
+    let (signed, bits) = match ty {
+        InferredType::Int { signed, bits } => (signed, bits),
+        InferredType::UntypedInt => (true, 64),
+        other => {
+            return Err(ExprError::UnsupportedConstruct {
+                construct: format!("{what} on {} in an ecmascript lowering", other.describe()),
+                observed: None,
+            })
+        }
+    };
+    if !INTEGER_WIDTHS.contains(&bits) {
+        return Err(ExprError::UnsupportedConstruct {
+            construct: format!(
+                "{what} on a {bits}-bit integer in an ecmascript lowering: the library \
+                 implements {INTEGER_WIDTHS:?}"
+            ),
+            observed: None,
+        });
+    }
+    Ok(format!(
+        "{RUNTIME_GLOBAL}.{}{bits}",
+        if signed { "I" } else { "U" }
+    ))
 }
 
 fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
@@ -6894,15 +6984,20 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
         ExprKind::NullLit => "null".to_string(),
         ExprKind::Ident(s) | ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } => {
+            // Bitwise operations and shifts are outside the integer contract and
+            // wrap at their width (SCE_FORGE.md §3.4.1), which is the library's
+            // method of the node's own type.
             if op.is_bitwise() {
-                return Err(ExprError::UnsupportedConstruct {
-                    construct: format!(
-                        "the bitwise operator `{}` in an ecmascript lowering: a Number's \
-                         bitwise operators are 32-bit and signed",
-                        js_binop(*op)
-                    ),
-                    observed: Some(js_binop(*op).to_string()),
-                });
+                let namespace = js_integer_namespace(
+                    expr.ty,
+                    &format!("the bitwise operator `{}`", js_binop(*op)),
+                )?;
+                return Ok(format!(
+                    "{namespace}.{}({}, {})",
+                    js_bitwise_helper(*op),
+                    emit_js(left, expr.ty)?,
+                    emit_js(right, expr.ty)?
+                ));
             }
             // A real division is `/`; between two integers it is the truncating
             // pair the generated backends compute (SCE_FORGE.md §3.4.1), which
@@ -6912,18 +7007,67 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
             } else {
                 binary_operand_type(*op, left.ty, right.ty)
             };
-            let l_raw = emit_js(left, operand_ty)?;
-            let r_raw = emit_js(right, operand_ty)?;
-            let l = if child_needs_parens(left, *op, true, ecma_precedence) {
-                format!("({l_raw})")
-            } else {
-                l_raw
+            // An integer operation at 64 bits is the library's even where
+            // nothing checks it: either operand may be a BigInt, and a bare
+            // operator over one throws. The library's result is the same
+            // value, held to the same type.
+            if op.is_arith()
+                && matches!(operand_ty, InferredType::Int { bits: 64, .. })
+                && !matches!(left.ty, InferredType::Float { .. })
+                && !matches!(right.ty, InferredType::Float { .. })
+            {
+                let namespace = js_integer_namespace(operand_ty, "an integer operation")?;
+                let helper = CheckedOp::of_binary(*op)
+                    .expect("an arithmetic operator has a checked form")
+                    .helper();
+                return Ok(format!(
+                    "{namespace}.{helper}({}, {})",
+                    emit_js(left, operand_ty)?,
+                    emit_js(right, operand_ty)?
+                ));
+            }
+            // Two integers ordered by `<` where one may be a BigInt are ordered
+            // as BigInts. The engine orders a BigInt against a Number by
+            // comparing the magnitudes of the two, and for two negative values
+            // that is the wrong way round (QuickJS, `js_bigint_float64_cmp`:
+            // `-2^62 > -1790503200000` is true there). Equality needs no such
+            // care: an integer has one form, so equal integers are the same
+            // kind of value.
+            let ordered_as_big = matches!(op, BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq)
+                && js_is_integer(left)
+                && js_is_integer(right)
+                && (js_may_be_big(left) || js_may_be_big(right));
+            // A 64-bit integer that meets a real is the real nearest to it, as
+            // on every backend (`Number(big)` rounds to nearest, ties to even),
+            // and a bare operator over a BigInt and a real throws a TypeError.
+            let as_real = |child: &TypedExpr, text: String| {
+                if matches!(operand_ty, InferredType::Float { .. })
+                    && matches!(child.ty, InferredType::Int { bits: 64, .. })
+                {
+                    format!("Number({text})")
+                } else {
+                    text
+                }
             };
-            let r = if child_needs_parens(right, *op, false, ecma_precedence) {
-                format!("({r_raw})")
-            } else {
-                r_raw
+            let operand = |child: &TypedExpr, left_side: bool| -> Result<String, ExprError> {
+                let text = emit_js(child, operand_ty)?;
+                if ordered_as_big {
+                    return Ok(format!("BigInt({text})"));
+                }
+                let converted = as_real(child, text.clone());
+                if converted != text {
+                    return Ok(converted);
+                }
+                Ok(
+                    if child_needs_parens(child, *op, left_side, ecma_precedence) {
+                        format!("({text})")
+                    } else {
+                        text
+                    },
+                )
             };
+            let l = operand(left, true)?;
+            let r = operand(right, false)?;
             let integer_operands = matches!(
                 operand_ty,
                 InferredType::Int { .. } | InferredType::UntypedInt
@@ -6940,12 +7084,8 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
                 UnaryOp::Pos => "+",
                 UnaryOp::Not => "!",
                 UnaryOp::BitNot => {
-                    return Err(ExprError::UnsupportedConstruct {
-                        construct: "the bitwise operator `~` in an ecmascript lowering: a \
-                                    Number's bitwise operators are 32-bit and signed"
-                            .to_string(),
-                        observed: Some("~".to_string()),
-                    })
+                    let namespace = js_integer_namespace(expr.ty, "the bitwise operator `~`")?;
+                    return Ok(format!("{namespace}.not({})", emit_js(operand, expr.ty)?));
                 }
             };
             let inner = emit_js(operand, expr.ty)?;
@@ -7030,9 +7170,14 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
                 // round half away from zero. The library's `round` is that rule;
                 // `Math.floor` goes toward -∞ everywhere and needs no rewrite.
                 let inner = emit_js(&args[0], InferredType::Float { bits: 64 })?;
+                // The result is an integer, so it has an integer's one form: a
+                // real past 2^53 is a whole number a Number holds, and a BigInt
+                // is how the rest of the lowering holds it (`fromReal`).
                 return Ok(match op {
                     RealToInt::Round => format!("{RUNTIME_GLOBAL}.round({inner})"),
-                    RealToInt::Floor => format!("Math.floor({inner})"),
+                    RealToInt::Floor => {
+                        format!("{RUNTIME_GLOBAL}.fromReal(Math.floor({inner}))")
+                    }
                 });
             }
             let mut a = Vec::with_capacity(args.len());
@@ -9449,18 +9594,6 @@ mod tests {
         .unwrap()
     }
 
-    fn js_refusal(expr: &str) -> String {
-        transpile_typed(
-            expr,
-            ExprTarget::Js,
-            &js_ctx(),
-            &empty_renames(),
-            InferredType::Unknown,
-        )
-        .unwrap_err()
-        .to_string()
-    }
-
     /// The one property the lowering exists for: an integer operation is the
     /// library's, at the width the operation is checked at, so a `uint8` that
     /// would pass 255 throws where a bare `+` would write 256.
@@ -9468,7 +9601,7 @@ mod tests {
     fn js_checks_an_integer_operation_at_its_own_width() {
         assert_eq!(js("level + 3"), "SceStatic.U8.add(level, 3)");
         assert_eq!(js("delta - 1"), "SceStatic.I32.sub(delta, 1)");
-        assert_eq!(js("wide * 2"), "SceStatic.U64.mul(wide, 2)");
+        assert_eq!(js("wide * 2"), "SceStatic.out(SceStatic.U64.mul(wide, 2))");
         assert_eq!(js("delta / 2"), "SceStatic.I32.div(delta, 2)");
         assert_eq!(js("delta % 2"), "SceStatic.I32.rem(delta, 2)");
         assert_eq!(js("-delta"), "SceStatic.I32.neg(delta)");
@@ -9532,9 +9665,11 @@ mod tests {
     }
 
     /// An integer literal is its decimal value — `017` reads as octal in
-    /// sloppy-mode ECMAScript — and one a Number cannot hold is refused.
+    /// sloppy-mode ECMAScript — and one a Number cannot hold is a BigInt literal,
+    /// which is how the lowering holds such an integer; past `u64`, the widest
+    /// any backend declares, it is refused.
     #[test]
-    fn js_writes_an_integer_literal_as_its_value_and_refuses_a_lossy_one() {
+    fn js_writes_an_integer_literal_as_its_value_and_a_wide_one_as_a_bigint() {
         assert_eq!(js_number_literal("017").unwrap(), "17");
         assert_eq!(js_number_literal("0xFF").unwrap(), "255");
         assert_eq!(js_number_literal("0b101").unwrap(), "5");
@@ -9543,23 +9678,29 @@ mod tests {
             js_number_literal("9007199254740991").unwrap(),
             "9007199254740991"
         );
-        for lossy in [
-            "9007199254740992",
-            "18446744073709551615",
-            "0xFFFFFFFFFFFFFFFF0",
-        ] {
-            let refusal = js_number_literal(lossy).unwrap_err().to_string();
-            assert!(refusal.contains("9007199254740991"), "{lossy}: {refusal}");
-        }
+        assert_eq!(
+            js_number_literal("9007199254740992").unwrap(),
+            "9007199254740992n"
+        );
+        assert_eq!(
+            js_number_literal("18446744073709551615").unwrap(),
+            "18446744073709551615n"
+        );
+        let refusal = js_number_literal("0xFFFFFFFFFFFFFFFF0")
+            .unwrap_err()
+            .to_string();
+        assert!(refusal.contains("u64"), "{refusal}");
     }
 
     /// `round` is half away from zero, which `Math.round` is not
     /// (`Math.round(-2.5)` is -2), so it is the library's; `floor` is
-    /// `Math.floor`.
+    /// `Math.floor`. Both give an integer, which has the one form the rest of
+    /// the lowering holds one in, so a whole number past 2^53 comes back a
+    /// BigInt (`fromReal`).
     #[test]
     fn js_rounds_half_away_from_zero_through_the_library() {
         assert_eq!(js("round(ratio)"), "SceStatic.round(ratio)");
-        assert_eq!(js("floor(ratio)"), "Math.floor(ratio)");
+        assert_eq!(js("floor(ratio)"), "SceStatic.fromReal(Math.floor(ratio))");
     }
 
     /// The length of a list or a string is `.length`.
@@ -9586,25 +9727,43 @@ mod tests {
         assert_eq!(text, "history.length");
     }
 
-    /// An operator whose ECMAScript meaning is not the document's is refused,
-    /// naming the operator, rather than written as it would be for a Number.
+    /// An operator whose ECMAScript meaning is not the document's is not written
+    /// as it would be for a Number — a Number's own are 32-bit and signed — but
+    /// as the library's, at the width of the operation, which wraps there.
     #[test]
-    fn js_refuses_the_bitwise_operators() {
-        for (expr, operator) in [
-            ("level & 3", "&"),
-            ("level | 3", "|"),
-            ("level ^ 3", "^"),
-            ("level << 1", "<<"),
-            ("level >> 1", ">>"),
-            ("level >>> 1", ">>>"),
-            ("~level", "~"),
+    fn js_writes_the_bitwise_operators_as_the_librarys() {
+        for (expr, written) in [
+            ("level & 3", "SceStatic.U8.and(level, 3)"),
+            ("level | 3", "SceStatic.U8.or(level, 3)"),
+            ("level ^ 3", "SceStatic.U8.xor(level, 3)"),
+            ("level << 1", "SceStatic.U8.shl(level, 1)"),
+            ("level >> 1", "SceStatic.U8.shr(level, 1)"),
+            ("level >>> 1", "SceStatic.U8.ushr(level, 1)"),
+            ("~level", "SceStatic.U8.not(level)"),
+            ("delta & 255", "SceStatic.I32.and(delta, 255)"),
         ] {
-            let refusal = js_refusal(expr);
-            assert!(
-                refusal.contains(&format!("`{operator}`")),
-                "{expr}: {refusal}"
-            );
+            assert_eq!(js(expr), written, "{expr}");
         }
+    }
+
+    /// A 64-bit integer that leaves the expressions for the Interpreter's data
+    /// goes through `out`, which refuses what the data model would lose; a
+    /// narrower one is always a Number and does not.
+    #[test]
+    fn js_hands_a_64_bit_integer_to_the_machine_through_out() {
+        assert_eq!(js("wide * 2"), "SceStatic.out(SceStatic.U64.mul(wide, 2))");
+        assert_eq!(js("level + 3"), "SceStatic.U8.add(level, 3)");
+    }
+
+    /// Two integers ordered where one may be a BigInt are ordered as BigInts
+    /// (the engine orders a BigInt against a Number wrongly for two negative
+    /// values), and one that meets a real is converted to it.
+    #[test]
+    fn js_orders_a_possible_bigint_as_a_bigint_and_converts_it_for_a_real() {
+        assert_eq!(js("wide < delta"), "BigInt(wide) < BigInt(delta)");
+        assert_eq!(js("level < 3"), "level < 3");
+        assert_eq!(js("wide === 3"), "wide === 3");
+        assert_eq!(js("wide * ratio"), "Number(wide) * ratio");
     }
 
     /// An enum variant reference has no ECMAScript declaration to be spelled

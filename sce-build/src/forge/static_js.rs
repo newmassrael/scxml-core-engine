@@ -897,8 +897,20 @@ mod tests {
                 assert!(text.contains(&method), "no `{method}` in the library");
             }
         }
-        for member in ["at: function", "round: function", "field: field"] {
+        for member in [
+            "at: function",
+            "round: function",
+            "field: field",
+            "out: function",
+            "extend: function",
+        ] {
             assert!(text.contains(member), "no `{member}` in the library");
+        }
+        // The bitwise operators are written as the library's, at the width of
+        // the operation.
+        for method in ["and", "or", "xor", "not", "shl", "shr", "ushr"] {
+            let declared = format!("{method}: function");
+            assert!(text.contains(&declared), "no `{declared}` in the library");
         }
         // Every type a payload field is read at is one `field` knows: the
         // integer types by their range, the rest by name.

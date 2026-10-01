@@ -2667,12 +2667,13 @@ enum Commands {
     /// `install` once in the script engine, then call
     /// `SceStatic.algorithms.<symbol>(...)`. A failure throws an Error whose
     /// `sceFailure` names it (overflow, divide-by-zero, precondition, out-of-range,
-    /// capacity-exceeded — or unrepresentable, for an integer beyond the 2^53 a
-    /// Number holds exactly).
+    /// capacity-exceeded — or unrepresentable, for an integer the Interpreter's data
+    /// model cannot hold). An integer beyond the 2^53 a Number holds exactly is a
+    /// BigInt, as an argument and as an answer.
     ///
     /// Refused as `lower` refuses an import of it, with `generate/unsupported-feature`
-    /// naming the construct: an algorithm that takes, builds or returns `bytes`,
-    /// or holds a constant, or imports a document it cannot read.
+    /// naming the construct: a `bytes` literal, or an import the document cannot
+    /// read.
     LowerAlgorithm {
         /// An `sce:std/...` document name, or the path of an algorithm document
         document: String,

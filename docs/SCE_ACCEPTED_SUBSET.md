@@ -2907,10 +2907,23 @@ operation is a call of a small library the document's first `<data>` installs
 type does not hold; the Interpreter's ECMAScript data model turns a throwing
 statement into a skipped one and a throwing condition into a false one, each
 raising `error.execution`, which is the outcome the generated backends give
-the same operation. An integer is an ECMAScript Number, so a 64-bit integer is
-exact only to ±2^53: a result beyond that is refused at run time, and an
-integer literal beyond it at build time, rather than rounded. The bitwise
-operators are refused — a Number's are 32-bit and signed.
+the same operation. An integer is an ECMAScript Number where a Number holds it
+exactly, up to ±2^53, and a BigInt where it does not, so one value is always one
+JavaScript value and `===` between two integers is the comparison the document
+wrote; an integer literal past 2^53 is a BigInt literal. A BigInt is a value only
+inside the expressions that compute it: the Interpreter's data model holds a
+Number and loses a BigInt without a word, so a 64-bit value that leaves an
+expression for a variable, an event or a log goes through the library's `out`,
+which fails `unrepresentable` for one — the statement is skipped and
+`error.execution` is raised, as for an overflow. A 64-bit variable of a lowered
+statechart therefore holds ±2^53, and what a statechart computes on the way to
+it is exact. The bitwise operators and shifts are the library's, at the width of
+the operation, and wrap there (SCE_FORGE.md §3.4.1); a Number's own are 32-bit
+and signed. Two defects of the QuickJS the Interpreter embeds are routed round,
+and both are measured against Node on the same cases: it orders a BigInt against
+a Number wrongly when both are negative, so two integers one of which may be a
+BigInt are ordered as BigInts, and `BigInt.asUintN` gives a negative result for
+a width of 32 or 64 whose top bit is set, so a result is masked instead.
 
 An event's data reaches the Interpreter as untyped JSON, which a generated
 machine reads through the event's schema. So a read of a schema field is a call
@@ -2954,12 +2967,14 @@ a record is built whole by its `<sce:set>`s and changed a field at a time by
 `<sce:foreach>` reads each element of a list in order. What is lowered of an
 algorithm today is `<sce:var>`, `<sce:assign>`, `<sce:append>`, `<sce:if>`,
 `<sce:while>`, `<sce:foreach>`, `<sce:require>`, `<sce:call>` and
-`<sce:return>`, over scalar, list and record values.
+`<sce:return>`, over scalar, list, record and `bytes` values. Bytes are an array
+of numbers, a `bytes` buffer is appended to as a list is (an append of a `bytes`
+value extends it), and a `<sce:const>` table is built when the algorithm is
+installed, by the same evaluator every backend's is.
 
-A construct with no lowering yet — `<sce:action>`, an algorithm with a `bytes`
-parameter, return or buffer, a constant, and executable content beyond
-`<assign>`, `<if>`, `<log>`, `<raise>`, `<cancel>`, `<sce:append>`,
-`<sce:clear>` and a `<send>` with no `<param>` — is refused with
+A construct with no lowering yet — `<sce:action>`, a `bytes` literal, and
+executable content beyond `<assign>`, `<if>`, `<log>`, `<raise>`, `<cancel>`,
+`<sce:append>`, `<sce:clear>` and a `<send>` with no `<param>` — is refused with
 `generate/unsupported-feature` naming it, never passed through half lowered.
 `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`
 replays the scenarios the Kotlin and Rust backends replay
@@ -2976,16 +2991,20 @@ import of it would be, and for the same reasons. A failure throws an Error whose
 caller compares failures by name and not by message. A signed minimum divided by
 `-1` fails `overflow` and so does its remainder, which is `0` mathematically:
 SCE_FORGE.md §3.4.1 makes the pair one answer on every backend. The one name no
-backend has is `unrepresentable`, for an integer beyond the 2^53 a Number holds
-exactly, used as an operand or produced as a result: the operation is defined,
-and this engine cannot hold its value.
+backend has is `unrepresentable`, for an integer the Interpreter's data model
+cannot hold, which is one beyond the 2^53 a Number holds exactly handed to a
+variable or an event, or a Number that is not an integer a Number holds exactly
+used as an operand; inside the algorithm the integers are exact to the width of
+their type. A BigInt is how the algorithm holds one beyond 2^53, so an argument
+or an answer past it is a BigInt, which the differential check writes as a BigInt
+literal and reads back from a marker object.
 `tests/integration/AnAlgorithmRunsLoweredUnderTheInterpreterTest.cpp` holds every
 algorithm fixture of the conformance catalog to the cases the six backends are
-held to (`tests/forge/conformance/numerical_reference.json`). A case with an
-argument beyond 2^53 is not asked, one that fails `unrepresentable` is counted
-and not compared, and a fixture the lowering refuses is reported with the
-construct it names; each of the three counts is printed, so a comparison that
-stopped being made shows as a number that fell.
+held to (`tests/forge/conformance/numerical_reference.json`). A fixture the
+lowering refuses is reported with the construct it names, a case that fails
+`unrepresentable` is counted and not compared, and a case a value of the
+reference has no form for is not asked; each count is printed, so a comparison
+that stopped being made shows as a number that fell.
 
 ### §2.16 A closed interface — `sce:interface="closed"`
 

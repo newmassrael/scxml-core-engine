@@ -20,13 +20,19 @@
 //!
 //! # Values
 //!
-//! A number, a truth value and a string are what the script engine calls them.
-//! A list is an array, a record a plain object of its schema's fields, and
-//! neither is changed in place: an `<sce:append>` and a field assignment are an
-//! assignment of the whole value, written again (`SceStatic.append`,
-//! `SceStatic.set`), so a record or a list a caller handed in is never changed
-//! under it — a parameter is read-only on every backend, and a copy a body took
-//! of one is its own.
+//! A number, a truth value and a string are what the script engine calls them,
+//! and an integer is exact: a Number where a Number holds it, a BigInt where it
+//! does not, so a function computes in the width of its types and a hash whose
+//! intermediate product passes 2^53 is the hash. A BigInt leaves a function as
+//! the value it is, and a statechart that takes it from a call is the one that
+//! checks it ([`TypeCtx::exact_integers`]). A list and `bytes` are arrays, a
+//! record a plain object of its schema's fields, and none is changed in place:
+//! an `<sce:append>` and a field assignment are an assignment of the whole
+//! value, written again (`SceStatic.append`, `SceStatic.set`), so a record or a
+//! list a caller handed in is never changed under it — a parameter is read-only
+//! on every backend, and a copy a body took of one is its own. A constant is a
+//! `var` of a function that closes over it, built once when the algorithm is
+//! installed.
 //!
 //! # Imports
 //!
@@ -46,11 +52,13 @@
 //! an overflow of its own: the statement is skipped, the guard is false, and
 //! `error.execution` is raised (W3C SCXML 5.9.1, 3.12.2).
 
+use crate::forge::const_fold::{self, ConstSite, ConstValue};
 use crate::forge::error::GenerateError;
 use crate::forge::expr::{self, ExprTarget};
 use crate::forge::generator::{AlgorithmTypes, ImportContext, RecordImport};
 use crate::forge::model::{
-    AlgorithmModel, AlgorithmStmt, AlgorithmValueType, ForgeImport, ListElemType, SceType,
+    AlgorithmConstType, AlgorithmModel, AlgorithmStmt, AlgorithmValueType, ForgeImport,
+    ListElemType, SceType,
 };
 use crate::forge::static_js::RUNTIME_GLOBAL;
 use crate::forge::types::{InferredType, TypeCtx};
@@ -162,12 +170,89 @@ fn refuse(algorithm: &str, what: impl std::fmt::Display) -> GenerateError {
     ))
 }
 
-/// Whether a scalar type is a value this lowering can hold: a number, a truth
-/// value or a string. A `bytes` value is a scalar to the model and has no form
-/// here, and an enum is the enum document's type, which the lowered document
-/// does not import.
+/// Whether a scalar type is a value this lowering can hold in a local, an
+/// element of a list or a field: a number, a truth value or a string. A `bytes`
+/// value is a scalar to the model but a list of numbers here, held by a
+/// parameter, a buffer and a return and by nothing else, and an enum is the enum
+/// document's type, which the lowered document does not import.
 fn has_a_value_form(ty: &SceType) -> bool {
     !matches!(ty, SceType::Bytes | SceType::Enum(_))
+}
+
+/// A build-time value as ECMAScript writes it: an integer a Number holds
+/// exactly as a Number and another as a BigInt, as an expression's literal is.
+fn const_literal(algorithm: &str, name: &str, value: ConstValue) -> Result<String, GenerateError> {
+    Ok(match value {
+        ConstValue::U8(v) => v.to_string(),
+        ConstValue::U16(v) => v.to_string(),
+        ConstValue::U32(v) => v.to_string(),
+        ConstValue::I8(v) => v.to_string(),
+        ConstValue::I16(v) => v.to_string(),
+        ConstValue::I32(v) => v.to_string(),
+        ConstValue::U64(v) if v <= 9_007_199_254_740_991 => v.to_string(),
+        ConstValue::U64(v) => format!("{v}n"),
+        ConstValue::I64(v) if v.unsigned_abs() <= 9_007_199_254_740_991 => v.to_string(),
+        ConstValue::I64(v) => format!("{v}n"),
+        ConstValue::F32(v) if v.is_finite() => format!("{v:?}"),
+        ConstValue::F64(v) if v.is_finite() => format!("{v:?}"),
+        ConstValue::F32(_) | ConstValue::F64(_) => {
+            return Err(refuse(
+                algorithm,
+                format!("the constant `{name}`, which holds a value ECMAScript has no literal for"),
+            ))
+        }
+        ConstValue::Bool(v) => v.to_string(),
+    })
+}
+
+/// The constants of `m`, each as a `var` — a table folded at build time as an
+/// array, a scalar as its value — evaluated here as every backend's are
+/// ([`crate::forge::const_fold`]).
+fn consts(m: &AlgorithmModel) -> Result<String, GenerateError> {
+    let mut budget = const_fold::Budget::default();
+    let mut out = String::new();
+    for constant in &m.consts {
+        check_name(&m.name, &constant.name)?;
+        let site = ConstSite {
+            algorithm: &m.name,
+            const_name: &constant.name,
+        };
+        let literal = |value: ConstValue| const_literal(&m.name, &constant.name, value);
+        let value = match (&constant.sce_type, &constant.fold, &constant.init) {
+            (AlgorithmConstType::Array { len, .. }, Some(fold), None) => {
+                let values = const_fold::evaluate_fold(fold, &mut budget, site)?;
+                if values.len() as u32 != *len {
+                    return Err(refuse(
+                        &m.name,
+                        format!(
+                            "the constant `{}`, whose fold gives {} elements where it declares {len}",
+                            constant.name,
+                            values.len()
+                        ),
+                    ));
+                }
+                let elements = values
+                    .into_iter()
+                    .map(literal)
+                    .collect::<Result<Vec<_>, _>>()?;
+                format!("[{}]", elements.join(", "))
+            }
+            (AlgorithmConstType::Scalar(ty), None, Some(init)) => {
+                literal(const_fold::evaluate_scalar_init(init, ty, site)?)?
+            }
+            _ => {
+                return Err(refuse(
+                    &m.name,
+                    format!(
+                        "the constant `{}`, which is neither a fold nor a scalar",
+                        constant.name
+                    ),
+                ))
+            }
+        };
+        out.push_str(&format!("var {} = {value}; ", constant.name));
+    }
+    Ok(out)
 }
 
 fn check_name(algorithm: &str, name: &str) -> Result<(), GenerateError> {
@@ -483,13 +568,16 @@ impl Body<'_> {
                     ));
                 };
                 let element = match buffer.element {
+                    // A `bytes` value extends the buffer and a byte is
+                    // pushed, as the expression's own type says.
                     BufferElement::Byte => {
                         let rhs = expr::infer_expr_type(expr, self.ctx)
                             .map_err(|e| refuse(self.algorithm, e.error))?;
                         if matches!(rhs, InferredType::Bytes) {
-                            return Err(refuse(
-                                self.algorithm,
-                                format!("<sce:append target=\"{target}\"> of a `bytes` value"),
+                            return Ok(format!(
+                                "{target} = {RUNTIME_GLOBAL}.extend({target}, {}, {});",
+                                buffer.capacity,
+                                self.slot(expr, InferredType::Bytes)?
                             ));
                         }
                         self.slot(
@@ -608,7 +696,9 @@ impl Body<'_> {
 /// Whether `ty` is a parameter or a return this lowering can hold.
 fn holds(ty: &AlgorithmValueType) -> bool {
     match ty {
-        AlgorithmValueType::Scalar(scalar) => has_a_value_form(scalar),
+        AlgorithmValueType::Scalar(scalar) => {
+            has_a_value_form(scalar) || matches!(scalar, SceType::Bytes)
+        }
         AlgorithmValueType::List {
             elem: ListElemType::Scalar(elem),
         } => has_a_value_form(elem),
@@ -622,12 +712,12 @@ fn holds(ty: &AlgorithmValueType) -> bool {
 /// The ECMAScript function `m` lowers to, as an expression —
 /// `function (a, b) { … }` — on one line, for the attribute that carries it.
 ///
-/// Refused by name, never passed on half lowered: a constant, a parameter or a
-/// return of a type with no form here, and every statement it does not spell.
+/// A constant is a `var` of a function that closes over it, so the table is
+/// built once, when the algorithm is installed, and not on every call.
+///
+/// Refused by name, never passed on half lowered: a parameter or a return of a
+/// type with no form here, and every statement it does not spell.
 pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, GenerateError> {
-    if let Some(constant) = m.consts.first() {
-        return Err(refuse(&m.name, format!("the constant `{}`", constant.name)));
-    }
     let mut params = Vec::new();
     let mut iterable: HashSet<&str> = HashSet::new();
     let mut whole_values: HashSet<&str> = HashSet::new();
@@ -643,10 +733,11 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
                 ),
             ));
         }
-        if param.sce_type.list_elem().is_some() {
+        let is_bytes = matches!(param.sce_type, AlgorithmValueType::Scalar(SceType::Bytes));
+        if param.sce_type.list_elem().is_some() || is_bytes {
             iterable.insert(&param.name);
         }
-        if !matches!(param.sce_type, AlgorithmValueType::Scalar(_)) {
+        if is_bytes || !matches!(param.sce_type, AlgorithmValueType::Scalar(_)) {
             whole_values.insert(&param.name);
         }
         params.push(param.name.clone());
@@ -658,11 +749,17 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
     let options = crate::ForgeCompileOptions::default();
     let types = AlgorithmTypes::collect(m, &imports.contexts, &options)
         .map_err(|e| GenerateError::unsupported(format!("the algorithm `{}`: {e}", m.name)))?;
-    let ctx = types.type_ctx(m, &imports.contexts);
+    let mut ctx = types.type_ctx(m, &imports.contexts);
+    // An integer here is exact and may be a BigInt; one leaves the function as
+    // the value it is, and a statechart that takes it from a call is the one
+    // that checks it ([`TypeCtx::exact_integers`]).
+    ctx.exact_integers = true;
     let renames = imports.renames();
 
     let return_ty = match &m.signature.return_type {
         None => InferredType::Unknown,
+        // A `bytes` return is a buffer returned by name, like a list.
+        Some(AlgorithmValueType::Scalar(SceType::Bytes)) => InferredType::Unknown,
         Some(ty) if !holds(ty) => {
             return Err(refuse(
                 &m.name,
@@ -701,10 +798,17 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
         whole_values,
     };
     let statements = body.statements(&m.body, 0)?;
-    Ok(format!(
+    let function = format!(
         "function ({}) {{ {} }}",
         params.join(", "),
         statements.join(" ")
+    );
+    if m.consts.is_empty() {
+        return Ok(function);
+    }
+    Ok(format!(
+        "(function () {{ {}return {function}; }})()",
+        consts(m)?
     ))
 }
 
@@ -860,11 +964,12 @@ mod tests {
         let bytes = lowered(
             false,
             r#"<sce:param name="data" type="bytes"/>"#,
-            r#"<sce:return expr="0"/>"#,
+            r#"<sce:if cond="data === 'abc'"><sce:return expr="1"/></sce:if>
+    <sce:return expr="0"/>"#,
         )
-        .expect_err("a bytes value has no form here");
+        .expect_err("a bytes literal has no form here");
         assert!(
-            bytes.contains("probe") && bytes.contains("the parameter `data` of type `bytes`"),
+            bytes.contains("probe") && bytes.contains("`bytes` value"),
             "{bytes}"
         );
 

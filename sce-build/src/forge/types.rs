@@ -942,6 +942,14 @@ pub struct TypeCtx<'a> {
     ///
     /// [`ExprKind::Checked`]: crate::forge::expr::ExprKind::Checked
     pub receives_failures: bool,
+    /// Whether an integer expression of this context may be a value an
+    /// ECMAScript Number cannot hold — the body of an algorithm lowered for the
+    /// Interpreter, where it is computed exactly as a BigInt
+    /// ([`crate::forge::static_js_algorithm`]). `false` everywhere else, and
+    /// there a 64-bit integer expression leaves through the library's `out`,
+    /// which refuses a value the Interpreter's data model would lose without a
+    /// word. Read by the ECMAScript emitter only.
+    pub exact_integers: bool,
     /// Whether a call to a name this context does not carry is an ERROR.
     ///
     /// ⚠ OFF by default, and the default is the interesting half. A statechart
@@ -1039,6 +1047,7 @@ impl<'a> TypeCtx<'a> {
             array_elems: HashMap::new(),
             project_str_args_as_bytes_view: false,
             receives_failures: false,
+            exact_integers: false,
             reject_unknown_callees: false,
             reject_unknown_identifiers: false,
             enums: HashMap::new(),
