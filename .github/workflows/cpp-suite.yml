@@ -152,9 +152,10 @@ name: C++ Test Suite
 # `LANES` in `sce-build/tests/ci_supersession_policy.rs`, never from here.
 #
 # The docs-only push above cancelled the W3C run on `174b25a24c` while proving
-# this lane's filter. Mutation Rounds is the shape of the answer for both: its
-# concurrency group is keyed on the sha, so a later push supersedes nothing --
-# at the price its own row now records, a backlog of unstarted runs.
+# this lane's filter. Mutation Rounds was the shape of the answer for both: its
+# concurrency group was keyed on the sha, so a later push superseded nothing --
+# at the price of a backlog of unstarted runs, which is why it no longer is. It
+# now reaches back over the commits a replaced round skipped instead.
 #
 # Measured 2026-09-02 over this lane's own last 25 runs: a 79.1 min median
 # success against a 17.6 min median gap between pushes to `main`, the slowest
@@ -177,23 +178,28 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-# ⚠ FLIPPED TO `true` BY OWNER DECISION, 2026-09-15. The prose above argues for
-# `false` and its argument still holds on its own terms — this lane cannot finish
-# between two pushes, so a superseding run can be superseded in its turn. What
-# changed is the binding constraint: the account's four repositories were putting
-# 20-27 runs an hour into a shared hosted pool that executed nothing for 165
-# minutes, with 36 runs waiting and the oldest at 8.4 hours. Under a queue that
-# deep a lane that is never cancelled does not answer either — it simply waits,
-# and its verdict is as absent as a cancelled one. Cancelling frees the slot for
-# the newest commit, which is the only one anybody is asking about.
+# ⚠ BACK TO `false` BY OWNER DECISION, 2026-10-01, reversing the flip to `true`
+# of 2026-09-15. What the owner asked for is what `false` does on a group shared
+# by every push: the run in flight is never cancelled, and at most ONE run waits
+# behind it -- a newer push replaces the waiting one. When the run in flight
+# ends, only the newest commit runs, and the commits between get no run of
+# their own. The prose above argues for exactly this and still holds.
 #
-# The cost is stated rather than hidden: while pushes come faster than this lane
-# runs, it reports only when they stop. `ci_supersession_policy.rs` no longer
-# derives the flag from a median; it now requires `true` everywhere, so a quiet
-# revert to `false` is red rather than invisible.
+# The flip of 2026-09-15 answered a shared hosted pool that executed nothing for
+# 165 minutes with 36 runs waiting and the oldest at 8.4 hours: it cancelled work
+# in flight to free the slot for the newest commit. Measured 2026-10-01, 123 runs
+# were active across the account's repositories and 55 of them were Mutation
+# Rounds, whose group was keyed on `github.sha` so that every push queued beside
+# the last. A group shared per ref bounds a lane to one running and one waiting
+# run, which is the bound the queue was missing.
+#
+# The cost is stated rather than hidden: a run in flight goes on finishing a
+# commit that is already stale, and holds a runner while it does.
+# `ci_supersession_policy.rs` requires `false` everywhere, so a revert to `true`
+# is red rather than invisible.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   cpp-suite:

@@ -1474,8 +1474,15 @@ fail-safe that editing an unfiltered lane is supposed to buy.
 cancels a PENDING one, so `false` saves the run in flight and the latest commit
 and defers the ones between. That is correct for a lane whose answer is about a
 BRANCH — these re-ask a fixed population against whatever the tree now holds.
-`mutation-rounds.yml` keys on `github.sha` because its answer is about a
-COMMIT: selection is by change set and nothing re-selects it.
+`mutation-rounds.yml` answers about a COMMIT: selection is by change set and
+nothing re-selects it. It kept a `github.sha` key until 2026-10-01, when that
+key was retired for growing the queue without bound; it now shares one group per
+ref and starts its range at the last round that reached a verdict.
+
+⚠ **Superseded in part, 2026-10-01.** The setting that holds today is `false` on
+every lane, and the predicate no longer derives it from the median: the owner
+decided it for all of them, and `ci_supersession_policy.rs` requires it. The
+median is kept to count the cost of that decision, not to make it.
 
 ## What is not yet decided
 

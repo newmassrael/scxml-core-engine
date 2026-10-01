@@ -38,15 +38,12 @@ on:
 # where it was not needed. Queueing a deploy nothing needed queued is the
 # cheap side of that error, and a lost deploy verdict is the dear one.
 #
-# ⚠ FLIPPED TO `true` BY OWNER DECISION, 2026-09-15, along with every other lane
-# that declared `false`. Checked before flipping rather than assumed: this lane
-# uses neither `actions/deploy-pages` nor `pages: write`, so cancelling it
-# cannot leave a half-published site — the thing `false` would have been
-# protecting here. What it can still lose is a verdict, which is the cost
-# `cpp-suite.yml` records for every lane in this flip.
+# ⚠ BACK TO `false` BY OWNER DECISION, 2026-10-01, reversing the flip to `true`
+# of 2026-09-15: the run in flight is kept and one waiting run holds the newest
+# commit. See `cpp-suite.yml` for the reasoning and the cost.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:

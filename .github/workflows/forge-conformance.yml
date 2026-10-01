@@ -112,13 +112,12 @@ on:
 # 22.15, the same figure as that window. The tail moved; the middle did not.
 # Moving this row needs a faster lane, not a quieter day.
 #
-# ⚠ FLIPPED TO `true` BY OWNER DECISION, 2026-09-15, along with every other lane
-# that declared `false`. The sentence above stays true and is now beside the
-# point: no lane is fast enough for a pool that executed nothing for 165 minutes.
-# See `cpp-suite.yml` for the measurement and the cost.
+# ⚠ BACK TO `false` BY OWNER DECISION, 2026-10-01, reversing the flip to `true`
+# of 2026-09-15: the run in flight is kept and one waiting run holds the newest
+# commit. See `cpp-suite.yml` for the reasoning and the cost.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 # Every language's harness pipes its test run into `tee` to keep a log for
 # the summary step. The runner's default shell is `bash -e {0}` — `-e` but

@@ -82,17 +82,16 @@ on:
 # cancels a PENDING one, so `false` saves the run IN FLIGHT and the LATEST
 # commit and defers the ones between. That is the right trade for a lane whose
 # answer is about a BRANCH — this one re-asks the whole shared table against
-# whatever the tree now holds. `mutation-rounds.yml` keys on `github.sha`
-# because its answer is about a COMMIT: selection is by change set, and nothing
-# re-selects it.
+# whatever the tree now holds. `mutation-rounds.yml` answers about a COMMIT
+# instead -- selection is by change set, and nothing re-selects it -- so it
+# starts its range at the last commit that reached a verdict.
 #
-# ⚠ FLIPPED TO `true` BY OWNER DECISION, 2026-09-15, along with every other lane
-# that declared `false`. The paragraph above notes that `false` already lets a
-# newly queued run cancel a PENDING one — the decision extends that to a run in
-# flight. See `cpp-suite.yml` for the queue measurement and the cost.
+# ⚠ BACK TO `false` BY OWNER DECISION, 2026-10-01, reversing the flip to `true`
+# of 2026-09-15: the run in flight is kept and one waiting run holds the newest
+# commit. See `cpp-suite.yml` for the reasoning and the cost.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   ecma262-lowered-cpp:

@@ -95,48 +95,47 @@ on:
         required: false
         default: ''
 
-# Every push and every dispatch gets a group of its own; a pull request keeps
-# sharing one per ref.
+# Every push to a ref shares one group; a dispatch gets a group of its own.
 #
-# `cancel-in-progress` is the right setting for a lane whose answer is about a
-# BRANCH — a newer commit really does supersede an older one's build — and the
-# wrong one for a lane whose answer is about a COMMIT. This lane's is:
-# selection is by change set, so a round judges the casefiles that ONE push's
-# targets selected, and nothing re-selects them afterwards unless a later push
-# happens to touch the same declared targets. A cancellation here is therefore
-# a verdict LOST, not deferred.
+# ## Latest commit only, and what keeps that from losing a verdict
 #
-# Measured across this workflow's 40 runs from 2026-08-24T01:06 to
-# 08-25T02:13: 25 never reached `success`, and 24 of those ended `cancelled` —
-# the dominant way this lane failed to answer, ahead of the job timeout
-# `mutation_corpus_fits_its_lane` guards against. The habit that grew around
-# it — commit now, push later, if you need the verdict — is the shape of a
-# defect being worked around rather than repaid.
+# `cancel-in-progress: false` keeps the round in flight, and a group shared by
+# every push holds at most ONE pending round behind it: a newer push replaces
+# the pending one instead of queueing beside it. When the round in flight ends,
+# the newest commit runs and the commits it replaced never get a round of
+# their own. That is the owner's decision of 2026-10-01 for every lane in this
+# repository; its doctrine and accounting live in
+# `sce-build/tests/ci_supersession_policy.rs`.
 #
-# A pull request keeps the shared group deliberately: there a force-push
-# destroys the very commit the run was judging, so superseding is correct.
-#
-# The dispatch key is the same property, repaid earlier for the same reason.
-# Measured 2026-08-17, within minutes of the dispatch input being added:
-# asking for a round over one casefile CANCELLED the push run for the same ref
-# (32034288611), because both landed in `<workflow>-refs/heads/main`.
+# This lane's answer is about a COMMIT, which is why it needs more than the
+# key. Selection is by change set, so a casefile is judged only when a push
+# touches its declared targets, and nothing re-selects it afterwards. A round
+# that replaced a pending one would drop that push's casefiles unless its range
+# reaches back over them. So the range starts at the commit of the last round
+# that REACHED A VERDICT (`success` or `failure`) on this branch, not at the
+# push's own `before`: every commit a replaced round would have judged is
+# inside it, and so is every commit whose round a person cancelled. The step
+# `Resolve the change set` below builds that range.
 #
 # Measured 2026-09-02 over this lane's own last 25 runs: a 49.8 min median
 # success against a 17.6 min median gap between pushes to `main`, so it cannot
-# finish between two of them -- and it still declares `cancel-in-progress:
-# true`, correctly. The group below carries `github.sha`, so each push lands in
-# a group of its OWN and a later one cannot supersede this run at all. That is
-# the STRONGER guarantee, not an exemption from it, and
-# `ci_supersession_policy` reads it off this file rather than off a roster.
+# finish between two of them. That is why the round in flight must not be
+# cancelled here: a push would take it down before it answered.
 #
-# ⚠⚠⚠ What that guarantee COSTS, measured in the same window: 14 of those 25
-# runs had still not started, the oldest queued 5.7 hours. Nothing cancels
-# them and nothing runs them. Its 0 cancellations are not a healthy lane, they
-# are the one number a per-commit group can never report — so `LANES` carries
-# an `unfinished` column now, and this is the row it was added for.
+# Measured across this workflow's 40 runs from 2026-08-24T01:06 to
+# 08-25T02:13: 25 never reached `success`, and 24 of those ended `cancelled`.
+# A cancelled round is not a red one, so those commits went without a verdict
+# and nothing said so. Under the range above a cancelled round moves the next
+# range back over its commits instead of losing them.
+#
+# The dispatch key is separate for a second reason, measured 2026-08-17:
+# asking for a round over one casefile CANCELLED the push run for the same ref
+# (32034288611), because both landed in `<workflow>-refs/heads/main`. A
+# dispatch must not take a push round's pending slot either. A pull request
+# keeps one group per ref: a force-push destroys the very commit it was judging.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || (github.event_name == 'workflow_dispatch' && github.run_id || github.event_name) }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event_name }}
+  cancel-in-progress: false
 
 # ## One job per casefile, and why the lane is shaped that way
 #
@@ -153,9 +152,9 @@ concurrency:
 # `cancelled`, `cancelled` and `cancelled`, at 1h41m, 1h21m and 3h31m of work
 # discarded, and a fourth push cancelled the third. Three consecutive commits
 # went without a mutation verdict, and nothing said so, because a cancelled
-# lane is not a red one. Keying a push run on `github.sha` is what ended that;
-# the matrix below is what keeps a single run's wall clock inside the interval
-# anyway, which is the half of the problem a concurrency key cannot touch.
+# lane is not a red one. Not cancelling the round in flight is what ended
+# that; the matrix below is what keeps a single run's wall clock short, which
+# is the half of the problem a concurrency key cannot touch.
 #
 # So the casefiles run as a matrix rather than a loop. Wall clock becomes the
 # slowest single casefile instead of their sum — 39m rather than 1h37m on the
@@ -177,6 +176,12 @@ jobs:
   select:
     name: Which casefiles does this change reach
     runs-on: ubuntu-latest
+
+    # `actions: read` lists this workflow's earlier runs to find the last one
+    # that reached a verdict; `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      actions: read
 
     outputs:
       count: ${{ steps.select.outputs.count }}
@@ -202,17 +207,33 @@ jobs:
     # hook, so CI and a developer's machine hand the gate the same kind of
     # answer.
     #
-    # A push event carries `before`, a pull_request carries its base. Neither
-    # is present for `workflow_dispatch`, and there the honest range is the
-    # whole corpus — which is what the gate does when handed no file, and the
-    # reason that mode exists.
+    # A pull_request carries its base. A push starts where the last round that
+    # REACHED A VERDICT on this branch ended -- see the concurrency block above
+    # for why `before` is the wrong start once a pending round can be replaced:
+    # the push's own `before` would leave the replaced round's commits unjudged
+    # and nothing would re-select them. Neither exists for `workflow_dispatch`,
+    # and there the honest range is the whole corpus -- which is what the gate
+    # does when handed no file, and the reason that mode exists.
+    #
+    # A round that is `cancelled`, `skipped` or still running has no verdict
+    # and is passed over, so its commits fall inside the next range. The
+    # listing is not caught: a failed `gh api` fails the step, because falling
+    # back to `before` silently is the loss this range exists to end.
     - name: Resolve the change set
       id: changed
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         base=""
         case "${{ github.event_name }}" in
-          push)         base='${{ github.event.before }}' ;;
+          push)
+            base=$(gh api "repos/${{ github.repository }}/actions/workflows/mutation-rounds.yml/runs?branch=${{ github.ref_name }}&event=push&status=completed&per_page=100" \
+              --jq '[.workflow_runs[] | select(.conclusion == "success" or .conclusion == "failure") | .head_sha][0] // empty')
+            # No earlier verdict on this branch: the push's own range is the
+            # best start left.
+            [ -n "$base" ] || base='${{ github.event.before }}'
+            ;;
           pull_request) base='${{ github.event.pull_request.base.sha }}' ;;
         esac
         # A new branch's `before` is all-zeroes, and a force-push can name a

@@ -1,55 +1,55 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! Every lane supersedes, and this counts what that costs.
+//! Every lane keeps its run in flight and queues only the newest commit, and
+//! this counts what that costs.
 //!
-//! ⛔ **REVERSED 2026-09-15 by owner decision.** This file used to derive the
-//! flag from a median: a lane slower than the gap between pushes had to declare
-//! `cancel-in-progress: false` or key its group on `github.sha`. It now requires
-//! `true` from every lane, and the assertion runs in that direction so a quiet
-//! revert is red.
+//! ⛔ **REVERSED AGAIN 2026-10-01 by owner decision.** The rule is that a push
+//! arriving while a lane is running does NOT cancel it, and that when the run
+//! in flight ends, the lane runs once, for the LAST commit pushed meanwhile --
+//! not once per commit. Every lane declares `cancel-in-progress: false` on a
+//! group shared by every push to a ref. GitHub then holds at most one waiting
+//! run per group, and a newer push replaces the waiting one, so the commits
+//! between the run in flight and the newest never get a run of their own.
 //!
-//! **What changed is the binding constraint, not the old argument.** The old one
-//! still holds on its own terms and is kept below, because a reason deleted is a
-//! reason that cannot be re-weighed. What it assumed was a runner pool that
-//! starts a job when one is queued. Measured 2026-09-15 across the four
-//! repositories sharing this account's hosted pool: **0 jobs executing, 36
-//! queued, the oldest 8.4 hours, nothing having run for 165 minutes**, against
-//! 20-27 runs an hour being created. Under a queue that deep, `false` protects a
-//! run that never started — `w3c-tests.yml`'s own row had already recorded the
-//! symptom, *"not the setting failing to protect a run in flight; it is no run
-//! ever reaching flight"* — while the queue it preserves is what keeps the
-//! newest commit from being reached at all.
+//! The history of this file is two reversals, and both are kept because a
+//! reason deleted is a reason that cannot be re-weighed:
 //!
-//! **The cost is real and is counted rather than argued away.** The old
-//! reasoning, kept verbatim: `cancel-in-progress: true` is the right default for
-//! a lane that answers in a minute, because the run it kills is re-taken by the
-//! run that killed it seconds later; it is the wrong setting for a lane that
-//! needs longer than the gap between pushes, because then the superseding run is
-//! killed in its turn and the lane reports only when the person stops pushing.
-//! `cpp-suite.yml` names the shape: *"a lane whose verdict depends on when a
-//! person stops typing is not measuring the tree, and a lane cancelled three
-//! times in four reads exactly like a lane that passes."*
+//! - Until 2026-09-15 the flag was DERIVED from a median: a lane slower than the
+//!   gap between pushes declared `false` or keyed its group on `github.sha`.
+//! - On 2026-09-15 the owner required `true` everywhere, because the account's
+//!   four repositories put 20-27 runs an hour into one hosted pool that executed
+//!   nothing for 165 minutes with 36 runs queued and the oldest at 8.4 hours.
+//!   Under a queue that deep `false` protects a run that never started.
+//! - On 2026-10-01 the owner required `false` everywhere. Measured that day,
+//!   123 runs were active across the account and 55 were `mutation-rounds.yml`,
+//!   whose group carried `github.sha`: every push queued beside the last, with
+//!   nothing to clear it. That is the queue the 09-15 flip was answering, and it
+//!   came from a per-commit group rather than from `false`. A group shared per
+//!   ref bounds a lane to one running and one waiting run.
 //!
-//! ⭐ **And the cost is narrower than "a lost verdict", which is worth stating
-//! because the wider phrasing argues against supersession more than the facts
-//! do.** Hosted CI checks out a sha and judges the TREE at it, not the diff, so
-//! a green run on a later sha subsumes the runs cancelled behind it: what is
-//! lost is not verification of what is on `main` now, but ATTRIBUTION — which
-//! commit broke a thing, once something is broken. Supersession is safe for
-//! exactly that reason, and it charges exactly that price: a red costs more to
-//! bisect. (Sharpened by a downstream consumer's session, 2026-09-15,
-//! which measured the same stalled pool from its own repository.)
+//! **The cost is real and is counted rather than argued away.** A run in flight
+//! goes on finishing a commit that is already stale, and holds a runner while
+//! it does. For a lane that needs longer than the gap between pushes, the run
+//! that follows is for whichever commit was newest when the first one ended, so
+//! the lane answers about a commit that may already be old.
 //!
-//! ⚠⚠ **Subsumption holds for a lane whose answer is about a BRANCH, and NOT
-//! for one whose answer is about a COMMIT.** This repository already carries
-//! both kinds and says so in the workflows themselves: `mutation-rounds.yml`
-//! keys its group on `github.sha` because "selection is by change set, and
-//! nothing re-selects them afterwards" — no later run re-takes what its
-//! cancelled run would have judged, so for that lane a cancellation really does
-//! destroy a verdict rather than move it. That lane keeps its per-commit group,
-//! and `supersede-stale-queue.yml` is what stops the backlog it accumulates
-//! instead.
+//! ⭐ **And what is lost is narrower than "a verdict".** Hosted CI checks out a
+//! sha and judges the TREE at it, not the diff, so a green run on a later sha
+//! subsumes the runs that never happened: what is lost is not verification of
+//! what is on `main` now, but ATTRIBUTION -- which commit broke a thing, once
+//! something is broken. Skipping an intermediate commit is safe for exactly
+//! that reason, and charges exactly that price: a red costs more to bisect.
+//!
+//! ⚠⚠ **That subsumption holds for a lane whose answer is about a BRANCH, and
+//! NOT for one whose answer is about a COMMIT.** `mutation-rounds.yml` selects
+//! by change set: "nothing re-selects them afterwards", so a skipped commit's
+//! casefiles are judged by no later run unless that run's range reaches back
+//! over them. The old repair was a per-commit group, which is what let the
+//! queue grow without bound. This rule forbids it ([`group_is_per_commit`]) and
+//! asks of such a lane instead that its range start at the last round that
+//! reached a verdict, read from its own run history
+//! ([`reads_its_own_run_history`]), never at the push's own `before`.
 //!
 //! [`must_not_supersede`] still identifies the slow lanes; it no longer decides
 //! anything, and the case asserts both populations stay non-empty so the price
@@ -138,12 +138,14 @@
 //! `mutation-rounds` 14 over 342 min.
 //!
 //! ⚠⚠⚠ Read that column and the doctrine below stops being sufficient. The
-//! four worst lanes are all already repaired, three by `false` and one by a
-//! per-commit key. `false` protects the run IN FLIGHT, and under a saturated
+//! four worst lanes were all repaired by 2026-09-02, three by `false` and one by
+//! a per-commit key. `false` protects the run IN FLIGHT, and under a saturated
 //! runner pool no run reaches flight to be protected -- `w3c-tests`'s eight
-//! newest cancellations were all still pending. The lever this file asserts is
-//! set correctly on every one of them and no longer controls the outcome. What
-//! remains is runners, which no assertion here can buy.
+//! newest cancellations were all still pending. The lever this file asserts can
+//! be set correctly on every lane and still not control the outcome. What
+//! remains is runners, which no assertion here can buy. The 2026-10-01 reading
+//! of the same column is the reason the per-commit key is now forbidden: it was
+//! the one lever that made the queue deeper rather than shorter.
 //!
 //! ⚠ **Take the numbers from a global run window and they say something else.**
 //! Read first from `gh run list --limit 300`, the same lanes reported 0
@@ -161,19 +163,21 @@
 //! population against whatever the tree now holds, so their answer is about a
 //! BRANCH and an intermediate commit's verdict is deferred into the next run.
 //!
-//! A lane whose answer is about a COMMIT needs the stronger fix, a per-commit
-//! concurrency key, because nothing re-asks its question afterwards.
-//! `mutation-rounds.yml` is that lane and `mutation_round_survives_the_next_push`
-//! holds its key.
+//! A lane whose answer is about a COMMIT cannot lean on that deferral, because
+//! nothing re-asks its question afterwards. Until 2026-10-01 it was given a
+//! per-commit concurrency key instead, and that key is what let its queue grow
+//! without bound: a group carrying `github.sha` puts every push in a group of
+//! its own, so nothing ever replaces a waiting run. `mutation-rounds.yml` is
+//! that lane. It now shares one group per ref like every other, and starts its
+//! range at the last round that reached a verdict so the commits a replaced
+//! round would have judged fall inside the next one;
+//! `mutation_round_survives_the_next_push` holds that.
 //!
-//! ⚠ That key also settles THIS file's question, and the rule reads it. A group
-//! carrying `github.sha` puts every push in a group of its own, so a later push
-//! cannot supersede the run whatever `cancel-in-progress` says. A long lane
-//! therefore passes on `false` OR on a per-commit group -- a disjunction, not
-//! an exemption list, because it is read off the mechanism in the file rather
-//! than from a roster of names. Reading only the flag was a defect: it judged
-//! `mutation-rounds.yml` by a property that lane does not depend on, and the
-//! judgement happened to agree only while its median sat below the gap.
+//! ⚠ The rule reads the mechanism off the file rather than from a roster of
+//! names: [`group_is_per_commit`] looks for `github.sha` in the group, and
+//! [`reads_its_own_run_history`] looks for the run listing. Reading only the
+//! flag was a defect once: it judged `mutation-rounds.yml` by a property that
+//! lane does not depend on.
 //!
 //! ## Why the table lists every workflow
 //!
@@ -313,17 +317,20 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     ("forge-conformance.yml", 25.5, 4, 19, 2),
     ("http-endpoint-ssot.yml", 6.0, 7, 17, 1),
     ("license-verify.yml", 0.3, 0, 3, 0),
-    // ⚠⚠⚠ This row is why the fifth column exists. It is long, declares
-    // `true`, and is nonetheless right -- its concurrency group carries
-    // `github.sha`, so a later push lands in a different group and cannot
-    // supersede it at all, which `group_is_per_commit` reads.
+    // ⚠⚠⚠ This row is why the fifth column exists, and it was taken under a
+    // group that no longer exists. Measured 2026-09-02 its concurrency group
+    // carried `github.sha`, so a later push landed in a different group and
+    // could supersede nothing, and its `0` cancellations were being read as
+    // health when a per-commit group CANNOT record a supersession. What the
+    // zero was hiding is the fifth column -- 14 of its last 25 runs had still
+    // not started, the oldest queued 5.7 hours. Nothing cancelled them and
+    // nothing ran them.
     //
-    // ⚠⚠⚠ But its `0` cancellations were being read as health, and they are
-    // not a measurement of health at all: a per-commit group CANNOT record a
-    // supersession, so that column can never be anything but zero here. What
-    // the zero was hiding is the fifth column -- 14 of its last 25 runs had
-    // still not started, the oldest queued 5.7 hours. Nothing cancels them and
-    // nothing runs them. The lever was traded, not the loss.
+    // ⚠ OWED, 2026-10-01: the key was retired that day, so the cancelled and
+    // unfinished columns describe a lane that is gone, and the median is the
+    // one figure that still applies. Re-measure the whole row after 25 runs of
+    // the shared group. It is kept rather than zeroed because a figure replaced
+    // by a guess is worse than one that says what it was taken under.
     ("mutation-rounds.yml", 49.8, 0, 10, 14),
     // Landed 2026-09-14 with the closure ledger it measures, and reached this
     // table by failing `every_workflow_is_classified` on the next round —
@@ -399,18 +406,6 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // `false` protects the run that started, and under a saturated runner pool
     // there is none to protect.
     ("w3c-tests.yml", 70.0, 14, 9, 2),
-    // NEW 2026-09-15, and the row is a declaration rather than a measurement:
-    // the lane has never run, so `successes` is 0 and the median is the one it
-    // is DESIGNED to have. It is `gh api` and a loop over at most 100 ids, with
-    // no checkout and no build — seconds, not minutes — and it is the janitor
-    // for the backlog `mutation-rounds.yml` records (14 of 25 never started,
-    // oldest queued 5.7 hours) and that nothing in this repository was clearing.
-    //
-    // ⚠ Re-measure it once it has a window. A zero-success row cannot be
-    // contradicted by its own lane, which is exactly the shape this file
-    // distrusts elsewhere, so it is written down here as owed rather than left
-    // to look like a reading.
-    ("supersede-stale-queue.yml", 0.5, 0, 0, 0),
 ];
 
 fn repo_root() -> PathBuf {
@@ -510,35 +505,55 @@ fn top_level_concurrency_group(workflow: &str) -> Option<String> {
 
 /// Whether a lane's concurrency group changes with every commit.
 ///
-/// A group keyed on `github.sha` puts each push in a group of its OWN, so a
-/// later push cannot supersede this run whatever `cancel-in-progress` says --
-/// the two runs are never in the same group to begin with.
+/// A group keyed on `github.sha` puts each push in a group of its OWN, so no
+/// later push ever replaces a waiting run -- the two are never in the same
+/// group to begin with -- and every commit gets a run of its own. That is the
+/// opposite of what the owner asked for on 2026-10-01 (the last commit only),
+/// and it is also how a queue grows without bound, so it is forbidden.
 ///
-/// This is not an exemption from the property this file asserts, it is the
-/// STRONGER way of satisfying it, and the distinction matters: an exemption
-/// list would let a lane escape by being named, while this reads the mechanism
-/// off the file and is wrong only if the mechanism is absent.
+/// Read off the mechanism in the file rather than from a roster of names: a
+/// roster would let a lane escape by being named.
 fn group_is_per_commit(workflow: &str) -> bool {
     top_level_concurrency_group(workflow).is_some_and(|g| g.contains("github.sha"))
 }
 
+/// Whether this lane builds its range from the history of its own runs.
+///
+/// A lane that selects by change set and takes its range from the push's own
+/// `before` loses a commit the moment a pending run is replaced: the replaced
+/// run's commits are in nobody's range. The repair is to start the range at the
+/// last run of THIS workflow that reached a verdict, which needs the run
+/// listing -- `actions/workflows/<file>/runs` -- and the conclusion to filter it
+/// by. Comment lines are skipped, so prose describing the mechanism cannot
+/// stand in for it.
+fn reads_its_own_run_history(workflow: &str) -> bool {
+    let code: Vec<&str> = workflow
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect();
+    let any = |needle: &str| code.iter().any(|l| l.contains(needle));
+    any("/actions/workflows/") && any("/runs?") && any(".conclusion ==")
+}
+
 /// Whether this lane SELECTS its work from the change set — the property that
-/// decides whether a later green subsumes a cancelled run, or replaces nothing.
+/// decides whether a later green subsumes a run that never happened, or
+/// replaces nothing.
 ///
 /// Read off the mechanism rather than from a list, for the reason above: a
 /// named exemption escapes by being named. A lane that resolves a BASE COMMIT
 /// is answering about a COMMIT; one that checks out a sha and runs a fixed
 /// suite is answering about a BRANCH, and the newest run of it says everything
-/// the cancelled ones would have.
+/// the skipped ones would have.
 ///
 /// ⚠ **The base is what to look for, not the diff.** Written first as a sweep
 /// for `changed-files` / `--changed-from` / `git diff`, this found
-/// `mutation-rounds.yml` only through a line of its PROSE — the workflow does
-/// not diff anything. It passes `github.event.before` to `scripts/gate`, and
-/// the diff happens inside the gate script. So a needle list aimed at the diff
-/// reads the wrong file: the half that lives in the workflow is the base, and
-/// that is the half this can see. (The first spelling's own control caught
-/// this, which is the whole reason the control is here.)
+/// `mutation-rounds.yml` only through a line of its PROSE. It hands a base to
+/// `scripts/gate`, and the selection happens inside the gate script. So a
+/// needle list aimed at the diff reads the wrong file: the half that lives in
+/// the workflow is the base, and that is the half this can see. (The first
+/// spelling's own control caught this, which is the whole reason the control
+/// is here.) `event.before` stays a needle although the lane now starts at the
+/// last verdict: it remains the fallback for a branch with none.
 fn selects_by_change_set(workflow: &str) -> bool {
     const NEEDLES: &[&str] = &[
         // the base a lane hands to whatever selects for it
@@ -642,28 +657,21 @@ fn no_row_counts_more_runs_than_the_window_holds() {
     );
 }
 
-/// The rule, plus the invariant tying a backlog to the mechanism that makes one.
+/// The rule: every lane keeps its run in flight and shares one group per ref.
 ///
-/// A lane slower than the push gap must not be superseded. Separately, a row
-/// reporting more unfinished runs than successes must sit on a per-commit
-/// group, because that is the only arrangement under which unstarted runs
-/// accumulate instead of being cleared by the next push.
+/// Three properties, each read off the workflow file rather than from a roster:
 ///
-/// ⚠ That invariant carries no minimum-population floor, deliberately, and the
-/// asymmetry is the point. Every other floor in this file refuses a population
-/// that has emptied, because an empty one means the check stopped looking. Here
-/// an empty one means the QUEUE DRAINED — the good outcome — so a floor would
-/// red the tree for improving. What keeps it honest instead is its mutation
-/// case, which constructs a violating row rather than waiting for the hosted
-/// queue to misbehave.
+/// 1. the top-level `cancel-in-progress` is `false`;
+/// 2. the group is not per-commit, so a newer push can replace a waiting run;
+/// 3. a lane that selects by change set reads its own run history, so the
+///    commits a replaced run would have judged fall inside the next range.
+///
+/// The cost of 1 and 2 is counted at the foot of the case; the readers behind
+/// all three are held by `the_mechanism_readers_tell_their_cases_apart`.
 #[test]
-fn a_lane_slower_than_the_push_gap_is_not_superseded() {
+fn every_lane_keeps_its_run_in_flight_and_queues_only_the_newest() {
     let mut long = 0;
     let mut short = 0;
-    // How each long lane satisfies the rule, counted apart so that the
-    // per-commit arm cannot quietly become the only one that ever fires.
-    let mut long_by_false = 0;
-    let mut long_by_key = 0;
 
     for &(file, median, cancelled, successes, unfinished) in LANES {
         let workflow = read_workflow(file);
@@ -679,94 +687,68 @@ fn a_lane_slower_than_the_push_gap_is_not_superseded() {
             );
         };
 
-        // The second arm: a row whose median was taken over fewer runs than
-        // never finished is describing the minority that found a runner, not
-        // the lane.
-        //
-        // ⚠ It deliberately does NOT feed the long/short classification, and
-        // the reason is that doing so would be provably redundant rather than
-        // merely unnecessary. The assertion below forces any such row onto a
-        // per-commit group, and a per-commit group already satisfies the long
-        // arm -- so the classification could not reach a different verdict.
-        // An arm that cannot change an outcome is one no mutation can turn
-        // red, and this file does not keep those.
-        let median_is_unrepresentative = unfinished > successes;
-
-        // A backlog that size is only reachable one way, and the two readings
-        // have to agree about which way. Under a group shared across commits
-        // the next push cancels whatever is still pending, so the unfinished
-        // column stays at one or two -- measured 2026-09-02, every lane with a
-        // shared group sat at 0..2. Only a per-commit group lets runs pile up,
-        // because nothing ever clears them. A row claiming a backlog on a
-        // shared group therefore contradicts its own workflow, and one of the
-        // two was read wrong.
-        assert!(
-            !median_is_unrepresentative || group_is_per_commit(&workflow),
-            "{file} reports {unfinished} run(s) that never finished against \
-             {successes} success(es), a backlog only a per-commit concurrency \
-             group can accumulate -- but its group is shared across commits, \
-             where a later push clears what is still pending. The row and the \
-             workflow disagree; re-read whichever was taken longer ago."
-        );
-
-        // EVERY lane supersedes. Owner's decision 2026-09-15, and the
-        // requirement runs in the direction the decision points: a lane that
-        // declares `false` is red, which is the half a workflow edit could
+        // EVERY lane keeps its run in flight. Owner's decision 2026-10-01, and
+        // the requirement runs in the direction the decision points: a lane
+        // that declares `true` is red, which is the half a workflow edit could
         // otherwise make invisible.
         assert!(
-            declared,
-            "{file} declares `cancel-in-progress: false`. Every lane in this \
-             repository supersedes (owner's decision 2026-09-15): the account's \
-             four repositories put 20-27 runs an hour into one hosted pool that \
-             executed nothing for 165 minutes with 36 runs queued and the oldest \
-             at 8.4 hours, and under a queue that deep a lane that is never \
-             cancelled does not answer either -- it waits, and an absent verdict \
-             is absent either way. This lane's own row reads {median} min \
-             median, {cancelled} cancellation(s), {successes} success(es), \
-             {unfinished} that never finished. Set `cancel-in-progress: true`. \
-             If this lane genuinely must not be interrupted -- it publishes, or \
-             it writes something a half-run leaves broken -- that is a case for \
-             a person, not for this flag: say so here and change this assertion \
-             with it."
+            !declared,
+            "{file} declares `cancel-in-progress: true`. Every lane in this \
+             repository keeps the run in flight (owner's decision 2026-10-01): \
+             a push that arrives while it runs waits in the group's one pending \
+             slot, and when the run in flight ends only the newest commit runs. \
+             This lane's own row reads {median} min median, {cancelled} \
+             cancellation(s), {successes} success(es), {unfinished} that never \
+             finished. Set `cancel-in-progress: false`. If this lane genuinely \
+             must be cancelled by the next push -- it writes something a stale \
+             run leaves broken -- that is a case for a person, not for this \
+             flag: say so here and change this assertion with it."
         );
 
-        // ⚠ The one lane shape the flip above would genuinely damage. A lane
-        // that selects from the change set is answering about a COMMIT, so no
-        // later run re-takes what a cancelled one would have judged — for it,
-        // cancelling destroys a verdict instead of moving it. Under a shared
-        // group that is exactly what `cancel-in-progress: true` now does.
-        //
-        // Measured 2026-09-15: `mutation-rounds.yml` is the only lane selecting
-        // this way and it already keys per commit, so the two readings agree
-        // today. This keeps them agreeing — the sweep is what makes the policy
-        // header's claim a property of the tree rather than a quotation from
-        // one workflow's own prose, which is all it rested on when written.
+        // A group that changes with the commit gives every commit a run of its
+        // own and lets the waiting runs pile up with nothing to replace them.
+        // Measured 2026-10-01, that was 55 of the 123 runs active across the
+        // account.
         assert!(
-            !selects_by_change_set(&workflow) || group_is_per_commit(&workflow),
+            !group_is_per_commit(&workflow),
+            "{file} keys its concurrency group on `github.sha`, so every push \
+             lands in a group of its own: nothing replaces a waiting run and \
+             every commit gets one. The owner asked for the last commit only \
+             (2026-10-01). Key the group on `github.workflow` and `github.ref`."
+        );
+
+        // ⚠ The lane shape that a replaced run would genuinely damage. A lane
+        // that selects from the change set is answering about a COMMIT, so no
+        // later run re-takes what a skipped one would have judged. Its range
+        // must therefore reach back to the last run that reached a verdict, and
+        // the push's own `before` does not.
+        //
+        // Measured 2026-10-01: `mutation-rounds.yml` is the only lane selecting
+        // this way. The sweep is what makes the claim a property of the tree
+        // rather than a quotation from one workflow's own prose.
+        assert!(
+            !selects_by_change_set(&workflow) || reads_its_own_run_history(&workflow),
             "{file} selects its work from the change set, so its answer is \
-             about a COMMIT and nothing re-selects it later -- but its \
-             concurrency group is shared across commits, where a later push \
-             cancels it. That destroys a verdict rather than superseding one. \
-             Key the group on `github.sha` (as `mutation-rounds.yml` does), or \
-             stop selecting by change set."
+             about a COMMIT and nothing re-selects it later -- but its range \
+             does not start at the last run of this workflow that reached a \
+             verdict. A run that replaces a waiting one would then drop the \
+             commits that run was for. List the workflow's own completed runs \
+             (`actions/workflows/<file>/runs`, filtered on `.conclusion ==`) \
+             and start the range at the newest `success` or `failure`."
         );
 
         if must_not_supersede(median) {
             long += 1;
-            if group_is_per_commit(&workflow) {
-                long_by_key += 1;
-            } else {
-                long_by_false += 1;
-            }
         } else {
             short += 1;
         }
     }
 
     // ⚠ THE COST, COUNTED RATHER THAN ARGUED. These lanes cannot finish between
-    // two pushes, so while pushes come faster than they run they report only
-    // when pushing stops. That is what the decision bought, and the number is
-    // kept visible so it can be re-weighed rather than rediscovered.
+    // two pushes, so the run that follows the one in flight is for whichever
+    // commit was newest when it ended, and the one in flight goes on finishing a
+    // commit that is already stale. That is what the decision bought, and the
+    // number is kept visible so it can be re-weighed rather than rediscovered.
     //
     // Both populations stay non-empty for the reason they always did: if every
     // lane fell on one side, the split below would be describing a table that
@@ -781,18 +763,6 @@ fn a_lane_slower_than_the_push_gap_is_not_superseded() {
         short >= 1,
         "every lane in `LANES` is slower than the push gap, so the short-lane \
          population is empty and the split below says nothing"
-    );
-
-    // The per-commit lanes pay a different price: nothing supersedes them and
-    // nothing clears them, so they pile up instead. `mutation-rounds.yml`
-    // measured 14 of 25 never started, the oldest queued 5.7 hours.
-    // `supersede-stale-queue.yml` is what answers that, and this keeps the
-    // population it answers for from silently emptying.
-    assert!(
-        long_by_key + long_by_false == long,
-        "a long lane was counted in neither arm -- the group reader stopped \
-         answering for {} of {long} lane(s)",
-        long - long_by_key - long_by_false
     );
 
     // ⚠ The control for the change-set assertion above. A reader that answered
@@ -811,29 +781,70 @@ fn a_lane_slower_than_the_push_gap_is_not_superseded() {
          when this was written -- either it stopped, or the needles in \
          `selects_by_change_set` no longer match how selection is spelled."
     );
+}
 
-    // ⚠ The control for `group_is_per_commit`, from BOTH sides. Every use of it
-    // above is the permissive arm of a disjunction — the backlog invariant and
-    // the change-set guard both pass when it says yes — so a reader that
-    // answered yes for every file would satisfy them everywhere and no lane
-    // could ever go red. Measured 2026-09-15: after the policy stopped using it
-    // to decide the flag, the mutation `g.contains("github.")` SURVIVED 0/6,
-    // because nothing left in this case could tell "every group is per-commit"
-    // from the truth. The population has to be neither empty nor everything.
-    let per_commit_lanes = LANES
-        .iter()
-        .filter(|(f, ..)| group_is_per_commit(&read_workflow(f)))
-        .count();
-    assert!(
-        per_commit_lanes >= 1 && per_commit_lanes < LANES.len(),
-        "{per_commit_lanes} of {} lane(s) read as keying their concurrency group \
-         per commit. `mutation-rounds.yml` does and most lanes do not, so the \
-         answer must be neither none nor all -- one of those means \
-         `group_is_per_commit` stopped recognising `github.sha`, the other that \
-         it recognises every group, and either one silences the two guards that \
-         rest on it.",
-        LANES.len()
+/// The readers behind the rule, held against inputs this case constructs.
+///
+/// The rule above can only go red on a workflow that violates it, and none
+/// does: every lane complies, so a reader that answered "fine" for every file
+/// would pass the rule everywhere and no mutation of the reader could turn it
+/// red. Measured 2026-09-15, before this case existed, the mutation
+/// `g.contains("github.")` SURVIVED 0/6 for exactly that reason. So each reader
+/// is asked here about text that is built to be a violation and text built to
+/// be clean, and has to tell them apart.
+#[test]
+fn the_mechanism_readers_tell_their_cases_apart() {
+    let shared = "concurrency:\n  group: ${{ github.workflow }}-${{ github.ref }}\n  \
+                  cancel-in-progress: false\n";
+    let per_commit = "concurrency:\n  group: ${{ github.workflow }}-${{ github.sha }}\n  \
+                      cancel-in-progress: false\n";
+    let cancelling = "concurrency:\n  group: ${{ github.workflow }}-${{ github.ref }}\n  \
+                      cancel-in-progress: true\n";
+    let job_level = "jobs:\n  a:\n    concurrency:\n      group: x\n      \
+                     cancel-in-progress: true\n";
+
+    // The flag, from both sides, and a block that is not the workflow's own.
+    assert_eq!(top_level_cancel_in_progress(shared), Some(false));
+    assert_eq!(top_level_cancel_in_progress(cancelling), Some(true));
+    assert_eq!(
+        top_level_cancel_in_progress(job_level),
+        None,
+        "a job-level `concurrency:` answered for the workflow"
     );
+
+    // The group, from both sides.
+    assert!(group_is_per_commit(per_commit), "`github.sha` was not read");
+    assert!(
+        !group_is_per_commit(shared),
+        "a group shared per ref was read as per-commit"
+    );
+
+    // The run-history reader needs all three needles in CODE, and a comment
+    // that merely describes them must not stand in for them.
+    let listing =
+        "      base=$(gh api \"repos/x/actions/workflows/mutation-rounds.yml/runs?branch=main\" \
+                   --jq 'select(.conclusion == \"success\")')\n";
+    assert!(reads_its_own_run_history(listing));
+    let only_prose =
+        "      # gh api actions/workflows/f.yml/runs?x selects .conclusion == success\n";
+    assert!(
+        !reads_its_own_run_history(only_prose),
+        "a comment describing the run listing was read as the listing"
+    );
+    assert!(
+        !reads_its_own_run_history("      base='${{ github.event.before }}'\n"),
+        "the push's own `before` was read as the run history"
+    );
+
+    // The change-set reader: code counts, prose does not.
+    assert!(selects_by_change_set(
+        "      base='${{ github.event.before }}'\n"
+    ));
+    assert!(
+        !selects_by_change_set("      # the push event carries event.before\n"),
+        "a comment mentioning the base was read as selecting by change set"
+    );
+    assert!(!selects_by_change_set("      run: cargo test\n"));
 }
 
 // ## The prose copies of these two numbers
@@ -1139,7 +1150,7 @@ fn every_long_lane_states_its_measured_numbers_in_its_own_workflow() {
         faults.join("\n")
     );
 
-    // `a_lane_slower_than_the_push_gap_is_not_superseded` already refuses an
+    // `every_lane_keeps_its_run_in_flight_and_queues_only_the_newest` already refuses an
     // empty long population; this floor keeps THIS case from passing on one.
     assert!(
         !lanes.is_empty(),

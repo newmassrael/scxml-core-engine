@@ -70,20 +70,20 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-# Superseded by the push that follows it.
+# Not cancelled by the push that follows it; the newest push runs after it.
 #
 # Unlike its C++ sibling this lane finishes in a few minutes — it compiles two
-# generated machines and the Lua JNI library, not a C++ tree — so a newer push
-# can reach a verdict before the older one would have, and the older answer is
-# about a tree nobody has any more. `cancel-in-progress: true` is the setting
-# for a lane whose duration is well under the gap between pushes.
+# generated machines and the Lua JNI library, not a C++ tree — so letting the
+# run in flight finish costs little. A newer push waits in the group's one
+# pending slot and replaces any push already waiting there. Owner decision,
+# 2026-10-01, for every lane: see `cpp-suite.yml` for the reasoning and the cost.
 #
 # ⚠ What holds this setting is `sce-build/tests/ci_supersession_policy.rs`,
 # which classifies EVERY workflow in this directory and reds one nobody
 # classified. A new lane is not exempt from that by being new.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   ecma262-lowered-kotlin:

@@ -1,0 +1,173 @@
+# Mutation cases for "every lane keeps its run in flight and queues only the
+# newest commit".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/every_lane_keeps_its_run_in_flight.cases`.
+#
+# `ci_supersession_policy` requires three things of every workflow: that its
+# top-level `cancel-in-progress` is `false`, that its concurrency group does not
+# name the commit, and that a lane selecting by change set builds its range from
+# its own run history. `mutation_round_survives_the_next_push` holds the same
+# for the one lane that does.
+#
+# The history of this subject is two reversals, and the casefile carries the
+# marks of both. On 2026-09-02 the cost of letting the policy drift came due:
+# `tree-hygiene.yml` had grown from 9.9 to 20.1 minutes against the push gap,
+# its row still read 9.9, and the rule went on approving the wrong flag for four
+# days. What made it last is a circle: `ci_supersession_policy` RUNS IN
+# `tree-hygiene.yml`, so while the lane is being superseded the check that would
+# say "move this row" is the thing being superseded. A guard a defect can
+# silence needs a reader outside that loop, which is what these cases are.
+# On 2026-09-15 the policy was reversed to `true` everywhere, and on 2026-10-01
+# back to `false` everywhere, together with the removal of the per-commit key.
+#
+# The cases come in pairs on purpose. Each rule can only go red on a workflow
+# that violates it, and no workflow does, so a reader that answered "fine" for
+# every file would satisfy the rule everywhere. The first of a pair edits a
+# workflow so that it violates; the second blinds the reader and requires the
+# suite to notice anyway, which `the_mechanism_readers_tell_their_cases_apart`
+# does with text it constructs.
+#
+# ⚠ Case one anchors on a live literal, which the paced-cost casefile next
+# door was bitten by. The difference is the failure mode, not the shape: that
+# map is DESIGNED to empty, so its anchor's death was routine, while this
+# literal only moves if somebody changes the lane's flag — a deliberate act that
+# must edit this policy in the same commit. And a dead anchor here is loud, not
+# silent: `scripts/mutate` calls it INCONCLUSIVE and `scripts/gate
+# mutation-cases` turns that into a red.
+
+mutation_tests -p sce-build --test ci_supersession_policy --test mutation_round_survives_the_next_push
+mutation_targets sce-build/tests/ci_supersession_policy.rs
+# Read at run time rather than compiled in: the literals under judgement live
+# in the workflow files, which the tests open by path.
+mutation_runtime_targets .github/workflows/tree-hygiene.yml .github/workflows/mutation-rounds.yml
+
+# The subject is a workflow edit quietly moving a lane's flag back to the one
+# the policy forbids. `tree-hygiene.yml` is the lane the 2026-09-02 drift
+# happened in.
+mutation_case "the lane slips back to a flag the policy no longer allows" <<'PY'
+edit(".github/workflows/tree-hygiene.yml",
+     "  cancel-in-progress: false",
+     "  cancel-in-progress: true")
+PY
+
+mutation_case "the reader cannot tell a declared true from a declared false" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     '"true" => Some(true),',
+     '"true" => Some(false),')
+PY
+
+# The per-commit pair. A group naming the commit gives every push a run of its
+# own and lets waiting runs pile up with nothing to replace them -- the shape
+# `mutation-rounds.yml` had until 2026-10-01, when 55 of the 123 runs active
+# across the account were its own.
+mutation_case "a lane keys its concurrency group on the commit again" <<'PY'
+edit(".github/workflows/tree-hygiene.yml",
+     "  group: ${{ github.workflow }}-${{ github.ref }}",
+     "  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}")
+PY
+
+mutation_case "a per-commit group is read as an ordinary shared one" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     'g.contains("github.sha")',
+     'g.contains("github.no-such-context")')
+PY
+
+mutation_case "every group is read as per-commit, so the guard condemns them all" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     'g.contains("github.sha")',
+     'g.contains("github.")')
+PY
+
+# The change-set pair. A lane that takes its range from the push's own `before`
+# loses the commits of a waiting run the moment a newer push replaces it.
+mutation_case "a change-set lane stops reading its own run history" <<'PY'
+edit(".github/workflows/mutation-rounds.yml",
+     "mutation-rounds.yml/runs?branch=",
+     "mutation-rounds.yml/runs-no-such?branch=")
+PY
+
+mutation_case "the change-set reader stops recognising the base a lane is handed" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     '"event.before",',
+     '"event.no-such-context",')
+PY
+
+# The window is 25 runs, so the three outcome columns cannot sum past it. This
+# is the shape a half-updated row takes: one column re-taken, the rest left.
+mutation_case "a row's columns are taken from different readings" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     '("cpp-suite.yml", 79.1, 12, 11, 2),',
+     '("cpp-suite.yml", 79.1, 12, 20, 2),')
+PY
+
+# ...and the same check must actually SUM the fifth column. While the row was
+# two columns wide this passed on `mutation-rounds.yml` reporting 11 outcomes
+# out of 25, because the fourteen unstarted runs were in no column at all.
+# `clang-format-check.yml` is chosen so the raised count stays inside the
+# window for the lane's successes, which keeps the red coming from the window
+# arithmetic and nothing else.
+mutation_case "the unfinished column is left out of the window sum" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     '("clang-format-check.yml", 0.8, 0, 25, 0),',
+     '("clang-format-check.yml", 0.8, 0, 25, 5),')
+PY
+
+# The last three are about the ENGLISH copies of the same two numbers. Both
+# figures are also written out in the workflow each row is about, and moving
+# the constant from 18.9 to 17.6 left seven of those copies behind -- a
+# rationale still claiming a derivation it no longer had. These ask whether
+# the copies now have an owner.
+#
+# ⚠ Neither of the first two may change a classification, or the red would
+# come from the older assertion and prove nothing about the new ones. 17.7
+# still sits below `deploy-visualizer` at 17.9 and above `embed-vendor-smoke`
+# at 15.2, and 70.1 leaves `w3c-tests` long exactly as 70.0 does.
+
+mutation_case "the constant moves and the prose copies keep the old number" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     "const MEDIAN_PUSH_GAP_MINUTES: f64 = 17.6;",
+     "const MEDIAN_PUSH_GAP_MINUTES: f64 = 17.7;")
+PY
+
+mutation_case "one row moves and its own workflow goes on stating the old one" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     '("w3c-tests.yml", 70.0, 14, 9, 2),',
+     '("w3c-tests.yml", 70.1, 14, 9, 2),')
+PY
+
+# The recipe has to be able to produce the columns. The round that added
+# `unfinished` wrote the number down while the command above still asked for
+# `conclusion` alone -- and a run that never started reports the same null
+# conclusion as one that was skipped, so the stated derivation could not have
+# reached the column. One case from each side: the field dropped from the
+# recipe, and the reader that stops finding the recipe at all.
+#
+# ⚠ The first of the two SURVIVED on its first run, and that is what it is for.
+# The reader was counting the shell block's COMMENTS, so deleting `status` from
+# the `--json` list left the sentence explaining `status` standing three lines
+# above and the field still "present". The reader now strips `#` lines, and
+# this case is what holds that strip in place -- a separate case removing the
+# strip alone would survive, because with the real command intact every field
+# is found either way. One case, doing both jobs, deliberately.
+
+mutation_case "the recipe stops asking for a field its column needs" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     "--json conclusion,status,createdAt,updatedAt",
+     "--json conclusion,createdAt,updatedAt")
+PY
+
+mutation_case "the recipe reader finds no shell block and so misses nothing" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     'if doc.trim() == "```sh" {',
+     'if doc.trim() == "```no-such-fence" {')
+PY
+
+# A scanner that finds nothing agrees with everything, which is why both cases
+# above would pass on a blinded reader. The floor is what refuses that, and
+# this is the case that keeps the floor honest.
+mutation_case "the reader stops recognising the phrase it owns" <<'PY'
+edit("sce-build/tests/ci_supersession_policy.rs",
+     'const CLAIM_PHRASE: &str = "min median";',
+     'const CLAIM_PHRASE: &str = "min medians";')
+PY

@@ -60,22 +60,23 @@ on:
 # FLIGHT and the LATEST commit and defers the ones between. That is the right
 # trade for a lane whose answer is about a BRANCH -- this one re-asks
 # `git ls-files` against whatever the tree now holds, so nothing is lost by
-# answering for the newest commit. `mutation-rounds.yml` keys on `github.sha`
-# because its answer is about a COMMIT and nothing re-selects it.
+# answering for the newest commit. `mutation-rounds.yml` answers about a COMMIT
+# and nothing re-selects it, so it starts its range at the last commit that
+# reached a verdict.
 #
 # Held by `sce-build/tests/ci_supersession_policy.rs` -- which runs IN THIS
 # JOB. Its row is what decides this literal, and that circle is why the drift
 # lasted four days: while the lane is superseded, the check that would move
 # the row is the thing being superseded.
 #
-# ⚠ FLIPPED TO `true` BY OWNER DECISION, 2026-09-15, along with every other lane
-# that declared `false`. The circle the paragraph above describes is broken from
-# the other side now: the policy no longer derives this flag from a median, so
-# this lane being superseded cannot hold its own row hostage. See
-# `cpp-suite.yml` for the queue measurement that prompted the decision.
+# ⚠ BACK TO `false` BY OWNER DECISION, 2026-10-01, reversing the flip to `true`
+# of 2026-09-15: the run in flight is kept and one waiting run holds the newest
+# commit. The circle the paragraph above describes stays broken: the policy no
+# longer derives this flag from a median. See `cpp-suite.yml` for the reasoning
+# and the cost.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   hygiene:
