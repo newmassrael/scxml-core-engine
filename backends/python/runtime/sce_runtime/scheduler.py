@@ -13,7 +13,7 @@ from __future__ import annotations
 import heapq
 import itertools
 from dataclasses import dataclass, field
-from typing import Any, Generic, Iterator, List, Optional, Set, TypeVar
+from typing import Any, Generic, Iterator, List, Optional, TypeVar
 
 E = TypeVar("E")
 
@@ -89,7 +89,6 @@ class Scheduler(Generic[E]):
 
     def __init__(self) -> None:
         self._heap: List[ScheduledEvent[E]] = []
-        self._cancelled: Set[str] = set()
         self._counter = itertools.count(1)
 
     def schedule(
@@ -147,27 +146,43 @@ class Scheduler(Generic[E]):
             heapq.heapify(kept)
             self._heap = kept
 
-    def cancel(self, sendid: str) -> None:
-        """W3C SCXML 6.2.2 — mark `sendid` cancelled; the matching entry
-        is skipped the next time it would be drained. No-op on empty
-        `sendid` (matches the W3C "id must be set to cancel" semantics)."""
-        if sendid:
-            self._cancelled.add(sendid)
+    def cancel(self, sendid: str) -> bool:
+        """W3C SCXML 6.3 — remove every entry still queued under `sendid`.
+        Answers whether there was one.
+
+        `<cancel>` reaches the delayed events an earlier `<send>` queued and
+        that are STILL queued; it is not a standing order about the id. So
+        nothing is remembered: a `<send>` made after the cancel, with the same
+        id, is a new send and is delivered. A state that arms `<send id="t"
+        delay>` on entry and cancels `t` on exit cancels, when its own timeout
+        has just fired, an id nothing is pending under, and is then re-entered
+        and arms `t` again — remembering the id dropped that second timer, and
+        the machine waited for ever (measured 2026-10-01 on a retry machine).
+
+        The same answer the Rust scheduler gives (`PullScheduler::cancel_event`,
+        which retains what does not match) and Go's `CancelEvent`. An empty
+        `sendid` cancels nothing: an entry without an id cannot be named
+        (W3C "id must be set to cancel"), and a host-run invocation's deadline
+        carries none, so a `<cancel sendidexpr>` that evaluates to "" must not
+        reach it."""
+        if not sendid:
+            return False
+        kept = [entry for entry in self._heap if entry.sendid != sendid]
+        if len(kept) == len(self._heap):
+            return False
+        heapq.heapify(kept)
+        self._heap = kept
+        return True
 
     def drain_due(self, now_ms: int) -> Iterator[ScheduledEvent[E]]:
         """Yield every scheduled event whose `due_ms <= now_ms`, popping
-        them off the heap. Cancelled entries are silently discarded as
-        they would have been delivered.
+        them off the heap.
 
         Draining is a generator, so a caller that runs a macrostep per
         entry sees each cancellation the previous one performed — see
         `pop_due`, which is the one-at-a-time form the engine uses."""
         while self._heap and self._heap[0].due_ms <= now_ms:
-            entry = heapq.heappop(self._heap)
-            if entry.sendid and entry.sendid in self._cancelled:
-                self._cancelled.discard(entry.sendid)
-                continue
-            yield entry
+            yield heapq.heappop(self._heap)
 
     def pop_due(self, now_ms: int) -> Optional[ScheduledEvent[E]]:
         """Pop the single earliest entry due at `now_ms`, or None.
@@ -184,21 +199,11 @@ class Scheduler(Generic[E]):
 
     def peek_next_due_ms(self) -> Optional[int]:
         """The `due_ms` of the earliest entry that would actually be
-        delivered, or None if there is none.
-
-        Cancelled entries stay on the heap until a drain walks past
-        them, so the front of the heap is not necessarily a deadline
-        anyone will see; they are dropped here first. Callers use this
-        to compute the next wake deadline — see
+        delivered, or None if there is none. A cancelled entry is not on the
+        heap, so the front of it is a deadline someone will see. Callers use
+        this to compute the next wake deadline — see
         `Engine.time_until_next_scheduled_ms`."""
-        while self._heap:
-            head = self._heap[0]
-            if head.sendid and head.sendid in self._cancelled:
-                heapq.heappop(self._heap)
-                self._cancelled.discard(head.sendid)
-                continue
-            return head.due_ms
-        return None
+        return self._heap[0].due_ms if self._heap else None
 
     def __len__(self) -> int:
         return len(self._heap)

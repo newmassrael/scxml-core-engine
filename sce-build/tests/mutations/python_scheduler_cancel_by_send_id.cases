@@ -1,0 +1,93 @@
+# Mutation cases for the Python runtime scheduler's `<cancel sendid>`,
+# `backends/python/runtime/sce_runtime/scheduler.py`.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/python_scheduler_cancel_by_send_id.cases`.
+#
+# W3C SCXML 6.3: `<cancel>` reaches the delayed events an earlier `<send>`
+# queued and that are still queued. The scheduler used to remember a cancelled
+# id instead, and dropped the next entry that carried it, so a state that arms
+# a timer on entry and cancels it on exit lost the timer of its second entry
+# (measured 2026-10-01 on a retry machine drafted from a prose specification).
+# The Rust and Go schedulers remove what is pending and remember nothing; the
+# Python one is held to the same answers (`backends/python/tests/scheduler/`).
+#
+# Each case below breaks one thing the repair relies on and must red.
+#
+# Python compiles nothing, so the module on disk is the artifact every run
+# reads — the edits are `mutation_runtime_targets`. No regeneration is
+# declared: the oracle imports the runtime and no generated machine.
+
+mutation_pytest backends/python/tests scheduler/
+mutation_runtime_targets backends/python/runtime/sce_runtime/scheduler.py
+mutation_oracles backends/python/tests/scheduler/test_cancel_by_send_id.py
+
+# ── A cancel stops being a removal ──────────────────────────────────
+#
+# Nothing is removed, so the pending entry is delivered after the cancel.
+
+mutation_case "a cancel removes nothing" <<'PY'
+edit("backends/python/runtime/sce_runtime/scheduler.py",
+     "        kept = [entry for entry in self._heap if entry.sendid != sendid]",
+     "        kept = list(self._heap)")
+PY
+
+# ── A cancel reaches only the first entry under the id ──────────────
+#
+# Rust retains everything that does not match; stopping after one leaves the
+# later entries of the same id pending.
+
+mutation_case "a cancel removes only the first entry under the id" <<'PY'
+edit("backends/python/runtime/sce_runtime/scheduler.py",
+     "        kept = [entry for entry in self._heap if entry.sendid != sendid]",
+     "        kept = list(self._heap)\n"
+     "        for index, entry in enumerate(kept):\n"
+     "            if entry.sendid == sendid:\n"
+     "                del kept[index]\n"
+     "                break")
+PY
+
+# ── A cancel reaches every id ───────────────────────────────────────
+#
+# The match on the id is dropped, so a cancel of one id takes the others with it.
+
+mutation_case "a cancel removes entries of other ids too" <<'PY'
+edit("backends/python/runtime/sce_runtime/scheduler.py",
+     "        kept = [entry for entry in self._heap if entry.sendid != sendid]",
+     "        kept = []")
+PY
+
+# ── An empty id is cancellable ──────────────────────────────────────
+#
+# An entry without an id cannot be named, and a host-run invocation's deadline
+# carries none, so an empty `<cancel sendidexpr>` must reach nothing.
+
+mutation_case "an empty id cancels the entries that carry no id" <<'PY'
+edit("backends/python/runtime/sce_runtime/scheduler.py",
+     "        if not sendid:\n            return False\n",
+     "")
+PY
+
+# ── The cancel leaves the heap unordered ────────────────────────────
+#
+# The heap is rebuilt after a removal. Without it the entries come out in
+# whatever order the filter left them: five entries whose array is
+# [100, 300, 200, 500, 400] lose the 100, and the 300 is delivered before the
+# 200.
+
+mutation_case "the heap is not rebuilt after a cancel" <<'PY'
+edit("backends/python/runtime/sce_runtime/scheduler.py",
+     "        heapq.heapify(kept)\n        self._heap = kept",
+     "        self._heap = kept")
+PY
+
+# ── The next deadline is not reported ───────────────────────────────
+#
+# A host decides when to call `advance_time` again from this answer, and one
+# that is always None sleeps through a timer that is still pending.
+
+mutation_case "the next deadline is never reported" <<'PY'
+edit("backends/python/runtime/sce_runtime/scheduler.py",
+     "        return self._heap[0].due_ms if self._heap else None",
+     "        return None")
+PY

@@ -117,11 +117,18 @@ status=0
 # `mesh/` is the eighth, for the same reason: it reads
 # `tests/mesh/mesh_target_cases.json`, the Mesh-peer predicate every engine
 # and the build are held to (SCE_MESH.md §mesh-19).
+#
+# `scheduler/` is the ninth: it holds the delayed-send scheduler's `<cancel
+# sendid>` to the answers the Rust and Go schedulers give, over no document.
+# A cancel used to be remembered against its id and dropped the next send that
+# carried it (W3C SCXML 6.3), which no fixture in the suite re-arms a timer
+# under the same id to ask.
 PYTHONPATH="$SCE_REPO_ROOT/backends/python/runtime${PYTHONPATH:+:$PYTHONPATH}" \
     python3 -m pytest backends/python/tests/generated/ backends/python/tests/integration/ \
         backends/python/tests/ecmascript/ backends/python/tests/configuration_entry/ \
         backends/python/tests/microstep/ backends/python/tests/json_text/ \
         backends/python/tests/durations/ backends/python/tests/mesh/ \
+        backends/python/tests/scheduler/ \
         --no-header -v >"$LOG/pytest.log" 2>&1 || status=$?
 cat "$LOG/pytest.log"
 
