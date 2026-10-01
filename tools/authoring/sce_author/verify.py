@@ -51,6 +51,10 @@ from .lowering import default_runtime as _default_runtime  # noqa: F401
 from .lowering import generated_module_of  # noqa: F401
 from .lowering import host_names as _host_names_of
 from .lowering import load  # noqa: F401
+# The ceiling on the instants one move of time may stop at. `lowering`'s, because a
+# scenario and a comparison walk time by the same rule; the name stays here so a
+# test can play under a smaller one.
+from .lowering import MAX_TIME_STOPS
 from .pack import Pack
 
 # The kinds whose generated shape is one function per output, taking the
@@ -2217,6 +2221,7 @@ class StatechartRun:
         # it rather than as the record happens to spell it.
         self.model = model
         self.build = build
+        self.module = module
         self.readers = _host_names(module, "readers")
         # The sink lives where the machine does: the sends are made in the
         # process that plays the design and come back as copies (`sandbox`).
@@ -2324,6 +2329,27 @@ class StatechartRun:
                 f"on")
         return value
 
+    def advance(self, ms: float) -> None:
+        """Move the machine's clock forward by `ms`, from one deadline to the next.
+
+        ⚠ Never in one jump. The engine pops the due entries one macrostep apart,
+        so a long step does not step over a deadline the document distinguishes;
+        but it dates a timer from the END of the move that fires it, so a machine
+        that arms its next timer when one fires was read where the jump left it
+        and not where real time put it. Measured 2026-10-02 against
+        `ea810d48fb`: a signal that flashes 400 ms after a train, by two timers
+        of 200, read DARK at a record's 600 ms and failed a correct case, while
+        the same behaviour as one timer passed. The step is the engine's own next
+        deadline (`time_until_next_scheduled_ms`) -- not a size chosen here, which
+        its runtime warns against, because the host owns this clock outright. A
+        scenario and a comparison move time through the same function
+        (`lowering.advance`), and the walk is one exchange with the worker."""
+        stopped = self.module.procedure("advance", engine=self.engine, ms=int(ms),
+                                        max_time_stops=MAX_TIME_STOPS)
+        if stopped is not None:
+            raise VerifyError(f"the record {stopped}, so what the machine holds after it "
+                              f"cannot be read")
+
     def observe(self, case) -> None:
         """Move virtual time to the moment this case was observed.
 
@@ -2333,11 +2359,6 @@ class StatechartRun:
         as a delta between two cases would be wrong twice over: the field
         restarts whenever the situation does, and its own schema says a
         record where it goes backwards is ordinary rather than broken.
-
-        ⚠⚠ One advance, however large. The engine pops due entries one
-        macrostep apart, so a long step does not step over a deadline the
-        document distinguishes -- and choosing a step SIZE is the move its
-        runtime warns against, because the host owns this clock outright.
         """
         if case.elapsed_window is None:
             if self.engine.time_until_next_scheduled_ms() is not None:
@@ -2365,7 +2386,7 @@ class StatechartRun:
         # and from that moment no configuration is known, so the run is
         # given up rather than judged on one of two machines.
         self.slack_ms += hi - lo
-        self.engine.advance_time(int(lo))
+        self.advance(lo)
         self.settle()
 
     def settle(self) -> None:
@@ -2413,7 +2434,7 @@ class StatechartRun:
             raise VerifyError(f"records `elapsed_ms` of {lo:g}, and an age cannot be negative")
         start = 0 if from_drive else lo
         span = hi - start
-        self.engine.advance_time(int(start))
+        self.advance(start)
         yield start
         elapsed = 0
         while True:
@@ -2426,12 +2447,12 @@ class StatechartRun:
                     f"the window this case was read in closes, and earlier "
                     f"steps may have run up to {self.slack_ms:g} ms past the "
                     f"engine's clock -- whether it fell inside is not known")
-            self.engine.advance_time(int(due))
+            self.advance(due)
             elapsed += due
             yield start + elapsed
         if elapsed < span:
             # Nothing answered inside: the harness read at the window's end.
-            self.engine.advance_time(int(span - elapsed))
+            self.advance(span - elapsed)
             yield hi
 
 

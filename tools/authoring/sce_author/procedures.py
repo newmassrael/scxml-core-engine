@@ -85,4 +85,20 @@ def trace(module, declared, steps, max_time_stops=MAX_TIME_STOPS) -> list:
     return out
 
 
-PROCEDURES = {"trace": trace}
+def advance_engine(module, engine, ms, max_time_stops=MAX_TIME_STOPS) -> str | None:
+    """Move an engine this process holds forward by `ms`, deadline to deadline.
+
+    The engine is a reference the caller holds, and the walk is one exchange:
+    walking asks the engine for its next deadline and moves to it, and asking
+    across the boundary for each of those would cost a request apiece. None when
+    the time was moved. Otherwise the engine's words for why it was not
+    (`lowering.Unplayable`), as data: the caller decides what that means for what
+    it was judging, and an exception here would arrive as a stand-in class."""
+    try:
+        advance(engine, ms, max_time_stops)
+    except Unplayable as exc:
+        return str(exc)
+    return None
+
+
+PROCEDURES = {"trace": trace, "advance": advance_engine}

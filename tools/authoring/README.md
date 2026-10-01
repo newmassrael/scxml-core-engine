@@ -358,7 +358,11 @@ a bigger machine would play it) instead of being classed. Measured 2026-10-02 by
 outside review, a cyclic eventless draft was classed with one that waits, and two
 retry drafts that pass the same examples were told apart because `compare` moved
 600 ms in one jump. Both rules are written once, in `sce_author/lowering.py`, and a
-scenario and a comparison both go through them.
+scenario and a comparison both go through them. So does `verify`, which read a
+record's `elapsed_ms` of 600 by jumping to it: a signal armed by two timers of 200 ms
+read DARK there and failed a case it should pass, and the same behaviour as one timer
+of 400 ms passed. The time to an observation is walked deadline to deadline there
+too, in one exchange with the worker.
 
 Whatever a child started is ended with it, however it ended: on its own, by a
 limit, or by the clock. The group is signalled while the child is still uncollected,

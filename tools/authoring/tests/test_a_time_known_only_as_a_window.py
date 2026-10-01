@@ -25,6 +25,8 @@ detected:
     nothing pending, nothing carried: the slack resets
     a clock input is not handed one end of a window
     a window whose min is above its max is refused where it is read
+    time moves deadline to deadline: a machine that re-arms is read where real
+    time put it, not where one jump left it                    (the discriminator)
 """
 
 from __future__ import annotations
@@ -58,6 +60,39 @@ def detected(expect: str | None = None, elapsed=None, **extra) -> dict:
 
 def details(result):
     return [(r.name, r.refusal, r.failures) for r in result.results]
+
+
+_HEAD = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+         '<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" '
+         'version="1.0" datamodel="ecmascript" initial="dark" sce:kind="statechart">\n')
+
+# The signal flashes 400 ms after a train is detected: the first timer arms the
+# second when it fires. Real time puts the flashing at 400.
+REARMS = _HEAD + """
+  <state id="dark"><transition event="train.approaching" target="s1"/></state>
+  <state id="s1"><onentry><send event="step" delay="200ms"/></onentry>
+    <transition event="step" target="s2"/></state>
+  <state id="s2"><onentry><send event="step" delay="200ms"/></onentry>
+    <transition event="step" target="s3"/></state>
+  <state id="s3"><onentry><send event="signal.flashing" type="x-sce-host"/></onentry></state>
+</scxml>
+"""
+
+# The same behaviour written as one timer of 400 ms.
+ARMED_ONCE = _HEAD + """
+  <state id="dark"><transition event="train.approaching" target="arming"/></state>
+  <state id="arming"><onentry>
+    <send event="signal.flashing" type="x-sce-host" delay="400ms"/></onentry></state>
+</scxml>
+"""
+
+# A deadline every 100 ms, forever.
+HEARTBEAT = _HEAD + """
+  <state id="dark"><transition event="train.approaching" target="beating"/></state>
+  <state id="beating"><onentry><send event="beat" delay="100ms"/></onentry>
+    <transition event="beat" target="beating"/></state>
+</scxml>
+"""
 
 
 @unittest.skipUnless(codegen_is_built(), "the product's generator is not built")
@@ -254,6 +289,48 @@ class ATimeKnownOnlyAsAWindow(unittest.TestCase):
         self.assertTrue(result.ran, result.refusal)
         self.assertEqual((2, 0, 0), (result.passed, result.failed, result.unjudged),
                          details(result))
+
+    def use(self, document: str) -> None:
+        (self.tmp / "signal.scxml").write_text(document, encoding="utf-8")
+
+    def test_a_machine_that_re_arms_is_read_where_real_time_put_it(self):
+        """⚠ The discriminator. Both documents flash 400 ms after the train, so
+        a record that observed at 600 ms found FLASHING in either. The engine
+        dates a timer from the end of the move that fires it, so moving its clock
+        to 600 in one jump put the second timer of the first document at 800 and
+        the machine read DARK: a correct machine failed its case, and the same
+        behaviour written as one timer passed. Measured 2026-10-02 against
+        `ea810d48fb`. Time moves deadline to deadline, as a scenario's does."""
+        for name, document in (("re-armed", REARMS), ("armed once", ARMED_ONCE)):
+            with self.subTest(name):
+                self.use(document)
+                result = self.run_cases([detected("FLASHING", {"min": 600, "max": 600})])
+                self.assertTrue(result.ran, result.refusal)
+                self.assertEqual((1, 0, 0), (result.passed, result.failed, result.unjudged),
+                                 details(result))
+
+    def test_a_window_is_not_met_by_an_answer_that_only_the_jump_delayed(self):
+        """The other face of it: the case says the signal is still DARK anywhere
+        in 450..700, and the machine flashes from 400. Jumping to 450 left the
+        machine before its second timer, read DARK, and passed a case that is
+        wrong."""
+        self.use(REARMS)
+        result = self.run_cases([detected("DARK", {"min": 450, "max": 700})])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((0, 1, 0), (result.passed, result.failed, result.unjudged),
+                         details(result))
+
+    def test_a_deadline_at_too_many_instants_is_a_refusal_not_a_hang(self):
+        import importlib
+        from unittest import mock
+
+        self.use(HEARTBEAT)
+        with mock.patch.object(importlib.import_module("sce_author.verify"),
+                               "MAX_TIME_STOPS", 5):
+            result = self.run_cases([detected("DARK", {"min": 1000, "max": 1000})])
+        self.assertTrue(result.ran, result.refusal)
+        (one,) = result.results
+        self.assertIn("more than 5 of its instants", one.refusal)
 
     def test_a_window_whose_min_is_above_its_max_is_refused(self):
         (self.tmp / "examples.yaml").write_text(yaml.safe_dump(
