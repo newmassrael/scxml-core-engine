@@ -72,6 +72,9 @@ from .gaps import report as gap_report
 from .pack import load_pack
 from .pseudo import render as render_pseudo
 from . import requirement_set
+from .scenario_driver import answer as scenario_answer
+from .scenario_driver import read_set as read_scenario_set
+from .scenario_driver import run as run_scenarios
 from .verify import validate_scxml as run_scxml_validation
 from .verify import (accept_design, acceptance_holds, acceptance_page,
                      design_requirement_records, diagram_figures, kind_catalog,
@@ -578,6 +581,86 @@ TOOLS = [
                 "documents_text": {
                     "type": "array",
                     "description": "The drafts themselves, each under its own name.",
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "text"],
+                        "properties": {"name": {"type": "string"},
+                                       "text": {"type": "string"}},
+                    },
+                },
+            },
+        },
+    },
+    {
+        "name": "scxml_scenarios",
+        "description": (
+            "Play examples of what the specification says into a statechart "
+            "design and report whether it behaves as they say. Use it when "
+            "the owner asks whether the design does what the specification "
+            "says, or whether a requirement is met by something NOT "
+            "happening (\"nothing is sent after the response\"), which no "
+            "reading of the document shows. Give `scenarios` (or "
+            "`scenarios_text`): a scenario set, JSON, which you write from "
+            "the specification and the owner confirms -- "
+            "{\"record\":\"sce-scenario-set\",\"v\":1,"
+            "\"specification\":{\"doc_id\":\"retry\",\"rev\":\"1\"},"
+            "\"origin\":\"ai-proposed\","
+            "\"interface\":{\"inputs\":[{\"name\":\"RequestNeeded\"}],"
+            "\"outputs\":[{\"name\":\"SendRequest\"}]},"
+            "\"scenarios\":[{\"id\":\"T2\",\"quote\":\"If 200ms pass without "
+            "a response, it sends SendRequest again.\",\"steps\":["
+            "{\"send\":\"RequestNeeded\",\"expect\":{\"outbound\":"
+            "[{\"event\":\"SendRequest\"}]}},{\"advance_ms\":199,\"expect\":"
+            "{\"outbound\":[]}},{\"advance_ms\":1,\"expect\":{\"outbound\":"
+            "[{\"event\":\"SendRequest\"}]}}]}]}. Each scenario's `quote` is "
+            "a sentence of the specification word for word (pass the "
+            "specification as `specification` or `specification_text` and "
+            "every quote is checked; without it none is, and the answer says "
+            "so). A step either sends an input (`send`, with `payload` when it "
+            "carries fields) or lets virtual time pass (`advance_ms`), and "
+            "`expect` says what must be observed after it: `outbound` is "
+            "EVERY event sent outward during the step, in order, and `[]` "
+            "means none, so write the boundary (199 ms, then 1 ms) and the "
+            "absence; `finished` (true or false), `condition` (a state the "
+            "specification itself names) and `data` (names the "
+            "specification itself gives) are optional. Every input, output, "
+            "condition and data name must be listed in `interface`, which "
+            "you propose and the owner accepts. Do not invent what the "
+            "specification does not say: a question it leaves open is a "
+            "scenario with `\"status\":\"awaiting-decision\"` and a "
+            "`decision` holding the question, and a fact nobody has decided "
+            "is `\"status\":\"blocked\"` with `blocked_by`; neither is run. "
+            "`origin` is `ai-proposed` unless the owner wrote the examples "
+            "themselves. Give `documents` (paths) or `documents_text` "
+            "(each document's name and text): the FIRST is the statechart "
+            "the examples are about, the others the documents it imports. "
+            "Returns JSON: `set` (whether the examples are usable and every "
+            "problem found; nothing is run while there are problems), then "
+            "per scenario `pass`, `fail`, `not-judged`, `blocked` or "
+            "`awaiting-decision`, with each failed check (what was expected "
+            "and what was seen, at which step) and each gap, and `engine`, "
+            "which the verdicts are about. `not-judged` is not a failure: "
+            "the design leaves something open that the run needs, such as "
+            "where an output is sent, and the reason names it. Tell the owner "
+            "each fail, each reason and each gap. A `pass` says only that the "
+            "design behaved as these examples say on that engine; it does "
+            "not say the design is right, and the examples are yours until "
+            "the owner confirms them."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                **_file_input("scenarios", "the scenario set (JSON)"),
+                **_file_input("specification",
+                              "the specification the quotes are taken from"),
+                "documents": {"type": "array", "items": {"type": "string"},
+                              "description": "Paths to the design: the statechart first, "
+                                             "then the documents it imports "
+                                             "(local servers only)."},
+                "documents_text": {
+                    "type": "array",
+                    "description": "The design itself, each document under the name the "
+                                   "others import it by; the statechart first.",
                     "items": {
                         "type": "object",
                         "required": ["name", "text"],
@@ -1567,6 +1650,24 @@ def _compare_tool(args: dict, staging: _Staging) -> dict:
     return _text(json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n")
 
 
+def _scenarios_tool(args: dict, staging: _Staging) -> dict:
+    scenario_set = staging.file(args, "scenarios", "the scenario set", "scenarios.json")
+    specification = staging.file(args, "specification", "the specification", "specification.md",
+                                 required=False)
+    documents = staging.many(args, "documents",
+                             "the design: the statechart first, then the documents it imports")
+
+    def located(path):
+        # Staged files come back named relative to the staging directory.
+        return path if path.is_absolute() else staging.dir / path
+
+    chosen = located(scenario_set)
+    read = read_scenario_set(chosen, located(specification) if specification else None)
+    usable = any(r.get("kind") == "scenario-set" and r.get("usable") for r in read)
+    played = run_scenarios(chosen, located(documents[0])) if usable else None
+    return _text(json.dumps(scenario_answer(read, played), indent=2, ensure_ascii=False) + "\n")
+
+
 def _decisions_tool(args: dict, staging: _Staging) -> dict:
     document = staging.file(args, "document", "the draft", "document.scxml")
     record = staging.file(args, "decisions", "the owner's decision record", "decisions.json")
@@ -1864,6 +1965,7 @@ _PACK_FREE = {
     "validate_scxml": _validate_tool,
     "validate_scxml_set": _validate_set_tool,
     "compare": _compare_tool,
+    "scxml_scenarios": _scenarios_tool,
     "decisions": _decisions_tool,
     "render_scxml_pseudocode": _pseudocode_tool,
     "render_scxml_diagram": _diagram_tool,

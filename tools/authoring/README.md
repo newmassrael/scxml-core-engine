@@ -254,6 +254,74 @@ cannot say whether that is the profile or the sample. The three cases are the
 ones the product was shaped on and the lists were written by the owner's side
 before the drafts, so this is not a blind test.
 
+#### Examples a design is played against
+
+A requirement met by something NOT happening ("nothing is sent after the
+response") has no node to point at, so `scxml_requirements` can only call it
+`needs-scenario`. **scxml_scenarios** (the MCP tool) is the evidence column that
+outcome asks for. The client writes a scenario set from the specification, the
+owner confirms it, and the tool plays it into the design and says whether the
+design behaved as the examples say. The set is `schemas/sce-scenario-set.v1.schema.json`:
+each example is anchored to a sentence of the specification word for word (give
+`specification` and every quote is checked), names its inputs and outputs in an
+`interface` the owner accepts with it, and says after every step what must be
+observed, including what must NOT be sent. An example the specification leaves
+open is `awaiting-decision`, and one that waits on a fact nobody has decided is
+`blocked`; neither is run.
+
+The product does two things and the authoring package one. `sce-codegen
+scenarios` says whether a set is usable, and nothing is run from one that is not.
+`sce-codegen judge-scenarios` turns a set and an observation trace into
+`pass`, `fail`, `not-judged`, `blocked` or `awaiting-decision` per example, with
+each failed check and each gap. `sce_author/scenario_driver.py` is the one driver
+written so far: it generates the design to Python (the lowering `verify` and
+`compare` drive), plays each example in virtual time, and writes the trace,
+naming itself `Python lowering`, because a verdict is about an engine. The
+verdicts are the product's, passed through. A second driver on another engine
+needs only to write the same trace.
+
+⚠ What the driver does not do is as much of the design as what it does. It
+reports what it saw and fills no hole:
+
+- An example is **refused**, not run, when the engine raised an `error.*` that no
+  state answered (W3C SCXML 3.12.2). The usual cause is a send whose route is an
+  open decision: the send fails, the entry block ends there (W3C SCXML 4.9), the
+  timer after it is never armed, and the machine would then fail an example about
+  timing it was never allowed to keep. The refusal names the open decisions the
+  author wrote, and the product reports `not-judged`, never `fail`.
+- An output the interface sends through a route (`via`) counts only when the
+  design sent it through that route. A design that leaves by another door is not
+  what the owner accepted, and counting its event would pass it.
+- A data item the generated module has no reader for is a gap, with the
+  generator's reason when it gave one: a C++ keyword, or a name equal to the
+  document's own, which the C++ class takes (measured 2026-10-01: `credit` read
+  nothing in `credit.scxml` and read fine in `counter.scxml`). An item declared
+  with no initial value has neither a reader nor a reason, and the gap says
+  exactly that. A send over BasicHTTP is refused: the driver does not observe it.
+- A `pass` says the design behaved as these examples say, on this engine, over
+  these inputs. It does not say the design is right, and the examples are the
+  client's reading until the owner confirms them.
+
+Measured 2026-10-01 on the retry client, with a set of six examples written from
+the specification before any draft was played
+(`sce-build/tests/fixtures/scenario_sets/`):
+
+| Design | Result |
+|---|---|
+| A correct retry machine | 6 of 6 `pass` |
+| The same machine retrying once too often | 5 `pass`, the count example `fail` at the step that should have timed out |
+| The correct machine on the Python runtime BEFORE the scheduler repair | 5 `pass`, the count example `fail` |
+| A GPT draft whose caller route was left open | 6 `not-judged`, 0 `fail`, the draft's own open routing decision quoted |
+
+The third row is the reason the engine is in every verdict. The defect that made
+two drafts of one door look like two behaviours (`backends/python/tests/scheduler/`)
+would have shown here as a failed example, and as a failure ON the Python
+lowering: a failure only one engine shows is a place to look at the engine first.
+⚠ The set is not a blind test, and the machine of the first rows is written to
+the specification by hand. What is measured is that a real run produces the
+observations the judge was tested on, and that a draft that cannot be played is
+told so instead of being failed.
+
 #### The owner's decision record
 
 What a draft does where the specification is silent is the difference

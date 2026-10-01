@@ -128,7 +128,7 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
              "validate_scxml_set",
              "render_scxml_pseudocode",
              "render_scxml_diagram", "scxml_unresolved", "scxml_requirement_set",
-             "scxml_requirements",
+             "scxml_requirements", "scxml_scenarios",
              "scxml_acceptance_report", "scxml_accept", "scxml_acceptance_check",
              "scxml_accepted_for"},
             names)
@@ -167,10 +167,14 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # pure step of this core (quotes to manifest and sidecar) with no CLI
         # face: the CLI here is pack-driven, and the step takes no pack, so
         # there is no second name to collide with and none is added.
+        # `scxml_scenarios` is the same case: the examples are the client's to
+        # write and the verdicts the product's, so the only step this core
+        # owns is playing them into a design, and that is not a pack command.
         mcp_only = {"scxml_kinds", "validate_scxml", "validate_scxml_set",
                     "render_scxml_pseudocode",
                     "render_scxml_diagram",
                     "scxml_unresolved", "scxml_requirement_set", "scxml_requirements",
+                    "scxml_scenarios",
                     "scxml_acceptance_report",
                     "scxml_accept", "scxml_acceptance_check", "scxml_accepted_for"}
         self.assertEqual(commands, {t["name"] for t in mcp.TOOLS} - mcp_only)

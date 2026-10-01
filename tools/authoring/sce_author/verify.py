@@ -347,7 +347,8 @@ class Build:
 
 
 def generate(document: pathlib.Path, codegen: pathlib.Path,
-             into: pathlib.Path, backend: str = "python") -> Build:
+             into: pathlib.Path, backend: str = "python",
+             serves: tuple[str, ...] = ()) -> Build:
     """Build the document, declaring whatever host processors it sends to.
 
     ⚠ TWO PASSES, and it is the product's own handshake rather than a way
@@ -359,11 +360,19 @@ def generate(document: pathlib.Path, codegen: pathlib.Path,
     transitions, sent nothing anybody could receive, and every case read the
     resting value -- a full run, judged, and about a document nobody could
     hear.
+
+    `serves` are types the caller already knows the host serves, declared in
+    the first pass. The Python lowering refuses a send that names a target as
+    well as a type unless the type is declared, so the first pass of such a
+    document ends in that refusal and never reaches the manifest that would
+    have named the type. An interface that says where each output leaves
+    (`via`) is how a caller knows the type before it builds.
     """
-    build = _emit(document, codegen, into, (), backend)
+    build = _emit(document, codegen, into, serves, backend)
     if build.refusal or not build.unreachable:
+        build.declared = tuple(serves)
         return build
-    declared = build.unreachable
+    declared = tuple(dict.fromkeys((*serves, *build.unreachable)))
     build = _emit(document, codegen, into, declared, backend)
     if build.refusal:
         return build
@@ -852,6 +861,39 @@ def _product_answer(args: list[str], codegen: pathlib.Path | None, *,
         }]
     text = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
     return ("", text) if refused else (text, "")
+
+
+def _json_lines(stdout: str) -> list:
+    """The records a reporting subcommand printed, one JSON object per line."""
+    return [json.loads(line) for line in stdout.splitlines() if line.strip()]
+
+
+def scenario_set_reading(scenario_set: pathlib.Path,
+                         specification: pathlib.Path | None = None,
+                         codegen: pathlib.Path | None = None, *,
+                         cwd: pathlib.Path | None = None) -> tuple[str, str]:
+    """The product's reading of a scenario set (`sce-codegen scenarios`):
+    whether it is usable and each problem it found, as `records`.
+
+    With the specification every quote is checked word for word; without it
+    none is, and the summary record says so. The command reports problems as
+    findings, so a refusal here means the file is not a scenario set at all."""
+    args = ["scenarios", str(scenario_set)]
+    if specification is not None:
+        args += ["--specification", str(specification)]
+    return _product_answer(args, codegen, answer="records", read=_json_lines, cwd=cwd)
+
+
+def scenario_judgement(scenario_set: pathlib.Path, trace: pathlib.Path,
+                       codegen: pathlib.Path | None = None) -> tuple[str, str]:
+    """The product's judgement of an observation trace against a scenario set
+    (`sce-codegen judge-scenarios`), as `records`: the summary, one verdict
+    per scenario, then each failed check, gap and problem.
+
+    Nothing is judged here. The verdicts are the product's, one function
+    for every driver, so a second driver cannot disagree about them."""
+    return _product_answer(["judge-scenarios", str(scenario_set), str(trace)], codegen,
+                           answer="records", read=_json_lines)
 
 
 def _written_paths(stdout: str) -> list:
