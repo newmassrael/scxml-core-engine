@@ -560,6 +560,124 @@ fn the_derivation_does_not_read_its_own_prose() {
     }
 }
 
+/// The opposite defect to the one above, and the one that shipped: a comment
+/// marker that is NOT a comment eating real code. `StaticScenarioTest.kt` has a
+/// `//` comment that names a glob, `scenarios/*.json`; stripping every block
+/// comment first read that `/*` as an opener and deleted everything down to the
+/// next `*/` in the file, the class header included. JUnit then reported a
+/// class the derivation had never heard of, and every row was refused for it.
+///
+/// Each shape below is a marker inside something that claims it first — a line
+/// comment, a string — followed further down by a REAL block comment, because
+/// the damage is the span between the false opener and the next closer.
+#[test]
+fn a_comment_marker_inside_a_comment_or_a_string_does_not_open_a_comment() {
+    let tree = synthetic_sources(
+        200,
+        &[
+            (
+                "GlobNamedInAComment.kt",
+                "package com.sce.integration\n\n\
+                 // A scenario (fixtures/scenarios/*.json) is data.\n\
+                 class GlobNamingCommentTest {\n    @Test\n    fun runs() {}\n}\n\n\
+                 /* a real block comment, further down */\n",
+            ),
+            (
+                "GlobHeldInAString.kt",
+                "package com.sce.integration\n\n\
+                 class GlobInStringTest {\n    val pattern = \"scenarios/*.json\"\n\n    \
+                 @Test\n    fun runs() {}\n}\n\n\
+                 /* a real block comment, further down */\n",
+            ),
+        ],
+    );
+
+    let out = derive(tree.path());
+    assert_eq!(
+        out.code, 0,
+        "the derivation refused a readable tree.\nstderr: {}",
+        out.stderr
+    );
+    let derived = derived_set(&out);
+
+    for expected in ["GlobNamingCommentTest", "GlobInStringTest"] {
+        assert!(
+            derived.iter().any(|name| name.ends_with(expected)),
+            "`{expected}` is real code that sits between a comment marker which \
+             is not a comment and a block comment which is, and it was not \
+             derived. JUnit would report it and every row would be refused for \
+             a class the derivation cannot account for.\nderived: {derived:?}"
+        );
+    }
+}
+
+/// Kotlin block comments nest. A reader that ends one at the first `*/` leaves
+/// the rest of the outer comment in the text as code, and a class commented out
+/// inside it comes back as a class every row must report.
+#[test]
+fn a_nested_block_comment_is_one_comment() {
+    let tree = synthetic_sources(
+        200,
+        &[(
+            "Nested.kt",
+            "package com.sce.integration\n\n\
+             /* outer\n/* inner */\n\
+             class NestedGhostTest {\n    @Test\n    fun runs() {}\n}\n*/\n\n\
+             class AfterNestedTest {\n    @Test\n    fun runs() {}\n}\n",
+        )],
+    );
+
+    let out = derive(tree.path());
+    assert_eq!(
+        out.code, 0,
+        "the derivation refused a readable tree.\nstderr: {}",
+        out.stderr
+    );
+    let derived = derived_set(&out);
+
+    assert!(
+        !derived.iter().any(|name| name.ends_with("NestedGhostTest")),
+        "`NestedGhostTest` is written only inside a nested block comment and \
+         was derived anyway.\nderived: {derived:?}"
+    );
+    assert!(
+        derived.iter().any(|name| name.ends_with("AfterNestedTest")),
+        "the class after a nested block comment was not derived, so the \
+         comment's end was taken to be somewhere else.\nderived: {derived:?}"
+    );
+}
+
+/// A block comment that never closes is a file this reader cannot split into
+/// comment and code. Reading it as "no comment" derives whatever the comment
+/// was hiding, and reading it as "comment to the end" derives nothing; neither
+/// is a derivation, so it refuses and names the file.
+#[test]
+fn a_block_comment_that_never_closes_is_refused() {
+    let tree = synthetic_sources(
+        200,
+        &[(
+            "Unclosed.kt",
+            "package com.sce.integration\n\n\
+             /* this comment is never closed\n\
+             class HiddenByTheOpenCommentTest {\n    @Test\n    fun runs() {}\n}\n",
+        )],
+    );
+
+    let out = derive(tree.path());
+    assert_eq!(
+        out.code, REFUSED,
+        "a source with an unterminated block comment was accepted, so the \
+         classes it declares were silently left out of the set every row must \
+         report.\nstdout: {}\nstderr: {}",
+        out.stdout, out.stderr
+    );
+    assert!(
+        out.stderr.contains("Unclosed.kt"),
+        "the refusal does not name the file it could not read.\nstderr: {}",
+        out.stderr
+    );
+}
+
 /// A derivation that read nothing REFUSES, and does not hand the rows an empty
 /// set to match. The quiet zero this repository keeps re-learning: a reader
 /// that parsed nothing reports every row as complete.

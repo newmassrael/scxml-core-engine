@@ -52,8 +52,21 @@ REFUSED = 3
 # this side of it. 251 classes were derived on 2026-08-31.
 RUNNABLE_FLOOR = 200
 
-BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
-LINE_COMMENT = re.compile(r"//[^\n]*")
+# What can begin at a position in a Kotlin source, tried in the order a reader
+# would meet it: the earliest match in the text decides what that text is.
+# A comment marker is a comment only where no string, character or earlier
+# comment has already claimed it.
+SOURCE_TOKEN = re.compile(
+    r'''
+      (?P<raw>"""[\s\S]*?"""(?!"))
+    | (?P<string>"(?:\\.|[^"\\\n])*")
+    | (?P<char>'(?:\\.|[^'\\\n])+')
+    | (?P<line>//[^\n]*)
+    | (?P<block>/\*)
+    ''',
+    re.X,
+)
+BLOCK_EDGE = re.compile(r"/\*|\*/")
 EXECUTION_ANNOTATION = re.compile(
     r"@(Test|TestFactory|ParameterizedTest|RepeatedTest|TestTemplate)\b"
 )
@@ -62,9 +75,65 @@ DECLARATION = re.compile(
 )
 
 
+class UnreadableSource(Exception):
+    """A source this reader cannot tell the comments of from the code of."""
+
+
 def refuse(message: str) -> int:
     print(f"{message}", file=sys.stderr)
     return REFUSED
+
+
+def strip_comments(text: str) -> str:
+    """`text` with its comments removed and everything else left as written.
+
+    ONE pass, left to right, because what a marker means depends on what came
+    before it. The reader used to strip every `/* ... */` first and every
+    `// ...` second, and a `//` comment that merely NAMES a glob --
+    `// scenarios/*.json` -- then opened a block comment that ran to the next
+    `*/` anywhere below it. Found 2026-10-01 on the hosted lane: that deleted
+    the `package` line and the class header of `StaticScenarioTest`, so the
+    class was never derived, JUnit reported it, and every row was refused for
+    "a class the derivation cannot account for". The same shape is a
+    `"dir/*.json"` string, so strings and character literals are claimed as
+    well and their text is kept.
+
+    Block comments NEST in Kotlin, so `/* a /* b */ c */` is one comment.
+    A comment becomes the newlines it held and nothing else: the declarations
+    are matched at the start of a line, and the line structure of what remains
+    must be the file's own.
+
+    Limit, stated rather than hidden: a string template that nests a quote,
+    `"${x["k"]}"`, is read as two strings. That only matters if a comment marker
+    sits inside one, and the Gradle build would not compile an unbalanced file.
+    """
+    kept: list[str] = []
+    position = 0
+    while True:
+        token = SOURCE_TOKEN.search(text, position)
+        if token is None:
+            kept.append(text[position:])
+            return "".join(kept)
+        kept.append(text[position : token.start()])
+        position = token.end()
+        kind = token.lastgroup
+        if kind == "line":
+            continue
+        if kind != "block":
+            kept.append(token.group())
+            continue
+        depth = 1
+        opened = token.start()
+        while depth:
+            edge = BLOCK_EDGE.search(text, position)
+            if edge is None:
+                raise UnreadableSource(
+                    f"the block comment opened on line "
+                    f"{text.count(chr(10), 0, opened) + 1} is never closed"
+                )
+            depth += 1 if edge.group() == "/*" else -1
+            position = edge.end()
+        kept.append("\n" * text.count("\n", opened, position))
 
 
 def derive(root: pathlib.Path) -> list[str]:
@@ -83,11 +152,21 @@ def derive(root: pathlib.Path) -> list[str]:
     ⚠ Comments are stripped before anything is read. This repository has
     already watched a scanner read its own prose -- `reach_of` matched a gate
     script's COMMENT and demanded a tool that lane never installed -- and a
-    `@Test` or a `class` named in a KDoc is exactly that defect here.
+    `@Test` or a `class` named in a KDoc is exactly that defect here. The
+    stripping is `strip_comments`, which reads a file once and left to right;
+    the opposite defect, a comment marker that is NOT a comment eating the code
+    below it, hid a whole class from this set (see there).
+
+    A file whose comments cannot be told from its code raises
+    `UnreadableSource`, which `main` turns into a refusal: a class dropped
+    silently is a class no row is held to running.
     """
     declarations: dict[str, dict] = {}
     for path in sorted(root.rglob("*.kt")):
-        text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
+        try:
+            text = strip_comments(path.read_text())
+        except UnreadableSource as unreadable:
+            raise UnreadableSource(f"{path}: {unreadable}") from None
         package = re.search(r"^package\s+([\w.]+)", text, re.M)
         package = package.group(1) if package else ""
         found = list(DECLARATION.finditer(text))
@@ -298,7 +377,13 @@ def main() -> int:
                 f"{args.sources} is not a directory, so no runnable test class "
                 f"can be derived from it"
             )
-        classes = derive(args.sources)
+        try:
+            classes = derive(args.sources)
+        except UnreadableSource as unreadable:
+            return refuse(
+                f"a Kotlin source could not be read, so the classes it declares "
+                f"are unknown and no row can be held to running them: {unreadable}"
+            )
         if len(classes) < RUNNABLE_FLOOR:
             return refuse(
                 f"only {len(classes)} runnable test class(es) were derived from "

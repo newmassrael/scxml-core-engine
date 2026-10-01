@@ -209,6 +209,53 @@ edit("scripts/gates/kotlin_coverage.py",
      "    if False and not runnable:")
 PY
 
+# ── A comment marker that is not a comment ─────────────────────────
+#
+# Not hypothetical either: `StaticScenarioTest.kt` has a `//` comment naming
+# `scenarios/*.json`, and the reader that stripped every `/* ... */` first and
+# every `// ...` second took that `/*` for an opener. It deleted the class
+# header down to the next `*/` in the file, JUnit reported a class the
+# derivation had never heard of, and every row was refused for it.
+#
+# The reader is one left-to-right pass now (`strip_comments`), and these five
+# are the ways it stops being a faithful one. The first puts the old two passes
+# back verbatim, so a surviving mutation there would mean the fixtures stopped
+# containing the file that broke.
+
+mutation_case "comments are stripped block-first and line-second again" <<'PY'
+edit("scripts/gates/kotlin_coverage.py",
+     "            text = strip_comments(path.read_text())",
+     '            text = re.sub(r"//[^\\n]*", "", re.sub(r"/\\*.*?\\*/", "", path.read_text(), flags=re.S))')
+PY
+
+mutation_case "a string no longer claims the comment marker inside it" <<'PY'
+edit("scripts/gates/kotlin_coverage.py",
+     r'    | (?P<string>"(?:\\.|[^"\\\n])*")',
+     r'    | (?P<string>(?!))')
+PY
+
+mutation_case "a nested block comment ends at the first edge it meets" <<'PY'
+edit("scripts/gates/kotlin_coverage.py",
+     '            depth += 1 if edge.group() == "/*" else -1',
+     '            depth -= 1')
+PY
+
+mutation_case "a block comment that never closes is read as no comment" <<'PY'
+edit("scripts/gates/kotlin_coverage.py",
+     """            if edge is None:
+                raise UnreadableSource(""",
+     """            if edge is None:
+                break
+            if False:
+                raise UnreadableSource(""")
+PY
+
+mutation_case "the refusal for an unreadable source stops naming the file" <<'PY'
+edit("scripts/gates/kotlin_coverage.py",
+     'raise UnreadableSource(f"{path}: {unreadable}") from None',
+     'raise UnreadableSource(f"{unreadable}") from None')
+PY
+
 # ── The class a report is filed under is taken from its display name ──
 #
 # Not hypothetical: this is the defect the extraction shipped and
