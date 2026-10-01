@@ -67,10 +67,18 @@ jobs:
         submodules: recursive
 
     # libxml2 backs the default `xsd` feature the generator builds with.
+    #
+    # clang-format-19: the procedure regenerates the Mesh C++ envelope tree
+    # (`sce/src/mesh/generate_envelope.sh`) through `sce-codegen`, which
+    # formats C++ with clang-format pinned to major 19 and refuses without it
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9); the runner image carries other
+    # majors only. Without it the procedure stops at that stage, and a lane
+    # that cannot finish the procedure says nothing about whether any tree
+    # reproduces.
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y pkg-config libxml2-dev
+        sudo apt-get install -y pkg-config libxml2-dev clang-format-19
 
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable

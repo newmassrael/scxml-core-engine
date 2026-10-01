@@ -915,7 +915,16 @@ jobs:
           libxml2-dev \
           libspdlog-dev \
           libfmt-dev \
-          libboost-dev
+          libboost-dev \
+          clang-format-19
+    # clang-format-19: this lane builds only C targets, but the CMake
+    # configure that registers them also declares the C++ integration
+    # fixtures, and it declares each one from `sce-codegen --plan generate`.
+    # A plan runs the same pipeline as the real run, C++ formatting
+    # included, so configure stops with the generator's refusal unless
+    # clang-format pinned to major 19 is installed
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9). The runner image carries other
+    # majors only.
 
     - name: Setup Problem Matchers
       run: |
