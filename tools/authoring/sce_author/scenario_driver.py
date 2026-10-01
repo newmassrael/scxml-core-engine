@@ -76,6 +76,10 @@ from .verify import (SendRecorder, VerifyError, _default_codegen, _host_names, _
 ENGINE_NAME = "Python lowering"
 RECORD = "sce-observation-trace"
 VERSION = 1
+#: Where this driver runs. Replaced by what the runner measured when the driver
+#: is supervised; in this process it is none of the layers a design needs
+#: stopping by, and says so.
+ISOLATION = "none (in the caller's process)"
 
 
 class ScenarioDriverError(VerifyError):
@@ -96,7 +100,18 @@ class _HttpSeen:
 
 class _Refusal(Exception):
     """One run ended because what it saw would not be the design's behaviour.
-    Its text is what the owner reads."""
+    Its text is what the owner reads.
+
+    `cause` says whether another machine would refuse the same run: `design`
+    when what the design did made the example unplayable, `environment` when
+    the machine it ran on did (time, memory, a crash). Everything this driver
+    refuses today is the design's, because it runs in this process and has no
+    way to be stopped by anything else; the runner that supervises it will
+    refuse for the other reason."""
+
+    def __init__(self, why: str, cause: str = "design") -> None:
+        super().__init__(why)
+        self.cause = cause
 
 
 def _scalar(value) -> bool:
@@ -217,11 +232,15 @@ class _Design:
     def run(self, scenario: dict) -> dict:
         """The scenario's run: one observation per step, or why it was refused."""
         if self.refusal:
-            return {"scenario": scenario["id"], "refused": {"why": self.refusal}}
+            # The design could not be built, or is not a statechart: the same
+            # on every machine.
+            return {"scenario": scenario["id"],
+                    "refused": {"why": self.refusal, "cause": "design"}}
         try:
             return {"scenario": scenario["id"], "observations": self._play(scenario["steps"])}
         except _Refusal as exc:
-            return {"scenario": scenario["id"], "refused": {"why": str(exc)}}
+            return {"scenario": scenario["id"],
+                    "refused": {"why": str(exc), "cause": exc.cause}}
 
     def _play(self, steps: list) -> list:
         from sce_runtime.event import EventMetadata
@@ -404,6 +423,11 @@ def drive(scenario_set: pathlib.Path, document: pathlib.Path,
         "observes": {"outbound": True, "finished": True, "configuration": True,
                      "data": ({"unavailable": design.data_unavailable}
                               if design.data_unavailable else True)},
+        # What this run was bounded by and kept apart by, said plainly. A driver
+        # that runs in the caller's process is kept apart from nothing, and a
+        # verdict that did not say so would read as better protected than it was.
+        "limits": {"time_stops_per_step": MAX_TIME_STOPS},
+        "isolation": ISOLATION,
         "runs": runs,
     }
     if design.unreadable:
@@ -478,11 +502,17 @@ def answer(read: list, played: dict | None) -> dict:
     judgement = next((r for r in records if r.get("kind") == "judgement"), {})
     reply["verdict"] = "judged" if judgement.get("judged") else "nothing judged"
     reply["engine"] = judgement.get("engine")
+    # The bounds and the isolation the verdicts were made under, repeated as the
+    # product repeated them. Left out when the trace named none.
+    for key in ("limits", "isolation"):
+        if key in judgement:
+            reply[key] = judgement[key]
     reply["counts"] = {name: judgement.get(name) for name in
                        ("scenarios", "pass", "fail", "not-judged", "blocked",
                         "awaiting-decision")}
-    reply["scenarios"] = [{k: r[k] for k in ("id", "verdict", "reason", "requirements", "bound")
-                           if k in r} for r in records if r.get("kind") == "verdict"]
+    reply["scenarios"] = [{k: r[k] for k in ("id", "verdict", "reason", "cause",
+                                             "requirements", "bound") if k in r}
+                          for r in records if r.get("kind") == "verdict"]
     said = {r["reason"] for r in reply["scenarios"] if r.get("reason")}
     for kind in ("failure", "gap", "problem"):
         found = [r for r in records if r.get("kind") == kind]

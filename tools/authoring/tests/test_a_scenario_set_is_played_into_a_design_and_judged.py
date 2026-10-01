@@ -185,6 +185,9 @@ class TestWhatTheDriverRefusesToInvent(Played):
             self.assertEqual(1, reason.count("who the caller is was not said"), reason)
             self.assertNotIn("..", reason)
             self.assertIn("2 open decision(s)", reason)
+        # An open route is the design's, whichever machine plays it.
+        causes = {r.get("cause") for r in answer["judgement"] if r["kind"] in ("verdict", "gap")}
+        self.assertEqual({"design"}, causes, answer["judgement"])
 
     def test_an_output_sent_through_another_route_is_refused_with_both_named(self):
         """The interface is what the owner accepted. A machine that leaves by
