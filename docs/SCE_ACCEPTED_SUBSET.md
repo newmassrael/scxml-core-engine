@@ -2848,10 +2848,10 @@ machine at a macrostep boundary and restores it into a new process in place
 of `initialize`: Kotlin `sm.save()` / `sm.restore(saved)` on a machine not
 yet started, Rust `engine.save()` / `Engine::<P>::restore(policy, &saved)`
 through the generated `<Machine>Persist` trait. A saved state holds every
-variable, the machine's own included, the configuration, the current leaf and
-the external queue in order — only the internal queue is empty at a macrostep
-boundary, so an event a host raised and has not yet driven the machine
-through is part of the state — as one JSON document (`SavedState::to_json` / `SavedState.toJson`, schema
+variable, the machine's own included, the configuration, the current leaf,
+what each `<history>` recorded and the external queue in order — only the
+internal queue is empty at a macrostep boundary, so an event a host raised and
+has not yet driven the machine through is part of the state — as one JSON document (`SavedState::to_json` / `SavedState.toJson`, schema
 `schemas/sce-saved-state.v1.schema.json`, a `pre-release` surface in
 `SCE_WIRE_CONTRACTS.md`). The document is the same on every backend — keys are
 the document's ids, the configuration is in document order, a 64-bit integer
@@ -2859,11 +2859,30 @@ is a text and a real that is not finite is `NaN` / `Infinity` / `-Infinity` —
 so what one backend saved another restores; both are held to the shared
 instances in `sce-build/tests/fixtures/static_datamodel/saved/`.
 
+What a `<history>` recorded is part of the state because it decides where a
+resumed machine goes: `history` is an object keyed by the history's id and
+ordered by it, each value the state ids it recorded in document order — the
+children of its parent for a shallow history, the atomic states below it for a
+deep one (§scxml-3.10). A history that has recorded nothing is absent, so a
+machine that resumes through it takes its default transition, as the saved one
+would have; a document with no `<history>` writes `{}`. The field is always
+present, as `external` is.
+
 A restore runs no `<onentry>` and evaluates no `<data>` (the saved run did
 both, and its host calls cannot be made twice), and it is refused, leaving
 the machine as it was, for a state saved from a document of another shape, a
-configuration that is not one of the document, or a value its variable's type
-or bound cannot hold. A save is refused for a machine that is not running and
+configuration that is not one of the document, a value its variable's type
+or bound cannot hold, or a history value the document could not have
+recorded: an id it does not declare or names twice, a state it does not name,
+none at all, one that is not below the history's parent (or, for a shallow
+history, not a child of it), a deep history's state that has children, or
+states no configuration could hold at once — a compound state with two active
+children, a `<parallel>` with a region missing. The last is the child arity a
+whole configuration is held to, applied to the history's subtree
+(`helpers::configuration::validate_history`, Kotlin `validateHistory`). The
+JSON reader refuses an object that repeats a name, on both backends: one that
+took the first and one that took the last would restore two machines from one
+text. A save is refused for a machine that is not running and
 for one whose last macrostep was `truncated`, and on Kotlin for a machine its
 own coroutine drives (`start`): its macrosteps run on another thread while the
 host would read it, and its queued events sit in a channel nothing can read
@@ -2872,19 +2891,25 @@ timing. The refusal follows the mode the host chose for the run, never the
 moment.
 
 A saved state is bound to the document's SHAPE, not its source hash: a
-SHA-256 the generator computes over every state with its kind and parent and
-every variable with its type and bound (`static_lowering::saved_shape`). A
-guard, an action, an initial value or a comment changed leaves it restorable,
-so an app update does not lose its users' state; a state or variable renamed,
-re-typed, re-parented or re-bounded refuses it. What the shape cannot see — a
+SHA-256 the generator computes over every state with its kind and parent,
+every `<history>` with its id, kind and parent, and every variable with its
+type and bound (`static_lowering::saved_shape`); a document with no `<history>`
+hashes what it did before histories were saved. A guard, an action, an initial
+value or a comment changed leaves it restorable, so an app update does not
+lose its users' state; a state, history or variable renamed, re-typed,
+re-parented or re-bounded refuses it. What the shape cannot see — a
 variable of the same name and type whose meaning changed — is the author's to
 avoid until a document can declare a migration.
 
-A document with a `<history>`, a delayed `<send>` or an `<invoke>` has state
-the runtime holds rather than its fields, which this version of the format
-does not carry. Such a machine is generated WITHOUT `save` / `restore`, so a
-host finds out when it compiles rather than when a restore drops part of the
-state.
+A document with a delayed `<send>` (or a `<cancel>`) or an `<invoke>` has
+state the runtime holds rather than its fields, which this version of the
+format does not carry: a timer still pending in the scheduler, an invoked
+session. Such a machine is generated WITHOUT `save` / `restore`, so a host
+finds out when it compiles rather than when a restore drops part of the state.
+`sce-build/tests/a_machine_holding_state_in_the_runtime_has_no_save_api.rs`
+pins this end to end, because the generator decides it from a model the
+analyzer has read: a delayed `<send>` is known to need the scheduler only after
+that pass.
 
 **Host actions.** Under `sce-static` a `<sce:action>` argument (§2.11) is
 any typed expression over the same scope, not only a bare
