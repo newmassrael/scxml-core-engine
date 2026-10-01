@@ -150,6 +150,27 @@ class TheOwnersListIsTheDenominator(unittest.TestCase):
         # ...and not the sentence for a design nobody measured.
         self.assertNotIn("has not measured it", answer["show"])
 
+    def test_a_measured_answer_tells_the_client_to_save_the_list_and_its_sidecar(self):
+        result = call("validate_scxml", document_text=lamp(), document_name="lamp.scxml",
+                      manifest_text=manifest_text())
+        shown = json.loads(result["content"][0]["text"])["show"]
+        # The ids in the design mean what the list says; without the saved files
+        # they mean nothing once the conversation ends.
+        self.assertIn("requirements.manifest.json", shown)
+        self.assertIn("requirements.sidecar.json", shown)
+        self.assertIn("tell the owner where they are", shown)
+
+    def test_the_list_input_says_what_file_it_is(self):
+        # A client given only "the requirement manifest" wrote one by hand, as
+        # YAML, and was refused three times (a GPT run, 2026-10-01).
+        for name in ("validate_scxml", "validate_scxml_set", "scxml_requirements"):
+            tool = next(t for t in mcp.TOOLS if t["name"] == name)
+            for key in ("manifest", "manifest_text"):
+                said = tool["inputSchema"]["properties"][key]["description"]
+                self.assertIn("scxml_requirement_set", said, f"{name}.{key}")
+                self.assertIn("never written or edited by hand", said, f"{name}.{key}")
+                self.assertIn("JSON", said, f"{name}.{key}")
+
     def test_an_unreadable_list_is_not_presented_as_a_measurement(self):
         result = call("validate_scxml", document_text=lamp(), document_name="lamp.scxml",
                       manifest_text='{"not": "a manifest"}')

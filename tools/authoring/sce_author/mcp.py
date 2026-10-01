@@ -246,7 +246,14 @@ _LEXICON_INPUT = {
                 "(default `en`; `ko` renders the grammar's words in Korean)."},
 }
 _DOCUMENT_INPUT = _file_input("document", "the SCXML document")
-_MANIFEST_INPUT = _file_input("manifest", "the requirement manifest")
+# ⚠ The description says what the file IS. Measured 2026-10-01 on a GPT run: the
+# input said only "the requirement manifest", and the client, having no format to
+# go on, wrote one by hand as YAML, was refused three times, and made the list
+# again. The only list the product reads is the JSON scxml_requirement_set builds.
+_MANIFEST_INPUT = _file_input(
+    "manifest",
+    "the owner's requirement list: the JSON that scxml_requirement_set returned "
+    "as manifest_text, unchanged and never written or edited by hand")
 # The owner's authoring profile: what a design is held to, stated in a file
 # the owner keeps beside the specification. Only the product reads it, so it
 # is handed over untouched and a setting the product adds needs no edit here.
@@ -1429,7 +1436,10 @@ _UNMEASURED = ("If your reply has a table of the requirements and where the desi
 _MEASURED = ("Give the owner `requirements` as SCE's: the count and the ids per "
              "outcome, each missing and dangling id by name. Say that `implemented` "
              "means a state or transition carries the id, and that SCE has not "
-             "checked that it does what the sentence says.")
+             "checked that it does what the sentence says. The ids in the design "
+             "mean what the list says, so save manifest_text and the sidecar_text "
+             "that goes with it beside the design (requirements.manifest.json, "
+             "requirements.sidecar.json) and tell the owner where they are.")
 
 _UNREADABLE = ("The requirement list could not be read, so nothing was measured "
                "against it: say so, and do not present a requirement table as "

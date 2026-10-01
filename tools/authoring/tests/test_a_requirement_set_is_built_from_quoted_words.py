@@ -163,6 +163,25 @@ class TheFilesAreWhatTheProductReads(unittest.TestCase):
         json.loads(built["manifest_text"])
         json.loads(built["sidecar_text"])
 
+    def test_what_comes_next_names_the_files_to_save_and_the_checks_that_take_the_list(self):
+        # Measured 2026-10-01: no client saved the list or its sidecar (0 of 20
+        # Sonnet runs, and a GPT run saved the list and not the sidecar), so the
+        # ids in a design meant nothing once the conversation ended; and the
+        # old text named two tools and not the checks, so the list was never
+        # given to the one a design with companion files goes through.
+        built = rs.answer(rs.build(SPEC, ALL))
+        said = built["next"]
+        for name in ("requirements.manifest.json", "requirements.sidecar.json",
+                     "validate_scxml", "validate_scxml_set", "scxml_acceptance_report"):
+            self.assertIn(name, said)
+        self.assertIn("exactly as returned", said)
+        # A client that cannot write files is told what to do instead.
+        self.assertIn("cannot write files", said)
+
+    def test_a_refusal_does_not_tell_the_client_to_save_a_list_there_is_not(self):
+        refused = rs.answer(rs.build(SPEC, [{"quote": "nope", "statement": "x"}]))
+        self.assertNotIn("requirements.manifest.json", refused["next"])
+
 
 class TheToolTakesTheSpecificationAsTextOrPath(unittest.TestCase):
     def test_the_tool_is_offered_with_its_two_forms_of_the_specification(self):

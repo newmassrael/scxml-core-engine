@@ -383,6 +383,21 @@ the arms run at different times, and the labels read by a person from the final
 reply. GPT (Codex, reasoning effort none) gave a table with no word about its
 source and called no requirement tool (2026-10-01): that client is not measured
 here.
+The list and its sidecar are the only durable record of what R1..Rn mean, and
+no client kept them: none of the 20 Sonnet runs saved either file, and a later
+GPT run saved the list and not the sidecar, after writing a list by hand as YAML
+and being refused three times, because the `manifest` input said only "the
+requirement manifest". The `next` of `scxml_requirement_set`, the `manifest`
+input's description and the measured check's `show` now say what the file is
+(the JSON the tool returned, unchanged) and to save `manifest_text` and
+`sidecar_text` as `requirements.manifest.json` and `requirements.sidecar.json`
+beside the design and tell the owner where they are. With the owner's request
+unchanged (it never mentions the list), 19 of 20 runs saved both, every one
+byte for byte what the tool returned, and the list reached a check in 20 (17
+before); the one that did not said so and offered to. One run per arm. The
+product's acceptance report, rendered from the saved pair, sets each
+requirement's sentence beside the nodes that carry it; without the sidecar it
+says `(no sidecar supplied)` under every requirement.
 `render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page
 as its FIRST block and, as a second block, a note on what the page was rendered
 from: the sha256 of the document, the product's check of that same document

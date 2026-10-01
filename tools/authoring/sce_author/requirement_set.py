@@ -236,8 +236,15 @@ def answer(built: Built) -> dict:
         "basis": ("synthesized: this prose specification names no requirements of "
                   "its own, so the list is the client's reading of it and nothing "
                   "in the source audits which sentences were counted"),
-        "next": ("put each id on the state or transition that carries it "
-                 "(sce:req=\"R3\"), pass manifest_text to scxml_requirements and "
-                 "scxml_acceptance_report (with sidecar_text), and tell the owner "
-                 "the sentences in unclaimed_sentences that no requirement quotes"),
+        "next": ("save manifest_text as requirements.manifest.json and sidecar_text "
+                 "as requirements.sidecar.json beside the specification, exactly as "
+                 "returned (the ids in the design mean what these two files say, and "
+                 "the sidecar holds the quoted sentences: tell the owner where they "
+                 "are, or give both texts in your reply when you cannot write files); "
+                 "put each id on the state or transition that carries it "
+                 "(sce:req=\"R3\"); check the design with validate_scxml, or "
+                 "validate_scxml_set when it imports other documents, passing "
+                 "manifest_text; give scxml_acceptance_report both texts; and tell "
+                 "the owner the sentences in unclaimed_sentences that no requirement "
+                 "quotes"),
     }
